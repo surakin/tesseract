@@ -44,14 +44,17 @@ struct RaShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
@@ -60,15 +63,26 @@ struct RaShell : tesseract::test::TestShellBase
     {
         statuses.push_back(m);
     }
-    void on_rooms_updated_() override { ++rooms_updated; }
-    void on_invites_updated_() override { ++invites_updated; }
-    void on_my_knocks_updated_() override { ++knocks_updated; }
-    void request_relayout_() override { ++relayouts; }
+    void on_rooms_updated_() override
+    {
+        ++rooms_updated;
+    }
+    void on_invites_updated_() override
+    {
+        ++invites_updated;
+    }
+    void on_my_knocks_updated_() override
+    {
+        ++knocks_updated;
+    }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
 
     std::vector<std::function<void()>> delayed;
     std::vector<std::string> statuses;
-    int rooms_updated = 0, invites_updated = 0, knocks_updated = 0,
-        relayouts = 0;
+    int rooms_updated = 0, invites_updated = 0, knocks_updated = 0, relayouts = 0;
 
     using ShellBase::accept_invite_async_;
     using ShellBase::accept_knock_request_async_;
@@ -179,18 +193,23 @@ struct RaAppFx : RaFx
     std::unique_ptr<TestSurface> surface = TestSurface::create(1000, 700);
     std::unique_ptr<tesseract::views::MainAppWidget> app =
         tk::create_root_widget<tesseract::views::MainAppWidget>(nullptr);
-    RaAppFx() { s.main_app_ = app.get(); }
+    RaAppFx()
+    {
+        s.main_app_ = app.get();
+    }
     // Workers post back into main_app_ (queued by TestShellBase::post_to_ui_), and
     // `app` is destroyed before the base's shell: drain them first.
-    ~RaAppFx() { s.drain_workers(); }
+    ~RaAppFx()
+    {
+        s.drain_workers();
+    }
 };
 
 } // namespace
 
 // ── push_* ingestion ─────────────────────────────────────────────────────────
 
-TEST_CASE("push_rooms_ for another account only updates its cache",
-          "[shell][rooms]")
+TEST_CASE("push_rooms_ for another account only updates its cache", "[shell][rooms]")
 {
     RaFx f;
     f.s.rooms_ = {ra_room("!mine")};
@@ -217,8 +236,7 @@ TEST_CASE("push_rooms_ for the active account replaces the list and drops "
     CHECK(f.s.known_users_room_set_hash_ != 0);
 }
 
-TEST_CASE("push_rooms_ warms bridge status and unread rooms once per room set",
-          "[shell][rooms]")
+TEST_CASE("push_rooms_ warms bridge status and unread rooms once per room set", "[shell][rooms]")
 {
     RaFx f;
     f.s.room_list_running_accounts_.insert("@me:x");
@@ -238,8 +256,7 @@ TEST_CASE("push_rooms_ warms bridge status and unread rooms once per room set",
     CHECK(f.s.bridge_check_fingerprint_ != bridge_fp);
 }
 
-TEST_CASE("push_rooms_ holds back warming while a layout restore is pending",
-          "[shell][rooms]")
+TEST_CASE("push_rooms_ holds back warming while a layout restore is pending", "[shell][rooms]")
 {
     RaFx f;
     f.s.room_list_running_accounts_.insert("@me:x");
@@ -250,12 +267,13 @@ TEST_CASE("push_rooms_ holds back warming while a layout restore is pending",
 
     // After enough ticks the gate gives up.
     for (int i = 0; i < RaShell::kRestoreGateMaxTicks; ++i)
+    {
         f.s.push_rooms_("@me:x", {ra_room("!a")});
+    }
     CHECK(f.s.bridge_check_fingerprint_ != 0);
 }
 
-TEST_CASE("push_rooms_ holds back warming until the room list is running",
-          "[shell][rooms]")
+TEST_CASE("push_rooms_ holds back warming until the room list is running", "[shell][rooms]")
 {
     RaFx f;
     auto fav = ra_room("!fav");
@@ -276,8 +294,7 @@ TEST_CASE("push_rooms_ holds back warming until the room list is running",
     CHECK(f.s.unread_prefetch_fingerprint_ != 0);
 }
 
-TEST_CASE("push_rooms_ replays a matrix link that arrived before login",
-          "[shell][rooms]")
+TEST_CASE("push_rooms_ replays a matrix link that arrived before login", "[shell][rooms]")
 {
     RaFx f;
     f.s.pending_matrix_link_ = "https://matrix.to/#/!room:x";
@@ -285,8 +302,7 @@ TEST_CASE("push_rooms_ replays a matrix link that arrived before login",
     CHECK(f.s.pending_matrix_link_.empty());
 }
 
-TEST_CASE("push_rooms_ reveals a just-created space once sync reports it",
-          "[shell][rooms]")
+TEST_CASE("push_rooms_ reveals a just-created space once sync reports it", "[shell][rooms]")
 {
     RaAppFx f;
     f.s.current_room_id_ = "!space";
@@ -379,8 +395,7 @@ TEST_CASE("knock commands register pending actions", "[shell][rooms][knock]")
     CHECK(f.s.pending_room_actions_.size() == 3);
 }
 
-TEST_CASE("knock request panel subscription is idempotent and releasable",
-          "[shell][rooms][knock]")
+TEST_CASE("knock request panel subscription is idempotent and releasable", "[shell][rooms][knock]")
 {
     RaFx f;
     f.s.subscribe_knock_requests_panel_("", nullptr);
@@ -432,8 +447,7 @@ TEST_CASE("uploads report failures on the status line", "[shell][rooms]")
 
 // ── commands that register pending work ─────────────────────────────────────
 
-TEST_CASE("simple room setting commands tolerate a missing client",
-          "[shell][rooms][commands]")
+TEST_CASE("simple room setting commands tolerate a missing client", "[shell][rooms][commands]")
 {
     RaFx f;
     f.s.set_room_notification_mode_("!r", "mute", nullptr);
@@ -466,8 +480,7 @@ TEST_CASE("leave tags spaces separately from rooms", "[shell][rooms][commands]")
     CHECK(rooms == 1);
 }
 
-TEST_CASE("join registers a pending action and uses stashed via hints",
-          "[shell][rooms][commands]")
+TEST_CASE("join registers a pending action and uses stashed via hints", "[shell][rooms][commands]")
 {
     RaFx f;
     f.s.join_room_command_("", {}, nullptr);
@@ -498,8 +511,7 @@ TEST_CASE("create_room_command_ needs a client and flips the form to Creating",
     CHECK(f.s.pending_room_actions_.size() == 1);
 }
 
-TEST_CASE("invite / moderation / bulk invite register tracked requests",
-          "[shell][rooms][commands]")
+TEST_CASE("invite / moderation / bulk invite register tracked requests", "[shell][rooms][commands]")
 {
     RaFx f;
     f.s.invite_user_command_("", "@u:x", "", nullptr);
@@ -517,10 +529,13 @@ TEST_CASE("invite / moderation / bulk invite register tracked requests",
     CHECK(f.s.pending_moderations_.size() == 3);
 
     std::vector<std::string> results;
-    f.s.invite_users_("!r", {"@a:x", "@b:x"},
-                      [&](const std::string& u, bool ok, const std::string&)
-                      { results.push_back(u + (ok ? "+" : "-")); },
-                      nullptr);
+    f.s.invite_users_(
+        "!r", {"@a:x", "@b:x"},
+        [&](const std::string& u, bool ok, const std::string&)
+        {
+            results.push_back(u + (ok ? "+" : "-"));
+        },
+        nullptr);
     CHECK(f.s.pending_invites_.size() == 3);
     f.s.invite_users_("", {"@a:x"}, {}, nullptr);
     CHECK(f.s.pending_invites_.size() == 3);
@@ -536,8 +551,7 @@ TEST_CASE("invite / moderation / bulk invite register tracked requests",
     CHECK(f.s.pending_invites_.empty());
 }
 
-TEST_CASE("confirm_leave_room_ asks first and leaves on confirmation",
-          "[shell][rooms][commands]")
+TEST_CASE("confirm_leave_room_ asks first and leaves on confirmation", "[shell][rooms][commands]")
 {
     RaAppFx f;
     f.s.rooms_ = {ra_room("!r")};
@@ -575,8 +589,7 @@ TEST_CASE("invite completion goes to the per-request callback or the status line
     RaFx f;
     bool got_ok = true;
     std::string got_msg;
-    f.s.pending_invites_[1] = {"!r", "@u:x",
-                               [&](bool ok, const std::string& m)
+    f.s.pending_invites_[1] = {"!r", "@u:x", [&](bool ok, const std::string& m)
                                {
                                    got_ok = ok;
                                    got_msg = m;
@@ -597,13 +610,15 @@ TEST_CASE("invite completion goes to the per-request callback or the status line
     CHECK(f.s.statuses[1] == "Couldn't invite @u:x: denied");
 }
 
-TEST_CASE("moderation completion reports each failing action",
-          "[shell][rooms][complete]")
+TEST_CASE("moderation completion reports each failing action", "[shell][rooms][complete]")
 {
     using MA = RaShell::ModerationAction;
     RaFx f;
     std::vector<bool> done;
-    auto cb = [&](bool ok) { done.push_back(ok); };
+    auto cb = [&](bool ok)
+    {
+        done.push_back(ok);
+    };
     f.s.pending_moderations_[1] = {"@u:x", "", MA::Kick, cb};
     f.s.pending_moderations_[2] = {"@u:x", "Uma", MA::Ban, cb};
     f.s.pending_moderations_[3] = {"@u:x", "Uma", MA::Unban, cb};
@@ -626,8 +641,7 @@ TEST_CASE("unknown completion ids are ignored", "[shell][rooms][complete]")
     CHECK(f.s.statuses.empty());
 }
 
-TEST_CASE("failed room actions name the action and clean up",
-          "[shell][rooms][complete]")
+TEST_CASE("failed room actions name the action and clean up", "[shell][rooms][complete]")
 {
     RaFx f;
     struct Case
@@ -667,8 +681,7 @@ TEST_CASE("failed room actions name the action and clean up",
     CHECK(f.s.statuses[0] == "Couldn't leave room");
 }
 
-TEST_CASE("a failed AddSpaceChild reverts the optimistic cache entry",
-          "[shell][rooms][complete]")
+TEST_CASE("a failed AddSpaceChild reverts the optimistic cache entry", "[shell][rooms][complete]")
 {
     RaFx f;
     // The space is listed, so the rebuild that follows a failure re-derives the
@@ -718,8 +731,7 @@ TEST_CASE("successful create navigates to the new room", "[shell][rooms][complet
     CHECK(f.s.current_room_id_ == "!new");
 }
 
-TEST_CASE("leaving a room closes its tab, or deselects the last one",
-          "[shell][rooms][complete]")
+TEST_CASE("leaving a room closes its tab, or deselects the last one", "[shell][rooms][complete]")
 {
     RaFx f;
     f.s.tab_select_room("!a");
@@ -748,8 +760,7 @@ TEST_CASE("leaving a space steps back out of it", "[shell][rooms][complete]")
     CHECK(f.s.space_root_shown_id_.empty());
 }
 
-TEST_CASE("successful knock confirms and the others complete quietly",
-          "[shell][rooms][complete]")
+TEST_CASE("successful knock confirms and the others complete quietly", "[shell][rooms][complete]")
 {
     RaFx f;
     f.s.pending_room_actions_[1] = {"!k", RaKind::Knock, ""};
@@ -766,8 +777,7 @@ TEST_CASE("successful knock confirms and the others complete quietly",
     CHECK(f.s.pending_room_actions_.empty());
 }
 
-TEST_CASE("leave_space_navigate_back_ pops only a matching stack top",
-          "[shell][rooms][complete]")
+TEST_CASE("leave_space_navigate_back_ pops only a matching stack top", "[shell][rooms][complete]")
 {
     RaFx f;
     f.s.space_stack_ = {"!outer", "!inner"};
@@ -790,8 +800,7 @@ TEST_CASE("join outcome closes the dialog on success and shows the error on fail
     ar->open(AR::Tab::Join);
     f.s.on_join_room_outcome_ui_(false, "!r", "denied");
     CHECK(ar->is_open());
-    CHECK(ar->join_view()->state() ==
-          tesseract::views::JoinRoomView::State::Error);
+    CHECK(ar->join_view()->state() == tesseract::views::JoinRoomView::State::Error);
     f.s.on_join_room_outcome_ui_(false, "!r", "");
     f.s.on_join_room_outcome_ui_(true, "!r", "");
     CHECK_FALSE(ar->is_open());
@@ -808,8 +817,7 @@ TEST_CASE("join outcome closes the dialog on success and shows the error on fail
     CHECK(ar->is_open());
 }
 
-TEST_CASE("create outcome closes the dialog or shows the error",
-          "[shell][rooms][outcome]")
+TEST_CASE("create outcome closes the dialog or shows the error", "[shell][rooms][outcome]")
 {
     using AR = tesseract::views::AddRoomView;
     RaAppFx f;
@@ -818,8 +826,7 @@ TEST_CASE("create outcome closes the dialog or shows the error",
     ar->open(AR::Tab::Create);
     f.s.on_create_room_outcome_ui_(false, "", "taken");
     CHECK(ar->is_open());
-    CHECK(ar->create_view()->state() ==
-          tesseract::views::CreateRoomView::State::Error);
+    CHECK(ar->create_view()->state() == tesseract::views::CreateRoomView::State::Error);
     f.s.on_create_room_outcome_ui_(false, "", "");
     f.s.on_create_room_outcome_ui_(true, "!r", "");
     CHECK_FALSE(ar->is_open());
@@ -831,8 +838,7 @@ TEST_CASE("create outcome closes the dialog or shows the error",
 
 // ── room list refresh ───────────────────────────────────────────────────────
 
-TEST_CASE("refresh_room_list_ shows the root rooms, hiding space children",
-          "[shell][rooms][list]")
+TEST_CASE("refresh_room_list_ shows the root rooms, hiding space children", "[shell][rooms][list]")
 {
     RaAppFx f;
     f.s.refresh_room_list_(); // fine without rooms
@@ -843,14 +849,15 @@ TEST_CASE("refresh_room_list_ shows the root rooms, hiding space children",
     f.s.refresh_room_list_();
     std::vector<std::string> ids;
     for (const auto& r : f.app->room_list_view()->rooms())
+    {
         ids.push_back(r.id);
+    }
     CHECK(std::find(ids.begin(), ids.end(), "!child") == ids.end());
     CHECK(std::find(ids.begin(), ids.end(), "!loose") != ids.end());
     CHECK(f.app->room_list_view()->selected_room_id() == "!loose");
 }
 
-TEST_CASE("refresh_room_list_ inside a space lists only its children",
-          "[shell][rooms][list]")
+TEST_CASE("refresh_room_list_ inside a space lists only its children", "[shell][rooms][list]")
 {
     RaAppFx f;
     f.s.rooms_ = {ra_room("!space", true), ra_room("!child"), ra_room("!loose")};
@@ -866,8 +873,7 @@ TEST_CASE("refresh_room_list_ inside a space lists only its children",
     CHECK(f.app->room_list_view()->rooms().size() >= 2);
 }
 
-TEST_CASE("an active room search lists every room unfiltered",
-          "[shell][rooms][list]")
+TEST_CASE("an active room search lists every room unfiltered", "[shell][rooms][list]")
 {
     RaAppFx f;
     f.s.rooms_ = {ra_room("!space", true), ra_room("!child"), ra_room("!loose")};
@@ -891,8 +897,7 @@ TEST_CASE("space_back_command_ re-asserts a space that is still the open room",
     CHECK(f.s.space_root_shown_id_ == "!space");
 }
 
-TEST_CASE("knock panel refresh pushes the list into the panel", 
-          "[shell][rooms][knock]")
+TEST_CASE("knock panel refresh pushes the list into the panel", "[shell][rooms][knock]")
 {
     RaAppFx f;
     tesseract::KnockRequestInfo k;

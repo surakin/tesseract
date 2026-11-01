@@ -34,9 +34,18 @@ constexpr tk::Color kAudioBarRest = tk::Color::rgba(255, 255, 255, 80);
 AudioViewerPage::AudioViewerPage(MediaViewerPageHost& host)
     : host_(host), bar_(host, /*with_speed=*/true)
 {
-    bar_.on_toggle = [this] { toggle_(); };
-    bar_.on_cycle_speed = [this] { cycle_speed_(); };
-    bar_.on_seek = [this](float frac) { seek_to_fraction_(frac); };
+    bar_.on_toggle = [this]
+    {
+        toggle_();
+    };
+    bar_.on_cycle_speed = [this]
+    {
+        cycle_speed_();
+    };
+    bar_.on_seek = [this](float frac)
+    {
+        seek_to_fraction_(frac);
+    };
 }
 
 void AudioViewerPage::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
@@ -44,8 +53,14 @@ void AudioViewerPage::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
     player_ = std::move(player);
     if (player_)
     {
-        player_->on_progress = [this] { on_player_progress_(); };
-        player_->on_error = [this] { on_player_error_(); };
+        player_->on_progress = [this]
+        {
+            on_player_progress_();
+        };
+        player_->on_error = [this]
+        {
+            on_player_error_();
+        };
         player_->set_playback_rate(rate_);
     }
     if (active_)
@@ -239,8 +254,8 @@ void AudioViewerPage::arrange(tk::LayoutCtx& lc, tk::Rect /*b*/)
 
     const float inner_x = card_.x + kAudioCardPad;
     const float inner_w = card_.w - 2.0f * kAudioCardPad;
-    bar_rect_ = {inner_x, card_.y + card_.h - kAudioCardPad - MediaTransportBar::kHeight,
-                 inner_w, MediaTransportBar::kHeight};
+    bar_rect_ = {inner_x, card_.y + card_.h - kAudioCardPad - MediaTransportBar::kHeight, inner_w,
+                 MediaTransportBar::kHeight};
     wave_ = {inner_x, bar_rect_.y - 12.0f - kAudioWaveH, inner_w, kAudioWaveH};
 
     bar_.arrange(lc, bar_rect_, controls_available_() && host_.host_chrome_shown());
@@ -267,8 +282,7 @@ void AudioViewerPage::paint_content(tk::PaintCtx& ctx)
     // Glyph
     const float glyph_y = card_.y + kAudioCardPad;
     glyph_.draw(cv, ctx.factory, kMusicSvg,
-                {card_.x + (card_.w - kAudioGlyphPx) * 0.5f, glyph_y, kAudioGlyphPx,
-                 kAudioGlyphPx},
+                {card_.x + (card_.w - kAudioGlyphPx) * 0.5f, glyph_y, kAudioGlyphPx, kAudioGlyphPx},
                 kAudioGlyphPx, kAudioTextSecondary);
 
     // Title
@@ -306,8 +320,7 @@ void AudioViewerPage::paint_content(tk::PaintCtx& ctx)
             if (lo)
             {
                 const tk::Size sz = lo->measure();
-                cv.draw_text(*lo, {card_.x + (card_.w - sz.w) * 0.5f, y},
-                             kAudioTextSecondary);
+                cv.draw_text(*lo, {card_.x + (card_.w - sz.w) * 0.5f, y}, kAudioTextSecondary);
             }
         }
     }
@@ -319,9 +332,8 @@ void AudioViewerPage::paint_content(tk::PaintCtx& ctx)
                                     std::chrono::steady_clock::now() - loading_start_)
                                     .count();
         const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-        tk::draw_spinner_dots(cv, {wave_.x + wave_.w * 0.5f, wave_.y + wave_.h * 0.5f},
-                              phase, /*radius=*/14.0f, /*dot_r=*/3.0f,
-                              tk::Color{220, 220, 220, 255});
+        tk::draw_spinner_dots(cv, {wave_.x + wave_.w * 0.5f, wave_.y + wave_.h * 0.5f}, phase,
+                              /*radius=*/14.0f, /*dot_r=*/3.0f, tk::Color{220, 220, 220, 255});
         host_.host_request_repaint();
         return;
     }
@@ -344,8 +356,7 @@ void AudioViewerPage::paint_content(tk::PaintCtx& ctx)
         {
             const tk::Size sz = lo->measure();
             cv.draw_text(*lo,
-                         {wave_.x + (wave_.w - sz.w) * 0.5f,
-                          wave_.y + (wave_.h - sz.h) * 0.5f},
+                         {wave_.x + (wave_.w - sz.w) * 0.5f, wave_.y + (wave_.h - sz.h) * 0.5f},
                          kAudioTextSecondary);
         }
         return;
@@ -363,8 +374,8 @@ void AudioViewerPage::paint_content(tk::PaintCtx& ctx)
     const std::uint64_t dur = duration_();
     const float frac =
         (player_ && dur > 0)
-            ? std::clamp(static_cast<float>(player_->position_ms()) / static_cast<float>(dur),
-                         0.0f, 1.0f)
+            ? std::clamp(static_cast<float>(player_->position_ms()) / static_cast<float>(dur), 0.0f,
+                         1.0f)
             : 0.0f;
     const int cursor_bar = static_cast<int>(frac * static_cast<float>(bars));
     const float mid_y = wave_.y + wave_.h * 0.5f;
@@ -375,15 +386,14 @@ void AudioViewerPage::paint_content(tk::PaintCtx& ctx)
         {
             const std::size_t n = waveform_.size();
             const std::size_t src = std::min<std::size_t>(
-                n - 1, static_cast<std::size_t>(static_cast<double>(i) / bars *
-                                                static_cast<double>(n)));
+                n - 1,
+                static_cast<std::size_t>(static_cast<double>(i) / bars * static_cast<double>(n)));
             const float a = std::min(1.0f, static_cast<float>(waveform_[src]) * norm);
             h = std::max(kAudioWaveBarMinH, a * wave_.h);
         }
-        cv.fill_rounded_rect({wave_.x + static_cast<float>(i) * step, mid_y - h * 0.5f,
-                              kAudioWaveBarW, h},
-                             kAudioWaveBarW * 0.5f,
-                             i < cursor_bar ? kAudioBarPlayed : kAudioBarRest);
+        cv.fill_rounded_rect(
+            {wave_.x + static_cast<float>(i) * step, mid_y - h * 0.5f, kAudioWaveBarW, h},
+            kAudioWaveBarW * 0.5f, i < cursor_bar ? kAudioBarPlayed : kAudioBarRest);
     }
 }
 

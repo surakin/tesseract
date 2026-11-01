@@ -22,11 +22,18 @@ std::wstring query_package_string(Fn fn)
     UINT32 length = 0;
     const LONG first = fn(&length, nullptr);
     if (first != ERROR_INSUFFICIENT_BUFFER || length == 0)
+    {
         return {};
+    }
     std::vector<wchar_t> value(length, L'\0');
     if (fn(&length, value.data()) != ERROR_SUCCESS)
+    {
         return {};
-    if (!value.empty() && value.back() == L'\0') value.pop_back();
+    }
+    if (!value.empty() && value.back() == L'\0')
+    {
+        value.pop_back();
+    }
     return {value.begin(), value.end()};
 }
 } // namespace
@@ -34,22 +41,21 @@ std::wstring query_package_string(Fn fn)
 bool is_packaged()
 {
     UINT32 length = 0;
-    return GetCurrentPackageFullName(&length, nullptr) ==
-           ERROR_INSUFFICIENT_BUFFER;
+    return GetCurrentPackageFullName(&length, nullptr) == ERROR_INSUFFICIENT_BUFFER;
 }
 
 std::wstring package_family_name()
 {
     return query_package_string(
         [](UINT32* length, wchar_t* value)
-        { return GetCurrentPackageFamilyName(length, value); });
+        {
+            return GetCurrentPackageFamilyName(length, value);
+        });
 }
 
 std::wstring select_aumid(bool packaged, const std::wstring& packaged_aumid)
 {
-    return packaged && !packaged_aumid.empty()
-        ? packaged_aumid
-        : std::wstring{kUnpackagedAumid};
+    return packaged && !packaged_aumid.empty() ? packaged_aumid : std::wstring{kUnpackagedAumid};
 }
 
 std::wstring effective_aumid()
@@ -60,7 +66,9 @@ std::wstring effective_aumid()
     {
         packaged_aumid = query_package_string(
             [](UINT32* length, wchar_t* value)
-            { return GetCurrentApplicationUserModelId(length, value); });
+            {
+                return GetCurrentApplicationUserModelId(length, value);
+            });
     }
     std::wstring aumid = select_aumid(packaged, packaged_aumid);
     // Unpackaged builds give each --profile its own AUMID (own taskbar
@@ -69,7 +77,9 @@ std::wstring effective_aumid()
     if (!packaged && !tesseract::profile().empty())
     {
         for (char c : ".p_" + tesseract::profile())
+        {
             aumid.push_back(static_cast<wchar_t>(c));
+        }
     }
     return aumid;
 }
@@ -77,13 +87,17 @@ std::wstring effective_aumid()
 std::filesystem::path local_state_path()
 {
     const auto family = package_family_name();
-    if (family.empty()) return {};
-    PWSTR raw = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT,
-                                    nullptr, &raw)))
+    if (family.empty())
+    {
         return {};
-    std::filesystem::path result = std::filesystem::path(raw) / L"Packages" /
-                                   family / L"LocalState";
+    }
+    PWSTR raw = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &raw)))
+    {
+        return {};
+    }
+    std::filesystem::path result =
+        std::filesystem::path(raw) / L"Packages" / family / L"LocalState";
     CoTaskMemFree(raw);
     return result;
 }
@@ -91,9 +105,11 @@ std::filesystem::path local_state_path()
 std::wstring msix_version(const std::string& project_version)
 {
     std::wstring result(project_version.begin(), project_version.end());
-    const auto dots = static_cast<int>(
-        std::count(result.begin(), result.end(), L'.'));
-    for (int i = dots; i < 3; ++i) result += L".0";
+    const auto dots = static_cast<int>(std::count(result.begin(), result.end(), L'.'));
+    for (int i = dots; i < 3; ++i)
+    {
+        result += L".0";
+    }
     return result;
 }
 

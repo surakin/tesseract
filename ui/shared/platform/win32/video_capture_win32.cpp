@@ -45,13 +45,14 @@ namespace
 {
 
 // Converts NV12 (Y + interleaved UV) → I420 (Y + planar U + planar V).
-void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y,
-                  const std::uint8_t* src_uv, std::uint32_t src_stride_uv,
-                  std::uint32_t w, std::uint32_t h,
+void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y, const std::uint8_t* src_uv,
+                  std::uint32_t src_stride_uv, std::uint32_t w, std::uint32_t h,
                   std::uint8_t* dst_y, std::uint8_t* dst_u, std::uint8_t* dst_v)
 {
     for (std::uint32_t row = 0; row < h; ++row)
+    {
         std::memcpy(dst_y + row * w, src_y + row * src_stride_y, w);
+    }
 
     const std::uint32_t h_uv = (h + 1) / 2;
     const std::uint32_t w_uv = (w + 1) / 2;
@@ -73,27 +74,34 @@ void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y,
 tk::VideoCapture::Error classify_hr(HRESULT hr)
 {
     using Error = tk::VideoCapture::Error;
-    if (hr == MF_E_VIDEO_RECORDING_DEVICE_PREEMPTED ||
-        hr == MF_E_HW_MFT_FAILED_START_STREAMING ||
-        hr == HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION) ||
-        hr == HRESULT_FROM_WIN32(ERROR_BUSY))
+    if (hr == MF_E_VIDEO_RECORDING_DEVICE_PREEMPTED || hr == MF_E_HW_MFT_FAILED_START_STREAMING ||
+        hr == HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION) || hr == HRESULT_FROM_WIN32(ERROR_BUSY))
+    {
         return Error::Busy;
+    }
     if (hr == E_ACCESSDENIED)
+    {
         return Error::PermissionDenied;
+    }
     if (hr == MF_E_VIDEO_RECORDING_DEVICE_INVALIDATED ||
         hr == HRESULT_FROM_WIN32(ERROR_DEVICE_NOT_CONNECTED) ||
         hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+    {
         return Error::NoDevice;
+    }
     return Error::Failed;
 }
 
-class VideoCaptureWin32
-    : public tk::VideoCapture
-    , public IMFSourceReaderCallback
+class VideoCaptureWin32 : public tk::VideoCapture, public IMFSourceReaderCallback
 {
 public:
-    VideoCaptureWin32() : ref_count_(1) {}
-    ~VideoCaptureWin32() override { stop(); }
+    VideoCaptureWin32() : ref_count_(1)
+    {
+    }
+    ~VideoCaptureWin32() override
+    {
+        stop();
+    }
 
     // IUnknown
     ULONG STDMETHODCALLTYPE AddRef() override
@@ -104,7 +112,9 @@ public:
     {
         ULONG n = InterlockedDecrement(&ref_count_);
         if (n == 0)
+        {
             delete this;
+        }
         return n;
     }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
@@ -134,14 +144,10 @@ public:
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE OnReadSample(HRESULT hr,
-                                            DWORD /*stream_index*/,
-                                            DWORD stream_flags,
-                                            LONGLONG /*timestamp*/,
-                                            IMFSample* sample) override
+    HRESULT STDMETHODCALLTYPE OnReadSample(HRESULT hr, DWORD /*stream_index*/, DWORD stream_flags,
+                                           LONGLONG /*timestamp*/, IMFSample* sample) override
     {
-        if (running_.load() &&
-            (FAILED(hr) || (stream_flags & MF_SOURCE_READERF_ERROR)))
+        if (running_.load() && (FAILED(hr) || (stream_flags & MF_SOURCE_READERF_ERROR)))
         {
             // Dead source: stop reading (no ReadSample re-issue) and report.
             // stop() still releases the reader when the owner reacts.
@@ -151,30 +157,38 @@ public:
         if (!running_.load() || !sample)
         {
             if (reader_ && running_.load())
-                reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-                                    0, nullptr, nullptr, nullptr, nullptr);
+            {
+                reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, nullptr,
+                                    nullptr, nullptr);
+            }
             return S_OK;
         }
 
         IMFMediaBuffer* buf = nullptr;
         if (SUCCEEDED(sample->ConvertToContiguousBuffer(&buf)))
         {
-            BYTE* data    = nullptr;
+            BYTE* data = nullptr;
             DWORD max_len = 0, cur_len = 0;
             if (SUCCEEDED(buf->Lock(&data, &max_len, &cur_len)))
             {
                 if (bgra_mode_)
+                {
                     deliver_bgra_(reinterpret_cast<std::uint8_t*>(data), cur_len);
+                }
                 else
+                {
                     deliver_i420_(reinterpret_cast<std::uint8_t*>(data));
+                }
                 buf->Unlock();
             }
             buf->Release();
         }
 
         if (reader_ && running_.load())
-            reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-                                0, nullptr, nullptr, nullptr, nullptr);
+        {
+            reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, nullptr, nullptr,
+                                nullptr);
+        }
         return S_OK;
     }
 
@@ -195,7 +209,9 @@ public:
     void start() override
     {
         if (running_.load())
+        {
             return;
+        }
         clear_error_();
 
         IMFAttributes* attrs = nullptr;
@@ -240,12 +256,16 @@ public:
                     WCHAR* sym = nullptr;
                     UINT32 sym_len = 0;
                     if (SUCCEEDED(devices[i]->GetAllocatedString(
-                            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
-                            &sym, &sym_len)))
+                            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, &sym,
+                            &sym_len)))
                     {
                         bool match = (wpref == sym);
                         CoTaskMemFree(sym);
-                        if (match) { selected = i; break; }
+                        if (match)
+                        {
+                            selected = i;
+                            break;
+                        }
                     }
                 }
             }
@@ -254,7 +274,9 @@ public:
         IMFMediaSource* source = nullptr;
         HRESULT hr = devices[selected]->ActivateObject(IID_PPV_ARGS(&source));
         for (UINT32 i = 0; i < count; ++i)
+        {
             devices[i]->Release();
+        }
         CoTaskMemFree(devices);
 
         if (!source)
@@ -284,8 +306,7 @@ public:
             // MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING (set on attrs)
             // inserts the Video Processor MFT which supports ARGB32 output.
             type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32);
-            reader_->SetCurrentMediaType(
-                MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
+            reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
         }
         else
         {
@@ -293,12 +314,11 @@ public:
             MFSetAttributeSize(type, MF_MT_FRAME_SIZE, 640, 480);
             MFSetAttributeRatio(type, MF_MT_FRAME_RATE, 30, 1);
             type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_I420);
-            if (FAILED(reader_->SetCurrentMediaType(
-                    MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type)))
+            if (FAILED(reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr,
+                                                    type)))
             {
                 type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
-                reader_->SetCurrentMediaType(
-                    MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
+                reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
                 use_nv12_ = true;
             }
         }
@@ -318,16 +338,20 @@ public:
         }
 
         running_.store(true);
-        hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-                                 0, nullptr, nullptr, nullptr, nullptr);
+        hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, nullptr, nullptr,
+                                 nullptr);
         if (FAILED(hr))
+        {
             report_error_(classify_hr(hr));
+        }
     }
 
     void stop() override
     {
         if (!running_.exchange(false))
+        {
             return;
+        }
         if (reader_)
         {
             // Flush() is asynchronous in callback mode: it returns
@@ -346,7 +370,10 @@ public:
             {
                 std::unique_lock<std::mutex> lk(mu_);
                 flush_cv_.wait_for(lk, std::chrono::seconds(2),
-                                    [this] { return flush_done_; });
+                                   [this]
+                                   {
+                                       return flush_done_;
+                                   });
             }
             reader_->Release();
             reader_ = nullptr;
@@ -364,20 +391,24 @@ private:
             bgra_cb = bgra_callback_;
         }
         if (!bgra_cb)
+        {
             return;
+        }
 
         // MFVideoFormat_ARGB32 contiguous buffer: B,G,R,A per pixel,
         // stride = w*4 for the constrained 640x480 format we requested.
         const std::uint32_t expected = w * h * 4;
         if (len < expected)
+        {
             return;
+        }
         bgra_cb(raw, w, h);
     }
 
     void deliver_i420_(const std::uint8_t* raw)
     {
-        const std::uint32_t w    = frame_w_;
-        const std::uint32_t h    = frame_h_;
+        const std::uint32_t w = frame_w_;
+        const std::uint32_t h = frame_h_;
         const std::uint32_t h_uv = (h + 1) / 2;
         const std::uint32_t w_uv = (w + 1) / 2;
 
@@ -387,16 +418,18 @@ private:
             cb = callback_;
         }
         if (!cb)
+        {
             return;
+        }
 
         if (!use_nv12_)
         {
             tk::VideoCapture::Frame f;
-            f.y        = raw;
-            f.u        = raw + w * h;
-            f.v        = raw + w * h + w_uv * h_uv;
-            f.width    = w;
-            f.height   = h;
+            f.y = raw;
+            f.u = raw + w * h;
+            f.v = raw + w * h + w_uv * h_uv;
+            f.width = w;
+            f.height = h;
             f.stride_y = w;
             f.stride_u = w_uv;
             f.stride_v = w_uv;
@@ -404,7 +437,7 @@ private:
         }
         else
         {
-            const std::uint8_t* src_y  = raw;
+            const std::uint8_t* src_y = raw;
             const std::uint8_t* src_uv = raw + w * h;
 
             const std::size_t i420_size = w * h + 2 * w_uv * h_uv;
@@ -416,11 +449,11 @@ private:
             nv12_to_i420(src_y, w, src_uv, w, w, h, dst_y, dst_u, dst_v);
 
             tk::VideoCapture::Frame f;
-            f.y        = dst_y;
-            f.u        = dst_u;
-            f.v        = dst_v;
-            f.width    = w;
-            f.height   = h;
+            f.y = dst_y;
+            f.u = dst_u;
+            f.v = dst_v;
+            f.width = w;
+            f.height = h;
             f.stride_y = w;
             f.stride_u = w_uv;
             f.stride_v = w_uv;
@@ -428,20 +461,20 @@ private:
         }
     }
 
-    LONG                              ref_count_;
-    std::atomic<bool>                 running_{false};
-    bool                              bgra_mode_  = false;
-    bool                              use_nv12_   = false;
-    IMFSourceReader*                  reader_     = nullptr;
-    std::uint32_t                     frame_w_    = 640;
-    std::uint32_t                     frame_h_    = 480;
+    LONG ref_count_;
+    std::atomic<bool> running_{false};
+    bool bgra_mode_ = false;
+    bool use_nv12_ = false;
+    IMFSourceReader* reader_ = nullptr;
+    std::uint32_t frame_w_ = 640;
+    std::uint32_t frame_h_ = 480;
 
-    std::mutex                        mu_;
-    std::condition_variable           flush_cv_;
-    bool                              flush_done_ = false;
-    tk::VideoCapture::FrameCallback   callback_;
-    tk::VideoCapture::BgraCallback    bgra_callback_;
-    std::vector<std::uint8_t>         i420_buf_;
+    std::mutex mu_;
+    std::condition_variable flush_cv_;
+    bool flush_done_ = false;
+    tk::VideoCapture::FrameCallback callback_;
+    tk::VideoCapture::BgraCallback bgra_callback_;
+    std::vector<std::uint8_t> i420_buf_;
 };
 
 } // namespace
@@ -453,7 +486,9 @@ std::unique_ptr<VideoCapture> make_video_capture_win32()
 {
     IMFAttributes* attrs = nullptr;
     if (FAILED(MFCreateAttributes(&attrs, 1)))
+    {
         return nullptr;
+    }
     attrs->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
                    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
     IMFActivate** devices = nullptr;
@@ -461,9 +496,13 @@ std::unique_ptr<VideoCapture> make_video_capture_win32()
     HRESULT hr = MFEnumDeviceSources(attrs, &devices, &count);
     attrs->Release();
     if (FAILED(hr) || count == 0)
+    {
         return nullptr;
+    }
     for (UINT32 i = 0; i < count; ++i)
+    {
         devices[i]->Release();
+    }
     CoTaskMemFree(devices);
 
     return std::make_unique<VideoCaptureWin32>();

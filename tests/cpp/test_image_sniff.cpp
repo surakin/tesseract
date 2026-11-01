@@ -55,7 +55,9 @@ struct BitWriter
         for (int i = 0; i < n; ++i, ++nbits)
         {
             if (nbits % 8 == 0)
+            {
                 out.push_back(0);
+            }
             out.back() |= static_cast<std::uint8_t>(((v >> i) & 1u) << (nbits % 8));
         }
     }
@@ -65,10 +67,10 @@ struct BitWriter
 std::vector<std::uint8_t> jxl_square_header(std::uint32_t side)
 {
     BitWriter w;
-    w.put(0, 1);        // div8
-    w.put(3, 2);        // ysize selector: Bits(30)
+    w.put(0, 1); // div8
+    w.put(3, 2); // ysize selector: Bits(30)
     w.put(side - 1, 30);
-    w.put(1, 3);        // ratio 1:1
+    w.put(1, 3); // ratio 1:1
     std::vector<std::uint8_t> b{0xFF, 0x0A};
     b.insert(b.end(), w.out.begin(), w.out.end());
     b.resize(b.size() + 8, 0);
@@ -78,7 +80,9 @@ std::vector<std::uint8_t> jxl_square_header(std::uint32_t side)
 void put_be32(std::vector<std::uint8_t>& v, std::uint32_t x)
 {
     for (int s = 24; s >= 0; s -= 8)
+    {
         v.push_back(static_cast<std::uint8_t>(x >> s));
+    }
 }
 
 } // namespace
@@ -121,7 +125,7 @@ TEST_CASE("decode_size_allowed: oversize JXL rejected", "[image-sniff]")
     CHECK_FALSE(tk::decode_size_allowed(jxl_square_header(60000), false)); // > 32768 side
     CHECK_FALSE(tk::decode_size_allowed(jxl_square_header(20000), false)); // 400 MP still
     CHECK(tk::decode_size_allowed(jxl_square_header(4000), false));
-    CHECK_FALSE(tk::decode_size_allowed(jxl_square_header(5000), true));   // > 16 MP animated
+    CHECK_FALSE(tk::decode_size_allowed(jxl_square_header(5000), true)); // > 16 MP animated
     const auto d = tk::probe_image_dimensions(jxl_square_header(1234));
     REQUIRE(d.has_value());
     CHECK(d->width == 1234);
@@ -136,9 +140,10 @@ TEST_CASE("bytes_may_be_animated: GIF", "[image-sniff]")
 TEST_CASE("bytes_may_be_animated: WebP honours the VP8X animation flag", "[image-sniff]")
 {
     CHECK(tk::bytes_may_be_animated(webp_vp8x(0x02)));
-    CHECK(tk::bytes_may_be_animated(webp_vp8x(0x12))); // animation + alpha
+    CHECK(tk::bytes_may_be_animated(webp_vp8x(0x12)));       // animation + alpha
     CHECK_FALSE(tk::bytes_may_be_animated(webp_vp8x(0x10))); // alpha only
-    CHECK_FALSE(tk::bytes_may_be_animated(bytes_of(std::string("RIFF\x1a\x00\x00\x00WEBPVP8 ", 16))));
+    CHECK_FALSE(
+        tk::bytes_may_be_animated(bytes_of(std::string("RIFF\x1a\x00\x00\x00WEBPVP8 ", 16))));
 }
 
 TEST_CASE("bytes_may_be_animated: APNG needs acTL before IDAT", "[image-sniff]")
@@ -163,8 +168,8 @@ namespace
 
 std::string be32(std::uint32_t v)
 {
-    return {static_cast<char>(v >> 24), static_cast<char>(v >> 16),
-            static_cast<char>(v >> 8), static_cast<char>(v)};
+    return {static_cast<char>(v >> 24), static_cast<char>(v >> 16), static_cast<char>(v >> 8),
+            static_cast<char>(v)};
 }
 
 std::string le16(std::uint32_t v)
@@ -217,7 +222,7 @@ std::vector<std::uint8_t> webp_vp8l(std::uint32_t w, std::uint32_t h)
 std::vector<std::uint8_t> webp_vp8(std::uint32_t w, std::uint32_t h)
 {
     std::string s("RIFF\x00\x00\x00\x00WEBPVP8 \x00\x00\x00\x00", 20);
-    s.append(3, '\0');            // frame tag
+    s.append(3, '\0'); // frame tag
     s += std::string("\x9d\x01\x2a", 3);
     s += le16(w) + le16(h);
     s.append(4, '\0');
@@ -347,8 +352,7 @@ TEST_CASE("probe_image_dimensions: junk byte before SOF does not hide the size")
     CHECK_FALSE(tk::decode_size_allowed(big, false));
 }
 
-TEST_CASE("sniff_image_mime: labels a file by its signature, not its name",
-          "[image-sniff]")
+TEST_CASE("sniff_image_mime: labels a file by its signature, not its name", "[image-sniff]")
 {
     CHECK(tk::sniff_image_mime(bytes_of("\x89PNG\r\n\x1a\n\0\0\0\rIHDR")) == "image/png");
     CHECK(tk::sniff_image_mime(bytes_of("\xFF\xD8\xFF\xE0\0\x10JFIF")) == "image/jpeg");
@@ -356,8 +360,7 @@ TEST_CASE("sniff_image_mime: labels a file by its signature, not its name",
     CHECK(tk::sniff_image_mime(webp_vp8x(0)) == "image/webp");
 }
 
-TEST_CASE("sniff_image_mime: anything else is refused, not labelled",
-          "[image-sniff]")
+TEST_CASE("sniff_image_mime: anything else is refused, not labelled", "[image-sniff]")
 {
     CHECK(tk::sniff_image_mime(bytes_of("<html>not an image</html>")).empty());
     // A JPEG XL file is not in the picker's set, so it is refused too.

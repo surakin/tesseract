@@ -22,8 +22,7 @@ struct TkMediaSectionStage
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         root.measure(lc, {640.0f, 800.0f});
         root.arrange(lc, {0.0f, 0.0f, 640.0f, 800.0f});
-        tk::PaintCtx pc{surface->canvas(), surface->factory(),
-                        tk::Theme::light()};
+        tk::PaintCtx pc{surface->canvas(), surface->factory(), tk::Theme::light()};
         root.paint(pc);
     }
 };
@@ -41,7 +40,11 @@ struct MediaFixture
     MediaSection sec{binder};
     MediaFixture()
     {
-        binder.on_changed = [this](SettingKey k) { ++fires; last = k; };
+        binder.on_changed = [this](SettingKey k)
+        {
+            ++fires;
+            last = k;
+        };
     }
     ~MediaFixture()
     {
@@ -53,24 +56,21 @@ struct MediaFixture
 
 } // namespace
 
-TEST_CASE("MediaSection: paints without crash with no devices set",
-          "[media_section]")
+TEST_CASE("MediaSection: paints without crash with no devices set", "[media_section]")
 {
     TkMediaSectionStage st;
     MediaFixture f;
     st.run(f.sec);
 }
 
-TEST_CASE("MediaSection: set_audio_input_devices does not report a change",
-          "[media_section]")
+TEST_CASE("MediaSection: set_audio_input_devices does not report a change", "[media_section]")
 {
     MediaFixture f;
     f.sec.set_audio_input_devices({{"hw:0", "Built-in Mic"}, {"hw:1", "USB Mic"}});
     REQUIRE(f.fires == 0);
 }
 
-TEST_CASE("MediaSection: set_selected_audio_input does not report a change",
-          "[media_section]")
+TEST_CASE("MediaSection: set_selected_audio_input does not report a change", "[media_section]")
 {
     MediaFixture f;
     f.sec.set_audio_input_devices({{"hw:0", "Built-in Mic"}});
@@ -100,8 +100,7 @@ TEST_CASE("MediaSection: picking a speaker stores the id and reports AudioOutput
     REQUIRE(f.last == SettingKey::AudioOutput);
 }
 
-TEST_CASE("MediaSection: picking a camera stores the id and reports Camera",
-          "[media_section]")
+TEST_CASE("MediaSection: picking a camera stores the id and reports Camera", "[media_section]")
 {
     MediaFixture f;
     f.s.camera_device_id.clear();
@@ -111,8 +110,7 @@ TEST_CASE("MediaSection: picking a camera stores the id and reports Camera",
     REQUIRE(f.last == SettingKey::Camera);
 }
 
-TEST_CASE("MediaSection: empty-string selection means system default",
-          "[media_section]")
+TEST_CASE("MediaSection: empty-string selection means system default", "[media_section]")
 {
     MediaFixture f;
     f.s.audio_input_device_id = "hw:0";

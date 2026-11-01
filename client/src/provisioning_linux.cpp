@@ -10,7 +10,9 @@ ProvisionedValues read_platform_provisioning_raw()
 {
     std::ifstream in("/etc/tesseract/provisioning.json");
     if (!in)
+    {
         return {};
+    }
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     return parse_provisioning_values(text);
 }

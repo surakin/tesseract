@@ -24,9 +24,11 @@ inline TimelineColumn timeline_column(float timeline_w, int width_pct,
                                       Settings::TimelineColumnAnchor anchor)
 {
     if (!(timeline_w > 0.0f))
+    {
         return {0.0f, 0.0f};
-    const int pct = std::clamp(width_pct, Settings::kTimelineColumnMinPct,
-                               Settings::kTimelineColumnMaxPct);
+    }
+    const int pct =
+        std::clamp(width_pct, Settings::kTimelineColumnMinPct, Settings::kTimelineColumnMaxPct);
     const float floor_w = std::min(kTimelineColumnMinW, timeline_w);
     const float w = std::clamp(timeline_w * static_cast<float>(pct) / 100.0f, floor_w, timeline_w);
     const float x =

@@ -45,7 +45,7 @@ enum class AccentTheme
 struct AccentThemeInfo
 {
     AccentTheme id;
-    const char* name; // untranslated key, e.g. "Blue" — wrap in tk::tr() at the UI call site
+    const char* name;   // untranslated key, e.g. "Blue" — wrap in tk::tr() at the UI call site
     float seed_hue_deg; // 0..360; unused for System (no generation happens)
 };
 
@@ -62,7 +62,7 @@ struct Palette
     Color sidebar_hover;
     Color section_header_bg;    // room-list section header (idle)
     Color section_header_hover; // room-list section header (hovered)
-    Color chrome_bg; // headers, status, banner backgrounds
+    Color chrome_bg;            // headers, status, banner backgrounds
     Color compose_card_bg;
     Color border;
     Color separator;
@@ -136,7 +136,7 @@ struct Palette
     Color notice_bg;      // notice strips (encryption reminder, ...)
     Color notice_border;
     Color notice_text;
-    Color warning_bg;     // connection-lost banner
+    Color warning_bg; // connection-lost banner
     Color warning_text;
 
     // Text and glyphs drawn on a `sidebar_selected` fill (text_primary in the
@@ -226,13 +226,19 @@ inline void paint_hc_hover_outline(Canvas& cv, const Theme& t, Rect r, float rad
                                    std::optional<Color> colour = std::nullopt)
 {
     if (!t.high_contrast)
+    {
         return;
+    }
     const Color c = colour.value_or(t.palette.text_primary);
-    const Rect  in{r.x + 0.5f, r.y + 0.5f, r.w - 1.0f, r.h - 1.0f};
+    const Rect in{r.x + 0.5f, r.y + 0.5f, r.w - 1.0f, r.h - 1.0f};
     if (radius > 0.0f)
+    {
         cv.stroke_rounded_rect(in, std::max(0.0f, radius - 0.5f), c, 1.0f);
+    }
     else
+    {
         cv.stroke_rect(in, c, 1.0f);
+    }
 }
 
 // Overlay a raw OS accent colour onto an already-resolved AccentTheme::System

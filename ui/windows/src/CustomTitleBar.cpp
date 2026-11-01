@@ -92,10 +92,8 @@ Gdiplus::Bitmap* icon_bitmap(Glyph g, int px, COLORREF color)
         return slot.bitmap.get();
     }
 
-    const tk::Color tint{GetRValue(color), GetGValue(color), GetBValue(color),
-                         255};
-    std::vector<std::uint8_t> rgba =
-        tk::rasterize_svg_rgba(glyph_svg(g), px, tint);
+    const tk::Color tint{GetRValue(color), GetGValue(color), GetBValue(color), 255};
+    std::vector<std::uint8_t> rgba = tk::rasterize_svg_rgba(glyph_svg(g), px, tint);
     if (rgba.empty())
     {
         return nullptr;
@@ -109,8 +107,8 @@ Gdiplus::Bitmap* icon_bitmap(Glyph g, int px, COLORREF color)
     }
 
     slot.pixels = std::move(rgba);
-    slot.bitmap = std::make_unique<Gdiplus::Bitmap>(
-        px, px, px * 4, PixelFormat32bppARGB, slot.pixels.data());
+    slot.bitmap =
+        std::make_unique<Gdiplus::Bitmap>(px, px, px * 4, PixelFormat32bppARGB, slot.pixels.data());
     slot.px = px;
     slot.color = color;
     return slot.bitmap.get();
@@ -143,14 +141,12 @@ void CustomTitleBar::attach(HWND owner)
     // BetterTextField/Area registration) but there's no reason to pay for
     // the repeat call.
     static bool registered =
-        BetterTextRegisterControl(
-            reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr))) != FALSE;
+        BetterTextRegisterControl(reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr))) != FALSE;
     (void)registered;
 
-    text_hwnd_ = CreateWindowExW(
-        0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10,
-        owner, nullptr, reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr)),
-        nullptr);
+    text_hwnd_ =
+        CreateWindowExW(0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, owner,
+                        nullptr, reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr)), nullptr);
     if (!text_hwnd_)
     {
         return;
@@ -183,16 +179,14 @@ void CustomTitleBar::refresh_caption_font_()
 {
     NONCLIENTMETRICSW ncm{};
     ncm.cbSize = sizeof(ncm);
-    if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm,
-                                   0, dpi_) &&
-        ncm.lfCaptionFont.lfFaceName[0] != L'\0' &&
-        ncm.lfCaptionFont.lfHeight != 0)
+    if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0, dpi_) &&
+        ncm.lfCaptionFont.lfFaceName[0] != L'\0' && ncm.lfCaptionFont.lfHeight != 0)
     {
         const LOGFONTW& lf = ncm.lfCaptionFont;
         font_family_ = lf.lfFaceName;
         // lfHeight is in pixels at dpi_; BetterText wants DIPs (96/inch).
-        font_size_dip_ = std::abs(static_cast<float>(lf.lfHeight)) * 96.0f /
-                         static_cast<float>(dpi_);
+        font_size_dip_ =
+            std::abs(static_cast<float>(lf.lfHeight)) * 96.0f / static_cast<float>(dpi_);
         font_weight_ = lf.lfWeight > 0 ? lf.lfWeight : FW_NORMAL;
     }
     else
@@ -205,11 +199,10 @@ void CustomTitleBar::refresh_caption_font_()
     font_dirty_ = true;
 }
 
-void CustomTitleBar::compute_button_rects(int client_w_px, RECT& btn_min,
-                                          RECT& btn_max, RECT& btn_close) const
+void CustomTitleBar::compute_button_rects(int client_w_px, RECT& btn_min, RECT& btn_max,
+                                          RECT& btn_close) const
 {
-    const int btn_w =
-        static_cast<int>(std::lround(kButtonWidthDip * dpi_ / 96.0f));
+    const int btn_w = static_cast<int>(std::lround(kButtonWidthDip * dpi_ / 96.0f));
     btn_close = RECT{client_w_px - btn_w, 0, client_w_px, height_px_};
     btn_max = RECT{btn_close.left - btn_w, 0, btn_close.left, height_px_};
     btn_min = RECT{btn_max.left - btn_w, 0, btn_max.left, height_px_};
@@ -228,8 +221,7 @@ void CustomTitleBar::invalidate_strip(HWND hwnd) const
     InvalidateRect(hwnd, &rc, TRUE);
 }
 
-void CustomTitleBar::adjust_nccalcsize(HWND hwnd, WPARAM wParam,
-                                       LPARAM lParam) const
+void CustomTitleBar::adjust_nccalcsize(HWND hwnd, WPARAM wParam, LPARAM lParam) const
 {
     if (wParam != TRUE)
     {
@@ -249,9 +241,8 @@ void CustomTitleBar::adjust_nccalcsize(HWND hwnd, WPARAM wParam,
     }
 }
 
-std::optional<LRESULT> CustomTitleBar::dwm_hittest_hook(HWND hwnd, UINT msg,
-                                                         WPARAM wParam,
-                                                         LPARAM lParam)
+std::optional<LRESULT> CustomTitleBar::dwm_hittest_hook(HWND hwnd, UINT msg, WPARAM wParam,
+                                                        LPARAM lParam)
 {
     LRESULT result = 0;
     if (DwmDefWindowProc(hwnd, msg, wParam, lParam, &result))
@@ -353,8 +344,7 @@ bool CustomTitleBar::handle_nclbuttonup(HWND hwnd, WPARAM ht)
     return true;
 }
 
-bool CustomTitleBar::show_system_menu(HWND hwnd, WPARAM ht,
-                                      LPARAM lParam) const
+bool CustomTitleBar::show_system_menu(HWND hwnd, WPARAM ht, LPARAM lParam) const
 {
     if (ht != HTCAPTION)
     {
@@ -366,20 +356,15 @@ bool CustomTitleBar::show_system_menu(HWND hwnd, WPARAM ht,
         return false;
     }
     const bool zoomed = IsZoomed(hwnd) != FALSE;
-    EnableMenuItem(menu, SC_RESTORE,
-                  MF_BYCOMMAND | (zoomed ? MF_ENABLED : MF_GRAYED));
-    EnableMenuItem(menu, SC_MOVE,
-                  MF_BYCOMMAND | (zoomed ? MF_GRAYED : MF_ENABLED));
-    EnableMenuItem(menu, SC_SIZE,
-                  MF_BYCOMMAND | (zoomed ? MF_GRAYED : MF_ENABLED));
-    EnableMenuItem(menu, SC_MAXIMIZE,
-                  MF_BYCOMMAND | (zoomed ? MF_GRAYED : MF_ENABLED));
+    EnableMenuItem(menu, SC_RESTORE, MF_BYCOMMAND | (zoomed ? MF_ENABLED : MF_GRAYED));
+    EnableMenuItem(menu, SC_MOVE, MF_BYCOMMAND | (zoomed ? MF_GRAYED : MF_ENABLED));
+    EnableMenuItem(menu, SC_SIZE, MF_BYCOMMAND | (zoomed ? MF_GRAYED : MF_ENABLED));
+    EnableMenuItem(menu, SC_MAXIMIZE, MF_BYCOMMAND | (zoomed ? MF_GRAYED : MF_ENABLED));
     EnableMenuItem(menu, SC_MINIMIZE, MF_BYCOMMAND | MF_ENABLED);
     EnableMenuItem(menu, SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 
-    const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                                   GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam),
-                                   0, hwnd, nullptr);
+    const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, GET_X_LPARAM(lParam),
+                                   GET_Y_LPARAM(lParam), 0, hwnd, nullptr);
     if (cmd)
     {
         PostMessageW(hwnd, WM_SYSCOMMAND, static_cast<WPARAM>(cmd), 0);
@@ -387,8 +372,7 @@ bool CustomTitleBar::show_system_menu(HWND hwnd, WPARAM ht,
     return true;
 }
 
-void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
-                           bool active)
+void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc, bool active)
 {
     RECT strip = client_rc;
     strip.bottom = strip.top + height_px_;
@@ -407,8 +391,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
     // Cosmetic — tweak freely. Lucide icons carry their own internal
     // padding, so this reads as noticeably smaller than the button box.
     constexpr float kIconDip = 14.0f;
-    const int icon_px =
-        std::max(1, static_cast<int>(std::lround(kIconDip * dpi_ / 96.0f)));
+    const int icon_px = std::max(1, static_cast<int>(std::lround(kIconDip * dpi_ / 96.0f)));
 
     struct ButtonSpec
     {
@@ -419,8 +402,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
     const bool zoomed = IsZoomed(hwnd) != FALSE;
     const ButtonSpec specs[3] = {
         {btn_min, static_cast<UINT>(HTMINBUTTON), Glyph::Minimize},
-        {btn_max, static_cast<UINT>(HTMAXBUTTON),
-         zoomed ? Glyph::Restore : Glyph::Maximize},
+        {btn_max, static_cast<UINT>(HTMAXBUTTON), zoomed ? Glyph::Restore : Glyph::Maximize},
         {btn_close, static_cast<UINT>(HTCLOSE), Glyph::Close},
     };
 
@@ -439,14 +421,13 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
         bool bg_owned = false;
         if (is_pressed)
         {
-            bg_brush = is_close ? CreateSolidBrush(kClosePressedBg)
-                                : theme::brush(tb.button_pressed);
+            bg_brush =
+                is_close ? CreateSolidBrush(kClosePressedBg) : theme::brush(tb.button_pressed);
             bg_owned = is_close;
         }
         else if (is_hovered)
         {
-            bg_brush = is_close ? CreateSolidBrush(kCloseHoverBg)
-                                : theme::brush(tb.button_hover);
+            bg_brush = is_close ? CreateSolidBrush(kCloseHoverBg) : theme::brush(tb.button_hover);
             bg_owned = is_close;
         }
         else
@@ -462,14 +443,11 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
         const bool glyph_on_red = is_close && (is_pressed || is_hovered);
         const COLORREF glyph_color =
             glyph_on_red ? kCloseGlyphOnRed
-                         : ((is_pressed || is_hovered) ? tb.button_hover_text
-                                                       : tb.text);
+                         : ((is_pressed || is_hovered) ? tb.button_hover_text : tb.text);
         if (Gdiplus::Bitmap* bmp = icon_bitmap(s.glyph, icon_px, glyph_color))
         {
-            const int x =
-                s.rc.left + ((s.rc.right - s.rc.left) - icon_px) / 2;
-            const int y =
-                s.rc.top + ((s.rc.bottom - s.rc.top) - icon_px) / 2;
+            const int x = s.rc.left + ((s.rc.right - s.rc.left) - icon_px) / 2;
+            const int y = s.rc.top + ((s.rc.bottom - s.rc.top) - icon_px) / 2;
             gfx.DrawImage(bmp, x, y, icon_px, icon_px);
         }
     }
@@ -487,8 +465,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
     if (icon)
     {
         const int icon_y = strip.top + (height_px_ - icon_size) / 2;
-        DrawIconEx(hdc, text_left, icon_y, icon, icon_size, icon_size, 0,
-                  nullptr, DI_NORMAL);
+        DrawIconEx(hdc, text_left, icon_y, icon, icon_size, icon_size, 0, nullptr, DI_NORMAL);
         text_left += icon_size + pad;
     }
 
@@ -515,8 +492,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
             // and recreates its render target on every WM_SIZE (see
             // ResizeRenderTarget, BetterTextControl.cpp) — doing that once
             // per mouse-move tick was the actual cause of flicker.
-            if (text_changed || color_changed || rect_changed ||
-                font_dirty_ || !last_bitmap_valid_)
+            if (text_changed || color_changed || rect_changed || font_dirty_ || !last_bitmap_valid_)
             {
                 // Style/theme must land BEFORE (re-)setting the document
                 // text below: BetterText bakes each text run's color into
@@ -567,17 +543,15 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
                 }
                 if (rect_changed)
                 {
-                    SetWindowPos(text_hwnd_, nullptr, text_rc.left,
-                                text_rc.top, text_rc.right - text_rc.left,
-                                text_rc.bottom - text_rc.top,
-                                SWP_NOZORDER | SWP_NOACTIVATE);
+                    SetWindowPos(text_hwnd_, nullptr, text_rc.left, text_rc.top,
+                                 text_rc.right - text_rc.left, text_rc.bottom - text_rc.top,
+                                 SWP_NOZORDER | SWP_NOACTIVATE);
                     last_rect_ = text_rc;
                 }
 
                 int cap_w = 0, cap_h = 0;
-                if (BetterTextRequestCaptureBGRA(text_hwnd_, &cap_w,
-                                                 &cap_h) &&
-                    cap_w > 0 && cap_h > 0)
+                if (BetterTextRequestCaptureBGRA(text_hwnd_, &cap_w, &cap_h) && cap_w > 0 &&
+                    cap_h > 0)
                 {
                     // Capture into a scratch buffer first — only replace
                     // the cache (and last_bitmap_valid_) on an actual
@@ -586,12 +560,11 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
                     // still-good previous frame and blank the title text
                     // for a tick until the next repaint happens to recover
                     // it; just keep showing the stale-but-valid one.
-                    std::vector<std::uint8_t> new_pixels(
-                        static_cast<std::size_t>(cap_w) * cap_h * 4);
-                    if (BetterTextReadCaptureBGRA(
-                            text_hwnd_, new_pixels.data(),
-                            static_cast<int>(new_pixels.size()), &cap_w,
-                            &cap_h))
+                    std::vector<std::uint8_t> new_pixels(static_cast<std::size_t>(cap_w) * cap_h *
+                                                         4);
+                    if (BetterTextReadCaptureBGRA(text_hwnd_, new_pixels.data(),
+                                                  static_cast<int>(new_pixels.size()), &cap_w,
+                                                  &cap_h))
                     {
                         last_bitmap_pixels_ = std::move(new_pixels);
                         last_bitmap_w_ = cap_w;
@@ -606,11 +579,9 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
                 // Premultiplied alpha, BGRA byte order — matches
                 // PixelFormat32bppPArgb directly (see BetterText's
                 // ReadCaptureBGRA doc comment).
-                Gdiplus::Bitmap bmp(last_bitmap_w_, last_bitmap_h_,
-                                   last_bitmap_w_ * 4, PixelFormat32bppPARGB,
-                                   last_bitmap_pixels_.data());
-                gfx.DrawImage(&bmp, text_rc.left, text_rc.top,
-                             last_bitmap_w_, last_bitmap_h_);
+                Gdiplus::Bitmap bmp(last_bitmap_w_, last_bitmap_h_, last_bitmap_w_ * 4,
+                                    PixelFormat32bppPARGB, last_bitmap_pixels_.data());
+                gfx.DrawImage(&bmp, text_rc.left, text_rc.top, last_bitmap_w_, last_bitmap_h_);
             }
         }
     }

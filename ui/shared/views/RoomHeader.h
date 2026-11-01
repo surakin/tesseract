@@ -44,8 +44,7 @@ public:
     ~RoomHeader() override = default;
 
     void set_room(const tesseract::RoomInfo& info);
-    void set_avatar_provider(
-        std::function<const tk::Image*(const std::string& mxc_url)> provider);
+    void set_avatar_provider(std::function<const tk::Image*(const std::string& mxc_url)> provider);
 
     // When condensed, the header shows only the room topic at a reduced height.
     // Used by the multi-tab layout when a TabBar is visible above the header.
@@ -61,14 +60,23 @@ public:
     {
         show_calendar_btn_ = enabled;
     }
-    bool jump_to_date_enabled() const { return show_calendar_btn_; }
+    bool jump_to_date_enabled() const
+    {
+        return show_calendar_btn_;
+    }
 
     // Show or hide the leading back button. Used in the narrow-window
     // adaptive layout (see MainAppWidget), where the room list and room
     // view aren't both shown at once — this is the affordance back to the
     // list. Hidden by default.
-    void set_show_back_button(bool show) { show_back_btn_ = show; }
-    bool show_back_button() const { return show_back_btn_; }
+    void set_show_back_button(bool show)
+    {
+        show_back_btn_ = show;
+    }
+    bool show_back_button() const
+    {
+        return show_back_btn_;
+    }
 
     // Show or hide the threads button. Hidden by default; the shell flips this
     // on once the SDK reports that the room contains at least one thread.
@@ -93,16 +101,31 @@ public:
 
     // Show or hide the search button. Hidden by default; the shell enables it
     // when the room supports full-text search.
-    void set_show_search_btn(bool show) { show_search_btn_ = show; }
-    bool show_search_btn() const { return show_search_btn_; }
+    void set_show_search_btn(bool show)
+    {
+        show_search_btn_ = show;
+    }
+    bool show_search_btn() const
+    {
+        return show_search_btn_;
+    }
 
     // Show or hide the start-call button. Hidden by default; shown when the
     // room is a DM or the server advertises MatrixRTC support.
-    void set_show_call_btn(bool show) { show_call_btn_ = show; }
-    bool show_call_btn() const { return show_call_btn_; }
+    void set_show_call_btn(bool show)
+    {
+        show_call_btn_ = show;
+    }
+    bool show_call_btn() const
+    {
+        return show_call_btn_;
+    }
 
     // Toggle the active-call indicator style on the call button.
-    void set_call_active(bool active) { call_active_ = active; }
+    void set_call_active(bool active)
+    {
+        call_active_ = active;
+    }
 
     // Fired when the user presses the call button, passing the button's
     // world-space rect so the owner can anchor a popup to it.
@@ -115,14 +138,15 @@ public:
     void access_detached_children(std::vector<tk::Widget*>& out) const override
     {
         if (date_picker_visible_ && date_picker_)
+        {
             out.push_back(date_picker_.get());
+        }
     }
     void on_popup_dismiss() override;
 
     bool on_pointer_down(tk::Point local) override;
     void on_pointer_up(tk::Point local, bool inside_self) override;
-    tk::Widget* dispatch_pointer_move(tk::Point world,
-                                      bool* dirty = nullptr) override;
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override;
     bool on_pointer_move(tk::Point local) override;
     void on_pointer_leave() override;
 
@@ -134,11 +158,14 @@ public:
     // rich text (HTML, or a plain topic with URLs), so the topic Label is
     // hidden — the topic text plus one Link row per link in it.
     std::size_t access_row_count() const override;
-    tk::Role    access_role_for_widget_row(std::size_t i) const override;
+    tk::Role access_role_for_widget_row(std::size_t i) const override;
     std::string access_name_for_widget_row(std::size_t i) const override;
-    bool        access_activate_widget_row(std::size_t i) override;
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override;
-    bool        access_rows_after_children() const override { return true; }
+    bool access_activate_widget_row(std::size_t i) override;
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override;
+    bool access_rows_after_children() const override
+    {
+        return true;
+    }
     // Fired when the pointer enters or leaves a hyperlink in the topic.
     // Passes the URL while hovering, empty string when leaving.
     std::function<void(const std::string& url)> on_link_hovered;
@@ -209,7 +236,7 @@ private:
     bool threads_mention_ = false;
     bool show_search_btn_ = false;
     bool show_call_btn_ = false;
-    bool call_active_   = false;
+    bool call_active_ = false;
     bool show_back_btn_ = false;
 
     // Calendar / threads / search / call action buttons. Variant::Icon child
@@ -231,8 +258,13 @@ private:
     // opens room info (the same on_info_requested a click fires), Left/
     // Right cycle the topic's links. Pointer-transparent.
     tk::KeyboardTarget* title_target_ = nullptr;
+
 public:
-    tk::KeyboardTarget* title_target() const { return title_target_; }
+    tk::KeyboardTarget* title_target() const
+    {
+        return title_target_;
+    }
+
 private:
     // Rebuilt each arrange() pass with whatever's currently collapsed;
     // consumed when more_btn_ is clicked.
@@ -266,7 +298,10 @@ public:
     // to assert it's excluded from Tab traversal while a modal overlay is
     // open (bounds alone can't disambiguate since the overlay covers the
     // same screen area).
-    tk::Widget* search_btn_for_test() const { return search_btn_; }
+    tk::Widget* search_btn_for_test() const
+    {
+        return search_btn_;
+    }
     tk::Rect name_label_rect_for_test() const
     {
         return name_label_ ? name_label_->bounds() : tk::Rect{};
@@ -277,26 +312,25 @@ public:
     }
 
 private:
-
     bool encrypted_ = false;
     tk::Rect lock_icon_rect_{};
 
     // Bridged-room badge next to the title: the network's logo (or a cable
     // glyph) with a tooltip explaining what bridging means.
-    bool        bridged_ = false;
+    bool bridged_ = false;
     std::string bridge_network_name_;
     std::string bridge_network_avatar_url_;
-    tk::Rect    bridge_icon_rect_{};
-    bool        hover_bridge_ = false;
+    tk::Rect bridge_icon_rect_{};
+    bool hover_bridge_ = false;
     tk::IconCache bridge_icon_cache_;
     std::string bridge_tooltip_() const;
 
     struct AccessRow
     {
-        tk::Role    role;
+        tk::Role role;
         std::string name;
         std::string url; // Link rows only
-        tk::Rect    rect;
+        tk::Rect rect;
     };
     mutable std::vector<AccessRow> access_rows_;
 

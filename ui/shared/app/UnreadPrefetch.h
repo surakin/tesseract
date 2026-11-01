@@ -22,7 +22,7 @@ namespace tesseract
 struct UnreadPrefetchSet
 {
     std::vector<std::string> ids;
-    std::size_t              fingerprint = 0;
+    std::size_t fingerprint = 0;
 };
 
 // Select the rooms to one-shot prefetch from the current room list:
@@ -42,11 +42,9 @@ struct UnreadPrefetchSet
 // order-independent (a pure reorder among the capped set does NOT re-fire) but
 // mixes in both counts so new messages or a new mention in an already-prefetched
 // room DO re-fire the warm-up. An empty set yields fingerprint 0.
-inline UnreadPrefetchSet
-compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
-                           const std::string&           current_room_id,
-                           std::size_t                  cap,
-                           bool                          include_unread = true)
+inline UnreadPrefetchSet compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
+                                                     const std::string& current_room_id,
+                                                     std::size_t cap, bool include_unread = true)
 {
     std::vector<const RoomInfo*> selected;
     selected.reserve(rooms.size());
@@ -54,9 +52,13 @@ compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
     for (const auto& r : rooms)
     {
         if (r.id == current_room_id)
+        {
             continue;
+        }
         if (r.is_favorite)
+        {
             selected.push_back(&r);
+        }
     }
 
     if (include_unread)
@@ -66,11 +68,14 @@ compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
         for (const auto& r : rooms)
         {
             if (r.id == current_room_id || r.is_favorite) // favorites already selected
+            {
                 continue;
-            if (views::unread_style_for(r.notification_count, r.highlight_count,
-                                        r.unread_count, r.muted) ==
-                views::UnreadStyle::None)
+            }
+            if (views::unread_style_for(r.notification_count, r.highlight_count, r.unread_count,
+                                        r.muted) == views::UnreadStyle::None)
+            {
                 continue;
+            }
             unread.push_back(&r);
         }
 
@@ -82,7 +87,9 @@ compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
         {
             std::partial_sort(unread.begin(), unread.begin() + cap, unread.end(),
                               [](const RoomInfo* a, const RoomInfo* b)
-                              { return a->last_activity_ts > b->last_activity_ts; });
+                              {
+                                  return a->last_activity_ts > b->last_activity_ts;
+                              });
             unread.resize(cap);
         }
         selected.insert(selected.end(), unread.begin(), unread.end());
@@ -92,10 +99,10 @@ compute_unread_prefetch_set(const std::vector<RoomInfo>& rooms,
     out.ids.reserve(selected.size());
     for (const auto* r : selected)
     {
-        std::size_t h = tk::hash_combine(
-            tk::hash_combine(std::hash<std::string>{}(r->id),
-                             std::hash<std::uint64_t>{}(r->notification_count)),
-            std::hash<std::uint64_t>{}(r->unread_count));
+        std::size_t h =
+            tk::hash_combine(tk::hash_combine(std::hash<std::string>{}(r->id),
+                                              std::hash<std::uint64_t>{}(r->notification_count)),
+                             std::hash<std::uint64_t>{}(r->unread_count));
         out.fingerprint ^= h;
         out.ids.push_back(r->id);
     }

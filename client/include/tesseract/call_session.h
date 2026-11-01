@@ -22,8 +22,7 @@ class CallSession
 public:
     /// `session_id` is the id `Client::rtc_start_call` returned: every event of
     /// this call carries it, and an event with another id (or none) is not ours.
-    CallSession(Client* client, std::string room_id, std::string slot_id,
-                std::uint64_t session_id);
+    CallSession(Client* client, std::string room_id, std::string slot_id, std::uint64_t session_id);
     ~CallSession();
 
     /// Mute/unmute local audio. No-op when the FFI session is gone.
@@ -44,12 +43,24 @@ public:
     /// Stop the screen share track.
     void stop_screen_share();
 
-    const std::string& room_id() const { return room_id_; }
-    const std::string& slot_id() const { return slot_id_; }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
+    const std::string& slot_id() const
+    {
+        return slot_id_;
+    }
     /// The id the SDK gave this call when it was started.
-    std::uint64_t session_id() const { return session_id_; }
+    std::uint64_t session_id() const
+    {
+        return session_id_;
+    }
     /// Whether an SDK event carrying `id` belongs to this call.
-    bool owns_event(std::uint64_t id) const { return id != 0 && id == session_id_; }
+    bool owns_event(std::uint64_t id) const
+    {
+        return id != 0 && id == session_id_;
+    }
 
     /// Thread-safe snapshot of the current participant list.
     std::vector<RtcParticipantInfo> participants() const;
@@ -61,7 +72,7 @@ public:
     void on_session_ended(const std::string& reason);
 
 private:
-    Client* client_;   // non-owning
+    Client* client_; // non-owning
     std::string room_id_;
     std::string slot_id_;
     std::uint64_t session_id_;

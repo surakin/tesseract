@@ -20,8 +20,7 @@ struct ServerInfoStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
 };
 
@@ -134,7 +133,8 @@ TEST_CASE("from_ffi(ServerInfoFfi): profile field flags pass through", "[server]
     CHECK(info.profile_fields_enabled == false);
 }
 
-TEST_CASE("from_ffi(ServerInfoFfi): software, upload limit, login flows, feature flags", "[server][info]")
+TEST_CASE("from_ffi(ServerInfoFfi): software, upload limit, login flows, feature flags",
+          "[server][info]")
 {
     auto f = ok_info();
     f.server_name = "Synapse";
@@ -159,12 +159,16 @@ TEST_CASE("from_ffi(ServerInfoFfi): software, upload limit, login flows, feature
 
 namespace
 {
-const tesseract::views::ServerInfoRow* find_row(const std::vector<tesseract::views::ServerInfoRow>& rows,
-                                                const std::string& label)
+const tesseract::views::ServerInfoRow*
+find_row(const std::vector<tesseract::views::ServerInfoRow>& rows, const std::string& label)
 {
     for (const auto& r : rows)
+    {
         if (r.label == label)
+        {
             return &r;
+        }
+    }
     return nullptr;
 }
 } // namespace

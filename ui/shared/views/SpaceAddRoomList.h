@@ -34,8 +34,7 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(SpaceAddRoomList)
 
 public:
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
     using RoomsProvider = std::function<std::vector<tesseract::RoomInfo>()>;
 
     ~SpaceAddRoomList() override;
@@ -56,11 +55,20 @@ public:
     // Gates add interactions (drag-source, click/Enter). The list stays
     // visible for context even when false.
     void set_can_manage(bool v);
-    bool can_manage() const { return can_manage_; }
+    bool can_manage() const
+    {
+        return can_manage_;
+    }
 
     // ── Native-field rect delegation (mirrors ForwardRoomPicker) ───────────
-    tk::Rect search_field_rect() const { return search_field_rect_; }
-    tk::TextField* search_field() const { return search_field_; }
+    tk::Rect search_field_rect() const
+    {
+        return search_field_rect_;
+    }
+    tk::TextField* search_field() const
+    {
+        return search_field_;
+    }
 
     // ── Callbacks ────────────────────────────────────────────────────────
     // Fired by Enter/click on a candidate row.
@@ -71,8 +79,8 @@ public:
     std::function<void(const tesseract::RoomInfo&)> on_room_avatar_needed;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
     bool on_drag_enter(tk::Point local, const tk::DragPayload& payload) override;
     void on_drag_over(tk::Point local, const tk::DragPayload& payload) override;
@@ -92,7 +100,7 @@ private:
     tk::DragVisual build_drag_visual_(const tesseract::RoomInfo& room);
     std::string tooltip_text_(const tesseract::RoomInfo& room) const;
 
-    RoomsProvider  rooms_provider_;
+    RoomsProvider rooms_provider_;
     AvatarProvider avatar_provider_;
     std::vector<tesseract::RoomInfo> all_candidates_;
     std::vector<tesseract::RoomInfo> filtered_;

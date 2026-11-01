@@ -11,11 +11,15 @@ std::unique_ptr<ScreenCapture> ScreenCapture::create()
     return make_screen_capture_macos();
 #else
     {
-        const bool wayland = (std::getenv("WAYLAND_DISPLAY") != nullptr ||
-                              std::getenv("FLATPAK_ID") != nullptr);
+        const bool wayland =
+            (std::getenv("WAYLAND_DISPLAY") != nullptr || std::getenv("FLATPAK_ID") != nullptr);
         if (wayland)
+        {
             if (auto p = make_screen_capture_portal())
+            {
                 return p;
+            }
+        }
     }
     return make_screen_capture_gst();
 #endif

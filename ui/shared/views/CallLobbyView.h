@@ -48,38 +48,55 @@ public:
     void open(std::string room_id, std::string slot_id, bool default_audio_only);
     // Stops capture and hides the view. Safe to call when already closed.
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
     // Last camera failure since the camera was (re)enabled; None when fine.
-    tk::VideoCapture::Error camera_error() const { return cam_error_; }
-    bool camera_enabled() const { return cam_enabled_; }
+    tk::VideoCapture::Error camera_error() const
+    {
+        return cam_error_;
+    }
+    bool camera_enabled() const
+    {
+        return cam_enabled_;
+    }
     // The room this lobby is currently showing (empty while closed) — lets
     // callers distinguish "still the same room" repeat calls from an actual
     // switch away, since is_open() alone can't tell those apart.
-    const std::string& room_id() const { return room_id_; }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
 
-    void set_avatar_provider(
-        std::function<const tk::Image*(const std::string& user_id)> fn);
-    void set_local_user_id(std::string id) { local_user_id_ = std::move(id); }
+    void set_avatar_provider(std::function<const tk::Image*(const std::string& user_id)> fn);
+    void set_local_user_id(std::string id)
+    {
+        local_user_id_ = std::move(id);
+    }
     void set_repaint_requester(std::function<void()> fn);
 
     // Disables Join and shows `reason` above the toggles (e.g. the user may
     // not start calls in this room); an empty string re-enables Join.
     void set_join_blocked(const std::string& reason);
-    bool join_blocked() const { return join_blocked_; }
+    bool join_blocked() const
+    {
+        return join_blocked_;
+    }
 
     // room_id, slot_id, audio_only (camera was deliberately left off),
     // start_audio_muted (mic was left off), start_video_muted (the camera
     // failed — join as a video call with video off so it can be retried).
-    std::function<void(const std::string& room_id, const std::string& slot_id,
-                       bool audio_only, bool start_audio_muted,
-                       bool start_video_muted)> on_join;
+    std::function<void(const std::string& room_id, const std::string& slot_id, bool audio_only,
+                       bool start_audio_muted, bool start_video_muted)>
+        on_join;
     std::function<void()> on_cancel;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad) override;
 
 private:
     void start_camera_();
@@ -87,7 +104,7 @@ private:
     void apply_preview_state_();
     void set_camera_error_(tk::VideoCapture::Error err);
 
-    bool        open_ = false;
+    bool open_ = false;
     std::string room_id_;
     std::string slot_id_;
     std::string local_user_id_;
@@ -96,22 +113,22 @@ private:
     bool cam_enabled_ = true;
     tk::VideoCapture::Error cam_error_ = tk::VideoCapture::Error::None;
 
-    std::unique_ptr<tk::VideoCapture>          capture_;
-    std::mutex                                 frame_mu_;
+    std::unique_ptr<tk::VideoCapture> capture_;
+    std::mutex frame_mu_;
     std::shared_ptr<std::vector<std::uint8_t>> pending_frame_;
-    std::uint32_t                              frame_w_ = 0, frame_h_ = 0;
+    std::uint32_t frame_w_ = 0, frame_h_ = 0;
 
     ParticipantTile* preview_tile_ = nullptr;
-    tk::Button*      mic_btn_      = nullptr;
-    tk::Button*      cam_btn_      = nullptr;
-    tk::Button*      join_btn_     = nullptr;
-    tk::Button*      cancel_btn_   = nullptr;
-    tk::Label*       cam_error_label_ = nullptr;
-    tk::Label*       blocked_label_   = nullptr;
-    bool             join_blocked_    = false;
+    tk::Button* mic_btn_ = nullptr;
+    tk::Button* cam_btn_ = nullptr;
+    tk::Button* join_btn_ = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
+    tk::Label* cam_error_label_ = nullptr;
+    tk::Label* blocked_label_ = nullptr;
+    bool join_blocked_ = false;
 
     std::function<const tk::Image*(const std::string&)> avatar_provider_;
-    std::function<void()>                                repaint_requester_;
+    std::function<void()> repaint_requester_;
 };
 
 } // namespace tesseract::views

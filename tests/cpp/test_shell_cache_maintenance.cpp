@@ -29,9 +29,18 @@ namespace
 
 struct CmFakeImg : tk::Image
 {
-    int width() const override { return 1; }
-    int height() const override { return 1; }
-    std::size_t memory_bytes() const override { return 4; }
+    int width() const override
+    {
+        return 1;
+    }
+    int height() const override
+    {
+        return 1;
+    }
+    std::size_t memory_bytes() const override
+    {
+        return 4;
+    }
 };
 
 struct CmShell : tesseract::test::TestShellBase
@@ -44,14 +53,17 @@ struct CmShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_(std::function<void()> fn) override
     {
         std::lock_guard<std::mutex> lk(mu);
@@ -79,9 +91,13 @@ struct CmShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
 
@@ -124,27 +140,39 @@ TEST_CASE("voice clips: cold request downloads once, warmed bytes are handed ove
 
     s.client_ = &client;
     int ready = 0;
-    CHECK(s.voice_bytes_or_fetch_("mxc://hs/v", [&] { ++ready; }).empty());
-    CHECK(s.voice_bytes_or_fetch_("mxc://hs/v", [&] { ++ready; }).empty());
+    CHECK(s.voice_bytes_or_fetch_("mxc://hs/v",
+                                  [&]
+                                  {
+                                      ++ready;
+                                  })
+              .empty());
+    CHECK(s.voice_bytes_or_fetch_("mxc://hs/v",
+                                  [&]
+                                  {
+                                      ++ready;
+                                  })
+              .empty());
     REQUIRE(s.pending_media_.size() == 1); // de-duplicated
     CHECK(s.voice_bytes_in_flight_.count("mxc://hs/v") == 1);
 
     s.handle_media_ready_ui_(s.pending_media_.begin()->first, {1, 2, 3});
     CHECK(ready == 1);
     CHECK(s.voice_bytes_in_flight_.empty());
-    CHECK(s.voice_bytes_or_fetch_("mxc://hs/v", nullptr) ==
-          std::vector<std::uint8_t>{1, 2, 3});
+    CHECK(s.voice_bytes_or_fetch_("mxc://hs/v", nullptr) == std::vector<std::uint8_t>{1, 2, 3});
     CHECK(s.voice_bytes_cache_.empty()); // consumed
 }
 
-TEST_CASE("an empty voice download still notifies and caches nothing",
-          "[shell][cache]")
+TEST_CASE("an empty voice download still notifies and caches nothing", "[shell][cache]")
 {
     tesseract::Client client;
     CmShell s;
     s.client_ = &client;
     int ready = 0;
-    s.voice_bytes_or_fetch_("mxc://hs/v", [&] { ++ready; });
+    s.voice_bytes_or_fetch_("mxc://hs/v",
+                            [&]
+                            {
+                                ++ready;
+                            });
     s.handle_media_ready_ui_(s.pending_media_.begin()->first, {});
     CHECK(ready == 1);
     CHECK(s.voice_bytes_cache_.empty());
@@ -163,16 +191,19 @@ TEST_CASE("the warm voice cache is bounded", "[shell][cache]")
     // Complete all nine downloads.
     std::vector<std::uint64_t> ids;
     for (auto& [id, req] : s.pending_media_)
+    {
         ids.push_back(id);
+    }
     std::sort(ids.begin(), ids.end());
     for (auto id : ids)
+    {
         s.handle_media_ready_ui_(id, {7});
+    }
     CHECK(s.voice_bytes_cache_.size() <= 8);
     CHECK(s.voice_bytes_cache_.size() >= 1);
 }
 
-TEST_CASE("prefetch window falls back without a laid-out message list",
-          "[shell][cache]")
+TEST_CASE("prefetch window falls back without a laid-out message list", "[shell][cache]")
 {
     CmShell s;
     CHECK(s.media_prefetch_window_() == 20);
@@ -211,7 +242,10 @@ TEST_CASE("the image GC only runs after user activity and evicts stale entries",
     // Age the entry past both the generation and wall-clock retention, then
     // run the deferred sweep.
     images.set_clock_for_testing(
-        [] { return std::chrono::steady_clock::now() + std::chrono::hours(1); });
+        []
+        {
+            return std::chrono::steady_clock::now() + std::chrono::hours(1);
+        });
     images.advance_generation();
     images.advance_generation();
     images.advance_generation();
@@ -229,8 +263,11 @@ TEST_CASE("cache sizes need a signed-in account and a callback", "[shell][cache]
 {
     CmShell s;
     int calls = 0;
-    s.compute_cache_sizes_([&](uint64_t, uint64_t, uint64_t, uint64_t,
-                               uint64_t, uint64_t, uint64_t) { ++calls; });
+    s.compute_cache_sizes_(
+        [&](uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)
+        {
+            ++calls;
+        });
     s.pump();
     CHECK(calls == 0);
 
@@ -240,12 +277,12 @@ TEST_CASE("cache sizes need a signed-in account and a callback", "[shell][cache]
     CHECK(calls == 0);
 
     uint64_t memory = ~0ull;
-    s.compute_cache_sizes_([&](uint64_t, uint64_t, uint64_t mem, uint64_t,
-                               uint64_t, uint64_t, uint64_t)
-                           {
-                               ++calls;
-                               memory = mem;
-                           });
+    s.compute_cache_sizes_(
+        [&](uint64_t, uint64_t, uint64_t mem, uint64_t, uint64_t, uint64_t, uint64_t)
+        {
+            ++calls;
+            memory = mem;
+        });
     s.pump();
     CHECK(calls == 1);
     CHECK(memory != ~0ull);

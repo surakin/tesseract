@@ -48,8 +48,7 @@ std::string homeserver_server_name(std::string_view homeserver);
 
 // Builds "@user:server" from a username (localpart or MXID) and a homeserver
 // setting; nullopt when the username has no server part and `homeserver` is empty.
-std::optional<std::string> make_user_id(std::string_view username,
-                                        std::string_view homeserver);
+std::optional<std::string> make_user_id(std::string_view username, std::string_view homeserver);
 
 struct ProvisionedValues
 {

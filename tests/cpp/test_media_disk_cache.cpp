@@ -53,7 +53,7 @@ TEST_CASE("load counts hits and misses", "[media-disk-cache]")
     c.load(tk::CacheKey::media("missing")); // miss
     c.load(tk::CacheKey::media("k"));       // hit
 
-    CHECK(c.hits()   == 2);
+    CHECK(c.hits() == 2);
     CHECK(c.misses() == 1);
 }
 
@@ -68,11 +68,12 @@ TEST_CASE("clear resets hit/miss counters", "[media-disk-cache]")
     REQUIRE(c.hits() == 1);
 
     c.clear();
-    CHECK(c.hits()   == 0);
+    CHECK(c.hits() == 0);
     CHECK(c.misses() == 0);
 }
 
-TEST_CASE("retire_for_clear moves the entries aside and leaves an empty cache", "[media-disk-cache]")
+TEST_CASE("retire_for_clear moves the entries aside and leaves an empty cache",
+          "[media-disk-cache]")
 {
     TmpDir tmp;
     tk::MediaDiskCache c(tmp.path);
@@ -128,8 +129,7 @@ fs::path only_file(const fs::path& dir)
 }
 } // namespace
 
-TEST_CASE("an entry is served only under the key it was stored with",
-          "[media-disk-cache]")
+TEST_CASE("an entry is served only under the key it was stored with", "[media-disk-cache]")
 {
     TmpDir tmp;
     tk::MediaDiskCache c(tmp.path);

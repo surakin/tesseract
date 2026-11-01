@@ -30,8 +30,7 @@ struct BridgeRecorder : tesseract::IEventHandler
     std::vector<tesseract::RoomInfo> rooms;
     bool throw_on_removed = false;
 
-    void on_timeline_reset(const std::string& r,
-                           tesseract::EventList snap) override
+    void on_timeline_reset(const std::string& r, tesseract::EventList snap) override
     {
         log.push_back("reset:" + r);
         for (auto& e : snap)
@@ -62,18 +61,15 @@ struct BridgeRecorder : tesseract::IEventHandler
         log.push_back("rm:" + r);
         idx.push_back(i);
     }
-    void on_messages_prepended(const std::string& r,
-                               tesseract::EventList evs) override
+    void on_messages_prepended(const std::string& r, tesseract::EventList evs) override
     {
         log.push_back("pre:" + r + ":" + std::to_string(evs.size()));
     }
-    void on_messages_appended(const std::string& r,
-                              tesseract::EventList evs) override
+    void on_messages_appended(const std::string& r, tesseract::EventList evs) override
     {
         log.push_back("app:" + r + ":" + std::to_string(evs.size()));
     }
-    void on_messages_updated_batch(const std::string& r,
-                                   std::vector<std::size_t> is,
+    void on_messages_updated_batch(const std::string& r, std::vector<std::size_t> is,
                                    tesseract::EventList evs) override
     {
         log.push_back("batch:" + r + ":" + std::to_string(evs.size()));
@@ -99,8 +95,7 @@ struct BridgeRecorder : tesseract::IEventHandler
         rooms = r;
         log.push_back("rooms");
     }
-    void on_sync_error(const std::string& c, const std::string& d,
-                       bool soft) override
+    void on_sync_error(const std::string& c, const std::string& d, bool soft) override
     {
         log.push_back("err:" + c + ":" + d + ":" + (soft ? "soft" : "hard"));
     }
@@ -112,75 +107,64 @@ struct BridgeRecorder : tesseract::IEventHandler
     {
         log.push_back("rls:" + std::to_string(static_cast<int>(s)));
     }
-    void on_media_ready(std::uint64_t id,
-                        const std::vector<std::uint8_t>& b) override
+    void on_media_ready(std::uint64_t id, const std::vector<std::uint8_t>& b) override
     {
-        log.push_back("media:" + std::to_string(id) + ":" +
-                      std::to_string(b.size()));
+        log.push_back("media:" + std::to_string(id) + ":" + std::to_string(b.size()));
     }
     void on_own_profile_changed(const std::optional<std::string>& n,
                                 const std::optional<std::string>& a) override
     {
-        log.push_back(std::string("profile:") + (n ? *n : "-") + ":" +
-                      (a ? *a : "-"));
+        log.push_back(std::string("profile:") + (n ? *n : "-") + ":" + (a ? *a : "-"));
     }
-    void on_presence_changed(const std::string& u,
-                             tesseract::PresenceState s) override
+    void on_presence_changed(const std::string& u, tesseract::PresenceState s) override
     {
         log.push_back("presence:" + u + ":" + std::to_string(static_cast<int>(s)));
     }
-    void on_identity_status_changed(
-        const std::string& r,
-        const std::vector<tesseract::IdentityWarning>& w) override
+    void on_identity_status_changed(const std::string& r,
+                                    const std::vector<tesseract::IdentityWarning>& w) override
     {
         std::string s = "identity:" + r;
         for (auto& x : w)
         {
             s += ":" + x.user_id + "/" + x.display_name + "/" +
-                 (x.kind == tesseract::IdentityWarning::Kind::VerificationBroken
-                      ? "broken"
-                      : "changed");
+                 (x.kind == tesseract::IdentityWarning::Kind::VerificationBroken ? "broken"
+                                                                                 : "changed");
         }
         log.push_back(s);
     }
-    void on_typing_changed(const std::string& r,
-                           const std::vector<std::string>& n) override
+    void on_typing_changed(const std::string& r, const std::vector<std::string>& n) override
     {
         log.push_back("typing:" + r + ":" + std::to_string(n.size()));
     }
-    void on_gif_results(std::uint64_t id,
-                        const std::vector<tesseract::GifResult>& r) override
+    void on_gif_results(std::uint64_t id, const std::vector<tesseract::GifResult>& r) override
     {
         log.push_back("gif:" + std::to_string(id));
         if (!r.empty())
         {
-            log.push_back(r[0].id + "|" + r[0].image_url + "|" +
-                          std::to_string(r[0].image_w));
+            log.push_back(r[0].id + "|" + r[0].image_url + "|" + std::to_string(r[0].image_w));
         }
     }
-    void on_search_results(std::uint64_t id,
-                           const std::vector<tesseract::SearchHit>& r) override
+    void on_search_results(std::uint64_t id, const std::vector<tesseract::SearchHit>& r) override
     {
-        log.push_back("search:" + std::to_string(id) + ":" +
-                      std::to_string(r.size()));
+        log.push_back("search:" + std::to_string(id) + ":" + std::to_string(r.size()));
         if (!r.empty())
         {
             log.push_back(r[0].room_name + "|" + std::to_string(r[0].timestamp_ms));
         }
     }
-    void on_room_directory_search_results(
-        std::uint64_t id, const std::vector<tesseract::RoomDirectoryEntry>& e,
-        bool end) override
+    void on_room_directory_search_results(std::uint64_t id,
+                                          const std::vector<tesseract::RoomDirectoryEntry>& e,
+                                          bool end) override
     {
-        log.push_back("dir:" + std::to_string(id) + ":" +
-                      std::to_string(e.size()) + (end ? ":end" : ":more"));
+        log.push_back("dir:" + std::to_string(id) + ":" + std::to_string(e.size()) +
+                      (end ? ":end" : ":more"));
         if (!e.empty())
         {
             log.push_back(e[0].alias + "|" + std::to_string(e[0].joined_members));
         }
     }
-    void on_verification_request(const std::string& f, const std::string& u,
-                                 const std::string& d, bool in) override
+    void on_verification_request(const std::string& f, const std::string& u, const std::string& d,
+                                 bool in) override
     {
         log.push_back("vreq:" + f + ":" + u + ":" + d + (in ? ":in" : ":out"));
     }
@@ -192,49 +176,39 @@ struct BridgeRecorder : tesseract::IEventHandler
     void on_call_participant_joined(std::uint64_t s,
                                     const tesseract::RtcParticipantInfo& i) override
     {
-        log.push_back("pj:" + std::to_string(s) + ":" + i.participant_id + ":" +
-                      i.user_id + (i.is_screen_sharing ? ":share" : ""));
+        log.push_back("pj:" + std::to_string(s) + ":" + i.participant_id + ":" + i.user_id +
+                      (i.is_screen_sharing ? ":share" : ""));
     }
-    void on_call_video_frame(std::uint64_t s, const std::string& p,
-                             std::uint32_t w, std::uint32_t h,
-                             const std::uint8_t*, std::size_t n) override
+    void on_call_video_frame(std::uint64_t s, const std::string& p, std::uint32_t w,
+                             std::uint32_t h, const std::uint8_t*, std::size_t n) override
     {
-        log.push_back("vf:" + std::to_string(s) + ":" + p + ":" +
-                      std::to_string(w) + "x" + std::to_string(h) + ":" +
-                      std::to_string(n));
+        log.push_back("vf:" + std::to_string(s) + ":" + p + ":" + std::to_string(w) + "x" +
+                      std::to_string(h) + ":" + std::to_string(n));
     }
-    void on_call_audio_frame(std::uint64_t s, const std::string& p,
-                             const std::int16_t*, std::size_t n,
-                             std::uint32_t rate, std::uint32_t ch) override
+    void on_call_audio_frame(std::uint64_t s, const std::string& p, const std::int16_t*,
+                             std::size_t n, std::uint32_t rate, std::uint32_t ch) override
     {
-        log.push_back("af:" + std::to_string(s) + ":" + p + ":" +
-                      std::to_string(n) + ":" + std::to_string(rate) + ":" +
-                      std::to_string(ch));
+        log.push_back("af:" + std::to_string(s) + ":" + p + ":" + std::to_string(n) + ":" +
+                      std::to_string(rate) + ":" + std::to_string(ch));
     }
-    void on_call_invitation(const std::string& r, const std::string& s,
-                            const std::string& c, const std::string& i,
-                            std::uint64_t life, const std::string& n) override
+    void on_call_invitation(const std::string& r, const std::string& s, const std::string& c,
+                            const std::string& i, std::uint64_t life, const std::string& n) override
     {
-        log.push_back("inv:" + r + ":" + s + ":" + c + ":" + i + ":" +
-                      std::to_string(life) + ":" + n);
+        log.push_back("inv:" + r + ":" + s + ":" + c + ":" + i + ":" + std::to_string(life) + ":" +
+                      n);
     }
-    void on_notification(const std::string& r, const std::string& rn,
-                         const std::string& s, const std::string& b, bool m,
-                         const std::vector<std::uint8_t>& av,
-                         const std::vector<std::uint8_t>& img,
-                         const std::string& e) override
+    void on_notification(const std::string& r, const std::string& rn, const std::string& s,
+                         const std::string& b, bool m, const std::vector<std::uint8_t>& av,
+                         const std::vector<std::uint8_t>& img, const std::string& e) override
     {
-        log.push_back("notif:" + r + ":" + rn + ":" + s + ":" + b +
-                      (m ? ":m:" : ":-:") + std::to_string(av.size()) + ":" +
-                      std::to_string(img.size()) + ":" + e);
+        log.push_back("notif:" + r + ":" + rn + ":" + s + ":" + b + (m ? ":m:" : ":-:") +
+                      std::to_string(av.size()) + ":" + std::to_string(img.size()) + ":" + e);
     }
-    void on_room_media_page(std::uint64_t id,
-                            const std::vector<tesseract::MediaIndexRow>& rows,
+    void on_room_media_page(std::uint64_t id, const std::vector<tesseract::MediaIndexRow>& rows,
                             bool end, std::uint64_t total) override
     {
-        log.push_back("mpage:" + std::to_string(id) + ":" +
-                      std::to_string(rows.size()) + (end ? ":end:" : ":more:") +
-                      std::to_string(total));
+        log.push_back("mpage:" + std::to_string(id) + ":" + std::to_string(rows.size()) +
+                      (end ? ":end:" : ":more:") + std::to_string(total));
         if (!rows.empty())
         {
             log.push_back(rows[0].event_id + "|" + rows[0].src_mxc + "|" +
@@ -260,8 +234,7 @@ tesseract_ffi::TimelineEvent ffi_ev(const char* id)
 
 } // namespace
 
-TEST_CASE("bridge forwards single timeline mutations with index and event",
-          "[bridge][dispatch]")
+TEST_CASE("bridge forwards single timeline mutations with index and event", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_message_inserted("!r:s", 3, ffi_ev("$a"));
@@ -272,8 +245,7 @@ TEST_CASE("bridge forwards single timeline mutations with index and event",
     CHECK(f.rec.ids == std::vector<std::string>{"$a", "$b"});
 }
 
-TEST_CASE("bridge converts a snapshot vector preserving order",
-          "[bridge][dispatch]")
+TEST_CASE("bridge converts a snapshot vector preserving order", "[bridge][dispatch]")
 {
     BridgeFixture f;
     rust::Vec<tesseract_ffi::TimelineEvent> v;
@@ -287,14 +259,12 @@ TEST_CASE("bridge converts a snapshot vector preserving order",
     f.bridge.on_thread_messages_prepended("!r:s", "$root", v);
     f.bridge.on_thread_messages_appended("!r:s", "$root", v);
     CHECK(f.rec.ids == std::vector<std::string>{"$1", "$2", "$3"});
-    CHECK(f.rec.log ==
-          std::vector<std::string>{"reset:!r:s", "pre:!r:s:3", "app:!r:s:3",
-                                   "treset:!r:s:$root:3", "tpre:!r:s:$root:3",
-                                   "tapp:!r:s:$root:3"});
+    CHECK(f.rec.log == std::vector<std::string>{"reset:!r:s", "pre:!r:s:3", "app:!r:s:3",
+                                                "treset:!r:s:$root:3", "tpre:!r:s:$root:3",
+                                                "tapp:!r:s:$root:3"});
 }
 
-TEST_CASE("bridge batch update requires matching non-empty parallel arrays",
-          "[bridge][dispatch]")
+TEST_CASE("bridge batch update requires matching non-empty parallel arrays", "[bridge][dispatch]")
 {
     BridgeFixture f;
     rust::Vec<std::uint64_t> idx;
@@ -318,8 +288,7 @@ TEST_CASE("bridge batch update requires matching non-empty parallel arrays",
     CHECK(f.rec.idx == std::vector<std::size_t>{1, 2});
 }
 
-TEST_CASE("detach() makes every later callback a silent no-op",
-          "[bridge][dispatch]")
+TEST_CASE("detach() makes every later callback a silent no-op", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_message_removed("!r:s", 1);
@@ -333,8 +302,7 @@ TEST_CASE("detach() makes every later callback a silent no-op",
     CHECK(f.rec.log.size() == 1);
 }
 
-TEST_CASE("a throwing handler never propagates out of the bridge",
-          "[bridge][dispatch]")
+TEST_CASE("a throwing handler never propagates out of the bridge", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.rec.throw_on_removed = true;
@@ -344,30 +312,24 @@ TEST_CASE("a throwing handler never propagates out of the bridge",
     CHECK(f.rec.log == std::vector<std::string>{"err:ctx:msg:soft"});
 }
 
-TEST_CASE("bridge forwards error and session callbacks",
-          "[bridge][dispatch]")
+TEST_CASE("bridge forwards error and session callbacks", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_error("sync", "bad", false);
     f.bridge.on_session_refreshed("{\"a\":1}");
-    CHECK(f.rec.log == std::vector<std::string>{"err:sync:bad:hard",
-                                                "session:{\"a\":1}"});
+    CHECK(f.rec.log == std::vector<std::string>{"err:sync:bad:hard", "session:{\"a\":1}"});
 }
 
-TEST_CASE("room list state codes beyond Terminated clamp to Init",
-          "[bridge][dispatch]")
+TEST_CASE("room list state codes beyond Terminated clamp to Init", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_room_list_state(1);
-    f.bridge.on_room_list_state(static_cast<std::uint8_t>(
-        tesseract::RoomListState::Terminated));
+    f.bridge.on_room_list_state(static_cast<std::uint8_t>(tesseract::RoomListState::Terminated));
     f.bridge.on_room_list_state(200);
-    CHECK(f.rec.log ==
-          std::vector<std::string>{
-              "rls:1",
-              "rls:" + std::to_string(static_cast<int>(
-                           tesseract::RoomListState::Terminated)),
-              "rls:0"});
+    CHECK(f.rec.log == std::vector<std::string>{"rls:1",
+                                                "rls:" + std::to_string(static_cast<int>(
+                                                             tesseract::RoomListState::Terminated)),
+                                                "rls:0"});
 }
 
 TEST_CASE("bridge converts room lists", "[bridge][dispatch]")
@@ -394,24 +356,20 @@ TEST_CASE("bridge copies byte slices", "[bridge][dispatch]")
     f.bridge.on_notification("!r", "Name", "@u", "hi", true,
                              rust::Slice<const std::uint8_t>(data, 2),
                              rust::Slice<const std::uint8_t>(data, 3), "$e");
-    CHECK(f.rec.log == std::vector<std::string>{"media:7:4",
-                                                "notif:!r:Name:@u:hi:m:2:3:$e"});
+    CHECK(f.rec.log == std::vector<std::string>{"media:7:4", "notif:!r:Name:@u:hi:m:2:3:$e"});
 }
 
-TEST_CASE("own profile change maps absent fields to nullopt",
-          "[bridge][dispatch]")
+TEST_CASE("own profile change maps absent fields to nullopt", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_own_profile_changed(true, "Bob", false, "ignored");
     f.bridge.on_own_profile_changed(false, "ignored", true, "mxc://a/b");
     f.bridge.on_own_profile_changed(true, "", true, "");
-    CHECK(f.rec.log == std::vector<std::string>{"profile:Bob:-",
-                                                "profile:-:mxc://a/b",
-                                                "profile::"});
+    CHECK(f.rec.log ==
+          std::vector<std::string>{"profile:Bob:-", "profile:-:mxc://a/b", "profile::"});
 }
 
-TEST_CASE("presence codes map to Online/Unavailable/Offline",
-          "[bridge][dispatch]")
+TEST_CASE("presence codes map to Online/Unavailable/Offline", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_presence_changed("@a", 1);
@@ -421,14 +379,11 @@ TEST_CASE("presence codes map to Online/Unavailable/Offline",
     auto on = std::to_string(static_cast<int>(tesseract::PresenceState::Online));
     auto un = std::to_string(static_cast<int>(tesseract::PresenceState::Unavailable));
     auto off = std::to_string(static_cast<int>(tesseract::PresenceState::Offline));
-    CHECK(f.rec.log == std::vector<std::string>{"presence:@a:" + on,
-                                                "presence:@b:" + un,
-                                                "presence:@c:" + off,
-                                                "presence:@d:" + off});
+    CHECK(f.rec.log == std::vector<std::string>{"presence:@a:" + on, "presence:@b:" + un,
+                                                "presence:@c:" + off, "presence:@d:" + off});
 }
 
-TEST_CASE("identity status zips parallel arrays tolerating short ones",
-          "[bridge][dispatch]")
+TEST_CASE("identity status zips parallel arrays tolerating short ones", "[bridge][dispatch]")
 {
     BridgeFixture f;
     rust::Vec<rust::String> ids;
@@ -443,8 +398,7 @@ TEST_CASE("identity status zips parallel arrays tolerating short ones",
     kinds.push_back(2);
     f.bridge.on_identity_status_changed("!r", ids, names, kinds);
     CHECK(f.rec.log ==
-          std::vector<std::string>{
-              "identity:!r:@a/Alice/changed:@b/Bob/broken:@c//changed"});
+          std::vector<std::string>{"identity:!r:@a/Alice/changed:@b/Bob/broken:@c//changed"});
 }
 
 TEST_CASE("typing list is forwarded", "[bridge][dispatch]")
@@ -457,8 +411,7 @@ TEST_CASE("typing list is forwarded", "[bridge][dispatch]")
     CHECK(f.rec.log == std::vector<std::string>{"typing:!r:2"});
 }
 
-TEST_CASE("gif, search and directory results convert every field",
-          "[bridge][dispatch]")
+TEST_CASE("gif, search and directory results convert every field", "[bridge][dispatch]")
 {
     BridgeFixture f;
     {
@@ -486,10 +439,8 @@ TEST_CASE("gif, search and directory results convert every field",
         v.push_back(std::move(e));
         f.bridge.on_room_directory_search_results(13, v, true);
     }
-    CHECK(f.rec.log ==
-          std::vector<std::string>{"gif:11", "g1|https://x/g.gif|320",
-                                   "search:12:1", "Lobby|123456789",
-                                   "dir:13:1:end", "#a:s|42"});
+    CHECK(f.rec.log == std::vector<std::string>{"gif:11", "g1|https://x/g.gif|320", "search:12:1",
+                                                "Lobby|123456789", "dir:13:1:end", "#a:s|42"});
 }
 
 TEST_CASE("media index rows convert", "[bridge][dispatch]")
@@ -502,12 +453,10 @@ TEST_CASE("media index rows convert", "[bridge][dispatch]")
     r.media_w = 640;
     v.push_back(std::move(r));
     f.bridge.on_room_media_page(5, v, false, 99);
-    CHECK(f.rec.log == std::vector<std::string>{"mpage:5:1:more:99",
-                                                "$m|mxc://s/m|640"});
+    CHECK(f.rec.log == std::vector<std::string>{"mpage:5:1:more:99", "$m|mxc://s/m|640"});
 }
 
-TEST_CASE("verification and call callbacks forward their arguments",
-          "[bridge][dispatch]")
+TEST_CASE("verification and call callbacks forward their arguments", "[bridge][dispatch]")
 {
     BridgeFixture f;
     f.bridge.on_verification_request("f1", "@u", "DEV", true);
@@ -527,13 +476,10 @@ TEST_CASE("verification and call callbacks forward their arguments",
     const std::uint8_t px[8] = {};
     f.bridge.on_rtc_video_frame(9, "p", 2, 1, rust::Slice<const std::uint8_t>(px, 8));
     const std::int16_t pcm[4] = {};
-    f.bridge.on_rtc_audio_frame(9, "p", rust::Slice<const std::int16_t>(pcm, 4),
-                                48000, 2);
+    f.bridge.on_rtc_audio_frame(9, "p", rust::Slice<const std::int16_t>(pcm, 4), 48000, 2);
     f.bridge.on_rtc_invitation("!r", "slot", "@c", "video", 30000, "$n");
 
-    CHECK(f.rec.log ==
-          std::vector<std::string>{"vreq:f1:@u:DEV:in", "sas:f1:1:20",
-                                   "pj:9:p:@u:share", "vf:9:p:2x1:8",
-                                   "af:9:p:4:48000:2",
-                                   "inv:!r:slot:@c:video:30000:$n"});
+    CHECK(f.rec.log == std::vector<std::string>{
+                           "vreq:f1:@u:DEV:in", "sas:f1:1:20", "pj:9:p:@u:share", "vf:9:p:2x1:8",
+                           "af:9:p:4:48000:2", "inv:!r:slot:@c:video:30000:$n"});
 }

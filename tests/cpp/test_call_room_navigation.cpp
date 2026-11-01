@@ -11,14 +11,13 @@ TEST_CASE("decide_call_room_action: no active call, plain room -> None")
                                   /*active_call_room_is_new_room=*/false,
                                   /*new_room_is_call_room=*/false,
                                   /*call_auto_floated=*/false,
-                                  /*overlay_is_docked=*/false) ==
-          CallRoomAction::None);
+                                  /*overlay_is_docked=*/false) == CallRoomAction::None);
 }
 
 TEST_CASE("decide_call_room_action: no active call, call room -> AutoJoin")
 {
-    CHECK(decide_call_room_action(false, false, /*new_room_is_call_room=*/true,
-                                  false, false) == CallRoomAction::AutoJoin);
+    CHECK(decide_call_room_action(false, false, /*new_room_is_call_room=*/true, false, false) ==
+          CallRoomAction::AutoJoin);
 }
 
 TEST_CASE("decide_call_room_action: returning to the active call's room, "
@@ -28,16 +27,14 @@ TEST_CASE("decide_call_room_action: returning to the active call's room, "
                                   /*active_call_room_is_new_room=*/true,
                                   /*new_room_is_call_room=*/true,
                                   /*call_auto_floated=*/true,
-                                  /*overlay_is_docked=*/false) ==
-          CallRoomAction::AutoRestore);
+                                  /*overlay_is_docked=*/false) == CallRoomAction::AutoRestore);
 }
 
 TEST_CASE("decide_call_room_action: returning to the active call's room, "
           "not auto-floated -> None (user's own mode choice stands)")
 {
     CHECK(decide_call_room_action(true, true, true,
-                                  /*call_auto_floated=*/false, false) ==
-          CallRoomAction::None);
+                                  /*call_auto_floated=*/false, false) == CallRoomAction::None);
 }
 
 TEST_CASE("decide_call_room_action: switching directly to another call room "
@@ -45,12 +42,10 @@ TEST_CASE("decide_call_room_action: switching directly to another call room "
 {
     CHECK(decide_call_room_action(/*has_active_call=*/true,
                                   /*active_call_room_is_new_room=*/false,
-                                  /*new_room_is_call_room=*/true,
-                                  false, /*overlay_is_docked=*/true) ==
-          CallRoomAction::LeaveAndJoin);
+                                  /*new_room_is_call_room=*/true, false,
+                                  /*overlay_is_docked=*/true) == CallRoomAction::LeaveAndJoin);
     CHECK(decide_call_room_action(true, false, true, false,
-                                  /*overlay_is_docked=*/false) ==
-          CallRoomAction::LeaveAndJoin);
+                                  /*overlay_is_docked=*/false) == CallRoomAction::LeaveAndJoin);
 }
 
 TEST_CASE("decide_call_room_action: leaving the active call's room while "
@@ -58,17 +53,15 @@ TEST_CASE("decide_call_room_action: leaving the active call's room while "
 {
     CHECK(decide_call_room_action(/*has_active_call=*/true,
                                   /*active_call_room_is_new_room=*/false,
-                                  /*new_room_is_call_room=*/false,
-                                  false, /*overlay_is_docked=*/true) ==
-          CallRoomAction::AutoFloat);
+                                  /*new_room_is_call_room=*/false, false,
+                                  /*overlay_is_docked=*/true) == CallRoomAction::AutoFloat);
 }
 
 TEST_CASE("decide_call_room_action: leaving the active call's room while "
           "already floating/popout -> NoOp")
 {
     CHECK(decide_call_room_action(true, false, false, false,
-                                  /*overlay_is_docked=*/false) ==
-          CallRoomAction::NoOp);
+                                  /*overlay_is_docked=*/false) == CallRoomAction::NoOp);
 }
 
 TEST_CASE("call_entry_permitted: a running call needs only the join level")

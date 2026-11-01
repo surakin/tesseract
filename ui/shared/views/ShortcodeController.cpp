@@ -16,14 +16,20 @@ std::vector<tesseract::ImagePackImage> empty_emoticons()
 }
 } // namespace
 
-ShortcodeController::ShortcodeController(tk::TextArea* text_area,
-                                        ShortcodePopup* popup, Hooks hooks)
+ShortcodeController::ShortcodeController(tk::TextArea* text_area, ShortcodePopup* popup,
+                                         Hooks hooks)
     : text_area_(text_area), popup_(popup), hooks_(std::move(hooks))
 {
     if (popup_)
     {
-        popup_->on_accepted = [this](ShortcodeSuggestion s) { accept(s); };
-        popup_->on_dismissed = [this] { hide(); };
+        popup_->on_accepted = [this](ShortcodeSuggestion s)
+        {
+            accept(s);
+        };
+        popup_->on_dismissed = [this]
+        {
+            hide();
+        };
     }
 }
 
@@ -38,8 +44,7 @@ bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
 
     const std::vector<tesseract::ImagePackImage> packs =
         hooks_.emoticons ? hooks_.emoticons() : empty_emoticons();
-    const auto tone =
-        hooks_.skin_tone ? hooks_.skin_tone() : tesseract::emoji::SkinTone::None;
+    const auto tone = hooks_.skin_tone ? hooks_.skin_tone() : tesseract::emoji::SkinTone::None;
     const std::uint16_t max_version = text_area_ && text_area_->host()
                                           ? text_area_->host()->supported_emoji_version()
                                           : tk::kAllEmojiVersions;
@@ -59,10 +64,10 @@ bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
             }
             else
             {
-                const tk::Image* image = hooks_.resolve_image
-                    ? hooks_.resolve_image(hit.emoticon.url) : nullptr;
-                text_area_->insert_emoticon(complete->start, complete->end,
-                                            hit.shortcode, hit.emoticon.url, image);
+                const tk::Image* image =
+                    hooks_.resolve_image ? hooks_.resolve_image(hit.emoticon.url) : nullptr;
+                text_area_->insert_emoticon(complete->start, complete->end, hit.shortcode,
+                                            hit.emoticon.url, image);
             }
             applying_ = false;
         }
@@ -183,10 +188,10 @@ void ShortcodeController::accept(const ShortcodeSuggestion& s)
     }
     if (text_area_)
     {
-        const tk::Image* image = hooks_.resolve_image
-            ? hooks_.resolve_image(s.emoticon.url) : nullptr;
-        text_area_->insert_emoticon(active_match_.start, active_match_.end,
-                                    s.shortcode, s.emoticon.url, image);
+        const tk::Image* image =
+            hooks_.resolve_image ? hooks_.resolve_image(s.emoticon.url) : nullptr;
+        text_area_->insert_emoticon(active_match_.start, active_match_.end, s.shortcode,
+                                    s.emoticon.url, image);
     }
     applying_ = false;
     hide();

@@ -10,11 +10,10 @@ using tesseract::AccountSession;
 
 namespace
 {
-std::shared_ptr<AccountSession> make_session(std::string user_id,
-                                              std::string display_name = "")
+std::shared_ptr<AccountSession> make_session(std::string user_id, std::string display_name = "")
 {
-    auto s          = std::make_shared<AccountSession>();
-    s->user_id      = std::move(user_id);
+    auto s = std::make_shared<AccountSession>();
+    s->user_id = std::move(user_id);
     s->display_name = std::move(display_name);
     return s;
 }
@@ -36,8 +35,7 @@ TEST_CASE("AccountManager - find unknown returns nullptr", "[account_manager]")
     CHECK(mgr.find("@nobody:example.org") == nullptr);
 }
 
-TEST_CASE("AccountManager - add_account ignores a duplicate user_id",
-          "[account_manager]")
+TEST_CASE("AccountManager - add_account ignores a duplicate user_id", "[account_manager]")
 {
     // A spawned (secondary) window must never re-add an account that the
     // primary window already restored: doing so duplicates it in every account
@@ -63,8 +61,7 @@ TEST_CASE("AccountManager - remove account", "[account_manager]")
     CHECK(mgr.accounts().empty());
 }
 
-TEST_CASE("AccountManager - accounts span contains all added sessions",
-          "[account_manager]")
+TEST_CASE("AccountManager - accounts span contains all added sessions", "[account_manager]")
 {
     AccountManager mgr;
     mgr.add_account(make_session("@alice:example.org"));
@@ -123,8 +120,7 @@ TEST_CASE("AccountManager registry - window_count", "[account_manager][registry]
     CHECK(mgr.window_count() == 1);
 }
 
-TEST_CASE("AccountManager registry - dedicated_window round-trip",
-          "[account_manager][registry]")
+TEST_CASE("AccountManager registry - dedicated_window round-trip", "[account_manager][registry]")
 {
     AccountManager mgr;
     int t1;
@@ -154,7 +150,7 @@ TEST_CASE("AccountManager registry - unregister_window is idempotent for unknown
 {
     AccountManager mgr;
     int t1;
-    mgr.unregister_window(fake_win(t1));  // must not crash
+    mgr.unregister_window(fake_win(t1)); // must not crash
     CHECK(mgr.window_count() == 0);
 }
 
@@ -195,8 +191,7 @@ TEST_CASE("AccountManager registry - primary_window falls back when primary unre
     CHECK(mgr.primary_window() == nullptr);
 }
 
-TEST_CASE("AccountManager - single tray owner across windows",
-          "[account_manager][tray]")
+TEST_CASE("AccountManager - single tray owner across windows", "[account_manager][tray]")
 {
     AccountManager mgr;
     int t1, t2;
@@ -226,8 +221,7 @@ TEST_CASE("AccountManager - single tray owner across windows",
     CHECK(mgr.tray_owner() == w2);
 }
 
-TEST_CASE("AccountManager - unregister_window releases tray ownership",
-          "[account_manager][tray]")
+TEST_CASE("AccountManager - unregister_window releases tray ownership", "[account_manager][tray]")
 {
     AccountManager mgr;
     int t1, t2;
@@ -257,8 +251,7 @@ TEST_CASE("AccountManager - upload request IDs are process-wide and nonzero",
 // barrier before considering logout (or a same-user_id re-login) safe.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("AccountManager draining - mark/is/clear round trip",
-          "[account_manager][draining]")
+TEST_CASE("AccountManager draining - mark/is/clear round trip", "[account_manager][draining]")
 {
     AccountManager mgr;
     CHECK_FALSE(mgr.is_draining("@alice:example.org"));
@@ -296,10 +289,12 @@ TEST_CASE("AccountManager draining - wait_until_drained blocks until another thr
     AccountManager mgr;
     mgr.mark_draining("@alice:example.org");
 
-    std::thread clearer([&mgr] {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        mgr.clear_draining("@alice:example.org");
-    });
+    std::thread clearer(
+        [&mgr]
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            mgr.clear_draining("@alice:example.org");
+        });
 
     CHECK(mgr.wait_until_drained("@alice:example.org", std::chrono::milliseconds(2000)));
     CHECK_FALSE(mgr.is_draining("@alice:example.org"));

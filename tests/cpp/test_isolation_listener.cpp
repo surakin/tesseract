@@ -53,9 +53,10 @@ public:
         // Start every test case with empty config/data/cache so on-disk state
         // (accounts index, caches) can't leak from one case into the next.
         std::error_code ec;
-        for (const char* sub : {"config", "data", "cache", "appdata",
-                                "localappdata", "home"})
+        for (const char* sub : {"config", "data", "cache", "appdata", "localappdata", "home"})
+        {
             fs::remove_all(root_ / sub, ec);
+        }
         apply_();
     }
 

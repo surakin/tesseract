@@ -62,14 +62,20 @@ public:
     /// A space tab was dragged to a new place. `before_space_id` is the tab it
     /// now sits in front of (empty = moved to the end). The picker has already
     /// reordered its own entries; the host persists the order.
-    std::function<void(const std::string& /*space_id*/,
-                       const std::string& /*before_space_id*/)> on_reorder;
+    std::function<void(const std::string& /*space_id*/, const std::string& /*before_space_id*/)>
+        on_reorder;
     std::function<void(const std::string& /*space_id*/)> on_unpin;
     /// Fired while painting a tab whose avatar isn't cached yet.
     std::function<void(const std::string& /*space_id*/)> on_avatar_needed;
 
-    const std::vector<SpacePickerEntry>& entries() const { return entries_; }
-    const std::string& active_space() const { return active_; }
+    const std::vector<SpacePickerEntry>& entries() const
+    {
+        return entries_;
+    }
+    const std::string& active_space() const
+    {
+        return active_;
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -93,9 +99,18 @@ public:
     void on_popup_dismiss() override;
 
     // Test helpers. Tab 0 is Home; tab i+1 is entries()[i].
-    int tab_count() const { return static_cast<int>(entries_.size()) + 1; }
-    int drop_slot_for_test() const { return drop_slot_; }
-    tk::Rect tab_rect_for_test(int tab) const { return tab_rect_(tab); }
+    int tab_count() const
+    {
+        return static_cast<int>(entries_.size()) + 1;
+    }
+    int drop_slot_for_test() const
+    {
+        return drop_slot_;
+    }
+    tk::Rect tab_rect_for_test(int tab) const
+    {
+        return tab_rect_(tab);
+    }
     const std::vector<PopupMenu::Item>& context_menu_items_for_test() const
     {
         return menu_->items_for_test();
@@ -150,7 +165,7 @@ private:
     const tk::Theme* theme_ = nullptr;
     float scale_factor_ = 1.0f;
     tk::IconCache home_icon_;
-    PopupMenu* menu_ = nullptr; // owned via children()
+    PopupMenu* menu_ = nullptr;                // owned via children()
     std::vector<tk::KeyboardTarget*> targets_; // owned via children()
 };
 

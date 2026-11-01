@@ -35,7 +35,6 @@ namespace tesseract
 
 namespace fs = std::filesystem;
 
-
 // ---------------------------------------------------------------------------
 // Read a top-level string field out of a JSON object, returning "" on any
 // parse error, a non-object root, or a missing/non-string field. Used to pull
@@ -65,21 +64,34 @@ static std::vector<uint8_t> hex_to_bytes(const std::string& hex)
 {
     auto nibble = [](char c) -> int
     {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= '0' && c <= '9')
+        {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f')
+        {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F')
+        {
+            return c - 'A' + 10;
+        }
         return -1;
     };
     std::vector<uint8_t> out;
     if (hex.size() % 2 != 0)
+    {
         return out;
+    }
     out.reserve(hex.size() / 2);
     for (size_t i = 0; i < hex.size(); i += 2)
     {
         int hi = nibble(hex[i]);
         int lo = nibble(hex[i + 1]);
         if (hi < 0 || lo < 0)
+        {
             return {};
+        }
         out.push_back(static_cast<uint8_t>((hi << 4) | lo));
     }
     return out;
@@ -248,8 +260,7 @@ static SessionStore::AccountIndex parse_index_body(const std::string& body)
             idx.corrupt = true;
             return idx;
         }
-        if (auto it = j.find("active_user_id");
-            it != j.end() && it->is_string())
+        if (auto it = j.find("active_user_id"); it != j.end() && it->is_string())
         {
             idx.active_user_id = it->get<std::string>();
         }
@@ -322,9 +333,8 @@ SessionStore::AccountIndex SessionStore::load_index()
                 {
                     std::error_code re;
                     fs::rename(bak, p, re);
-                    std::fprintf(stderr,
-                                 "[tesseract] accounts.json was missing; "
-                                 "recovered it from accounts.json.bak.\n");
+                    std::fprintf(stderr, "[tesseract] accounts.json was missing; "
+                                         "recovered it from accounts.json.bak.\n");
                     recovered.present = true;
                     return recovered;
                 }
@@ -433,11 +443,10 @@ bool SessionStore::save_index(const AccountIndex& idx)
                 fs::rename(p, quarantine, qe);
                 if (qe)
                 {
-                    std::fprintf(
-                        stderr,
-                        "[tesseract] failed to quarantine corrupt accounts.json "
-                        "(%s); refusing to overwrite recoverable file.\n",
-                        qe.message().c_str());
+                    std::fprintf(stderr,
+                                 "[tesseract] failed to quarantine corrupt accounts.json "
+                                 "(%s); refusing to overwrite recoverable file.\n",
+                                 qe.message().c_str());
                     return false;
                 }
             }
@@ -447,14 +456,15 @@ bool SessionStore::save_index(const AccountIndex& idx)
     return atomic_write_file(p, serialize_index(idx));
 }
 
-std::optional<std::string>
-SessionStore::load_account(const std::string& user_id)
+std::optional<std::string> SessionStore::load_account(const std::string& user_id)
 {
     // 1. Authoritative store: SecretStore (Keychain / CredManager / libsecret).
     //    Returns nullopt when the backend is unavailable (stub) or the key
     //    does not exist.
     if (auto sec = SecretStore::load(user_id))
+    {
         return sec;
+    }
 
     // 2. Legacy plaintext fallback.
     fs::path p = account_dir(user_id) / "session.json";
@@ -466,11 +476,15 @@ SessionStore::load_account(const std::string& user_id)
         // silently keep the plaintext in place and break the migration path.
         std::ifstream in(p, std::ios::binary);
         if (!in)
+        {
             return std::nullopt;
+        }
         std::ostringstream buf;
         buf << in.rdbuf();
         if (in.bad())
+        {
             return std::nullopt;
+        }
         s = buf.str();
     }
 
@@ -478,7 +492,9 @@ SessionStore::load_account(const std::string& user_id)
     // (key deleted externally or backend temporarily unavailable). Treat as
     // no session — the user must log in again.
     if (s.empty() || s == kMigratedSentinel)
+    {
         return std::nullopt;
+    }
 
     // 3. Opportunistic migration: on first load after upgrade, move the
     //    plaintext session to SecretStore. Best-effort: if SecretStore is
@@ -486,17 +502,20 @@ SessionStore::load_account(const std::string& user_id)
     {
         std::lock_guard<std::mutex> lk(credential_write_mutex());
         if (SecretStore::save(user_id, s))
+        {
             atomic_write_file(p, kMigratedSentinel);
+        }
     }
 
     return s;
 }
 
-bool SessionStore::save_account(const std::string& user_id,
-                                const std::string& json)
+bool SessionStore::save_account(const std::string& user_id, const std::string& json)
 {
     if (sanitize_user_id(user_id).empty())
+    {
         return false;
+    }
 
     std::lock_guard<std::mutex> lk(credential_write_mutex());
     if (SecretStore::save(user_id, json))
@@ -516,14 +535,12 @@ bool SessionStore::save_account(const std::string& user_id,
     // been consumed. Drop it first; if it can't be dropped, the disk copy
     // isn't authoritative and the save must not report success.
     SecretStore::remove(user_id);
-    const bool written =
-        atomic_write_file(account_dir(user_id) / "session.json", json);
+    const bool written = atomic_write_file(account_dir(user_id) / "session.json", json);
     if (SecretStore::load(user_id))
     {
-        std::fprintf(stderr,
-                     "[tesseract] credential store rejected the session "
-                     "update but still holds an older copy; the new session "
-                     "was not persisted authoritatively.\n");
+        std::fprintf(stderr, "[tesseract] credential store rejected the session "
+                             "update but still holds an older copy; the new session "
+                             "was not persisted authoritatively.\n");
         return false;
     }
     return written;
@@ -543,7 +560,9 @@ SessionStore::load_account_with_key(const std::string& user_id)
 {
     auto raw = load_account(user_id);
     if (!raw)
+    {
         return std::nullopt;
+    }
 
     LoadedAccount out;
     try
@@ -596,24 +615,21 @@ bool SessionStore::save_account_with_key(const std::string& user_id,
     return save_account(user_id, wrapper.dump());
 }
 
-bool SessionStore::save_session_update(const std::string& user_id,
-                                       const std::string& session_json)
+bool SessionStore::save_session_update(const std::string& user_id, const std::string& session_json)
 {
     // Token-refresh persistence (both the synchronous persist_session FFI
     // path and the async on_session_saved path) doesn't have the account's
     // store_key on hand — only the login-time flow does. Look up whatever
     // is already on file and keep it, so a refresh can never silently strip
     // the wrapper written at login and orphan an already-encrypted store.
-    if (auto existing = load_account_with_key(user_id);
-        existing && !existing->store_key.empty())
+    if (auto existing = load_account_with_key(user_id); existing && !existing->store_key.empty())
     {
         return save_account_with_key(user_id, session_json, existing->store_key);
     }
     return save_account(user_id, session_json);
 }
 
-void SessionStore::queue_session_update(const std::string& user_id,
-                                        const std::string& session_json)
+void SessionStore::queue_session_update(const std::string& user_id, const std::string& session_json)
 {
     session_persist_queue().enqueue(user_id, session_json);
 }
@@ -754,8 +770,7 @@ static fs::path legacy_sdk_store_dir()
 #elif defined(__APPLE__)
     if (const char* home = std::getenv("HOME"); home && *home)
     {
-        return fs::path(home) / "Library" / "Application Support" /
-               "tesseract" / "matrix-store";
+        return fs::path(home) / "Library" / "Application Support" / "tesseract" / "matrix-store";
     }
     return fs::temp_directory_path() / "tesseract" / "matrix-store";
 #else
@@ -765,8 +780,7 @@ static fs::path legacy_sdk_store_dir()
     }
     if (const char* home = std::getenv("HOME"); home && *home)
     {
-        return fs::path(home) / ".local" / "share" / "tesseract" /
-               "matrix-store";
+        return fs::path(home) / ".local" / "share" / "tesseract" / "matrix-store";
     }
     return fs::temp_directory_path() / "tesseract" / "matrix-store";
 #endif
@@ -785,9 +799,7 @@ static bool move_path(const fs::path& src, const fs::path& dst)
         return true;
     }
 
-    fs::copy(src, dst,
-             fs::copy_options::recursive | fs::copy_options::overwrite_existing,
-             ec);
+    fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
     if (ec)
     {
         std::error_code ec2;
@@ -852,8 +864,7 @@ bool SessionStore::migrate_legacy_layout()
 
     // (1) Multi-account layout still under config_dir (older build)? Relocate
     //     the whole accounts/ tree + index into data_dir.
-    if (data_dir() != config_dir() &&
-        fs::exists(config_dir() / "accounts.json", ec))
+    if (data_dir() != config_dir() && fs::exists(config_dir() / "accounts.json", ec))
     {
         return migrate_config_accounts_to_data();
     }
@@ -924,11 +935,10 @@ bool SessionStore::migrate_legacy_layout()
             fs::rename(dst_session, legacy_session, rb);
             if (rb)
             {
-                std::fprintf(
-                    stderr,
-                    "[tesseract] migration rollback failed: session stranded "
-                    "at %s (%s)\n",
-                    dst_session.string().c_str(), rb.message().c_str());
+                std::fprintf(stderr,
+                             "[tesseract] migration rollback failed: session stranded "
+                             "at %s (%s)\n",
+                             dst_session.string().c_str(), rb.message().c_str());
             }
             // Best-effort cleanup of the now-empty account dir.
             std::error_code rmc;
@@ -954,11 +964,10 @@ bool SessionStore::migrate_legacy_layout()
         fs::rename(dst_session, legacy_session, rb);
         if (rb)
         {
-            std::fprintf(
-                stderr,
-                "[tesseract] migration rollback failed: session stranded "
-                "at %s (%s)\n",
-                dst_session.string().c_str(), rb.message().c_str());
+            std::fprintf(stderr,
+                         "[tesseract] migration rollback failed: session stranded "
+                         "at %s (%s)\n",
+                         dst_session.string().c_str(), rb.message().c_str());
         }
         std::error_code rb2;
         if (have_store)

@@ -21,28 +21,42 @@ constexpr float kMessageSearchFieldH = 32.0f;
 std::string relative_time(std::uint64_t ts_ms)
 {
     if (ts_ms == 0)
+    {
         return std::string();
+    }
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
     if (static_cast<std::uint64_t>(now) <= ts_ms)
+    {
         return tk::tr("now");
+    }
     const std::uint64_t secs = (static_cast<std::uint64_t>(now) - ts_ms) / 1000;
     if (secs < 60)
+    {
         return tk::tr("now");
+    }
     const std::uint64_t mins = secs / 60;
     if (mins < 60)
+    {
         return tk::trf(tk::tr("{0}m"), {std::to_string(mins)});
+    }
     const std::uint64_t hours = mins / 60;
     if (hours < 24)
+    {
         return tk::trf(tk::tr("{0}h"), {std::to_string(hours)});
+    }
     const std::uint64_t days = hours / 24;
     if (days < 7)
+    {
         return tk::trf(tk::tr("{0}d"), {std::to_string(days)});
+    }
     // Show weeks up to a full year, then years. Guard on `days` (not `weeks`)
     // so a ~52-week-old hit renders "52w" rather than rounding to "0y".
     if (days < 365)
+    {
         return tk::trf(tk::tr("{0}w"), {std::to_string(days / 7)});
+    }
     return tk::trf(tk::tr("{0}y"), {std::to_string(days / 365)});
 }
 
@@ -59,7 +73,9 @@ std::string one_line(const std::string& s)
         if (is_space)
         {
             if (!prev_space && !out.empty())
+            {
                 out.push_back(' ');
+            }
             prev_space = true;
         }
         else
@@ -69,15 +85,16 @@ std::string one_line(const std::string& s)
         }
     }
     while (!out.empty() && out.back() == ' ')
+    {
         out.pop_back();
+    }
     return out;
 }
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
 
-class MessageSearchView::Adapter : public tk::ListAdapter,
-                                   public tk::ListAdapterAccessibility
+class MessageSearchView::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(MessageSearchView& owner) : owner_(owner)
@@ -94,16 +111,20 @@ public:
         return kRowH;
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool selected, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override
     {
         if (index >= owner_.results_.size())
+        {
             return;
+        }
         const auto& hit = owner_.results_[index];
         const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
+        {
             ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
+        }
         else if (hovered)
         {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
@@ -123,15 +144,16 @@ public:
             ts.role = tk::FontRole::Small;
             time_lo = ctx.factory.build_text(time_str, ts);
             if (time_lo)
+            {
                 time_w = time_lo->measure().w + 8.0f;
+            }
         }
 
         tk::TextStyle ns{};
         ns.role = tk::FontRole::SidebarName;
         ns.trim = tk::TextTrim::Ellipsis;
         ns.max_width = std::max(0.0f, full_w - time_w);
-        const std::string room =
-            hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
+        const std::string room = hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
         auto room_lo = ctx.factory.build_text(room, ns);
 
         const float pad_y = 8.0f;
@@ -155,7 +177,9 @@ public:
 
         std::string snippet = one_line(hit.body);
         if (!hit.sender_name.empty())
+        {
             snippet = tk::trf(tk::tr("{0}: {1}"), {hit.sender_name, snippet});
+        }
         tk::TextStyle ss{};
         ss.role = tk::FontRole::SidebarPreview;
         ss.trim = tk::TextTrim::Ellipsis;
@@ -170,28 +194,34 @@ public:
     // ── tk::ListAdapterAccessibility ───────────────────────────────────
     tk::Role access_role_for_row(std::size_t index) const override
     {
-        return index < owner_.results_.size() ? tk::Role::ListItem
-                                              : tk::Role::None;
+        return index < owner_.results_.size() ? tk::Role::ListItem : tk::Role::None;
     }
     std::string access_name_for_row(std::size_t index) const override
     {
         if (index >= owner_.results_.size())
+        {
             return {};
+        }
         const auto& hit = owner_.results_[index];
-        const std::string room =
-            hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
+        const std::string room = hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
         std::string snippet = one_line(hit.body);
         if (!hit.sender_name.empty())
+        {
             snippet = tk::trf(tk::tr("{0}: {1}"), {hit.sender_name, snippet});
+        }
         const std::string t = relative_time(hit.timestamp_ms);
         if (t.empty())
+        {
             return tk::trf(tk::tr("{0}, {1}"), {room, snippet});
+        }
         return tk::trf(tk::tr("{0}, {1}, {2}"), {room, snippet, t});
     }
     bool access_activate_row(std::size_t index) override
     {
         if (index >= owner_.results_.size() || !owner_.list_)
+        {
             return false;
+        }
         owner_.list_->set_selected_index(static_cast<int>(index));
         owner_.activate_selected(); // same path as on_row_clicked
         return true;
@@ -203,8 +233,7 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-MessageSearchView::MessageSearchView()
-    : adapter_(std::make_unique<Adapter>(*this))
+MessageSearchView::MessageSearchView() : adapter_(std::make_unique<Adapter>(*this))
 {
     tk::Widget::set_visible(false);
 
@@ -212,8 +241,16 @@ MessageSearchView::MessageSearchView()
     {
         auto field = tk::create_widget<tk::TextField>(this, kMessageSearchFieldH);
         field->set_placeholder(tk::tr("Search your messages\xe2\x80\xa6"));
-        field->set_on_changed([this](const std::string& q) { set_query(q); });
-        field->set_on_submit([this] { activate_selected(); });
+        field->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_query(q);
+            });
+        field->set_on_submit(
+            [this]
+            {
+                activate_selected();
+            });
         field->set_visible(false);
         search_field_ = add_child(std::move(field));
     }
@@ -223,7 +260,9 @@ MessageSearchView::MessageSearchView()
     list->on_row_clicked = [this](int idx)
     {
         if (idx < 0 || static_cast<std::size_t>(idx) >= result_count_())
+        {
             return;
+        }
         list_->set_selected_index(idx);
         activate_selected();
     };
@@ -243,8 +282,7 @@ void MessageSearchView::open()
     set_visible(true);
     if (search_field_)
     {
-        const bool indexing_on =
-            tesseract::Settings::instance().index_messages_for_search;
+        const bool indexing_on = tesseract::Settings::instance().index_messages_for_search;
         search_field_->set_visible(true);
         search_field_->set_text("");
         search_field_->set_enabled(indexing_on);
@@ -264,25 +302,33 @@ void MessageSearchView::open()
 void MessageSearchView::close()
 {
     if (!is_open_)
+    {
         return;
+    }
     is_open_ = false;
     pending_focus_ = false;
     set_visible(false);
     if (on_close)
+    {
         on_close();
+    }
 }
 
 void MessageSearchView::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (!v && search_field_)
+    {
         search_field_->set_visible(false);
+    }
 }
 
 void MessageSearchView::set_query(const std::string& q)
 {
     if (q == query_)
+    {
         return;
+    }
     query_ = q;
     // A new query invalidates the prior results until the next response lands.
     results_.clear();
@@ -297,7 +343,9 @@ void MessageSearchView::set_query(const std::string& q)
         list_->scroll_to_top();
     }
     if (on_query_changed)
+    {
         on_query_changed(query_);
+    }
 }
 
 void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
@@ -305,7 +353,9 @@ void MessageSearchView::set_results(std::vector<tesseract::SearchHit> results,
 {
     // Drop stale responses: only apply results computed for the current query.
     if (for_query != query_)
+    {
         return;
+    }
     results_ = std::move(results);
     have_searched_ = true;
     if (list_)
@@ -328,22 +378,32 @@ void MessageSearchView::on_theme_changed(const tk::Theme& t)
     // color. See paint() and Widget::background_color()'s doc comment.
     set_background_color(t.palette.compose_card_bg);
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void MessageSearchView::move_selection(int delta)
 {
     if (!list_ || result_count_() == 0)
+    {
         return;
+    }
     const int n = static_cast<int>(result_count_());
     int cur = list_->selected_index();
     if (cur < 0)
+    {
         cur = delta > 0 ? -1 : 0;
+    }
     int next = cur + delta;
     if (next < 0)
+    {
         next = 0;
+    }
     if (next >= n)
+    {
         next = n - 1;
+    }
     list_->set_selected_index(next);
     list_->scroll_to_index(next);
 }
@@ -352,10 +412,14 @@ void MessageSearchView::activate_selected()
 {
     const int sel = list_ ? list_->selected_index() : -1;
     if (sel < 0 || static_cast<std::size_t>(sel) >= results_.size())
+    {
         return;
+    }
     const auto hit = results_[static_cast<std::size_t>(sel)];
     if (on_result_activated)
+    {
         on_result_activated(hit.room_id, hit.event_id);
+    }
     close();
 }
 
@@ -370,18 +434,18 @@ void MessageSearchView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
     if (!list_)
+    {
         return;
+    }
 
     const float margin = 40.0f;
     const float cw = std::min(kCardW, std::max(0.0f, bounds.w - 2 * margin));
     const float chrome_h = kHeaderH;
 
     const float list_content =
-        result_count_() == 0 ? kRowH
-                             : static_cast<float>(result_count_()) * kRowH;
+        result_count_() == 0 ? kRowH : static_cast<float>(result_count_()) * kRowH;
     const float max_h = std::min(kCardMaxH, std::max(0.0f, bounds.h - 2 * margin));
-    float ch =
-        chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
+    float ch = chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
     ch = std::max(ch, chrome_h + kRowH);
     ch = std::min(ch, max_h);
 
@@ -402,15 +466,16 @@ void MessageSearchView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         search_field_->arrange(ctx, search_field_rect_);
     }
 
-    const tk::Rect list_bounds{cx, cy + chrome_h, cw,
-                               std::max(0.0f, ch - chrome_h)};
+    const tk::Rect list_bounds{cx, cy + chrome_h, cw, std::max(0.0f, ch - chrome_h)};
     list_->arrange(ctx, list_bounds);
 }
 
 void MessageSearchView::paint(tk::PaintCtx& ctx)
 {
     if (!is_open_)
+    {
         return;
+    }
 
     // See pending_focus_'s doc comment: open() defers this because the
     // native search field's overlay isn't positioned (arrange() hasn't run
@@ -421,7 +486,9 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
     {
         pending_focus_ = false;
         if (search_field_)
+        {
             search_field_->set_focused(true);
+        }
     }
 
     const auto& pal = ctx.theme.palette;
@@ -431,17 +498,17 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rounded_rect(card_rect_, 10.0f, pal.chrome_bg);
     ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f, pal.popup_border, 1.0f);
 
-    tk::Rect sep{card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w,
-                 1.0f};
+    tk::Rect sep{card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f};
     ctx.canvas.fill_rect(sep, pal.separator);
     if (!search_field_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f,
-                                     pal.compose_card_bg);
-        ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f, pal.border,
-                                       1.0f);
+        ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f, pal.compose_card_bg);
+        ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f, pal.border, 1.0f);
     }
-    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
+    if (search_field_ && search_field_->visible())
+    {
+        search_field_->paint(ctx);
+    }
 
     if (result_count_() == 0)
     {
@@ -451,10 +518,8 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
             !tesseract::Settings::instance().index_messages_for_search
                 ? tk::tr("Message search is disabled. Enable indexing in "
                          "Settings to search your messages.")
-                : (query_.empty()
-                       ? tk::tr("Type to search your messages")
-                       : (have_searched_ ? tk::tr("No matches")
-                                         : tk::tr("Searching…")));
+                : (query_.empty() ? tk::tr("Type to search your messages")
+                                  : (have_searched_ ? tk::tr("No matches") : tk::tr("Searching…")));
         auto empty_lo = ctx.factory.build_text(msg, es);
         if (empty_lo)
         {
@@ -462,8 +527,7 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
             ctx.canvas.draw_text(
                 *empty_lo,
                 {card_rect_.x + (card_rect_.w - sz.w) * 0.5f,
-                 card_rect_.y + kHeaderH +
-                     (card_rect_.h - kHeaderH - sz.h) * 0.5f},
+                 card_rect_.y + kHeaderH + (card_rect_.h - kHeaderH - sz.h) * 0.5f},
                 pal.text_muted);
         }
         return;
@@ -479,7 +543,9 @@ void MessageSearchView::paint(tk::PaintCtx& ctx)
 bool MessageSearchView::on_pointer_down(tk::Point local)
 {
     if (!is_open_)
+    {
         return false;
+    }
     const tk::Point world{local.x + bounds_.x, local.y + bounds_.y};
     auto contains = [](const tk::Rect& r, tk::Point p)
     {
@@ -497,11 +563,14 @@ void MessageSearchView::on_pointer_up(tk::Point /*local*/, bool inside_self)
     {
         press_outside_ = false;
         if (inside_self)
+        {
             close();
+        }
     }
 }
 
-bool MessageSearchView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
+bool MessageSearchView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/,
+                                 bool /*is_touchpad*/)
 {
     // Consume wheel over the modal backdrop; the inner ListView handles its own
     // scrolling via the normal child-dispatch path before reaching here.

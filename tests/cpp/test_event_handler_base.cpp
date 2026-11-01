@@ -24,14 +24,17 @@ namespace
 
 struct HandlerShell : tesseract::test::TestShellBase
 {
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     void mark_gif_failed(const std::string& url)
     {
@@ -75,25 +78,20 @@ struct HandlerShell : tesseract::test::TestShellBase
     {
         rec("rm:" + r + ":" + std::to_string(i));
     }
-    void handle_messages_prepended_ui_(std::string r,
-                                       tesseract::EventList e) override
+    void handle_messages_prepended_ui_(std::string r, tesseract::EventList e) override
     {
         rec("pre:" + r + ":" + std::to_string(e.size()));
     }
-    void handle_messages_appended_ui_(std::string r,
-                                      tesseract::EventList e) override
+    void handle_messages_appended_ui_(std::string r, tesseract::EventList e) override
     {
         rec("app:" + r + ":" + std::to_string(e.size()));
     }
-    void handle_messages_updated_batch_ui_(std::string r,
-                                           std::vector<std::size_t> idx,
+    void handle_messages_updated_batch_ui_(std::string r, std::vector<std::size_t> idx,
                                            tesseract::EventList e) override
     {
-        rec("batch:" + r + ":" + std::to_string(idx.size()) + ":" +
-            std::to_string(e.size()));
+        rec("batch:" + r + ":" + std::to_string(idx.size()) + ":" + std::to_string(e.size()));
     }
-    void handle_thread_reset_ui_(std::string r, std::string t,
-                                 tesseract::EventList s) override
+    void handle_thread_reset_ui_(std::string r, std::string t, tesseract::EventList s) override
     {
         rec("treset:" + r + ":" + t + ":" + std::to_string(s.size()));
     }
@@ -107,8 +105,7 @@ struct HandlerShell : tesseract::test::TestShellBase
     {
         rec("tupd:" + r + ":" + t + ":" + std::to_string(i));
     }
-    void handle_thread_removed_ui_(std::string r, std::string t,
-                                   std::size_t i) override
+    void handle_thread_removed_ui_(std::string r, std::string t, std::size_t i) override
     {
         rec("trm:" + r + ":" + t + ":" + std::to_string(i));
     }
@@ -130,8 +127,7 @@ struct HandlerShell : tesseract::test::TestShellBase
     {
         rec("knocks:" + r);
     }
-    void handle_gif_results_ui_(std::uint64_t id,
-                                std::vector<tesseract::GifResult> r) override
+    void handle_gif_results_ui_(std::uint64_t id, std::vector<tesseract::GifResult> r) override
     {
         rec("gif:" + std::to_string(id) + ":" + std::to_string(r.size()));
     }
@@ -139,8 +135,7 @@ struct HandlerShell : tesseract::test::TestShellBase
     {
         rec("giffail:" + std::to_string(id) + ":" + m);
     }
-    void handle_sync_error_ui_(std::string c, std::string u, std::string d,
-                               bool soft) override
+    void handle_sync_error_ui_(std::string c, std::string u, std::string d, bool soft) override
     {
         rec("syncerr:" + c + ":" + u + ":" + d + (soft ? ":soft" : ":hard"));
     }
@@ -154,13 +149,15 @@ struct HandlerShell : tesseract::test::TestShellBase
         rec("online");
         offline_ = false;
     }
-    void handle_image_packs_updated_ui_() override { rec("packs"); }
+    void handle_image_packs_updated_ui_() override
+    {
+        rec("packs");
+    }
     void handle_account_prefs_updated_ui_(std::string u, std::string j) override
     {
         rec("prefs:" + u + ":" + j);
     }
-    void handle_media_preview_config_updated_ui_(std::string u,
-                                                 std::string j) override
+    void handle_media_preview_config_updated_ui_(std::string u, std::string j) override
     {
         rec("mpc:" + u + ":" + j);
     }
@@ -168,12 +165,10 @@ struct HandlerShell : tesseract::test::TestShellBase
     {
         rec("bot:" + r);
     }
-    void handle_rtc_invitation_ui_(std::string r, std::string s, std::string c,
-                                   std::string i, std::uint64_t l,
-                                   std::string n) override
+    void handle_rtc_invitation_ui_(std::string r, std::string s, std::string c, std::string i,
+                                   std::uint64_t l, std::string n) override
     {
-        rec("inv:" + r + ":" + s + ":" + c + ":" + i + ":" + std::to_string(l) +
-            ":" + n);
+        rec("inv:" + r + ":" + s + ":" + c + ":" + i + ":" + std::to_string(l) + ":" + n);
     }
     void handle_rtc_participant_joined_ui_(std::uint64_t s,
                                            tesseract::RtcParticipantInfo i) override
@@ -193,26 +188,38 @@ struct HandlerShell : tesseract::test::TestShellBase
     {
         rec("end:" + std::to_string(s) + ":" + r);
     }
-    void handle_rtc_video_frame_ui_(
-        std::uint64_t s, const std::string& p, std::uint32_t w, std::uint32_t h,
-        std::shared_ptr<std::vector<std::uint8_t>> bgra) override
+    void handle_rtc_video_frame_ui_(std::uint64_t s, const std::string& p, std::uint32_t w,
+                                    std::uint32_t h,
+                                    std::shared_ptr<std::vector<std::uint8_t>> bgra) override
     {
         rec("vf:" + std::to_string(s) + ":" + p + ":" + std::to_string(w) + "x" +
             std::to_string(h));
         frames.push_back(*bgra);
     }
-    void handle_rtc_screen_frame_ui_(
-        std::uint64_t s, const std::string& p, std::uint32_t w, std::uint32_t h,
-        std::shared_ptr<std::vector<std::uint8_t>> bgra) override
+    void handle_rtc_screen_frame_ui_(std::uint64_t s, const std::string& p, std::uint32_t w,
+                                     std::uint32_t h,
+                                     std::shared_ptr<std::vector<std::uint8_t>> bgra) override
     {
         rec("sf:" + std::to_string(s) + ":" + p + ":" + std::to_string(w) + "x" +
             std::to_string(h));
         frames.push_back(*bgra);
     }
-    void start_inflight_tick_() override { ++tick_starts; }
-    void stop_inflight_tick_() override { ++tick_stops; }
-    void on_inflight_ui_() override { ++inflight_ui; }
-    void on_room_list_state_ui_() override { ++room_list_ui; }
+    void start_inflight_tick_() override
+    {
+        ++tick_starts;
+    }
+    void stop_inflight_tick_() override
+    {
+        ++tick_stops;
+    }
+    void on_inflight_ui_() override
+    {
+        ++inflight_ui;
+    }
+    void on_room_list_state_ui_() override
+    {
+        ++room_list_ui;
+    }
 
     using ShellBase::active_account_;
     using ShellBase::event_account_;
@@ -227,7 +234,10 @@ struct EhbFx
 {
     HandlerShell shell;
     EventHandlerBase h{&shell};
-    EhbFx() { h.set_user_id("@me:x"); }
+    EhbFx()
+    {
+        h.set_user_id("@me:x");
+    }
 };
 
 std::unique_ptr<tesseract::Event> ehb_ev(const char* id)
@@ -260,10 +270,9 @@ TEST_CASE("timeline callbacks reach the matching handler tagged with the account
     f.h.on_messages_prepended("!r", ehb_list(3));
     f.h.on_messages_appended("!r", ehb_list(1));
     f.h.on_messages_updated_batch("!r", {1, 2}, ehb_list(2));
-    CHECK(f.shell.log ==
-          std::vector<std::string>{"reset:!r:2", "ins:!r:4:$a", "upd:!r:5:$b",
-                                   "rm:!r:6", "pre:!r:3", "app:!r:1",
-                                   "batch:!r:2:2"});
+    CHECK(f.shell.log == std::vector<std::string>{"reset:!r:2", "ins:!r:4:$a", "upd:!r:5:$b",
+                                                  "rm:!r:6", "pre:!r:3", "app:!r:1",
+                                                  "batch:!r:2:2"});
     for (const auto& a : f.shell.accounts)
     {
         CHECK(a == "@me:x");
@@ -283,15 +292,12 @@ TEST_CASE("thread callbacks carry the thread root", "[event_handler_base]")
     f.h.on_thread_messages_appended("!r", "$t", ehb_list(4));
     f.h.on_threads_updated("!r");
     f.h.on_knock_requests_updated("!r");
-    CHECK(f.shell.log ==
-          std::vector<std::string>{"treset:!r:$t:1", "tins:!r:$t:1",
-                                   "tupd:!r:$t:2", "trm:!r:$t:3",
-                                   "tpre:!r:$t:2", "tapp:!r:$t:4", "threads:!r",
-                                   "knocks:!r"});
+    CHECK(f.shell.log == std::vector<std::string>{"treset:!r:$t:1", "tins:!r:$t:1", "tupd:!r:$t:2",
+                                                  "trm:!r:$t:3", "tpre:!r:$t:2", "tapp:!r:$t:4",
+                                                  "threads:!r", "knocks:!r"});
 }
 
-TEST_CASE("each handler's account tag is its own user id",
-          "[event_handler_base]")
+TEST_CASE("each handler's account tag is its own user id", "[event_handler_base]")
 {
     HandlerShell shell;
     EventHandlerBase a(&shell);
@@ -316,8 +322,7 @@ TEST_CASE("set_shell redirects later callbacks", "[event_handler_base]")
     CHECK(s2.log.size() == 1);
 }
 
-TEST_CASE("search results route by which pending map owns the request id",
-          "[event_handler_base]")
+TEST_CASE("search results route by which pending map owns the request id", "[event_handler_base]")
 {
     EhbFx f;
     // Unowned id: falls through to the global search handler, which on an
@@ -333,17 +338,16 @@ TEST_CASE("search results route by which pending map owns the request id",
     CHECK_NOTHROW(f.h.on_search_failed(3, "x"));
 }
 
-TEST_CASE("only sync_offline/sync_error contexts flip the shell offline",
-          "[event_handler_base]")
+TEST_CASE("only sync_offline/sync_error contexts flip the shell offline", "[event_handler_base]")
 {
     EhbFx f;
     f.h.on_sync_error("sync_offline", "net down", false);
     f.h.on_sync_error("sync_error", "bad", true);
     f.h.on_sync_error("auth", "expired", true);
-    CHECK(f.shell.log ==
-          std::vector<std::string>{
-              "offline", "syncerr:sync_offline:@me:x:net down:hard", "offline",
-              "syncerr:sync_error:@me:x:bad:soft", "syncerr:auth:@me:x:expired:soft"});
+    CHECK(f.shell.log == std::vector<std::string>{"offline",
+                                                  "syncerr:sync_offline:@me:x:net down:hard",
+                                                  "offline", "syncerr:sync_error:@me:x:bad:soft",
+                                                  "syncerr:auth:@me:x:expired:soft"});
 }
 
 TEST_CASE("RoomListState::Running while offline brings the shell back online",
@@ -373,8 +377,7 @@ TEST_CASE("room list Running opens the warm-up gate for that account until Init"
     CHECK(f.shell.room_list_running_accounts_.empty());
 }
 
-TEST_CASE("inflight count drives the spinner tick and the UI refresh",
-          "[event_handler_base]")
+TEST_CASE("inflight count drives the spinner tick and the UI refresh", "[event_handler_base]")
 {
     EhbFx f;
     f.h.on_inflight_changed(0);
@@ -419,13 +422,11 @@ TEST_CASE("call callbacks forward ids and participants", "[event_handler_base]")
     f.h.on_call_participant_updated(4, p);
     f.h.on_call_participant_left(4, "p1");
     f.h.on_call_ended(4, "hangup");
-    CHECK(f.shell.log ==
-          std::vector<std::string>{"inv:!r:slot:@c:video:5000:$n", "pj:4:p1",
-                                   "pu:4:p1", "pl:4:p1", "end:4:hangup"});
+    CHECK(f.shell.log == std::vector<std::string>{"inv:!r:slot:@c:video:5000:$n", "pj:4:p1",
+                                                  "pu:4:p1", "pl:4:p1", "end:4:hangup"});
 }
 
-TEST_CASE("opaque RGBA video frames become BGRA with channels swapped",
-          "[event_handler_base]")
+TEST_CASE("opaque RGBA video frames become BGRA with channels swapped", "[event_handler_base]")
 {
     EhbFx f;
     const std::uint8_t rgba[8] = {10, 20, 30, 255, 40, 50, 60, 255};
@@ -462,8 +463,7 @@ TEST_CASE("an empty video frame is dropped", "[event_handler_base]")
     CHECK(f.shell.log.empty());
 }
 
-TEST_CASE("a frame whose size does not fit its bytes is dropped",
-          "[event_handler_base]")
+TEST_CASE("a frame whose size does not fit its bytes is dropped", "[event_handler_base]")
 {
     EhbFx f;
     // 2x2 needs 16 bytes; only 8 are given, so the conversion must not run.
@@ -481,11 +481,27 @@ TEST_CASE("the frame mailbox queues one UI task per key and delivers the newest"
     std::vector<int> seen;
     // The first put starts a UI task; later puts for the same key replace the
     // pending frame and start none.
-    CHECK(box.put("k", [&] { seen.push_back(1); }));
-    CHECK_FALSE(box.put("k", [&] { seen.push_back(2); }));
-    CHECK_FALSE(box.put("k", [&] { seen.push_back(3); }));
+    CHECK(box.put("k",
+                  [&]
+                  {
+                      seen.push_back(1);
+                  }));
+    CHECK_FALSE(box.put("k",
+                        [&]
+                        {
+                            seen.push_back(2);
+                        }));
+    CHECK_FALSE(box.put("k",
+                        [&]
+                        {
+                            seen.push_back(3);
+                        }));
     // Other keys are independent.
-    CHECK(box.put("other", [&] { seen.push_back(9); }));
+    CHECK(box.put("other",
+                  [&]
+                  {
+                      seen.push_back(9);
+                  }));
 
     auto first = box.take("k");
     REQUIRE(first);
@@ -493,15 +509,18 @@ TEST_CASE("the frame mailbox queues one UI task per key and delivers the newest"
     CHECK(seen == std::vector<int>{3});
     // Nothing left to take for that key until another put.
     CHECK_FALSE(box.take("k"));
-    CHECK(box.put("k", [&] { seen.push_back(4); }));
+    CHECK(box.put("k",
+                  [&]
+                  {
+                      seen.push_back(4);
+                  }));
     box.take("k")();
     CHECK(seen == std::vector<int>{3, 4});
     box.take("other")();
     CHECK(seen == std::vector<int>{3, 4, 9});
 }
 
-TEST_CASE("call audio frames bypass the UI queue and tolerate no output",
-          "[event_handler_base]")
+TEST_CASE("call audio frames bypass the UI queue and tolerate no output", "[event_handler_base]")
 {
     EhbFx f;
     const std::int16_t pcm[4] = {1, 2, 3, 4};
@@ -517,9 +536,8 @@ TEST_CASE("simple string and value callbacks are forwarded", "[event_handler_bas
     f.h.on_media_preview_config_updated("{}");
     f.h.on_gif_results(3, std::vector<tesseract::GifResult>(2));
     f.h.on_gif_search_failed(4, "nope");
-    CHECK(f.shell.log ==
-          std::vector<std::string>{"packs", "prefs:@me:x:{\"a\":1}",
-                                   "mpc:@me:x:{}", "gif:3:2", "giffail:4:nope"});
+    CHECK(f.shell.log == std::vector<std::string>{"packs", "prefs:@me:x:{\"a\":1}", "mpc:@me:x:{}",
+                                                  "gif:3:2", "giffail:4:nope"});
 }
 
 TEST_CASE("new GIF results clear the remembered strip failures", "[event_handler_base]")

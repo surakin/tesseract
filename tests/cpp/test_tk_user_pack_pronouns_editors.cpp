@@ -22,8 +22,14 @@ namespace
 struct PeStage : vt::Stage
 {
     std::unique_ptr<PronounsEditor> ed = tk::create_root_widget<PronounsEditor>(&host);
-    PeStage() { run(); }
-    void run() { mount(*ed, {0, 0, 600, 700}); }
+    PeStage()
+    {
+        run();
+    }
+    void run()
+    {
+        mount(*ed, {0, 0, 600, 700});
+    }
     // Per row: [language picker's field, summary field]; rows are fixed slots.
     tk::TextField* summary(std::size_t row)
     {
@@ -50,13 +56,15 @@ struct UpeStage : vt::Stage
         ed->set_images({upe_img("happy", "mxc://x/1"), upe_img("sad", "mxc://x/2")});
         run();
     }
-    void run() { mount(*ed, {0, 0, 480, 320}); }
+    void run()
+    {
+        mount(*ed, {0, 0, 480, 320});
+    }
 };
 
 } // namespace
 
-TEST_CASE("PronounsEditor lists entries and flushes edited summaries",
-          "[tk][view][pronouns]")
+TEST_CASE("PronounsEditor lists entries and flushes edited summaries", "[tk][view][pronouns]")
 {
     PeStage s;
     s.ed->set_editable(true);
@@ -66,7 +74,10 @@ TEST_CASE("PronounsEditor lists entries and flushes edited summaries",
     CHECK(s.summary(0)->text() == "she/her");
 
     std::vector<std::vector<tesseract::PronounEntry>> saves;
-    s.ed->on_changed = [&](std::vector<tesseract::PronounEntry> e) { saves.push_back(std::move(e)); };
+    s.ed->on_changed = [&](std::vector<tesseract::PronounEntry> e)
+    {
+        saves.push_back(std::move(e));
+    };
 
     s.ed->flush(); // nothing changed: no notification
     CHECK(saves.empty());
@@ -78,15 +89,17 @@ TEST_CASE("PronounsEditor lists entries and flushes edited summaries",
     CHECK(saves.size() == 1);
 }
 
-TEST_CASE("PronounsEditor add and remove rows, with the 8-row cap",
-          "[tk][view][pronouns]")
+TEST_CASE("PronounsEditor add and remove rows, with the 8-row cap", "[tk][view][pronouns]")
 {
     PeStage s;
     s.ed->set_editable(true);
     s.ed->set_pronouns({{"en", "she/her", ""}});
     s.run();
     int saves = 0;
-    s.ed->on_changed = [&](std::vector<tesseract::PronounEntry>) { ++saves; };
+    s.ed->on_changed = [&](std::vector<tesseract::PronounEntry>)
+    {
+        ++saves;
+    };
 
     REQUIRE(vt::press(*s.ed, "+ Add language"));
     CHECK(s.ed->pronouns().size() == 2);
@@ -109,7 +122,9 @@ TEST_CASE("PronounsEditor add and remove rows, with the 8-row cap",
     CHECK(saves == 2);
 
     for (int i = 0; i < 10; ++i)
+    {
         vt::press(*s.ed, "+ Add language");
+    }
     s.run();
     CHECK(s.ed->pronouns().size() == 8);
     CHECK_FALSE(vt::has_name(*s.ed, "+ Add language")); // hidden at the cap
@@ -151,8 +166,7 @@ TEST_CASE("PronounsEditor without a host is inert", "[tk][view][pronouns]")
 
 // ── UserPackEditor ──────────────────────────────────────────────────────
 
-TEST_CASE("UserPackEditor lists images as edit/remove rows",
-          "[tk][view][user_pack]")
+TEST_CASE("UserPackEditor lists images as edit/remove rows", "[tk][view][user_pack]")
 {
     UpeStage s;
     CHECK_FALSE(s.ed->has_changes());
@@ -171,7 +185,10 @@ TEST_CASE("UserPackEditor removing an existing image records its shortcode",
 {
     UpeStage s;
     int layouts = 0;
-    s.ed->on_layout_changed = [&] { ++layouts; };
+    s.ed->on_layout_changed = [&]
+    {
+        ++layouts;
+    };
     REQUIRE(s.ed->access_row_count() == 4);
     CHECK(s.ed->access_activate_widget_row(1)); // remove "happy"
     CHECK(s.ed->has_changes());
@@ -183,8 +200,7 @@ TEST_CASE("UserPackEditor removing an existing image records its shortcode",
     CHECK_FALSE(s.ed->access_activate_widget_row(50));
 }
 
-TEST_CASE("UserPackEditor shortcode edit: commit, cancel and live text",
-          "[tk][view][user_pack]")
+TEST_CASE("UserPackEditor shortcode edit: commit, cancel and live text", "[tk][view][user_pack]")
 {
     UpeStage s;
     CHECK(s.ed->access_activate_widget_row(0)); // edit "happy"
@@ -209,13 +225,12 @@ TEST_CASE("UserPackEditor shortcode edit: commit, cancel and live text",
     CHECK(s.ed->shortcode_edit_initial_text().empty());
 }
 
-TEST_CASE("UserPackEditor pasted and dropped images become pending tiles",
-          "[tk][view][user_pack]")
+TEST_CASE("UserPackEditor pasted and dropped images become pending tiles", "[tk][view][user_pack]")
 {
     UpeStage s;
     std::vector<std::uint64_t> added;
-    s.ed->on_pending_image_added = [&](std::uint64_t id, const std::vector<std::uint8_t>& b,
-                                       const std::string& mime)
+    s.ed->on_pending_image_added =
+        [&](std::uint64_t id, const std::vector<std::uint8_t>& b, const std::string& mime)
     {
         added.push_back(id);
         CHECK_FALSE(b.empty());
@@ -265,6 +280,7 @@ TEST_CASE("UserPackEditor pointer input: hover, wheel, drag-hover and focus "
     // Scan the tile area: a press on a label begins a shortcode edit.
     bool began = false;
     for (float y = 4; y < 300 && !began; y += 6)
+    {
         for (float x = 4; x < 470 && !began; x += 6)
         {
             if (s.ed->on_pointer_down({x, y}))
@@ -273,6 +289,7 @@ TEST_CASE("UserPackEditor pointer input: hover, wheel, drag-hover and focus "
                 s.ed->cancel_editing_shortcode();
             }
         }
+    }
     CHECK(began);
 
     // Keyboard cursor: Down lands on the first stop and Enter activates it.
@@ -283,8 +300,7 @@ TEST_CASE("UserPackEditor pointer input: hover, wheel, drag-hover and focus "
     s.run();
 }
 
-TEST_CASE("UserPackEditor without a host has no shortcode field",
-          "[tk][view][user_pack]")
+TEST_CASE("UserPackEditor without a host has no shortcode field", "[tk][view][user_pack]")
 {
     auto ed = tk::create_root_widget<UserPackEditor>(nullptr);
     ed->set_images({upe_img("a", "mxc://x/a")});

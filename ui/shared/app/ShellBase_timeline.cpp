@@ -5,8 +5,8 @@
 namespace tesseract
 {
 
-std::vector<views::MessageRowData>
-ShellBase::build_rows_(const EventList& snapshot, const std::string& room_id)
+std::vector<views::MessageRowData> ShellBase::build_rows_(const EventList& snapshot,
+                                                          const std::string& room_id)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
@@ -23,7 +23,9 @@ ShellBase::build_rows_(const EventList& snapshot, const std::string& room_id)
     {
         const auto& ev = snapshot[i];
         if (!ev)
+        {
             continue;
+        }
         if (i + media_prefetch_window >= n)
         {
             prep_row_media_(*ev, /*fetch_avatars=*/false);
@@ -35,16 +37,16 @@ ShellBase::build_rows_(const EventList& snapshot, const std::string& room_id)
         // so reply_pane is a pane of the event's own account (see
         // reply_pane_for_); it never touches that pane's own room_id_.
         if (!ev->in_reply_to_id.empty() && reply_pane)
-            reply_pane->ensure_reply_details_(room_id, ev->event_id,
-                                                   std::string());
+        {
+            reply_pane->ensure_reply_details_(room_id, ev->event_id, std::string());
+        }
         rows.push_back(views::make_row_data(*ev, own_user_id));
     }
     return rows;
 }
 
-std::vector<views::MessageRowData>
-ShellBase::build_rows_(const std::vector<Event*>& snapshot,
-                       const std::string& room_id)
+std::vector<views::MessageRowData> ShellBase::build_rows_(const std::vector<Event*>& snapshot,
+                                                          const std::string& room_id)
 {
     std::vector<views::MessageRowData> rows;
     rows.reserve(snapshot.size());
@@ -58,15 +60,18 @@ ShellBase::build_rows_(const std::vector<Event*>& snapshot,
     {
         auto* ev = snapshot[i];
         if (!ev)
+        {
             continue;
+        }
         if (i + media_prefetch_window >= n)
         {
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             media_prepped_event_ids_.insert(ev->event_id);
         }
         if (!ev->in_reply_to_id.empty() && reply_pane)
-            reply_pane->ensure_reply_details_(room_id, ev->event_id,
-                                                   std::string());
+        {
+            reply_pane->ensure_reply_details_(room_id, ev->event_id, std::string());
+        }
         rows.push_back(views::make_row_data(*ev, own_user_id));
     }
     return rows;
@@ -78,8 +83,8 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start,
     auto& state = pagination_for_(user_id, room_id);
     state.in_flight = false;
     state.reached_start = reached_start;
-    const bool for_active = user_id.empty() ||
-                            (active_account_ && active_account_->user_id == user_id);
+    const bool for_active =
+        user_id.empty() || (active_account_ && active_account_->user_id == user_id);
     if (for_active && room_id == current_room_id_ && room_view_)
     {
         room_view_->set_paginating(false);
@@ -87,31 +92,35 @@ void ShellBase::push_paginate_result_(std::string room_id, bool reached_start,
     }
 }
 
-void ShellBase::handle_room_export_progress_ui_(
-    const tesseract::RoomExportProgress& progress)
+void ShellBase::handle_room_export_progress_ui_(const tesseract::RoomExportProgress& progress)
 {
     if (history_export_controller_)
+    {
         history_export_controller_->handle_progress(progress);
+    }
 }
 
-void ShellBase::handle_room_export_complete_ui_(
-    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
-    std::string out_path, std::uint64_t events_written,
-    std::uint64_t bytes_written, std::string message)
+void ShellBase::handle_room_export_complete_ui_(std::uint64_t request_id, bool ok, bool cancelled,
+                                                bool reached_start, std::string out_path,
+                                                std::uint64_t events_written,
+                                                std::uint64_t bytes_written, std::string message)
 {
     if (history_export_controller_)
-        history_export_controller_->handle_complete(
-            request_id, ok, cancelled, reached_start, std::move(out_path),
-            events_written, bytes_written, std::move(message));
+    {
+        history_export_controller_->handle_complete(request_id, ok, cancelled, reached_start,
+                                                    std::move(out_path), events_written,
+                                                    bytes_written, std::move(message));
+    }
 }
 
-void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
-                                           bool reached_start, bool reached_end,
-                                           std::string /*message*/)
+void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok, bool reached_start,
+                                           bool reached_end, std::string /*message*/)
 {
     auto it = pending_paginates_.find(request_id);
     if (it == pending_paginates_.end())
+    {
         return;
+    }
     auto [room_id, is_backward] = it->second;
     pending_paginates_.erase(it);
 
@@ -122,7 +131,9 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
     {
         state.in_flight = false;
         if (ok)
+        {
             state.reached_start = reached_start;
+        }
 
         if (main_window_shows_(room_id) && room_view_)
         {
@@ -131,9 +142,8 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         }
         // If the in-room search bar triggered this paginate, re-run the query
         // so newly-indexed older events appear in the results.
-        if (in_room_search_rerun_on_paginate_ &&
-            room_id == in_room_search_room_id_ &&
-            room_view_ && room_view_->room_search_open())
+        if (in_room_search_rerun_on_paginate_ && room_id == in_room_search_room_id_ && room_view_ &&
+            room_view_->room_search_open())
         {
             in_room_search_rerun_on_paginate_ = false;
             // Bypass the user-typing debounce: fire the re-index search
@@ -147,7 +157,7 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
                     // Record state so the results handler knows this search
                     // was triggered by a paginate batch and can keep looping
                     // if no new matches appeared.
-                    in_room_search_paginate_rerun_   = true;
+                    in_room_search_paginate_rerun_ = true;
                     in_room_search_prev_match_count_ =
                         static_cast<int>(in_room_search_matches_.size());
                     const std::uint64_t id = ++in_room_search_request_id_;
@@ -166,7 +176,9 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
         {
             state.reached_end = reached_end;
             if (reached_end && main_room_pane_)
+            {
                 main_room_pane_->return_to_live_(room_id);
+            }
         }
     }
 }
@@ -190,33 +202,38 @@ void ShellBase::handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
 // directly from the SDK's timeline — see RoomPane.cpp and
 // paginate_media_view_back_async's doc comment for why this replaced an
 // earlier design that raced against the separate diff-streaming task.
-void ShellBase::handle_media_view_paginate_result_ui_(
-    std::uint64_t request_id, bool ok, bool reached_start,
-    std::uint64_t media_count, std::string /*message*/)
+void ShellBase::handle_media_view_paginate_result_ui_(std::uint64_t request_id, bool ok,
+                                                      bool reached_start, std::uint64_t media_count,
+                                                      std::string /*message*/)
 {
     auto it = pending_paginates_.find(request_id);
     if (it == pending_paginates_.end())
+    {
         return;
+    }
     const std::string room_id = it->second.first;
     pending_paginates_.erase(it);
 
     auto& state = pagination_for_(dispatch_account_(), room_id);
     state.in_flight = false;
     if (ok)
+    {
         state.reached_start = reached_start;
+    }
 
     auto owner_it = media_view_paginate_owners_.find(request_id);
     if (owner_it == media_view_paginate_owners_.end())
+    {
         return;
+    }
     RoomPane* owner = owner_it->second;
     media_view_paginate_owners_.erase(owner_it);
-    owner->handle_media_view_paginate_result_(request_id, ok,
-                                              state.reached_start, media_count);
+    owner->handle_media_view_paginate_result_(request_id, ok, state.reached_start, media_count);
 }
 
-void ShellBase::handle_room_media_page_ui_(
-    std::uint64_t request_id, std::vector<tesseract::MediaIndexRow> rows,
-    bool reached_db_end, std::uint64_t total)
+void ShellBase::handle_room_media_page_ui_(std::uint64_t request_id,
+                                           std::vector<tesseract::MediaIndexRow> rows,
+                                           bool reached_db_end, std::uint64_t total)
 {
     // DB-page requests share the media_view_paginate_owners_ map + the
     // next_paginate_id_ id space with the network path, but are deliberately
@@ -224,15 +241,15 @@ void ShellBase::handle_room_media_page_ui_(
     // Route purely by owner; the RoomPane guards on its own request_id.
     auto owner_it = media_view_paginate_owners_.find(request_id);
     if (owner_it == media_view_paginate_owners_.end())
+    {
         return;
+    }
     RoomPane* owner = owner_it->second;
-    owner->handle_room_media_page_(request_id, std::move(rows), reached_db_end,
-                                   total);
+    owner->handle_room_media_page_(request_id, std::move(rows), reached_db_end, total);
 }
 
-void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
-                                         const std::string& event_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::maybe_send_read_receipt_(const std::string& room_id, const std::string& event_id,
+                                         const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
@@ -266,13 +283,16 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id,
     // target without restarting it, so a busy room still clears on time.
     const std::string key = (sess ? sess->user_id : std::string{}) + "\x1F" + room_id;
     auto [it, inserted] = pending_fully_read_.try_emplace(key);
-    it->second.room_id  = room_id;
+    it->second.room_id = room_id;
     it->second.event_id = event_id;
-    it->second.sess     = sess;
+    it->second.sess = sess;
     if (inserted)
     {
-        post_to_ui_after_(kFullyReadLingerMs,
-                          guarded([this, key] { flush_fully_read_(key); }));
+        post_to_ui_after_(kFullyReadLingerMs, guarded(
+                                                  [this, key]
+                                                  {
+                                                      flush_fully_read_(key);
+                                                  }));
     }
 }
 
@@ -318,17 +338,16 @@ void ShellBase::flush_pending_fully_read_now_(const std::string& user_id)
         // client, which would cancel a queued worker.
         if (p.sess && p.sess->client)
         {
-            (void) p.sess->client->set_fully_read_marker(p.room_id, p.event_id);
+            (void)p.sess->client->set_fully_read_marker(p.room_id, p.event_id);
         }
         it = pending_fully_read_.erase(it); // the armed timer finds nothing
     }
 }
 
-void ShellBase::notify_fully_read_moved_(const std::string& user_id,
-                                         const std::string& room_id)
+void ShellBase::notify_fully_read_moved_(const std::string& user_id, const std::string& room_id)
 {
-    if (main_room_pane_ && active_account_ &&
-        active_account_->user_id == user_id && current_room_id_ == room_id)
+    if (main_room_pane_ && active_account_ && active_account_->user_id == user_id &&
+        current_room_id_ == room_id)
     {
         main_room_pane_->on_fully_read_moved();
     }
@@ -341,15 +360,13 @@ void ShellBase::notify_fully_read_moved_(const std::string& user_id,
     }
 }
 
-bool ShellBase::room_is_shown_(const std::string& user_id,
-                               const std::string& room_id) const
+bool ShellBase::room_is_shown_(const std::string& user_id, const std::string& room_id) const
 {
     if (room_id.empty())
     {
         return false;
     }
-    if (room_id == current_room_id_ && active_account_ &&
-        active_account_->user_id == user_id)
+    if (room_id == current_room_id_ && active_account_ && active_account_->user_id == user_id)
     {
         return true;
     }
@@ -367,47 +384,58 @@ void ShellBase::forget_thread_receipts_(const std::string& room_id)
 {
     // Keys are "room_id\x1Fthread_root" — drop every thread of this room.
     const std::string prefix = room_id + "\x1F";
-    for (auto it = last_sent_thread_receipt_.begin();
-         it != last_sent_thread_receipt_.end();)
+    for (auto it = last_sent_thread_receipt_.begin(); it != last_sent_thread_receipt_.end();)
     {
         if (it->first.rfind(prefix, 0) == 0)
+        {
             it = last_sent_thread_receipt_.erase(it);
+        }
         else
+        {
             ++it;
+        }
     }
 }
 
 void ShellBase::maybe_send_thread_read_receipt_(const std::string& room_id,
                                                 const std::string& thread_root,
                                                 const std::string& event_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                                const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || thread_root.empty() || event_id.empty())
+    {
         return;
+    }
     auto& last = last_sent_thread_receipt_[room_id + "\x1F" + thread_root];
     if (last == event_id)
+    {
         return;
+    }
     last = event_id;
     auto sess = acting;
     run_async_mut_(
         [sess, room_id, thread_root, event_id]()
         {
             if (sess && sess->client)
+            {
                 sess->client->send_thread_read_receipt(room_id, thread_root, event_id);
+            }
         });
 }
 
 void ShellBase::mark_all_threads_read_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                       const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty())
+    {
         return;
+    }
     // The Rust side writes optimistic markers + fires on_threads_updated, so
     // the panel/header dots clear on the next list_room_threads re-query
     // without any local bookkeeping here.
@@ -416,24 +444,30 @@ void ShellBase::mark_all_threads_read_(const std::string& room_id,
         [sess, room_id]()
         {
             if (sess && sess->client)
+            {
                 sess->client->mark_all_threads_read(room_id);
+            }
         });
 }
 
-void ShellBase::set_thread_followed_(const std::string& room_id,
-    const std::string& thread_root_id, bool follow,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::set_thread_followed_(const std::string& room_id, const std::string& thread_root_id,
+                                     bool follow,
+                                     const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || thread_root_id.empty())
+    {
         return;
+    }
     auto sess = acting;
     run_async_mut_(
         [sess, room_id, thread_root_id, follow]()
         {
             if (sess && sess->client)
+            {
                 sess->client->set_thread_followed(room_id, thread_root_id, follow);
+            }
         });
 }
 
@@ -448,7 +482,7 @@ void ShellBase::mark_room_read_(const std::string& room_id)
         if (r.id == room_id)
         {
             r.notification_count = 0;
-            r.highlight_count    = 0;
+            r.highlight_count = 0;
             break;
         }
     }
@@ -460,7 +494,7 @@ void ShellBase::mark_room_read_(const std::string& room_id)
             if (r.id == room_id)
             {
                 r.notification_count = 0;
-                r.highlight_count    = 0;
+                r.highlight_count = 0;
                 break;
             }
         }
@@ -468,8 +502,7 @@ void ShellBase::mark_room_read_(const std::string& room_id)
     on_rooms_updated_();
     notify_tray_unread_();
     auto sess = active_account_;
-    const bool include_fully_read =
-        sess && !room_is_shown_(sess->user_id, room_id);
+    const bool include_fully_read = sess && !room_is_shown_(sess->user_id, room_id);
     if (include_fully_read && sess)
     {
         // The marker jumps to the latest event now; a pending deferred move
@@ -486,9 +519,8 @@ void ShellBase::mark_room_read_(const std::string& room_id)
         });
 }
 
-void ShellBase::handle_voice_waveform_ready_ui_(
-    std::string room_id, std::string event_id,
-    std::vector<std::uint16_t> waveform)
+void ShellBase::handle_voice_waveform_ready_ui_(std::string room_id, std::string event_id,
+                                                std::vector<std::uint16_t> waveform)
 {
     if (room_id != current_room_id_)
     {
@@ -522,8 +554,8 @@ bool ShellBase::tick_anim_()
     // (MessageListView::draw_pagination_spinner_), so it only advances on
     // screen when something actually repaints it — nothing else drives that
     // on its own, hence gif_frame || spinner_active below.
-    const bool spinner_active = room_view_ && room_view_->message_list() &&
-                                room_view_->message_list()->paginating();
+    const bool spinner_active =
+        room_view_ && room_view_->message_list() && room_view_->message_list()->paginating();
     if (!account_manager_.anim_cache().any_visible() && !spinner_active)
     {
         stop_anim_tick_();
@@ -546,11 +578,9 @@ bool ShellBase::tick_anim_()
                 req.session->decode_next_batch(
                     req.batch_size,
                     [this, key = req.key, session = req.session](
-                        int /*frame_index*/, std::unique_ptr<tk::Image> frame,
-                        int delay_ms) mutable
+                        int /*frame_index*/, std::unique_ptr<tk::Image> frame, int delay_ms) mutable
                     {
-                        auto boxed = std::make_shared<std::unique_ptr<tk::Image>>(
-                            std::move(frame));
+                        auto boxed = std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame));
                         post_to_ui_(
                             [this, key, delay_ms, boxed, session]() mutable
                             {
@@ -560,15 +590,15 @@ bool ShellBase::tick_anim_()
                                 // replaced by a different decode (a
                                 // redundant concurrent fetch/decode race for
                                 // the same key) rather than splicing it in.
-                                account_manager_.anim_cache()
-                                    .append_frame_from_session(
-                                        key, session, std::move(*boxed),
-                                        delay_ms);
+                                account_manager_.anim_cache().append_frame_from_session(
+                                    key, session, std::move(*boxed), delay_ms);
                             });
                     });
                 post_to_ui_(
                     [this, key = req.key]() mutable
-                    { account_manager_.anim_cache().finish_topup(key); });
+                    {
+                        account_manager_.anim_cache().finish_topup(key);
+                    });
             });
     }
 
@@ -580,7 +610,9 @@ bool ShellBase::tick_anim_()
         for (auto& w : owned_secondary_windows_)
         {
             if (w)
+            {
                 w->repaint_anim_frame();
+            }
         }
     }
     return true;
@@ -592,9 +624,10 @@ void ShellBase::repaint_anim_frame_()
     // The pagination spinner reports no damage rect, so a backend that repaints
     // only the animated-image rects (Win32) would freeze it while a GIF is on
     // screen; repaint the whole main surface while it spins.
-    if (room_view_ && room_view_->message_list() &&
-        room_view_->message_list()->paginating())
+    if (room_view_ && room_view_->message_list() && room_view_->message_list()->paginating())
+    {
         request_repaint_();
+    }
     if (compose_popups_)
     {
         compose_popups_->repaint_anim_frame();
@@ -602,9 +635,13 @@ void ShellBase::repaint_anim_frame_()
     if (room_view_)
     {
         if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
+        {
             room_view_->emoji_picker()->invalidate_image_cache();
+        }
         if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
+        {
             room_view_->sticker_picker()->invalidate_image_cache();
+        }
     }
     update_settings_anim_regions_();
 }
@@ -644,8 +681,7 @@ void ShellBase::schedule_relayout_()
         });
 }
 
-void ShellBase::handle_timeline_reset_ui_(std::string room_id,
-                                          EventList snapshot)
+void ShellBase::handle_timeline_reset_ui_(std::string room_id, EventList snapshot)
 {
     if (main_window_shows_(room_id) && room_view_)
     {
@@ -658,8 +694,7 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
         // main-window-only richness that follows (pinned-banner refresh,
         // pending-scroll re-arm, the tabs_ saved-scroll-offset restore —
         // pop-outs have no tabs_ concept) stays here.
-        const bool room_switch =
-            main_room_pane_->on_timeline_reset(build_rows_(snapshot, room_id));
+        const bool room_switch = main_room_pane_->on_timeline_reset(build_rows_(snapshot, room_id));
         // A full reset can land a reply row and its quoted target in the same
         // snapshot without ever going through the insert/prepend/append paths
         // that already retry a stale placeholder (see
@@ -674,10 +709,14 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
             for (const auto& ev : snapshot)
             {
                 if (ev)
+                {
                     ids.push_back(ev->event_id);
+                }
             }
             if (main_room_pane_)
+            {
                 main_room_pane_->retry_stale_reply_previews_(ids);
+            }
         }
         // Re-assert the pin banner/permission state on a genuine switch.
         // after_active_room_changed_() already did this for the common case,
@@ -687,15 +726,15 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
         // calling it again is cheap and removes any dependency on ordering
         // between this async callback and that synchronous call.
         if (room_switch)
+        {
             refresh_pinned_for_current_room_();
+        }
         // set_messages() clears MessageListView::pending_scroll_event_id_.
         // Re-arm it so arrange() still applies the deferred scroll with
         // up-to-date row_offsets_ (handles the subscribe_room_at reset path).
-        if (!pending_scroll_room_event_id_.empty() &&
-            room_view_->message_list())
+        if (!pending_scroll_room_event_id_.empty() && room_view_->message_list())
         {
-            room_view_->message_list()->set_pending_scroll_event_id(
-                pending_scroll_room_event_id_);
+            room_view_->message_list()->set_pending_scroll_event_id(pending_scroll_room_event_id_);
         }
         // Restore saved scroll offset when returning to a tab that had been
         // scrolled up from the bottom. Main-window-only — tabs_ is a
@@ -707,8 +746,7 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
         if (auto* list = room_view_->message_list())
         {
             const auto& pstate = pagination_[room_id];
-            if (room_switch && !pstate.is_focused &&
-                active_tab_idx_ < tabs_.size() &&
+            if (room_switch && !pstate.is_focused && active_tab_idx_ < tabs_.size() &&
                 tabs_[active_tab_idx_].room_id == room_id &&
                 tabs_[active_tab_idx_].scroll_offset > 0.f)
             {
@@ -724,15 +762,13 @@ void ShellBase::handle_timeline_reset_ui_(std::string room_id,
     // since navigated away from) and no-ops if the gallery isn't open for it.
     if (main_room_pane_ && event_is_for_active_account_())
     {
-        main_room_pane_->feed_gallery_reset_(room_id,
-                                             build_rows_(snapshot, room_id));
+        main_room_pane_->feed_gallery_reset_(room_id, build_rows_(snapshot, room_id));
     }
 
     dispatch_timeline_reset_secondary_(room_id, snapshot);
 }
 
-void ShellBase::handle_message_inserted_ui_(std::string room_id,
-                                            std::size_t index,
+void ShellBase::handle_message_inserted_ui_(std::string room_id, std::size_t index,
                                             std::unique_ptr<Event> ev)
 {
     if (!ev || ev->type == tesseract::EventType::Unhandled)
@@ -769,20 +805,20 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
         auto row = tesseract::views::make_row_data(*ev, dispatch_account_());
         into_withheld = main_room_pane_->withheld_insert(index, row);
     }
-    const std::size_t withheld =
-        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
-    if (main_window_shows_(room_id) && !in_thread && room_view_ &&
-        !into_withheld)
+    const std::size_t withheld = main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (main_window_shows_(room_id) && !in_thread && room_view_ && !into_withheld)
     {
         prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty() && main_room_pane_)
         {
             main_room_pane_->ensure_reply_details_(ev->event_id);
         }
-        room_view_->insert_message(
-            index - withheld, tesseract::views::make_row_data(*ev, dispatch_account_()));
+        room_view_->insert_message(index - withheld,
+                                   tesseract::views::make_row_data(*ev, dispatch_account_()));
         if (main_room_pane_)
+        {
             main_room_pane_->retry_stale_reply_previews_({ev->event_id});
+        }
         schedule_relayout_(); // coalesce bursts into one layout pass
     }
     // Room-media gallery: append newly-arrived live media (e.g. someone
@@ -804,8 +840,7 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id,
     }
 }
 
-void ShellBase::handle_message_updated_ui_(std::string room_id,
-                                           std::size_t index,
+void ShellBase::handle_message_updated_ui_(std::string room_id, std::size_t index,
                                            std::unique_ptr<Event> ev)
 {
     if (!ev || ev->type == tesseract::EventType::Unhandled)
@@ -829,10 +864,8 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
         auto row = tesseract::views::make_row_data(*ev, dispatch_account_());
         in_withheld = main_room_pane_->withheld_update(index, row);
     }
-    const std::size_t withheld =
-        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
-    if (main_window_shows_(room_id) && !in_thread && room_view_ &&
-        !in_withheld)
+    const std::size_t withheld = main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    if (main_window_shows_(room_id) && !in_thread && room_view_ && !in_withheld)
     {
         // NOT delegated to main_room_pane_->on_message_updated() — that
         // calls deps_.relayout(), which for the main window is the
@@ -848,8 +881,8 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
         {
             main_room_pane_->ensure_reply_details_(ev->event_id);
         }
-        room_view_->update_message(
-            index - withheld, tesseract::views::make_row_data(*ev, dispatch_account_()));
+        room_view_->update_message(index - withheld,
+                                   tesseract::views::make_row_data(*ev, dispatch_account_()));
         if (!ev->in_reply_to_id.empty() && !ev->in_reply_to_sender_name.empty())
         {
             // Reply metadata just resolved (or this is a subsequent update
@@ -876,17 +909,15 @@ void ShellBase::handle_message_updated_ui_(std::string room_id,
     }
 }
 
-void ShellBase::handle_message_removed_ui_(std::string room_id,
-                                           std::size_t index)
+void ShellBase::handle_message_removed_ui_(std::string room_id, std::size_t index)
 {
     // NOT delegated to main_room_pane_->on_message_removed() — see
     // handle_message_updated_ui_ above for why (relayout coalescing).
     // See handle_message_inserted_ui_ for the withheld-region index
     // translation this needs.
-    const bool in_withheld = main_window_shows_(room_id) && main_room_pane_ &&
-                             main_room_pane_->withheld_remove(index);
-    const std::size_t withheld =
-        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    const bool in_withheld =
+        main_window_shows_(room_id) && main_room_pane_ && main_room_pane_->withheld_remove(index);
+    const std::size_t withheld = main_room_pane_ ? main_room_pane_->withheld_count() : 0;
     if (main_window_shows_(room_id) && room_view_ && !in_withheld)
     {
         room_view_->remove_message(index - withheld);
@@ -907,11 +938,10 @@ void ShellBase::handle_message_removed_ui_(std::string room_id,
 // The gallery-rendering half below IS delegated, via
 // feed_gallery_prepend_batch_ (a real batch method, since the gallery has
 // no per-row relayout/scroll concern to preserve).
-void ShellBase::handle_messages_prepended_ui_(std::string room_id,
-                                              EventList events)
+void ShellBase::handle_messages_prepended_ui_(std::string room_id, EventList events)
 {
-    const bool in_thread = !events.empty() && events.front() &&
-                           !events.front()->thread_root_id.empty();
+    const bool in_thread =
+        !events.empty() && events.front() && !events.front()->thread_root_id.empty();
     if (main_window_shows_(room_id) && !in_thread && room_view_)
     {
         std::vector<views::MessageRowData> rows;
@@ -921,12 +951,16 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         for (auto& ev : events)
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
+            {
                 continue;
+            }
             // Prepended events land above the current viewport. Skip eager
             // media fetch; on_visible_rows_changed_ handles them lazily when
             // the user scrolls up to reveal them.
             if (!ev->in_reply_to_id.empty() && main_room_pane_)
+            {
                 main_room_pane_->ensure_reply_details_(ev->event_id);
+            }
             new_ids.push_back(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
         }
@@ -937,7 +971,9 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
             // history reaches the client — retry any already-rendered reply
             // row still waiting on one of these newly-loaded events.
             if (main_room_pane_)
+            {
                 main_room_pane_->retry_stale_reply_previews_(new_ids);
+            }
             schedule_relayout_();
         }
     }
@@ -959,14 +995,15 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         for (auto& ev : events)
         {
             if (!ev || (ev->type != tesseract::EventType::Image &&
-                       ev->type != tesseract::EventType::Video))
+                        ev->type != tesseract::EventType::Video))
+            {
                 continue;
+            }
             media_rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
         }
         if (!media_rows.empty())
         {
-            main_room_pane_->feed_gallery_prepend_batch_(room_id,
-                                                          std::move(media_rows));
+            main_room_pane_->feed_gallery_prepend_batch_(room_id, std::move(media_rows));
         }
     }
 
@@ -978,19 +1015,24 @@ void ShellBase::handle_messages_prepended_ui_(std::string room_id,
         for (auto it = events.crbegin(); it != events.crend(); ++it)
         {
             if (*it)
+            {
                 dispatch_message_prepended_secondary_(room_id, **it);
+            }
         }
     }
 }
 
-void ShellBase::handle_messages_appended_ui_(std::string room_id,
-                                             EventList events)
+void ShellBase::handle_messages_appended_ui_(std::string room_id, EventList events)
 {
     for (const auto& e : events)
+    {
         if (e)
+        {
             note_member_event_(room_id, *e);
-    const bool in_thread = !events.empty() && events.front() &&
-                           !events.front()->thread_root_id.empty();
+        }
+    }
+    const bool in_thread =
+        !events.empty() && events.front() && !events.front()->thread_root_id.empty();
     if (main_window_shows_(room_id) && !in_thread && room_view_)
     {
         std::vector<views::MessageRowData> rows;
@@ -1000,12 +1042,16 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         for (auto& ev : events)
         {
             if (!ev || ev->type == tesseract::EventType::Unhandled)
+            {
                 continue;
+            }
             // Suppress avatar fetches — on_visible_avatars_changed handles
             // lazy avatar loading for whatever is actually visible.
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty() && main_room_pane_)
+            {
                 main_room_pane_->ensure_reply_details_(ev->event_id);
+            }
             new_ids.push_back(ev->event_id);
             rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
         }
@@ -1013,7 +1059,9 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         {
             room_view_->append_messages(std::move(rows));
             if (main_room_pane_)
+            {
                 main_room_pane_->retry_stale_reply_previews_(new_ids);
+            }
             schedule_relayout_();
         }
     }
@@ -1022,7 +1070,9 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id,
         for (auto& ev : events)
         {
             if (ev)
+            {
                 dispatch_message_appended_secondary_(room_id, *ev);
+            }
         }
     }
 }
@@ -1032,22 +1082,27 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
                                                   EventList events)
 {
     for (const auto& e : events)
+    {
         if (e)
+        {
             note_member_event_(room_id, *e);
-    const bool in_thread = !events.empty() && events.front() &&
-                           !events.front()->thread_root_id.empty();
+        }
+    }
+    const bool in_thread =
+        !events.empty() && events.front() && !events.front()->thread_root_id.empty();
     // See handle_message_inserted_ui_ for the withheld-region index
     // translation this needs — indices here are individually just as
     // full-timeline-relative as the single-update path's.
-    const std::size_t withheld =
-        main_room_pane_ ? main_room_pane_->withheld_count() : 0;
+    const std::size_t withheld = main_room_pane_ ? main_room_pane_->withheld_count() : 0;
     if (main_window_shows_(room_id) && !in_thread && room_view_)
     {
         for (std::size_t i = 0; i < indices.size() && i < events.size(); ++i)
         {
             auto& ev = events[i];
             if (!ev || ev->type == tesseract::EventType::Unhandled)
+            {
                 continue;
+            }
             if (indices[i] < withheld)
             {
                 auto row = tesseract::views::make_row_data(*ev, dispatch_account_());
@@ -1058,33 +1113,36 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
             // so we don't bulk-request every sender across the entire history.
             prep_row_media_(*ev, /*fetch_avatars=*/false);
             if (!ev->in_reply_to_id.empty() && main_room_pane_)
+            {
                 main_room_pane_->ensure_reply_details_(ev->event_id);
-            room_view_->update_message(
-                indices[i] - withheld,
-                tesseract::views::make_row_data(*ev, dispatch_account_()));
+            }
+            room_view_->update_message(indices[i] - withheld,
+                                       tesseract::views::make_row_data(*ev, dispatch_account_()));
         }
         if (!indices.empty())
+        {
             schedule_relayout_();
+        }
     }
     if (!in_thread)
     {
         for (std::size_t i = 0; i < indices.size() && i < events.size(); ++i)
         {
             if (events[i])
+            {
                 dispatch_message_updated_secondary_(room_id, indices[i], *events[i]);
+            }
         }
     }
 }
 
-void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
-                                                     std::string thread_root,
+void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id, std::string thread_root,
                                                      EventList events)
 {
     // Fan out to secondary window for this room if it has this thread open.
     {
         RoomWindowBase* sw = find_event_secondary_(room_id);
-        if (sw &&
-            sw->popout_thread_root() == thread_root)
+        if (sw && sw->popout_thread_root() == thread_root)
         {
             std::vector<views::MessageRowData> rows;
             std::vector<std::string> new_ids;
@@ -1094,10 +1152,14 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
             for (auto& ev : events)
             {
                 if (!ev || ev->type == tesseract::EventType::Unhandled)
+                {
                     continue;
+                }
                 prep_row_media_(*ev);
                 if (!ev->in_reply_to_id.empty())
+                {
                     reply_ids.push_back(ev->event_id);
+                }
                 new_ids.push_back(ev->event_id);
                 rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
             }
@@ -1109,7 +1171,9 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
                 // its row there to copy an already-resolved main-list
                 // preview into it.
                 for (const auto& rid : reply_ids)
+                {
                     sw->ensure_thread_reply_details_(rid);
+                }
                 // Backward pagination is exactly how older thread history
                 // reaches the client — retry any already-rendered reply row
                 // still waiting on one of these newly-loaded events.
@@ -1119,12 +1183,18 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
     }
     if (!main_window_shows_(room_id) || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
+    {
         return;
+    }
     if (!room_view_)
+    {
         return;
+    }
     auto* tl = room_view_->thread_view();
     if (!tl)
+    {
         return;
+    }
     std::vector<views::MessageRowData> rows;
     std::vector<std::string> new_ids;
     std::vector<std::string> reply_ids;
@@ -1133,10 +1203,14 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
     for (auto& ev : events)
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
+        {
             continue;
+        }
         prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
+        {
             reply_ids.push_back(ev->event_id);
+        }
         new_ids.push_back(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
     }
@@ -1144,21 +1218,21 @@ void ShellBase::handle_thread_messages_prepended_ui_(std::string room_id,
     {
         tl->prepend_messages(std::move(rows));
         for (const auto& rid : reply_ids)
+        {
             main_room_pane_->ensure_thread_reply_details_(rid);
+        }
         main_room_pane_->retry_stale_thread_reply_previews_(new_ids);
         schedule_relayout_();
     }
 }
 
-void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
-                                                    std::string thread_root,
+void ShellBase::handle_thread_messages_appended_ui_(std::string room_id, std::string thread_root,
                                                     EventList events)
 {
     // Fan out to secondary window for this room if it has this thread open.
     {
         RoomWindowBase* sw = find_event_secondary_(room_id);
-        if (sw &&
-            sw->popout_thread_root() == thread_root)
+        if (sw && sw->popout_thread_root() == thread_root)
         {
             std::vector<views::MessageRowData> rows;
             std::vector<std::string> new_ids;
@@ -1168,10 +1242,14 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
             for (auto& ev : events)
             {
                 if (!ev || ev->type == tesseract::EventType::Unhandled)
+                {
                     continue;
+                }
                 prep_row_media_(*ev);
                 if (!ev->in_reply_to_id.empty())
+                {
                     reply_ids.push_back(ev->event_id);
+                }
                 new_ids.push_back(ev->event_id);
                 rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
             }
@@ -1179,19 +1257,27 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
             {
                 sw->apply_thread_append_(std::move(rows));
                 for (const auto& rid : reply_ids)
+                {
                     sw->ensure_thread_reply_details_(rid);
+                }
                 sw->retry_stale_thread_reply_previews_(new_ids);
             }
         }
     }
     if (!main_window_shows_(room_id) || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
+    {
         return;
+    }
     if (!room_view_)
+    {
         return;
+    }
     auto* tl = room_view_->thread_view();
     if (!tl)
+    {
         return;
+    }
     std::vector<views::MessageRowData> rows;
     std::vector<std::string> new_ids;
     std::vector<std::string> reply_ids;
@@ -1200,10 +1286,14 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
     for (auto& ev : events)
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
+        {
             continue;
+        }
         prep_row_media_(*ev);
         if (!ev->in_reply_to_id.empty())
+        {
             reply_ids.push_back(ev->event_id);
+        }
         new_ids.push_back(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
     }
@@ -1211,29 +1301,32 @@ void ShellBase::handle_thread_messages_appended_ui_(std::string room_id,
     {
         tl->append_messages(std::move(rows));
         for (const auto& rid : reply_ids)
+        {
             main_room_pane_->ensure_thread_reply_details_(rid);
+        }
         main_room_pane_->retry_stale_thread_reply_previews_(new_ids);
         schedule_relayout_();
     }
 }
 
-void ShellBase::handle_thread_reset_ui_(std::string room_id,
-                                        std::string thread_root,
+void ShellBase::handle_thread_reset_ui_(std::string room_id, std::string thread_root,
                                         EventList snapshot)
 {
     // Determine whether main window and/or a secondary window need this update.
-    const bool main_matches =
-        (main_window_shows_(room_id) && main_room_pane_ &&
-         thread_root == main_room_pane_->thread_root());
+    const bool main_matches = (main_window_shows_(room_id) && main_room_pane_ &&
+                               thread_root == main_room_pane_->thread_root());
     RoomWindowBase* popout_win = nullptr;
     {
         RoomWindowBase* sw = find_event_secondary_(room_id);
-        if (sw &&
-            sw->popout_thread_root() == thread_root)
+        if (sw && sw->popout_thread_root() == thread_root)
+        {
             popout_win = sw;
+        }
     }
     if (!main_matches && !popout_win)
+    {
         return;
+    }
 
     // Prepare rows once; they may be delivered to main window, popout, or both.
     std::vector<views::MessageRowData> rows;
@@ -1244,10 +1337,14 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
     for (auto& ev : snapshot)
     {
         if (!ev || ev->type == tesseract::EventType::Unhandled)
+        {
             continue;
+        }
         prep_row_media_(*ev, /*fetch_avatars=*/false);
         if (!ev->in_reply_to_id.empty())
+        {
             reply_ids.push_back(ev->event_id);
+        }
         ids.push_back(ev->event_id);
         rows.push_back(tesseract::views::make_row_data(*ev, dispatch_account_()));
     }
@@ -1257,7 +1354,9 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
     // recorded against the previous (now dropped) timeline, so leaving them
     // would skip the fetch and leave a reopened thread's quotes unresolved.
     for (const auto& rid : reply_ids)
+    {
         reply_details_requested_.erase(reply_details_key_(dispatch_account_(), rid));
+    }
 
     // A full reset can land a reply row and its quoted target in the same
     // snapshot (see handle_timeline_reset_ui_'s identical rationale for the
@@ -1269,109 +1368,125 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
         // Resolve AFTER the rows exist in the thread's own list — see
         // handle_thread_inserted_ui_'s identical ordering rationale.
         for (const auto& rid : reply_ids)
+        {
             popout_win->ensure_thread_reply_details_(rid);
+        }
         popout_win->retry_stale_thread_reply_previews_(ids);
     }
     if (main_matches)
     {
         apply_thread_messages_(thread_root, std::move(rows), /*room_switch=*/true);
         for (const auto& rid : reply_ids)
+        {
             main_room_pane_->ensure_thread_reply_details_(rid);
+        }
         main_room_pane_->retry_stale_thread_reply_previews_(ids);
     }
 }
 
-void ShellBase::handle_thread_inserted_ui_(std::string room_id,
-                                           std::string thread_root,
-                                           std::size_t index,
-                                           std::unique_ptr<Event> ev)
+void ShellBase::handle_thread_inserted_ui_(std::string room_id, std::string thread_root,
+                                           std::size_t index, std::unique_ptr<Event> ev)
 {
     if (!ev || ev->type == tesseract::EventType::Unhandled)
+    {
         return;
+    }
     // Fan out to secondary window if it has this thread open.
     {
         RoomWindowBase* sw = find_event_secondary_(room_id);
-        if (sw &&
-            sw->popout_thread_root() == thread_root)
+        if (sw && sw->popout_thread_root() == thread_root)
         {
             prep_row_media_(*ev);
-            sw->apply_thread_insert_(
-                index, tesseract::views::make_row_data(*ev, dispatch_account_()));
+            sw->apply_thread_insert_(index,
+                                     tesseract::views::make_row_data(*ev, dispatch_account_()));
             // Resolve/sync AFTER the row exists in the thread's own list —
             // ensure_thread_reply_details_'s root-row case needs to find it
             // there to copy an already-resolved main-list preview into it.
             if (!ev->in_reply_to_id.empty())
+            {
                 sw->ensure_thread_reply_details_(ev->event_id);
+            }
             sw->retry_stale_thread_reply_previews_({ev->event_id});
         }
     }
     if (!main_window_shows_(room_id) || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
+    {
         return;
+    }
     prep_row_media_(*ev);
-    apply_thread_message_insert_(
-        thread_root, index,
-        tesseract::views::make_row_data(*ev, dispatch_account_()));
+    apply_thread_message_insert_(thread_root, index,
+                                 tesseract::views::make_row_data(*ev, dispatch_account_()));
     if (!ev->in_reply_to_id.empty())
+    {
         main_room_pane_->ensure_thread_reply_details_(ev->event_id);
+    }
     main_room_pane_->retry_stale_thread_reply_previews_({ev->event_id});
 }
 
-void ShellBase::handle_thread_updated_ui_(std::string room_id,
-                                          std::string thread_root,
-                                          std::size_t index,
-                                          std::unique_ptr<Event> ev)
+void ShellBase::handle_thread_updated_ui_(std::string room_id, std::string thread_root,
+                                          std::size_t index, std::unique_ptr<Event> ev)
 {
     if (!ev || ev->type == tesseract::EventType::Unhandled)
+    {
         return;
+    }
     // Fan out to secondary window if it has this thread open.
     {
         RoomWindowBase* sw = find_event_secondary_(room_id);
-        if (sw &&
-            sw->popout_thread_root() == thread_root)
+        if (sw && sw->popout_thread_root() == thread_root)
         {
             prep_row_media_(*ev);
-            sw->apply_thread_update_(
-                index, tesseract::views::make_row_data(*ev, dispatch_account_()));
+            sw->apply_thread_update_(index,
+                                     tesseract::views::make_row_data(*ev, dispatch_account_()));
             // Resolve AFTER apply_thread_update_ — it overwrites the row
             // with freshly-converted (possibly still-unresolved) data, which
             // would otherwise clobber a sync done beforehand.
             if (!ev->in_reply_to_id.empty())
+            {
                 sw->ensure_thread_reply_details_(ev->event_id);
+            }
         }
     }
     if (!main_window_shows_(room_id) || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
+    {
         return;
+    }
     prep_row_media_(*ev);
-    apply_thread_message_update_(
-        thread_root, index,
-        tesseract::views::make_row_data(*ev, dispatch_account_()));
+    apply_thread_message_update_(thread_root, index,
+                                 tesseract::views::make_row_data(*ev, dispatch_account_()));
     if (!ev->in_reply_to_id.empty())
+    {
         main_room_pane_->ensure_thread_reply_details_(ev->event_id);
+    }
 }
 
-void ShellBase::handle_thread_removed_ui_(std::string room_id,
-                                          std::string thread_root,
+void ShellBase::handle_thread_removed_ui_(std::string room_id, std::string thread_root,
                                           std::size_t index)
 {
     // Fan out to secondary window if it has this thread open.
     {
         RoomWindowBase* sw = find_event_secondary_(room_id);
-        if (sw &&
-            sw->popout_thread_root() == thread_root)
+        if (sw && sw->popout_thread_root() == thread_root)
+        {
             sw->apply_thread_remove_(index);
+        }
     }
     if (!main_window_shows_(room_id) || !main_room_pane_ ||
         thread_root != main_room_pane_->thread_root())
+    {
         return;
+    }
     apply_thread_message_remove_(thread_root, index);
 }
 
 void ShellBase::handle_threads_updated_ui_(std::string room_id)
 {
     if (!client_)
+    {
         return;
+    }
 
     // Always update the threads button on any secondary window showing this
     // room (a popout may have a different room_id than current_room_id_).
@@ -1380,20 +1495,22 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
         auto owner = sw ? sw->owner_session() : nullptr;
         if (sw && sw->room_view() && owner && owner->client)
         {
-            fetch_threads_async_(owner, room_id,
-                                 [this, owner, room_id](ThreadsSnapshot snap)
-            {
-                // The continuation runs outside the event's account scope.
-                EventAccountScope scope(*this, owner->user_id);
-                auto* w = find_event_secondary_(room_id);
-                if (!w || !w->room_view())
-                    return;
-                const auto agg = views::aggregate_threads(snap.threads);
-                w->room_view()->set_show_threads_button(!snap.threads.empty());
-                w->room_view()->set_threads_unread(agg.any_unread, agg.any_mention);
-                w->room_view()->set_thread_subscriptions(snap.subs_supported,
-                                                         snap.threads);
-            });
+            fetch_threads_async_(
+                owner, room_id,
+                [this, owner, room_id](ThreadsSnapshot snap)
+                {
+                    // The continuation runs outside the event's account scope.
+                    EventAccountScope scope(*this, owner->user_id);
+                    auto* w = find_event_secondary_(room_id);
+                    if (!w || !w->room_view())
+                    {
+                        return;
+                    }
+                    const auto agg = views::aggregate_threads(snap.threads);
+                    w->room_view()->set_show_threads_button(!snap.threads.empty());
+                    w->room_view()->set_threads_unread(agg.any_unread, agg.any_mention);
+                    w->room_view()->set_thread_subscriptions(snap.subs_supported, snap.threads);
+                });
         }
     }
 
@@ -1401,27 +1518,33 @@ void ShellBase::handle_threads_updated_ui_(std::string room_id)
     // the latest list to decide whether to render. apply_threads_list_ no-ops
     // cheaply when the thread-list panel widget isn't around.
     if (!main_window_shows_(room_id))
-        return;
-    auto sess = active_account_;
-    fetch_threads_async_(sess, room_id,
-                         [this, sess, room_id](ThreadsSnapshot snap)
     {
-        EventAccountScope scope(*this, sess->user_id);
-        if (!client_ || client_ != sess->client.get() || !main_window_shows_(room_id))
-            return;
-        apply_threads_list_(std::move(snap.threads), snap.subs_supported);
-        // on_near_bottom only fires on user scroll, so it can't bootstrap the
-        // initial fill when the first SDK page fits within the viewport. Drive
-        // pagination here instead: each completed page triggers this callback,
-        // which requests the next one — stopping when the controller reports
-        // reached_start.
-        if (main_room_pane_ && main_room_pane_->thread_panel() == ThreadPanel::List)
-            main_room_pane_->paginate_threads_();
-    });
+        return;
+    }
+    auto sess = active_account_;
+    fetch_threads_async_(
+        sess, room_id,
+        [this, sess, room_id](ThreadsSnapshot snap)
+        {
+            EventAccountScope scope(*this, sess->user_id);
+            if (!client_ || client_ != sess->client.get() || !main_window_shows_(room_id))
+            {
+                return;
+            }
+            apply_threads_list_(std::move(snap.threads), snap.subs_supported);
+            // on_near_bottom only fires on user scroll, so it can't bootstrap the
+            // initial fill when the first SDK page fits within the viewport. Drive
+            // pagination here instead: each completed page triggers this callback,
+            // which requests the next one — stopping when the controller reports
+            // reached_start.
+            if (main_room_pane_ && main_room_pane_->thread_panel() == ThreadPanel::List)
+            {
+                main_room_pane_->paginate_threads_();
+            }
+        });
 }
 
-void ShellBase::handle_typing_changed_ui_(std::string room_id,
-                                          std::vector<std::string> names)
+void ShellBase::handle_typing_changed_ui_(std::string room_id, std::vector<std::string> names)
 {
     const std::string text = shell_helpers::format_typing_text(names);
     const bool visible = !names.empty();
@@ -1447,11 +1570,14 @@ void ShellBase::handle_compose_text_changed_(const std::string& text)
     if (!current_room_id_.empty())
     {
         auto sess = active_account_;
-        run_async_([sess, room_id = current_room_id_, typing]()
-        {
-            if (sess && sess->client)
-                sess->client->send_typing_notice(room_id, typing);
-        });
+        run_async_(
+            [sess, room_id = current_room_id_, typing]()
+            {
+                if (sess && sess->client)
+                {
+                    sess->client->send_typing_notice(room_id, typing);
+                }
+            });
     }
 }
 
@@ -1463,18 +1589,20 @@ void ShellBase::handle_compose_room_leaving_(const std::string& old_room_id)
     }
     compose_typing_active_ = false;
     auto sess = active_account_;
-    run_async_([sess, old_room_id]()
-    {
-        if (sess && sess->client)
-            sess->client->send_typing_notice(old_room_id, false);
-    });
+    run_async_(
+        [sess, old_room_id]()
+        {
+            if (sess && sess->client)
+            {
+                sess->client->send_typing_notice(old_room_id, false);
+            }
+        });
 }
 
 // ── Concrete apply_thread_*_ virtuals (route into room_view_->thread_view) ─
 
 void ShellBase::apply_thread_messages_(const std::string& /*thread_root*/,
-                                       std::vector<views::MessageRowData> rows,
-                                       bool room_switch)
+                                       std::vector<views::MessageRowData> rows, bool room_switch)
 {
     if (room_view_ && room_view_->thread_view())
     {
@@ -1483,8 +1611,7 @@ void ShellBase::apply_thread_messages_(const std::string& /*thread_root*/,
     }
 }
 
-void ShellBase::apply_thread_message_insert_(const std::string& /*thread_root*/,
-                                             std::size_t index,
+void ShellBase::apply_thread_message_insert_(const std::string& /*thread_root*/, std::size_t index,
                                              views::MessageRowData row)
 {
     if (room_view_ && room_view_->thread_view())
@@ -1494,8 +1621,7 @@ void ShellBase::apply_thread_message_insert_(const std::string& /*thread_root*/,
     }
 }
 
-void ShellBase::apply_thread_message_update_(const std::string& /*thread_root*/,
-                                             std::size_t index,
+void ShellBase::apply_thread_message_update_(const std::string& /*thread_root*/, std::size_t index,
                                              views::MessageRowData row)
 {
     if (room_view_ && room_view_->thread_view())
@@ -1505,8 +1631,7 @@ void ShellBase::apply_thread_message_update_(const std::string& /*thread_root*/,
     }
 }
 
-void ShellBase::apply_thread_message_remove_(const std::string& /*thread_root*/,
-                                             std::size_t index)
+void ShellBase::apply_thread_message_remove_(const std::string& /*thread_root*/, std::size_t index)
 {
     if (room_view_ && room_view_->thread_view())
     {
@@ -1519,62 +1644,83 @@ void ShellBase::fetch_threads_async_(const std::shared_ptr<AccountSession>& sess
                                      const std::string& room_id, ThreadsDone done)
 {
     if (!sess || !sess->client || room_id.empty())
+    {
         return;
+    }
     const std::string key = sess->user_id + '\x1f' + room_id;
     auto& f = threads_fetch_[key];
     f.queued.push_back(std::move(done));
     if (!f.running)
+    {
         run_threads_fetch_(sess, key, room_id);
+    }
 }
 
 void ShellBase::run_threads_fetch_(const std::shared_ptr<AccountSession>& sess,
                                    const std::string& key, const std::string& room_id)
 {
-    auto& f   = threads_fetch_[key];
+    auto& f = threads_fetch_[key];
     f.running = true;
     auto waiters = std::move(f.queued);
     f.queued.clear();
     run_async_("threads/list",
                [this, sess, key, room_id, waiters = std::move(waiters)]() mutable
-    {
-        ThreadsSnapshot snap;
-        snap.threads        = sess->client->list_room_threads(room_id);
-        snap.subs_supported = sess->client->thread_subscriptions_enabled();
-        post_to_ui_alive_([this, sess, key, room_id, snap = std::move(snap),
-                           waiters = std::move(waiters)]() mutable
-        {
-            for (auto& w : waiters)
-                if (w)
-                    w(snap);
-            auto it = threads_fetch_.find(key);
-            if (it == threads_fetch_.end())
-                return;
-            if (it->second.queued.empty())
-                threads_fetch_.erase(it);
-            else
-                run_threads_fetch_(sess, key, room_id);
-        });
-    });
+               {
+                   ThreadsSnapshot snap;
+                   snap.threads = sess->client->list_room_threads(room_id);
+                   snap.subs_supported = sess->client->thread_subscriptions_enabled();
+                   post_to_ui_alive_(
+                       [this, sess, key, room_id, snap = std::move(snap),
+                        waiters = std::move(waiters)]() mutable
+                       {
+                           for (auto& w : waiters)
+                           {
+                               if (w)
+                               {
+                                   w(snap);
+                               }
+                           }
+                           auto it = threads_fetch_.find(key);
+                           if (it == threads_fetch_.end())
+                           {
+                               return;
+                           }
+                           if (it->second.queued.empty())
+                           {
+                               threads_fetch_.erase(it);
+                           }
+                           else
+                           {
+                               run_threads_fetch_(sess, key, room_id);
+                           }
+                       });
+               });
 }
 
 void ShellBase::refresh_threads_list_async_(const std::string& room_id)
 {
     auto sess = active_account_;
     if (!sess || !client_)
+    {
         return;
+    }
     fetch_threads_async_(sess, room_id,
                          [this, sess, room_id](ThreadsSnapshot snap)
-    {
-        if (room_id != current_room_id_ || client_ != sess->client.get())
-            return;
-        apply_threads_list_(std::move(snap.threads), snap.subs_supported);
-    });
+                         {
+                             if (room_id != current_room_id_ || client_ != sess->client.get())
+                             {
+                                 return;
+                             }
+                             apply_threads_list_(std::move(snap.threads), snap.subs_supported);
+                         });
 }
 
 void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads, bool subs_supported)
 {
     if (!room_view_)
+    {
         return;
+    }
 
     // Drive header-button visibility off the latest snapshot. This runs on
     // every on_threads_updated tick (including the initial empty tick after
@@ -1584,11 +1730,9 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads, bool subs_s
     // count, unless the bridge advertises thread support via
     // com.beeper.room_features (otherwise it cannot relay them).
     const auto* cur_room = room_by_id_(current_room_id_);
-    const bool cur_room_bridged =
-        cur_room && cur_room->is_bridged && !cur_room->bridge_overridden;
+    const bool cur_room_bridged = cur_room && cur_room->is_bridged && !cur_room->bridge_overridden;
     const bool show_threads =
-        !threads.empty() &&
-        (!cur_room_bridged || cur_room->bridge_capabilities.threads);
+        !threads.empty() && (!cur_room_bridged || cur_room->bridge_capabilities.threads);
     room_view_->set_show_threads_button(show_threads);
 
     // Unread-thread indicator: fold the per-thread flags into the header dot.

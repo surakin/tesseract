@@ -65,8 +65,7 @@ public:
     // Replace the result list. `for_query` lets the shell tag results with the
     // query they belong to so a stale response (a slower earlier search) can be
     // dropped — applied only when it matches the current query.
-    void set_results(std::vector<tesseract::SearchHit> results,
-                     const std::string& for_query);
+    void set_results(std::vector<tesseract::SearchHit> results, const std::string& for_query);
 
     // ── Keyboard navigation (driven by the field's popup-nav callback) ────
     void move_selection(int delta);

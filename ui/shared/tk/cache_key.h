@@ -45,7 +45,7 @@ enum class CacheUsage : std::uint8_t
 // convention, so two different call sites can never collide by accident.
 struct CacheKey
 {
-    CacheUsage  usage = CacheUsage::Media;
+    CacheUsage usage = CacheUsage::Media;
     std::string id;
     int w = 0; // meaningful only for CacheUsage::Thumbnail
     int h = 0; // meaningful only for CacheUsage::Thumbnail

@@ -36,7 +36,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
 
     Role access_role() const override
     {
@@ -57,7 +59,9 @@ public:
     void access_detached_children(std::vector<Widget*>& out) const override
     {
         for (Widget* w : detached)
+        {
             out.push_back(w);
+        }
     }
 
     std::string description;
@@ -77,7 +81,9 @@ public:
     {
         return n;
     }
-    void paint_cell(std::size_t, PaintCtx&, Rect, bool, bool) override {}
+    void paint_cell(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
     Role access_role_for_cell(std::size_t) const override
     {
         return Role::GridCell;
@@ -110,15 +116,16 @@ using access_test::find_named;
 using access_test::find_prefix;
 
 TEST_CASE("detached children are walked after real children, hidden ones skipped",
-         "[tk][access_tree][accessibility]")
+          "[tk][access_tree][accessibility]")
 {
     auto root = create_root_widget<AccessExtProbe>(nullptr, Rect{0, 0, 200, 200});
     root->add_child(std::make_unique<AccessExtProbe>(Rect{0, 0, 10, 10}, Role::Button, "real"));
-    auto popup = create_root_widget<AccessExtProbe>(nullptr, Rect{50, 50, 50, 50}, Role::Dialog,
-                                           "popup");
-    popup->add_child(std::make_unique<AccessExtProbe>(Rect{55, 55, 10, 10}, Role::Button, "inside"));
-    auto hidden = create_root_widget<AccessExtProbe>(nullptr, Rect{0, 0, 5, 5}, Role::Button,
-                                            "hidden");
+    auto popup =
+        create_root_widget<AccessExtProbe>(nullptr, Rect{50, 50, 50, 50}, Role::Dialog, "popup");
+    popup->add_child(
+        std::make_unique<AccessExtProbe>(Rect{55, 55, 10, 10}, Role::Button, "inside"));
+    auto hidden =
+        create_root_widget<AccessExtProbe>(nullptr, Rect{0, 0, 5, 5}, Role::Button, "hidden");
     hidden->set_visible(false);
     root->detached = {popup.get(), hidden.get()};
 
@@ -131,14 +138,14 @@ TEST_CASE("detached children are walked after real children, hidden ones skipped
     CHECK(find_named(tree, "hidden") == nullptr);
 }
 
-TEST_CASE("an open modal hides everything else under the root",
-         "[tk][access_tree][accessibility]")
+TEST_CASE("an open modal hides everything else under the root", "[tk][access_tree][accessibility]")
 {
     auto root = create_root_widget<AccessExtProbe>(nullptr, Rect{0, 0, 200, 200});
     root->add_child(std::make_unique<AccessExtProbe>(Rect{0, 0, 10, 10}, Role::Button, "behind"));
     auto* dialog = root->add_child(
         std::make_unique<AccessExtProbe>(Rect{20, 20, 100, 100}, Role::Dialog, "Leave room?"));
-    dialog->add_child(std::make_unique<AccessExtProbe>(Rect{30, 80, 40, 20}, Role::Button, "Leave"));
+    dialog->add_child(
+        std::make_unique<AccessExtProbe>(Rect{30, 80, 40, 20}, Role::Button, "Leave"));
 
     SECTION("not modal: both visible")
     {
@@ -177,8 +184,7 @@ TEST_CASE("description is copied onto the node", "[tk][access_tree][accessibilit
     CHECK(n->description == "Enter the key you saved");
 }
 
-TEST_CASE("ProgressBar reports a value only when determinate",
-         "[tk][access_tree][accessibility]")
+TEST_CASE("ProgressBar reports a value only when determinate", "[tk][access_tree][accessibility]")
 {
     auto bar = create_root_widget<ProgressBar>(nullptr);
     bar->set_label("Exporting");
@@ -196,7 +202,7 @@ TEST_CASE("ProgressBar reports a value only when determinate",
 }
 
 TEST_CASE("grid cells carry 2-D positions and the grid its dimensions",
-         "[tk][access_tree][gridview][accessibility]")
+          "[tk][access_tree][gridview][accessibility]")
 {
     auto surface = TestSurface::create(200, 200);
     LayoutCtx lc{surface->factory(), Theme::light()};
@@ -219,7 +225,7 @@ TEST_CASE("grid cells carry 2-D positions and the grid its dimensions",
 }
 
 TEST_CASE("Host::announce routes to the backend and show_toast announces",
-         "[tk][host][accessibility]")
+          "[tk][host][accessibility]")
 {
     auto root = create_root_widget<AccessExtProbe>(nullptr, Rect{0, 0, 10, 10});
     AccessExtAnnounceHost host(root.get());
@@ -236,8 +242,7 @@ TEST_CASE("Host::announce routes to the backend and show_toast announces",
     CHECK(host.announced[2].first == "Copied to clipboard");
 }
 
-TEST_CASE("a Link-variant Button is an ordinary accessible button",
-         "[tk][controls][accessibility]")
+TEST_CASE("a Link-variant Button is an ordinary accessible button", "[tk][controls][accessibility]")
 {
     auto b = create_root_widget<Button>(nullptr, "Skip for now", std::function<void()>{},
                                         Button::Variant::Link);
@@ -246,7 +251,7 @@ TEST_CASE("a Link-variant Button is an ordinary accessible button",
 }
 
 TEST_CASE("with two dialogs open, the one painted on top is exposed",
-         "[tk][access_tree][accessibility]")
+          "[tk][access_tree][accessibility]")
 {
     auto root = create_root_widget<AccessExtProbe>(nullptr, Rect{0, 0, 200, 200});
     auto* under = root->add_child(
@@ -254,7 +259,7 @@ TEST_CASE("with two dialogs open, the one painted on top is exposed",
     auto* over = root->add_child(
         std::make_unique<AccessExtProbe>(Rect{20, 20, 100, 100}, Role::Dialog, "over"));
     under->modal = true;
-    over->modal  = true;
+    over->modal = true;
     AccessNode tree = build_access_tree(root.get());
     REQUIRE(tree.children.size() == 1);
     CHECK(tree.children[0].name == "over");

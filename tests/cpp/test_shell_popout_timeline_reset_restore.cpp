@@ -34,13 +34,17 @@ namespace
 struct PopoutTimelineResetShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::current_room_id_;
     using ShellBase::pagination_;
@@ -86,16 +90,17 @@ std::vector<MessageRowData> make_rows(int count)
     std::vector<MessageRowData> rows;
     rows.reserve(static_cast<std::size_t>(count));
     for (int i = 0; i < count; ++i)
+    {
         rows.push_back(make_text_row("$row" + std::to_string(i)));
+    }
     return rows;
 }
 
 } // namespace
 
-TEST_CASE(
-    "RoomPane::on_timeline_reset re-asserts a pop-out's OWN focused-timeline "
-    "scroll state, not just the main window's",
-    "[shell][popout][timeline-reset]")
+TEST_CASE("RoomPane::on_timeline_reset re-asserts a pop-out's OWN focused-timeline "
+          "scroll state, not just the main window's",
+          "[shell][popout][timeline-reset]")
 {
     // Regression coverage for the MSC3030 completion-side gap: previously
     // only ShellBase::handle_timeline_reset_ui_'s main-window-only branch
@@ -124,7 +129,11 @@ TEST_CASE(
         RoomPane::Deps{
             .shell = &s,
             .repaint = [] {},
-            .relayout = [&] { stage.run(*view.message_list(), bounds); },
+            .relayout =
+                [&]
+            {
+                stage.run(*view.message_list(), bounds);
+            },
         },
         popout_room);
     pane.attach(RoomPane::Widgets{.room_view = &view});
@@ -155,10 +164,9 @@ TEST_CASE(
     CHECK(list->scroll_y() < max_scroll);
 }
 
-TEST_CASE(
-    "RoomPane::on_timeline_reset scrolls a pop-out to the bottom and clears "
-    "returning_to_live once consumed",
-    "[shell][popout][timeline-reset]")
+TEST_CASE("RoomPane::on_timeline_reset scrolls a pop-out to the bottom and clears "
+          "returning_to_live once consumed",
+          "[shell][popout][timeline-reset]")
 {
     PopoutTimelineResetShell s;
     const std::string popout_room = "!popout:example.org";
@@ -176,7 +184,11 @@ TEST_CASE(
         RoomPane::Deps{
             .shell = &s,
             .repaint = [] {},
-            .relayout = [&] { stage.run(*view.message_list(), bounds); },
+            .relayout =
+                [&]
+            {
+                stage.run(*view.message_list(), bounds);
+            },
         },
         popout_room);
     pane.attach(RoomPane::Widgets{.room_view = &view});
@@ -198,10 +210,9 @@ TEST_CASE(
     CHECK_FALSE(s.pagination_[popout_room].returning_to_live);
 }
 
-TEST_CASE(
-    "RoomPane::on_timeline_reset leaves historical mode off for an ordinary "
-    "(non-focused, non-returning) reset",
-    "[shell][popout][timeline-reset]")
+TEST_CASE("RoomPane::on_timeline_reset leaves historical mode off for an ordinary "
+          "(non-focused, non-returning) reset",
+          "[shell][popout][timeline-reset]")
 {
     PopoutTimelineResetShell s;
     const std::string popout_room = "!popout:example.org";
@@ -219,7 +230,11 @@ TEST_CASE(
         RoomPane::Deps{
             .shell = &s,
             .repaint = [] {},
-            .relayout = [&] { stage.run(*view.message_list(), bounds); },
+            .relayout =
+                [&]
+            {
+                stage.run(*view.message_list(), bounds);
+            },
         },
         popout_room);
     pane.attach(RoomPane::Widgets{.room_view = &view});

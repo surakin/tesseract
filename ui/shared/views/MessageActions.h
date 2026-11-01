@@ -44,16 +44,16 @@ struct MessageActionInputs
     bool utd = false;
     bool poll = false;
     bool editable_kind = false;
-    bool forwarded = false;         // MSC4553 forward: shows the original's content
+    bool forwarded = false; // MSC4553 forward: shows the original's content
     bool is_own = false;
-    bool pending = false;           // local echo not yet confirmed
-    bool can_thread = false;        // is a thread root or not yet in a thread
+    bool pending = false;    // local echo not yet confirmed
+    bool can_thread = false; // is a thread root or not yet in a thread
     bool thread_button_visible = false;
     bool can_redact_others = false;
     bool can_pin = false;
     bool is_pinned = false;
     bool developer_mode = false;
-    bool saveable_sticker = false;  // a sticker not yet in the Saved Stickers pack
+    bool saveable_sticker = false; // a sticker not yet in the Saved Stickers pack
 };
 
 // Pill actions first (display order), then overflow actions.

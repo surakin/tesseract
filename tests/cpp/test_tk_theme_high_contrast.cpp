@@ -19,16 +19,14 @@ namespace
 // Windows' "High Contrast Black" and "High Contrast White" system colours.
 HighContrastColors hc_black()
 {
-    return {Color::rgb(0x000000), Color::rgb(0xFFFFFF), Color::rgb(0x1AEBFF),
-            Color::rgb(0x000000), Color::rgb(0xFFFF00), Color::rgb(0x3FF23F),
-            Color::rgb(0x000000), Color::rgb(0xFFFFFF)};
+    return {Color::rgb(0x000000), Color::rgb(0xFFFFFF), Color::rgb(0x1AEBFF), Color::rgb(0x000000),
+            Color::rgb(0xFFFF00), Color::rgb(0x3FF23F), Color::rgb(0x000000), Color::rgb(0xFFFFFF)};
 }
 
 HighContrastColors hc_white()
 {
-    return {Color::rgb(0xFFFFFF), Color::rgb(0x000000), Color::rgb(0x37006E),
-            Color::rgb(0xFFFFFF), Color::rgb(0x600000), Color::rgb(0x600000),
-            Color::rgb(0xFFFFFF), Color::rgb(0x000000)};
+    return {Color::rgb(0xFFFFFF), Color::rgb(0x000000), Color::rgb(0x37006E), Color::rgb(0xFFFFFF),
+            Color::rgb(0x600000), Color::rgb(0x600000), Color::rgb(0xFFFFFF), Color::rgb(0x000000)};
 }
 
 // Palette is a plain struct of Color fields, so it can be walked as an array.
@@ -49,8 +47,7 @@ TEST_CASE("make_high_contrast_theme picks the mode from the window colour",
     CHECK(tk::make_high_contrast_theme(hc_white()).mode == ThemeMode::Light);
 }
 
-TEST_CASE("make_high_contrast_theme maps the system colours",
-          "[tk][theme][high_contrast]")
+TEST_CASE("make_high_contrast_theme maps the system colours", "[tk][theme][high_contrast]")
 {
     const auto hc = GENERATE(hc_black(), hc_white());
     const Theme t = tk::make_high_contrast_theme(hc);
@@ -83,8 +80,7 @@ TEST_CASE("make_high_contrast_theme maps the system colours",
     CHECK(tk::on_selected(t, Color::rgb(0x123456)) == hc.highlight_text);
 }
 
-TEST_CASE("make_high_contrast_theme builds an opaque palette",
-          "[tk][theme][high_contrast]")
+TEST_CASE("make_high_contrast_theme builds an opaque palette", "[tk][theme][high_contrast]")
 {
     const auto hc = GENERATE(hc_black(), hc_white());
     // Even when the OS colours carry alpha, nothing translucent comes out.
@@ -112,9 +108,8 @@ TEST_CASE("The new palette roles equal the colours their call sites used",
           "[tk][theme][high_contrast]")
 {
     const auto mode = GENERATE(ThemeMode::Light, ThemeMode::Dark);
-    const auto accent = GENERATE(AccentTheme::Blue, AccentTheme::Forest,
-                                 AccentTheme::Sunset, AccentTheme::Violet,
-                                 AccentTheme::System);
+    const auto accent = GENERATE(AccentTheme::Blue, AccentTheme::Forest, AccentTheme::Sunset,
+                                 AccentTheme::Violet, AccentTheme::System);
     Theme t = Theme::variant(mode, accent);
     if (accent == AccentTheme::System)
     {

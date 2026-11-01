@@ -23,12 +23,28 @@ struct BarHost final : MediaViewerPageHost
 {
     Widget* root = nullptr;
 
-    Rect host_bounds() const override { return {0, 0, 400, 300}; }
-    bool host_fullscreen() const override { return false; }
-    bool host_chrome_shown() const override { return true; }
-    void host_refresh_chrome_autohide() override {}
-    void host_request_repaint() override {}
-    const Image* host_image(const std::string&) const override { return nullptr; }
+    Rect host_bounds() const override
+    {
+        return {0, 0, 400, 300};
+    }
+    bool host_fullscreen() const override
+    {
+        return false;
+    }
+    bool host_chrome_shown() const override
+    {
+        return true;
+    }
+    void host_refresh_chrome_autohide() override
+    {
+    }
+    void host_request_repaint() override
+    {
+    }
+    const Image* host_image(const std::string&) const override
+    {
+        return nullptr;
+    }
     Button* host_add_icon_button() override
     {
         return root->add_child(
@@ -36,15 +52,16 @@ struct BarHost final : MediaViewerPageHost
     }
     Button* host_add_label_button(std::string label) override
     {
-        return root->add_child(create_widget<Button>(root, std::move(label),
-                                                     std::function<void()>{},
-                                                     Button::Variant::Primary));
+        return root->add_child(create_widget<Button>(
+            root, std::move(label), std::function<void()>{}, Button::Variant::Primary));
     }
     Slider* host_add_slider() override
     {
         return root->add_child(create_widget<Slider>(root, 0.0, 1.0, 0.001));
     }
-    void host_playback_started() override {}
+    void host_playback_started() override
+    {
+    }
 };
 
 struct BarStage : vt::Stage
@@ -59,7 +76,10 @@ struct BarStage : vt::Stage
     {
         bar_host.root = root.get();
         bar = std::make_unique<MediaTransportBar>(bar_host, /*with_speed=*/false);
-        bar->on_seek = [this](float f) { seeks.push_back(f); };
+        bar->on_seek = [this](float f)
+        {
+            seeks.push_back(f);
+        };
         state.duration_ms = 10000;
         host.set_root(root.get());
         refresh();
@@ -73,7 +93,10 @@ struct BarStage : vt::Stage
         auto p = pc();
         bar->paint(p, state);
     }
-    Slider* slider() const { return bar->scrub_slider(); }
+    Slider* slider() const
+    {
+        return bar->scrub_slider();
+    }
     // Pointer position `frac` of the way along the slider, in its local space.
     Point at(float frac) const
     {
@@ -100,8 +123,7 @@ TEST_CASE("transport bar scrub slider seeks to the pressed fraction", "[tk][tran
     CHECK_FALSE(s.bar->scrubbing());
 }
 
-TEST_CASE("transport bar scrub slider never seeks past the downloaded part",
-          "[tk][transportbar]")
+TEST_CASE("transport bar scrub slider never seeks past the downloaded part", "[tk][transportbar]")
 {
     BarStage s;
     s.state.buffered_frac = 0.4f;
@@ -112,8 +134,7 @@ TEST_CASE("transport bar scrub slider never seeks past the downloaded part",
     CHECK(s.seeks.back() == Catch::Approx(0.4f).margin(1e-3));
 }
 
-TEST_CASE("transport bar scrub slider ignores a stream of unknown duration",
-          "[tk][transportbar]")
+TEST_CASE("transport bar scrub slider ignores a stream of unknown duration", "[tk][transportbar]")
 {
     BarStage s;
     s.state.duration_ms = 0;
@@ -122,8 +143,7 @@ TEST_CASE("transport bar scrub slider ignores a stream of unknown duration",
     CHECK(s.seeks.empty());
 }
 
-TEST_CASE("transport bar does not move the slider under the user's drag",
-          "[tk][transportbar]")
+TEST_CASE("transport bar does not move the slider under the user's drag", "[tk][transportbar]")
 {
     BarStage s;
     s.press(0.25f);

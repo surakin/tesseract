@@ -43,8 +43,7 @@ private:
     // for as long as this view is on-screen (idle "no room open" splash,
     // startup splash, About section). Starts ticking from construction, not
     // lazily, since it animates unconditionally.
-    std::chrono::steady_clock::time_point wireframe_start_ =
-        std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point wireframe_start_ = std::chrono::steady_clock::now();
     // Guards against scheduling overlapping post_delayed timers if paint()
     // fires more often than the throttle interval for unrelated reasons.
     bool wireframe_repaint_pending_ = false;

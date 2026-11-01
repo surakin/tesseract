@@ -4,7 +4,8 @@
 
 #include "views/update_checks.h"
 
-namespace tesseract {
+namespace tesseract
+{
 
 // Abstract interface for checking whether a newer application version is
 // available. The concrete implementation (GithubUpdateChecker) calls

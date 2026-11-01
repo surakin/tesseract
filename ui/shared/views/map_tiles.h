@@ -55,9 +55,8 @@ inline TileCoord lat_lon_to_tile(double lat, double lon, int zoom)
     lon = clamp_lon(lon);
     const double lat_r = lat * M_PI / 180.0;
     int x = static_cast<int>(std::floor((lon + 180.0) / 360.0 * fn));
-    int y = static_cast<int>(std::floor(
-        (1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / M_PI) / 2.0 *
-        fn));
+    int y = static_cast<int>(
+        std::floor((1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / M_PI) / 2.0 * fn));
     x = std::max(0, std::min(x, n - 1));
     y = std::max(0, std::min(y, n - 1));
     return {zoom, x, y};
@@ -72,37 +71,31 @@ inline tk::Point lat_lon_to_world_px(double lat, double lon, int zoom)
     lon = clamp_lon(lon);
     const double lat_r = lat * M_PI / 180.0;
     double fx = (lon + 180.0) / 360.0 * n;
-    double fy =
-        (1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / M_PI) / 2.0 *
-        n;
+    double fy = (1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / M_PI) / 2.0 * n;
     return {static_cast<float>(fx), static_cast<float>(fy)};
 }
 
 /// Inverse of lat_lon_to_world_px.
-inline std::pair<double, double> world_px_to_lat_lon(float px, float py,
-                                                     int zoom)
+inline std::pair<double, double> world_px_to_lat_lon(float px, float py, int zoom)
 {
     const double n = static_cast<double>(1 << zoom) * 256.0;
     double fx = static_cast<double>(px) / n;
     double fy = static_cast<double>(py) / n;
     double lon = fx * 360.0 - 180.0;
     double merc_y = M_PI * (1.0 - 2.0 * fy);
-    double lat =
-        (2.0 * std::atan(std::exp(merc_y)) - M_PI / 2.0) * (180.0 / M_PI);
+    double lat = (2.0 * std::atan(std::exp(merc_y)) - M_PI / 2.0) * (180.0 / M_PI);
     return {lat, lon};
 }
 
 /// Top-left pixel position of a tile within `map_rect`, given the viewport.
 /// `viewport_px` is lat_lon_to_world_px(vp.lat, vp.lon, vp.zoom).
-inline tk::Point tile_pixel_origin(TileCoord t, tk::Point viewport_px,
-                                   tk::Rect map_rect)
+inline tk::Point tile_pixel_origin(TileCoord t, tk::Point viewport_px, tk::Rect map_rect)
 {
     float tile_world_x = static_cast<float>(t.x) * 256.0f;
     float tile_world_y = static_cast<float>(t.y) * 256.0f;
     float map_cx = map_rect.x + map_rect.w * 0.5f;
     float map_cy = map_rect.y + map_rect.h * 0.5f;
-    return {map_cx + (tile_world_x - viewport_px.x),
-            map_cy + (tile_world_y - viewport_px.y)};
+    return {map_cx + (tile_world_x - viewport_px.x), map_cy + (tile_world_y - viewport_px.y)};
 }
 
 /// All tile coordinates needed to fill `map_rect` at the viewport zoom.
@@ -143,15 +136,14 @@ inline bool is_png_bytes(const std::vector<std::uint8_t>& bytes)
 
 inline std::string tile_cache_key(TileCoord t)
 {
-    return "tile:" + std::to_string(t.z) + "/" + std::to_string(t.x) + "/" +
-           std::to_string(t.y);
+    return "tile:" + std::to_string(t.z) + "/" + std::to_string(t.x) + "/" + std::to_string(t.y);
 }
 
 /// OSM slippy-map tile URL.
 inline std::string tile_url(TileCoord t)
 {
-    return "https://tile.openstreetmap.org/" + std::to_string(t.z) + "/" +
-           std::to_string(t.x) + "/" + std::to_string(t.y) + ".png";
+    return "https://tile.openstreetmap.org/" + std::to_string(t.z) + "/" + std::to_string(t.x) +
+           "/" + std::to_string(t.y) + ".png";
 }
 
 /// Locale-independent fixed-point text of `v` with 6 decimals. std::to_string
@@ -169,9 +161,8 @@ inline std::string coord_text(double v)
 /// marker dropped at that point.
 inline std::string osm_view_url(double lat, double lon, int zoom)
 {
-    return "https://www.openstreetmap.org/?mlat=" + coord_text(lat) +
-           "&mlon=" + coord_text(lon) + "#map=" + std::to_string(zoom) +
-           "/" + coord_text(lat) + "/" + coord_text(lon);
+    return "https://www.openstreetmap.org/?mlat=" + coord_text(lat) + "&mlon=" + coord_text(lon) +
+           "#map=" + std::to_string(zoom) + "/" + coord_text(lat) + "/" + coord_text(lon);
 }
 
 /// URL to open when a location card is clicked. A location whose body is a
@@ -185,33 +176,36 @@ inline bool is_known_map_url(std::string_view url)
 {
     const auto scheme_end = url.find("://");
     if (scheme_end == std::string_view::npos)
+    {
         return false;
+    }
     const auto after = url.substr(scheme_end + 3);
     const auto host_end = after.find_first_of("/?#");
     const auto host = after.substr(0, host_end);
-    const auto path = host_end == std::string_view::npos
-                          ? std::string_view{}
-                          : after.substr(host_end);
-    if (host == "openstreetmap.org" || host == "www.openstreetmap.org" ||
-        host == "osm.org" || host == "maps.apple.com")
+    const auto path =
+        host_end == std::string_view::npos ? std::string_view{} : after.substr(host_end);
+    if (host == "openstreetmap.org" || host == "www.openstreetmap.org" || host == "osm.org" ||
+        host == "maps.apple.com")
+    {
         return true;
-    if (host == "maps.google.com" || host == "www.google.com" ||
-        host == "google.com")
+    }
+    if (host == "maps.google.com" || host == "www.google.com" || host == "google.com")
+    {
         return path.starts_with("/maps");
+    }
     return false;
 }
 
-inline std::string location_click_url(std::string_view body, double lat,
-                                      double lon, int zoom)
+inline std::string location_click_url(std::string_view body, double lat, double lon, int zoom)
 {
-    const bool body_is_url =
-        body.starts_with("http://") || body.starts_with("https://");
+    const bool body_is_url = body.starts_with("http://") || body.starts_with("https://");
     if (!body_is_url || !is_known_map_url(body))
+    {
         return osm_view_url(lat, lon, zoom);
-    const bool broken_osm =
-        (body.starts_with("https://www.openstreetmap.org/") ||
-         body.starts_with("https://openstreetmap.org/")) &&
-        body.find(',') != std::string_view::npos;
+    }
+    const bool broken_osm = (body.starts_with("https://www.openstreetmap.org/") ||
+                             body.starts_with("https://openstreetmap.org/")) &&
+                            body.find(',') != std::string_view::npos;
     return broken_osm ? osm_view_url(lat, lon, zoom) : std::string(body);
 }
 

@@ -21,8 +21,7 @@ struct TkImagePackEditorStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -34,8 +33,7 @@ struct TkImagePackEditorStage
     }
 };
 
-tesseract::ImagePack make_pack(std::string id, std::string name,
-                               const std::string& room_id)
+tesseract::ImagePack make_pack(std::string id, std::string name, const std::string& room_id)
 {
     tesseract::ImagePack p;
     // Distinct per-pack state_key (mirroring `id`, not production's
@@ -50,8 +48,7 @@ tesseract::ImagePack make_pack(std::string id, std::string name,
     return p;
 }
 
-tesseract::ImagePackImage make_image(std::string pack_id, std::string shortcode,
-                                     std::string url)
+tesseract::ImagePackImage make_image(std::string pack_id, std::string shortcode, std::string url)
 {
     tesseract::ImagePackImage img;
     img.pack_id = std::move(pack_id);
@@ -68,47 +65,46 @@ tesseract::ImagePackImage make_image(std::string pack_id, std::string shortcode,
 //     -> new-pack row at y=16+16+4=36, height 32; list starts at
 //        y=36+32+16=84
 //   section list: grid_w = 800-2*8=784; cols = floor((784+8)/(96+8)) = 7
-constexpr float kListTop        = 84.0f;
-constexpr float kHeaderH        = 40.0f;
-constexpr float kTileSize       = 96.0f;
-constexpr float kTileSpacing    = 8.0f;
-constexpr float kTilePad        = 8.0f;
-constexpr float kSectionGap     = 16.0f;
-constexpr float kImageH         = 76.0f;
-constexpr float kLabelH         = 20.0f;
-constexpr float kRemoveChipR    = 9.0f;
-constexpr float kHeaderRemoveR  = 10.0f;
-constexpr float kUsageSegW      = 52.0f;
-constexpr float kUsageSegH      = 24.0f;
-constexpr float kUsageSegGap    = 4.0f;
-constexpr float kHeaderPadX     = 12.0f;
-constexpr std::size_t kCols     = 7;
+constexpr float kListTop = 84.0f;
+constexpr float kHeaderH = 40.0f;
+constexpr float kTileSize = 96.0f;
+constexpr float kTileSpacing = 8.0f;
+constexpr float kTilePad = 8.0f;
+constexpr float kSectionGap = 16.0f;
+constexpr float kImageH = 76.0f;
+constexpr float kLabelH = 20.0f;
+constexpr float kRemoveChipR = 9.0f;
+constexpr float kHeaderRemoveR = 10.0f;
+constexpr float kUsageSegW = 52.0f;
+constexpr float kUsageSegH = 24.0f;
+constexpr float kUsageSegGap = 4.0f;
+constexpr float kHeaderPadX = 12.0f;
+constexpr std::size_t kCols = 7;
 
 float section_height(std::size_t image_count)
 {
     const std::size_t tile_count = image_count + 1; // + hint tile
     const std::size_t rows = (tile_count + kCols - 1) / kCols;
     const float grid_h =
-        kTilePad * 2.0f +
-        (rows > 0 ? static_cast<float>(rows) * kTileSize +
-                        static_cast<float>(rows - 1) * kTileSpacing
-                  : 0.0f);
+        kTilePad * 2.0f + (rows > 0 ? static_cast<float>(rows) * kTileSize +
+                                          static_cast<float>(rows - 1) * kTileSpacing
+                                    : 0.0f);
     return kHeaderH + grid_h + kSectionGap;
 }
 
-float section_top_world(const std::vector<std::size_t>& image_counts,
-                        std::size_t pack_idx)
+float section_top_world(const std::vector<std::size_t>& image_counts, std::size_t pack_idx)
 {
     float y = kListTop;
     for (std::size_t i = 0; i < pack_idx; ++i)
+    {
         y += section_height(image_counts[i]);
+    }
     return y;
 }
 
 // World-space center of pack `pack_idx`'s header name area (safe click
 // target: well inside the label, left of the usage toggle).
-tk::Point header_name_point(const std::vector<std::size_t>& image_counts,
-                            std::size_t pack_idx)
+tk::Point header_name_point(const std::vector<std::size_t>& image_counts, std::size_t pack_idx)
 {
     const float top = section_top_world(image_counts, pack_idx);
     return {100.0f, top + kHeaderH * 0.5f};
@@ -128,16 +124,18 @@ tk::Point header_usage_segment_point(const std::vector<std::size_t>& image_count
 {
     const float top = section_top_world(image_counts, pack_idx);
     const float chip_right = 800.0f - kHeaderPadX;
-    const float chip_left  = chip_right - kHeaderRemoveR * 2.0f;
+    const float chip_left = chip_right - kHeaderRemoveR * 2.0f;
     float seg_right = chip_left - kUsageSegGap;
     for (int s = 2; s > seg; --s)
+    {
         seg_right -= kUsageSegGap + kUsageSegW;
+    }
     const float seg_left = seg_right - kUsageSegW;
     return {(seg_left + seg_right) * 0.5f, top + kHeaderH * 0.5f};
 }
 
-tk::Point tile_remove_chip_point(const std::vector<std::size_t>& image_counts,
-                                 std::size_t pack_idx, std::size_t tile_idx)
+tk::Point tile_remove_chip_point(const std::vector<std::size_t>& image_counts, std::size_t pack_idx,
+                                 std::size_t tile_idx)
 {
     const float top = section_top_world(image_counts, pack_idx);
     const std::size_t row = tile_idx / kCols;
@@ -148,8 +146,8 @@ tk::Point tile_remove_chip_point(const std::vector<std::size_t>& image_counts,
     return {cell_x + kTileSize - kRemoveChipR, cell_y + kRemoveChipR};
 }
 
-tk::Point tile_label_point(const std::vector<std::size_t>& image_counts,
-                           std::size_t pack_idx, std::size_t tile_idx)
+tk::Point tile_label_point(const std::vector<std::size_t>& image_counts, std::size_t pack_idx,
+                           std::size_t tile_idx)
 {
     const float top = section_top_world(image_counts, pack_idx);
     const std::size_t row = tile_idx / kCols;
@@ -174,8 +172,8 @@ TEST_CASE("ImagePackEditorView: closed by default", "[image_pack][view]")
 }
 
 TEST_CASE("ImagePackEditorView: paste_catcher is self-owned, invisible, "
-         "and becomes focused once the view opens",
-         "[image_pack][view]")
+          "and becomes focused once the view opens",
+          "[image_pack][view]")
 {
     StubHost host;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(&host);
@@ -198,8 +196,8 @@ TEST_CASE("ImagePackEditorView: paste_catcher is self-owned, invisible, "
 }
 
 TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
-         "active pack",
-         "[image_pack][view]")
+          "active pack",
+          "[image_pack][view]")
 {
     // TkImagePackEditorStage must be declared (and so destroyed last) before
     // the widget tree below: paint() rasterizes icon bitmaps/text layouts
@@ -225,8 +223,7 @@ TEST_CASE("ImagePackEditorView: pasting into the paste_catcher targets the "
     REQUIRE(v.packs()[0].images.size() == 1);
 }
 
-TEST_CASE("ImagePackEditorView: open() opens the view for the given room",
-         "[image_pack][view]")
+TEST_CASE("ImagePackEditorView: open() opens the view for the given room", "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -237,8 +234,8 @@ TEST_CASE("ImagePackEditorView: open() opens the view for the given room",
 }
 
 TEST_CASE("ImagePackEditorView: no packs leaves the list empty and no "
-         "active pack",
-         "[image_pack][view]")
+          "active pack",
+          "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -251,8 +248,8 @@ TEST_CASE("ImagePackEditorView: no packs leaves the list empty and no "
 }
 
 TEST_CASE("ImagePackEditorView: available packs are all listed at once, "
-         "the first is active, and on_pack_images_needed fires for each",
-         "[image_pack][view]")
+          "the first is active, and on_pack_images_needed fires for each",
+          "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -261,7 +258,9 @@ TEST_CASE("ImagePackEditorView: available packs are all listed at once, "
 
     std::vector<std::string> needed;
     v.on_pack_images_needed = [&](std::string pack_id)
-    { needed.push_back(std::move(pack_id)); };
+    {
+        needed.push_back(std::move(pack_id));
+    };
 
     std::vector<tesseract::ImagePack> packs;
     packs.push_back(make_pack("p1", "Emotes", "!room:example.org"));
@@ -279,8 +278,8 @@ TEST_CASE("ImagePackEditorView: available packs are all listed at once, "
 }
 
 TEST_CASE("ImagePackEditorView: defaults to read-only on open() until "
-         "set_field_permissions(true)",
-         "[image_pack][view]")
+          "set_field_permissions(true)",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -299,7 +298,9 @@ TEST_CASE("ImagePackEditorView: defaults to read-only on open() until "
     v.set_new_pack_name_text("New Pack");
     const tk::Point create_pt{800.0f - 24.0f - 44.0f, 16.0f + 20.0f + 16.0f};
     if (tk::Widget* c = v.dispatch_pointer_down(create_pt))
+    {
         c->on_pointer_up(c->world_to_local(create_pt), /*inside_self=*/true);
+    }
     CHECK(v.packs().empty());
 
     v.set_field_permissions(true);
@@ -315,9 +316,9 @@ TEST_CASE("ImagePackEditorView: defaults to read-only on open() until "
 }
 
 TEST_CASE("ImagePackEditorView: set_field_permissions(false) disables "
-         "remove/usage-change/rename/paste but header click still selects "
-         "the pack as active",
-         "[image_pack][view]")
+          "remove/usage-change/rename/paste but header click still selects "
+          "the pack as active",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -358,8 +359,8 @@ TEST_CASE("ImagePackEditorView: set_field_permissions(false) disables "
 }
 
 TEST_CASE("ImagePackEditorView: set_pack_images populates the matching "
-         "pack only",
-         "[image_pack][view]")
+          "pack only",
+          "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -368,8 +369,7 @@ TEST_CASE("ImagePackEditorView: set_pack_images populates the matching "
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
                            make_pack("p2", "Stickers", "!room:example.org")});
 
-    v.set_pack_images("p2",
-                      {make_image("p2", "wave", "mxc://example.org/1")});
+    v.set_pack_images("p2", {make_image("p2", "wave", "mxc://example.org/1")});
 
     REQUIRE(v.packs()[0].images.empty());
     REQUIRE(v.packs()[1].images.size() == 1);
@@ -377,8 +377,8 @@ TEST_CASE("ImagePackEditorView: set_pack_images populates the matching "
 }
 
 TEST_CASE("ImagePackEditorView: set_pack_images for an unknown pack id is "
-         "ignored",
-         "[image_pack][view]")
+          "ignored",
+          "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -386,14 +386,12 @@ TEST_CASE("ImagePackEditorView: set_pack_images for an unknown pack id is "
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
 
-    v.set_pack_images("does-not-exist",
-                      {make_image("x", "wave", "mxc://example.org/1")});
+    v.set_pack_images("does-not-exist", {make_image("x", "wave", "mxc://example.org/1")});
 
     CHECK(v.packs()[0].images.empty());
 }
 
-TEST_CASE("ImagePackEditorView: clicking a pack header selects it as active",
-         "[image_pack][view]")
+TEST_CASE("ImagePackEditorView: clicking a pack header selects it as active", "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -416,8 +414,8 @@ TEST_CASE("ImagePackEditorView: clicking a pack header selects it as active",
 }
 
 TEST_CASE("ImagePackEditorView: clicking a header's usage segment sets "
-         "that pack's usage",
-         "[image_pack][view]")
+          "that pack's usage",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -445,8 +443,8 @@ TEST_CASE("ImagePackEditorView: clicking a header's usage segment sets "
 }
 
 TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
-         "that pack and records it as removed",
-         "[image_pack][view]")
+          "that pack and records it as removed",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -476,8 +474,8 @@ TEST_CASE("ImagePackEditorView: clicking a header's remove chip deletes "
 }
 
 TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
-         "record it as removed (it never existed server-side)",
-         "[image_pack][view]")
+          "record it as removed (it never existed server-side)",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -518,8 +516,8 @@ TEST_CASE("ImagePackEditorView: removing a newly-created pack does not "
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_to_active targets the "
-         "active pack",
-         "[image_pack][view]")
+          "active pack",
+          "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -530,10 +528,11 @@ TEST_CASE("ImagePackEditorView: add_pending_image_to_active targets the "
     REQUIRE(*v.active_pack_index() == 0);
 
     std::uint64_t added_id = 0;
-    v.on_pending_image_added = [&](std::uint64_t local_id,
-                                   const std::vector<std::uint8_t>&,
-                                   const std::string&)
-    { added_id = local_id; };
+    v.on_pending_image_added =
+        [&](std::uint64_t local_id, const std::vector<std::uint8_t>&, const std::string&)
+    {
+        added_id = local_id;
+    };
 
     v.add_pending_image_to_active({1, 2, 3}, "image/png");
 
@@ -545,8 +544,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_to_active targets the "
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_to_active is a no-op "
-         "with no active pack",
-         "[image_pack][view]")
+          "with no active pack",
+          "[image_pack][view]")
 {
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
     ImagePackEditorView& v = *v_owner;
@@ -555,16 +554,19 @@ TEST_CASE("ImagePackEditorView: add_pending_image_to_active is a no-op "
     v.set_available_packs({});
 
     int added_count = 0;
-    v.on_pending_image_added = [&](std::uint64_t, const std::vector<std::uint8_t>&,
-                                   const std::string&) { ++added_count; };
+    v.on_pending_image_added =
+        [&](std::uint64_t, const std::vector<std::uint8_t>&, const std::string&)
+    {
+        ++added_count;
+    };
     v.add_pending_image_to_active({1, 2, 3}, "image/png");
 
     CHECK(added_count == 0);
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_at targets the pack "
-         "under the drop point, not the active pack",
-         "[image_pack][view]")
+          "under the drop point, not the active pack",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -589,8 +591,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at targets the pack "
 }
 
 TEST_CASE("ImagePackEditorView: dispatch_file_drop reconstructs world "
-         "coordinates and reaches the same pack as add_pending_image_at",
-         "[image_pack][view]")
+          "coordinates and reaches the same pack as add_pending_image_at",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -621,8 +623,8 @@ TEST_CASE("ImagePackEditorView: dispatch_file_drop reconstructs world "
 }
 
 TEST_CASE("ImagePackEditorView: dispatch_native_drag_hover targets the pack under "
-         "the point and updates on move without changing the claimed widget",
-         "[image_pack][view]")
+          "the point and updates on move without changing the claimed widget",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -657,8 +659,8 @@ TEST_CASE("ImagePackEditorView: dispatch_native_drag_hover targets the pack unde
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_at falls back to the "
-         "active pack when the point isn't over any pack's section",
-         "[image_pack][view]")
+          "active pack when the point isn't over any pack's section",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -679,8 +681,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at falls back to the "
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_at is a no-op with no "
-         "packs at all",
-         "[image_pack][view]")
+          "packs at all",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -696,8 +698,8 @@ TEST_CASE("ImagePackEditorView: add_pending_image_at is a no-op with no "
 }
 
 TEST_CASE("ImagePackEditorView: set_tile_preview finds the image across "
-         "packs by local_id",
-         "[image_pack][view]")
+          "packs by local_id",
+          "[image_pack][view]")
 {
     auto tmp_surface = TestSurface::create(4, 4);
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -708,9 +710,11 @@ TEST_CASE("ImagePackEditorView: set_tile_preview finds the image across "
                            make_pack("p2", "Stickers", "!room:example.org")});
 
     std::uint64_t added_id = 0;
-    v.on_pending_image_added = [&](std::uint64_t local_id,
-                                   const std::vector<std::uint8_t>&,
-                                   const std::string&) { added_id = local_id; };
+    v.on_pending_image_added =
+        [&](std::uint64_t local_id, const std::vector<std::uint8_t>&, const std::string&)
+    {
+        added_id = local_id;
+    };
     // active pack is p1 (index 0); add to p1.
     v.add_pending_image_to_active({1, 2, 3}, "image/png");
     REQUIRE(added_id != 0);
@@ -725,8 +729,8 @@ TEST_CASE("ImagePackEditorView: set_tile_preview finds the image across "
 }
 
 TEST_CASE("ImagePackEditorView: clicking a tile's shortcode label begins "
-         "editing, set_editing_shortcode_text + commit updates it",
-         "[image_pack][view]")
+          "editing, set_editing_shortcode_text + commit updates it",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -734,8 +738,7 @@ TEST_CASE("ImagePackEditorView: clicking a tile's shortcode label begins "
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
-    v.set_pack_images("p1",
-                      {make_image("p1", "happy", "mxc://example.org/1")});
+    v.set_pack_images("p1", {make_image("p1", "happy", "mxc://example.org/1")});
 
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     REQUIRE(v.shortcode_edit_rect().empty());
@@ -755,8 +758,8 @@ TEST_CASE("ImagePackEditorView: clicking a tile's shortcode label begins "
 }
 
 TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
-         "and shifts in-progress editing on later tiles",
-         "[image_pack][view]")
+          "and shifts in-progress editing on later tiles",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -790,8 +793,7 @@ TEST_CASE("ImagePackEditorView: clicking a tile's remove chip removes it "
     CHECK_FALSE(v.shortcode_edit_rect().empty());
 }
 
-TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
-         "[image_pack][view]")
+TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll", "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -802,8 +804,10 @@ TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
 
     std::vector<tesseract::ImagePackImage> images;
     for (int i = 0; i < 60; ++i)
-        images.push_back(make_image("p1", "s" + std::to_string(i),
-                                    "mxc://example.org/" + std::to_string(i)));
+    {
+        images.push_back(
+            make_image("p1", "s" + std::to_string(i), "mxc://example.org/" + std::to_string(i)));
+    }
     v.set_pack_images("p1", images);
 
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -819,8 +823,8 @@ TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll",
 }
 
 TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
-         "pack, including a tile with only pending_bytes",
-         "[image_pack][view]")
+          "pack, including a tile with only pending_bytes",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -828,8 +832,7 @@ TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
     v.open("!room:example.org");
     v.set_field_permissions(true);
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
-    v.set_pack_images("p1",
-                      {make_image("p1", "happy", "mxc://example.org/1")});
+    v.set_pack_images("p1", {make_image("p1", "happy", "mxc://example.org/1")});
     v.add_pending_image_to_active({9, 9, 9}, "image/png");
 
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -843,14 +846,13 @@ TEST_CASE("ImagePackEditorView: build_result() returns every remaining "
     REQUIRE(accepted.packs[0].images.size() == 2);
     CHECK(accepted.packs[0].images[0].shortcode == "happy");
     CHECK(accepted.packs[0].images[1].existing_url.empty());
-    CHECK(accepted.packs[0].images[1].pending_bytes ==
-         std::vector<std::uint8_t>{9, 9, 9});
+    CHECK(accepted.packs[0].images[1].pending_bytes == std::vector<std::uint8_t>{9, 9, 9});
     CHECK(accepted.removed_state_keys.empty());
 }
 
 TEST_CASE("ImagePackEditorView: set_committing(true) disables the Create "
-         "button and hides the native-overlay rects",
-         "[image_pack][view]")
+          "button and hides the native-overlay rects",
+          "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -884,8 +886,7 @@ TEST_CASE("ImagePackEditorView: close() closes the view", "[image_pack][view]")
     CHECK_FALSE(v.is_open());
 }
 
-TEST_CASE("ImagePackEditorView: paints without crashing across states",
-         "[image_pack][view]")
+TEST_CASE("ImagePackEditorView: paints without crashing across states", "[image_pack][view]")
 {
     TkImagePackEditorStage st;
     auto v_owner = tk::create_root_widget<ImagePackEditorView>(nullptr);
@@ -905,8 +906,7 @@ TEST_CASE("ImagePackEditorView: paints without crashing across states",
     // Multiple packs, one mid-edit, one being created.
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org"),
                            make_pack("p2", "Stickers", "!room:example.org")});
-    v.set_pack_images("p1",
-                      {make_image("p1", "happy", "mxc://example.org/1")});
+    v.set_pack_images("p1", {make_image("p1", "happy", "mxc://example.org/1")});
     v.add_pending_image_to_active({1, 2, 3}, "image/png");
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }

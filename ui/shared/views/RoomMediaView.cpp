@@ -21,8 +21,7 @@ namespace
 
 bool is_media_row(const MessageRowData& r)
 {
-    return r.kind == MessageRowData::Kind::Image ||
-           r.kind == MessageRowData::Kind::Video;
+    return r.kind == MessageRowData::Kind::Image || r.kind == MessageRowData::Kind::Video;
 }
 
 struct MonthKey
@@ -41,8 +40,7 @@ MonthKey compute_month_key(std::uint64_t timestamp_ms)
     localtime_r(&t, &tm_val);
 #endif
     char key_buf[32];
-    std::snprintf(key_buf, sizeof(key_buf), "%04d-%02d",
-                 tm_val.tm_year + 1900, tm_val.tm_mon + 1);
+    std::snprintf(key_buf, sizeof(key_buf), "%04d-%02d", tm_val.tm_year + 1900, tm_val.tm_mon + 1);
     // TRANSLATORS: month header pattern, see tk::format_date.
     return {std::string(key_buf), tk::format_date(tm_val, tk::tr("%B %Y"))};
 }
@@ -54,8 +52,7 @@ MonthKey compute_month_key(std::uint64_t timestamp_ms)
 //  media-strip row model.
 // ─────────────────────────────────────────────────────────────────────────
 
-class RoomMediaView::Adapter : public tk::ListAdapter,
-                               public tk::ListAdapterAccessibility
+class RoomMediaView::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(RoomMediaView& owner) : owner_(owner)
@@ -70,14 +67,16 @@ public:
     float measure_row_height(std::size_t index, tk::LayoutCtx&, float) override
     {
         if (index >= owner_.rows_.size())
+        {
             return 0.0f;
+        }
         return owner_.rows_[index].kind == MediaGridRow::Kind::MonthHeader
                    ? kMonthHeaderH
                    : (RoomMediaView::kCellSize + RoomMediaView::kCellSpacing);
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool /*selected*/, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool /*selected*/,
+                   bool hovered) override
     {
         owner_.paint_grid_row_(index, ctx, bounds, hovered);
     }
@@ -91,12 +90,13 @@ public:
     std::string row_key(std::size_t index) const override
     {
         if (index >= owner_.rows_.size())
+        {
             return {};
+        }
         const auto& r = owner_.rows_[index];
         return r.kind == MediaGridRow::Kind::MonthHeader
                    ? ("month:" + r.month_key)
-                   : ("strip:" + r.month_key + ":" +
-                      std::to_string(r.strip_index));
+                   : ("strip:" + r.month_key + ":" + std::to_string(r.strip_index));
     }
 
     static constexpr float kMonthHeaderH = 28.0f;
@@ -108,21 +108,26 @@ public:
     tk::Role access_role_for_row(std::size_t index) const override
     {
         if (index >= owner_.rows_.size())
+        {
             return tk::Role::None;
-        return owner_.rows_[index].kind == MediaGridRow::Kind::MonthHeader
-                   ? tk::Role::StaticText
-                   : tk::Role::Group;
+        }
+        return owner_.rows_[index].kind == MediaGridRow::Kind::MonthHeader ? tk::Role::StaticText
+                                                                           : tk::Role::Group;
     }
     std::vector<tk::AccessNode> access_subtree_for_row(std::size_t index) const override
     {
         std::vector<tk::AccessNode> out;
         if (index >= owner_.rows_.size())
+        {
             return out;
+        }
         const auto& r = owner_.rows_[index];
         if (r.kind != MediaGridRow::Kind::MediaStrip)
+        {
             return out;
-        const tk::Rect row_rect = owner_.list_ ? owner_.list_->row_world_rect(static_cast<int>(index))
-                                               : tk::Rect{};
+        }
+        const tk::Rect row_rect =
+            owner_.list_ ? owner_.list_->row_world_rect(static_cast<int>(index)) : tk::Rect{};
         for (std::size_t i = 0; i < r.items.size(); ++i)
         {
             const MessageRowData& item = r.items[i];
@@ -139,12 +144,16 @@ public:
             n.activate = [owner, event_id]
             {
                 for (const auto& row : owner->rows_)
+                {
                     for (const auto& it : row.items)
+                    {
                         if (it.event_id == event_id)
                         {
                             owner->activate_item_(it);
                             return true;
                         }
+                    }
+                }
                 return false;
             };
             out.push_back(std::move(n));
@@ -154,23 +163,30 @@ public:
     std::string access_name_for_row(std::size_t index) const override
     {
         if (index >= owner_.rows_.size())
+        {
             return {};
+        }
         const auto& r = owner_.rows_[index];
         if (r.kind == MediaGridRow::Kind::MonthHeader)
+        {
             return r.month_label;
-        const std::string count = tk::trf(tk::trn("{0} item", "{0} items",
-                                                  static_cast<long>(r.items.size())),
-                                          {std::to_string(r.items.size())});
-        return r.month_label.empty() ? count
-                                     : tk::trf(tk::tr("{0}, {1}"), {count, r.month_label});
+        }
+        const std::string count =
+            tk::trf(tk::trn("{0} item", "{0} items", static_cast<long>(r.items.size())),
+                    {std::to_string(r.items.size())});
+        return r.month_label.empty() ? count : tk::trf(tk::tr("{0}, {1}"), {count, r.month_label});
     }
     bool access_activate_row(std::size_t index) override
     {
         if (index >= owner_.rows_.size())
+        {
             return false;
+        }
         const auto& r = owner_.rows_[index];
         if (r.kind != MediaGridRow::Kind::MediaStrip || r.items.empty())
+        {
             return false;
+        }
         owner_.activate_item_(r.items.front()); // opens the first thumbnail
         return true;
     }
@@ -209,8 +225,7 @@ public:
         if (row_idx >= 0 && row_idx == press_row_)
         {
             const tk::Point world{local.x + bounds().x, local.y + bounds().y};
-            owner_.handle_cell_pointer_up_(static_cast<std::size_t>(row_idx),
-                                           world);
+            owner_.handle_cell_pointer_up_(static_cast<std::size_t>(row_idx), world);
         }
         press_row_ = -1;
         tk::ListView::on_pointer_up(local, inside_self);
@@ -223,7 +238,9 @@ public:
     bool on_key_down(const tk::KeyEvent& e) override
     {
         if (!has_focus() || e.ctrl || e.alt || e.meta)
+        {
             return tk::ListView::on_key_down(e);
+        }
         if (e.key == tk::Key::Left || e.key == tk::Key::Right)
         {
             const int dir = e.key == tk::Key::Right ? 1 : -1;
@@ -237,7 +254,9 @@ public:
             }
             const int n = static_cast<int>(cells_(row).size());
             if (cell_ + dir >= 0 && cell_ + dir < n)
+            {
                 cell_ += dir;
+            }
             else
             {
                 // Hop to the neighbouring strip (base Up/Down skips month
@@ -245,15 +264,24 @@ public:
                 const int before = selected_index();
                 tk::ListView::on_key_down({dir > 0 ? tk::Key::Down : tk::Key::Up});
                 if (selected_index() != before)
-                    cell_ = dir > 0 ? 0 : std::max(0, static_cast<int>(cells_(selected_index()).size()) - 1);
+                {
+                    cell_ =
+                        dir > 0
+                            ? 0
+                            : std::max(0, static_cast<int>(cells_(selected_index()).size()) - 1);
+                }
             }
-            if (auto* h = host()) h->request_repaint();
+            if (auto* h = host())
+            {
+                h->request_repaint();
+            }
             return true;
         }
         if (e.key == tk::Key::Enter || e.key == tk::Key::Space)
         {
             auto cells = cells_(selected_index());
-            if (cell_ >= 0 && cell_ < static_cast<int>(cells.size()) && cells[static_cast<std::size_t>(cell_)].activate)
+            if (cell_ >= 0 && cell_ < static_cast<int>(cells.size()) &&
+                cells[static_cast<std::size_t>(cell_)].activate)
             {
                 cells[static_cast<std::size_t>(cell_)].activate();
                 return true;
@@ -262,7 +290,10 @@ public:
         const int before = selected_index();
         const bool handled = tk::ListView::on_key_down(e);
         if (selected_index() != before)
-            cell_ = std::min(cell_, std::max(0, static_cast<int>(cells_(selected_index()).size()) - 1));
+        {
+            cell_ =
+                std::min(cell_, std::max(0, static_cast<int>(cells_(selected_index()).size()) - 1));
+        }
         return handled;
     }
 
@@ -270,16 +301,22 @@ public:
     {
         auto cells = cells_(selected_index());
         if (cell_ >= 0 && cell_ < static_cast<int>(cells.size()))
+        {
             tk::paint_focus_ring(ctx, cells[static_cast<std::size_t>(cell_)].rect, 6.0f);
+        }
         else
+        {
             tk::ListView::paint_own_focus_ring(ctx);
+        }
     }
 
 private:
     std::vector<tk::AccessNode> cells_(int row) const
     {
         if (row < 0 || !owner_.adapter_)
+        {
             return {};
+        }
         return owner_.adapter_->access_subtree_for_row(static_cast<std::size_t>(row));
     }
 
@@ -313,29 +350,35 @@ RoomMediaView::RoomMediaView() : adapter_(std::make_unique<Adapter>(*this))
     list->on_near_top = [this]
     {
         if (on_load_older_media)
+        {
             on_load_older_media(room_id_);
+        }
     };
     list_ = add_child(std::move(list));
 
-    auto close_button = tk::create_widget<tk::Button>(
-        this, std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    auto close_button = tk::create_widget<tk::Button>(this, std::string{}, std::function<void()>{},
+                                                      tk::Button::Variant::Icon);
     close_button->set_icon(kCloseSvg, 20.0f);
     close_button->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close_button));
-    close_btn_->set_on_click([this] { close(); });
+    close_btn_->set_on_click(
+        [this]
+        {
+            close();
+        });
 }
 
 RoomMediaView::~RoomMediaView() = default;
 
 void RoomMediaView::open(std::string room_id, std::string room_name)
 {
-    room_id_   = std::move(room_id);
+    room_id_ = std::move(room_id);
     room_name_ = std::move(room_name);
     title_layout_.reset();
     items_.clear();
     rows_.clear();
     reached_start_ = false;
-    is_open_        = true;
+    is_open_ = true;
     set_visible(true);
     if (list_)
     {
@@ -347,7 +390,9 @@ void RoomMediaView::open(std::string room_id, std::string room_name)
 void RoomMediaView::close()
 {
     if (!is_open_)
+    {
         return;
+    }
     is_open_ = false;
     set_visible(false);
     // Defense in depth: the arrange-time autofill can still call on_near_top
@@ -358,7 +403,9 @@ void RoomMediaView::close()
     // (RoomPane::on_media_view_load_older_).
     room_id_.clear();
     if (on_close)
+    {
         on_close();
+    }
 }
 
 void RoomMediaView::set_media(std::vector<MessageRowData> rows)
@@ -373,14 +420,22 @@ void RoomMediaView::set_media(std::vector<MessageRowData> rows)
     for (auto& r : rows)
     {
         if (!is_media_row(r))
+        {
             continue;
+        }
         if (!r.event_id.empty() && !seen.insert(r.event_id).second)
+        {
             continue;
+        }
         items_.push_back(std::move(r));
     }
     if (list_)
     {
-        list_->preserve_top_through([this] { rebuild_rows_(); });
+        list_->preserve_top_through(
+            [this]
+            {
+                rebuild_rows_();
+            });
         list_->reset_near_top_latch();
     }
 }
@@ -388,30 +443,45 @@ void RoomMediaView::set_media(std::vector<MessageRowData> rows)
 void RoomMediaView::prepend_media(std::vector<MessageRowData> rows)
 {
     if (rows.empty())
+    {
         return;
+    }
     std::unordered_set<std::string> seen;
     seen.reserve(items_.size());
     for (const auto& it : items_)
+    {
         if (!it.event_id.empty())
+        {
             seen.insert(it.event_id);
+        }
+    }
     std::vector<MessageRowData> filtered;
     filtered.reserve(rows.size());
     for (auto& r : rows)
     {
         if (!is_media_row(r))
+        {
             continue;
+        }
         if (!r.event_id.empty() && !seen.insert(r.event_id).second)
+        {
             continue;
+        }
         filtered.push_back(std::move(r));
     }
     if (filtered.empty())
+    {
         return;
-    items_.insert(items_.begin(),
-                  std::make_move_iterator(filtered.begin()),
+    }
+    items_.insert(items_.begin(), std::make_move_iterator(filtered.begin()),
                   std::make_move_iterator(filtered.end()));
     if (list_)
     {
-        list_->preserve_top_through([this] { rebuild_rows_(); });
+        list_->preserve_top_through(
+            [this]
+            {
+                rebuild_rows_();
+            });
         list_->reset_near_top_latch();
     }
 }
@@ -419,17 +489,27 @@ void RoomMediaView::prepend_media(std::vector<MessageRowData> rows)
 void RoomMediaView::append_live_media(MessageRowData row)
 {
     if (!is_media_row(row))
+    {
         return;
+    }
     if (!row.event_id.empty())
     {
         for (const auto& it : items_)
+        {
             if (it.event_id == row.event_id)
+            {
                 return;
+            }
+        }
     }
     items_.push_back(std::move(row));
     if (list_)
     {
-        list_->preserve_top_through([this] { rebuild_rows_(); });
+        list_->preserve_top_through(
+            [this]
+            {
+                rebuild_rows_();
+            });
     }
 }
 
@@ -441,10 +521,11 @@ bool RoomMediaView::content_fills_viewport() const
 std::size_t RoomMediaView::estimated_capacity() const
 {
     if (!list_ || list_->bounds().h <= 0.0f)
+    {
         return 0;
-    const int rows = std::max(
-        1, static_cast<int>(std::ceil(list_->bounds().h /
-                                       (kCellSize + kCellSpacing))));
+    }
+    const int rows =
+        std::max(1, static_cast<int>(std::ceil(list_->bounds().h / (kCellSize + kCellSpacing))));
     return static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols_);
 }
 
@@ -460,8 +541,7 @@ std::vector<tk::MediaPrefetchKey> RoomMediaView::collect_prefetchable_media_keys
     {
         return keys;
     }
-    for (int i = first;
-         i <= last && static_cast<std::size_t>(i) < rows_.size(); ++i)
+    for (int i = first; i <= last && static_cast<std::size_t>(i) < rows_.size(); ++i)
     {
         const auto& row = rows_[static_cast<std::size_t>(i)];
         if (row.kind != MediaGridRow::Kind::MediaStrip)
@@ -472,14 +552,12 @@ std::vector<tk::MediaPrefetchKey> RoomMediaView::collect_prefetchable_media_keys
         {
             // Mirrors paint_cell_'s key derivation above.
             std::string key = item.thumbnail
-                                   ? item.thumbnail->fetch_token()
-                                   : (item.source ? item.source->fetch_token()
-                                                  : std::string{});
+                                  ? item.thumbnail->fetch_token()
+                                  : (item.source ? item.source->fetch_token() : std::string{});
             if (!key.empty())
             {
-                keys.push_back({tk::CacheKey::thumbnail(
-                                    key, static_cast<int>(kCellSize),
-                                    static_cast<int>(kCellSize)),
+                keys.push_back({tk::CacheKey::thumbnail(key, static_cast<int>(kCellSize),
+                                                        static_cast<int>(kCellSize)),
                                 tk::MediaKind::MediaThumbnail});
             }
         }
@@ -497,7 +575,9 @@ void RoomMediaView::set_reached_start(bool reached_start)
     // stay latched after the first firing and never fire again for a
     // follow-up scroll gesture once a round comes back empty.
     if (list_)
+    {
         list_->reset_near_top_latch();
+    }
 }
 
 void RoomMediaView::set_image_provider(ImageProvider p)
@@ -517,7 +597,9 @@ void RoomMediaView::rebuild_rows_()
     // (e.g. two images in one batch) in their arrival order.
     std::stable_sort(items_.begin(), items_.end(),
                      [](const MessageRowData& a, const MessageRowData& b)
-                     { return a.timestamp_ms < b.timestamp_ms; });
+                     {
+                         return a.timestamp_ms < b.timestamp_ms;
+                     });
 
     rows_.clear();
     const int cols = std::max(1, cols_);
@@ -530,21 +612,20 @@ void RoomMediaView::rebuild_rows_()
         const MonthKey mk = compute_month_key(item.timestamp_ms);
         if (mk.key != cur_month_key)
         {
-            cur_month_key       = mk.key;
-            strip_idx_in_month  = 0;
+            cur_month_key = mk.key;
+            strip_idx_in_month = 0;
             MediaGridRow hdr;
-            hdr.kind        = MediaGridRow::Kind::MonthHeader;
-            hdr.month_key   = mk.key;
+            hdr.kind = MediaGridRow::Kind::MonthHeader;
+            hdr.month_key = mk.key;
             hdr.month_label = mk.label;
             rows_.push_back(std::move(hdr));
             cur_strip = nullptr;
         }
-        if (!cur_strip ||
-            cur_strip->size() >= static_cast<std::size_t>(cols))
+        if (!cur_strip || cur_strip->size() >= static_cast<std::size_t>(cols))
         {
             MediaGridRow strip;
-            strip.kind        = MediaGridRow::Kind::MediaStrip;
-            strip.month_key   = cur_month_key;
+            strip.kind = MediaGridRow::Kind::MediaStrip;
+            strip.month_key = cur_month_key;
             strip.strip_index = strip_idx_in_month++;
             rows_.push_back(std::move(strip));
             cur_strip = &rows_.back().items;
@@ -553,30 +634,40 @@ void RoomMediaView::rebuild_rows_()
     }
 
     if (list_)
+    {
         list_->invalidate_data();
+    }
 }
 
-void RoomMediaView::handle_cell_pointer_up_(std::size_t row_idx,
-                                            tk::Point world)
+void RoomMediaView::handle_cell_pointer_up_(std::size_t row_idx, tk::Point world)
 {
     if (row_idx >= rows_.size() || !list_)
+    {
         return;
+    }
     const auto& row = rows_[row_idx];
     if (row.kind != MediaGridRow::Kind::MediaStrip || row.items.empty())
+    {
         return;
+    }
     const tk::Rect rrect = list_->row_world_rect(static_cast<int>(row_idx));
     if (rrect.w <= 0.0f)
+    {
         return;
+    }
     // Only a click on a cell activates it. The padding, the gap between
     // cells and the blank space after a strip's last cell do nothing.
     const float x = world.x - rrect.x - kPadX;
     const float stride = kCellSize + kCellSpacing;
     if (x < 0.0f)
+    {
         return;
+    }
     const auto col = static_cast<std::size_t>(x / stride);
-    if (col >= row.items.size() ||
-        x - static_cast<float>(col) * stride >= kCellSize)
+    if (col >= row.items.size() || x - static_cast<float>(col) * stride >= kCellSize)
+    {
         return;
+    }
     activate_item_(row.items[col]);
 }
 
@@ -585,31 +676,35 @@ void RoomMediaView::activate_item_(const MessageRowData& item)
     if (item.kind == MessageRowData::Kind::Video)
     {
         if (!on_video_clicked)
+        {
             return;
+        }
         MessageListView::VideoHit hit;
-        hit.event_id      = item.event_id;
-        hit.source        = item.source;
-        hit.thumbnail     = item.thumbnail;
-        hit.mime_type     = item.video_mime;
-        hit.natural_w     = item.media_w;
-        hit.natural_h     = item.media_h;
-        hit.duration_ms   = item.duration_ms;
-        hit.autoplay      = item.video_autoplay;
-        hit.loop          = item.video_loop;
-        hit.no_audio      = item.video_no_audio;
+        hit.event_id = item.event_id;
+        hit.source = item.source;
+        hit.thumbnail = item.thumbnail;
+        hit.mime_type = item.video_mime;
+        hit.natural_w = item.media_w;
+        hit.natural_h = item.media_h;
+        hit.duration_ms = item.duration_ms;
+        hit.autoplay = item.video_autoplay;
+        hit.loop = item.video_loop;
+        hit.no_audio = item.video_no_audio;
         hit.hide_controls = item.video_hide_controls;
-        hit.gif           = item.video_gif;
+        hit.gif = item.video_gif;
         on_video_clicked(hit);
     }
     else if (item.kind == MessageRowData::Kind::Image)
     {
         if (!on_image_clicked)
+        {
             return;
+        }
         MessageListView::ImageHit hit;
-        hit.event_id  = item.event_id;
-        hit.source    = item.source;
+        hit.event_id = item.event_id;
+        hit.source = item.source;
         hit.thumbnail = item.thumbnail;
-        hit.body      = item.body;
+        hit.body = item.body;
         hit.natural_w = item.media_w;
         hit.natural_h = item.media_h;
         on_image_clicked(hit);
@@ -634,9 +729,8 @@ void RoomMediaView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         close_btn_->arrange(lc, {cx, cy, kCloseSz, kCloseSz});
     }
 
-    const int new_cols = std::max(
-        1, static_cast<int>((bounds.w - kPadX * 2.0f) /
-                            (kCellSize + kCellSpacing)));
+    const int new_cols =
+        std::max(1, static_cast<int>((bounds.w - kPadX * 2.0f) / (kCellSize + kCellSpacing)));
     if (new_cols != cols_)
     {
         cols_ = new_cols;
@@ -646,7 +740,7 @@ void RoomMediaView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (list_)
     {
         const float list_top = bounds.y + kHeaderH;
-        const float list_h   = std::max(0.0f, bounds.bottom() - list_top);
+        const float list_h = std::max(0.0f, bounds.bottom() - list_top);
         list_->arrange(lc, {bounds.x, list_top, bounds.w, list_h});
     }
 }
@@ -675,9 +769,11 @@ bool RoomMediaView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bo
 void RoomMediaView::paint(tk::PaintCtx& ctx)
 {
     if (!is_open_)
+    {
         return;
+    }
 
-    auto& cv        = ctx.canvas;
+    auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
     cv.fill_rect(bounds_, pal.bg);
@@ -685,24 +781,21 @@ void RoomMediaView::paint(tk::PaintCtx& ctx)
     // Header strip.
     const tk::Rect header_rect{bounds_.x, bounds_.y, bounds_.w, kHeaderH};
     cv.fill_rect(header_rect, pal.chrome_bg);
-    cv.fill_rect({bounds_.x, bounds_.y + kHeaderH - 1.0f, bounds_.w, 1.0f},
-                 pal.separator);
+    cv.fill_rect({bounds_.x, bounds_.y + kHeaderH - 1.0f, bounds_.w, 1.0f}, pal.separator);
 
     if (!title_layout_)
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Title;
-        st.trim      = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(
-            0.0f, bounds_.w - kPadX * 2.0f - kCloseSz - kCloseInset);
-        title_layout_ = ctx.factory.build_text(
-            tk::trf(tk::tr("Media \xE2\x80\x94 {0}"), {room_name_}), st);
+        st.role = tk::FontRole::Title;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds_.w - kPadX * 2.0f - kCloseSz - kCloseInset);
+        title_layout_ =
+            ctx.factory.build_text(tk::trf(tk::tr("Media \xE2\x80\x94 {0}"), {room_name_}), st);
     }
     if (title_layout_)
     {
         const tk::Size sz = title_layout_->measure();
-        cv.draw_text(*title_layout_,
-                     {bounds_.x + kPadX, bounds_.y + (kHeaderH - sz.h) * 0.5f},
+        cv.draw_text(*title_layout_, {bounds_.x + kPadX, bounds_.y + (kHeaderH - sz.h) * 0.5f},
                      pal.text_primary);
     }
 
@@ -711,18 +804,15 @@ void RoomMediaView::paint(tk::PaintCtx& ctx)
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Body;
-        const std::string msg = reached_start_
-                                     ? tk::tr("No media in this room yet")
-                                     : tk::tr("Loading media\xE2\x80\xA6");
+        const std::string msg = reached_start_ ? tk::tr("No media in this room yet")
+                                               : tk::tr("Loading media\xE2\x80\xA6");
         auto lo = ctx.factory.build_text(msg, st);
         if (lo)
         {
             const tk::Size sz = lo->measure();
             const tk::Rect body{bounds_.x, bounds_.y + kHeaderH, bounds_.w,
                                 std::max(0.0f, bounds_.h - kHeaderH)};
-            cv.draw_text(*lo,
-                         {body.x + (body.w - sz.w) * 0.5f,
-                          body.y + (body.h - sz.h) * 0.5f},
+            cv.draw_text(*lo, {body.x + (body.w - sz.w) * 0.5f, body.y + (body.h - sz.h) * 0.5f},
                          pal.text_muted);
         }
     }
@@ -734,7 +824,9 @@ void RoomMediaView::paint(tk::PaintCtx& ctx)
     // Close button — painted last so it always reads above the grid. Now
     // self-contained (Button::set_icon), no manual glyph draw needed.
     if (close_btn_ && close_btn_->visible())
+    {
         close_btn_->paint(ctx);
+    }
 }
 
 void RoomMediaView::on_theme_changed(const tk::Theme& t)
@@ -744,16 +836,20 @@ void RoomMediaView::on_theme_changed(const tk::Theme& t)
     // override — set here (once per theme apply) rather than every paint,
     // since it's a fixed color, not state-dependent.
     if (close_btn_)
+    {
         close_btn_->set_icon_color_override(t.palette.text_secondary);
+    }
 }
 
-void RoomMediaView::paint_grid_row_(std::size_t index, tk::PaintCtx& ctx,
-                                    tk::Rect bounds, bool hovered)
+void RoomMediaView::paint_grid_row_(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
+                                    bool hovered)
 {
     if (index >= rows_.size())
+    {
         return;
-    auto& row       = rows_[index];
-    auto& cv        = ctx.canvas;
+    }
+    auto& row = rows_[index];
+    auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
     if (row.kind == MediaGridRow::Kind::MonthHeader)
@@ -762,16 +858,16 @@ void RoomMediaView::paint_grid_row_(std::size_t index, tk::PaintCtx& ctx,
         if (!row.label_layout)
         {
             tk::TextStyle st{};
-            st.role   = tk::FontRole::Small;
+            st.role = tk::FontRole::Small;
             st.halign = tk::TextHAlign::Leading;
             row.label_layout = ctx.factory.build_text(row.month_label, st);
         }
         if (row.label_layout)
         {
-            cv.draw_text(*row.label_layout,
-                         {bounds.x + kPadX,
-                          bounds.y + (bounds.h - row.label_layout->measure().h) * 0.5f},
-                         pal.text_muted);
+            cv.draw_text(
+                *row.label_layout,
+                {bounds.x + kPadX, bounds.y + (bounds.h - row.label_layout->measure().h) * 0.5f},
+                pal.text_muted);
         }
         return;
     }
@@ -780,39 +876,35 @@ void RoomMediaView::paint_grid_row_(std::size_t index, tk::PaintCtx& ctx,
     // doc comment on the simplified click/press model).
     cv.fill_rect(bounds, hovered ? pal.subtle_hover : pal.bg);
     if (hovered)
+    {
         tk::paint_hc_hover_outline(cv, ctx.theme, bounds);
+    }
     for (std::size_t i = 0; i < row.items.size(); ++i)
     {
-        const float cx = bounds.x + kPadX +
-                         static_cast<float>(i) * (kCellSize + kCellSpacing);
+        const float cx = bounds.x + kPadX + static_cast<float>(i) * (kCellSize + kCellSpacing);
         const tk::Rect cell{cx, bounds.y, kCellSize, kCellSize};
         paint_cell_(ctx, cell, row.items[i]);
     }
 }
 
-void RoomMediaView::paint_cell_(tk::PaintCtx& ctx, tk::Rect cell,
-                                const MessageRowData& item)
+void RoomMediaView::paint_cell_(tk::PaintCtx& ctx, tk::Rect cell, const MessageRowData& item)
 {
-    auto& cv        = ctx.canvas;
+    auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
     tk::ClipScope clip(cv, cell);
     cv.fill_rect(cell, pal.subtle_hover);
 
-    const std::string key =
-        item.thumbnail ? item.thumbnail->fetch_token()
-                       : (item.source ? item.source->fetch_token()
-                                     : std::string{});
-    const tk::Image* img =
-        (image_provider_ && !key.empty()) ? image_provider_(key) : nullptr;
+    const std::string key = item.thumbnail
+                                ? item.thumbnail->fetch_token()
+                                : (item.source ? item.source->fetch_token() : std::string{});
+    const tk::Image* img = (image_provider_ && !key.empty()) ? image_provider_(key) : nullptr;
     if (img && img->width() > 0 && img->height() > 0)
     {
-        const tk::Size fitted =
-            fit_media(static_cast<float>(img->width()),
-                     static_cast<float>(img->height()), cell.w, cell.h);
-        const tk::Rect dst{cell.x + (cell.w - fitted.w) * 0.5f,
-                           cell.y + (cell.h - fitted.h) * 0.5f, fitted.w,
-                           fitted.h};
+        const tk::Size fitted = fit_media(static_cast<float>(img->width()),
+                                          static_cast<float>(img->height()), cell.w, cell.h);
+        const tk::Rect dst{cell.x + (cell.w - fitted.w) * 0.5f, cell.y + (cell.h - fitted.h) * 0.5f,
+                           fitted.w, fitted.h};
         cv.draw_image(*img, dst);
     }
 
@@ -828,16 +920,13 @@ void RoomMediaView::paint_cell_(tk::PaintCtx& ctx, tk::Rect cell,
         {
             const tk::Size sz = video_badge_glyph_->measure();
             const tk::Rect badge{cell.x + (cell.w - sz.w) * 0.5f - 8.0f,
-                                 cell.y + (cell.h - sz.h) * 0.5f - 4.0f,
-                                 sz.w + 16.0f, sz.h + 8.0f};
+                                 cell.y + (cell.h - sz.h) * 0.5f - 4.0f, sz.w + 16.0f, sz.h + 8.0f};
             cv.fill_rounded_rect(badge, 6.0f, tk::Color::rgba(0, 0, 0, 140));
             cv.draw_text(*video_badge_glyph_,
-                         {cell.x + (cell.w - sz.w) * 0.5f,
-                          cell.y + (cell.h - sz.h) * 0.5f},
+                         {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
                          tk::Color::rgba(255, 255, 255, 255));
         }
     }
-
 }
 
 } // namespace tesseract::views

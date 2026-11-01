@@ -23,18 +23,22 @@ using PostFn = tk::LocationProviderPostFn;
 @implementation TesseractLocationDelegate
 
 - (void)locationManager:(CLLocationManager*)manager
-      didUpdateLocations:(NSArray<CLLocation*>*)locations
+     didUpdateLocations:(NSArray<CLLocation*>*)locations
 {
     (void)manager;
     if (locations.count > 0 && self.onUpdate)
+    {
         self.onUpdate(locations.lastObject);
+    }
 }
 
 - (void)locationManager:(CLLocationManager*)manager didFailWithError:(NSError*)error
 {
     (void)manager;
     if (self.onError)
+    {
         self.onError(error);
+    }
 }
 
 - (void)locationManager:(CLLocationManager*)manager
@@ -42,7 +46,9 @@ using PostFn = tk::LocationProviderPostFn;
 {
     (void)manager;
     if (self.onAuthChanged)
+    {
         self.onAuthChanged(status);
+    }
 }
 
 @end
@@ -68,32 +74,44 @@ public:
         // __block (not a plain local): guarded()'s returned closure has a
         // non-const operator() (it's declared mutable), and an ObjC block
         // captures by-value locals as const unless marked __block.
-        __block auto on_update = guarded([this](CLLocation* loc) {
-            post_(guarded([this, loc]() {
-                finish_(true, loc.coordinate.latitude, loc.coordinate.longitude,
-                        loc.horizontalAccuracy, tk::LocationError::None);
-            }));
-        });
+        __block auto on_update = guarded(
+            [this](CLLocation* loc)
+            {
+                post_(guarded(
+                    [this, loc]()
+                    {
+                        finish_(true, loc.coordinate.latitude, loc.coordinate.longitude,
+                                loc.horizontalAccuracy, tk::LocationError::None);
+                    }));
+            });
         delegate_.onUpdate = ^(CLLocation* loc) {
             on_update(loc);
         };
-        __block auto on_error = guarded([this](NSError* error) {
-            const bool denied = (error.domain == kCLErrorDomain &&
-                                 error.code == kCLErrorDenied);
-            post_(guarded([this, denied]() {
-                finish_(false, 0, 0, -1,
-                        denied ? tk::LocationError::PermissionDenied
-                               : tk::LocationError::Unknown);
-            }));
-        });
+        __block auto on_error = guarded(
+            [this](NSError* error)
+            {
+                const bool denied =
+                    (error.domain == kCLErrorDomain && error.code == kCLErrorDenied);
+                post_(guarded(
+                    [this, denied]()
+                    {
+                        finish_(false, 0, 0, -1,
+                                denied ? tk::LocationError::PermissionDenied
+                                       : tk::LocationError::Unknown);
+                    }));
+            });
         delegate_.onError = ^(NSError* error) {
             on_error(error);
         };
-        __block auto on_auth_changed = guarded([this](CLAuthorizationStatus status) {
-            post_(guarded([this, status]() {
-                handle_auth_change_(status);
-            }));
-        });
+        __block auto on_auth_changed = guarded(
+            [this](CLAuthorizationStatus status)
+            {
+                post_(guarded(
+                    [this, status]()
+                    {
+                        handle_auth_change_(status);
+                    }));
+            });
         delegate_.onAuthChanged = ^(CLAuthorizationStatus status) {
             on_auth_changed(status);
         };
@@ -108,12 +126,13 @@ public:
     void request_current_location(LocationCallback cb) override
     {
         if (cb_)
+        {
             return;
+        }
         cb_ = std::move(cb);
 
         const CLAuthorizationStatus status = manager_.authorizationStatus;
-        if (status == kCLAuthorizationStatusDenied ||
-            status == kCLAuthorizationStatusRestricted)
+        if (status == kCLAuthorizationStatusDenied || status == kCLAuthorizationStatusRestricted)
         {
             finish_(false, 0, 0, -1, tk::LocationError::PermissionDenied);
             return;
@@ -136,7 +155,9 @@ private:
     void handle_auth_change_(CLAuthorizationStatus status)
     {
         if (!cb_)
+        {
             return; // not currently awaiting a request
+        }
         if (status == kCLAuthorizationStatusAuthorizedAlways ||
             status == kCLAuthorizationStatusAuthorized)
         {
@@ -150,11 +171,12 @@ private:
         // kCLAuthorizationStatusNotDetermined: still waiting, no-op.
     }
 
-    void finish_(bool success, double lat, double lon, double accuracy,
-                 tk::LocationError error)
+    void finish_(bool success, double lat, double lon, double accuracy, tk::LocationError error)
     {
         if (!cb_)
+        {
             return;
+        }
         auto cb = std::move(cb_);
         cb_ = nullptr;
         tk::LocationFix fix{lat, lon, accuracy};
@@ -175,7 +197,9 @@ namespace tk
 std::unique_ptr<LocationProvider> make_location_provider_macos(LocationProviderPostFn post)
 {
     if (![CLLocationManager locationServicesEnabled])
+    {
         return nullptr;
+    }
     return std::make_unique<LocationProviderMacOS>(std::move(post));
 }
 

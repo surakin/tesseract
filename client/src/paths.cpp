@@ -136,8 +136,7 @@ fs::path cache_dir()
         return fs::path(local) / app_folder("Tesseract");
     }
     wchar_t buf[MAX_PATH] = {};
-    if (SUCCEEDED(
-            SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, buf)))
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, buf)))
     {
         return fs::path(buf) / app_folder("Tesseract");
     }

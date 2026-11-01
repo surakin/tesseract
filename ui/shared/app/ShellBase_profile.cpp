@@ -45,39 +45,55 @@ bool ShellBase::other_accounts_have_unread() const
 void ShellBase::refresh_user_strip_()
 {
     if (!main_app_ || !main_app_->user_info())
+    {
         return;
+    }
     auto* ui = main_app_->user_info();
     ui->set_display_name(my_display_name_);
     ui->set_user_id(my_user_id_);
     ui->set_avatar_url(my_avatar_url_);
     if (!my_avatar_url_.empty() && client_)
+    {
         ensure_user_avatar_(my_avatar_url_);
+    }
     request_relayout_();
 }
 
 void ShellBase::close_account_picker_()
 {
     if (!account_picker_popup_)
+    {
         return;
+    }
     const bool was_visible = account_picker_popup_->visible();
     account_picker_popup_->set_visible(false);
     if (!was_visible)
+    {
         return;
+    }
     tk::SurfaceBase* main = main_surface_();
     if (!main)
+    {
         return;
+    }
     main->host().set_key_prefilter({});
     // Keyboard focus goes back to the user strip it was opened from.
     if (main_app_ && main_app_->user_info())
+    {
         main->host().request_focus(main_app_->user_info());
+    }
 }
 
 bool ShellBase::handle_account_picker_key_(const tk::KeyEvent& e)
 {
     if (!account_picker_popup_ || !account_picker_popup_->visible())
+    {
         return false;
+    }
     if (e.ctrl || e.alt || e.meta)
+    {
         return false;
+    }
     switch (e.key)
     {
     case tk::Key::Up:
@@ -103,52 +119,76 @@ bool ShellBase::handle_escape_key_()
         return true;
     }
     if (!main_app_)
+    {
         return false;
-    const bool had_quick_switch = main_app_->quick_switcher() &&
-                                  main_app_->quick_switcher()->is_open();
-    const bool had_message_search = main_app_->message_search() &&
-                                    main_app_->message_search()->is_open();
-    const bool had_room_search = main_app_->room_view() &&
-                                 main_app_->room_view()->room_search_open();
+    }
+    const bool had_quick_switch =
+        main_app_->quick_switcher() && main_app_->quick_switcher()->is_open();
+    const bool had_message_search =
+        main_app_->message_search() && main_app_->message_search()->is_open();
+    const bool had_room_search =
+        main_app_->room_view() && main_app_->room_view()->room_search_open();
     if (!main_app_->dispatch_key_down({tk::Key::Escape}))
+    {
         return false;
+    }
     if (had_quick_switch)
+    {
         close_quick_switch_();
+    }
     else if (had_message_search)
+    {
         close_message_search_();
+    }
     else if (had_room_search)
+    {
         close_find_in_room_();
+    }
     else if (auto* surface = main_surface_())
+    {
         surface->relayout();
+    }
     return true;
 }
 
 void ShellBase::rebuild_account_picker_()
 {
     if (!account_picker_)
+    {
         return;
+    }
     account_picker_->set_entries(build_account_picker_entries_());
     if (account_picker_popup_ && account_picker_popup_->visible())
+    {
         account_picker_popup_->request_relayout();
+    }
 }
 
 void ShellBase::open_account_picker_()
 {
     if (account_manager_.accounts().size() < 2 || !main_app_)
+    {
         return;
+    }
     // A click on the user strip that just dismissed the picker (the outside-press
     // watcher does not consume it) must toggle it shut, not reopen it.
     if (account_picker_dismissed_ms_ &&
         monotonic_ms_() - *account_picker_dismissed_ms_ < kAccountPickerReopenGuardMs)
+    {
         return;
+    }
     tk::SurfaceBase* main = main_surface_();
     if (!main)
+    {
         return;
+    }
     if (!account_picker_popup_)
     {
         account_picker_popup_ = main->host().make_popup_surface();
         if (!account_picker_popup_)
+        {
             return;
+        }
         auto picker = std::make_unique<views::AccountPicker>();
         account_picker_ = picker.get();
         account_picker_->set_image_provider(make_avatar_image_provider_());
@@ -157,9 +197,14 @@ void ShellBase::open_account_picker_()
             close_account_picker_();
             on_account_picker_select_(uid);
         };
-        account_picker_->on_avatar_needed =
-            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
-        account_picker_->on_dismiss = [this] { close_account_picker_(); };
+        account_picker_->on_avatar_needed = [this](const std::string& mxc)
+        {
+            ensure_user_avatar_(mxc);
+        };
+        account_picker_->on_dismiss = [this]
+        {
+            close_account_picker_();
+        };
         account_picker_popup_->set_root(std::move(picker));
         // The picker paints its own rounded card.
         account_picker_popup_->set_corner_radius(8.0f);
@@ -178,8 +223,7 @@ void ShellBase::open_account_picker_()
     constexpr float kWidth = views::AccountPicker::kPreferredWidth;
     tk::LayoutCtx lc{main->factory(), main->theme()};
     const float height = std::ceil(account_picker_->measure(lc, {kWidth, 0.0f}).h);
-    account_picker_popup_->set_rect(main_app_->user_info()->bounds(),
-                                    {kWidth, height},
+    account_picker_popup_->set_rect(main_app_->user_info()->bounds(), {kWidth, height},
                                     tk::PopupPlacement::PreferAbove);
     account_picker_popup_->set_visible(true);
 
@@ -187,11 +231,16 @@ void ShellBase::open_account_picker_()
     // reach the main host, which hands them on (see handle_account_picker_key_),
     // and start on the first row.
     main->host().release_focus_to_canvas();
-    main->host().set_key_prefilter([this](const tk::KeyEvent& e)
-                                   { return handle_account_picker_key_(e); });
+    main->host().set_key_prefilter(
+        [this](const tk::KeyEvent& e)
+        {
+            return handle_account_picker_key_(e);
+        });
     if (tk::Host* popup_host = account_picker_popup_->popup_host();
         popup_host && !account_picker_->rows().empty())
+    {
         popup_host->request_focus(account_picker_->rows().front());
+    }
 }
 
 std::vector<views::AccountEntry> ShellBase::build_account_picker_entries_()
@@ -202,11 +251,11 @@ std::vector<views::AccountEntry> ShellBase::build_account_picker_entries_()
     for (const auto& s : accs)
     {
         views::AccountEntry e;
-        e.user_id      = s->user_id;
+        e.user_id = s->user_id;
         e.display_name = s->display_name;
-        e.avatar_url   = s->avatar_url;
-        e.active       = active_account_ && s->user_id == active_account_->user_id;
-        e.has_unread   = account_has_unread_for(s->user_id);
+        e.avatar_url = s->avatar_url;
+        e.active = active_account_ && s->user_id == active_account_->user_id;
+        e.has_unread = account_has_unread_for(s->user_id);
         entries.push_back(std::move(e));
         if (!s->avatar_url.empty())
         {
@@ -227,7 +276,7 @@ bool ShellBase::account_has_unread_for(const std::string& user_id) const
 }
 
 std::string ShellBase::find_existing_dm(const std::vector<RoomInfo>& rooms,
-                                        const std::string&           user_id)
+                                        const std::string& user_id)
 {
     return shell_helpers::find_existing_dm(rooms, user_id);
 }
@@ -239,19 +288,29 @@ std::string ShellBase::find_existing_dm_(const std::string& user_id) const
 
 void ShellBase::setup_link_clicked_(views::RoomView* rv)
 {
-    if (!rv) return;
+    if (!rv)
+    {
+        return;
+    }
     rv->on_link_clicked = [this](const std::string& url)
     {
         if (Client::parse_matrix_link(url).kind != Client::MatrixLink::Kind::Unknown)
+        {
             open_matrix_link(url);
+        }
         else
+        {
             Client::open_in_browser(url);
+        }
     };
 }
 
 void ShellBase::setup_dm_callbacks()
 {
-    if (!room_view_) return;
+    if (!room_view_)
+    {
+        return;
+    }
     room_view_->on_open_dm = [this](std::string user_id)
     {
         handle_open_dm_(std::move(user_id));
@@ -266,8 +325,7 @@ void ShellBase::setup_dm_callbacks()
     // capture the raw pointer.
     if (auto* panel = room_view_->user_profile_panel())
     {
-        panel->on_extended_profile_requested =
-            [this, panel](std::string user_id)
+        panel->on_extended_profile_requested = [this, panel](std::string user_id)
         {
             fetch_user_extended_profile_async_(user_id, panel);
         };
@@ -283,11 +341,17 @@ void ShellBase::setup_dm_callbacks()
         // Row avatars use the shared thumbnail cache + lazy fetch, like the
         // forward picker; `image_provider_` above is the full-res lightbox cache.
         panel->set_common_room_avatar_provider(
-            [this](const std::string& mxc) -> const tk::Image* { return avatar_image_(mxc); });
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                return avatar_image_(mxc);
+            });
         panel->on_common_room_avatar_needed = [this](std::string room_id)
         {
             auto room = std::find_if(rooms_.begin(), rooms_.end(),
-                                     [&room_id](const RoomInfo& r) { return r.id == room_id; });
+                                     [&room_id](const RoomInfo& r)
+                                     {
+                                         return r.id == room_id;
+                                     });
             if (room != rooms_.end())
             {
                 ensure_room_avatar_(*room);
@@ -295,7 +359,10 @@ void ShellBase::setup_dm_callbacks()
         };
         panel->on_common_room_clicked = [this](std::string room_id)
         {
-            if (room_view_) room_view_->close_user_profile();
+            if (room_view_)
+            {
+                room_view_->close_user_profile();
+            }
             navigate_to_room_(room_id);
         };
 
@@ -304,10 +371,11 @@ void ShellBase::setup_dm_callbacks()
         // source image rather than the shared small thumbnail — reuse the
         // image viewer's full-resolution fetch/cache instead of
         // RoomView::set_avatar_provider's shared thumbnail-only provider.
-        panel->set_avatar_provider([this](const std::string& mxc) -> const tk::Image*
-        {
-            return viewer_image_lookup_(mxc);
-        });
+        panel->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                return viewer_image_lookup_(mxc);
+            });
         panel->on_avatar_needed = [this](const std::string& mxc)
         {
             ensure_viewer_fullres_(mxc);
@@ -320,53 +388,69 @@ void ShellBase::setup_dm_callbacks()
 
 void ShellBase::handle_open_dm_(const std::string& user_id, const std::string& reason)
 {
-    if (user_id.empty() || !client_) return;
+    if (user_id.empty() || !client_)
+    {
+        return;
+    }
 
     // Fast path: DM already in rooms_ — navigate immediately.
     if (auto existing = find_existing_dm_(user_id); !existing.empty())
     {
-        if (room_view_) room_view_->close_user_profile();
+        if (room_view_)
+        {
+            room_view_->close_user_profile();
+        }
         navigate_to_room_(existing);
         return;
     }
 
     // In-flight guard: suppress duplicate async calls for the same user.
-    if (dm_in_flight_user_ids_.count(user_id)) return;
+    if (dm_in_flight_user_ids_.count(user_id))
+    {
+        return;
+    }
     dm_in_flight_user_ids_.insert(user_id);
 
     // Show loading state while the async call runs.
     if (room_view_)
     {
-        room_view_->set_dm_button_state(
-            views::UserProfilePanel::DmButtonState::Sending);
+        room_view_->set_dm_button_state(views::UserProfilePanel::DmButtonState::Sending);
         request_repaint_();
     }
 
     auto sess = active_account_;
-    run_async_mut_([this, sess, user_id, reason]()
-    {
-        if (!sess || !sess->client) return;
-        auto dm_id = sess->client->get_or_create_dm(user_id, reason);
-        post_to_ui_alive_([this, user_id, dm_id = std::move(dm_id)]() mutable
+    run_async_mut_(
+        [this, sess, user_id, reason]()
         {
-            dm_in_flight_user_ids_.erase(user_id);
-            if (!dm_id.empty())
+            if (!sess || !sess->client)
             {
-                if (room_view_) room_view_->close_user_profile();
-                navigate_to_room_(dm_id);
+                return;
             }
-            else
-            {
-                // Reset so the user can retry.
-                if (room_view_)
+            auto dm_id = sess->client->get_or_create_dm(user_id, reason);
+            post_to_ui_alive_(
+                [this, user_id, dm_id = std::move(dm_id)]() mutable
                 {
-                    room_view_->set_dm_button_state(
-                        views::UserProfilePanel::DmButtonState::Normal);
-                    request_repaint_();
-                }
-            }
+                    dm_in_flight_user_ids_.erase(user_id);
+                    if (!dm_id.empty())
+                    {
+                        if (room_view_)
+                        {
+                            room_view_->close_user_profile();
+                        }
+                        navigate_to_room_(dm_id);
+                    }
+                    else
+                    {
+                        // Reset so the user can retry.
+                        if (room_view_)
+                        {
+                            room_view_->set_dm_button_state(
+                                views::UserProfilePanel::DmButtonState::Normal);
+                            request_repaint_();
+                        }
+                    }
+                });
         });
-    });
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +459,10 @@ void ShellBase::handle_open_dm_(const std::string& user_id, const std::string& r
 
 void ShellBase::fetch_own_extended_profile_async_()
 {
-    if (!client_) return;
+    if (!client_)
+    {
+        return;
+    }
     // No entry in pending_user_profiles_ → handle_extended_profile_ready_ui_
     // treats this as the own-profile case.
     client_->get_extended_profile_async(next_request_id_++, my_user_id_);
@@ -385,9 +472,8 @@ void ShellBase::push_own_status_to_strip_()
 {
     if (main_app_ && main_app_->user_info())
     {
-        main_app_->user_info()->set_status_editable(
-            server_info_.supports_profile_fields &&
-            server_info_.profile_fields_enabled);
+        main_app_->user_info()->set_status_editable(server_info_.supports_profile_fields &&
+                                                    server_info_.profile_fields_enabled);
         main_app_->user_info()->set_status(own_extended_profile_.status_emoji,
                                            own_extended_profile_.status_text);
     }
@@ -415,7 +501,9 @@ void ShellBase::open_settings_to_account_tab_()
 {
     open_app_settings_ui_();
     if (stats_settings_view_)
+    {
         stats_settings_view_->show_account_section();
+    }
 }
 
 void ShellBase::open_settings_from_login_()
@@ -504,9 +592,11 @@ void ShellBase::open_launch_room_(const std::string& room_id)
     const std::string target_room_id = room_id;
     for (const auto& [user_id, rooms] : per_account_rooms_)
     {
-        const bool found = std::any_of(
-            rooms.begin(), rooms.end(),
-            [&](const RoomInfo& room) { return room.id == target_room_id; });
+        const bool found = std::any_of(rooms.begin(), rooms.end(),
+                                       [&](const RoomInfo& room)
+                                       {
+                                           return room.id == target_room_id;
+                                       });
         if (!found)
         {
             continue;
@@ -516,7 +606,9 @@ void ShellBase::open_launch_room_(const std::string& room_id)
         {
             // Another window holds the account: open the room there.
             if (open_room_in_holder_window_(user_id, target_room_id))
+            {
                 return;
+            }
             switch_active_account_(user_id);
         }
         navigate_to_room_(target_room_id);
@@ -527,23 +619,26 @@ void ShellBase::open_launch_room_(const std::string& room_id)
     pending_launch_room_id_ = target_room_id;
 }
 
-void ShellBase::handle_profile_field_change_(const std::string& key,
-                                              const std::string& value_json)
+void ShellBase::handle_profile_field_change_(const std::string& key, const std::string& value_json)
 {
-    if (!client_) return;
+    if (!client_)
+    {
+        return;
+    }
     const auto request_id = next_request_id_++;
     pending_profile_field_writes_[request_id] = {key, value_json};
     client_->set_or_delete_profile_field_async(request_id, key, value_json);
 }
 
-void ShellBase::handle_profile_field_result_ui_(std::uint64_t request_id,
-                                                 std::string key, bool ok,
-                                                 std::string message)
+void ShellBase::handle_profile_field_result_ui_(std::uint64_t request_id, std::string key, bool ok,
+                                                std::string message)
 {
     on_profile_field_result_ui_(key, ok, message);
     auto it = pending_profile_field_writes_.find(request_id);
     if (it == pending_profile_field_writes_.end())
+    {
         return;
+    }
     const std::string value_json = std::move(it->second.second);
     pending_profile_field_writes_.erase(it);
     // Apply the just-written value straight into the cache instead of
@@ -557,9 +652,12 @@ void ShellBase::handle_profile_field_result_ui_(std::uint64_t request_id,
 }
 
 void ShellBase::fetch_user_extended_profile_async_(const std::string& user_id,
-                                                    views::UserProfilePanel* panel)
+                                                   views::UserProfilePanel* panel)
 {
-    if (!client_ || !panel) return;
+    if (!client_ || !panel)
+    {
+        return;
+    }
     auto req_id = next_request_id_++;
     pending_user_profiles_[req_id] = panel;
     client_->get_extended_profile_async(req_id, user_id);
@@ -648,21 +746,22 @@ void ShellBase::handle_mutual_rooms_ready_ui_(std::uint64_t request_id, std::str
             continue;
         }
         auto room = std::find_if(rooms_.begin(), rooms_.end(),
-                                 [&id](const RoomInfo& r) { return r.id == id; });
+                                 [&id](const RoomInfo& r)
+                                 {
+                                     return r.id == id;
+                                 });
         if (room == rooms_.end())
         {
             continue; // not a room we show (left, or not synced yet)
         }
         list.push_back({room->id, room->name, room->effective_avatar_url()});
     }
-    req.panel->set_common_rooms(std::move(list), page.count,
-                                !paging.next_batch.empty());
+    req.panel->set_common_rooms(std::move(list), page.count, !paging.next_batch.empty());
 
     // Unknown ids can leave the list too short to scroll, so the near-end hook
     // would never fire: keep pulling pages until it fills or the server is done.
     constexpr std::size_t kMinRowsBeforeScrolling = 12;
-    if (!paging.next_batch.empty() &&
-        req.panel->common_rooms().size() < kMinRowsBeforeScrolling)
+    if (!paging.next_batch.empty() && req.panel->common_rooms().size() < kMinRowsBeforeScrolling)
     {
         fetch_mutual_rooms_async_(req.user_id, req.panel, true);
     }
@@ -678,9 +777,13 @@ void ShellBase::handle_mutual_rooms_ready_ui_(std::uint64_t request_id, std::str
 void ShellBase::request_member_pronoun_ui_(const std::string& user_id)
 {
     if (!client_ || user_id.empty())
+    {
         return;
+    }
     if (member_gender_cache_.count(user_id) || member_gender_inflight_.count(user_id))
+    {
         return;
+    }
     member_gender_inflight_.insert(user_id);
     auto req_id = next_request_id_++;
     pending_member_gender_requests_[req_id] = user_id;
@@ -690,15 +793,20 @@ void ShellBase::request_member_pronoun_ui_(const std::string& user_id)
 void ShellBase::request_sender_timezone_ui_(const std::string& user_id)
 {
     if (!client_ || user_id.empty() || member_tz_inflight_.count(user_id))
+    {
         return;
+    }
     constexpr auto kTtl = std::chrono::hours(1);
     if (const auto it = member_tz_cache_.find(user_id);
         it != member_tz_cache_.end() &&
         std::chrono::steady_clock::now() - it->second.fetched < kTtl)
     {
         // Not delivered inline: the caller is mid-paint.
-        post_to_ui_alive_([this, user_id, tz = it->second.tz]
-                          { deliver_sender_timezone_(user_id, tz); });
+        post_to_ui_alive_(
+            [this, user_id, tz = it->second.tz]
+            {
+                deliver_sender_timezone_(user_id, tz);
+            });
         return;
     }
     member_tz_inflight_.insert(user_id);
@@ -710,23 +818,39 @@ void ShellBase::request_sender_timezone_ui_(const std::string& user_id)
 void ShellBase::deliver_sender_timezone_(const std::string& user_id, const std::string& tz)
 {
     if (room_view_)
+    {
         if (auto* ml = room_view_->message_list())
+        {
             ml->update_sender_timezone(user_id, tz);
+        }
+    }
     for (const auto& [rid, w] : secondary_windows_)
+    {
         if (auto* rv = w->room_view())
+        {
             if (auto* ml = rv->message_list())
+            {
                 ml->update_sender_timezone(user_id, tz);
+            }
+        }
+    }
 }
 
 void ShellBase::sync_detected_timezone_()
 {
     if (!client_ || !tesseract::Settings::instance().auto_detect_timezone)
+    {
         return;
+    }
     if (!server_info_.supports_profile_fields || !server_info_.profile_fields_enabled)
+    {
         return;
+    }
     const std::string tz = tk::system_timezone();
     if (tz.empty() || tz == own_extended_profile_.tz)
+    {
         return;
+    }
     // Both keys, as the settings picker does (reads prefer m.tz).
     const std::string json = nlohmann::json(tz).dump();
     handle_profile_field_change_("m.tz", json);
@@ -734,7 +858,7 @@ void ShellBase::sync_detected_timezone_()
 }
 
 void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
-                                                   std::string profile_json)
+                                                  std::string profile_json)
 {
     // Timeline timezone-difference case.
     if (const auto tit = pending_member_tz_requests_.find(request_id);
@@ -756,9 +880,8 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         auto* panel = pit->second;
         pending_user_profiles_.erase(pit);
         auto p = tesseract::UserProfile::from_json(profile_json);
-        tesseract::ExtendedProfile ep{p.pronouns,     p.tz,
-                                      p.biography,    p.status_emoji,
-                                      p.status_text,  p.call_joined_ts};
+        tesseract::ExtendedProfile ep{p.pronouns,     p.tz,          p.biography,
+                                      p.status_emoji, p.status_text, p.call_joined_ts};
         panel->set_extended_profile(ep);
         return;
     }
@@ -773,7 +896,9 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         {
             auto p = tesseract::UserProfile::from_json(profile_json);
             if (p.exists)
+            {
                 merge_resolved_user_(p);
+            }
         }
         return;
     }
@@ -786,24 +911,32 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         auto [mxid, gen] = iit->second;
         pending_invite_resolves_.erase(iit);
         if (gen == 0)
+        {
             invite_resolves_inflight_.erase(mxid);
+        }
         else if (invite_resolve_gen_.load() != gen)
+        {
             return; // superseded by a later keystroke
+        }
         auto p = tesseract::UserProfile::from_json(profile_json);
         std::optional<views::InviteDialog::UserEntry> entry;
         if (p.exists)
         {
             if (p.user_id.empty())
+            {
                 p.user_id = mxid;
-            entry = views::InviteDialog::UserEntry{p.user_id, p.display_name,
-                                                   p.avatar_url};
+            }
+            entry = views::InviteDialog::UserEntry{p.user_id, p.display_name, p.avatar_url};
             // Roster insert only — merge_resolved_user_ would also re-emit
             // the quick switcher's results.
             known_users_[p.user_id] =
                 tesseract::RoomMember{p.user_id, p.display_name, p.avatar_url};
         }
-        for_each_invite_dialog_([&](views::InviteDialog& d)
-                                { d.set_resolved_user(mxid, entry); });
+        for_each_invite_dialog_(
+            [&](views::InviteDialog& d)
+            {
+                d.set_resolved_user(mxid, entry);
+            });
         request_repaint_();
         return;
     }
@@ -823,18 +956,26 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         auto p = tesseract::UserProfile::from_json(profile_json);
         const auto* entry =
             views::select_pronoun_entry_for_locale(p.pronouns, tk::current_locale());
-        const std::string pronoun = views::possessive_pronoun_for_gender(
-            entry ? entry->grammatical_gender : std::string());
+        const std::string pronoun =
+            views::possessive_pronoun_for_gender(entry ? entry->grammatical_gender : std::string());
         member_gender_cache_[user_id] = pronoun;
 
         if (room_view_)
+        {
             if (auto* ml = room_view_->message_list())
+            {
                 ml->update_member_pronoun(user_id, pronoun);
+            }
+        }
         for (const auto& [rid, w] : secondary_windows_)
         {
             if (auto* rv = w->room_view())
+            {
                 if (auto* ml = rv->message_list())
+                {
                     ml->update_member_pronoun(user_id, pronoun);
+                }
+            }
         }
         return;
     }
@@ -844,7 +985,7 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
     // Only update if the fetch returned a valid result; otherwise keep stale.
     if (p.exists || own_extended_profile_.pronouns.empty())
     {
-        own_extended_profile_ = {p.pronouns,    p.tz,          p.biography,
+        own_extended_profile_ = {p.pronouns,     p.tz,          p.biography,
                                  p.status_emoji, p.status_text, p.call_joined_ts};
         notify_own_extended_profile_changed_();
         sync_detected_timezone_();
@@ -870,10 +1011,12 @@ void ShellBase::handle_user_query_(const std::string& query)
 
     // Live-resolve a fully-typed mxid we don't already know, debounced so fast
     // typing coalesces into a single lookup.
-    if (views::is_complete_mxid(query) &&
-        known_users_.find(query) == known_users_.end())
+    if (views::is_complete_mxid(query) && known_users_.find(query) == known_users_.end())
     {
-        if (!client_) return;
+        if (!client_)
+        {
+            return;
+        }
         auto req_id = next_request_id_++;
         pending_resolve_requests_[req_id] = {query, gen};
         // Capture client_ on the UI thread; don't read it from the worker.
@@ -885,9 +1028,11 @@ void ShellBase::handle_user_query_(const std::string& query)
                 if (user_resolve_gen_.load() != gen)
                 {
                     // Superseded — remove the stale map entry on the UI thread.
-                    post_to_ui_alive_([this, req_id]() {
-                        pending_resolve_requests_.erase(req_id);
-                    });
+                    post_to_ui_alive_(
+                        [this, req_id]()
+                        {
+                            pending_resolve_requests_.erase(req_id);
+                        });
                     return;
                 }
                 // Still valid — fire the async FFI call; result arrives via
@@ -900,12 +1045,16 @@ void ShellBase::handle_user_query_(const std::string& query)
 void ShellBase::build_known_users_roster_()
 {
     if (known_users_building_ || !client_)
+    {
         return;
+    }
     known_users_building_ = true;
 
     // Fresh cancellation token; supersede any prior in-flight build.
     if (roster_build_cancel_)
+    {
         roster_build_cancel_->store(true);
+    }
     auto cancel = std::make_shared<std::atomic<bool>>(false);
     roster_build_cancel_ = cancel;
 
@@ -920,21 +1069,23 @@ void ShellBase::build_known_users_roster_()
     std::vector<const tesseract::RoomInfo*> ordered;
     ordered.reserve(rooms_.size());
     for (const auto& r : rooms_)
+    {
         ordered.push_back(&r);
+    }
     std::sort(ordered.begin(), ordered.end(),
               [](const tesseract::RoomInfo* a, const tesseract::RoomInfo* b)
-              { return a->last_activity_ts > b->last_activity_ts; });
+              {
+                  return a->last_activity_ts > b->last_activity_ts;
+              });
 
     std::vector<std::string> room_ids;
     room_ids.reserve(ordered.size());
     for (const auto* r : ordered)
     {
         room_ids.push_back(r->id);
-        if (r->is_direct && !r->dm_counterpart_user_id.empty() &&
-            r->dm_counterpart_user_id != me)
+        if (r->is_direct && !r->dm_counterpart_user_id.empty() && r->dm_counterpart_user_id != me)
         {
-            merge_roster_entry_(r->dm_counterpart_user_id, std::string{},
-                                r->dm_avatar_url);
+            merge_roster_entry_(r->dm_counterpart_user_id, std::string{}, r->dm_avatar_url);
         }
     }
     emit_user_results_();
@@ -949,25 +1100,29 @@ void ShellBase::build_known_users_roster_()
             auto flush = [&](bool final)
             {
                 if (batch.empty() && !final)
+                {
                     return;
+                }
                 post_to_ui_alive_(
-                    [this, sess, cancel, final,
-                     batch = std::move(batch)]() mutable
+                    [this, sess, cancel, final, batch = std::move(batch)]() mutable
                     {
                         // Drop if superseded (new build / invalidate / teardown)
                         // or the account switched mid-build.
                         if (cancel->load() || active_account_ != sess)
                         {
                             if (final && roster_build_cancel_ == cancel)
+                            {
                                 known_users_building_ = false;
+                            }
                             return;
                         }
                         for (auto& [id, m] : batch)
-                            merge_roster_entry_(id, std::move(m.display_name),
-                                                m.avatar_url);
+                        {
+                            merge_roster_entry_(id, std::move(m.display_name), m.avatar_url);
+                        }
                         if (final)
                         {
-                            known_users_built_    = true;
+                            known_users_built_ = true;
                             known_users_building_ = false;
                         }
                         emit_user_results_();
@@ -981,28 +1136,44 @@ void ShellBase::build_known_users_roster_()
                 for (const auto& rid : room_ids)
                 {
                     if (cancel->load())
+                    {
                         return; // bail early — keeps shutdown/switch responsive
+                    }
                     // Count first: a room over the cap is skipped without
                     // building its member list.
                     if (sess->client->room_joined_member_count(rid) > cap)
+                    {
                         continue;
+                    }
                     auto members = sess->client->get_room_members(rid);
                     if (members.size() > cap)
+                    {
                         continue; // skip very large rooms to keep this cheap
+                    }
                     for (auto& m : members)
                     {
                         if (m.user_id.empty() || m.user_id == me)
+                        {
                             continue;
+                        }
                         auto& slot = batch[m.user_id];
                         if (slot.user_id.empty())
+                        {
                             slot.user_id = m.user_id;
+                        }
                         if (slot.display_name.empty() && !m.display_name.empty())
+                        {
                             slot.display_name = std::move(m.display_name);
+                        }
                         if (slot.avatar_url.empty() && !m.avatar_url.empty())
+                        {
                             slot.avatar_url = std::move(m.avatar_url);
+                        }
                     }
                     if (++scanned % kRosterEmitBatchRooms == 0)
+                    {
                         flush(false);
+                    }
                 }
             }
             flush(true);
@@ -1016,20 +1187,16 @@ ShellBase::filter_known_users_(const std::string& needle) const
     out.reserve(known_users_.size());
     for (const auto& [id, m] : known_users_)
     {
-        if (tk::ci_contains(m.display_name, needle) ||
-            tk::ci_contains(m.user_id, needle))
+        if (tk::ci_contains(m.display_name, needle) || tk::ci_contains(m.user_id, needle))
         {
             out.push_back({m.user_id, m.display_name, m.avatar_url});
         }
     }
     std::sort(out.begin(), out.end(),
-              [](const views::QuickSwitcher::UserEntry& a,
-                 const views::QuickSwitcher::UserEntry& b)
+              [](const views::QuickSwitcher::UserEntry& a, const views::QuickSwitcher::UserEntry& b)
               {
-                  const std::string& an =
-                      a.display_name.empty() ? a.user_id : a.display_name;
-                  const std::string& bn =
-                      b.display_name.empty() ? b.user_id : b.display_name;
+                  const std::string& an = a.display_name.empty() ? a.user_id : a.display_name;
+                  const std::string& bn = b.display_name.empty() ? b.user_id : b.display_name;
                   return std::lexicographical_compare(
                       an.begin(), an.end(), bn.begin(), bn.end(),
                       [](char x, char y)
@@ -1040,37 +1207,48 @@ ShellBase::filter_known_users_(const std::string& needle) const
               });
     constexpr std::size_t kMaxUserRows = 100;
     if (out.size() > kMaxUserRows)
+    {
         out.resize(kMaxUserRows);
+    }
     return out;
 }
 
 void ShellBase::ensure_known_users_roster_()
 {
     if (!known_users_built_ && !known_users_building_)
+    {
         build_known_users_roster_();
+    }
 }
 
 void ShellBase::resolve_invite_user_(const std::string& user_id, bool debounce,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                     const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (!acting_client || !views::is_complete_mxid(user_id))
+    {
         return;
+    }
     // Already known (e.g. the roster landed since the dialog asked).
     if (auto it = known_users_.find(user_id); it != known_users_.end())
     {
         const auto& m = it->second;
         views::InviteDialog::UserEntry e{m.user_id, m.display_name, m.avatar_url};
-        for_each_invite_dialog_([&](views::InviteDialog& d)
-                                { d.set_resolved_user(user_id, e); });
+        for_each_invite_dialog_(
+            [&](views::InviteDialog& d)
+            {
+                d.set_resolved_user(user_id, e);
+            });
         return;
     }
     if (!debounce)
     {
         if (!invite_resolves_inflight_.insert(user_id).second)
+        {
             return;
+        }
         auto req_id = next_request_id_++;
         pending_invite_resolves_[req_id] = {user_id, 0};
         acting_client->resolve_user_profile_async(req_id, user_id);
@@ -1088,34 +1266,50 @@ void ShellBase::resolve_invite_user_(const std::string& user_id, bool debounce,
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
             if (invite_resolve_gen_.load() != gen)
             {
-                post_to_ui_alive_([this, req_id]()
-                                  { pending_invite_resolves_.erase(req_id); });
+                post_to_ui_alive_(
+                    [this, req_id]()
+                    {
+                        pending_invite_resolves_.erase(req_id);
+                    });
                 return;
             }
             c->resolve_user_profile_async(req_id, mxid);
         });
 }
 
-void ShellBase::for_each_invite_dialog_(
-    const std::function<void(views::InviteDialog&)>& fn)
+void ShellBase::for_each_invite_dialog_(const std::function<void(views::InviteDialog&)>& fn)
 {
     if (room_view_)
+    {
         if (auto* d = room_view_->invite_dialog(); d && d->is_open())
+        {
             fn(*d);
+        }
+    }
     for (const auto& [rid, w] : secondary_windows_)
     {
         if (auto* rv = w->room_view())
+        {
             if (auto* d = rv->invite_dialog(); d && d->is_open())
+            {
                 fn(*d);
+            }
+        }
     }
 }
 
 void ShellBase::emit_user_results_()
 {
     // Open invite dialogs filter the same roster.
-    for_each_invite_dialog_([](views::InviteDialog& d) { d.refresh_candidates(); });
+    for_each_invite_dialog_(
+        [](views::InviteDialog& d)
+        {
+            d.refresh_candidates();
+        });
     if (!main_app_)
+    {
         return;
+    }
     if (auto* qs = main_app_->quick_switcher())
     {
         qs->set_user_results(filter_known_users_(last_user_query_));
@@ -1123,26 +1317,32 @@ void ShellBase::emit_user_results_()
     }
 }
 
-void ShellBase::merge_roster_entry_(const std::string& id,
-                                    std::string display_name,
+void ShellBase::merge_roster_entry_(const std::string& id, std::string display_name,
                                     const std::string& avatar_url)
 {
     if (id.empty())
+    {
         return;
+    }
     auto& slot = known_users_[id];
     if (slot.user_id.empty())
+    {
         slot.user_id = id;
+    }
     if (slot.display_name.empty() && !display_name.empty())
+    {
         slot.display_name = std::move(display_name);
+    }
     if (slot.avatar_url.empty() && !avatar_url.empty())
+    {
         slot.avatar_url = avatar_url;
+    }
 }
 
 void ShellBase::merge_resolved_user_(const tesseract::UserProfile& p)
 {
     // A live-resolved profile is authoritative — overwrite any stale entry.
-    known_users_[p.user_id] =
-        tesseract::RoomMember{p.user_id, p.display_name, p.avatar_url};
+    known_users_[p.user_id] = tesseract::RoomMember{p.user_id, p.display_name, p.avatar_url};
     emit_user_results_();
 }
 
@@ -1156,7 +1356,7 @@ void ShellBase::invalidate_known_users_()
         roster_build_cancel_.reset();
     }
     known_users_.clear();
-    known_users_built_    = false;
+    known_users_built_ = false;
     known_users_building_ = false;
     // Drop any in-flight resolve targeting the old roster/account.
     user_resolve_gen_.fetch_add(1);
@@ -1170,8 +1370,12 @@ uint64_t ShellBase::compute_dock_notification_count_() const
 {
     uint64_t total = 0;
     for (const auto& [uid, rooms] : per_account_rooms_)
+    {
         for (const auto& r : rooms)
+        {
             total += r.notification_count;
+        }
+    }
     return total;
 }
 
@@ -1202,7 +1406,7 @@ void ShellBase::notify_tray_unread_()
     {
         return;
     }
-    last_tray_unread_    = u;
+    last_tray_unread_ = u;
     last_tray_highlight_ = h;
     on_tray_unread_changed_(u, h);
 }
@@ -1213,12 +1417,15 @@ const RoomInfo* ShellBase::best_unread_room_() const
     for (const auto& r : rooms_)
     {
         if (r.notification_count == 0 && r.highlight_count == 0)
+        {
             continue;
-        if (!best
-            || (r.highlight_count > 0 && best->highlight_count == 0)
-            || (r.highlight_count == best->highlight_count
-                && r.last_activity_ts > best->last_activity_ts))
+        }
+        if (!best || (r.highlight_count > 0 && best->highlight_count == 0) ||
+            (r.highlight_count == best->highlight_count &&
+             r.last_activity_ts > best->last_activity_ts))
+        {
             best = &r;
+        }
     }
     return best;
 }
@@ -1241,26 +1448,36 @@ void ShellBase::open_matrix_link(const std::string& uri)
     // Remember the permalink's `?via=` routing hints so a later join / knock /
     // preview of this room reaches a homeserver that doesn't already know it.
     if (!link.via.empty() &&
-        (link.kind == Kind::Room || link.kind == Kind::RoomAlias ||
-         link.kind == Kind::Event))
+        (link.kind == Kind::Room || link.kind == Kind::RoomAlias || link.kind == Kind::Event))
+    {
         remember_join_via_(link.primary, link.via);
+    }
 
     switch (link.kind)
     {
     case Kind::User:
         if (room_view_)
+        {
             room_view_->open_user_profile(link.primary);
+        }
         break;
 
     case Kind::Room:
     {
         auto it = std::find_if(rooms_.begin(), rooms_.end(),
-                               [&](const RoomInfo& r) { return r.id == link.primary; });
+                               [&](const RoomInfo& r)
+                               {
+                                   return r.id == link.primary;
+                               });
         if (it != rooms_.end())
+        {
             tab_navigate_room(link.primary);
+        }
         else
+        {
             // Possibly an upgraded room we're still in but no longer list.
             open_room_version_(link.primary, link.via, {}, /*join_if_missing=*/false);
+        }
         break;
     }
 
@@ -1268,7 +1485,9 @@ void ShellBase::open_matrix_link(const std::string& uri)
     {
         auto it = std::find_if(rooms_.begin(), rooms_.end(),
                                [&](const RoomInfo& r)
-                               { return r.canonical_alias == link.primary; });
+                               {
+                                   return r.canonical_alias == link.primary;
+                               });
         if (it != rooms_.end())
         {
             tab_navigate_room(it->id);
@@ -1277,7 +1496,9 @@ void ShellBase::open_matrix_link(const std::string& uri)
             if (!link.event_id.empty())
             {
                 if (room_view_ && room_view_->message_list())
+                {
                     room_view_->message_list()->set_highlighted_event(link.event_id);
+                }
                 try_scroll_to_room_event_(link.event_id);
             }
         }
@@ -1299,12 +1520,14 @@ void ShellBase::open_matrix_link(const std::string& uri)
     }
 }
 
-void ShellBase::open_room_event_(const std::string& room_id,
-                                 const std::string& event_id,
+void ShellBase::open_room_event_(const std::string& room_id, const std::string& event_id,
                                  const std::vector<std::string>& via)
 {
     auto it = std::find_if(rooms_.begin(), rooms_.end(),
-                           [&](const RoomInfo& r) { return r.id == room_id; });
+                           [&](const RoomInfo& r)
+                           {
+                               return r.id == room_id;
+                           });
     if (it != rooms_.end())
     {
         // Navigate (sets current_room_id_ synchronously), then jump to the
@@ -1314,7 +1537,9 @@ void ShellBase::open_room_event_(const std::string& room_id,
         if (!event_id.empty())
         {
             if (room_view_ && room_view_->message_list())
+            {
                 room_view_->message_list()->set_highlighted_event(event_id);
+            }
             try_scroll_to_room_event_(event_id);
         }
     }
@@ -1330,7 +1555,9 @@ void ShellBase::open_room_event_(const std::string& room_id,
 void ShellBase::navigate_tray_unread_()
 {
     if (const RoomInfo* best = best_unread_room_())
+    {
         tab_navigate_room(best->id);
+    }
 }
 
 bool ShellBase::focus_tray_unread_popout_()
@@ -1342,36 +1569,38 @@ bool ShellBase::focus_tray_unread_popout_()
 void ShellBase::broadcast_rebuild_tray_()
 {
     for (ShellBase* win : account_manager_.all_windows())
+    {
         win->rebuild_tray_();
+    }
 }
 
-std::vector<std::pair<std::string, std::function<void()>>>
-ShellBase::build_tray_items_()
+std::vector<std::pair<std::string, std::function<void()>>> ShellBase::build_tray_items_()
 {
     std::vector<std::pair<std::string, std::function<void()>>> items;
     for (const auto& acc : account_manager_.accounts())
     {
         std::string label = acc->display_name.empty()
-                                 ? acc->user_id
-                                 : acc->display_name + " (" + acc->user_id + ")";
+                                ? acc->user_id
+                                : acc->display_name + " (" + acc->user_id + ")";
         const std::string uid = acc->user_id;
         // Mirrors on_account_picker_select_(): raise the account's dedicated
         // popout window if it has one, otherwise switch it into this window
         // (the tray owner — the only window whose menu this really is).
-        items.emplace_back(
-            std::move(label),
-            [this, uid]
-            {
-                auto* win = account_owner_window_(uid);
-                if (!win)
-                    win = account_manager_.dedicated_window(uid);
-                if (win)
-                {
-                    win->raise_and_activate_();
-                    return;
-                }
-                switch_active_account_(uid);
-            });
+        items.emplace_back(std::move(label),
+                           [this, uid]
+                           {
+                               auto* win = account_owner_window_(uid);
+                               if (!win)
+                               {
+                                   win = account_manager_.dedicated_window(uid);
+                               }
+                               if (win)
+                               {
+                                   win->raise_and_activate_();
+                                   return;
+                               }
+                               switch_active_account_(uid);
+                           });
     }
     return items;
 }
@@ -1387,35 +1616,37 @@ ShellBase::build_tray_items_()
 // the item lets the user restart verification mid-session and
 // disappears once verified.
 std::vector<ShellBase::UserMenuItem> ShellBase::build_user_menu_items_(
-    std::function<void()> open_settings,
-    std::function<void()> add_account,
-    std::function<void()> show_qr_grant,
-    std::function<void()> logout,
-    std::function<void()> quit,
+    std::function<void()> open_settings, std::function<void()> add_account,
+    std::function<void()> show_qr_grant, std::function<void()> logout, std::function<void()> quit,
     std::function<void()> verify_session) const
 {
     std::vector<UserMenuItem> items;
-    items.push_back({tk::tr("Settings\xe2\x80\xa6"),    std::move(open_settings)});
+    items.push_back({tk::tr("Settings\xe2\x80\xa6"), std::move(open_settings)});
     // Opened in the shared tree, so no shell needs its own callback for it.
     if (main_app_)
-        items.push_back({tk::tr("Keyboard Shortcuts\xe2\x80\xa6"),
-                         [app = main_app_] { app->show_keyboard_shortcuts(); }});
+    {
+        items.push_back({tk::tr("Keyboard Shortcuts\xe2\x80\xa6"), [app = main_app_]
+                         {
+                             app->show_keyboard_shortcuts();
+                         }});
+    }
     if (verify_session)
+    {
         items.push_back({tk::tr("Confirm this device\xe2\x80\xa6"), std::move(verify_session)});
+    }
     items.push_back({tk::tr("Add Account\xe2\x80\xa6"), std::move(add_account)});
     if (server_info_.supports_qr_grant && show_qr_grant)
+    {
         items.push_back({tk::tr("Link a device\xe2\x80\xa6"), std::move(show_qr_grant)});
-    const std::string& name =
-        my_display_name_.empty() ? my_user_id_ : my_display_name_;
+    }
+    const std::string& name = my_display_name_.empty() ? my_user_id_ : my_display_name_;
     items.push_back({tk::trf(tk::tr("Log Out {0}"), {name}), std::move(logout)});
     items.push_back({"", nullptr}); // separator
     items.push_back({tk::tr("Quit"), std::move(quit)});
     return items;
 }
 
-
-void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
-                                                 std::string json)
+void ShellBase::handle_account_prefs_updated_ui_(std::string user_id, std::string json)
 {
     // Only the active account's prefs set the pending restore rooms.
     if (!active_account_ || active_account_->user_id != user_id)
@@ -1439,9 +1670,13 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
         active_account_->bridge_not_bridged_overrides = prefs.bridge_not_bridged_overrides;
         apply_bridge_overrides_(rooms_, active_account_->bridge_not_bridged_overrides);
         if (auto it = per_account_rooms_.find(my_user_id_); it != per_account_rooms_.end())
+        {
             apply_bridge_overrides_(it->second, active_account_->bridge_not_bridged_overrides);
+        }
         if (!current_room_id_.empty())
+        {
             refresh_bridge_dependent_ui_(current_room_id_);
+        }
     }
 
     // The browsed-servers list is small and rarely edited concurrently: the
@@ -1468,12 +1703,13 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     {
         recent_room_ids_ = prefs.recent_rooms;
         if (recent_room_ids_.size() > kRecentRoomsMax)
+        {
             recent_room_ids_.resize(kRecentRoomsMax);
+        }
         active_account_->recent_rooms = recent_room_ids_;
     }
 
-    if (!prefs.open_rooms.empty() && pending_restore_rooms_.empty() &&
-        current_room_id_.empty())
+    if (!prefs.open_rooms.empty() && pending_restore_rooms_.empty() && current_room_id_.empty())
     {
         restore_gate_ticks_ = 0;
         pending_restore_rooms_ = prefs.open_rooms;
@@ -1481,14 +1717,18 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
         // corrupt or hostile list cannot queue thousands of tab restores.
         constexpr std::size_t kMaxRestoredRooms = 32;
         if (pending_restore_rooms_.size() > kMaxRestoredRooms)
+        {
             pending_restore_rooms_.resize(kMaxRestoredRooms);
+        }
         // Ensure last_room (active tab) is at [0].
         if (!prefs.last_room.empty() && pending_restore_rooms_[0] != prefs.last_room)
         {
-            auto it = std::find(pending_restore_rooms_.begin(),
-                                pending_restore_rooms_.end(), prefs.last_room);
+            auto it = std::find(pending_restore_rooms_.begin(), pending_restore_rooms_.end(),
+                                prefs.last_room);
             if (it != pending_restore_rooms_.end())
+            {
                 std::rotate(pending_restore_rooms_.begin(), it, it + 1);
+            }
         }
         // Populate popouts-to-restore from local settings (device-local, not
         // synced). Only do this on the first account-prefs arrival so that a
@@ -1497,9 +1737,9 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     }
 }
 
-void ShellBase::handle_own_profile_changed_ui_(
-    std::string user_id, std::optional<std::string> display_name,
-    std::optional<std::string> avatar_url)
+void ShellBase::handle_own_profile_changed_ui_(std::string user_id,
+                                               std::optional<std::string> display_name,
+                                               std::optional<std::string> avatar_url)
 {
     if (!active_account_ || active_account_->user_id != user_id)
     {
@@ -1526,15 +1766,14 @@ void ShellBase::handle_own_profile_changed_ui_(
 
     // Timezone, status, pronouns and bio come from the MSC4133 fetch; its
     // own-profile branch in handle_extended_profile_ready_ui_ applies them.
-    if (server_info_.supports_profile_fields &&
-        server_info_.profile_fields_enabled)
+    if (server_info_.supports_profile_fields && server_info_.profile_fields_enabled)
     {
         fetch_own_extended_profile_async_();
     }
 }
 
-void ShellBase::handle_identity_status_changed_ui_(
-    std::string room_id, std::vector<tesseract::IdentityWarning> warnings)
+void ShellBase::handle_identity_status_changed_ui_(std::string room_id,
+                                                   std::vector<tesseract::IdentityWarning> warnings)
 {
     if (main_window_shows_(room_id) && main_room_pane_)
     {
@@ -1543,8 +1782,7 @@ void ShellBase::handle_identity_status_changed_ui_(
     dispatch_to_secondary_windows_(room_id,
                                    [&](RoomWindowBase* w)
                                    {
-                                       w->on_identity_status_changed(room_id,
-                                                                     warnings);
+                                       w->on_identity_status_changed(room_id, warnings);
                                    });
 }
 
@@ -1553,14 +1791,19 @@ void ShellBase::handle_user_identities_changed_ui_(std::vector<std::string> user
     // Every pane of this account (main window and pop-outs) re-reads its
     // open profile's trust row if it shows one of these users.
     if (event_is_for_active_account_() && main_room_pane_)
+    {
         main_room_pane_->on_user_identities_changed(user_ids);
+    }
     for (const auto& w : owned_secondary_windows_)
+    {
         if (w && w->pane() && popout_accepts_event_(w.get()))
+        {
             w->pane()->on_user_identities_changed(user_ids);
+        }
+    }
 }
 
-void ShellBase::handle_presence_changed_ui_(const std::string& user_id,
-                                            PresenceState state)
+void ShellBase::handle_presence_changed_ui_(const std::string& user_id, PresenceState state)
 {
     // poll_presence_once (sdk/src/client/sync.rs) reports every successful
     // presence poll unconditionally, not just changes — with N DM
@@ -1572,7 +1815,9 @@ void ShellBase::handle_presence_changed_ui_(const std::string& user_id,
     if (!inserted)
     {
         if (it->second == state)
+        {
             return;
+        }
         it->second = state;
     }
     // The room list may show a DM dot, and the RoomInfoPanel (main or
@@ -1620,13 +1865,17 @@ void ShellBase::notify_window_active_(bool active)
 {
     // The account picker is a bare popup surface, not a registered popup.
     if (!active)
+    {
         close_account_picker_();
+    }
 
     // Alt-tabbing/switching to another program shouldn't leave a popup menu
     // (or any other registered popup — ComboBox dropdowns, the date picker,
     // etc.) floating on top of a now-background window.
     if (!active && main_app_ && main_app_->host())
+    {
         main_app_->host()->dismiss_active_popup();
+    }
 
     if (presence_tracker_)
     {
@@ -1676,7 +1925,7 @@ void ShellBase::notify_presence_logout_()
     presence_tracker_.reset();
     if (client_)
     {
-        (void) client_->set_presence(PresenceState::Offline);
+        (void)client_->set_presence(PresenceState::Offline);
     }
 }
 
@@ -1691,8 +1940,7 @@ void ShellBase::start_presence_tracking_()
         return;
     }
     presence_tracker_ = std::make_unique<PresenceTracker>();
-    presence_tracker_->on_state_change =
-        [this](PresenceTracker::State s)
+    presence_tracker_->on_state_change = [this](PresenceTracker::State s)
     {
         // Online ↔ Unavailable transitions: send the PUT through run_async_
         // so app shutdown drains it (WorkerPool destructor joins threads
@@ -1702,7 +1950,9 @@ void ShellBase::start_presence_tracking_()
         // user logs out / switches before the worker runs.
         const auto target = shell_helpers::to_client_presence(s);
         if (client_)
+        {
             client_->set_presence_async(target);
+        }
     };
     presence_tracker_->notify_sync_started();
 }
@@ -1710,7 +1960,9 @@ void ShellBase::start_presence_tracking_()
 void ShellBase::on_account_badges_changed_(bool other_accounts_unread)
 {
     if (!main_app_ || !main_app_->user_info())
+    {
         return;
+    }
     main_app_->user_info()->set_notification_dot(other_accounts_unread);
     request_relayout_();
 }

@@ -30,8 +30,7 @@ TEST_CASE("Tooltip paint is a no-op without content", "[tk][tooltip]")
     SUCCEED();
 }
 
-TEST_CASE("Tooltip reveal restarts on reset_reveal and paints while easing",
-          "[tk][tooltip]")
+TEST_CASE("Tooltip reveal restarts on reset_reveal and paints while easing", "[tk][tooltip]")
 {
     TipStage s;
     Tooltip t;
@@ -52,9 +51,8 @@ TEST_CASE("Tooltip paints for anchors at every edge, long text and tiny "
     Tooltip t;
     auto pc = s.pc();
     const std::string longtext(600, 'w');
-    const Rect anchors[] = {{0, 0, 10, 10},    {390, 0, 10, 10},
-                            {0, 290, 10, 10},  {390, 290, 10, 10},
-                            {150, 150, 20, 20}};
+    const Rect anchors[] = {
+        {0, 0, 10, 10}, {390, 0, 10, 10}, {0, 290, 10, 10}, {390, 290, 10, 10}, {150, 150, 20, 20}};
     for (const Rect& a : anchors)
     {
         t.set_content("short", a);

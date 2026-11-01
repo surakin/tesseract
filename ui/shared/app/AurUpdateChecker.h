@@ -5,13 +5,13 @@
 #include <functional>
 #include <string>
 
-namespace tesseract {
+namespace tesseract
+{
 
 // IUpdateChecker implementation that queries the AUR RPC API.
 // Calls Client::check_for_aur_update() (blocking) on a provided async executor,
 // then delivers the result on the UI thread via a provided post-to-UI executor.
-class AurUpdateChecker : public IUpdateChecker,
-                         public tk::EnableWeakSelf<AurUpdateChecker>
+class AurUpdateChecker : public IUpdateChecker, public tk::EnableWeakSelf<AurUpdateChecker>
 {
 public:
     using Executor = std::function<void(std::function<void()>)>;
@@ -21,11 +21,8 @@ public:
     // `post_to_ui`  — wraps ShellBase::post_to_ui_(); posts lambdas to the UI thread
     // `pkgname`     — AUR package name (e.g. "tesseract-matrix")
     // `current_version` — running version string (e.g. tesseract::kVersion)
-    AurUpdateChecker(tesseract::Client& client,
-                     Executor post_async,
-                     Executor post_to_ui,
-                     std::string pkgname,
-                     std::string current_version);
+    AurUpdateChecker(tesseract::Client& client, Executor post_async, Executor post_to_ui,
+                     std::string pkgname, std::string current_version);
     ~AurUpdateChecker() override;
 
     void check_async(Callback on_update) override;

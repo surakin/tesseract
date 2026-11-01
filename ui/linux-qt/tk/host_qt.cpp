@@ -144,7 +144,10 @@ public:
 
     // QLineEdit::cursorRect() is protected — re-expose it for the
     // canvas-owned caret (see QtNativeTextField::caret_rect()).
-    QRect caret_rect_local() const { return cursorRect(); }
+    QRect caret_rect_local() const
+    {
+        return cursorRect();
+    }
 
     std::function<bool(NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
@@ -171,8 +174,7 @@ protected:
             auto* ke = static_cast<QKeyEvent*>(e);
             if (ke->key() == Qt::Key_Tab || ke->key() == Qt::Key_Backtab)
             {
-                NavKey nk = (ke->key() == Qt::Key_Tab) ? NavKey::Tab
-                                                       : NavKey::ShiftTab;
+                NavKey nk = (ke->key() == Qt::Key_Tab) ? NavKey::Tab : NavKey::ShiftTab;
                 auto nav = popup_nav_;
                 if (nav && nav(nk))
                 {
@@ -231,26 +233,43 @@ protected:
     void paintEvent(QPaintEvent* e) override
     {
         if (capturing_)
+        {
             QLineEdit::paintEvent(e);
+        }
     }
 
     void focusInEvent(QFocusEvent* e) override
     {
         QLineEdit::focusInEvent(e);
-        if (on_focus_changed_) on_focus_changed_(true);
-        if (on_focus_changed_internal_) on_focus_changed_internal_(true);
+        if (on_focus_changed_)
+        {
+            on_focus_changed_(true);
+        }
+        if (on_focus_changed_internal_)
+        {
+            on_focus_changed_internal_(true);
+        }
     }
     void focusOutEvent(QFocusEvent* e) override
     {
         QLineEdit::focusOutEvent(e);
-        if (on_focus_changed_) on_focus_changed_(false);
-        if (on_focus_changed_internal_) on_focus_changed_internal_(false);
+        if (on_focus_changed_)
+        {
+            on_focus_changed_(false);
+        }
+        if (on_focus_changed_internal_)
+        {
+            on_focus_changed_internal_(false);
+        }
     }
 
     void mousePressEvent(QMouseEvent* e) override
     {
         QLineEdit::mousePressEvent(e);
-        if (on_pointer_down_) on_pointer_down_();
+        if (on_pointer_down_)
+        {
+            on_pointer_down_();
+        }
     }
 
     // Qt's default handling would show createStandardContextMenu()'s QMenu
@@ -305,12 +324,16 @@ public:
         : registry_(std::move(registry))
     {
         if (auto r = registry_.lock())
+        {
             r->clients.push_back(this);
+        }
     }
     virtual ~QtOcclusionClient()
     {
         if (auto r = registry_.lock())
+        {
             std::erase(r->clients, this);
+        }
     }
     QtOcclusionClient(const QtOcclusionClient&) = delete;
     QtOcclusionClient& operator=(const QtOcclusionClient&) = delete;
@@ -323,17 +346,19 @@ protected:
     // while masked may leave the masked-out part blank.
     bool apply_occlusion_mask_(QWidget* w)
     {
-        const std::optional<Rect> over =
-            occlusion_query_ ? occlusion_query_() : std::nullopt;
+        const std::optional<Rect> over = occlusion_query_ ? occlusion_query_() : std::nullopt;
         QRect hole;
         if (over)
-            hole = QRectF(over->x - w->x(), over->y - w->y(), over->w, over->h)
-                       .toAlignedRect() &
+        {
+            hole = QRectF(over->x - w->x(), over->y - w->y(), over->w, over->h).toAlignedRect() &
                    w->rect();
+        }
         if (hole.isEmpty())
         {
             if (!masked_)
+            {
                 return false;
+            }
             w->clearMask();
             masked_ = false;
             mask_ = QRegion();
@@ -344,9 +369,13 @@ protected:
         // fully covered control hit-testable everywhere again — mask it to a
         // pixel outside its own rect instead, which nothing can hit.
         if (region.isEmpty())
+        {
             region = QRegion(-2, -2, 1, 1);
+        }
         if (masked_ && region == mask_)
+        {
             return false;
+        }
         w->setMask(region);
         masked_ = true;
         mask_ = region;
@@ -366,16 +395,16 @@ void QtOcclusionRegistry::refresh_all()
     // Copy: a refresh must not be able to invalidate the iteration.
     const std::vector<QtOcclusionClient*> snapshot = clients;
     for (QtOcclusionClient* c : snapshot)
+    {
         c->refresh_occlusion_mask();
+    }
 }
 
 class QtNativeTextField : public NativeTextField, public QtOcclusionClient
 {
 public:
-    QtNativeTextField(QWidget* parent,
-                      std::weak_ptr<QtOcclusionRegistry> occlusion)
-        : QtOcclusionClient(std::move(occlusion)),
-          edit_(new NavLineEdit(parent))
+    QtNativeTextField(QWidget* parent, std::weak_ptr<QtOcclusionRegistry> occlusion)
+        : QtOcclusionClient(std::move(occlusion)), edit_(new NavLineEdit(parent))
     {
         edit_->setAttribute(Qt::WA_StyledBackground, true);
         edit_->setFrame(false);
@@ -438,42 +467,43 @@ public:
                              request_capture();
                          });
         QObject::connect(edit_, &QLineEdit::selectionChanged, edit_,
-                         [this] { request_capture(); });
+                         [this]
+                         {
+                             request_capture();
+                         });
 
         // Canvas-owned caret blink: each tick just toggles
         // caret_blink_visible_ and asks for a scoped repaint of the caret's
         // own rect — no full recapture. Runs only while focused.
-        edit_->on_focus_changed_internal_ =
-            [this](bool focused)
+        edit_->on_focus_changed_internal_ = [this](bool focused)
+        {
+            has_focus_ = focused;
+            caret_blink_visible_ = true;
+            refresh_image();
+            if (focused)
             {
-                has_focus_ = focused;
-                caret_blink_visible_ = true;
-                refresh_image();
-                if (focused)
+                if (!blink_timer_)
                 {
-                    if (!blink_timer_)
-                    {
-                        blink_timer_ = new QTimer(edit_);
-                        int ms = QApplication::cursorFlashTime();
-                        blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
-                        QObject::connect(blink_timer_, &QTimer::timeout, edit_,
-                                         [this]
+                    blink_timer_ = new QTimer(edit_);
+                    int ms = QApplication::cursorFlashTime();
+                    blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
+                    QObject::connect(blink_timer_, &QTimer::timeout, edit_,
+                                     [this]
+                                     {
+                                         caret_blink_visible_ = !caret_blink_visible_;
+                                         if (on_repaint_needed_)
                                          {
-                                             caret_blink_visible_ =
-                                                 !caret_blink_visible_;
-                                             if (on_repaint_needed_)
-                                             {
-                                                 on_repaint_needed_(caret_rect());
-                                             }
-                                         });
-                    }
-                    blink_timer_->start();
+                                             on_repaint_needed_(caret_rect());
+                                         }
+                                     });
                 }
-                else if (blink_timer_)
-                {
-                    blink_timer_->stop();
-                }
-            };
+                blink_timer_->start();
+            }
+            else if (blink_timer_)
+            {
+                blink_timer_->stop();
+            }
+        };
 
         refresh_image();
     }
@@ -509,7 +539,9 @@ public:
     void refresh_occlusion() override
     {
         if (edit_ && apply_occlusion_mask_(edit_))
+        {
             request_capture();
+        }
     }
     void refresh_occlusion_mask() override
     {
@@ -523,14 +555,16 @@ public:
     Rect rendered_image_rect() const override
     {
         if (!edit_)
+        {
             return {};
+        }
         // edit_->geometry() is already in the same widget-tree (DIP) space
         // as set_rect()'s `r` above, which passes r's coordinates straight
         // through with no scale conversion — but set_rect() then narrows
         // the applied height to sizeHint(), so this can be smaller than
         // bounds_. See NativeTextField::rendered_image_rect()'s doc comment.
         return {static_cast<float>(edit_->x()), static_cast<float>(edit_->y()),
-               static_cast<float>(edit_->width()), static_cast<float>(edit_->height())};
+                static_cast<float>(edit_->width()), static_cast<float>(edit_->height())};
     }
     void set_on_repaint_needed(std::function<void(Rect)> cb) override
     {
@@ -608,14 +642,15 @@ public:
     {
         if (edit_)
         {
-            edit_->setEchoMode(password ? QLineEdit::Password
-                                        : QLineEdit::Normal);
+            edit_->setEchoMode(password ? QLineEdit::Password : QLineEdit::Normal);
         }
     }
     void set_text_color(Color c) override
     {
         if (!edit_)
+        {
             return;
+        }
         QPalette pal = edit_->palette();
         QColor qc(c.r, c.g, c.b, c.a);
         pal.setColor(QPalette::Text, qc);
@@ -628,16 +663,18 @@ public:
     void set_font_role(tk::FontRole role) override
     {
         if (!edit_)
+        {
             return;
+        }
         const int base = std::max(QApplication::font().pointSize(), 8);
         QFont f;
         const std::string_view family = tk::font_role_family(role);
         if (!family.empty())
-            f.setFamily(QString::fromUtf8(
-                family.data(), static_cast<qsizetype>(family.size())));
+        {
+            f.setFamily(QString::fromUtf8(family.data(), static_cast<qsizetype>(family.size())));
+        }
         f.setPointSize(tk::font_role_pt(role, base));
-        f.setWeight(tk::font_role_is_semibold(role) ? QFont::DemiBold
-                                                    : QFont::Normal);
+        f.setWeight(tk::font_role_is_semibold(role) ? QFont::DemiBold : QFont::Normal);
         edit_->setFont(f);
         request_capture();
     }
@@ -703,8 +740,7 @@ public:
         const QRect cr = edit_->caret_rect_local();
         const int fh = QFontMetrics(edit_->font()).height();
         return {static_cast<float>(edit_->x() + cr.x() + 4),
-                static_cast<float>(edit_->y() + cr.y() + (cr.height() - fh) / 2),
-                1.0f,
+                static_cast<float>(edit_->y() + cr.y() + (cr.height() - fh) / 2), 1.0f,
                 static_cast<float>(fh)};
     }
 
@@ -785,8 +821,7 @@ private:
         // Mirrors insert_mention()'s pill-rasterization dpr handling.
         const qreal dpr = edit_->devicePixelRatioF();
         QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
-                   has_bg_ ? QImage::Format_RGB32
-                           : QImage::Format_ARGB32_Premultiplied);
+                   has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
         img.setDevicePixelRatio(dpr);
         img.fill(has_bg_ ? bg_color_ : Qt::transparent);
         QPainter p(&img);
@@ -812,10 +847,8 @@ private:
         {
             return;
         }
-        QPoint local = QPoint(static_cast<int>(world.x), static_cast<int>(world.y))
-                       - edit_->pos();
-        QMouseEvent ev(type, local, edit_->mapToGlobal(local), button, buttons,
-                       Qt::NoModifier);
+        QPoint local = QPoint(static_cast<int>(world.x), static_cast<int>(world.y)) - edit_->pos();
+        QMouseEvent ev(type, local, edit_->mapToGlobal(local), button, buttons, Qt::NoModifier);
         QApplication::sendEvent(edit_, &ev);
     }
 
@@ -864,25 +897,34 @@ std::optional<tk::FileDropPayload> read_local_file_for_paste(const QString& path
 {
     const QFileInfo fi(path);
     if (!fi.isFile())
+    {
         return std::nullopt;
+    }
     const qint64 size = fi.size();
     if (size <= 0 || static_cast<std::size_t>(size) > tk::kMaxDroppedFileBytes)
+    {
         return std::nullopt;
+    }
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
+    {
         return std::nullopt;
+    }
     const QByteArray ba = f.readAll();
     if (ba.isEmpty())
+    {
         return std::nullopt;
+    }
     QMimeDatabase db;
     QString mime = db.mimeTypeForFileNameAndData(path, ba).name();
     if (mime.isEmpty())
+    {
         mime = QStringLiteral("application/octet-stream");
-    std::vector<std::uint8_t> bytes(
-        reinterpret_cast<const std::uint8_t*>(ba.constData()),
-        reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
-    return tk::FileDropPayload{std::move(bytes), mime.toStdString(),
-                               fi.fileName().toStdString()};
+    }
+    std::vector<std::uint8_t> bytes(reinterpret_cast<const std::uint8_t*>(ba.constData()),
+                                    reinterpret_cast<const std::uint8_t*>(ba.constData()) +
+                                        ba.size());
+    return tk::FileDropPayload{std::move(bytes), mime.toStdString(), fi.fileName().toStdString()};
 }
 
 class ComposeTextEdit : public QTextEdit
@@ -940,9 +982,13 @@ protected:
                 for (const QUrl& url : source->urls())
                 {
                     if (!url.isLocalFile())
+                    {
                         continue;
+                    }
                     if (auto payload = read_local_file_for_paste(url.toLocalFile()))
+                    {
                         files.push_back(std::move(*payload));
+                    }
                 }
                 if (!files.empty())
                 {
@@ -1024,13 +1070,11 @@ protected:
             QTextCursor cursor = textCursor();
             const QTextBlock block = cursor.block();
             const int pos = cursor.positionInBlock();
-            const int start = cursor.hasSelection()
-                                  ? -1
-                                  : emoji_cluster_start_before(block.text(), pos);
+            const int start =
+                cursor.hasSelection() ? -1 : emoji_cluster_start_before(block.text(), pos);
             if (start >= 0)
             {
-                cursor.setPosition(block.position() + start,
-                                   QTextCursor::KeepAnchor);
+                cursor.setPosition(block.position() + start, QTextCursor::KeepAnchor);
                 cursor.removeSelectedText();
                 setTextCursor(cursor);
                 ensureCursorVisible();
@@ -1044,20 +1088,35 @@ protected:
     void focusInEvent(QFocusEvent* e) override
     {
         QTextEdit::focusInEvent(e);
-        if (on_focus_changed_) on_focus_changed_(true);
-        if (on_focus_changed_internal_) on_focus_changed_internal_(true);
+        if (on_focus_changed_)
+        {
+            on_focus_changed_(true);
+        }
+        if (on_focus_changed_internal_)
+        {
+            on_focus_changed_internal_(true);
+        }
     }
     void focusOutEvent(QFocusEvent* e) override
     {
         QTextEdit::focusOutEvent(e);
-        if (on_focus_changed_) on_focus_changed_(false);
-        if (on_focus_changed_internal_) on_focus_changed_internal_(false);
+        if (on_focus_changed_)
+        {
+            on_focus_changed_(false);
+        }
+        if (on_focus_changed_internal_)
+        {
+            on_focus_changed_internal_(false);
+        }
     }
 
     void mousePressEvent(QMouseEvent* e) override
     {
         QTextEdit::mousePressEvent(e);
-        if (on_pointer_down_) on_pointer_down_();
+        if (on_pointer_down_)
+        {
+            on_pointer_down_();
+        }
     }
 
     void insertFromMimeData(const QMimeData* source) override
@@ -1084,11 +1143,8 @@ protected:
                     if (!ba.isEmpty())
                     {
                         std::vector<std::uint8_t> bytes(
-                            reinterpret_cast<const std::uint8_t*>(
-                                ba.constData()),
-                            reinterpret_cast<const std::uint8_t*>(
-                                ba.constData()) +
-                                ba.size());
+                            reinterpret_cast<const std::uint8_t*>(ba.constData()),
+                            reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
                         on_image_paste_(std::move(bytes), std::string(m));
                         return;
                     }
@@ -1105,8 +1161,7 @@ protected:
                 {
                     std::vector<std::uint8_t> bytes(
                         reinterpret_cast<const std::uint8_t*>(ba.constData()),
-                        reinterpret_cast<const std::uint8_t*>(ba.constData()) +
-                            ba.size());
+                        reinterpret_cast<const std::uint8_t*>(ba.constData()) + ba.size());
                     on_image_paste_(std::move(bytes), "image/png");
                     return;
                 }
@@ -1120,7 +1175,9 @@ protected:
         // reach here, but guard again in case something calls this
         // directly — a file drag/paste must never be reduced to its path.
         if (source && source->hasText() && !source->hasUrls())
+        {
             textCursor().insertText(source->text());
+        }
     }
 
     // See NavLineEdit::contextMenuEvent — same styled-widget-cascade issue
@@ -1170,9 +1227,8 @@ protected:
         // Match the canvas's emoji-run size (canvas_qpainter build_rich_text)
         // so a composed emoji is the same size in the input as in a message
         // row — shared tweak knob + Qt CBDT stock compensation.
-        const qreal emoji_pt =
-            tk::font_role_pt(tk::FontRole::InlineEmoji, base_pt) *
-            tk::kEmojiSizeAdjust * tk::qt6::kQtEmojiStockComp;
+        const qreal emoji_pt = tk::font_role_pt(tk::FontRole::InlineEmoji, base_pt) *
+                               tk::kEmojiSizeAdjust * tk::qt6::kQtEmojiStockComp;
         // Map every run edge in one walk of the text (per-edge mapping copies
         // the whole block each call, quadratic in the number of emoji).
         std::vector<std::size_t> edges;
@@ -1196,10 +1252,8 @@ protected:
 class QtNativeTextArea : public NativeTextArea, public QtOcclusionClient
 {
 public:
-    QtNativeTextArea(QWidget* parent,
-                     std::weak_ptr<QtOcclusionRegistry> occlusion)
-        : QtOcclusionClient(std::move(occlusion)),
-          edit_(new ComposeTextEdit(parent))
+    QtNativeTextArea(QWidget* parent, std::weak_ptr<QtOcclusionRegistry> occlusion)
+        : QtOcclusionClient(std::move(occlusion)), edit_(new ComposeTextEdit(parent))
     {
         edit_->setAttribute(Qt::WA_StyledBackground, true);
         edit_->setFrameShape(QFrame::NoFrame);
@@ -1242,8 +1296,7 @@ public:
                              request_capture();
                              if (on_changed_)
                              {
-                                 on_changed_(
-                                     edit_->toPlainText().toStdString());
+                                 on_changed_(edit_->toPlainText().toStdString());
                              }
                              float h = natural_height();
                              if (h != last_height_ && on_height_changed_)
@@ -1269,7 +1322,10 @@ public:
                              request_capture();
                          });
         QObject::connect(edit_, &QTextEdit::selectionChanged, edit_,
-                         [this] { request_capture(); });
+                         [this]
+                         {
+                             request_capture();
+                         });
         // Real wheel-driven scrolling reaches edit_'s viewport via normal Qt
         // hit-testing (WA_DontShowOnScreen doesn't affect input routing or
         // cascade to children) and drives QTextEdit::scrollContentsBy(), which
@@ -1280,44 +1336,46 @@ public:
         // ghosting artifact (old text not cleared behind the newly-scrolled
         // content). Recapturing on every scrollbar move keeps the canvas
         // snapshot synced with the control's actual current scroll position.
-        QObject::connect(edit_->verticalScrollBar(), &QScrollBar::valueChanged,
-                         edit_, [this](int) { request_capture(); });
+        QObject::connect(edit_->verticalScrollBar(), &QScrollBar::valueChanged, edit_,
+                         [this](int)
+                         {
+                             request_capture();
+                         });
 
-        edit_->on_focus_changed_internal_ =
-            [this](bool focused)
+        edit_->on_focus_changed_internal_ = [this](bool focused)
+        {
+            has_focus_ = focused;
+            caret_blink_visible_ = true;
+            refresh_image();
+            if (focused)
             {
-                has_focus_ = focused;
-                caret_blink_visible_ = true;
-                refresh_image();
-                if (focused)
+                if (!blink_timer_)
                 {
-                    if (!blink_timer_)
-                    {
-                        blink_timer_ = new QTimer(edit_);
-                        int ms = QApplication::cursorFlashTime();
-                        blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
-                        // Caret is canvas-owned (see caret_rect()/
-                        // caret_blink_visible() above) — each tick only
-                        // toggles caret_blink_visible_ and requests a
-                        // scoped repaint of the caret's own small rect, not
-                        // a full refresh_image() capture.
-                        QObject::connect(blink_timer_, &QTimer::timeout, edit_,
-                                         [this]
+                    blink_timer_ = new QTimer(edit_);
+                    int ms = QApplication::cursorFlashTime();
+                    blink_timer_->setInterval(ms > 0 ? ms / 2 : 530);
+                    // Caret is canvas-owned (see caret_rect()/
+                    // caret_blink_visible() above) — each tick only
+                    // toggles caret_blink_visible_ and requests a
+                    // scoped repaint of the caret's own small rect, not
+                    // a full refresh_image() capture.
+                    QObject::connect(blink_timer_, &QTimer::timeout, edit_,
+                                     [this]
+                                     {
+                                         caret_blink_visible_ = !caret_blink_visible_;
+                                         if (on_repaint_needed_)
                                          {
-                                             caret_blink_visible_ = !caret_blink_visible_;
-                                             if (on_repaint_needed_)
-                                             {
-                                                 on_repaint_needed_(caret_rect());
-                                             }
-                                         });
-                    }
-                    blink_timer_->start();
+                                             on_repaint_needed_(caret_rect());
+                                         }
+                                     });
                 }
-                else if (blink_timer_)
-                {
-                    blink_timer_->stop();
-                }
-            };
+                blink_timer_->start();
+            }
+            else if (blink_timer_)
+            {
+                blink_timer_->stop();
+            }
+        };
     }
 
     ~QtNativeTextArea() override
@@ -1364,7 +1422,9 @@ public:
     void refresh_occlusion() override
     {
         if (edit_ && apply_occlusion_mask_(edit_))
+        {
             request_capture();
+        }
     }
     void refresh_occlusion_mask() override
     {
@@ -1449,16 +1509,18 @@ public:
     void set_font_role(tk::FontRole role) override
     {
         if (!edit_)
+        {
             return;
+        }
         const int base = std::max(QApplication::font().pointSize(), 8);
         QFont f; // inherits app family
         const std::string_view family = tk::font_role_family(role);
         if (!family.empty())
-            f.setFamily(QString::fromUtf8(
-                family.data(), static_cast<qsizetype>(family.size())));
+        {
+            f.setFamily(QString::fromUtf8(family.data(), static_cast<qsizetype>(family.size())));
+        }
         f.setPointSize(tk::font_role_pt(role, base));
-        f.setWeight(tk::font_role_is_semibold(role) ? QFont::DemiBold
-                                                    : QFont::Normal);
+        f.setWeight(tk::font_role_is_semibold(role) ? QFont::DemiBold : QFont::Normal);
         edit_->setFont(f);
     }
     void set_text_color(Color c) override
@@ -1524,8 +1586,7 @@ public:
             docSize = edit_->document()->size();
         }
         const auto m = edit_->contentsMargins();
-        return static_cast<float>(docSize.height() + m.top() + m.bottom() +
-                                  4.0);
+        return static_cast<float>(docSize.height() + m.top() + m.bottom() + 4.0);
     }
     void set_on_changed(std::function<void(const std::string&)> cb) override
     {
@@ -1571,10 +1632,8 @@ public:
             return {};
         }
         QRect cr = edit_->cursorRect();
-        QPoint pt =
-            edit_->viewport()->mapTo(edit_->parentWidget(), cr.topLeft());
-        return {float(pt.x()), float(pt.y()), float(cr.width()),
-                float(cr.height())};
+        QPoint pt = edit_->viewport()->mapTo(edit_->parentWidget(), cr.topLeft());
+        return {float(pt.x()), float(pt.y()), float(cr.width()), float(cr.height())};
     }
     // setCursorWidth(0) in the ctor means Qt never draws a caret into the
     // capture — the canvas draws its own, driven by caret_rect()/
@@ -1691,8 +1750,7 @@ public:
             return;
         }
         QSet<QString> live;
-        for (QTextBlock block = edit_->document()->begin(); block.isValid();
-             block = block.next())
+        for (QTextBlock block = edit_->document()->begin(); block.isValid(); block = block.next())
         {
             for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
             {
@@ -1771,11 +1829,9 @@ public:
         spec.fg = mention_colors_.fg;
         spec.initials_bg = mention_colors_.initials_bg;
         spec.initials_fg = mention_colors_.initials_fg;
-        const tk::LineMetrics lm =
-            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const tk::LineMetrics lm = tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
         tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-            *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
-            static_cast<float>(scale));
+            *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, static_cast<float>(scale));
         if (!pinned)
         {
             // No pill chrome in this fallback, so the '@' is the only visual
@@ -1786,11 +1842,9 @@ public:
             return;
         }
 
-        QString res = QStringLiteral("tesseract-mention://%1")
-                          .arg(mention_counter_++);
-        edit_->document()->addResource(
-            QTextDocument::ImageResource, QUrl(res),
-            QVariant(tk::qt6::to_native_image(*pinned)));
+        QString res = QStringLiteral("tesseract-mention://%1").arg(mention_counter_++);
+        edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
+                                       QVariant(tk::qt6::to_native_image(*pinned)));
         mention_pill_refs_[res] = pinned;
         QTextImageFormat fmt;
         fmt.setName(res);
@@ -1843,13 +1897,11 @@ public:
 
         QFontMetrics fm(edit_->font());
         const int side = fm.height();
-        QImage scaled = tk::qt6::to_native_image(*image).scaled(
-            side, side, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QImage scaled = tk::qt6::to_native_image(*image).scaled(side, side, Qt::KeepAspectRatio,
+                                                                Qt::SmoothTransformation);
 
-        QString res = QStringLiteral("tesseract-emoticon://%1")
-                          .arg(emoticon_counter_++);
-        edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
-                                       QVariant(scaled));
+        QString res = QStringLiteral("tesseract-emoticon://%1").arg(emoticon_counter_++);
+        edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res), QVariant(scaled));
         QTextImageFormat fmt;
         fmt.setName(res);
         fmt.setVerticalAlignment(QTextCharFormat::AlignBaseline);
@@ -1891,8 +1943,7 @@ public:
             }
         };
         bool first_block = true;
-        for (QTextBlock block = edit_->document()->begin(); block.isValid();
-             block = block.next())
+        for (QTextBlock block = edit_->document()->begin(); block.isValid(); block = block.next())
         {
             if (!first_block)
             {
@@ -1912,10 +1963,8 @@ public:
                     flush_text();
                     tesseract::MentionSeg s;
                     s.kind = tesseract::MentionSeg::Kind::Mention;
-                    s.user_id =
-                        cf.property(PropMentionUserId).toString().toStdString();
-                    s.display_name =
-                        cf.property(PropMentionDisplay).toString().toStdString();
+                    s.user_id = cf.property(PropMentionUserId).toString().toStdString();
+                    s.display_name = cf.property(PropMentionDisplay).toString().toStdString();
                     s.is_room = cf.property(PropMentionIsRoom).toBool();
                     segs.push_back(std::move(s));
                 }
@@ -1924,10 +1973,8 @@ public:
                     flush_text();
                     tesseract::MentionSeg s;
                     s.kind = tesseract::MentionSeg::Kind::Emoticon;
-                    s.shortcode =
-                        cf.property(PropEmoticonShortcode).toString().toStdString();
-                    s.mxc_url =
-                        cf.property(PropEmoticonUrl).toString().toStdString();
+                    s.shortcode = cf.property(PropEmoticonShortcode).toString().toStdString();
+                    s.mxc_url = cf.property(PropEmoticonUrl).toString().toStdString();
                     segs.push_back(std::move(s));
                 }
                 else
@@ -1937,10 +1984,7 @@ public:
                     // to '\n', but frag.text() returns the raw codepoint.
                     // Normalise here so markdown_to_html's line-splitter (which
                     // only recognises '\n') sees proper newlines.
-                    pending +=
-                        frag.text()
-                            .replace(QChar(0x2028), QLatin1Char('\n'))
-                            .toStdString();
+                    pending += frag.text().replace(QChar(0x2028), QLatin1Char('\n')).toStdString();
                 }
             }
         }
@@ -1957,8 +2001,7 @@ public:
     // each matching mention's resource image in place rather than reading
     // it — no document text touched, so this is safe regardless of what's
     // been typed since insert_mention.
-    void refresh_mention_avatar(const std::string& user_id,
-                                const tk::Image* avatar) override
+    void refresh_mention_avatar(const std::string& user_id, const tk::Image* avatar) override
     {
         if (!edit_ || !avatar)
         {
@@ -1969,8 +2012,7 @@ public:
             pill_factory_ = tk::qt6::make_factory();
         }
         bool changed = false;
-        for (QTextBlock block = edit_->document()->begin(); block.isValid();
-            block = block.next())
+        for (QTextBlock block = edit_->document()->begin(); block.isValid(); block = block.next())
         {
             for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
             {
@@ -1980,13 +2022,11 @@ public:
                     continue;
                 }
                 QTextCharFormat cf = frag.charFormat();
-                if (!cf.hasProperty(PropMentionDisplay) ||
-                    cf.property(PropMentionIsRoom).toBool())
+                if (!cf.hasProperty(PropMentionDisplay) || cf.property(PropMentionIsRoom).toBool())
                 {
                     continue;
                 }
-                if (cf.property(PropMentionUserId).toString().toStdString() !=
-                    user_id)
+                if (cf.property(PropMentionUserId).toString().toStdString() != user_id)
                 {
                     continue;
                 }
@@ -1996,8 +2036,7 @@ public:
                     continue;
                 }
                 tk::PillSpec spec;
-                spec.text =
-                    cf.property(PropMentionDisplay).toString().toStdString();
+                spec.text = cf.property(PropMentionDisplay).toString().toStdString();
                 spec.kind = tk::PillKind::User;
                 spec.image = avatar;
                 spec.bg = mention_colors_.bg;
@@ -2007,17 +2046,16 @@ public:
                 const qreal scale = edit_->devicePixelRatioF();
                 const tk::LineMetrics lm =
                     tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
-                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
-                    static_cast<float>(scale));
+                tk::ImageRef pinned =
+                    tk::render_pill_bitmap_cached(*pill_factory_, pill_cache_, spec, lm.ascent,
+                                                  lm.descent, static_cast<float>(scale));
                 if (!pinned)
                 {
                     continue;
                 }
                 const QString res = imgfmt.name();
-                edit_->document()->addResource(
-                    QTextDocument::ImageResource, QUrl(res),
-                    QVariant(tk::qt6::to_native_image(*pinned)));
+                edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
+                                               QVariant(tk::qt6::to_native_image(*pinned)));
                 mention_pill_refs_[res] = pinned;
                 changed = true;
             }
@@ -2026,8 +2064,7 @@ public:
         {
             // Forces the layout to re-fetch each touched resource rather
             // than keep painting whatever image it already resolved.
-            edit_->document()->markContentsDirty(
-                0, edit_->document()->characterCount());
+            edit_->document()->markContentsDirty(0, edit_->document()->characterCount());
         }
     }
 
@@ -2044,8 +2081,7 @@ public:
             pill_factory_ = tk::qt6::make_factory();
         }
         bool changed = false;
-        for (QTextBlock block = edit_->document()->begin(); block.isValid();
-            block = block.next())
+        for (QTextBlock block = edit_->document()->begin(); block.isValid(); block = block.next())
         {
             for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
             {
@@ -2055,8 +2091,7 @@ public:
                     continue;
                 }
                 QTextCharFormat cf = frag.charFormat();
-                if (!cf.hasProperty(PropMentionDisplay) ||
-                    !cf.property(PropMentionIsRoom).toBool())
+                if (!cf.hasProperty(PropMentionDisplay) || !cf.property(PropMentionIsRoom).toBool())
                 {
                     continue;
                 }
@@ -2077,25 +2112,23 @@ public:
                 const qreal scale = edit_->devicePixelRatioF();
                 const tk::LineMetrics lm =
                     tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
-                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
-                    static_cast<float>(scale));
+                tk::ImageRef pinned =
+                    tk::render_pill_bitmap_cached(*pill_factory_, pill_cache_, spec, lm.ascent,
+                                                  lm.descent, static_cast<float>(scale));
                 if (!pinned)
                 {
                     continue;
                 }
                 const QString res = imgfmt.name();
-                edit_->document()->addResource(
-                    QTextDocument::ImageResource, QUrl(res),
-                    QVariant(tk::qt6::to_native_image(*pinned)));
+                edit_->document()->addResource(QTextDocument::ImageResource, QUrl(res),
+                                               QVariant(tk::qt6::to_native_image(*pinned)));
                 mention_pill_refs_[res] = pinned;
                 changed = true;
             }
         }
         if (changed)
         {
-            edit_->document()->markContentsDirty(
-                0, edit_->document()->characterCount());
+            edit_->document()->markContentsDirty(0, edit_->document()->characterCount());
         }
     }
 
@@ -2106,12 +2139,14 @@ public:
     Rect rendered_image_rect() const override
     {
         if (!edit_)
+        {
             return {};
+        }
         // See QtNativeTextField::rendered_image_rect — same rationale
         // (set_rect() above narrows the applied height when content is
         // shorter than the rect).
         return {static_cast<float>(edit_->x()), static_cast<float>(edit_->y()),
-               static_cast<float>(edit_->width()), static_cast<float>(edit_->height())};
+                static_cast<float>(edit_->width()), static_cast<float>(edit_->height())};
     }
     void set_on_repaint_needed(std::function<void(Rect)> cb) override
     {
@@ -2172,8 +2207,7 @@ private:
         // here.
         const qreal dpr = edit_->devicePixelRatioF();
         QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
-                   has_bg_ ? QImage::Format_RGB32
-                           : QImage::Format_ARGB32_Premultiplied);
+                   has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
         img.setDevicePixelRatio(dpr);
         img.fill(has_bg_ ? bg_color_ : Qt::transparent);
         QPainter p(&img);
@@ -2208,14 +2242,12 @@ private:
         }
         QWidget* viewport = edit_->viewport();
         QWidget* target = viewport ? viewport : static_cast<QWidget*>(edit_);
-        QPoint local = QPoint(static_cast<int>(world.x), static_cast<int>(world.y))
-                       - edit_->pos();
+        QPoint local = QPoint(static_cast<int>(world.x), static_cast<int>(world.y)) - edit_->pos();
         if (viewport)
         {
             local -= viewport->pos();
         }
-        QMouseEvent ev(type, local, target->mapToGlobal(local), button, buttons,
-                       Qt::NoModifier);
+        QMouseEvent ev(type, local, target->mapToGlobal(local), button, buttons, Qt::NoModifier);
         QApplication::sendEvent(target, &ev);
     }
 
@@ -2245,9 +2277,8 @@ private:
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
-    tk::MentionColors mention_colors_{
-        tk::Color::rgb(0x2E3B5E), tk::Color::rgb(0xA8C5FF),
-        tk::Color::rgb(0x1F3A66), tk::Color::rgb(0xBFD8FF)};
+    tk::MentionColors mention_colors_{tk::Color::rgb(0x2E3B5E), tk::Color::rgb(0xA8C5FF),
+                                      tk::Color::rgb(0x1F3A66), tk::Color::rgb(0xBFD8FF)};
     int mention_counter_ = 0;
     int emoticon_counter_ = 0;
     // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper,
@@ -2318,9 +2349,11 @@ public:
     ~QtPopupSurfaceHandle() override
     {
         if (filter_installed_)
+        {
             qApp->removeEventFilter(this);
+        }
         surface_.reset(); // remove the Surface QWidget from frame_'s children first
-        delete frame_;     // then delete the now-childless frame_
+        delete frame_;    // then delete the now-childless frame_
     }
 
     void set_root(std::unique_ptr<Widget> root) override
@@ -2328,8 +2361,7 @@ public:
         surface_->set_root(std::move(root));
     }
 
-    void set_rect(Rect anchor_world_rect, Size size,
-                  tk::PopupPlacement placement) override
+    void set_rect(Rect anchor_world_rect, Size size, tk::PopupPlacement placement) override
     {
         if (!anchor_surface_ || !frame_)
         {
@@ -2346,9 +2378,13 @@ public:
         const int y_below = pc.y() + int(anchor_world_rect.h) + 4;
         int y;
         if (placement == tk::PopupPlacement::PreferAbove)
+        {
             y = (y_above >= work.top()) ? y_above : y_below;
+        }
         else
+        {
             y = (y_below + h <= work.bottom()) ? y_below : y_above;
+        }
         x = std::clamp(x, work.left(), work.right() - w);
         y = std::clamp(y, work.top(), work.bottom() - h);
         frame_->setGeometry(x, y, w, h);
@@ -2361,7 +2397,9 @@ public:
     {
         radius_ = radius_dip;
         if (frame_)
+        {
             apply_mask_(frame_->width(), frame_->height());
+        }
     }
 
     void set_visible(bool visible) override
@@ -2397,7 +2435,10 @@ public:
         return visible_;
     }
 
-    tk::Host* popup_host() override { return &surface_->host(); }
+    tk::Host* popup_host() override
+    {
+        return &surface_->host();
+    }
 
     void set_theme(const Theme& theme) override
     {
@@ -2433,7 +2474,9 @@ public:
     void apply_mask_(int w, int h)
     {
         if (!frame_)
+        {
             return;
+        }
         if (radius_ <= 0.f)
         {
             frame_->clearMask();
@@ -2459,7 +2502,9 @@ protected:
             if (!frame_->rect().contains(frame_->mapFromGlobal(global)))
             {
                 if (on_dismiss_requested)
+                {
                     on_dismiss_requested();
+                }
             }
         }
         return QObject::eventFilter(obj, event);
@@ -2487,8 +2532,7 @@ class Host : public tk::Host, public tk::AnimDamageSink, public QObject
 {
 public:
     Host(Surface* surface, const Theme& theme, bool transparent = false)
-        : surface_(surface), theme_(&theme), factory_(make_factory()),
-          transparent_(transparent)
+        : surface_(surface), theme_(&theme), factory_(make_factory()), transparent_(transparent)
     {
         qApp->installEventFilter(this);
     }
@@ -2504,7 +2548,9 @@ public:
         {
             std::vector<FontFamilyInfo> out;
             for (const QString& f : QFontDatabase::families())
+            {
                 out.push_back({f.toStdString(), QFontDatabase::isFixedPitch(f)});
+            }
             return out; // QFontDatabase::families() is already sorted + unique
         }();
         return cached;
@@ -2515,16 +2561,30 @@ public:
     void apply_cursor_(tk::CursorShape shape) override
     {
         if (!surface_)
+        {
             return;
+        }
         Qt::CursorShape c = Qt::ArrowCursor;
         switch (shape)
         {
-        case tk::CursorShape::Default:  c = Qt::ArrowCursor; break;
-        case tk::CursorShape::Pointer:  c = Qt::PointingHandCursor; break;
-        case tk::CursorShape::Text:     c = Qt::IBeamCursor; break;
-        case tk::CursorShape::Grab:     c = Qt::OpenHandCursor; break;
-        case tk::CursorShape::Grabbing: c = Qt::ClosedHandCursor; break;
-        case tk::CursorShape::ResizeH:  c = Qt::SplitHCursor; break;
+        case tk::CursorShape::Default:
+            c = Qt::ArrowCursor;
+            break;
+        case tk::CursorShape::Pointer:
+            c = Qt::PointingHandCursor;
+            break;
+        case tk::CursorShape::Text:
+            c = Qt::IBeamCursor;
+            break;
+        case tk::CursorShape::Grab:
+            c = Qt::OpenHandCursor;
+            break;
+        case tk::CursorShape::Grabbing:
+            c = Qt::ClosedHandCursor;
+            break;
+        case tk::CursorShape::ResizeH:
+            c = Qt::SplitHCursor;
+            break;
         }
         surface_->setCursor(c);
     }
@@ -2625,8 +2685,7 @@ public:
             }
             return;
         }
-        QMetaObject::invokeMethod(surface_, std::move(task),
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(surface_, std::move(task), Qt::QueuedConnection);
     }
 
     void post_delayed(int ms, std::function<void()> fn) override
@@ -2648,7 +2707,10 @@ public:
             QNetworkInformation::loadDefaultBackend();
             info = QNetworkInformation::instance();
         }
-        if (!info) return true; // no reachability backend loaded — don't block
+        if (!info)
+        {
+            return true; // no reachability backend loaded — don't block
+        }
         // Only "no network at all" blocks. Local, Site and Unknown mean a link
         // exists (a LAN, VPN or intranet homeserver may still be reachable),
         // and a disabled or failed connectivity check reports Unknown.
@@ -2687,12 +2749,11 @@ public:
     std::unique_ptr<VideoPlayer> make_video_player() override;
     std::unique_ptr<AudioPlayback> make_audio_playback() override;
 
-    std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
+    std::vector<tk::DeviceListing> enumerate_audio_inputs() const override;
     std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
-    std::vector<tk::DeviceListing> enumerate_cameras()       const override;
+    std::vector<tk::DeviceListing> enumerate_cameras() const override;
 
-    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
-                                 bool compress) override
+    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len, bool compress) override
     {
         EncodedImage out{};
         if (!data || len == 0)
@@ -2710,8 +2771,7 @@ public:
 
         // Decode once so we can read the size + mime even on the
         // pass-through path. QImageReader sniffs format from the bytes.
-        QByteArray src(reinterpret_cast<const char*>(data),
-                       static_cast<int>(len));
+        QByteArray src(reinterpret_cast<const char*>(data), static_cast<int>(len));
         QBuffer src_buf(&src);
         src_buf.open(QIODevice::ReadOnly);
         QImageReader reader(&src_buf);
@@ -2729,10 +2789,8 @@ public:
 
         if (!compress)
         {
-            out.bytes.assign(
-                reinterpret_cast<const std::uint8_t*>(src.constData()),
-                reinterpret_cast<const std::uint8_t*>(src.constData()) +
-                    src.size());
+            out.bytes.assign(reinterpret_cast<const std::uint8_t*>(src.constData()),
+                             reinterpret_cast<const std::uint8_t*>(src.constData()) + src.size());
             if (fmt == "png")
             {
                 out.mime = "image/png";
@@ -2755,9 +2813,8 @@ public:
             }
             else
             {
-                out.mime = "image/" +
-                           std::string(fmt.constData(),
-                                       static_cast<std::size_t>(fmt.size()));
+                out.mime =
+                    "image/" + std::string(fmt.constData(), static_cast<std::size_t>(fmt.size()));
             }
             out.width = static_cast<std::uint32_t>(src_w);
             out.height = static_cast<std::uint32_t>(src_h);
@@ -2769,8 +2826,7 @@ public:
         constexpr int kMaxH = 1200;
         if (src_w > kMaxW || src_h > kMaxH)
         {
-            img = img.scaled(kMaxW, kMaxH, Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
+            img = img.scaled(kMaxW, kMaxH, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
 
         QByteArray dst;
@@ -2783,10 +2839,8 @@ public:
             return EncodedImage{};
         }
 
-        out.bytes.assign(
-            reinterpret_cast<const std::uint8_t*>(dst.constData()),
-            reinterpret_cast<const std::uint8_t*>(dst.constData()) +
-                dst.size());
+        out.bytes.assign(reinterpret_cast<const std::uint8_t*>(dst.constData()),
+                         reinterpret_cast<const std::uint8_t*>(dst.constData()) + dst.size());
         out.mime = "image/jpeg";
         out.width = static_cast<std::uint32_t>(img.width());
         out.height = static_cast<std::uint32_t>(img.height());
@@ -2799,17 +2853,19 @@ public:
             QString::fromUtf8(text.data(), static_cast<int>(text.size())));
     }
 
-    bool
-    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
+    bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
     {
         if (encoded_bytes.empty())
+        {
             return false;
-        const QByteArray raw(
-            reinterpret_cast<const char*>(encoded_bytes.data()),
-            static_cast<int>(encoded_bytes.size()));
+        }
+        const QByteArray raw(reinterpret_cast<const char*>(encoded_bytes.data()),
+                             static_cast<int>(encoded_bytes.size()));
         QImage img;
         if (!img.loadFromData(raw))
+        {
             return false;
+        }
 
         // Sniff the container so the suggested filename gets a sensible
         // extension (png / jpeg / gif / webp).
@@ -2818,10 +2874,14 @@ public:
             QBuffer buf;
             buf.setData(raw);
             if (buf.open(QIODevice::ReadOnly))
+            {
                 fmt = QImageReader(&buf).format();
+            }
         }
         if (fmt.isEmpty())
+        {
             fmt = "png";
+        }
 
         auto* mime = new QMimeData;
         mime->setImageData(img);
@@ -2834,8 +2894,7 @@ public:
         mime->setData(QStringLiteral("x-kde-force-image-copy"), QByteArray());
         // Also advertise a suggested filename so pasting into a save dialog /
         // Dolphin proposes a sensible name rather than "Untitled".
-        mime->setData(QStringLiteral("application/x-kde-suggestedfilename"),
-                      "image." + fmt);
+        mime->setData(QStringLiteral("application/x-kde-suggestedfilename"), "image." + fmt);
         QGuiApplication::clipboard()->setMimeData(mime);
         return true;
     }
@@ -2918,18 +2977,30 @@ public:
     // Pointer-event entry points. Each translates the native event to a
     // world-space Point (already done by the Surface) and forwards to the
     // shared Host::dispatch_pointer_* state machine.
-    void on_pointer_down(Point local) { dispatch_pointer_down(local); }
+    void on_pointer_down(Point local)
+    {
+        dispatch_pointer_down(local);
+    }
 
     void on_right_click(Point local)
     {
         dispatch_right_click(local);
     }
 
-    void on_pointer_up(Point local) { dispatch_pointer_up(local); }
+    void on_pointer_up(Point local)
+    {
+        dispatch_pointer_up(local);
+    }
 
-    void on_pointer_move(Point local) { dispatch_pointer_move(local); }
+    void on_pointer_move(Point local)
+    {
+        dispatch_pointer_move(local);
+    }
 
-    void on_pointer_leave() { dispatch_pointer_leave(); }
+    void on_pointer_leave()
+    {
+        dispatch_pointer_leave();
+    }
 
     void on_wheel(Point local, float dx, float dy, bool is_touchpad = false)
     {
@@ -2973,16 +3044,22 @@ public:
     }
 
 protected:
-    Widget* input_root_() const override { return root_.get(); }
+    Widget* input_root_() const override
+    {
+        return root_.get();
+    }
 
 public:
     std::uint16_t supported_emoji_version() override
     {
-        return tk::cached_emoji_version([] { return tk::qt6::make_factory(); });
+        return tk::cached_emoji_version(
+            []
+            {
+                return tk::qt6::make_factory();
+            });
     }
 
 protected:
-
     // See tk::Host::claim_native_focus_container_'s doc comment: the newly
     // tk-focused widget has no native Qt control of its own (e.g. a plain
     // Button reached via Tab from the compose box), so nothing would
@@ -2994,7 +3071,9 @@ protected:
     void claim_native_focus_container_() override
     {
         if (surface_)
+        {
             surface_->setFocus(Qt::OtherFocusReason);
+        }
     }
 
     // Announces ordinary tk-level Tab-focus moves to AT-SPI/Orca — without
@@ -3044,7 +3123,9 @@ private:
         if (p == occlusion_popup_ && r.x == occlusion_popup_rect_.x &&
             r.y == occlusion_popup_rect_.y && r.w == occlusion_popup_rect_.w &&
             r.h == occlusion_popup_rect_.h)
+        {
             return;
+        }
         occlusion_popup_ = p;
         occlusion_popup_rect_ = r;
         occlusion_->refresh_all();
@@ -3056,8 +3137,7 @@ private:
     bool transparent_ = false;
     // Declared before root_ so it outlives every native control root_'s
     // widgets own (they unregister from it on destruction).
-    std::shared_ptr<QtOcclusionRegistry> occlusion_ =
-        std::make_shared<QtOcclusionRegistry>();
+    std::shared_ptr<QtOcclusionRegistry> occlusion_ = std::make_shared<QtOcclusionRegistry>();
     const Widget* occlusion_popup_ = nullptr; // identity only, never deref'd
     Rect occlusion_popup_rect_{};
     std::unique_ptr<Widget> root_;
@@ -3149,8 +3229,14 @@ void Surface::set_theme(const Theme& t)
 
 void Surface::apply_scale_change(float scale)
 {
-    if (Widget* r = root()) r->apply_scale_change(scale);
-    if (on_scale_changed_) on_scale_changed_(scale);
+    if (Widget* r = root())
+    {
+        r->apply_scale_change(scale);
+    }
+    if (on_scale_changed_)
+    {
+        on_scale_changed_(scale);
+    }
 }
 
 void Surface::set_on_scale_changed(std::function<void(float)> cb)
@@ -3204,26 +3290,45 @@ Key key_from_qt(int key)
 {
     switch (key)
     {
-    case Qt::Key_Escape: return Key::Escape;
+    case Qt::Key_Escape:
+        return Key::Escape;
     case Qt::Key_Return:
-    case Qt::Key_Enter: return Key::Enter;
-    case Qt::Key_Space: return Key::Space;
-    case Qt::Key_Tab: return Key::Tab;
-    case Qt::Key_Backtab: return Key::Backtab;
-    case Qt::Key_Up: return Key::Up;
-    case Qt::Key_Down: return Key::Down;
-    case Qt::Key_Left: return Key::Left;
-    case Qt::Key_Right: return Key::Right;
-    case Qt::Key_Home: return Key::Home;
-    case Qt::Key_End: return Key::End;
-    case Qt::Key_PageUp: return Key::PageUp;
-    case Qt::Key_PageDown: return Key::PageDown;
-    case Qt::Key_Backspace: return Key::Backspace;
-    case Qt::Key_Delete: return Key::Delete;
-    case Qt::Key_Menu: return Key::Menu;
-    case Qt::Key_F10: return Key::F10;
-    case Qt::Key_F1: return Key::F1;
-    default: return Key::Unknown;
+    case Qt::Key_Enter:
+        return Key::Enter;
+    case Qt::Key_Space:
+        return Key::Space;
+    case Qt::Key_Tab:
+        return Key::Tab;
+    case Qt::Key_Backtab:
+        return Key::Backtab;
+    case Qt::Key_Up:
+        return Key::Up;
+    case Qt::Key_Down:
+        return Key::Down;
+    case Qt::Key_Left:
+        return Key::Left;
+    case Qt::Key_Right:
+        return Key::Right;
+    case Qt::Key_Home:
+        return Key::Home;
+    case Qt::Key_End:
+        return Key::End;
+    case Qt::Key_PageUp:
+        return Key::PageUp;
+    case Qt::Key_PageDown:
+        return Key::PageDown;
+    case Qt::Key_Backspace:
+        return Key::Backspace;
+    case Qt::Key_Delete:
+        return Key::Delete;
+    case Qt::Key_Menu:
+        return Key::Menu;
+    case Qt::Key_F10:
+        return Key::F10;
+    case Qt::Key_F1:
+        return Key::F1;
+    default:
+        return Key::Unknown;
     }
 }
 
@@ -3235,8 +3340,8 @@ std::string character_text_from_qt(QKeyEvent* e)
     // so shared shortcut matching on 'c' would never fire. Qt's xkb
     // backend already maps key() to the Latin key on the same physical key
     // for modified presses (that's how QShortcut matches them), so prefer it.
-    if ((e->modifiers() & (Qt::ControlModifier | Qt::MetaModifier)) &&
-        key >= Qt::Key_A && key <= Qt::Key_Z)
+    if ((e->modifiers() & (Qt::ControlModifier | Qt::MetaModifier)) && key >= Qt::Key_A &&
+        key <= Qt::Key_Z)
     {
         const char base = (e->modifiers() & Qt::ShiftModifier) ? 'A' : 'a';
         return std::string(1, static_cast<char>(base + key - Qt::Key_A));
@@ -3300,8 +3405,7 @@ void Surface::resizeEvent(QResizeEvent*)
 
 void Surface::mousePressEvent(QMouseEvent* e)
 {
-    tk::Point pt{static_cast<float>(e->position().x()),
-                 static_cast<float>(e->position().y())};
+    tk::Point pt{static_cast<float>(e->position().x()), static_cast<float>(e->position().y())};
     if (e->button() == Qt::LeftButton)
     {
         host_->on_pointer_down(pt);
@@ -3330,23 +3434,25 @@ void Surface::mousePressEvent(QMouseEvent* e)
     // Surface::keyPressEvent is what feeds Host::dispatch_key_down.
     tk::Widget* focused = host_->focused_widget();
     if (takes_focus_on_click_ && (!focused || !focused->holds_native_focus()))
+    {
         setFocus(Qt::MouseFocusReason);
+    }
 }
 
 void Surface::mouseReleaseEvent(QMouseEvent* e)
 {
     if (e->button() == Qt::LeftButton)
     {
-        host_->on_pointer_up({static_cast<float>(e->position().x()),
-                              static_cast<float>(e->position().y())});
+        host_->on_pointer_up(
+            {static_cast<float>(e->position().x()), static_cast<float>(e->position().y())});
     }
     QWidget::mouseReleaseEvent(e);
 }
 
 void Surface::mouseMoveEvent(QMouseEvent* e)
 {
-    host_->on_pointer_move({static_cast<float>(e->position().x()),
-                            static_cast<float>(e->position().y())});
+    host_->on_pointer_move(
+        {static_cast<float>(e->position().x()), static_cast<float>(e->position().y())});
     QWidget::mouseMoveEvent(e);
 }
 
@@ -3398,10 +3504,11 @@ void Surface::showEvent(QShowEvent* e)
         if (QWindow* win = windowHandle())
         {
             screen_changed_connected_ = true;
-            connect(win, &QWindow::screenChanged, this, [this](QScreen*)
-            {
-                apply_scale_change(static_cast<float>(devicePixelRatioF()));
-            });
+            connect(win, &QWindow::screenChanged, this,
+                    [this](QScreen*)
+                    {
+                        apply_scale_change(static_cast<float>(devicePixelRatioF()));
+                    });
         }
     }
 }
@@ -3442,8 +3549,7 @@ void Surface::wheelEvent(QWheelEvent* e)
     // per notch). A wheel reports no scroll phase; trackpads on compositors
     // that send phases do, so only phase-less events are treated as wheels.
     const bool is_touchpad =
-        !pd.isNull() &&
-        !(e->phase() == Qt::NoScrollPhase && !e->angleDelta().isNull());
+        !pd.isNull() && !(e->phase() == Qt::NoScrollPhase && !e->angleDelta().isNull());
     if (is_touchpad)
     {
         // Smooth-scroll device (trackpad): pixel delta is already in px.
@@ -3458,8 +3564,8 @@ void Surface::wheelEvent(QWheelEvent* e)
         dx = static_cast<float>(ad.x()) * 0.75f;
         dy = -static_cast<float>(ad.y()) * 0.75f;
     }
-    host_->on_wheel({static_cast<float>(pos.x()), static_cast<float>(pos.y())},
-                    dx, dy, is_touchpad);
+    host_->on_wheel({static_cast<float>(pos.x()), static_cast<float>(pos.y())}, dx, dy,
+                    is_touchpad);
     e->accept();
 }
 
@@ -3475,8 +3581,8 @@ void Surface::dragEnterEvent(QDragEnterEvent* e)
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        host_->on_native_drag_hover({static_cast<float>(e->position().x()),
-                              static_cast<float>(e->position().y())});
+        host_->on_native_drag_hover(
+            {static_cast<float>(e->position().x()), static_cast<float>(e->position().y())});
     }
     else
     {
@@ -3490,8 +3596,8 @@ void Surface::dragMoveEvent(QDragMoveEvent* e)
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        host_->on_native_drag_hover({static_cast<float>(e->position().x()),
-                              static_cast<float>(e->position().y())});
+        host_->on_native_drag_hover(
+            {static_cast<float>(e->position().x()), static_cast<float>(e->position().y())});
     }
     else
     {
@@ -3542,8 +3648,7 @@ void Surface::dropEvent(QDropEvent* e)
                 continue;
             }
             const qint64 size = fi.size();
-            if (size <= 0 ||
-                static_cast<std::size_t>(size) > kMaxDroppedFileBytes)
+            if (size <= 0 || static_cast<std::size_t>(size) > kMaxDroppedFileBytes)
             {
                 continue;
             }
@@ -3551,7 +3656,9 @@ void Surface::dropEvent(QDropEvent* e)
             if (!f.open(QIODevice::ReadOnly))
             {
                 if (on_file_drop_error_)
+                {
                     on_file_drop_error_(f.errorString().toStdString());
+                }
                 continue;
             }
             const QByteArray ba = f.readAll();
@@ -3568,10 +3675,9 @@ void Surface::dropEvent(QDropEvent* e)
                 mime = QStringLiteral("application/octet-stream");
             }
 
-            std::vector<std::uint8_t> bytes(
-                reinterpret_cast<const std::uint8_t*>(ba.constData()),
-                reinterpret_cast<const std::uint8_t*>(ba.constData()) +
-                    ba.size());
+            std::vector<std::uint8_t> bytes(reinterpret_cast<const std::uint8_t*>(ba.constData()),
+                                            reinterpret_cast<const std::uint8_t*>(ba.constData()) +
+                                                ba.size());
             tk::FileDropPayload payload{std::move(bytes), mime.toStdString(),
                                         fi.fileName().toStdString()};
             if (host_->on_file_drop(drop_pos, payload))
@@ -3596,11 +3702,12 @@ void Surface::dropEvent(QDropEvent* e)
             {
                 std::vector<std::uint8_t> bytes(
                     reinterpret_cast<const std::uint8_t*>(out.constData()),
-                    reinterpret_cast<const std::uint8_t*>(out.constData()) +
-                        out.size());
+                    reinterpret_cast<const std::uint8_t*>(out.constData()) + out.size());
                 tk::FileDropPayload payload{std::move(bytes), "image/png", {}};
                 if (host_->on_file_drop(drop_pos, payload))
+                {
                     handled = true;
+                }
             }
         }
     }
@@ -3626,13 +3733,15 @@ std::unique_ptr<tk::AudioPlayer> Host::make_audio_player()
 }
 
 // Defined in audio_capture_qt.cpp.
-std::unique_ptr<tk::AudioCapture>
-make_audio_capture_qt(tk::AudioCapturePostFn post);
+std::unique_ptr<tk::AudioCapture> make_audio_capture_qt(tk::AudioCapturePostFn post);
 
 std::unique_ptr<tk::AudioCapture> Host::make_audio_capture()
 {
     return make_audio_capture_qt(
-        [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
+        [this](std::function<void()> fn)
+        {
+            post_to_ui(std::move(fn));
+        });
 }
 
 // Defined in audio_playback_qt.cpp (in namespace tk::qt6).
@@ -3657,7 +3766,7 @@ std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
     for (const QAudioDevice& dev : QMediaDevices::audioInputs())
     {
         tk::DeviceListing entry;
-        entry.id           = dev.id().toStdString();
+        entry.id = dev.id().toStdString();
         entry.display_name = dev.description().toStdString();
         result.push_back(std::move(entry));
     }
@@ -3670,7 +3779,7 @@ std::vector<tk::DeviceListing> Host::enumerate_audio_outputs() const
     for (const QAudioDevice& dev : QMediaDevices::audioOutputs())
     {
         tk::DeviceListing entry;
-        entry.id           = dev.id().toStdString();
+        entry.id = dev.id().toStdString();
         entry.display_name = dev.description().toStdString();
         result.push_back(std::move(entry));
     }
@@ -3697,18 +3806,15 @@ QString build_menu_qss(const Theme& t)
     // this is a no-op for them.
     auto col = [](const Color& c)
     {
-        return QStringLiteral("rgba(%1,%2,%3,%4)")
-            .arg(c.r).arg(c.g).arg(c.b).arg(c.a);
+        return QStringLiteral("rgba(%1,%2,%3,%4)").arg(c.r).arg(c.g).arg(c.b).arg(c.a);
     };
-    return QStringLiteral(
-               "QMenu { background-color: %1; border: 1px solid %2; }"
-               "QMenu::item { color: %3; padding: 4px 24px; }"
-               "QMenu::item:disabled { color: %4; }"
-               "QMenu::item:selected { background-color: %5; color: %6; }"
-               "QMenu::separator { background-color: %7; height: 1px; margin: 4px 0; }")
-        .arg(col(p.sidebar_bg), col(p.popup_border), col(p.text_primary),
-             col(p.text_muted), col(p.subtle_hover), col(p.text_primary),
-             col(p.separator));
+    return QStringLiteral("QMenu { background-color: %1; border: 1px solid %2; }"
+                          "QMenu::item { color: %3; padding: 4px 24px; }"
+                          "QMenu::item:disabled { color: %4; }"
+                          "QMenu::item:selected { background-color: %5; color: %6; }"
+                          "QMenu::separator { background-color: %7; height: 1px; margin: 4px 0; }")
+        .arg(col(p.sidebar_bg), col(p.popup_border), col(p.text_primary), col(p.text_muted),
+             col(p.subtle_hover), col(p.text_primary), col(p.separator));
 }
 
 } // namespace tk::qt6

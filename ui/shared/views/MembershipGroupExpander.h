@@ -33,10 +33,15 @@ public:
     void toggle(const std::string& group_key)
     {
         if (!expanded_.insert(group_key).second)
+        {
             expanded_.erase(group_key);
+        }
     }
 
-    void clear() { expanded_.clear(); }
+    void clear()
+    {
+        expanded_.clear();
+    }
 
 private:
     std::unordered_set<std::string> expanded_;

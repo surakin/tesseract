@@ -46,8 +46,7 @@ std::vector<AccountEntry> n_entries(int n)
     for (int i = 0; i < n; ++i)
     {
         const std::string id = std::to_string(i);
-        out.push_back(AccountEntry{"@user" + id + ":example.org", "User " + id,
-                                   "", i == 0});
+        out.push_back(AccountEntry{"@user" + id + ":example.org", "User " + id, "", i == 0});
     }
     return out;
 }
@@ -144,8 +143,7 @@ TEST_CASE("AccountPicker active indicator paints on only the active row",
     CHECK_FALSE(row_b->active_indicator());
 }
 
-TEST_CASE("AccountPicker image_provider propagates to every row",
-          "[tk][view][account_picker]")
+TEST_CASE("AccountPicker image_provider propagates to every row", "[tk][view][account_picker]")
 {
     TkAccountPickerStage st;
     AccountPicker picker;
@@ -182,7 +180,10 @@ TEST_CASE("AccountPicker picks up accounts added or removed after first build",
     CHECK(picker.rows()[3]->user_id() == "@user3:example.org");
 
     std::string got;
-    picker.on_select = [&](const std::string& uid) { got = uid; };
+    picker.on_select = [&](const std::string& uid)
+    {
+        got = uid;
+    };
     st.run(picker, {0, 0, 320, 400});
     const auto b = picker.rows()[3]->bounds();
     const tk::Point click{b.x + b.w * 0.5f, b.y + b.h * 0.5f};
@@ -221,6 +222,5 @@ TEST_CASE("AccountPicker caps its height at kMaxVisibleRows and scrolls the rest
     picker.dispatch_wheel({160.0f, h * 0.5f}, 0.0f, 1000.0f);
     picker.arrange(lc, {0, 0, 320, h});
     CHECK(picker.rows().back()->bounds().y < last_top_before);
-    CHECK(picker.rows().back()->bounds().y + row_h ==
-          Catch::Approx(h).margin(0.5f));
+    CHECK(picker.rows().back()->bounds().y + row_h == Catch::Approx(h).margin(0.5f));
 }

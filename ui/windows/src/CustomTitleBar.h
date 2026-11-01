@@ -51,7 +51,10 @@ public:
     // Re-reads the system caption font (SPI_SETNONCLIENTMETRICS). The caller
     // should also invalidate the strip.
     void on_system_metrics_changed();
-    int height_px() const { return height_px_; }
+    int height_px() const
+    {
+        return height_px_;
+    }
 
     // Releases every cached rasterized caption-button icon (see
     // CustomTitleBar.cpp) — a process-wide cache shared by every
@@ -79,9 +82,8 @@ public:
     // hover flyout keeps working. Call at the top of the WM_NCHITTEST /
     // WM_NCLBUTTONDOWN / WM_NCLBUTTONUP handlers; if this returns a value,
     // return it immediately without further handling.
-    static std::optional<LRESULT> dwm_hittest_hook(HWND hwnd, UINT msg,
-                                                    WPARAM wParam,
-                                                    LPARAM lParam);
+    static std::optional<LRESULT> dwm_hittest_hook(HWND hwnd, UINT msg, WPARAM wParam,
+                                                   LPARAM lParam);
 
     // lParam is WM_NCHITTEST's screen-coordinate point. Returns HTMINBUTTON
     // / HTMAXBUTTON / HTCLOSE / HTCAPTION for a point inside the strip, or
@@ -129,8 +131,7 @@ public:
     void invalidate_strip(HWND hwnd) const;
 
 private:
-    void compute_button_rects(int client_w_px, RECT& btn_min, RECT& btn_max,
-                              RECT& btn_close) const;
+    void compute_button_rects(int client_w_px, RECT& btn_min, RECT& btn_max, RECT& btn_close) const;
     void refresh_caption_font_();
 
     // System caption font (falls back to theme::FontRole::Ui). Size is in

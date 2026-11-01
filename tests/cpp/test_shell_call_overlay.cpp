@@ -42,14 +42,17 @@ struct CoShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
@@ -58,8 +61,14 @@ struct CoShell : tesseract::test::TestShellBase
     {
         statuses.push_back(m);
     }
-    void request_relayout_() override { ++relayouts; }
-    void request_repaint_() override { ++repaints; }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
+    void request_repaint_() override
+    {
+        ++repaints;
+    }
     std::vector<std::function<void()>> delayed;
     std::vector<std::string> statuses;
     int relayouts = 0, repaints = 0;
@@ -85,8 +94,7 @@ struct CoShell : tesseract::test::TestShellBase
     using ShellBase::start_call;
 };
 
-tesseract::RoomInfo co_room(const std::string& id, bool call_room = false,
-                            bool space = false)
+tesseract::RoomInfo co_room(const std::string& id, bool call_room = false, bool space = false)
 {
     tesseract::RoomInfo r;
     r.id = id;
@@ -118,8 +126,7 @@ struct CoFx
 
 } // namespace
 
-TEST_CASE("decide_call_room_action covers every state combination",
-          "[shell][call_overlay]")
+TEST_CASE("decide_call_room_action covers every state combination", "[shell][call_overlay]")
 {
     // No call.
     CHECK(tesseract::decide_call_room_action(false, false, false, false, false) ==
@@ -153,8 +160,7 @@ TEST_CASE("mode requests need an overlay host and a call", "[shell][call_overlay
     CHECK(f.s.active_call_overlay_() == nullptr);
 }
 
-TEST_CASE("floating mode mounts the overlay and persists the preference",
-          "[shell][call_overlay]")
+TEST_CASE("floating mode mounts the overlay and persists the preference", "[shell][call_overlay]")
 {
     CoFx f;
     f.s.on_call_overlay_mode_requested_(Mode::Floating);
@@ -166,8 +172,7 @@ TEST_CASE("floating mode mounts the overlay and persists the preference",
     CHECK(f.s.relayouts >= 1);
 }
 
-TEST_CASE("docked modes follow the call's room and are clamped elsewhere",
-          "[shell][call_overlay]")
+TEST_CASE("docked modes follow the call's room and are clamped elsewhere", "[shell][call_overlay]")
 {
     CoFx f;
     f.s.on_call_overlay_mode_requested_(Mode::Docked);
@@ -182,8 +187,7 @@ TEST_CASE("docked modes follow the call's room and are clamped elsewhere",
     CHECK(f.s.active_call_overlay_()->mode() == Mode::Floating);
 }
 
-TEST_CASE("non-persisting transitions leave the saved preference alone",
-          "[shell][call_overlay]")
+TEST_CASE("non-persisting transitions leave the saved preference alone", "[shell][call_overlay]")
 {
     CoFx f;
     tesseract::Settings::instance().call_overlay_mode =
@@ -257,8 +261,7 @@ TEST_CASE("leaving the call's room auto-floats a docked overlay and returning re
     CHECK(f.s.active_call_overlay_()->room_active());
 }
 
-TEST_CASE("navigating to a room not yet listed is retried later",
-          "[shell][call_overlay][nav]")
+TEST_CASE("navigating to a room not yet listed is retried later", "[shell][call_overlay][nav]")
 {
     CoFx f;
     f.s.current_room_id_ = "!new:x";
@@ -312,8 +315,7 @@ TEST_CASE("request_call_ wires the lobby join to start_call", "[shell][call_over
     SUCCEED();
 }
 
-TEST_CASE("end_call removes the overlay and resets the banner state",
-          "[shell][call_overlay]")
+TEST_CASE("end_call removes the overlay and resets the banner state", "[shell][call_overlay]")
 {
     CoFx f;
     f.s.on_call_overlay_mode_requested_(Mode::Floating);

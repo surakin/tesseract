@@ -32,36 +32,35 @@ namespace
 
 /// Software BGRA (B,G,R,A byte order) → I420 conversion using BT.601 full-range.
 /// dst_y/dst_u/dst_v must be pre-allocated to exactly w*h, w_uv*h_uv each.
-void bgra_to_i420(const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h,
-                  std::uint8_t* dst_y, std::uint8_t* dst_u, std::uint8_t* dst_v,
-                  std::uint32_t src_stride = 0)
+void bgra_to_i420(const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h, std::uint8_t* dst_y,
+                  std::uint8_t* dst_u, std::uint8_t* dst_v, std::uint32_t src_stride = 0)
 {
     if (src_stride == 0)
+    {
         src_stride = w * 4;
+    }
     const std::uint32_t w_uv = (w + 1) / 2;
     for (std::uint32_t row = 0; row < h; ++row)
     {
         const std::uint8_t* src = bgra + row * src_stride;
-        std::uint8_t*       dy  = dst_y + row * w;
+        std::uint8_t* dy = dst_y + row * w;
         for (std::uint32_t col = 0; col < w; ++col, src += 4)
         {
             const int b = src[0], g = src[1], r = src[2];
-            dy[col] = static_cast<std::uint8_t>(
-                ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16);
+            dy[col] = static_cast<std::uint8_t>(((66 * r + 129 * g + 25 * b + 128) >> 8) + 16);
         }
     }
     for (std::uint32_t row = 0; row < h; row += 2)
     {
         const std::uint8_t* src = bgra + row * src_stride;
-        std::uint8_t*       du  = dst_u + (row / 2) * w_uv;
-        std::uint8_t*       dv  = dst_v + (row / 2) * w_uv;
+        std::uint8_t* du = dst_u + (row / 2) * w_uv;
+        std::uint8_t* dv = dst_v + (row / 2) * w_uv;
         for (std::uint32_t col = 0; col < w; col += 2, src += 8)
         {
             const int b = src[0], g = src[1], r = src[2];
-            du[col / 2] = static_cast<std::uint8_t>(
-                ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128);
-            dv[col / 2] = static_cast<std::uint8_t>(
-                ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128);
+            du[col / 2] =
+                static_cast<std::uint8_t>(((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128);
+            dv[col / 2] = static_cast<std::uint8_t>(((112 * r - 94 * g - 18 * b + 128) >> 8) + 128);
         }
     }
 }
@@ -76,7 +75,7 @@ void bgra_to_rgba(const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h,
     for (std::uint32_t row = 0; row < h; ++row)
     {
         const std::uint8_t* src = bgra + static_cast<std::size_t>(row) * src_stride;
-        std::uint8_t*       dst = out.data() + static_cast<std::size_t>(row) * w * 4;
+        std::uint8_t* dst = out.data() + static_cast<std::size_t>(row) * w * 4;
         for (std::uint32_t col = 0; col < w; ++col, src += 4, dst += 4)
         {
             dst[0] = src[2]; // R
@@ -90,7 +89,10 @@ void bgra_to_rgba(const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h,
 class ScreenCaptureWin32 : public tk::ScreenCapture
 {
 public:
-    ~ScreenCaptureWin32() override { stop(); }
+    ~ScreenCaptureWin32() override
+    {
+        stop();
+    }
 
     std::vector<tk::ScreenSource> enumerate_sources() override
     {
@@ -98,7 +100,9 @@ public:
         // Enumerate monitors via DXGI adapter output enumeration.
         IDXGIFactory1* factory = nullptr;
         if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+        {
             return sources;
+        }
         IDXGIAdapter1* adapter = nullptr;
         for (UINT ai = 0; factory->EnumAdapters1(ai, &adapter) != DXGI_ERROR_NOT_FOUND; ++ai)
         {
@@ -108,14 +112,16 @@ public:
                 DXGI_OUTPUT_DESC desc{};
                 if (SUCCEEDED(output->GetDesc(&desc)))
                 {
-                    int n = WideCharToMultiByte(CP_UTF8, 0, desc.DeviceName, -1,
-                                               nullptr, 0, nullptr, nullptr);
+                    int n = WideCharToMultiByte(CP_UTF8, 0, desc.DeviceName, -1, nullptr, 0,
+                                                nullptr, nullptr);
                     std::string name(static_cast<std::size_t>(n - 1), '\0');
-                    WideCharToMultiByte(CP_UTF8, 0, desc.DeviceName, -1,
-                                       name.data(), n, nullptr, nullptr);
+                    WideCharToMultiByte(CP_UTF8, 0, desc.DeviceName, -1, name.data(), n, nullptr,
+                                        nullptr);
                     // id = "monitor:<adapter>:<output>"
                     std::string id = "monitor:" + std::to_string(ai) + ":" + std::to_string(oi);
-                    sources.push_back({id, tk::trf(tk::tr("Display {0}"), {std::to_string(sources.size() + 1)}), false});
+                    sources.push_back(
+                        {id, tk::trf(tk::tr("Display {0}"), {std::to_string(sources.size() + 1)}),
+                         false});
                 }
                 output->Release();
             }
@@ -129,21 +135,25 @@ public:
             {
                 auto* list = reinterpret_cast<std::vector<tk::ScreenSource>*>(lp);
                 if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+                {
                     return TRUE;
+                }
                 WCHAR title[256] = {};
                 GetWindowTextW(hwnd, title, 256);
                 if (title[0] == L'\0')
+                {
                     return TRUE;
+                }
                 // Skip taskbar to avoid self-capture confusion.
                 WCHAR cls[64] = {};
                 GetClassNameW(hwnd, cls, 64);
                 if (wcscmp(cls, L"Shell_TrayWnd") == 0)
+                {
                     return TRUE;
-                int n = WideCharToMultiByte(CP_UTF8, 0, title, -1,
-                                            nullptr, 0, nullptr, nullptr);
+                }
+                int n = WideCharToMultiByte(CP_UTF8, 0, title, -1, nullptr, 0, nullptr, nullptr);
                 std::string name(static_cast<std::size_t>(n - 1), '\0');
-                WideCharToMultiByte(CP_UTF8, 0, title, -1,
-                                    name.data(), n, nullptr, nullptr);
+                WideCharToMultiByte(CP_UTF8, 0, title, -1, name.data(), n, nullptr, nullptr);
                 std::string id = "window:" + std::to_string(reinterpret_cast<std::uintptr_t>(hwnd));
                 list->push_back({id, name, true});
                 return TRUE;
@@ -167,25 +177,36 @@ public:
     void start() override
     {
         if (running_.load())
+        {
             return;
+        }
         running_.store(true);
-        thread_ = std::thread([this] { capture_loop_(); });
+        thread_ = std::thread(
+            [this]
+            {
+                capture_loop_();
+            });
     }
 
     void stop() override
     {
         if (!running_.exchange(false))
+        {
             return;
+        }
         if (thread_.joinable())
+        {
             thread_.join();
+        }
     }
 
-    bool capture_thumbnail(const std::string& source_id,
-                           std::vector<std::uint8_t>& out_rgba,
+    bool capture_thumbnail(const std::string& source_id, std::vector<std::uint8_t>& out_rgba,
                            std::uint32_t& out_w, std::uint32_t& out_h) override
     {
         if (source_id.rfind("window:", 0) == 0)
+        {
             return capture_window_thumbnail_(source_id, out_rgba, out_w, out_h);
+        }
         return capture_monitor_thumbnail_(source_id, out_rgba, out_w, out_h);
     }
 
@@ -197,7 +218,9 @@ private:
         // still marked running ended on its own: a failed duplication, a
         // closed window, or a setup step that did not succeed.
         if (running_.load())
+        {
             report_failure_();
+        }
     }
 
     void capture_frames_()
@@ -225,7 +248,7 @@ private:
             if (colon != std::string::npos)
             {
                 adapter_idx = static_cast<UINT>(std::stoul(rest.substr(0, colon)));
-                output_idx  = static_cast<UINT>(std::stoul(rest.substr(colon + 1)));
+                output_idx = static_cast<UINT>(std::stoul(rest.substr(colon + 1)));
             }
         }
 
@@ -236,29 +259,34 @@ private:
         CreateDXGIFactory1(IID_PPV_ARGS(&factory));
         IDXGIAdapter1* target_adapter = nullptr;
         if (factory)
+        {
             factory->EnumAdapters1(adapter_idx, &target_adapter);
+        }
         if (factory)
+        {
             factory->Release();
+        }
 
         // Create D3D11 device on that adapter (an explicit adapter needs the
         // UNKNOWN driver type).
-        ID3D11Device*        d3d_dev  = nullptr;
-        ID3D11DeviceContext* d3d_ctx  = nullptr;
-        D3D_FEATURE_LEVEL    feature_level;
-        if (FAILED(D3D11CreateDevice(target_adapter,
-                                     target_adapter ? D3D_DRIVER_TYPE_UNKNOWN
-                                                    : D3D_DRIVER_TYPE_HARDWARE,
-                                     nullptr, 0, nullptr, 0, D3D11_SDK_VERSION,
-                                     &d3d_dev, &feature_level, &d3d_ctx)))
+        ID3D11Device* d3d_dev = nullptr;
+        ID3D11DeviceContext* d3d_ctx = nullptr;
+        D3D_FEATURE_LEVEL feature_level;
+        if (FAILED(D3D11CreateDevice(
+                target_adapter, target_adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
+                nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &d3d_dev, &feature_level, &d3d_ctx)))
         {
-            if (target_adapter) target_adapter->Release();
+            if (target_adapter)
+            {
+                target_adapter->Release();
+            }
             return;
         }
 
-        IDXGIDevice*  dxgi_dev     = nullptr;
+        IDXGIDevice* dxgi_dev = nullptr;
         IDXGIAdapter* dxgi_adapter = nullptr;
-        IDXGIOutput*  dxgi_output  = nullptr;
-        IDXGIOutput1* dxgi_out1    = nullptr;
+        IDXGIOutput* dxgi_output = nullptr;
+        IDXGIOutput1* dxgi_out1 = nullptr;
         IDXGIOutputDuplication* duplication = nullptr;
 
         d3d_dev->QueryInterface(IID_PPV_ARGS(&dxgi_dev));
@@ -274,14 +302,25 @@ private:
             dxgi_adapter->EnumOutputs(0, &dxgi_output);
         }
 
-        if (!dxgi_output ||
-            FAILED(dxgi_output->QueryInterface(IID_PPV_ARGS(&dxgi_out1))) ||
+        if (!dxgi_output || FAILED(dxgi_output->QueryInterface(IID_PPV_ARGS(&dxgi_out1))) ||
             FAILED(dxgi_out1->DuplicateOutput(d3d_dev, &duplication)))
         {
-            if (dxgi_out1)    dxgi_out1->Release();
-            if (dxgi_output)  dxgi_output->Release();
-            if (dxgi_adapter) dxgi_adapter->Release();
-            if (dxgi_dev)     dxgi_dev->Release();
+            if (dxgi_out1)
+            {
+                dxgi_out1->Release();
+            }
+            if (dxgi_output)
+            {
+                dxgi_output->Release();
+            }
+            if (dxgi_adapter)
+            {
+                dxgi_adapter->Release();
+            }
+            if (dxgi_dev)
+            {
+                dxgi_dev->Release();
+            }
             d3d_ctx->Release();
             d3d_dev->Release();
             return;
@@ -301,7 +340,7 @@ private:
 
         // Create a staging texture for CPU readback.
         D3D11_TEXTURE2D_DESC tex_desc{};
-        tex_desc.Width  = w;
+        tex_desc.Width = w;
         tex_desc.Height = h;
         tex_desc.MipLevels = 1;
         tex_desc.ArraySize = 1;
@@ -326,13 +365,17 @@ private:
         constexpr DWORD frame_ms = 67;
         while (running_.load())
         {
-            IDXGIResource*       res   = nullptr;
+            IDXGIResource* res = nullptr;
             DXGI_OUTDUPL_FRAME_INFO fi{};
             HRESULT hr = duplication->AcquireNextFrame(frame_ms, &fi, &res);
             if (hr == DXGI_ERROR_WAIT_TIMEOUT)
+            {
                 continue;
+            }
             if (FAILED(hr))
+            {
                 break;
+            }
 
             ID3D11Texture2D* tex = nullptr;
             if (SUCCEEDED(res->QueryInterface(IID_PPV_ARGS(&tex))))
@@ -343,8 +386,10 @@ private:
                 {
                     const auto* src = reinterpret_cast<const std::uint8_t*>(mapped.pData);
                     for (UINT row = 0; row < h; ++row)
-                        std::memcpy(bgra_buf.data() + row * w * 4,
-                                    src + row * mapped.RowPitch, w * 4);
+                    {
+                        std::memcpy(bgra_buf.data() + row * w * 4, src + row * mapped.RowPitch,
+                                    w * 4);
+                    }
                     d3d_ctx->Unmap(staging, 0);
                     bgra_to_i420(bgra_buf.data(), w, h, dst_y, dst_u, dst_v);
                     tk::ScreenCapture::FrameCallback cb;
@@ -355,11 +400,11 @@ private:
                     if (cb)
                     {
                         tk::ScreenCapture::Frame f;
-                        f.y        = dst_y;
-                        f.u        = dst_u;
-                        f.v        = dst_v;
-                        f.width    = w;
-                        f.height   = h;
+                        f.y = dst_y;
+                        f.u = dst_u;
+                        f.v = dst_v;
+                        f.width = w;
+                        f.height = h;
                         f.stride_y = w;
                         f.stride_u = w_uv;
                         f.stride_v = w_uv;
@@ -368,7 +413,10 @@ private:
                 }
                 tex->Release();
             }
-            if (res) res->Release();
+            if (res)
+            {
+                res->Release();
+            }
             duplication->ReleaseFrame();
         }
 
@@ -385,10 +433,11 @@ private:
     void capture_window_loop_(const std::string& sid)
     {
         // Parse HWND from "window:<decimal_ptr>"
-        HWND hwnd = reinterpret_cast<HWND>(
-            static_cast<std::uintptr_t>(std::stoull(sid.substr(7))));
+        HWND hwnd = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(std::stoull(sid.substr(7))));
         if (!IsWindow(hwnd))
+        {
             return;
+        }
 
         constexpr DWORD frame_ms = 67;
         while (running_.load())
@@ -423,9 +472,10 @@ private:
             const UINT crop_w = std::min(cw, ww - static_cast<UINT>(off_x));
             const UINT crop_h = std::min(ch, wh - static_cast<UINT>(off_y));
 
-            HDC  hdc_win = GetDC(hwnd);
-            HDC  hdc_mem = CreateCompatibleDC(hdc_win);
-            HBITMAP bmp  = CreateCompatibleBitmap(hdc_win, static_cast<int>(ww), static_cast<int>(wh));
+            HDC hdc_win = GetDC(hwnd);
+            HDC hdc_mem = CreateCompatibleDC(hdc_win);
+            HBITMAP bmp =
+                CreateCompatibleBitmap(hdc_win, static_cast<int>(ww), static_cast<int>(wh));
             SelectObject(hdc_mem, bmp);
             // PW_RENDERFULLCONTENT (Win8.1+) is required for GPU-composited
             // windows (browsers, Electron, D3D/D2D apps) — plain PW_CLIENTONLY
@@ -435,16 +485,16 @@ private:
             PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT);
 
             BITMAPINFOHEADER bih{};
-            bih.biSize        = sizeof(bih);
-            bih.biWidth       = static_cast<LONG>(ww);
-            bih.biHeight      = -static_cast<LONG>(wh); // top-down
-            bih.biPlanes      = 1;
-            bih.biBitCount    = 32;
+            bih.biSize = sizeof(bih);
+            bih.biWidth = static_cast<LONG>(ww);
+            bih.biHeight = -static_cast<LONG>(wh); // top-down
+            bih.biPlanes = 1;
+            bih.biBitCount = 32;
             bih.biCompression = BI_RGB;
 
             std::vector<std::uint8_t> bgra_buf(ww * wh * 4);
-            GetDIBits(hdc_mem, bmp, 0, wh, bgra_buf.data(),
-                      reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS);
+            GetDIBits(hdc_mem, bmp, 0, wh, bgra_buf.data(), reinterpret_cast<BITMAPINFO*>(&bih),
+                      DIB_RGB_COLORS);
 
             const UINT w_uv = (crop_w + 1) / 2;
             const UINT h_uv = (crop_h + 1) / 2;
@@ -464,11 +514,11 @@ private:
             if (cb)
             {
                 tk::ScreenCapture::Frame f;
-                f.y        = dst_y;
-                f.u        = dst_u;
-                f.v        = dst_v;
-                f.width    = crop_w;
-                f.height   = crop_h;
+                f.y = dst_y;
+                f.u = dst_u;
+                f.v = dst_v;
+                f.width = crop_w;
+                f.height = crop_h;
                 f.stride_y = crop_w;
                 f.stride_u = w_uv;
                 f.stride_v = w_uv;
@@ -485,14 +535,14 @@ private:
     /// One-shot version of capture_window_loop_'s body: same
     /// GetDC/PrintWindow(PW_RENDERFULLCONTENT)/GetDIBits/crop sequence, run
     /// once instead of in a loop, producing RGBA instead of I420.
-    bool capture_window_thumbnail_(const std::string& sid,
-                                   std::vector<std::uint8_t>& out_rgba,
+    bool capture_window_thumbnail_(const std::string& sid, std::vector<std::uint8_t>& out_rgba,
                                    std::uint32_t& out_w, std::uint32_t& out_h)
     {
-        HWND hwnd = reinterpret_cast<HWND>(
-            static_cast<std::uintptr_t>(std::stoull(sid.substr(7))));
+        HWND hwnd = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(std::stoull(sid.substr(7))));
         if (!IsWindow(hwnd) || !IsWindowVisible(hwnd))
+        {
             return false;
+        }
 
         RECT client_rc{};
         GetClientRect(hwnd, &client_rc);
@@ -503,7 +553,9 @@ private:
         const UINT ww = static_cast<UINT>(window_rc.right - window_rc.left);
         const UINT wh = static_cast<UINT>(window_rc.bottom - window_rc.top);
         if (cw == 0 || ch == 0 || ww == 0 || wh == 0)
+        {
             return false;
+        }
 
         POINT client_origin{0, 0};
         ClientToScreen(hwnd, &client_origin);
@@ -514,23 +566,23 @@ private:
         const UINT crop_w = std::min(cw, ww - static_cast<UINT>(off_x));
         const UINT crop_h = std::min(ch, wh - static_cast<UINT>(off_y));
 
-        HDC     hdc_win = GetDC(hwnd);
-        HDC     hdc_mem = CreateCompatibleDC(hdc_win);
-        HBITMAP bmp     = CreateCompatibleBitmap(hdc_win, static_cast<int>(ww), static_cast<int>(wh));
+        HDC hdc_win = GetDC(hwnd);
+        HDC hdc_mem = CreateCompatibleDC(hdc_win);
+        HBITMAP bmp = CreateCompatibleBitmap(hdc_win, static_cast<int>(ww), static_cast<int>(wh));
         SelectObject(hdc_mem, bmp);
         PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT);
 
         BITMAPINFOHEADER bih{};
-        bih.biSize        = sizeof(bih);
-        bih.biWidth       = static_cast<LONG>(ww);
-        bih.biHeight      = -static_cast<LONG>(wh);
-        bih.biPlanes      = 1;
-        bih.biBitCount    = 32;
+        bih.biSize = sizeof(bih);
+        bih.biWidth = static_cast<LONG>(ww);
+        bih.biHeight = -static_cast<LONG>(wh);
+        bih.biPlanes = 1;
+        bih.biBitCount = 32;
         bih.biCompression = BI_RGB;
 
         std::vector<std::uint8_t> bgra_buf(static_cast<std::size_t>(ww) * wh * 4);
-        GetDIBits(hdc_mem, bmp, 0, wh, bgra_buf.data(),
-                  reinterpret_cast<BITMAPINFO*>(&bih), DIB_RGB_COLORS);
+        GetDIBits(hdc_mem, bmp, 0, wh, bgra_buf.data(), reinterpret_cast<BITMAPINFO*>(&bih),
+                  DIB_RGB_COLORS);
 
         DeleteObject(bmp);
         DeleteDC(hdc_mem);
@@ -550,8 +602,7 @@ private:
     /// acquire after a fresh DuplicateOutput reliably returns the full
     /// desktop but can need a couple of attempts), producing RGBA instead of
     /// I420, with every COM interface released before returning.
-    bool capture_monitor_thumbnail_(const std::string& sid,
-                                    std::vector<std::uint8_t>& out_rgba,
+    bool capture_monitor_thumbnail_(const std::string& sid, std::vector<std::uint8_t>& out_rgba,
                                     std::uint32_t& out_w, std::uint32_t& out_h)
     {
         UINT adapter_idx = 0, output_idx = 0;
@@ -562,7 +613,7 @@ private:
             if (colon != std::string::npos)
             {
                 adapter_idx = static_cast<UINT>(std::stoul(rest.substr(0, colon)));
-                output_idx  = static_cast<UINT>(std::stoul(rest.substr(colon + 1)));
+                output_idx = static_cast<UINT>(std::stoul(rest.substr(colon + 1)));
             }
         }
 
@@ -571,27 +622,32 @@ private:
         CreateDXGIFactory1(IID_PPV_ARGS(&factory));
         IDXGIAdapter1* target_adapter = nullptr;
         if (factory)
-            factory->EnumAdapters1(adapter_idx, &target_adapter);
-        if (factory)
-            factory->Release();
-
-        ID3D11Device*        d3d_dev = nullptr;
-        ID3D11DeviceContext* d3d_ctx = nullptr;
-        D3D_FEATURE_LEVEL    feature_level;
-        if (FAILED(D3D11CreateDevice(target_adapter,
-                                     target_adapter ? D3D_DRIVER_TYPE_UNKNOWN
-                                                    : D3D_DRIVER_TYPE_HARDWARE,
-                                     nullptr, 0, nullptr, 0, D3D11_SDK_VERSION,
-                                     &d3d_dev, &feature_level, &d3d_ctx)))
         {
-            if (target_adapter) target_adapter->Release();
+            factory->EnumAdapters1(adapter_idx, &target_adapter);
+        }
+        if (factory)
+        {
+            factory->Release();
+        }
+
+        ID3D11Device* d3d_dev = nullptr;
+        ID3D11DeviceContext* d3d_ctx = nullptr;
+        D3D_FEATURE_LEVEL feature_level;
+        if (FAILED(D3D11CreateDevice(
+                target_adapter, target_adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
+                nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &d3d_dev, &feature_level, &d3d_ctx)))
+        {
+            if (target_adapter)
+            {
+                target_adapter->Release();
+            }
             return false;
         }
 
-        IDXGIDevice*  dxgi_dev     = nullptr;
+        IDXGIDevice* dxgi_dev = nullptr;
         IDXGIAdapter* dxgi_adapter = nullptr;
-        IDXGIOutput*  dxgi_output  = nullptr;
-        IDXGIOutput1* dxgi_out1    = nullptr;
+        IDXGIOutput* dxgi_output = nullptr;
+        IDXGIOutput1* dxgi_out1 = nullptr;
         IDXGIOutputDuplication* duplication = nullptr;
 
         d3d_dev->QueryInterface(IID_PPV_ARGS(&dxgi_dev));
@@ -607,14 +663,25 @@ private:
             dxgi_adapter->EnumOutputs(0, &dxgi_output);
         }
 
-        if (!dxgi_output ||
-            FAILED(dxgi_output->QueryInterface(IID_PPV_ARGS(&dxgi_out1))) ||
+        if (!dxgi_output || FAILED(dxgi_output->QueryInterface(IID_PPV_ARGS(&dxgi_out1))) ||
             FAILED(dxgi_out1->DuplicateOutput(d3d_dev, &duplication)))
         {
-            if (dxgi_out1)    dxgi_out1->Release();
-            if (dxgi_output)  dxgi_output->Release();
-            if (dxgi_adapter) dxgi_adapter->Release();
-            if (dxgi_dev)     dxgi_dev->Release();
+            if (dxgi_out1)
+            {
+                dxgi_out1->Release();
+            }
+            if (dxgi_output)
+            {
+                dxgi_output->Release();
+            }
+            if (dxgi_adapter)
+            {
+                dxgi_adapter->Release();
+            }
+            if (dxgi_dev)
+            {
+                dxgi_dev->Release();
+            }
             d3d_ctx->Release();
             d3d_dev->Release();
             return false;
@@ -626,7 +693,7 @@ private:
         const UINT h = dup_desc.ModeDesc.Height;
 
         D3D11_TEXTURE2D_DESC tex_desc{};
-        tex_desc.Width  = w;
+        tex_desc.Width = w;
         tex_desc.Height = h;
         tex_desc.MipLevels = 1;
         tex_desc.ArraySize = 1;
@@ -641,13 +708,17 @@ private:
             std::vector<std::uint8_t> bgra_buf(static_cast<std::size_t>(w) * h * 4);
             for (int attempt = 0; attempt < 5 && !ok; ++attempt)
             {
-                IDXGIResource*       res = nullptr;
+                IDXGIResource* res = nullptr;
                 DXGI_OUTDUPL_FRAME_INFO fi{};
                 HRESULT hr = duplication->AcquireNextFrame(200, &fi, &res);
                 if (hr == DXGI_ERROR_WAIT_TIMEOUT)
+                {
                     continue;
+                }
                 if (FAILED(hr))
+                {
                     break;
+                }
 
                 ID3D11Texture2D* tex = nullptr;
                 if (SUCCEEDED(res->QueryInterface(IID_PPV_ARGS(&tex))))
@@ -658,8 +729,10 @@ private:
                     {
                         const auto* src = reinterpret_cast<const std::uint8_t*>(mapped.pData);
                         for (UINT row = 0; row < h; ++row)
+                        {
                             std::memcpy(bgra_buf.data() + static_cast<std::size_t>(row) * w * 4,
                                         src + row * mapped.RowPitch, w * 4);
+                        }
                         d3d_ctx->Unmap(staging, 0);
                         bgra_to_rgba(bgra_buf.data(), w, h, w * 4, out_rgba);
                         out_w = w;
@@ -684,11 +757,11 @@ private:
         return ok;
     }
 
-    std::atomic<bool>                     running_{false};
-    std::thread                           thread_;
-    std::mutex                            mu_;
-    std::string                           source_id_;
-    tk::ScreenCapture::FrameCallback      callback_;
+    std::atomic<bool> running_{false};
+    std::thread thread_;
+    std::mutex mu_;
+    std::string source_id_;
+    tk::ScreenCapture::FrameCallback callback_;
 };
 
 } // namespace
@@ -701,7 +774,9 @@ std::unique_ptr<ScreenCapture> make_screen_capture_win32()
     // Require DXGI 1.2 (Win8+): verify IDXGIOutput1 is accessible.
     IDXGIFactory1* factory = nullptr;
     if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+    {
         return nullptr;
+    }
     IDXGIAdapter1* adapter = nullptr;
     bool have_output1 = false;
     if (SUCCEEDED(factory->EnumAdapters1(0, &adapter)))
@@ -711,14 +786,19 @@ std::unique_ptr<ScreenCapture> make_screen_capture_win32()
         {
             IDXGIOutput1* out1 = nullptr;
             have_output1 = SUCCEEDED(out->QueryInterface(IID_PPV_ARGS(&out1)));
-            if (out1) out1->Release();
+            if (out1)
+            {
+                out1->Release();
+            }
             out->Release();
         }
         adapter->Release();
     }
     factory->Release();
     if (!have_output1)
+    {
         return nullptr;
+    }
     return std::make_unique<ScreenCaptureWin32>();
 }
 

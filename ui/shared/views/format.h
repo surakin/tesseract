@@ -46,18 +46,15 @@ inline std::string format_size(std::uint64_t bytes)
     }
     else if (bytes >= 1024ull * 1024)
     {
-        std::snprintf(buf, sizeof(buf), "%.1f MB",
-                      static_cast<double>(bytes) / (1024.0 * 1024));
+        std::snprintf(buf, sizeof(buf), "%.1f MB", static_cast<double>(bytes) / (1024.0 * 1024));
     }
     else if (bytes >= 1024ull)
     {
-        std::snprintf(buf, sizeof(buf), "%.0f KB",
-                      static_cast<double>(bytes) / 1024.0);
+        std::snprintf(buf, sizeof(buf), "%.0f KB", static_cast<double>(bytes) / 1024.0);
     }
     else
     {
-        std::snprintf(buf, sizeof(buf), "%llu B",
-                      static_cast<unsigned long long>(bytes));
+        std::snprintf(buf, sizeof(buf), "%llu B", static_cast<unsigned long long>(bytes));
     }
     return std::string(buf);
 }

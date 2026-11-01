@@ -41,10 +41,8 @@ private:
     // zeroes it, so a late activation never posts to a destroyed or recycled
     // window — the old captured-HWND + IsWindow() check was a TOCTOU race.
     std::shared_ptr<std::atomic<HWND>> hwnd_box_;
-    static std::wstring build_toast_xml(const std::string& sender,
-                                        const std::string& room_name,
-                                        const std::string& body,
-                                        const std::wstring& avatar_uri,
+    static std::wstring build_toast_xml(const std::string& sender, const std::string& room_name,
+                                        const std::string& body, const std::wstring& avatar_uri,
                                         const std::wstring& image_uri,
                                         const std::wstring& reply_placeholder,
                                         const std::wstring& reply_label);

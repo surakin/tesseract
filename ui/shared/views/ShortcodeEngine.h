@@ -19,8 +19,8 @@ struct ShortcodeMatch
 
 struct ShortcodeSuggestion
 {
-    std::string shortcode; ///< Without surrounding colons, e.g. "smile".
-    std::string glyph; ///< UTF-8 emoji character. Empty for custom emoticons.
+    std::string shortcode;              ///< Without surrounding colons, e.g. "smile".
+    std::string glyph;                  ///< UTF-8 emoji character. Empty for custom emoticons.
     tesseract::ImagePackImage emoticon; ///< Valid when glyph is empty.
 };
 
@@ -31,13 +31,11 @@ public:
     /// Find an open shortcode prefix (`:abc`) under or immediately before
     /// the cursor. Returns nullopt when the cursor is not inside such a sequence.
     /// Requires at least one shortcode character after the opening ':'.
-    std::optional<ShortcodeMatch> find_prefix(std::string_view text,
-                                              int cursor_byte_pos) const;
+    std::optional<ShortcodeMatch> find_prefix(std::string_view text, int cursor_byte_pos) const;
 
     /// Find a completed shortcode (`:word:`) immediately before cursor_byte_pos
     /// where the character at match.end is a space, tab, or cursor is at EOT.
-    std::optional<ShortcodeMatch> find_complete(std::string_view text,
-                                                int cursor_byte_pos) const;
+    std::optional<ShortcodeMatch> find_complete(std::string_view text, int cursor_byte_pos) const;
 
     /// Search Unicode emoji shortcodes and custom emoticons for `prefix`.
     /// Unicode results ranked by exact/prefix/substring match quality, then
@@ -47,10 +45,8 @@ public:
     /// newer than `max_version` (the platform font's Emoji version, see
     /// tk/emoji_support.h) fall back to their base or are left out.
     std::vector<ShortcodeSuggestion>
-    lookup(std::string_view prefix,
-           const std::vector<tesseract::ImagePackImage>& packs,
-           int max_results = 8,
-           tesseract::emoji::SkinTone tone = tesseract::emoji::SkinTone::None,
+    lookup(std::string_view prefix, const std::vector<tesseract::ImagePackImage>& packs,
+           int max_results = 8, tesseract::emoji::SkinTone tone = tesseract::emoji::SkinTone::None,
            std::uint16_t max_version = tk::kAllEmojiVersions) const;
 };
 

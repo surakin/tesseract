@@ -10,12 +10,12 @@ namespace tesseract::views
 
 namespace
 {
-constexpr int   kColumns     = 4;
-constexpr float kTileH       = 72.0f;
-constexpr float kTileGap     = 8.0f;
-constexpr float kGlyphH      = 46.0f;
-constexpr float kTileRadius  = 6.0f;
-constexpr float kDecimalH    = 56.0f;
+constexpr int kColumns = 4;
+constexpr float kTileH = 72.0f;
+constexpr float kTileGap = 8.0f;
+constexpr float kGlyphH = 46.0f;
+constexpr float kTileRadius = 6.0f;
+constexpr float kDecimalH = 56.0f;
 } // namespace
 
 float sas_decimal_row_height()
@@ -27,11 +27,11 @@ void paint_sas_decimal_row(tk::PaintCtx& ctx, tk::Rect area,
                            const std::array<uint16_t, 3>& decimals)
 {
     const auto& pal = ctx.theme.palette;
-    const int   n      = static_cast<int>(decimals.size());
+    const int n = static_cast<int>(decimals.size());
     const float tile_w = (area.w - kTileGap * (n - 1)) / n;
 
     tk::TextStyle st;
-    st.role      = tk::FontRole::Title;
+    st.role = tk::FontRole::Title;
     st.monospace = true; // equal-width digits, easier to compare
 
     for (int i = 0; i < n; ++i)
@@ -42,8 +42,7 @@ void paint_sas_decimal_row(tk::PaintCtx& ctx, tk::Rect area,
         if (auto lo = ctx.factory.build_text(std::to_string(decimals[i]), st))
         {
             const tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(*lo, {r.x + (r.w - sz.w) * 0.5f,
-                                       r.y + (r.h - sz.h) * 0.5f},
+            ctx.canvas.draw_text(*lo, {r.x + (r.w - sz.w) * 0.5f, r.y + (r.h - sz.h) * 0.5f},
                                  pal.text_primary);
         }
     }
@@ -77,8 +76,8 @@ void paint_sas_emoji_grid(tk::PaintCtx& ctx, tk::Rect area,
         const int in_row = std::min(kColumns, count - row * kColumns);
         const float row_w = in_row * tile_w + (in_row - 1) * kTileGap;
         const float x0 = area.x + (area.w - row_w) * 0.5f;
-        tk::Rect r{x0 + col * (tile_w + kTileGap), area.y + row * (kTileH + kTileGap),
-                   tile_w, kTileH};
+        tk::Rect r{x0 + col * (tile_w + kTileGap), area.y + row * (kTileH + kTileGap), tile_w,
+                   kTileH};
 
         ctx.canvas.fill_rounded_rect(r, kTileRadius, pal.bg);
         ctx.canvas.stroke_rounded_rect(r, kTileRadius, pal.border, 1.0f);
@@ -86,16 +85,16 @@ void paint_sas_emoji_grid(tk::PaintCtx& ctx, tk::Rect area,
         if (auto lo = ctx.factory.build_text(emojis[i].symbol, glyph_style))
         {
             const tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(*lo, {r.x + (r.w - sz.w) * 0.5f,
-                                       r.y + (kGlyphH - sz.h) * 0.5f + 2.0f},
+            ctx.canvas.draw_text(*lo,
+                                 {r.x + (r.w - sz.w) * 0.5f, r.y + (kGlyphH - sz.h) * 0.5f + 2.0f},
                                  pal.text_primary);
         }
         if (auto lo = ctx.factory.build_text(emojis[i].description, caption_style))
         {
             const tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(*lo, {r.x + (r.w - sz.w) * 0.5f,
-                                       r.y + kGlyphH + (r.h - kGlyphH - sz.h) * 0.5f},
-                                 pal.text_secondary);
+            ctx.canvas.draw_text(
+                *lo, {r.x + (r.w - sz.w) * 0.5f, r.y + kGlyphH + (r.h - kGlyphH - sz.h) * 0.5f},
+                pal.text_secondary);
         }
     }
 }

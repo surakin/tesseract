@@ -91,8 +91,7 @@ public:
     void replace_range(int start, int end, std::string text);
     int cursor_byte_pos() const;
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room,
-                        const Image* avatar);
+                        const std::string& display_name, bool is_room, const Image* avatar);
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const Image* image);
     std::vector<tesseract::MentionSeg> composer_draft() const;
@@ -198,7 +197,9 @@ public:
     std::string access_name() const override
     {
         if (!accessible_name_.empty())
+        {
             return accessible_name_;
+        }
         std::string t = text();
         return t.empty() ? placeholder_ : t;
     }
@@ -208,13 +209,25 @@ public:
     // control that just told us it changed on its own.
     void on_focus_gained() override
     {
-        if (area_ && !syncing_from_native_) area_->set_focused(true);
-        if (on_focus_changed_cb_) on_focus_changed_cb_(true);
+        if (area_ && !syncing_from_native_)
+        {
+            area_->set_focused(true);
+        }
+        if (on_focus_changed_cb_)
+        {
+            on_focus_changed_cb_(true);
+        }
     }
     void on_focus_lost() override
     {
-        if (area_ && !syncing_from_native_) area_->set_focused(false);
-        if (on_focus_changed_cb_) on_focus_changed_cb_(false);
+        if (area_ && !syncing_from_native_)
+        {
+            area_->set_focused(false);
+        }
+        if (on_focus_changed_cb_)
+        {
+            on_focus_changed_cb_(false);
+        }
     }
 
 private:

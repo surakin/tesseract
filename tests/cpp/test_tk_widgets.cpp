@@ -60,8 +60,7 @@ bool nearly(Color a, Color b, int tol = 12)
     {
         return x > y ? x - y : y - x;
     };
-    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol &&
-           delta(a.b, b.b) <= tol;
+    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol && delta(a.b, b.b) <= tol;
 }
 
 class PaintProbe : public Widget
@@ -112,8 +111,7 @@ private:
 class KeyProbe : public FixedBox
 {
 public:
-    KeyProbe(int& count, bool consume)
-        : FixedBox({10, 10}), count_(count), consume_(consume)
+    KeyProbe(int& count, bool consume) : FixedBox({10, 10}), count_(count), consume_(consume)
     {
     }
 
@@ -171,8 +169,7 @@ TEST_CASE("VBox stacks children with spacing", "[tk][widget][layout]")
     CHECK(rb.w == 180.0f);
 }
 
-TEST_CASE("VBox Main::Center centres children with leftover space",
-          "[tk][widget][layout]")
+TEST_CASE("VBox Main::Center centres children with leftover space", "[tk][widget][layout]")
 {
     TkWidgetsStage st;
     auto box_owner = tk::create_root_widget<VBox>(nullptr);
@@ -196,11 +193,11 @@ TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
     auto row_owner = tk::create_root_widget<HBox>(nullptr);
     HBox& row = *row_owner;
     row.set_spacing(4).set_cross(Cross::Stretch);
-    auto* a = row.add_child(
-        tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Vertical));
+    auto* a =
+        row.add_child(tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Vertical));
     a->set_thickness(10);
-    auto* b = row.add_child(
-        tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Vertical));
+    auto* b =
+        row.add_child(tk::create_root_widget<Separator>(nullptr, Separator::Orientation::Vertical));
     b->set_thickness(20);
 
     auto lc = st.layout_ctx();
@@ -215,8 +212,7 @@ TEST_CASE("HBox lays children horizontally", "[tk][widget][layout]")
     CHECK(b->bounds().h == 50.0f);
 }
 
-TEST_CASE("Widget default paint traverses visible children",
-          "[tk][widget][layout]")
+TEST_CASE("Widget default paint traverses visible children", "[tk][widget][layout]")
 {
     TkWidgetsStage st;
     auto root_owner = tk::create_root_widget<FixedBox>(nullptr, Size{100, 100});
@@ -246,8 +242,7 @@ TEST_CASE("Widget::apply_theme visits every descendant, including hidden ones",
     auto* visible_child = root.add_child(std::make_unique<ThemeProbe>(themed_visible_child));
     auto* hidden_child = root.add_child(std::make_unique<ThemeProbe>(themed_hidden_child));
     hidden_child->set_visible(false);
-    auto* grandchild =
-        visible_child->add_child(std::make_unique<ThemeProbe>(themed_grandchild));
+    auto* grandchild = visible_child->add_child(std::make_unique<ThemeProbe>(themed_grandchild));
 
     root.apply_theme(Theme::dark());
 
@@ -263,8 +258,7 @@ TEST_CASE("Widget::apply_theme visits every descendant, including hidden ones",
     CHECK(static_cast<ThemeProbe*>(grandchild)->last_mode == ThemeMode::Dark);
 }
 
-TEST_CASE("Stack arranges visible children to the same bounds",
-          "[tk][widget][layout]")
+TEST_CASE("Stack arranges visible children to the same bounds", "[tk][widget][layout]")
 {
     TkWidgetsStage st;
     auto stack_owner = tk::create_root_widget<Stack>(nullptr);
@@ -288,8 +282,7 @@ TEST_CASE("Stack arranges visible children to the same bounds",
     CHECK(b->bounds().h == 80.0f);
 }
 
-TEST_CASE("Keyboard dispatch routes to topmost visible child first",
-          "[tk][widget][key]")
+TEST_CASE("Keyboard dispatch routes to topmost visible child first", "[tk][widget][key]")
 {
     auto root_owner = tk::create_root_widget<FixedBox>(nullptr, Size{100, 100});
     FixedBox& root = *root_owner;
@@ -307,8 +300,7 @@ TEST_CASE("Keyboard dispatch routes to topmost visible child first",
     CHECK(upper == 1);
 }
 
-TEST_CASE("Keyboard dispatch bubbles to parent when children ignore it",
-          "[tk][widget][key]")
+TEST_CASE("Keyboard dispatch bubbles to parent when children ignore it", "[tk][widget][key]")
 {
     class ParentProbe : public FixedBox
     {
@@ -340,12 +332,12 @@ TEST_CASE("Keyboard dispatch bubbles to parent when children ignore it",
     CHECK(parent == 1);
 }
 
-TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first",
-          "[tk][widget][key]")
+TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first", "[tk][widget][key]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.media_viewer()->open(
+        tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
     app.show_media_viewer(true);
     app.show_quick_switch(true);
 
@@ -356,12 +348,12 @@ TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first",
     CHECK(app.media_viewer()->visible() == true);
 }
 
-TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
-          "[tk][widget][key]")
+TEST_CASE("MainAppWidget Escape closes and hides media lightboxes", "[tk][widget][key]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.media_viewer()->open(
+        tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
     app.show_media_viewer(true);
 
     CHECK(app.dispatch_key_down({Key::Escape}) == true);
@@ -388,13 +380,12 @@ TEST_CASE("MainAppWidget hides the compose text area while the export dialog is 
     CHECK(app->compose_text_area_rect().empty());
 }
 
-TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
-          "[tk][widget]")
+TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox", "[tk][widget]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.media_viewer()->open(tesseract::views::test::video_item(
-        "mxc://example.org/v", "", "video/mp4", 0u, 640, 360));
+    app.media_viewer()->open(
+        tesseract::views::test::video_item("mxc://example.org/v", "", "video/mp4", 0u, 640, 360));
     app.show_media_viewer(true);
     REQUIRE(app.media_viewer()->is_open());
 
@@ -404,12 +395,12 @@ TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
     CHECK(app.media_viewer()->visible() == false);
 }
 
-TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
-          "[tk][widget]")
+TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox", "[tk][widget]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.media_viewer()->open(
+        tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
     app.show_media_viewer(true);
     REQUIRE(app.media_viewer()->is_open());
 
@@ -419,8 +410,7 @@ TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
     CHECK(app.media_viewer()->visible() == false);
 }
 
-TEST_CASE("MainAppWidget Escape closes in-room search",
-          "[tk][widget][key]")
+TEST_CASE("MainAppWidget Escape closes in-room search", "[tk][widget][key]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
@@ -432,17 +422,25 @@ TEST_CASE("MainAppWidget Escape closes in-room search",
     CHECK(app.room_view()->room_search_open() == false);
 }
 
-TEST_CASE("MainAppWidget routes primary shortcut callbacks",
-          "[tk][widget][key]")
+TEST_CASE("MainAppWidget routes primary shortcut callbacks", "[tk][widget][key]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
     int quick_switch = 0;
     int message_search = 0;
     int find_in_room = 0;
-    app.on_quick_switch_shortcut = [&] { ++quick_switch; };
-    app.on_message_search_shortcut = [&] { ++message_search; };
-    app.on_find_in_room_shortcut = [&] { ++find_in_room; };
+    app.on_quick_switch_shortcut = [&]
+    {
+        ++quick_switch;
+    };
+    app.on_message_search_shortcut = [&]
+    {
+        ++message_search;
+    };
+    app.on_find_in_room_shortcut = [&]
+    {
+        ++find_in_room;
+    };
 
     KeyEvent quick{};
     quick.key = Key::Character;
@@ -468,13 +466,15 @@ TEST_CASE("MainAppWidget routes primary shortcut callbacks",
     CHECK(message_search == 1);
 }
 
-TEST_CASE("MainAppWidget accepts Command as the primary shortcut modifier",
-          "[tk][widget][key]")
+TEST_CASE("MainAppWidget accepts Command as the primary shortcut modifier", "[tk][widget][key]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
     int quick_switch = 0;
-    app.on_quick_switch_shortcut = [&] { ++quick_switch; };
+    app.on_quick_switch_shortcut = [&]
+    {
+        ++quick_switch;
+    };
 
     KeyEvent quick{};
     quick.key = Key::Character;
@@ -485,23 +485,32 @@ TEST_CASE("MainAppWidget accepts Command as the primary shortcut modifier",
     CHECK(quick_switch == 1);
 }
 
-TEST_CASE("MainAppWidget routes history navigation shortcuts",
-          "[tk][widget][key]")
+TEST_CASE("MainAppWidget routes history navigation shortcuts", "[tk][widget][key]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
     int back = 0;
     int forward = 0;
-    app.on_history_back_shortcut = [&] { ++back; };
-    app.on_history_forward_shortcut = [&] { ++forward; };
+    app.on_history_back_shortcut = [&]
+    {
+        ++back;
+    };
+    app.on_history_forward_shortcut = [&]
+    {
+        ++forward;
+    };
 
     // The platform's chords (Alt+Left/Right; ⌘[ / ⌘] on macOS), as the
     // shell's native accelerator forwards them.
     using tesseract::views::ShortcutId;
     for (const auto& c : tesseract::views::shortcut(ShortcutId::HistoryBack).chords)
+    {
         CHECK(app.dispatch_key_down(tk::to_key_event(c)) == true);
+    }
     for (const auto& c : tesseract::views::shortcut(ShortcutId::HistoryForward).chords)
+    {
         CHECK(app.dispatch_key_down(tk::to_key_event(c)) == true);
+    }
 #if !defined(__APPLE__)
     // Only the platform's own chords: ⌘[ isn't "back" off macOS.
     KeyEvent cmd_bracket{};
@@ -515,8 +524,7 @@ TEST_CASE("MainAppWidget routes history navigation shortcuts",
     CHECK(forward == 1);
 }
 
-TEST_CASE("MainAppWidget space nav routes header and back clicks",
-          "[tk][widget][pointer]")
+TEST_CASE("MainAppWidget space nav routes header and back clicks", "[tk][widget][pointer]")
 {
     // TkWidgetsStage must be declared (and so destroyed last) before the
     // widget tree below: arrange() rasterizes icon bitmaps/text layouts
@@ -529,8 +537,14 @@ TEST_CASE("MainAppWidget space nav routes header and back clicks",
     MainAppWidget& app = *app_owner;
     int back = 0;
     int header = 0;
-    app.on_space_back = [&] { ++back; };
-    app.on_space_header = [&] { ++header; };
+    app.on_space_back = [&]
+    {
+        ++back;
+    };
+    app.on_space_header = [&]
+    {
+        ++header;
+    };
     app.set_space_nav(true, "Space", "");
 
     auto lc = st.layout_ctx();
@@ -567,8 +581,7 @@ TEST_CASE("MainAppWidget hides the encryption reminder behind the encryption dia
     CHECK(app.encryption_reminder()->visible() == false);
 }
 
-TEST_CASE("MainAppWidget offline banner shifts chat content",
-          "[tk][widget][layout]")
+TEST_CASE("MainAppWidget offline banner shifts chat content", "[tk][widget][layout]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
@@ -592,8 +605,7 @@ TEST_CASE("MainAppWidget offline banner shifts chat content",
 //  Atomic widgets
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("Label::measure returns a non-zero size for non-empty text",
-          "[tk][widget][label]")
+TEST_CASE("Label::measure returns a non-zero size for non-empty text", "[tk][widget][label]")
 {
     TkWidgetsStage st;
     auto lbl_owner = tk::create_root_widget<Label>(nullptr, "Hello, world", FontRole::Body);
@@ -608,10 +620,10 @@ TEST_CASE("Button::click invokes the on-click callback", "[tk][widget][button]")
 {
     int n_calls = 0;
     auto btn_owner = tk::create_root_widget<Button>(nullptr, "OK",
-               [&]
-               {
-                   ++n_calls;
-               });
+                                                    [&]
+                                                    {
+                                                        ++n_calls;
+                                                    });
     Button& btn = *btn_owner;
     btn.click();
     CHECK(n_calls == 1);
@@ -675,22 +687,18 @@ constexpr std::string_view kSolidSquareSvg =
 
 std::span<const std::uint8_t> solid_square_svg()
 {
-    return {reinterpret_cast<const std::uint8_t*>(kSolidSquareSvg.data()),
-            kSolidSquareSvg.size()};
+    return {reinterpret_cast<const std::uint8_t*>(kSolidSquareSvg.data()), kSolidSquareSvg.size()};
 }
 } // namespace
 
-TEST_CASE("Button leading icon widens the measure by icon + gap",
-          "[tk][widget][button]")
+TEST_CASE("Button leading icon widens the measure by icon + gap", "[tk][widget][button]")
 {
     TkWidgetsStage st;
     auto lc = st.layout_ctx();
-    auto plain = tk::create_root_widget<Button>(nullptr, "Export History",
-                                                std::function<void()>{},
+    auto plain = tk::create_root_widget<Button>(nullptr, "Export History", std::function<void()>{},
                                                 Button::Variant::Subtle);
-    auto with_icon = tk::create_root_widget<Button>(nullptr, "Export History",
-                                                    std::function<void()>{},
-                                                    Button::Variant::Subtle);
+    auto with_icon = tk::create_root_widget<Button>(
+        nullptr, "Export History", std::function<void()>{}, Button::Variant::Subtle);
     with_icon->set_leading_icon(solid_square_svg(), 16.0f);
 
     Size a = plain->measure(lc, {-1, -1});
@@ -701,8 +709,7 @@ TEST_CASE("Button leading icon widens the measure by icon + gap",
     CHECK(with_icon->access_name() == "Export History");
 }
 
-TEST_CASE("Button::set_icon after set_leading_icon reverts to icon-only",
-          "[tk][widget][button]")
+TEST_CASE("Button::set_icon after set_leading_icon reverts to icon-only", "[tk][widget][button]")
 {
     TkWidgetsStage st;
     auto lc = st.layout_ctx();
@@ -715,12 +722,10 @@ TEST_CASE("Button::set_icon after set_leading_icon reverts to icon-only",
     st.run(*btn, {10, 10, 160, 36}); // paints the icon-only path cleanly
 }
 
-TEST_CASE("Button leading icon paints left of the label in the text colour",
-          "[tk][widget][button]")
+TEST_CASE("Button leading icon paints left of the label in the text colour", "[tk][widget][button]")
 {
     TkWidgetsStage st;
-    auto btn = tk::create_root_widget<Button>(nullptr, "Export",
-                                              std::function<void()>{},
+    auto btn = tk::create_root_widget<Button>(nullptr, "Export", std::function<void()>{},
                                               Button::Variant::Subtle);
     btn->set_leading_icon(solid_square_svg(), 16.0f);
 
@@ -734,14 +739,17 @@ TEST_CASE("Button leading icon paints left of the label in the text colour",
     CHECK(nearly(px, Theme::light().palette.text_primary, /*tol=*/20));
 }
 
-TEST_CASE("SwitchButton toggles checked state and fires on_change",
-          "[tk][widget][switch]")
+TEST_CASE("SwitchButton toggles checked state and fires on_change", "[tk][widget][switch]")
 {
-    int  calls = 0;
-    bool last  = false;
+    int calls = 0;
+    bool last = false;
     auto sw_owner = tk::create_root_widget<SwitchButton>(nullptr, "Favourite");
     SwitchButton& sw = *sw_owner;
-    sw.on_change = [&](bool c) { ++calls; last = c; };
+    sw.on_change = [&](bool c)
+    {
+        ++calls;
+        last = c;
+    };
 
     CHECK(sw.checked() == false);
 
@@ -854,8 +862,7 @@ TEST_CASE("Separator paints a 1 px line by default", "[tk][widget][separator]")
     CHECK(nearly(px, Theme::light().palette.separator, /*tol=*/30));
 }
 
-TEST_CASE("Avatar paints initials disc when no image is set",
-          "[tk][widget][avatar]")
+TEST_CASE("Avatar paints initials disc when no image is set", "[tk][widget][avatar]")
 {
     TkWidgetsStage st;
     auto a_owner = tk::create_root_widget<Avatar>(nullptr, "Alice Anders");
@@ -915,8 +922,8 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
     card.set_padding(Edges::all(24)).set_cross(Cross::Stretch);
 
     bool clicked = false;
-    auto* btn = card.add_child(tk::create_root_widget<Button>(nullptr,
-        "Sign in",
+    auto* btn = card.add_child(tk::create_root_widget<Button>(
+        nullptr, "Sign in",
         [&]
         {
             clicked = true;
@@ -951,14 +958,13 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
     CHECK(local.x < bb.w);
     CHECK(local.y < bb.h);
     btn->on_pointer_up(local,
-                       /*inside_self=*/local.x >= 0 && local.y >= 0 &&
-                           local.x < bb.w && local.y < bb.h);
+                       /*inside_self=*/local.x >= 0 && local.y >= 0 && local.x < bb.w &&
+                           local.y < bb.h);
     CHECK(clicked);
 
     // And a click clearly outside the button should miss it.
     clicked = false;
-    Widget* miss =
-        card.dispatch_pointer_down({card_bounds.x + 2, card_bounds.y + 2});
+    Widget* miss = card.dispatch_pointer_down({card_bounds.x + 2, card_bounds.y + 2});
     CHECK(miss != btn);
 }
 
@@ -966,8 +972,7 @@ TEST_CASE("Widget pointer dispatch routes clicks to a button in an offset "
 //  Shared LoginView smoke test
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("LoginView lays out + paints onto the offscreen surface",
-          "[tk][view][login]")
+TEST_CASE("LoginView lays out + paints onto the offscreen surface", "[tk][view][login]")
 {
     TkWidgetsStage st;
     TestHost host(nullptr);
@@ -986,15 +991,18 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     // inside a row with the discovery icon and help button, and a naive
     // depth-1 search would otherwise match the hidden legacy username_field_
     // (a direct card_ child) instead.
-    std::function<TextField*(Widget*)> find_visible_text_field =
-        [&](Widget* w) -> TextField*
+    std::function<TextField*(Widget*)> find_visible_text_field = [&](Widget* w) -> TextField*
     {
         for (auto& ch : w->children())
         {
             if (auto* tf = dynamic_cast<TextField*>(ch.get()); tf && tf->visible())
+            {
                 return tf;
+            }
             if (auto* found = find_visible_text_field(ch.get()))
+            {
                 return found;
+            }
         }
         return nullptr;
     };
@@ -1119,9 +1127,13 @@ TEST_CASE("MainAppWidget Tab order from the composer reaches the room list, "
         host.advance_focus(true);
         Widget* w = host.focused_widget();
         if (w == app.room_list_view()->search_field())
+        {
             saw_room_list_search = true;
+        }
         if (w == start)
+        {
             break;
+        }
     }
     CHECK(saw_room_list_search);
     CHECK(stops > 2);
@@ -1222,7 +1234,8 @@ TEST_CASE("MainAppWidget scopes Tab traversal to the open image viewer, "
     Widget* header_search = app.room_view()->header()->search_btn_for_test();
     REQUIRE(header_search != nullptr);
 
-    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.media_viewer()->open(
+        tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
     app.show_media_viewer(true);
 
     app.measure(lc, {1100.0f, 768.0f});
@@ -1251,8 +1264,14 @@ TEST_CASE("MessageSearchView::open() defers focusing the search field to "
     struct IndexGuard
     {
         bool prev = tesseract::Settings::instance().index_messages_for_search;
-        IndexGuard() { tesseract::Settings::instance().index_messages_for_search = true; }
-        ~IndexGuard() { tesseract::Settings::instance().index_messages_for_search = prev; }
+        IndexGuard()
+        {
+            tesseract::Settings::instance().index_messages_for_search = true;
+        }
+        ~IndexGuard()
+        {
+            tesseract::Settings::instance().index_messages_for_search = prev;
+        }
     } index_guard;
 
     StubHost host;
@@ -1317,31 +1336,31 @@ TEST_CASE("ForwardRoomPicker::open() defers focusing the search field to "
 TEST_CASE("font_role_pt scales relative to body base", "[font_role]")
 {
     // At body=12pt the computed sizes must reproduce the legacy hardcoded values.
-    CHECK(tk::font_role_pt(tk::FontRole::Small,           12) ==  8);
-    CHECK(tk::font_role_pt(tk::FontRole::Body,            12) == 12);
-    CHECK(tk::font_role_pt(tk::FontRole::SenderName,      12) == 11);
-    CHECK(tk::font_role_pt(tk::FontRole::Timestamp,       12) ==  9);
-    CHECK(tk::font_role_pt(tk::FontRole::SidebarName,     12) == 12);
-    CHECK(tk::font_role_pt(tk::FontRole::SidebarPreview,  12) == 10);
-    CHECK(tk::font_role_pt(tk::FontRole::UnreadBadge,     12) == 10);
-    CHECK(tk::font_role_pt(tk::FontRole::Title,           12) == 14);
-    CHECK(tk::font_role_pt(tk::FontRole::UiSemibold,      12) == 10);
-    CHECK(tk::font_role_pt(tk::FontRole::BigEmoji,        12) == 24);
+    CHECK(tk::font_role_pt(tk::FontRole::Small, 12) == 8);
+    CHECK(tk::font_role_pt(tk::FontRole::Body, 12) == 12);
+    CHECK(tk::font_role_pt(tk::FontRole::SenderName, 12) == 11);
+    CHECK(tk::font_role_pt(tk::FontRole::Timestamp, 12) == 9);
+    CHECK(tk::font_role_pt(tk::FontRole::SidebarName, 12) == 12);
+    CHECK(tk::font_role_pt(tk::FontRole::SidebarPreview, 12) == 10);
+    CHECK(tk::font_role_pt(tk::FontRole::UnreadBadge, 12) == 10);
+    CHECK(tk::font_role_pt(tk::FontRole::Title, 12) == 14);
+    CHECK(tk::font_role_pt(tk::FontRole::UiSemibold, 12) == 10);
+    CHECK(tk::font_role_pt(tk::FontRole::BigEmoji, 12) == 24);
     CHECK(tk::font_role_pt(tk::FontRole::EmojiPickerCell, 12) == 21);
 
     // At body=11pt (typical KDE Noto Sans) every role scales down by 1,
     // except BigEmoji which is 2×body.
-    CHECK(tk::font_role_pt(tk::FontRole::Small,           11) ==  7);
-    CHECK(tk::font_role_pt(tk::FontRole::Body,            11) == 11);
-    CHECK(tk::font_role_pt(tk::FontRole::Title,           11) == 13);
-    CHECK(tk::font_role_pt(tk::FontRole::BigEmoji,        11) == 22);
+    CHECK(tk::font_role_pt(tk::FontRole::Small, 11) == 7);
+    CHECK(tk::font_role_pt(tk::FontRole::Body, 11) == 11);
+    CHECK(tk::font_role_pt(tk::FontRole::Title, 11) == 13);
+    CHECK(tk::font_role_pt(tk::FontRole::BigEmoji, 11) == 22);
 
     // Sizes are clamped to at least 6pt.
-    CHECK(tk::font_role_pt(tk::FontRole::Small,            6) ==  6); // 6-4=2, clamped
+    CHECK(tk::font_role_pt(tk::FontRole::Small, 6) == 6); // 6-4=2, clamped
 
     // InlineEmoji currently == Body (emoji-vs-text sizing is tuned via the
     // Linux backend comp constants + kEmojiSizeAdjust, not this offset).
-    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,     12) == 12);
-    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,     11) == 11);
-    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji,      3) ==  6); // clamped
+    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji, 12) == 12);
+    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji, 11) == 11);
+    CHECK(tk::font_role_pt(tk::FontRole::InlineEmoji, 3) == 6); // clamped
 }

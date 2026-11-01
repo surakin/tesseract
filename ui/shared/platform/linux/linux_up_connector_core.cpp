@@ -41,23 +41,20 @@ bool is_valid_gateway_host(const std::string& host)
         {
             const char c = host[i];
             colon = colon || c == ':';
-            if (c != ':' && c != '.' &&
-                !std::isxdigit(static_cast<unsigned char>(c)))
+            if (c != ':' && c != '.' && !std::isxdigit(static_cast<unsigned char>(c)))
             {
                 return false;
             }
         }
         return colon;
     }
-    if (host.front() == '-' || host.front() == '.' ||
-        host.find("..") != std::string::npos)
+    if (host.front() == '-' || host.front() == '.' || host.find("..") != std::string::npos)
     {
         return false;
     }
     for (char c : host)
     {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '.' &&
-            c != '-' && c != '_')
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '.' && c != '-' && c != '_')
         {
             return false;
         }
@@ -94,8 +91,7 @@ std::optional<std::string> normalize_gateway_url(const std::string& endpoint)
     const std::size_t auth_begin = kScheme.size();
     const std::size_t auth_end = endpoint.find_first_of("/?#", auth_begin);
     const std::string authority = endpoint.substr(
-        auth_begin,
-        auth_end == std::string::npos ? std::string::npos : auth_end - auth_begin);
+        auth_begin, auth_end == std::string::npos ? std::string::npos : auth_end - auth_begin);
     if (authority.empty() || authority.find('@') != std::string::npos)
     {
         return std::nullopt;
@@ -164,8 +160,8 @@ std::optional<std::string> normalize_gateway_url(const std::string& endpoint)
 
 std::optional<std::string> extract_push_room_id(std::string_view payload)
 {
-    const auto doc = nlohmann::json::parse(payload.begin(), payload.end(),
-                                           nullptr, /*allow_exceptions=*/false);
+    const auto doc =
+        nlohmann::json::parse(payload.begin(), payload.end(), nullptr, /*allow_exceptions=*/false);
     if (!doc.is_object())
     {
         return std::nullopt;
@@ -212,9 +208,8 @@ void PusherCore::on_new_endpoint(const std::string& endpoint)
     if (!gateway)
     {
         // Log scheme + authority only: never the path or query string.
-        const auto end = endpoint.find_first_of("/?#", endpoint.find("://") == std::string::npos
-                                                           ? 0
-                                                           : endpoint.find("://") + 3);
+        const auto end = endpoint.find_first_of(
+            "/?#", endpoint.find("://") == std::string::npos ? 0 : endpoint.find("://") + 3);
         std::fprintf(stderr, "[up] rejected push endpoint: %.100s\n",
                      endpoint.substr(0, end).c_str());
         return;
@@ -224,8 +219,8 @@ void PusherCore::on_new_endpoint(const std::string& endpoint)
     {
         return; // user disabled notifications; keep the endpoint cached
     }
-    client_->register_pusher(token_, kPusherAppId, kPusherAppName,
-                             kPusherDeviceName, gateway_url_, kPusherLang);
+    client_->register_pusher(token_, kPusherAppId, kPusherAppName, kPusherDeviceName, gateway_url_,
+                             kPusherLang);
 }
 
 void PusherCore::set_enabled(bool enabled)
@@ -243,9 +238,8 @@ void PusherCore::set_enabled(bool enabled)
     {
         if (!gateway_url_.empty())
         {
-            client_->register_pusher(token_, kPusherAppId, kPusherAppName,
-                                     kPusherDeviceName, gateway_url_,
-                                     kPusherLang);
+            client_->register_pusher(token_, kPusherAppId, kPusherAppName, kPusherDeviceName,
+                                     gateway_url_, kPusherLang);
         }
     }
     else

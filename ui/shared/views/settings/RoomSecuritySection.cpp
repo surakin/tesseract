@@ -21,7 +21,10 @@ RoomSecuritySection::RoomSecuritySection()
     encryption_check_->on_change = [this](bool checked)
     {
         refresh_encryption_warning_();
-        if (on_encryption_changed) on_encryption_changed(checked);
+        if (on_encryption_changed)
+        {
+            on_encryption_changed(checked);
+        }
     };
 
     auto enc_warning = tk::create_widget<tk::Label>(
@@ -34,15 +37,18 @@ RoomSecuritySection::RoomSecuritySection()
     auto* join_group = add_group(tk::tr("Who can join"));
     auto jr_combo = tk::create_widget<tk::ComboBox>(this);
     jr_combo->set_options({
-        {tk::tr("Public"),      "public"},
+        {tk::tr("Public"), "public"},
         {tk::tr("Invite only"), "invite"},
-        {tk::tr("Knock"),       "knock"},
+        {tk::tr("Knock"), "knock"},
     });
     join_rule_combo_ = join_group->add_widget(std::move(jr_combo));
     join_rule_combo_->on_changed = [this](std::string v)
     {
         staged_join_rule_ = v;
-        if (on_join_rule_changed) on_join_rule_changed(std::move(v));
+        if (on_join_rule_changed)
+        {
+            on_join_rule_changed(std::move(v));
+        }
     };
     auto jr_readonly = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
     join_rule_readonly_ = join_group->add_widget(std::move(jr_readonly));
@@ -54,23 +60,29 @@ RoomSecuritySection::RoomSecuritySection()
     guest_access_check_ = guest_group->add_widget(std::move(guest_check));
     guest_access_check_->on_change = [this](bool checked)
     {
-        if (on_guest_access_changed) on_guest_access_changed(checked);
+        if (on_guest_access_changed)
+        {
+            on_guest_access_changed(checked);
+        }
     };
 
     // ── History visibility ───────────────────────────────────────────────
     auto* history_group = add_group(tk::tr("History Visibility"));
     auto hv_combo = tk::create_widget<tk::ComboBox>(this);
     hv_combo->set_options({
-        {tk::tr("Anyone"),                  "world_readable"},
-        {tk::tr("Members"),                 "shared"},
+        {tk::tr("Anyone"), "world_readable"},
+        {tk::tr("Members"), "shared"},
         {tk::tr("Members (since invited)"), "invited"},
-        {tk::tr("Members (since joined)"),  "joined"},
+        {tk::tr("Members (since joined)"), "joined"},
     });
     history_combo_ = history_group->add_widget(std::move(hv_combo));
     history_combo_->on_changed = [this](std::string v)
     {
         staged_history_visibility_ = v;
-        if (on_history_visibility_changed) on_history_visibility_changed(std::move(v));
+        if (on_history_visibility_changed)
+        {
+            on_history_visibility_changed(std::move(v));
+        }
     };
 }
 
@@ -93,7 +105,9 @@ void RoomSecuritySection::refresh_encryption_warning_()
     // i.e. the app's top-left corner) until the next full arrange() pass —
     // request one whenever the visibility actually flips.
     if (was_visible != now_visible && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void RoomSecuritySection::set_encryption(bool is_encrypted)
@@ -116,20 +130,21 @@ void RoomSecuritySection::set_join_rule(std::string join_rule)
     join_rule_readonly_->set_visible(managed_elsewhere);
     if (!managed_elsewhere)
     {
-        join_rule_combo_->set_selected_value(
-            staged_join_rule_.empty() ? "invite" : staged_join_rule_);
+        join_rule_combo_->set_selected_value(staged_join_rule_.empty() ? "invite"
+                                                                       : staged_join_rule_);
     }
     else
     {
-        const std::string label = staged_join_rule_ == "restricted"
-            ? tk::tr("Restricted") : tk::tr("Knock+Restricted");
-        join_rule_readonly_->set_text(
-            tk::trf(tk::tr("{0} (managed elsewhere)"), {label}));
+        const std::string label =
+            staged_join_rule_ == "restricted" ? tk::tr("Restricted") : tk::tr("Knock+Restricted");
+        join_rule_readonly_->set_text(tk::trf(tk::tr("{0} (managed elsewhere)"), {label}));
     }
     // See refresh_encryption_warning_'s comment — a widget that just became
     // visible needs a fresh arrange() pass or it paints at stale bounds_.
     if (combo_was_visible == managed_elsewhere && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void RoomSecuritySection::set_guest_access(bool allow)
@@ -145,13 +160,12 @@ void RoomSecuritySection::set_history_visibility(std::string visibility)
 }
 
 void RoomSecuritySection::set_field_permissions(bool can_encryption, bool can_join_rule,
-                                                bool can_guest_access,
-                                                bool can_history_visibility)
+                                                bool can_guest_access, bool can_history_visibility)
 {
-    can_encryption_   = can_encryption;
-    can_join_rule_    = can_join_rule;
+    can_encryption_ = can_encryption;
+    can_join_rule_ = can_join_rule;
     can_guest_access_ = can_guest_access;
-    can_history_      = can_history_visibility;
+    can_history_ = can_history_visibility;
     refresh_encryption_enabled_();
     join_rule_combo_->set_enabled(can_join_rule_ && !committing_);
     guest_access_check_->set_enabled(can_guest_access_ && !committing_);
@@ -174,7 +188,9 @@ void RoomSecuritySection::set_encryption_field_visible(bool visible)
     // See refresh_encryption_warning_'s comment — a widget that just became
     // visible needs a fresh arrange() pass or it paints at stale bounds_.
     if (was_visible != visible && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 } // namespace tesseract::views

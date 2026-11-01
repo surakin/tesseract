@@ -19,15 +19,16 @@ std::string cell_plain(const std::vector<tk::TextSpan>& spans)
 {
     std::string out;
     for (const auto& sp : spans)
+    {
         out += sp.is_image ? sp.image_alt : sp.text;
+    }
     return out;
 }
 
 } // namespace
 
 TableGrid compute_table_layout(const BodyTable& table, float avail_width,
-                               tk::CanvasFactory& factory,
-                               const tk::TextStyle& base)
+                               tk::CanvasFactory& factory, const tk::TextStyle& base)
 {
     TableGrid g;
     g.header_rows = table.header_rows;
@@ -35,16 +36,18 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
     const std::size_t ncols = table.col_align.size();
     const std::size_t nrows = table.rows.size();
     if (ncols == 0 || nrows == 0)
+    {
         return g;
+    }
 
     const float padX = kTableCellPadX;
     const float padY = kTableCellPadY;
     const float border = kTableBorder;
 
     tk::TextStyle natural_style = base;
-    natural_style.wrap      = false;
+    natural_style.wrap = false;
     natural_style.max_width = -1.0f;
-    natural_style.trim      = tk::TextTrim::None;
+    natural_style.trim = tk::TextTrim::None;
 
     // ── 1. Natural (unwrapped) content width per cell and per column ──────────
     // A wrapped rich-text layout reports max_width as its width on some
@@ -61,14 +64,15 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
         {
             const auto& spans = table.rows[r][c].spans;
             if (spans.empty())
+            {
                 continue;
-            std::shared_ptr<tk::TextLayout> lay =
-                factory.build_rich_text(spans, natural_style);
+            }
+            std::shared_ptr<tk::TextLayout> lay = factory.build_rich_text(spans, natural_style);
             if (lay)
             {
                 const float w = lay->measure().w;
-                cell_nat[r * ncols + c]    = w;
-                nat_layout[r * ncols + c]  = std::move(lay);
+                cell_nat[r * ncols + c] = w;
+                nat_layout[r * ncols + c] = std::move(lay);
                 nat[c] = std::max(nat[c], w);
             }
         }
@@ -93,8 +97,7 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
         float total_slack = 0.0f;
         for (std::size_t c = 0; c < ncols; ++c)
         {
-            const float floor_outer =
-                std::min(nat[c], kColMaxFloorInner) + 2.0f * padX;
+            const float floor_outer = std::min(nat[c], kColMaxFloorInner) + 2.0f * padX;
             slack[c] = std::max(0.0f, desired[c] - floor_outer);
             total_slack += slack[c];
         }
@@ -103,22 +106,29 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
         {
             // Enough give above the floors — shrink the widest columns.
             for (std::size_t c = 0; c < ncols; ++c)
+            {
                 col_w[c] = desired[c] - deficit * (slack[c] / total_slack);
+            }
         }
         else
         {
             // Even the floors overflow: scale every column down
             // proportionally so the grid still fits exactly. Cell content
             // clips against the column in paint — this is the last resort.
-            const float avail_inner = std::max(
-                1.0f, avail_width - static_cast<float>(ncols + 1) * border);
+            const float avail_inner =
+                std::max(1.0f, avail_width - static_cast<float>(ncols + 1) * border);
             float sum_desired = 0.0f;
             for (float d : desired)
+            {
                 sum_desired += d;
+            }
             if (sum_desired > 0.0f)
+            {
                 for (std::size_t c = 0; c < ncols; ++c)
-                    col_w[c] = std::max(
-                        1.0f, desired[c] * avail_inner / sum_desired);
+                {
+                    col_w[c] = std::max(1.0f, desired[c] * avail_inner / sum_desired);
+                }
+            }
         }
     }
 
@@ -148,8 +158,8 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
             const std::size_t i = r * ncols + c;
             const float inner = std::max(1.0f, g.col_w[c] - 2.0f * padX);
             TableCellBox& box = g.cells[i];
-            box.row   = static_cast<int>(r);
-            box.col   = static_cast<int>(c);
+            box.row = static_cast<int>(r);
+            box.col = static_cast<int>(c);
             box.spans = table.rows[r][c].spans;
 
             if (!box.spans.empty())
@@ -168,11 +178,11 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
                 else
                 {
                     tk::TextStyle cs = base;
-                    cs.wrap      = wrap;
+                    cs.wrap = wrap;
                     cs.max_width = inner;
-                    cs.trim      = tk::TextTrim::None;
-                    cs.halign    = tk::TextHAlign::Leading;
-                    box.layout   = factory.build_rich_text(box.spans, cs);
+                    cs.trim = tk::TextTrim::None;
+                    cs.halign = tk::TextHAlign::Leading;
+                    box.layout = factory.build_rich_text(box.spans, cs);
                 }
             }
 
@@ -223,7 +233,9 @@ std::string table_to_gfm(const BodyTable& table)
 {
     const std::size_t ncols = table.col_align.size();
     if (ncols == 0 || table.rows.empty())
+    {
         return {};
+    }
 
     auto escape = [](std::string s)
     {
@@ -232,11 +244,17 @@ std::string table_to_gfm(const BodyTable& table)
         for (char ch : s)
         {
             if (ch == '|')
+            {
                 out += "\\|";
+            }
             else if (ch == '\n')
+            {
                 out += ' ';
+            }
             else
+            {
                 out += ch;
+            }
         }
         return out;
     };
@@ -247,8 +265,7 @@ std::string table_to_gfm(const BodyTable& table)
         for (std::size_t c = 0; c < ncols; ++c)
         {
             line += ' ';
-            line += c < row.size() ? escape(cell_plain(row[c].spans))
-                                   : std::string{};
+            line += c < row.size() ? escape(cell_plain(row[c].spans)) : std::string{};
             line += " |";
         }
         line += '\n';
@@ -281,7 +298,9 @@ std::string table_to_gfm(const BodyTable& table)
     out += '\n';
 
     for (std::size_t r = 1; r < table.rows.size(); ++r)
+    {
         out += emit_row(table.rows[r]);
+    }
 
     return out;
 }

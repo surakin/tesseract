@@ -10,7 +10,9 @@ namespace pw = tesseract::power;
 bool variant_bool(GVariant* v, bool fallback)
 {
     if (v && g_variant_is_of_type(v, G_VARIANT_TYPE_BOOLEAN))
+    {
         return g_variant_get_boolean(v);
+    }
     return fallback;
 }
 
@@ -18,7 +20,9 @@ bool variant_bool(GVariant* v, bool fallback)
 GVariant* unbox_get_reply(GVariant* reply)
 {
     if (!reply)
+    {
         return nullptr;
+    }
     GVariant* boxed = nullptr;
     g_variant_get(reply, "(v)", &boxed);
     g_variant_unref(reply);
@@ -26,16 +30,17 @@ GVariant* unbox_get_reply(GVariant* reply)
 }
 } // namespace
 
-GVariant* LinuxPowerMonitorGtk::get_prop_(const char* service, const char* path,
-                                          const char* iface, const char* name)
+GVariant* LinuxPowerMonitorGtk::get_prop_(const char* service, const char* path, const char* iface,
+                                          const char* name)
 {
     if (!bus_)
+    {
         return nullptr;
+    }
     GError* err = nullptr;
     GVariant* reply = g_dbus_connection_call_sync(
-        bus_, service, path, pw::kPropsIface, "Get",
-        g_variant_new("(ss)", iface, name), G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &err);
+        bus_, service, path, pw::kPropsIface, "Get", g_variant_new("(ss)", iface, name),
+        G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &err);
     if (err)
     {
         g_error_free(err);
@@ -48,11 +53,12 @@ LinuxPowerMonitorGtk::LinuxPowerMonitorGtk()
 {
     bus_ = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, nullptr);
     if (!bus_)
+    {
         return;
+    }
 
     // power-profiles-daemon: prefer the new bus name, fall back to legacy.
-    if (GVariant* v = get_prop_(pw::kPpdService, pw::kPpdPath, pw::kPpdIface,
-                                "ActiveProfile"))
+    if (GVariant* v = get_prop_(pw::kPpdService, pw::kPpdPath, pw::kPpdIface, "ActiveProfile"))
     {
         g_variant_unref(v);
         ppd_service_ = pw::kPpdService;
@@ -73,16 +79,14 @@ LinuxPowerMonitorGtk::LinuxPowerMonitorGtk()
     refresh_power_saver_();
 
     sub_upower_ = g_dbus_connection_signal_subscribe(
-        bus_, pw::kUPowerService, pw::kPropsIface, "PropertiesChanged",
-        pw::kUPowerPath, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
-        &LinuxPowerMonitorGtk::on_upower_props, this, nullptr);
+        bus_, pw::kUPowerService, pw::kPropsIface, "PropertiesChanged", pw::kUPowerPath, nullptr,
+        G_DBUS_SIGNAL_FLAGS_NONE, &LinuxPowerMonitorGtk::on_upower_props, this, nullptr);
 
     if (!ppd_service_.empty())
     {
         sub_ppd_ = g_dbus_connection_signal_subscribe(
-            bus_, ppd_service_.c_str(), pw::kPropsIface, "PropertiesChanged",
-            ppd_path_.c_str(), nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
-            &LinuxPowerMonitorGtk::on_ppd_props, this, nullptr);
+            bus_, ppd_service_.c_str(), pw::kPropsIface, "PropertiesChanged", ppd_path_.c_str(),
+            nullptr, G_DBUS_SIGNAL_FLAGS_NONE, &LinuxPowerMonitorGtk::on_ppd_props, this, nullptr);
     }
 }
 
@@ -91,29 +95,32 @@ LinuxPowerMonitorGtk::~LinuxPowerMonitorGtk()
     if (bus_)
     {
         if (sub_upower_)
+        {
             g_dbus_connection_signal_unsubscribe(bus_, sub_upower_);
+        }
         if (sub_ppd_)
+        {
             g_dbus_connection_signal_unsubscribe(bus_, sub_ppd_);
+        }
         g_object_unref(bus_);
     }
 }
 
-void LinuxPowerMonitorGtk::on_upower_props(GDBusConnection*, const char*,
-                                           const char*, const char*,
-                                           const char*, GVariant* params,
-                                           gpointer user_data)
+void LinuxPowerMonitorGtk::on_upower_props(GDBusConnection*, const char*, const char*, const char*,
+                                           const char*, GVariant* params, gpointer user_data)
 {
     auto* self = static_cast<LinuxPowerMonitorGtk*>(user_data);
     // params: (sa{sv}as) — iface, changed, invalidated
     GVariant* changed = nullptr;
     g_variant_get_child(params, 1, "@a{sv}", &changed);
-    GVariant* on_batt = changed ? g_variant_lookup_value(changed, "OnBattery",
-                                                         G_VARIANT_TYPE_BOOLEAN)
-                                : nullptr;
+    GVariant* on_batt =
+        changed ? g_variant_lookup_value(changed, "OnBattery", G_VARIANT_TYPE_BOOLEAN) : nullptr;
     if (on_batt)
     {
         if (self->state_.set_on_battery(g_variant_get_boolean(on_batt)))
+        {
             self->notify_();
+        }
         g_variant_unref(on_batt);
     }
     else
@@ -122,25 +129,27 @@ void LinuxPowerMonitorGtk::on_upower_props(GDBusConnection*, const char*,
         self->refresh_on_battery_();
     }
     if (changed)
+    {
         g_variant_unref(changed);
+    }
 }
 
-void LinuxPowerMonitorGtk::on_ppd_props(GDBusConnection*, const char*,
-                                        const char*, const char*, const char*,
-                                        GVariant* params, gpointer user_data)
+void LinuxPowerMonitorGtk::on_ppd_props(GDBusConnection*, const char*, const char*, const char*,
+                                        const char*, GVariant* params, gpointer user_data)
 {
     auto* self = static_cast<LinuxPowerMonitorGtk*>(user_data);
     GVariant* changed = nullptr;
     g_variant_get_child(params, 1, "@a{sv}", &changed);
-    GVariant* prof = changed ? g_variant_lookup_value(changed, "ActiveProfile",
-                                                      G_VARIANT_TYPE_STRING)
-                             : nullptr;
+    GVariant* prof =
+        changed ? g_variant_lookup_value(changed, "ActiveProfile", G_VARIANT_TYPE_STRING) : nullptr;
     if (prof)
     {
         const char* s = g_variant_get_string(prof, nullptr);
         const bool saver = g_strcmp0(s, tesseract::power::kPowerSaverProfile) == 0;
         if (self->state_.set_power_saver(saver))
+        {
             self->notify_();
+        }
         g_variant_unref(prof);
     }
     else
@@ -148,25 +157,30 @@ void LinuxPowerMonitorGtk::on_ppd_props(GDBusConnection*, const char*,
         self->refresh_power_saver_();
     }
     if (changed)
+    {
         g_variant_unref(changed);
+    }
 }
 
 void LinuxPowerMonitorGtk::detect_battery_()
 {
     if (!bus_)
+    {
         return;
+    }
     GError* err = nullptr;
     GVariant* reply = g_dbus_connection_call_sync(
-        bus_, pw::kUPowerService, pw::kUPowerPath, pw::kUPowerIface,
-        "EnumerateDevices", nullptr, G_VARIANT_TYPE("(ao)"),
-        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &err);
+        bus_, pw::kUPowerService, pw::kUPowerPath, pw::kUPowerIface, "EnumerateDevices", nullptr,
+        G_VARIANT_TYPE("(ao)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &err);
     if (err)
     {
         g_error_free(err);
         return; // no UPower → assume no battery (desktop / headless)
     }
     if (!reply)
+    {
         return;
+    }
 
     constexpr const char* kDevIface = "org.freedesktop.UPower.Device";
     GVariantIter* it = nullptr;
@@ -174,20 +188,21 @@ void LinuxPowerMonitorGtk::detect_battery_()
     const char* path = nullptr;
     while (it && g_variant_iter_next(it, "&o", &path))
     {
-        GVariant* type =
-            get_prop_(pw::kUPowerService, path, kDevIface, "Type");
-        GVariant* supply =
-            get_prop_(pw::kUPowerService, path, kDevIface, "PowerSupply");
+        GVariant* type = get_prop_(pw::kUPowerService, path, kDevIface, "Type");
+        GVariant* supply = get_prop_(pw::kUPowerService, path, kDevIface, "PowerSupply");
         // UPower device Type enum: 2 == Battery.
-        const bool is_batt =
-            type && g_variant_is_of_type(type, G_VARIANT_TYPE_UINT32) &&
-            g_variant_get_uint32(type) == 2 && supply &&
-            g_variant_is_of_type(supply, G_VARIANT_TYPE_BOOLEAN) &&
-            g_variant_get_boolean(supply);
+        const bool is_batt = type && g_variant_is_of_type(type, G_VARIANT_TYPE_UINT32) &&
+                             g_variant_get_uint32(type) == 2 && supply &&
+                             g_variant_is_of_type(supply, G_VARIANT_TYPE_BOOLEAN) &&
+                             g_variant_get_boolean(supply);
         if (type)
+        {
             g_variant_unref(type);
+        }
         if (supply)
+        {
             g_variant_unref(supply);
+        }
         if (is_batt)
         {
             has_battery_ = true;
@@ -195,19 +210,22 @@ void LinuxPowerMonitorGtk::detect_battery_()
         }
     }
     if (it)
+    {
         g_variant_iter_free(it);
+    }
     g_variant_unref(reply);
 }
 
 void LinuxPowerMonitorGtk::refresh_on_battery_()
 {
-    GVariant* v = get_prop_(tesseract::power::kUPowerService,
-                            tesseract::power::kUPowerPath,
+    GVariant* v = get_prop_(tesseract::power::kUPowerService, tesseract::power::kUPowerPath,
                             tesseract::power::kUPowerIface, "OnBattery");
     if (v)
     {
         if (state_.set_on_battery(variant_bool(v, false)))
+        {
             notify_();
+        }
         g_variant_unref(v);
     }
 }
@@ -215,18 +233,23 @@ void LinuxPowerMonitorGtk::refresh_on_battery_()
 void LinuxPowerMonitorGtk::refresh_power_saver_()
 {
     if (ppd_service_.empty())
+    {
         return;
-    GVariant* v = get_prop_(ppd_service_.c_str(), ppd_path_.c_str(),
-                            ppd_iface_.c_str(), "ActiveProfile");
+    }
+    GVariant* v =
+        get_prop_(ppd_service_.c_str(), ppd_path_.c_str(), ppd_iface_.c_str(), "ActiveProfile");
     if (v)
     {
         const char* s = nullptr;
         if (g_variant_is_of_type(v, G_VARIANT_TYPE_STRING))
+        {
             s = g_variant_get_string(v, nullptr);
-        const bool saver =
-            s && g_strcmp0(s, tesseract::power::kPowerSaverProfile) == 0;
+        }
+        const bool saver = s && g_strcmp0(s, tesseract::power::kPowerSaverProfile) == 0;
         if (state_.set_power_saver(saver))
+        {
             notify_();
+        }
         g_variant_unref(v);
     }
 }
@@ -237,7 +260,9 @@ void LinuxPowerMonitorGtk::notify_()
     // connection was created on — here the GTK main thread — so calling
     // on_change directly is safe.
     if (on_change)
+    {
         on_change();
+    }
 }
 
 } // namespace gtk4

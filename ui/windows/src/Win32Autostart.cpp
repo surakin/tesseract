@@ -23,7 +23,9 @@ const wchar_t* value_name()
     {
         std::wstring n = L"Tesseract";
         for (char c : tesseract::profile_suffix())
+        {
             n.push_back(static_cast<wchar_t>(c));
+        }
         return n;
     }();
     return name.c_str();
@@ -39,8 +41,7 @@ bool Win32Autostart::is_enabled() const
             using winrt::Windows::ApplicationModel::StartupTask;
             using winrt::Windows::ApplicationModel::StartupTaskState;
             const auto state = StartupTask::GetAsync(L"TesseractStartup").get().State();
-            return state == StartupTaskState::Enabled ||
-                   state == StartupTaskState::EnabledByPolicy;
+            return state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy;
         }
         catch (const winrt::hresult_error&)
         {
@@ -48,8 +49,7 @@ bool Win32Autostart::is_enabled() const
         }
     }
     HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_QUERY_VALUE, &key)
-        != ERROR_SUCCESS)
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS)
     {
         return false;
     }
@@ -73,8 +73,7 @@ bool Win32Autostart::set_enabled(bool enabled)
                 return true;
             }
             const auto state = task.RequestEnableAsync().get();
-            return state == StartupTaskState::Enabled ||
-                   state == StartupTaskState::EnabledByPolicy;
+            return state == StartupTaskState::Enabled || state == StartupTaskState::EnabledByPolicy;
         }
         catch (const winrt::hresult_error&)
         {
@@ -84,8 +83,7 @@ bool Win32Autostart::set_enabled(bool enabled)
     if (!enabled)
     {
         HKEY key = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_SET_VALUE, &key)
-            != ERROR_SUCCESS)
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS)
         {
             // Key doesn't exist at all: nothing to remove, already disabled.
             return true;
@@ -97,27 +95,29 @@ bool Win32Autostart::set_enabled(bool enabled)
 
     wchar_t exe_path[MAX_PATH]{};
     if (GetModuleFileNameW(nullptr, exe_path, MAX_PATH) == 0)
+    {
         return false;
+    }
 
     std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" --autostart";
     for (const auto& arg : tesseract::profile_relaunch_args(tesseract::profile()))
     {
         cmd += L" ";
         for (char c : arg)
+        {
             cmd.push_back(static_cast<wchar_t>(c));
+        }
     }
 
     HKEY key = nullptr;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, nullptr,
-                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr, &key,
-                        nullptr) != ERROR_SUCCESS)
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, nullptr, REG_OPTION_NON_VOLATILE,
+                        KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS)
     {
         return false;
     }
-    LONG result = RegSetValueExW(
-        key, value_name(), 0, REG_SZ,
-        reinterpret_cast<const BYTE*>(cmd.c_str()),
-        static_cast<DWORD>((cmd.size() + 1) * sizeof(wchar_t)));
+    LONG result =
+        RegSetValueExW(key, value_name(), 0, REG_SZ, reinterpret_cast<const BYTE*>(cmd.c_str()),
+                       static_cast<DWORD>((cmd.size() + 1) * sizeof(wchar_t)));
     RegCloseKey(key);
     return result == ERROR_SUCCESS;
 }

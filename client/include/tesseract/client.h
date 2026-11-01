@@ -72,13 +72,14 @@ struct PaginateResult
 
 /// Extended profile fields from MSC4133 companion proposals.
 /// Populated by Client::get_extended_profile().
-struct ExtendedProfile {
+struct ExtendedProfile
+{
     std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
-    std::string tz;         ///< MSC4175 IANA timezone string, empty if not set
-    std::string biography;  ///< MSC4440 plain-text body, empty if not set
-    std::string status_emoji; ///< MSC4426 m.status emoji, empty if not set
-    std::string status_text;  ///< MSC4426 m.status text, empty if not set
-    std::uint64_t call_joined_ts = 0; ///< MSC4426 m.call join time (unix s); 0 = not in a call
+    std::string tz;                     ///< MSC4175 IANA timezone string, empty if not set
+    std::string biography;              ///< MSC4440 plain-text body, empty if not set
+    std::string status_emoji;           ///< MSC4426 m.status emoji, empty if not set
+    std::string status_text;            ///< MSC4426 m.status text, empty if not set
+    std::uint64_t call_joined_ts = 0;   ///< MSC4426 m.call join time (unix s); 0 = not in a call
 
     /// Applies a single field's just-written wire value (the same
     /// `value_json` passed to Client::set_or_delete_profile_field_async, one
@@ -170,10 +171,9 @@ public:
 
     struct DiscoveryResult
     {
-        bool ok = false; ///< false when the server is unreachable
-        std::string
-            base_url; ///< resolved base URL, e.g. "https://matrix-client.matrix.org"
-        std::string error; ///< human-readable error when ok==false
+        bool ok = false;      ///< false when the server is unreachable
+        std::string base_url; ///< resolved base URL, e.g. "https://matrix-client.matrix.org"
+        std::string error;    ///< human-readable error when ok==false
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
         /// Best-effort: does the homeserver advertise m.login.password among
         /// its login flows? Drives LoginView's auto-detect between OAuth and
@@ -195,7 +195,10 @@ public:
         std::vector<uint8_t> pixels; ///< RGBA, side×side×4 bytes
         uint32_t side = 0;           ///< width == height (QR is square)
 
-        explicit operator bool() const noexcept { return ok; }
+        explicit operator bool() const noexcept
+        {
+            return ok;
+        }
     };
 
     /// Returned when the QR grant flow reaches WaitingForAuth.
@@ -205,7 +208,10 @@ public:
         std::string message;
         std::string verification_uri;
 
-        explicit operator bool() const noexcept { return ok; }
+        explicit operator bool() const noexcept
+        {
+            return ok;
+        }
     };
 
     /// Discover the homeserver URL for a server name or Matrix ID.
@@ -219,8 +225,7 @@ public:
     /// true (OIDC prompt=create). Returns the auth URL to open in a browser.
     /// A full Matrix ID in `user_id_hint` asks the server to prefill the
     /// username (ignored for registration or when malformed).
-    OAuthFlow begin_oauth(const std::string& homeserver,
-                          bool register_account = false,
+    OAuthFlow begin_oauth(const std::string& homeserver, bool register_account = false,
                           const std::string& user_id_hint = {});
 
     /// Best-effort: does `homeserver` advertise OIDC registration support?
@@ -245,9 +250,8 @@ public:
     /// Log in with a Matrix user ID (e.g. "@user:example.org") or bare
     /// localpart, plus password. Blocks the calling thread — invoke from a
     /// worker thread.
-    Result login_password(const std::string& homeserver,
-                           const std::string& username,
-                           const std::string& password);
+    Result login_password(const std::string& homeserver, const std::string& username,
+                          const std::string& password);
 #endif
 
     // ------------------------------------------------------------------
@@ -353,13 +357,13 @@ public:
     {
         enum class Kind : uint8_t
         {
-            Unknown   = 0,
-            Room      = 1, // primary = !room:server
+            Unknown = 0,
+            Room = 1,      // primary = !room:server
             RoomAlias = 2, // primary = #alias:server
-            User      = 3, // primary = @user:server
-            Event     = 4, // primary = !room:server, event_id = $evt:server
+            User = 3,      // primary = @user:server
+            Event = 4,     // primary = !room:server, event_id = $evt:server
         };
-        Kind        kind     = Kind::Unknown;
+        Kind kind = Kind::Unknown;
         std::string primary;
         std::string event_id;
         /// Server names from the link's `?via=` params (may be empty), in
@@ -431,15 +435,13 @@ public:
 
     /// Non-blocking accept. Spawns the join as a tokio task; result delivered
     /// via IEventHandler::on_room_action_complete.
-    void accept_invite_async(std::uint64_t request_id,
-                             const std::string& room_id);
+    void accept_invite_async(std::uint64_t request_id, const std::string& room_id);
 
     /// Non-blocking decline. Fire-and-forget; no callback.
     void decline_invite_async(const std::string& room_id);
 
     /// Non-blocking block-invite. Fire-and-forget; no callback.
-    void block_invite_async(const std::string& room_id,
-                            const std::string& inviter_user_id);
+    void block_invite_async(const std::string& room_id, const std::string& inviter_user_id);
 
     // ------------------------------------------------------------------
     // Room knocking (MSC2403)
@@ -451,10 +453,8 @@ public:
     /// for none. `via` supplies extra routing server names (a permalink's
     /// `?via=`); the SDK also derives hints from joined spaces and the
     /// room/alias domain.
-    void knock_room_async(std::uint64_t request_id,
-                          const std::string& room_id_or_alias,
-                          const std::string& reason,
-                          const std::vector<std::string>& via = {});
+    void knock_room_async(std::uint64_t request_id, const std::string& room_id_or_alias,
+                          const std::string& reason, const std::vector<std::string>& via = {});
 
     /// Snapshot of every room the current user has knocked on and is still
     /// awaiting a decision for. Reads the local SDK cache — no network
@@ -486,20 +486,17 @@ public:
 
     /// Non-blocking accept: invites the requester into `room_id`. Result
     /// delivered via IEventHandler::on_room_action_complete.
-    void accept_knock_request_async(std::uint64_t request_id,
-                                    const std::string& room_id,
+    void accept_knock_request_async(std::uint64_t request_id, const std::string& room_id,
                                     const std::string& user_id);
 
     /// Non-blocking decline: kicks the requester from `room_id` with an
     /// optional reason. Fire-and-forget; no callback.
-    void decline_knock_request_async(const std::string& room_id,
-                                     const std::string& user_id,
+    void decline_knock_request_async(const std::string& room_id, const std::string& user_id,
                                      const std::string& reason);
 
     /// Non-blocking decline-and-ban: bans the requester from `room_id` with
     /// an optional reason. Fire-and-forget; no callback.
-    void decline_and_ban_knock_request_async(const std::string& room_id,
-                                             const std::string& user_id,
+    void decline_and_ban_knock_request_async(const std::string& room_id, const std::string& user_id,
                                              const std::string& reason);
 
     // ------------------------------------------------------------------
@@ -518,15 +515,13 @@ public:
     /// has reached its first event. Older history arrives via
     /// `IEventHandler::on_message_prepended`. UIs use `reached_start` to disable the
     /// scroll-up pagination trigger once no more history can be fetched.
-    PaginateResult paginate_back_with_status(const std::string& room_id,
-                                             std::uint16_t count);
+    PaginateResult paginate_back_with_status(const std::string& room_id, std::uint16_t count);
 
     /// Non-blocking counterpart of `paginate_back_with_status`. Spawns the
     /// HTTP request as a tokio task and delivers the result via
     /// `IEventHandler::on_paginate_result(request_id, …)`. Does not pin a
     /// C++ worker thread during the network round-trip.
-    void paginate_back_async(std::uint64_t request_id,
-                             const std::string& room_id,
+    void paginate_back_async(std::uint64_t request_id, const std::string& room_id,
                              std::uint16_t count);
 
     /// Backward pagination dedicated to the room-media gallery. Same
@@ -535,8 +530,7 @@ public:
     /// carries an authoritative Image/Video count read directly from the SDK
     /// timeline — decoupled from the separate, slower diff-streaming task
     /// that delivers rendered rows to the UI.
-    void paginate_media_view_back_async(std::uint64_t request_id,
-                                        const std::string& room_id,
+    void paginate_media_view_back_async(std::uint64_t request_id, const std::string& room_id,
                                         std::uint16_t count);
 
     /// Abort an in-flight `paginate_back_async` or
@@ -555,8 +549,7 @@ public:
     /// and exactly one `IEventHandler::on_room_export_complete`. Only one
     /// export runs app-wide at a time; a second call while one is in
     /// flight completes immediately with `ok=false`.
-    void start_room_export_async(std::uint64_t request_id,
-                                 const std::string& room_id,
+    void start_room_export_async(std::uint64_t request_id, const std::string& room_id,
                                  const RoomExportOptions& options);
 
     /// Cooperatively cancels an in-flight export. Unlike
@@ -584,8 +577,7 @@ public:
 
     /// Non-blocking counterpart of `paginate_forward`. Delivers result via
     /// `IEventHandler::on_paginate_result(request_id, …)`.
-    void paginate_forward_async(std::uint64_t request_id,
-                                const std::string& room_id,
+    void paginate_forward_async(std::uint64_t request_id, const std::string& room_id,
                                 std::uint16_t count);
 
     /// MSC3030 Jump to Date: resolve a Unix millisecond timestamp to the
@@ -593,29 +585,24 @@ public:
     /// ≥ ts) or `"b"` (backward — last event ≤ ts). On success
     /// `Result::message` holds the resolved event ID; on failure it holds
     /// the error description.
-    Result timestamp_to_event(const std::string& room_id, uint64_t ts_ms,
-                              const std::string& dir);
+    Result timestamp_to_event(const std::string& room_id, uint64_t ts_ms, const std::string& dir);
 
     /// MSC3030 Jump to Date: subscribe to a room's timeline focused on a
     /// specific event. Behaves like `subscribe_room` but centers the
     /// timeline on `focus_event_id`. Call `paginate_forward_async` (and
     /// `paginate_back_async`) to load events in either direction from the focus.
-    Result subscribe_room_at(const std::string& room_id,
-                             const std::string& focus_event_id);
+    Result subscribe_room_at(const std::string& room_id, const std::string& focus_event_id);
 
     /// Subscribe to the thread rooted at `root_event_id` in `room_id`. Fires
     /// IEventHandler::on_thread_* callbacks.
-    Result subscribe_thread(const std::string& room_id,
-                            const std::string& root_event_id);
+    Result subscribe_thread(const std::string& room_id, const std::string& root_event_id);
 
     /// Unsubscribe from a thread timeline.
-    void unsubscribe_thread(const std::string& room_id,
-                            const std::string& root_event_id);
+    void unsubscribe_thread(const std::string& room_id, const std::string& root_event_id);
 
     /// Paginate backwards in a subscribed thread timeline.
     PaginateResult paginate_thread_back(const std::string& room_id,
-                                        const std::string& root_event_id,
-                                        std::uint16_t count);
+                                        const std::string& root_event_id, std::uint16_t count);
 
     /// Start watching the thread list for `room_id` (fires
     /// IEventHandler::on_threads_updated on changes).
@@ -628,19 +615,17 @@ public:
     /// otherwise. Checks the event cache, then fetches the event from the
     /// homeserver. Blocks on the runtime (and possibly the network), so call it
     /// off the UI thread.
-    std::string thread_root_for_event(const std::string& room_id,
-                                      const std::string& event_id);
+    std::string thread_root_for_event(const std::string& room_id, const std::string& event_id);
     /// MSC4306: true when the homeserver supports thread subscriptions and
     /// the client opted in. Every call below is inert (false / failing
     /// Result) otherwise.
     bool thread_subscriptions_enabled();
     /// Whether the user follows the thread rooted at `thread_root_id`.
-    bool is_thread_followed(const std::string& room_id,
-                            const std::string& thread_root_id);
+    bool is_thread_followed(const std::string& room_id, const std::string& thread_root_id);
     /// Follow (manual subscription) or unfollow a thread. Fires
     /// IEventHandler::on_threads_updated on success.
-    Result set_thread_followed(const std::string& room_id,
-                               const std::string& thread_root_id, bool follow);
+    Result set_thread_followed(const std::string& room_id, const std::string& thread_root_id,
+                               bool follow);
 
     /// Kick off a background pass that paginates the given rooms (those
     /// currently visible in the room list), up to ~50 events each, with
@@ -713,12 +698,10 @@ public:
     /// map serialised as JSON — this call does no schema validation;
     /// callers validate against the command's `CommandDescription` first
     /// (see `match_bot_command_arguments`, ui/shared/app/SlashCommands.h).
-    Result send_bot_command(const std::string& room_id,
-                            const std::string& body,
+    Result send_bot_command(const std::string& room_id, const std::string& body,
                             const std::string& formatted_body,
                             const std::vector<std::string>& mentioned_user_ids,
-                            const std::string& command,
-                            const std::string& arguments_json);
+                            const std::string& command, const std::string& arguments_json);
 
     /// Re-enable the send queue for `room_id` after a recoverable failure.
     /// A non-empty `txn_id` also unwedges that local echo, for a send that
@@ -754,25 +737,18 @@ public:
     /// loop on capable clients (the standard upload path strips these fields).
     ///
     /// When non-empty, sends into this thread root (MSC3440).
-    Result send_image(const std::string& room_id,
-                      const std::vector<uint8_t>& bytes,
+    Result send_image(const std::string& room_id, const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
-                      const std::string& caption, std::uint32_t width,
-                      std::uint32_t height,
-                      bool is_animated,
-                      const std::string& reply_event_id = "",
+                      const std::string& caption, std::uint32_t width, std::uint32_t height,
+                      bool is_animated, const std::string& reply_event_id = "",
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking image send. Spawns the upload as a tokio task; result
     /// delivered via IEventHandler::on_upload_complete.
-    void send_image_async(std::uint64_t request_id,
-                          const std::string& room_id,
-                          const std::vector<uint8_t>& bytes,
-                          const std::string& mime_type,
-                          const std::string& filename,
-                          const std::string& caption,
-                          std::uint32_t width, std::uint32_t height,
-                          bool is_animated,
+    void send_image_async(std::uint64_t request_id, const std::string& room_id,
+                          const std::vector<uint8_t>& bytes, const std::string& mime_type,
+                          const std::string& filename, const std::string& caption,
+                          std::uint32_t width, std::uint32_t height, bool is_animated,
                           const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
@@ -786,29 +762,22 @@ public:
     /// E2EE rooms are handled transparently.
     ///
     /// When non-empty, sends into this thread root (MSC3440).
-    Result send_video(const std::string& room_id,
-                      const std::vector<uint8_t>& bytes,
+    Result send_video(const std::string& room_id, const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
-                      const std::string& caption,
-                      std::uint32_t width, std::uint32_t height,
-                      const std::vector<uint8_t>& thumb_bytes,
-                      std::uint32_t thumb_width, std::uint32_t thumb_height,
-                      std::uint64_t duration_ms,
+                      const std::string& caption, std::uint32_t width, std::uint32_t height,
+                      const std::vector<uint8_t>& thumb_bytes, std::uint32_t thumb_width,
+                      std::uint32_t thumb_height, std::uint64_t duration_ms,
                       const std::string& reply_event_id = "",
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking video send. Spawns the upload as a tokio task; result
     /// delivered via IEventHandler::on_upload_complete.
-    void send_video_async(std::uint64_t request_id,
-                          const std::string& room_id,
-                          const std::vector<uint8_t>& bytes,
-                          const std::string& mime_type,
-                          const std::string& filename,
-                          const std::string& caption,
+    void send_video_async(std::uint64_t request_id, const std::string& room_id,
+                          const std::vector<uint8_t>& bytes, const std::string& mime_type,
+                          const std::string& filename, const std::string& caption,
                           std::uint32_t width, std::uint32_t height,
-                          const std::vector<uint8_t>& thumb_bytes,
-                          std::uint32_t thumb_width, std::uint32_t thumb_height,
-                          std::uint64_t duration_ms,
+                          const std::vector<uint8_t>& thumb_bytes, std::uint32_t thumb_width,
+                          std::uint32_t thumb_height, std::uint64_t duration_ms,
                           const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
@@ -820,10 +789,8 @@ public:
     /// doc comment on ClientFfi::send_gallery_async for why). Requires 2+
     /// items; send a lone attachment via send_image_async/send_video_async/
     /// send_audio_async/send_file_async instead.
-    void send_gallery_async(std::uint64_t request_id,
-                            const std::string& room_id,
-                            const std::vector<GalleryItemOut>& items,
-                            const std::string& caption,
+    void send_gallery_async(std::uint64_t request_id, const std::string& room_id,
+                            const std::vector<GalleryItemOut>& items, const std::string& caption,
                             const std::string& reply_event_id = "",
                             const std::string& thread_root = std::string{});
 
@@ -834,24 +801,18 @@ public:
     /// transparently.
     ///
     /// When non-empty, sends into this thread root (MSC3440).
-    Result send_audio(const std::string& room_id,
-                      const std::vector<uint8_t>& bytes,
+    Result send_audio(const std::string& room_id, const std::vector<uint8_t>& bytes,
                       const std::string& mime_type, const std::string& filename,
-                      const std::string& caption,
-                      std::uint64_t duration_ms,
+                      const std::string& caption, std::uint64_t duration_ms,
                       const std::string& reply_event_id = "",
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking audio send. Spawns the upload as a tokio task; result
     /// delivered via IEventHandler::on_upload_complete.
-    void send_audio_async(std::uint64_t request_id,
-                          const std::string& room_id,
-                          const std::vector<uint8_t>& bytes,
-                          const std::string& mime_type,
-                          const std::string& filename,
-                          const std::string& caption,
-                          std::uint64_t duration_ms,
-                          const std::string& reply_event_id = "",
+    void send_audio_async(std::uint64_t request_id, const std::string& room_id,
+                          const std::vector<uint8_t>& bytes, const std::string& mime_type,
+                          const std::string& filename, const std::string& caption,
+                          std::uint64_t duration_ms, const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
     /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is
@@ -862,21 +823,16 @@ public:
     /// handled transparently by matrix-sdk.
     ///
     /// When non-empty, sends into this thread root (MSC3440).
-    Result send_file(const std::string& room_id,
-                     const std::vector<uint8_t>& bytes,
+    Result send_file(const std::string& room_id, const std::vector<uint8_t>& bytes,
                      const std::string& mime_type, const std::string& filename,
-                     const std::string& caption,
-                     const std::string& reply_event_id = "",
+                     const std::string& caption, const std::string& reply_event_id = "",
                      const std::string& thread_root = std::string{});
 
     /// Non-blocking file send. Spawns the upload as a tokio task; result
     /// delivered via IEventHandler::on_upload_complete.
-    void send_file_async(std::uint64_t request_id,
-                         const std::string& room_id,
-                         const std::vector<uint8_t>& bytes,
-                         const std::string& mime_type,
-                         const std::string& filename,
-                         const std::string& caption,
+    void send_file_async(std::uint64_t request_id, const std::string& room_id,
+                         const std::vector<uint8_t>& bytes, const std::string& mime_type,
+                         const std::string& filename, const std::string& caption,
                          const std::string& reply_event_id = "",
                          const std::string& thread_root = std::string{});
 
@@ -886,22 +842,16 @@ public:
     /// `caption` and `reply_event_id` follow the same semantics as send_image().
     ///
     /// When non-empty, sends into this thread root (MSC3440).
-    Result send_voice(const std::string& room_id,
-                      const std::uint8_t* pcm, std::size_t pcm_size,
-                      std::uint64_t duration_ms,
-                      const std::vector<std::uint16_t>& waveform,
-                      const std::string& caption,
-                      const std::string& reply_event_id,
+    Result send_voice(const std::string& room_id, const std::uint8_t* pcm, std::size_t pcm_size,
+                      std::uint64_t duration_ms, const std::vector<std::uint16_t>& waveform,
+                      const std::string& caption, const std::string& reply_event_id,
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking voice-message send with upload progress and completion
     /// delivered through IEventHandler.
-    void send_voice_async(std::uint64_t request_id,
-                          const std::string& room_id,
-                          const std::uint8_t* pcm, std::size_t pcm_size,
-                          std::uint64_t duration_ms,
-                          const std::vector<std::uint16_t>& waveform,
-                          const std::string& caption,
+    void send_voice_async(std::uint64_t request_id, const std::string& room_id,
+                          const std::uint8_t* pcm, std::size_t pcm_size, std::uint64_t duration_ms,
+                          const std::vector<std::uint16_t>& waveform, const std::string& caption,
                           const std::string& reply_event_id,
                           const std::string& thread_root = std::string{});
 
@@ -915,20 +865,17 @@ public:
     /// Send public `m.read` and private `m.read.private` receipts for
     /// `event_id` in `room_id`. Blocks until acknowledged. Does not require
     /// `subscribe_room`.
-    Result send_read_receipt(const std::string& room_id,
-                             const std::string& event_id);
+    Result send_read_receipt(const std::string& room_id, const std::string& event_id);
 
     /// Send public `m.read` and private `m.read.private` receipts for the
     /// latest cached event in `room_id`, plus `m.fully_read` when
     /// `include_fully_read` is set. Clears the unread count. Does not
     /// require `subscribe_room`.
-    Result mark_room_as_read(const std::string& room_id,
-                             bool include_fully_read = true);
+    Result mark_room_as_read(const std::string& room_id, bool include_fully_read = true);
 
     /// Move the `m.fully_read` marker (the timeline's "New messages"
     /// divider) to `event_id`. Blocks until acknowledged.
-    Result set_fully_read_marker(const std::string& room_id,
-                                 const std::string& event_id);
+    Result set_fully_read_marker(const std::string& room_id, const std::string& event_id);
 
     /// The room's `m.fully_read` marker (event id, plus its timestamp when
     /// the event cache holds the event). Reads the local store; does not
@@ -949,8 +896,7 @@ public:
     /// visible in the thread view); pass it whenever known so the receipt
     /// targets a real in-thread reply. Pass "" to let the SDK fall back to
     /// the thread list's latest known reply.
-    Result send_thread_read_receipt(const std::string& room_id,
-                                    const std::string& thread_root_id,
+    Result send_thread_read_receipt(const std::string& room_id, const std::string& thread_root_id,
                                     const std::string& event_id);
 
     /// Send threaded read receipts for every thread in `room_id` that has an
@@ -962,17 +908,15 @@ public:
     /// First call adds the reaction; second redacts it. Requires that the
     /// room is currently subscribed via `subscribe_room`. `key` may be a
     /// Unicode emoji (e.g. "👍") or an mxc:// URI for MSC4027 image reactions.
-    Result send_reaction(const std::string& room_id,
-                         const std::string& event_id, const std::string& key);
+    Result send_reaction(const std::string& room_id, const std::string& event_id,
+                         const std::string& key);
 
     /// Send an MSC4027 custom-image reaction (always adds, never toggles).
     /// `key` is the mxc:// URI; `shortcode` is stored as
     /// `com.beeper.reaction.shortcode` and may be empty. Use `send_reaction`
     /// (with the same mxc:// key) to redact/toggle.
-    Result send_reaction_custom(const std::string& room_id,
-                                const std::string& event_id,
-                                const std::string& key,
-                                const std::string& shortcode);
+    Result send_reaction_custom(const std::string& room_id, const std::string& event_id,
+                                const std::string& key, const std::string& shortcode);
 
     /// Redact (delete) `event_id` in `room_id`. `reason` may be empty.
     /// Requires that the room is currently subscribed via `subscribe_room`.
@@ -998,24 +942,19 @@ public:
     /// Send `body` as an `m.text` reply to `event_id` in `room_id`. Builds
     /// the `m.in_reply_to` relation. Does not require `subscribe_room`.
     Result send_reply(const std::string& room_id, const std::string& event_id,
-                      const std::string& body,
-                      const std::string& formatted_body = "",
+                      const std::string& body, const std::string& formatted_body = "",
                       const std::string& url_previews_json = "");
 
     /// Send `body` into the thread rooted at `thread_root` (MSC3440). Does not
     /// require subscribe_room.
-    Result send_thread_message(const std::string& room_id,
-                               const std::string& thread_root,
-                               const std::string& body,
-                               const std::string& formatted_body,
+    Result send_thread_message(const std::string& room_id, const std::string& thread_root,
+                               const std::string& body, const std::string& formatted_body,
                                const std::string& url_previews_json = "");
 
     /// Reply to `in_reply_to_event_id` within the thread rooted at
     /// `thread_root`. Does not require subscribe_room.
-    Result send_thread_reply(const std::string& room_id,
-                             const std::string& thread_root,
-                             const std::string& in_reply_to_event_id,
-                             const std::string& body,
+    Result send_thread_reply(const std::string& room_id, const std::string& thread_root,
+                             const std::string& in_reply_to_event_id, const std::string& body,
                              const std::string& formatted_body,
                              const std::string& url_previews_json = "");
 
@@ -1032,19 +971,18 @@ public:
     /// coordinates. `body` is the plain-text fallback shown by clients that
     /// don't render locations (typically the trimmed maps URL itself).
     Result send_location(const std::string& room_id, double lat, double lon,
-                        const std::string& body);
+                         const std::string& body);
 
     /// Send an MSC3381 poll start (`question`, `answers`, up to
     /// `max_selections` choices; `disclosed` = results visible before the
     /// poll ends). Blocks like `send_reaction`; call from a worker thread.
     Result send_poll(const std::string& room_id, const std::string& question,
-                     const std::vector<std::string>& answers,
-                     std::uint32_t max_selections, bool disclosed);
+                     const std::vector<std::string>& answers, std::uint32_t max_selections,
+                     bool disclosed);
 
     /// Cast (or replace) our vote on `poll_event_id` with `answer_ids`.
     /// Blocks like `send_reaction`; call from a worker thread.
-    Result send_poll_response(const std::string& room_id,
-                              const std::string& poll_event_id,
+    Result send_poll_response(const std::string& room_id, const std::string& poll_event_id,
                               const std::vector<std::string>& answer_ids);
 
     /// End the poll `poll_event_id` (sends the poll end event). Blocks like
@@ -1059,15 +997,13 @@ public:
     /// `on_message_updated`/`on_thread_updated` for every timeline item
     /// referencing it, so the UI re-paints the quote block with the sender
     /// name and snippet.
-    Result fetch_reply_details(const std::string& room_id,
-                               const std::string& event_id,
+    Result fetch_reply_details(const std::string& room_id, const std::string& event_id,
                                const std::string& thread_root = std::string());
 
     /// Edit `event_id` in `room_id` replacing its body with `new_body`.
     /// Only works on own `m.text` events. Does not require `subscribe_room`.
     Result send_edit(const std::string& room_id, const std::string& event_id,
-                     const std::string& new_body,
-                     const std::string& formatted_body = "",
+                     const std::string& new_body, const std::string& formatted_body = "",
                      const std::string& url_previews_json = "");
 
     /// Edit the caption of an image/file/video/audio/voice `event_id` in
@@ -1082,10 +1018,8 @@ public:
     /// and sends it as a new free-standing event in the target room.
     /// Non-blocking: result delivered via IEventHandler::on_forward_done /
     /// on_forward_failed with the supplied request_id.
-    void forward_event(std::uint64_t      request_id,
-                       const std::string& source_room_id,
-                       const std::string& event_id,
-                       const std::string& target_room_id);
+    void forward_event(std::uint64_t request_id, const std::string& source_room_id,
+                       const std::string& event_id, const std::string& target_room_id);
 
     /// Read the raw, pretty-printed JSON of `event_id`'s original event (not
     /// a later edit) from the room's already-loaded timeline state. No
@@ -1093,8 +1027,7 @@ public:
     /// room's subscribed timeline's item list (true for any event whose
     /// message row is currently on screen). Returns an empty string if the
     /// room isn't subscribed or the event isn't in its loaded item list.
-    std::string get_event_source(const std::string& room_id,
-                                  const std::string& event_id);
+    std::string get_event_source(const std::string& room_id, const std::string& event_id);
 
     // ------------------------------------------------------------------
     // Application prefs ("im.gnomos.tesseract" global account-data)
@@ -1125,8 +1058,7 @@ public:
     /// Write the global MSC4278 config, dual-writing the stable and unstable
     /// account-data types. Fire-and-forget — returns immediately; the echo
     /// arrives on the next sync and triggers `on_media_preview_config_updated`.
-    void save_media_preview_config(MediaPreviewConfig::Mode media_previews,
-                                   bool invite_avatars);
+    void save_media_preview_config(MediaPreviewConfig::Mode media_previews, bool invite_avatars);
 
     /// Write (or clear) the per-room MSC4278 `media_previews` override for
     /// `room_id`, dual-writing the stable and unstable room-account-data
@@ -1135,8 +1067,7 @@ public:
     /// surface a real error instead of assuming success. `has_override ==
     /// false` clears the override (the room reverts to inheriting the
     /// global config); `media_previews` is ignored in that case.
-    Result save_room_media_preview_override(const std::string& room_id,
-                                            bool has_override,
+    Result save_room_media_preview_override(const std::string& room_id, bool has_override,
                                             MediaPreviewConfig::Mode media_previews);
 
     // Recent emoji (MSC4356 + Element's "io.element.recent_emoji" account-data)
@@ -1182,14 +1113,12 @@ public:
     /// `bytes` is the raw image payload (PNG/JPEG/etc. — identified by
     /// `mime_type`, e.g. "image/png" or "image/jpeg").
     /// Blocks the calling thread — call from a worker thread.
-    Result upload_avatar(const std::vector<uint8_t>& bytes,
-                         const std::string& mime_type);
+    Result upload_avatar(const std::vector<uint8_t>& bytes, const std::string& mime_type);
 
     /// Upload bytes to the media server and return the mxc:// URI in
     /// Result.message. Does NOT change the user's global profile avatar.
     /// Blocks the calling thread — call from a worker thread.
-    Result upload_media(const std::vector<uint8_t>& bytes,
-                        const std::string& mime_type);
+    Result upload_media(const std::vector<uint8_t>& bytes, const std::string& mime_type);
 
     /// Remove the current user's avatar from the homeserver.
     /// Blocks the calling thread — call from a worker thread.
@@ -1234,7 +1163,10 @@ public:
         std::string fallback_url;
         std::string session;
 
-        explicit operator bool() const noexcept { return ok; }
+        explicit operator bool() const noexcept
+        {
+            return ok;
+        }
     };
 
     /// Returns the current device ID (e.g. "ABCDEFGHIJ"), or an empty
@@ -1247,8 +1179,7 @@ public:
     std::vector<Device> list_devices() const;
 
     /// Rename a device (no UIA required). Blocks — worker thread.
-    Result set_device_display_name(const std::string& device_id,
-                                   const std::string& name);
+    Result set_device_display_name(const std::string& device_id, const std::string& name);
 
     /// Start deleting a device. The homeserver will normally respond with a
     /// UIA challenge; see `DeleteDeviceBegin` for the follow-up flow.
@@ -1259,8 +1190,7 @@ public:
     /// browser via the fallback URL returned by `begin_delete_device`.
     /// `session` is the value from `DeleteDeviceBegin::session`.
     /// Blocks — worker thread.
-    Result complete_delete_device(const std::string& device_id,
-                                  const std::string& session);
+    Result complete_delete_device(const std::string& device_id, const std::string& session);
 
     // ------------------------------------------------------------------
     // Presence
@@ -1295,9 +1225,8 @@ public:
     /// `IEventHandler::on_media_ready(request_id, bytes)` when done.
     /// `group_id` (0 by default = never cancelled) lets a later
     /// `cancel_media_group(group_id)` abort it, same as `fetch_url_async`.
-    void fetch_source_bytes_async(std::uint64_t request_id,
-                                   const std::string& source_json,
-                                   std::uint64_t group_id = 0);
+    void fetch_source_bytes_async(std::uint64_t request_id, const std::string& source_json,
+                                  std::uint64_t group_id = 0);
 
     /// Fetch only the first `max_bytes` of a media source's underlying file
     /// via a raw authenticated Range GET, bypassing the SDK's media store
@@ -1308,8 +1237,7 @@ public:
 
     /// Non-blocking counterpart of `fetch_source_prefix_bytes`. Fires
     /// `IEventHandler::on_media_ready(request_id, bytes)` when done.
-    void fetch_source_prefix_async(std::uint64_t request_id,
-                                   const std::string& source_json,
+    void fetch_source_prefix_async(std::uint64_t request_id, const std::string& source_json,
                                    std::uint64_t max_bytes);
 
     /// Streaming counterpart of `fetch_source_bytes_async`: delivers the
@@ -1320,8 +1248,7 @@ public:
     /// `fetch_source_bytes_async`'s. Callers should first check
     /// `classify_media_container()` — streaming a non-fast-start file will
     /// simply stall until the whole download completes.
-    void fetch_source_stream_async(std::uint64_t request_id,
-                                   const std::string& source_json,
+    void fetch_source_stream_async(std::uint64_t request_id, const std::string& source_json,
                                    std::uint64_t group_id = 0);
 
     /// Classifies whether `prefix` (the leading bytes of a media file, e.g.
@@ -1348,8 +1275,7 @@ public:
     /// `repo` is the `owner/repo` slug (e.g. `"acme/tesseract"`).
     /// Blocks the calling thread — call from a worker pool thread, never the UI thread.
     /// Returns `has_update == false` on any network error or when already up-to-date.
-    UpdateResult check_for_update(const std::string& repo,
-                                  const std::string& current_version);
+    UpdateResult check_for_update(const std::string& repo, const std::string& current_version);
 
 #ifdef TESSERACT_SERVER_BROWSER_ENABLED
     /// One homeserver from the community list (servers.joinmatrix.org).
@@ -1376,7 +1302,7 @@ public:
     struct ServerList
     {
         std::vector<ServerListEntry> entries;
-        bool ok = false;         ///< false: no fetch and no usable cache
+        bool ok = false; ///< false: no fetch and no usable cache
         bool from_cache = false;
         std::string source_name; ///< provider shown to the user; empty unless ok
         std::string source_url;  ///< provider's https:// page
@@ -1407,10 +1333,10 @@ public:
     /// MEDIA_KIND_* constants in sdk/src/client/media.rs.
     enum class MediaReqKind : std::uint8_t
     {
-        RoomAvatar   = 0, ///< room.avatar thumbnail; `source` is the room id
+        RoomAvatar = 0,   ///< room.avatar thumbnail; `source` is the room id
         MxcThumbnail = 1, ///< plain mxc:// thumbnail
-        SourceThumb  = 2, ///< source (plain/encrypted) thumbnail
-        SourceFull   = 3, ///< full source (plain/encrypted) → bulk lane
+        SourceThumb = 2,  ///< source (plain/encrypted) thumbnail
+        SourceFull = 3,   ///< full source (plain/encrypted) → bulk lane
     };
 
     /// Scheduling priority for `fetch_media_async`. Within a lane, a pending
@@ -1421,7 +1347,7 @@ public:
     enum class MediaPriority : std::uint8_t
     {
         Backoff = 0, ///< backed-off retry (prior failure); never raised by prioritize_media
-        Normal  = 1, ///< eager whole-timeline prefetch
+        Normal = 1,  ///< eager whole-timeline prefetch
         Visible = 2, ///< backs a currently-visible row
     };
 
@@ -1433,17 +1359,15 @@ public:
     /// and scopes `prioritize_media` (0 = ungrouped/never-cancelled).
     /// `w`/`h`/`animated` apply to the thumbnail kinds. `priority` defaults to
     /// Normal; pass Visible (or call `prioritize_media`) for on-screen rows.
-    void fetch_media_async(std::uint64_t request_id, std::uint64_t group_id,
-                           MediaReqKind kind, const std::string& source,
-                           std::uint32_t w, std::uint32_t h, bool animated,
-                           MediaPriority priority = MediaPriority::Normal);
+    void fetch_media_async(std::uint64_t request_id, std::uint64_t group_id, MediaReqKind kind,
+                           const std::string& source, std::uint32_t w, std::uint32_t h,
+                           bool animated, MediaPriority priority = MediaPriority::Normal);
 
     /// Raise the priority of still-pending `fetch_media_async` downloads in
     /// `group_id` whose request id is in `request_ids` to Visible, so they are
     /// fetched before the off-screen backlog. Called when rows scroll into view.
     /// No-op for already-running/finished requests and for group 0.
-    void prioritize_media(std::uint64_t group_id,
-                          const std::vector<std::uint64_t>& request_ids);
+    void prioritize_media(std::uint64_t group_id, const std::vector<std::uint64_t>& request_ids);
 
     /// Abort every in-flight `fetch_media_async` / `get_url_preview_async`
     /// registered under `group_id` (e.g. on room switch). No-op for group 0.
@@ -1458,8 +1382,7 @@ public:
 
     /// Async counterpart of `fetch_url_bytes` (map tiles, etc.): returns
     /// immediately; the bytes arrive via `IEventHandler::on_media_ready`.
-    void fetch_url_async(std::uint64_t request_id, std::uint64_t group_id,
-                         const std::string& url);
+    void fetch_url_async(std::uint64_t request_id, std::uint64_t group_id, const std::string& url);
 
     // ------------------------------------------------------------------
     // GIF search + send
@@ -1470,9 +1393,8 @@ public:
     /// `on_gif_search_failed` on error. `request_id` lets the caller drop stale
     /// responses; `api_key`/`client_key` come from app settings; `limit` caps
     /// the result count.
-    void gif_search(std::uint64_t request_id, const std::string& query,
-                    const std::string& api_key, const std::string& client_key,
-                    std::uint32_t limit);
+    void gif_search(std::uint64_t request_id, const std::string& query, const std::string& api_key,
+                    const std::string& client_key, std::uint32_t limit);
 
     // ------------------------------------------------------------------
     // Full-text message search
@@ -1495,8 +1417,8 @@ public:
     /// doesn't filter by thread. `request_id` lets the caller drop stale
     /// responses; `limit` caps the result count.
     void search_messages(std::uint64_t request_id, const std::string& query,
-                         const std::string& room_id,
-                         const std::string& thread_root_id, std::uint32_t limit);
+                         const std::string& room_id, const std::string& thread_root_id,
+                         std::uint32_t limit);
 
     /// Summary of the local search index (message/room counts, oldest indexed
     /// timestamp, backfill-complete flag) for the Settings panel. Synchronous,
@@ -1515,8 +1437,7 @@ public:
     /// `IEventHandler::on_room_directory_search_results(request_id, …)`, or
     /// `on_room_directory_search_failed` on error. Use a fresh `request_id`
     /// per search.
-    void search_room_directory(std::uint64_t request_id,
-                               const std::string& filter,
+    void search_room_directory(std::uint64_t request_id, const std::string& filter,
                                const std::string& server);
 
     /// Fetches the next page of a search started by
@@ -1536,8 +1457,7 @@ public:
     /// == 0` requests the newest page; otherwise the page strictly older than
     /// that timestamp (pass the previous page's oldest `ts_ms`). `limit` caps
     /// the page size.
-    void load_room_media_page(std::uint64_t request_id,
-                              const std::string& room_id,
+    void load_room_media_page(std::uint64_t request_id, const std::string& room_id,
                               std::uint64_t before_ts_ms, std::uint32_t limit);
 
     /// `COUNT(*)` of a room's indexed image/video. 0 until the room's gallery
@@ -1559,9 +1479,8 @@ public:
     std::vector<MediaBackoffEntry> load_media_backoff() const;
 
     /// Upsert a backoff entry for `url` (called on fetch failure).
-    void note_media_backoff_failed(const std::string& url,
-                                   std::uint32_t       attempts,
-                                   std::int64_t        deadline_secs);
+    void note_media_backoff_failed(const std::string& url, std::uint32_t attempts,
+                                   std::int64_t deadline_secs);
 
     /// Delete the backoff entry for `url` (called on fetch success).
     void note_media_backoff_ok(const std::string& url);
@@ -1574,9 +1493,8 @@ public:
     std::vector<RoomSummaryBackoffEntry> load_room_summary_backoff() const;
 
     /// Upsert a backoff entry for `room_id` (called on fetch failure).
-    void note_room_summary_backoff_failed(const std::string& room_id,
-                                          std::uint32_t       attempts,
-                                          std::int64_t        deadline_secs);
+    void note_room_summary_backoff_failed(const std::string& room_id, std::uint32_t attempts,
+                                          std::int64_t deadline_secs);
 
     /// Delete the backoff entry for `room_id` (called on fetch success).
     void note_room_summary_backoff_ok(const std::string& room_id);
@@ -1586,32 +1504,23 @@ public:
     /// static poster image (`thumb_mime`, e.g. "image/png"; empty to omit).
     /// MP4 + thumbnail are encrypted in E2EE rooms, plaintext otherwise.
     /// `reply_event_id`/`thread_root` follow the same framing as send_video().
-    Result send_gif_video(const std::string& room_id,
-                          const std::vector<uint8_t>& mp4_bytes,
+    Result send_gif_video(const std::string& room_id, const std::vector<uint8_t>& mp4_bytes,
                           const std::string& mime_type, const std::string& body,
-                          std::uint32_t width, std::uint32_t height,
-                          std::uint64_t duration_ms,
-                          const std::vector<uint8_t>& thumb_bytes,
-                          const std::string& thumb_mime,
+                          std::uint32_t width, std::uint32_t height, std::uint64_t duration_ms,
+                          const std::vector<uint8_t>& thumb_bytes, const std::string& thumb_mime,
                           std::uint32_t thumb_width, std::uint32_t thumb_height,
-                          const std::string& reply_event_id,
-                          const std::string& thread_root);
+                          const std::string& reply_event_id, const std::string& thread_root);
 
     /// Fetch `image_url` (and optionally `preview_url`) from the CDN and send
     /// the GIF into `room_id` without blocking the calling thread. Fires
     /// `IEventHandler::on_upload_complete(request_id, ok, message)` on completion.
-    void send_gif_from_urls_async(std::uint64_t request_id,
-                                   const std::string& room_id,
-                                   const std::string& image_url,
-                                   const std::string& image_mime,
-                                   const std::string& body,
-                                   std::uint32_t width,
-                                   std::uint32_t height,
-                                   const std::string& preview_url,
-                                   std::uint32_t preview_w,
-                                   std::uint32_t preview_h,
-                                   const std::string& reply_event_id,
-                                   const std::string& thread_root);
+    void send_gif_from_urls_async(std::uint64_t request_id, const std::string& room_id,
+                                  const std::string& image_url, const std::string& image_mime,
+                                  const std::string& body, std::uint32_t width,
+                                  std::uint32_t height, const std::string& preview_url,
+                                  std::uint32_t preview_w, std::uint32_t preview_h,
+                                  const std::string& reply_event_id,
+                                  const std::string& thread_root);
 
     // ------------------------------------------------------------------
     // URL preview
@@ -1655,14 +1564,12 @@ public:
     /// Returns the summary on success, std::nullopt on failure (timeout /
     /// server error / stop signal). Blocks the calling thread up to 30 s —
     /// invoke only from a worker thread.
-    std::optional<RoomSummary>
-    get_space_child_summary(const std::string& space_id,
-                            const std::string& room_id);
+    std::optional<RoomSummary> get_space_child_summary(const std::string& space_id,
+                                                       const std::string& room_id);
     /// Async counterpart of `get_space_child_summary`. Spawns the fetch on the
     /// tokio runtime; result delivered via
     /// IEventHandler::on_space_child_summary_ready. Does not pin a thread.
-    void get_space_child_summary_async(std::uint64_t request_id,
-                                       const std::string& space_id,
+    void get_space_child_summary_async(std::uint64_t request_id, const std::string& space_id,
                                        const std::string& room_id);
     /// Abort every still-running `get_space_child_summary_async` fetch
     /// registered under `space_id`. Call when the user navigates away from a
@@ -1671,8 +1578,7 @@ public:
     void cancel_space_summaries(const std::string& space_id);
     /// Return the locally-cached MSC3266 room summary for `room_id`, or
     /// std::nullopt when no cached entry exists. No network, safe on any thread.
-    std::optional<RoomSummary>
-    get_cached_room_summary(const std::string& room_id) const;
+    std::optional<RoomSummary> get_cached_room_summary(const std::string& room_id) const;
 
     /// Async counterpart of `get_server_info`. Spawns the fetch on the tokio
     /// runtime; result delivered via IEventHandler::on_server_info_ready.
@@ -1691,8 +1597,7 @@ public:
     /// account-data extension can lag a fresh room switch); if it disagrees
     /// with the value already delivered, a correction arrives via
     /// IEventHandler::on_room_media_preview_override_updated.
-    void room_media_preview_override_async(std::uint64_t request_id,
-                                           const std::string& room_id);
+    void room_media_preview_override_async(std::uint64_t request_id, const std::string& room_id);
 
     /// Fetch the room's current m.room.encryption/m.room.join_rules/
     /// m.room.guest_access/m.room.history_visibility state directly from the
@@ -1702,8 +1607,7 @@ public:
     /// update-notification filter that can leave locally cached values
     /// stale after a write. Spawns on the tokio runtime; result delivered
     /// via IEventHandler::on_room_security_state_ready. Does not pin a thread.
-    void fetch_room_security_state_async(std::uint64_t request_id,
-                                         const std::string& room_id);
+    void fetch_room_security_state_async(std::uint64_t request_id, const std::string& room_id);
 
     /// Join a room by its ID or alias.
     /// Returns the canonical room ID (e.g. `!id:server`) on success, or an
@@ -1716,8 +1620,7 @@ public:
 
     /// Non-blocking join. Spawns the join as a tokio task; result delivered
     /// via IEventHandler::on_room_action_complete. See join_room() re: `via`.
-    void join_room_async(std::uint64_t request_id,
-                         const std::string& room_id_or_alias,
+    void join_room_async(std::uint64_t request_id, const std::string& room_id_or_alias,
                          const std::vector<std::string>& via = {});
 
     /// Create a new room from `options`. Returns the canonical room ID
@@ -1728,8 +1631,7 @@ public:
     /// Non-blocking counterpart. Spawns the create as a tokio task; result
     /// delivered via IEventHandler::on_room_action_complete (reused — its
     /// ok/room_id/message shape fits creation exactly, same as it does join).
-    void create_room_async(std::uint64_t request_id,
-                           const RoomCreateOptions& options);
+    void create_room_async(std::uint64_t request_id, const RoomCreateOptions& options);
 
     /// Leave a room. Blocks the calling thread — call from a worker thread.
     Result leave_room(const std::string& room_id);
@@ -1743,21 +1645,17 @@ public:
     /// no reason) and, when set, is attached to the invite via the stable
     /// `POST /rooms/{roomId}/invite` reason field.
     void invite_user_async(std::uint64_t request_id, const std::string& room_id,
-                           const std::string& user_id,
-                           const std::string& reason = "");
+                           const std::string& user_id, const std::string& reason = "");
 
     /// Non-blocking kick / ban. Result delivered via
     /// IEventHandler::on_room_action_complete. `reason` is optional (empty =
     /// no reason).
     void kick_user_async(std::uint64_t request_id, const std::string& room_id,
-                         const std::string& user_id,
-                         const std::string& reason = "");
+                         const std::string& user_id, const std::string& reason = "");
     void ban_user_async(std::uint64_t request_id, const std::string& room_id,
-                        const std::string& user_id,
-                        const std::string& reason = "");
+                        const std::string& user_id, const std::string& reason = "");
     void unban_user_async(std::uint64_t request_id, const std::string& room_id,
-                          const std::string& user_id,
-                          const std::string& reason = "");
+                          const std::string& user_id, const std::string& reason = "");
 
     /// Banned members of a room. Syncs the member list first (bounded by a
     /// timeout) so bans of users who never spoke are included. When that sync
@@ -1781,22 +1679,19 @@ public:
     /// (m.room.member state event) — distinct from set_room_display_name,
     /// which sets the room's own m.room.name (visible to all members).
     /// Blocks the calling thread — call from a worker thread.
-    Result set_user_room_display_name(const std::string& room_id,
-                                       const std::string& name);
+    Result set_user_room_display_name(const std::string& room_id, const std::string& name);
 
     /// Set the current user's avatar in a specific room
     /// (m.room.member state event) — distinct from set_room_avatar, which
     /// sets the room's own m.room.avatar (visible to all members).
     /// Blocks the calling thread — call from a worker thread.
-    Result set_user_room_avatar(const std::string& room_id,
-                                const std::string& mxc_uri);
+    Result set_user_room_avatar(const std::string& room_id, const std::string& mxc_uri);
 
     /// Like set_user_room_avatar, but takes an http(s) image URL: fetches it,
     /// center-crops to a square of at most 512x512 (animations stay animated,
     /// as WebP), uploads it and sets it as the avatar.
     /// Blocks the calling thread — call from a worker thread.
-    Result set_user_room_avatar_from_url(const std::string& room_id,
-                                         const std::string& url);
+    Result set_user_room_avatar_from_url(const std::string& room_id, const std::string& url);
 
     /// Reset the current user's avatar in `room_id` to their account
     /// (profile) avatar. Blocks the calling thread — call from a worker thread.
@@ -1810,16 +1705,14 @@ public:
     /// (visible to all members) — distinct from set_user_room_display_name,
     /// which only sets the current user's per-room member override.
     /// Blocks the calling thread — call from a worker thread.
-    Result set_room_display_name(const std::string& room_id,
-                                  const std::string& name);
+    Result set_room_display_name(const std::string& room_id, const std::string& name);
 
     /// Set or clear the room's m.room.avatar state event (visible to all
     /// members) — distinct from set_user_room_avatar, which only sets the
     /// current user's per-room member override. Pass an empty mxc_uri to
     /// clear the room avatar. Blocks the calling thread — call from a
     /// worker thread.
-    Result set_room_avatar(const std::string& room_id,
-                           const std::string& mxc_uri);
+    Result set_room_avatar(const std::string& room_id, const std::string& mxc_uri);
 
     /// Enable encryption for a room (m.room.encryption). No-op if already
     /// encrypted; there is no operation to disable it — matrix-sdk has none.
@@ -1830,8 +1723,7 @@ public:
     /// "public"/"invite"/"knock" — any other value is rejected (the room
     /// settings UI only ever offers these three as editable choices).
     /// Blocks the calling thread — call from a worker thread.
-    Result set_room_join_rule(const std::string& room_id,
-                              const std::string& join_rule);
+    Result set_room_join_rule(const std::string& room_id, const std::string& join_rule);
 
     /// Send an m.room.guest_access state event.
     /// Blocks the calling thread — call from a worker thread.
@@ -1840,8 +1732,7 @@ public:
     /// Send an m.room.history_visibility state event. `visibility` must be
     /// one of "world_readable"/"shared"/"invited"/"joined".
     /// Blocks the calling thread — call from a worker thread.
-    Result set_room_history_visibility(const std::string& room_id,
-                                       const std::string& visibility);
+    Result set_room_history_visibility(const std::string& room_id, const std::string& visibility);
 
     /// Append event_id to the room's m.room.pinned_events state event.
     /// Idempotent (returns ok when already pinned). Server enforces PL —
@@ -1866,8 +1757,7 @@ public:
 
     /// Decline an incoming MatrixRTC call invite (`m.rtc.decline` referencing
     /// `invite_event_id`). Fire-and-forget; no callback.
-    void decline_call_invite_async(const std::string& room_id,
-                                   const std::string& invite_event_id);
+    void decline_call_invite_async(const std::string& room_id, const std::string& invite_event_id);
 
     /// True iff the user can join (above) and also send the
     /// org.matrix.msc3401.call state event, i.e. may start a call that is
@@ -1936,8 +1826,7 @@ public:
 
     /// Send an updated m.room.power_levels state event with the fields
     /// from `levels`. Blocks the calling thread — call from a worker thread.
-    Result set_room_power_levels(const std::string& room_id,
-                                 const RoomPermissions& levels);
+    Result set_room_power_levels(const std::string& room_id, const RoomPermissions& levels);
 
     /// The current user's own effective power level in this room — used to
     /// check whether a staged Permissions-tab change would lock the user
@@ -2035,27 +1924,23 @@ public:
 
     /// Async counterpart of `get_extended_profile`. Result delivered via
     /// IEventHandler::on_extended_profile_ready. Does not pin a thread.
-    void get_extended_profile_async(std::uint64_t request_id,
-                                    const std::string& user_id);
+    void get_extended_profile_async(std::uint64_t request_id, const std::string& user_id);
 
     /// Fetch one page of the rooms shared with `user_id` (MSC2666). `from` is the
     /// previous page's `next_batch` (empty for the first page). Result delivered
     /// via IEventHandler::on_mutual_rooms_ready. Does not pin a thread.
-    void get_mutual_rooms_async(std::uint64_t request_id,
-                                const std::string& user_id,
+    void get_mutual_rooms_async(std::uint64_t request_id, const std::string& user_id,
                                 const std::string& from = "");
 
     /// Async counterpart of `resolve_user_profile`. Result delivered via
     /// IEventHandler::on_extended_profile_ready. Does not pin a thread.
-    void resolve_user_profile_async(std::uint64_t request_id,
-                                    const std::string& user_id);
+    void resolve_user_profile_async(std::uint64_t request_id, const std::string& user_id);
 
     /// Async entry point that unifies set and delete. Branches on
     /// `value_json == "null"` (delete) vs. any other value (set). Result
     /// delivered via IEventHandler::on_profile_field_result. Does not pin a
     /// thread.
-    void set_or_delete_profile_field_async(std::uint64_t request_id,
-                                           const std::string& key,
+    void set_or_delete_profile_field_async(std::uint64_t request_id, const std::string& key,
                                            const std::string& value_json);
 
     // ------------------------------------------------------------------
@@ -2083,9 +1968,8 @@ public:
     /// documented limitation. Pure, no I/O; does not coerce token values to
     /// their schema type (see `ui/shared/app/SlashCommands.cpp`'s per-token
     /// coercion, which runs on this method's output).
-    BotCommandMatchResult match_bot_command_arguments(
-        const CommandDescription& desc,
-        const std::vector<std::string>& tokens) const;
+    BotCommandMatchResult match_bot_command_arguments(const CommandDescription& desc,
+                                                      const std::vector<std::string>& tokens) const;
 
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)
@@ -2129,17 +2013,14 @@ public:
     /// transparently. When non-empty, `reply_event_id` adds an
     /// `m.in_reply_to` relation.
     Result send_sticker(const std::string& room_id, const std::string& body,
-                        const std::string& image_url,
-                        const std::string& info_json,
+                        const std::string& image_url, const std::string& info_json,
                         const std::string& reply_event_id = "");
 
     /// Send `m.sticker` into the MSC3440 thread rooted at `thread_root`.
     /// When non-empty, `reply_event_id` makes the sticker a threaded reply
     /// to that event instead of falling back to the thread root.
-    Result send_thread_sticker(const std::string& room_id,
-                               const std::string& thread_root,
-                               const std::string& body,
-                               const std::string& image_url,
+    Result send_thread_sticker(const std::string& room_id, const std::string& thread_root,
+                               const std::string& body, const std::string& image_url,
                                const std::string& info_json,
                                const std::string& reply_event_id = "");
 
@@ -2148,16 +2029,13 @@ public:
     /// display_name "Saved Stickers". Shortcodes collide-resolve by
     /// numeric suffix. GET-modify-PUT against the homeserver; the local
     /// pack cache refreshes once the server round-trip completes.
-    Result save_sticker_to_user_pack(const std::string& shortcode,
-                                     const std::string& body,
-                                     const std::string& image_url,
-                                     const std::string& info_json);
+    Result save_sticker_to_user_pack(const std::string& shortcode, const std::string& body,
+                                     const std::string& image_url, const std::string& info_json);
 
     /// True when `image_url` is already in the user's personal pack. Used
     /// by the right-click context menu to suppress "Add to Saved Stickers"
     /// for stickers the user has already saved.
-    bool user_pack_has_sticker(const std::string& image_url,
-                               const std::string& info_json) const;
+    bool user_pack_has_sticker(const std::string& image_url, const std::string& info_json) const;
 
     /// Flip the `im.tesseract.favorite` flag on the user-pack entry whose
     /// `url` matches `image_url`. No-op when the sticker isn't in the user
@@ -2182,8 +2060,7 @@ public:
     /// account data (dual-written). Local cache + `ImagePack::is_subscribed`
     /// refresh synchronously before this returns; `on_image_packs_updated`
     /// fires too.
-    Result set_pack_room_subscribed(const std::string& room_id,
-                                    const std::string& state_key,
+    Result set_pack_room_subscribed(const std::string& room_id, const std::string& state_key,
                                     bool subscribed);
 
     /// Create or replace one of a room's MSC2545 packs — a wholesale
@@ -2199,10 +2076,8 @@ public:
     /// type the room didn't already use. Refreshes the local pack cache
     /// synchronously before returning (`on_image_packs_updated` fires
     /// too). Blocks — call from a worker thread.
-    Result save_room_pack(const std::string& room_id,
-                          const std::string& state_key, bool is_new,
-                          const std::string& display_name,
-                          std::uint8_t usage_mask,
+    Result save_room_pack(const std::string& room_id, const std::string& state_key, bool is_new,
+                          const std::string& display_name, std::uint8_t usage_mask,
                           const std::vector<PackImageInput>& images);
 
     /// Empty an existing room pack's images (`{"images": {}}`), written to
@@ -2211,8 +2086,7 @@ public:
     /// appearing as a zero-image entry anywhere packs are listed until
     /// the room's state history is redacted (out of scope here). Same
     /// cache-refresh tail as `save_room_pack`. Blocks — worker thread.
-    Result remove_room_pack(const std::string& room_id,
-                            const std::string& state_key);
+    Result remove_room_pack(const std::string& room_id, const std::string& state_key);
 
     // ------------------------------------------------------------------
     // Spaces
@@ -2242,8 +2116,7 @@ public:
     /// a tokio task; result delivered via
     /// `IEventHandler::on_room_action_complete(request_id, ok, "", message)`
     /// — `joined_room_id` is unused/empty for this action.
-    void add_room_to_space_async(std::uint64_t request_id,
-                                 const std::string& space_id,
+    void add_room_to_space_async(std::uint64_t request_id, const std::string& space_id,
                                  const std::string& room_id,
                                  const std::vector<std::string>& via = {});
 
@@ -2251,8 +2124,7 @@ public:
     /// state event keyed by room_id with an empty via list, invalidating
     /// the child per the Matrix spec). Non-blocking; result delivered via
     /// `IEventHandler::on_room_action_complete(request_id, ok, "", message)`.
-    void remove_room_from_space_async(std::uint64_t request_id,
-                                      const std::string& space_id,
+    void remove_room_from_space_async(std::uint64_t request_id, const std::string& space_id,
                                       const std::string& room_id);
 
     // ------------------------------------------------------------------
@@ -2323,13 +2195,11 @@ public:
 
     /// Export all Megolm room keys to a passphrase-encrypted file at `path`
     /// (standard Matrix key-export format). Blocks — call from a worker thread.
-    Result export_room_keys(const std::string& path,
-                            const std::string& passphrase);
+    Result export_room_keys(const std::string& path, const std::string& passphrase);
 
     /// Import Megolm room keys from the passphrase-encrypted file at `path`.
     /// Blocks — call from a worker thread.
-    Result import_room_keys(const std::string& path,
-                            const std::string& passphrase);
+    Result import_room_keys(const std::string& path, const std::string& passphrase);
 
     /// Result of `begin_reset_crypto_identity`. When `needs_approval` is true
     /// the homeserver requires the user to approve the cross-signing reset in
@@ -2344,7 +2214,10 @@ public:
         bool needs_approval = false;
         std::string approval_url;
 
-        explicit operator bool() const noexcept { return ok; }
+        explicit operator bool() const noexcept
+        {
+            return ok;
+        }
     };
 
     /// Begin resetting the user's cross-signing identity ("Reset cryptographic
@@ -2393,8 +2266,7 @@ public:
     /// is off, there are no links, or nothing could be previewed. Blocks for
     /// up to ~8 s and takes only the shared FFI lock: run it on the read
     /// pool, never on the `&mut` worker (it would stall room switches).
-    std::string generate_url_previews(const std::string& room_id,
-                                      const std::string& body);
+    std::string generate_url_previews(const std::string& room_id, const std::string& body);
 
     /// Enable/disable MSC2545 "historical compatibility" — see
     /// Settings::msc2545_legacy_compat's doc comment for the full contract.
@@ -2472,11 +2344,9 @@ public:
     /// `pushkey` is a unique per-account identifier (e.g. sanitised Matrix ID
     /// + hostname). `endpoint_url` is the push gateway URL provided by the
     /// UnifiedPush distributor. Blocks until the homeserver acknowledges.
-    Result register_pusher(const std::string& pushkey,
-                           const std::string& app_id,
+    Result register_pusher(const std::string& pushkey, const std::string& app_id,
                            const std::string& app_display_name,
-                           const std::string& device_display_name,
-                           const std::string& endpoint_url,
+                           const std::string& device_display_name, const std::string& endpoint_url,
                            const std::string& lang);
 
     /// Remove a pusher from the homeserver identified by `pushkey` / `app_id`.
@@ -2500,8 +2370,7 @@ public:
     /// reason starting `start_failed:` (see `kRtcStartFailedReason`). Mute
     /// requests made before the call is up apply once it is.
     /// `audio_only` controls the `m.call.intent` advertised to other clients.
-    RtcStartResult rtc_start_call(const std::string& room_id,
-                                  const std::string& slot_id,
+    RtcStartResult rtc_start_call(const std::string& room_id, const std::string& slot_id,
                                   bool audio_only);
 
     /// Gracefully leave the active call without waiting for the network: the
@@ -2523,12 +2392,9 @@ public:
 
     /// Push a raw I420 video frame into the active session.
     /// No-op when no call is active.
-    void rtc_push_video_frame_i420(const std::uint8_t* y,
-                                   const std::uint8_t* u,
-                                   const std::uint8_t* v,
-                                   std::uint32_t width, std::uint32_t height,
-                                   std::uint32_t stride_y,
-                                   std::uint32_t stride_u,
+    void rtc_push_video_frame_i420(const std::uint8_t* y, const std::uint8_t* u,
+                                   const std::uint8_t* v, std::uint32_t width, std::uint32_t height,
+                                   std::uint32_t stride_y, std::uint32_t stride_u,
                                    std::uint32_t stride_v);
 
     /// Start publishing a screen-share track in the active session. Blocks
@@ -2541,13 +2407,10 @@ public:
 
     /// Push a raw I420 screen frame into the active session's screen track.
     /// No-op when no call is active or no screen-share track is published.
-    void rtc_push_screen_frame_i420(const std::uint8_t* y,
-                                    const std::uint8_t* u,
-                                    const std::uint8_t* v,
-                                    std::uint32_t width, std::uint32_t height,
-                                    std::uint32_t stride_y,
-                                    std::uint32_t stride_u,
-                                    std::uint32_t stride_v);
+    void rtc_push_screen_frame_i420(const std::uint8_t* y, const std::uint8_t* u,
+                                    const std::uint8_t* v, std::uint32_t width,
+                                    std::uint32_t height, std::uint32_t stride_y,
+                                    std::uint32_t stride_u, std::uint32_t stride_v);
 
 private:
     struct Impl;

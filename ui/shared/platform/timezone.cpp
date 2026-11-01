@@ -20,7 +20,9 @@ namespace
 std::string cf_to_string(CFStringRef s)
 {
     if (!s)
+    {
         return {};
+    }
     char buf[256];
     return CFStringGetCString(s, buf, sizeof buf, kCFStringEncodingUTF8) ? buf : std::string{};
 }
@@ -31,7 +33,9 @@ std::string system_timezone()
 {
     CFTimeZoneRef tz = CFTimeZoneCopySystem();
     if (!tz)
+    {
         return {};
+    }
     std::string name = cf_to_string(CFTimeZoneGetName(tz));
     CFRelease(tz);
     return name;
@@ -42,13 +46,18 @@ std::optional<int> timezone_utc_offset_minutes(const std::string& iana,
 {
     CFStringRef name = CFStringCreateWithCString(nullptr, iana.c_str(), kCFStringEncodingUTF8);
     if (!name)
+    {
         return std::nullopt;
+    }
     CFTimeZoneRef tz = CFTimeZoneCreateWithName(nullptr, name, false);
     CFRelease(name);
     if (!tz)
+    {
         return std::nullopt;
+    }
     const auto secs = std::chrono::duration_cast<std::chrono::seconds>(at.time_since_epoch());
-    const CFAbsoluteTime abs = static_cast<CFAbsoluteTime>(secs.count()) - kCFAbsoluteTimeIntervalSince1970;
+    const CFAbsoluteTime abs =
+        static_cast<CFAbsoluteTime>(secs.count()) - kCFAbsoluteTimeIntervalSince1970;
     const int offset = static_cast<int>(CFTimeZoneGetSecondsFromGMT(tz, abs) / 60);
     CFRelease(tz);
     return offset;
@@ -74,14 +83,18 @@ std::string configured_timezone()
     {
         const std::string target = link.generic_string();
         if (const auto pos = target.find(kMarker); pos != std::string::npos)
+        {
             return target.substr(pos + kMarker.size());
+        }
     }
     std::ifstream f("/etc/timezone");
     std::string line;
     if (f && std::getline(f, line))
     {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+        {
             line.pop_back();
+        }
         return line;
     }
     return {};
@@ -94,8 +107,11 @@ std::string system_timezone()
 {
 #if !defined(_WIN32)
     if (const std::string configured = configured_timezone();
-        !configured.empty() && timezone_utc_offset_minutes(configured, std::chrono::system_clock::now()))
+        !configured.empty() &&
+        timezone_utc_offset_minutes(configured, std::chrono::system_clock::now()))
+    {
         return configured;
+    }
 #endif
     try
     {
@@ -115,7 +131,8 @@ std::optional<int> timezone_utc_offset_minutes(const std::string& iana,
     {
         const std::chrono::time_zone* z = std::chrono::locate_zone(iana);
         const auto info = z->get_info(std::chrono::time_point_cast<std::chrono::seconds>(at));
-        return static_cast<int>(std::chrono::duration_cast<std::chrono::minutes>(info.offset).count());
+        return static_cast<int>(
+            std::chrono::duration_cast<std::chrono::minutes>(info.offset).count());
     }
     catch (...)
     {
@@ -128,7 +145,9 @@ std::optional<int> timezone_utc_offset_minutes(const std::string& iana,
 std::string format_offset_diff(int minutes)
 {
     if (minutes == 0)
+    {
         return {};
+    }
     std::string out = minutes < 0 ? "-" : "+";
     const int abs_min = std::abs(minutes);
     out += std::to_string(abs_min / 60);
@@ -136,7 +155,9 @@ std::string format_offset_diff(int minutes)
     {
         out += ':';
         if (rem < 10)
+        {
             out += '0';
+        }
         out += std::to_string(rem);
     }
     else

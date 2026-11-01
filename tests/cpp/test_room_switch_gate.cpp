@@ -25,8 +25,14 @@ RoomSwitchGateKeeper make_undecoded_gate()
 {
     RoomSwitchGateKeeper g;
     g.set_providers(
-        [](const std::string&) -> const tk::Image* { return nullptr; },
-        [](const std::string&) -> const UrlPreviewData* { return nullptr; });
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        },
+        [](const std::string&) -> const UrlPreviewData*
+        {
+            return nullptr;
+        });
     return g;
 }
 
@@ -54,8 +60,7 @@ TEST_CASE("gate does not wait on image decode when intrinsic dimensions are know
     CHECK(g.dep_satisfied(image_row_with_dims(400, 300)));
 }
 
-TEST_CASE("gate still waits on an image whose dimensions are unknown",
-          "[room_switch_gate]")
+TEST_CASE("gate still waits on an image whose dimensions are unknown", "[room_switch_gate]")
 {
     // No intrinsic dimensions → the reserved height is a placeholder that will
     // change on decode, so waiting (to avoid a reflow) is still correct.
@@ -63,8 +68,7 @@ TEST_CASE("gate still waits on an image whose dimensions are unknown",
     CHECK_FALSE(g.dep_satisfied(image_row_with_dims(0, 0)));
 }
 
-TEST_CASE("gate does not wait on a video thumbnail when dimensions are known",
-          "[room_switch_gate]")
+TEST_CASE("gate does not wait on a video thumbnail when dimensions are known", "[room_switch_gate]")
 {
     // Video height is derived from media_w/media_h (the decoded thumbnail never
     // affects it), so a known-dimension video must not gate the list.
@@ -78,8 +82,7 @@ TEST_CASE("gate does not wait on a video thumbnail when dimensions are known",
     CHECK(g.dep_satisfied(m));
 }
 
-TEST_CASE("reset_within_switch is a no-op when no gate is active",
-          "[room_switch_gate]")
+TEST_CASE("reset_within_switch is a no-op when no gate is active", "[room_switch_gate]")
 {
     // An ordinary backfill/pagination reset on an already-revealed room must
     // not start gating the list — that would freeze scroll-up pagination
@@ -89,18 +92,23 @@ TEST_CASE("reset_within_switch is a no-op when no gate is active",
     CHECK_FALSE(g.active());
 }
 
-TEST_CASE("reset_within_switch preserves focused mode across the re-arm",
-          "[room_switch_gate]")
+TEST_CASE("reset_within_switch preserves focused mode across the re-arm", "[room_switch_gate]")
 {
     // ShellBase only calls begin_focused_gate() on the room_switch==true
     // branch, so a same-room reset re-arm must remember focused mode itself
     // or a permalink/thread-focus open loses its jump-to-event target.
     RoomSwitchGateKeeper g = make_undecoded_gate();
     std::string revealed_focus_id;
-    bool        revealed_to_bottom = false;
+    bool revealed_to_bottom = false;
     g.set_scroll_callbacks(
-        [&](const std::string& id) { revealed_focus_id = id; },
-        [&]() { revealed_to_bottom = true; });
+        [&](const std::string& id)
+        {
+            revealed_focus_id = id;
+        },
+        [&]()
+        {
+            revealed_to_bottom = true;
+        });
 
     g.begin_room_switch();
     g.set_focus_event("$focus");
@@ -126,21 +134,25 @@ TEST_CASE("reset_within_switch's fresh gate ignores the superseded gate's timeou
     // must not be able to force an early reveal of the new gate.
     RoomSwitchGateKeeper g = make_undecoded_gate();
     std::vector<std::function<void()>> timeouts;
-    g.set_post_delayed([&](int, std::function<void()> cb)
-                        { timeouts.push_back(std::move(cb)); });
+    g.set_post_delayed(
+        [&](int, std::function<void()> cb)
+        {
+            timeouts.push_back(std::move(cb));
+        });
     auto alive = std::make_shared<bool>(true);
     g.set_alive(alive);
     g.set_repaint([] {});
 
-    auto scan_unresolved =
-        [](const std::function<void(const MessageRowData&)>& visit)
-    { visit(image_row_with_dims(0, 0)); };
+    auto scan_unresolved = [](const std::function<void(const MessageRowData&)>& visit)
+    {
+        visit(image_row_with_dims(0, 0));
+    };
 
     g.begin_room_switch();
     g.evaluate(scan_unresolved);
     REQUIRE(g.blocking()); // unresolved image dep holds the gate
 
-    g.reset_within_switch(); // same-room reset races the still-pending gate
+    g.reset_within_switch();     // same-room reset races the still-pending gate
     g.evaluate(scan_unresolved); // next paint re-scans the fresh gate
     REQUIRE(g.blocking());
     REQUIRE(timeouts.size() == 2);
@@ -155,15 +167,17 @@ TEST_CASE("reset_within_switch's fresh gate ignores the superseded gate's timeou
     CHECK_FALSE(g.blocking());
 }
 
-TEST_CASE("gate does not wait on avatars, even ones that never load",
-          "[room_switch_gate]")
+TEST_CASE("gate does not wait on avatars, even ones that never load", "[room_switch_gate]")
 {
     // Avatars are drawn in a fixed-size slot, so a late one decodes in place
     // without reflow; gating on them held the list hidden for the whole
     // timeout whenever an avatar never resolved (bridged / deleted media).
     RoomSwitchGateKeeper g = make_undecoded_gate();
-    g.set_avatar_provider([](const std::string&) -> const tk::Image*
-                          { return nullptr; });
+    g.set_avatar_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
 
     MessageRowData m;
     m.kind = MessageRowData::Kind::Text;
@@ -178,8 +192,7 @@ TEST_CASE("gate does not wait on avatars, even ones that never load",
     CHECK(g.dep_satisfied(mem));
 }
 
-TEST_CASE("a failed media key released via notify_loaded reveals the list",
-          "[room_switch_gate]")
+TEST_CASE("a failed media key released via notify_loaded reveals the list", "[room_switch_gate]")
 {
     // A fetch/decode failure calls notify_loaded for the key (via
     // notify_media_failed) so the gate doesn't run to its timeout.
@@ -190,10 +203,17 @@ TEST_CASE("a failed media key released via notify_loaded reveals the list",
     m.source = tesseract::MediaSource::plain("mxc://example.org/broken");
 
     bool repainted = false;
-    g.set_repaint([&] { repainted = true; });
+    g.set_repaint(
+        [&]
+        {
+            repainted = true;
+        });
     g.begin_room_switch();
-    g.evaluate([&](const std::function<void(const MessageRowData&)>& visit)
-              { visit(m); });
+    g.evaluate(
+        [&](const std::function<void(const MessageRowData&)>& visit)
+        {
+            visit(m);
+        });
     REQUIRE(g.blocking());
 
     g.notify_loaded("mxc://example.org/broken");
@@ -201,15 +221,16 @@ TEST_CASE("a failed media key released via notify_loaded reveals the list",
     CHECK(repainted);
 }
 
-TEST_CASE("gate does not wait on keys the failed provider reports as failed",
-          "[room_switch_gate]")
+TEST_CASE("gate does not wait on keys the failed provider reports as failed", "[room_switch_gate]")
 {
     // A key in failure backoff (or a failed preview) is never re-requested on
     // a revisit, so no failure event would ever release the gate for it.
     RoomSwitchGateKeeper g = make_undecoded_gate();
-    g.set_failed_provider([](const std::string& k)
-                          { return k == "mxc://example.org/backoff" ||
-                                   k == "https://dead.example/"; });
+    g.set_failed_provider(
+        [](const std::string& k)
+        {
+            return k == "mxc://example.org/backoff" || k == "https://dead.example/";
+        });
 
     MessageRowData img;
     img.kind = MessageRowData::Kind::Image; // unknown height
@@ -234,10 +255,16 @@ TEST_CASE("gate waits on an unresolved reply, keyed by the reply row's own event
 {
     RoomSwitchGateKeeper g = make_undecoded_gate();
     std::string revealed_focus_id;
-    bool        revealed_to_bottom = false;
+    bool revealed_to_bottom = false;
     g.set_scroll_callbacks(
-        [&](const std::string& id) { revealed_focus_id = id; },
-        [&]() { revealed_to_bottom = true; });
+        [&](const std::string& id)
+        {
+            revealed_focus_id = id;
+        },
+        [&]()
+        {
+            revealed_to_bottom = true;
+        });
 
     MessageRowData m;
     m.kind = MessageRowData::Kind::Text;
@@ -247,8 +274,11 @@ TEST_CASE("gate waits on an unresolved reply, keyed by the reply row's own event
     CHECK_FALSE(g.dep_satisfied(m));
 
     g.begin_room_switch();
-    g.evaluate([&](const std::function<void(const MessageRowData&)>& visit)
-              { visit(m); });
+    g.evaluate(
+        [&](const std::function<void(const MessageRowData&)>& visit)
+        {
+            visit(m);
+        });
     REQUIRE(g.blocking());
 
     g.notify_loaded(m.event_id);
@@ -257,8 +287,7 @@ TEST_CASE("gate waits on an unresolved reply, keyed by the reply row's own event
     CHECK(revealed_to_bottom);
 }
 
-TEST_CASE("gate waits on a reply's inline image once the reply resolves",
-          "[room_switch_gate]")
+TEST_CASE("gate waits on a reply's inline image once the reply resolves", "[room_switch_gate]")
 {
     RoomSwitchGateKeeper g = make_undecoded_gate();
 
@@ -267,8 +296,7 @@ TEST_CASE("gate waits on a reply's inline image once the reply resolves",
     m.event_id = "$reply";
     m.in_reply_to_id = "$original";
     m.in_reply_to_sender_name = "Alice"; // resolved
-    m.in_reply_to_image_source =
-        tesseract::MediaSource::plain("mxc://example.org/quoted-img");
+    m.in_reply_to_image_source = tesseract::MediaSource::plain("mxc://example.org/quoted-img");
     CHECK_FALSE(g.dep_satisfied(m));
 }
 
@@ -283,7 +311,10 @@ TEST_CASE("gate waits on an unloaded custom-emoji glyph referenced in formatted_
             provider_called = true;
             return nullptr;
         },
-        [](const std::string&) -> const UrlPreviewData* { return nullptr; });
+        [](const std::string&) -> const UrlPreviewData*
+        {
+            return nullptr;
+        });
 
     MessageRowData m;
     m.kind = MessageRowData::Kind::Text;
@@ -304,8 +335,7 @@ TEST_CASE("gate waits on an unloaded custom-emoji glyph referenced in formatted_
     CHECK_FALSE(provider_called);
 }
 
-TEST_CASE("a row can be waiting on multiple dependencies simultaneously",
-          "[room_switch_gate]")
+TEST_CASE("a row can be waiting on multiple dependencies simultaneously", "[room_switch_gate]")
 {
     RoomSwitchGateKeeper g = make_undecoded_gate();
 
@@ -314,12 +344,14 @@ TEST_CASE("a row can be waiting on multiple dependencies simultaneously",
     m.event_id = "$multi";
     m.in_reply_to_id = "$original";
     m.in_reply_to_sender_name = ""; // unresolved reply
-    m.formatted_body =
-        "hi <img data-mx-emoticon src=\"mxc://example.org/wave\" alt=\":wave:\"/>";
+    m.formatted_body = "hi <img data-mx-emoticon src=\"mxc://example.org/wave\" alt=\":wave:\"/>";
 
     g.begin_room_switch();
-    g.evaluate([&](const std::function<void(const MessageRowData&)>& visit)
-              { visit(m); });
+    g.evaluate(
+        [&](const std::function<void(const MessageRowData&)>& visit)
+        {
+            visit(m);
+        });
     REQUIRE(g.blocking());
 
     // Resolving only the reply must leave the emoji dependency blocking.
@@ -331,13 +363,15 @@ TEST_CASE("a row can be waiting on multiple dependencies simultaneously",
     CHECK_FALSE(g.blocking());
 }
 
-TEST_CASE("timeout still force-reveals when a dependency never resolves",
-          "[room_switch_gate]")
+TEST_CASE("timeout still force-reveals when a dependency never resolves", "[room_switch_gate]")
 {
     RoomSwitchGateKeeper g = make_undecoded_gate();
     std::vector<std::function<void()>> timeouts;
-    g.set_post_delayed([&](int, std::function<void()> cb)
-                        { timeouts.push_back(std::move(cb)); });
+    g.set_post_delayed(
+        [&](int, std::function<void()> cb)
+        {
+            timeouts.push_back(std::move(cb));
+        });
     auto alive = std::make_shared<bool>(true);
     g.set_alive(alive);
     g.set_repaint([] {});
@@ -349,8 +383,11 @@ TEST_CASE("timeout still force-reveals when a dependency never resolves",
     m.in_reply_to_sender_name = ""; // unresolved reply that never arrives
 
     g.begin_room_switch();
-    g.evaluate([&](const std::function<void(const MessageRowData&)>& visit)
-              { visit(m); });
+    g.evaluate(
+        [&](const std::function<void(const MessageRowData&)>& visit)
+        {
+            visit(m);
+        });
     REQUIRE(g.blocking());
     REQUIRE(timeouts.size() == 1);
 

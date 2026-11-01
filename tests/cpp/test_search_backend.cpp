@@ -42,7 +42,11 @@ TEST_CASE("query matches room name/topic case-insensitively", "[search_backend]"
         room("!a:x", "Engineering", "sprint planning"),
         room("!b:x", "Random", "off-topic chatter"),
     };
-    sb.register_shell({.rooms = [&] { return rooms; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms;
+                       },
                        .known_users = {},
                        .activate_room = {},
                        .activate_contact = {}});
@@ -65,7 +69,11 @@ TEST_CASE("query matches contacts by display name and mxid", "[search_backend]")
         user("@bob:x", ""), // falls back to mxid for title
     };
     sb.register_shell({.rooms = {},
-                       .known_users = [&] { return users; },
+                       .known_users =
+                           [&]
+                       {
+                           return users;
+                       },
                        .activate_room = {},
                        .activate_contact = {}});
 
@@ -80,8 +88,7 @@ TEST_CASE("query matches contacts by display name and mxid", "[search_backend]")
     CHECK(r2[0].title == "@bob:x");
 }
 
-TEST_CASE("rooms rank ahead of contacts, both alphabetical within group",
-          "[search_backend]")
+TEST_CASE("rooms rank ahead of contacts, both alphabetical within group", "[search_backend]")
 {
     SearchBackend sb;
     std::vector<tesseract::RoomInfo> rooms = {
@@ -92,8 +99,16 @@ TEST_CASE("rooms rank ahead of contacts, both alphabetical within group",
         user("@z:x", "zzz-person"),
         user("@a:x", "aaa-person"),
     };
-    sb.register_shell({.rooms = [&] { return rooms; },
-                       .known_users = [&] { return users; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms;
+                       },
+                       .known_users =
+                           [&]
+                       {
+                           return users;
+                       },
                        .activate_room = {},
                        .activate_contact = {}});
 
@@ -112,9 +127,15 @@ TEST_CASE("query respects max_results cap", "[search_backend]")
 {
     SearchBackend sb;
     std::vector<tesseract::RoomInfo> rooms = {
-        room("!1:x", "team-1"), room("!2:x", "team-2"), room("!3:x", "team-3"),
+        room("!1:x", "team-1"),
+        room("!2:x", "team-2"),
+        room("!3:x", "team-3"),
     };
-    sb.register_shell({.rooms = [&] { return rooms; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms;
+                       },
                        .known_users = {},
                        .activate_room = {},
                        .activate_contact = {}});
@@ -123,8 +144,7 @@ TEST_CASE("query respects max_results cap", "[search_backend]")
     CHECK(sb.query("team", 10).size() == 3);
 }
 
-TEST_CASE("query carries avatar_url through for rooms and contacts",
-          "[search_backend]")
+TEST_CASE("query carries avatar_url through for rooms and contacts", "[search_backend]")
 {
     SearchBackend sb;
 
@@ -136,15 +156,22 @@ TEST_CASE("query carries avatar_url through for rooms and contacts",
 
     tesseract::RoomInfo no_avatar = room("!c:x", "No Avatar");
 
-    std::vector<tesseract::RoomInfo> rooms = {with_avatar, dm_fallback,
-                                              no_avatar};
+    std::vector<tesseract::RoomInfo> rooms = {with_avatar, dm_fallback, no_avatar};
 
     tesseract::RoomMember alice = user("@alice:x", "Alice");
     alice.avatar_url = "mxc://x/alice-avatar";
     std::vector<tesseract::RoomMember> users = {alice};
 
-    sb.register_shell({.rooms = [&] { return rooms; },
-                       .known_users = [&] { return users; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms;
+                       },
+                       .known_users =
+                           [&]
+                       {
+                           return users;
+                       },
                        .activate_room = {},
                        .activate_contact = {}});
 
@@ -168,23 +195,36 @@ TEST_CASE("query carries avatar_url through for rooms and contacts",
     CHECK(r4[0].avatar_url == "mxc://x/alice-avatar");
 }
 
-TEST_CASE("activate routes to the registered shell owning the id",
-          "[search_backend]")
+TEST_CASE("activate routes to the registered shell owning the id", "[search_backend]")
 {
     SearchBackend sb;
     std::vector<tesseract::RoomInfo> rooms_a = {room("!a:x", "Alpha")};
     std::vector<tesseract::RoomInfo> rooms_b = {room("!b:x", "Beta")};
     std::string activated_in_a, activated_in_b;
 
-    sb.register_shell({.rooms = [&] { return rooms_a; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms_a;
+                       },
                        .known_users = {},
-                       .activate_room = [&](const std::string& id)
-                       { activated_in_a = id; },
+                       .activate_room =
+                           [&](const std::string& id)
+                       {
+                           activated_in_a = id;
+                       },
                        .activate_contact = {}});
-    sb.register_shell({.rooms = [&] { return rooms_b; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms_b;
+                       },
                        .known_users = {},
-                       .activate_room = [&](const std::string& id)
-                       { activated_in_b = id; },
+                       .activate_room =
+                           [&](const std::string& id)
+                       {
+                           activated_in_b = id;
+                       },
                        .activate_contact = {}});
 
     sb.activate("!b:x", SearchBackend::ResultKind::Room);
@@ -192,28 +232,37 @@ TEST_CASE("activate routes to the registered shell owning the id",
     CHECK(activated_in_b == "!b:x");
 }
 
-TEST_CASE("activate is a no-op for an id that no longer resolves",
-          "[search_backend]")
+TEST_CASE("activate is a no-op for an id that no longer resolves", "[search_backend]")
 {
     SearchBackend sb;
     std::vector<tesseract::RoomInfo> rooms = {room("!a:x", "Alpha")};
     bool activated = false;
-    sb.register_shell({.rooms = [&] { return rooms; },
+    sb.register_shell({.rooms =
+                           [&]
+                       {
+                           return rooms;
+                       },
                        .known_users = {},
-                       .activate_room = [&](const std::string&)
-                       { activated = true; },
+                       .activate_room =
+                           [&](const std::string&)
+                       {
+                           activated = true;
+                       },
                        .activate_contact = {}});
 
     sb.activate("!gone:x", SearchBackend::ResultKind::Room);
     CHECK_FALSE(activated);
 }
 
-TEST_CASE("unregister_shell drops a shell's rooms/contacts from future queries",
-          "[search_backend]")
+TEST_CASE("unregister_shell drops a shell's rooms/contacts from future queries", "[search_backend]")
 {
     SearchBackend sb;
     std::vector<tesseract::RoomInfo> rooms = {room("!a:x", "Alpha")};
-    auto h = sb.register_shell({.rooms = [&] { return rooms; },
+    auto h = sb.register_shell({.rooms =
+                                    [&]
+                                {
+                                    return rooms;
+                                },
                                 .known_users = {},
                                 .activate_room = {},
                                 .activate_contact = {}});
@@ -235,47 +284,105 @@ namespace
 // SearchBackend, the way real multi-window/multi-account shells do.
 struct SearchWiringShell : ShellBase
 {
-    explicit SearchWiringShell(tesseract::AccountManager& am) : ShellBase(am) {}
+    explicit SearchWiringShell(tesseract::AccountManager& am) : ShellBase(am)
+    {
+    }
 
-    void post_to_ui_(std::function<void()> fn) override { fn(); }
-    void post_to_ui_after_(int, std::function<void()> fn) override { fn(); }
-    void request_relayout_() override {}
-    void request_repaint_() override {}
-    void on_rooms_updated_() override {}
-    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind,
-                               std::vector<uint8_t>) override {}
-    void on_tab_state_changed_ui_() override {}
+    void post_to_ui_(std::function<void()> fn) override
+    {
+        fn();
+    }
+    void post_to_ui_after_(int, std::function<void()> fn) override
+    {
+        fn();
+    }
+    void request_relayout_() override
+    {
+    }
+    void request_repaint_() override
+    {
+    }
+    void on_rooms_updated_() override
+    {
+    }
+    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind, std::vector<uint8_t>) override
+    {
+    }
+    void on_tab_state_changed_ui_() override
+    {
+    }
     DecodedImage decode_image_(const std::vector<uint8_t>&, int, int) override
     {
         return {};
     }
-    std::int64_t monotonic_ms_() override { return 1000; }
-    void start_anim_tick_() override {}
-    void repaint_pickers_() override {}
-    void navigate_to_room_(const std::string&) override {}
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)>) override {}
-    void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode) override {}
-    void raise_and_activate_() override { raised = true; }
-    std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override { return nullptr; }
-    tesseract::CallWindowBase* create_call_window_() override { return nullptr; }
-    bool is_ctrl_held_() const override { return false; }
-    void switch_active_account_(const std::string&) override {}
-    void refresh_account_ui_after_switch_() override {}
-    void bind_settings_controller_() override {}
-    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
-    std::unique_ptr<tesseract::IEventHandler>
-    make_account_bridge_(const std::string&) override { return nullptr; }
-    void install_account_notifier_(tesseract::AccountSession&) override {}
-    void request_relogin_(const std::string&) override {}
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+    std::int64_t monotonic_ms_() override
+    {
+        return 1000;
+    }
+    void start_anim_tick_() override
+    {
+    }
+    void repaint_pickers_() override
+    {
+    }
+    void navigate_to_room_(const std::string&) override
+    {
+    }
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)>) override
+    {
+    }
+    void show_encryption_setup_overlay_(tesseract::views::EncryptionSetupOverlay::Mode) override
+    {
+    }
+    void raise_and_activate_() override
+    {
+        raised = true;
+    }
+    std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override
+    {
+        return nullptr;
+    }
+    tesseract::CallWindowBase* create_call_window_() override
+    {
+        return nullptr;
+    }
+    bool is_ctrl_held_() const override
+    {
+        return false;
+    }
+    void switch_active_account_(const std::string&) override
+    {
+    }
+    void refresh_account_ui_after_switch_() override
+    {
+    }
+    void bind_settings_controller_() override
+    {
+    }
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override
+    {
+    }
+    std::unique_ptr<tesseract::IEventHandler> make_account_bridge_(const std::string&) override
+    {
+        return nullptr;
+    }
+    void install_account_notifier_(tesseract::AccountSession&) override
+    {
+    }
+    void request_relogin_(const std::string&) override
+    {
+    }
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     bool raised = false;
 
@@ -286,8 +393,7 @@ struct SearchWiringShell : ShellBase
 
 } // namespace
 
-TEST_CASE("ShellBase registers its rooms_ into the shared SearchBackend",
-          "[search_backend][shell]")
+TEST_CASE("ShellBase registers its rooms_ into the shared SearchBackend", "[search_backend][shell]")
 {
     tesseract::AccountManager am;
     SearchWiringShell s(am);

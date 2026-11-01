@@ -28,7 +28,7 @@ protected:
     QSize sizeHint() const override;
 
 private:
-    uint32_t  count_     = 0;
+    uint32_t count_ = 0;
     tk::Color dot_color_ = tk::Color::rgb(0x40BF4D);
-    float     phase_     = 0.0f;
+    float phase_ = 0.0f;
 };

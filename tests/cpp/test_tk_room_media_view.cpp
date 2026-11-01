@@ -27,23 +27,28 @@ namespace
 struct TkRoomMediaViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    LayoutCtx layout_ctx() { return {surface->factory(), Theme::light()}; }
-    PaintCtx  paint_ctx()  { return {surface->canvas(), surface->factory(), Theme::light()}; }
+    LayoutCtx layout_ctx()
+    {
+        return {surface->factory(), Theme::light()};
+    }
+    PaintCtx paint_ctx()
+    {
+        return {surface->canvas(), surface->factory(), Theme::light()};
+    }
 };
 
 MessageRowData make_image_row(const std::string& event_id)
 {
     MessageRowData row;
-    row.kind     = MessageRowData::Kind::Image;
+    row.kind = MessageRowData::Kind::Image;
     row.event_id = event_id;
     return row;
 }
 
 } // namespace
 
-TEST_CASE(
-    "RoomMediaView does not keep re-firing on_load_older_media once populated",
-    "[tk][roommediaview]")
+TEST_CASE("RoomMediaView does not keep re-firing on_load_older_media once populated",
+          "[tk][roommediaview]")
 {
     TkRoomMediaViewStage st;
     RoomMediaView view;
@@ -58,7 +63,10 @@ TEST_CASE(
     view.set_media(std::move(rows));
 
     int fires = 0;
-    view.on_load_older_media = [&](std::string) { ++fires; };
+    view.on_load_older_media = [&](std::string)
+    {
+        ++fires;
+    };
 
     auto lc = st.layout_ctx();
     // Simulate several relayout passes in a row (schedule_relayout_ /
@@ -98,14 +106,15 @@ TEST_CASE("RoomMediaView::content_fills_viewport reflects actual content vs boun
     // Enough rows to exceed 600px of grid content.
     std::vector<MessageRowData> many;
     for (int i = 0; i < 200; ++i)
+    {
         many.push_back(make_image_row("$ev" + std::to_string(i)));
+    }
     view.set_media(std::move(many));
     view.arrange(lc, {0, 0, 800, 600});
     CHECK(view.content_fills_viewport());
 }
 
-TEST_CASE("RoomMediaView::estimated_capacity is 0 before any arrange() pass",
-          "[tk][roommediaview]")
+TEST_CASE("RoomMediaView::estimated_capacity is 0 before any arrange() pass", "[tk][roommediaview]")
 {
     // Reproduces the "stopped after only 6" bug: a fixed magic-number floor
     // used as the real capacity target stops pagination long before the

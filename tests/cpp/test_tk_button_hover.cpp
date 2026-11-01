@@ -26,9 +26,16 @@ public:
     {
         bounds_ = r;
     }
-    Size measure(LayoutCtx&, Size) override { return {bounds_.w, bounds_.h}; }
-    void arrange(LayoutCtx&, Rect) override {}
-    void paint(PaintCtx&) override {}
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void arrange(LayoutCtx&, Rect) override
+    {
+    }
+    void paint(PaintCtx&) override
+    {
+    }
 };
 
 // Mirrors RoomHeader / ComposeBar: claims pointer-move hover for itself even
@@ -40,7 +47,9 @@ public:
     Widget* dispatch_pointer_move(Point world, bool* dirty) override
     {
         if (!visible_ || !contains_world(world))
+        {
             return nullptr;
+        }
         Widget::dispatch_pointer_move(world, dirty);
         return this;
     }
@@ -54,21 +63,37 @@ public:
     Widget* dispatch_pointer_move(Point world, bool* dirty) override
     {
         if (!visible_)
+        {
             return nullptr;
+        }
         for (auto& ch : children())
+        {
             if (ch->visible())
+            {
                 if (Widget* hit = ch->dispatch_pointer_move(world, dirty))
+                {
                     return hit;
+                }
+            }
+        }
         return nullptr;
     }
     Widget* hit_test(Point world) override
     {
         if (!visible_)
+        {
             return nullptr;
+        }
         for (auto it = children().rbegin(); it != children().rend(); ++it)
+        {
             if ((*it)->visible())
+            {
                 if (Widget* hit = (*it)->hit_test(world))
+                {
                     return hit;
+                }
+            }
+        }
         return nullptr;
     }
 };
@@ -80,10 +105,16 @@ struct HoverFixture
 
     Button* add_button(Widget& parent, Rect r, int* clicks = nullptr)
     {
-        auto* b = parent.add_child(create_widget<Button>(
-            &parent, "B", std::function<void()>{}, Button::Variant::Subtle));
+        auto* b = parent.add_child(
+            create_widget<Button>(&parent, "B", std::function<void()>{}, Button::Variant::Subtle));
         if (clicks)
-            b->set_on_click([clicks] { ++*clicks; });
+        {
+            b->set_on_click(
+                [clicks]
+                {
+                    ++*clicks;
+                });
+        }
         b->arrange(lc, r);
         return b;
     }
@@ -91,8 +122,7 @@ struct HoverFixture
 
 } // namespace
 
-TEST_CASE("Button hover follows the pointer in and out",
-          "[tk][button][hover]")
+TEST_CASE("Button hover follows the pointer in and out", "[tk][button][hover]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
@@ -106,8 +136,7 @@ TEST_CASE("Button hover follows the pointer in and out",
     CHECK_FALSE(b->hovered());
 }
 
-TEST_CASE("Button hover is cleared when the pointer leaves the surface",
-          "[tk][button][hover]")
+TEST_CASE("Button hover is cleared when the pointer leaves the surface", "[tk][button][hover]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
@@ -120,15 +149,22 @@ TEST_CASE("Button hover is cleared when the pointer leaves the surface",
     CHECK_FALSE(b->hovered());
 }
 
-TEST_CASE("on_hover_enter / on_hover_leave fire once per transition",
-          "[tk][button][hover]")
+TEST_CASE("on_hover_enter / on_hover_leave fire once per transition", "[tk][button][hover]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
     Button* b = f.add_button(root, {10, 10, 50, 30});
     int enter = 0, leave = 0;
-    b->set_on_hover_enter([&] { ++enter; });
-    b->set_on_hover_leave([&] { ++leave; });
+    b->set_on_hover_enter(
+        [&]
+        {
+            ++enter;
+        });
+    b->set_on_hover_leave(
+        [&]
+        {
+            ++leave;
+        });
     TestHost host(&root);
 
     host.dispatch_pointer_move({20, 20});
@@ -152,8 +188,7 @@ TEST_CASE("A disabled Button is never hovered", "[tk][button][hover]")
     CHECK_FALSE(b->hovered());
 }
 
-TEST_CASE("Button still hovers under a parent that claims pointer-move",
-          "[tk][button][hover]")
+TEST_CASE("Button still hovers under a parent that claims pointer-move", "[tk][button][hover]")
 {
     HoverFixture f;
     HoverClaimingBox root({0, 0, 400, 400});
@@ -167,8 +202,7 @@ TEST_CASE("Button still hovers under a parent that claims pointer-move",
     CHECK_FALSE(b->hovered());
 }
 
-TEST_CASE("Button hovers beneath a transparent overlay stack",
-          "[tk][button][hover]")
+TEST_CASE("Button hovers beneath a transparent overlay stack", "[tk][button][hover]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
@@ -181,8 +215,7 @@ TEST_CASE("Button hovers beneath a transparent overlay stack",
     CHECK(b->hovered());
 }
 
-TEST_CASE("Of two overlapping Buttons only the topmost is hovered",
-          "[tk][button][hover]")
+TEST_CASE("Of two overlapping Buttons only the topmost is hovered", "[tk][button][hover]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
@@ -212,13 +245,12 @@ TEST_CASE("A Button inside the open popup is not hovered by the tree walk",
     TestHost host(&root);
     host.set_active_popup(&popup);
 
-    host.dispatch_pointer_move({20, 20}); // elsewhere: hover nothing
+    host.dispatch_pointer_move({20, 20});   // elsewhere: hover nothing
     host.dispatch_pointer_move({120, 120}); // inside popup, over `behind`
     CHECK_FALSE(behind->hovered());
 }
 
-TEST_CASE("Button click fires only for an inside release",
-          "[tk][button][click]")
+TEST_CASE("Button click fires only for an inside release", "[tk][button][click]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
@@ -255,7 +287,11 @@ TEST_CASE("Button on_click may destroy the button", "[tk][button][click]")
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});
     Button* b = f.add_button(root, {10, 10, 50, 30});
-    b->set_on_click([&root, b] { root.remove_child(b); });
+    b->set_on_click(
+        [&root, b]
+        {
+            root.remove_child(b);
+        });
     TestHost host(&root);
 
     host.dispatch_pointer_down({20, 20});
@@ -263,8 +299,7 @@ TEST_CASE("Button on_click may destroy the button", "[tk][button][click]")
     SUCCEED();
 }
 
-TEST_CASE("Button activates on Enter/Space only while focused",
-          "[tk][button][keyboard]")
+TEST_CASE("Button activates on Enter/Space only while focused", "[tk][button][keyboard]")
 {
     HoverFixture f;
     HoverBox root({0, 0, 400, 400});

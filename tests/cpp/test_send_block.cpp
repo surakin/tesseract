@@ -39,12 +39,13 @@ TEST_CASE("send_block decides what Retry does from the setting and the running s
 TEST_CASE("send_block names the affected users", "[send_block]")
 {
     const auto name = [](const std::string& id) -> std::string
-    { return id == "@a:x" ? "Alice" : id == "@b:x" ? "Bob" : ""; };
+    {
+        return id == "@a:x" ? "Alice" : id == "@b:x" ? "Bob" : "";
+    };
 
     CHECK(sb::reason("insecure_devices", {"@a:x"}, name) ==
           "Alice has a device that isn't confirmed by its owner");
-    CHECK(sb::reason("identity_violation", {"@a:x"}, name) ==
-          "Alice's digital identity was reset");
+    CHECK(sb::reason("identity_violation", {"@a:x"}, name) == "Alice's digital identity was reset");
     // Several users read as a list, not a repeated sentence.
     CHECK(sb::reason("insecure_devices", {"@a:x", "@b:x"}, name) ==
           "Alice and Bob have devices that aren't confirmed by their owners");
@@ -58,8 +59,10 @@ TEST_CASE("send_block falls back to the user id and handles missing users", "[se
           "@c:x has a device that isn't confirmed by its owner");
     // A name resolver that knows nothing behaves the same.
     CHECK(sb::reason("insecure_devices", {"@c:x"},
-                     [](const std::string&) { return std::string(); }) ==
-          "@c:x has a device that isn't confirmed by its owner");
+                     [](const std::string&)
+                     {
+                         return std::string();
+                     }) == "@c:x has a device that isn't confirmed by its owner");
     CHECK(sb::reason("insecure_devices", {}, {}) ==
           "someone in this room has a device that isn't confirmed by its owner");
 }

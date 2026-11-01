@@ -15,14 +15,17 @@ namespace
 struct ShellWarmSubscriptionsTestShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::select_warm_evictions_;
     using ShellBase::touch_visited_room_;
@@ -56,8 +59,7 @@ tesseract::RoomInfo room(const std::string& id)
 
 } // namespace
 
-TEST_CASE("status messages are not linkified unless explicitly opted in",
-          "[shell][status_links]")
+TEST_CASE("status messages are not linkified unless explicitly opted in", "[shell][status_links]")
 {
     ShellWarmSubscriptionsTestShell s;
     const std::string msg = "failed: see [click here](https://evil.example)";
@@ -74,8 +76,7 @@ TEST_CASE("status messages are not linkified unless explicitly opted in",
     CHECK(tesseract::status_has_links(linked));
 }
 
-TEST_CASE("room_by_id_ returns the matching room or nullptr",
-          "[shell][room_index]")
+TEST_CASE("room_by_id_ returns the matching room or nullptr", "[shell][room_index]")
 {
     ShellWarmSubscriptionsTestShell s;
     s.set_rooms_for_test({room("!a:x"), room("!b:x"), room("!c:x")});
@@ -86,8 +87,7 @@ TEST_CASE("room_by_id_ returns the matching room or nullptr",
     CHECK(s.room_by_id_("!missing:x") == nullptr);
 }
 
-TEST_CASE("room_by_id_ reflects a wholesale room-list replacement",
-          "[shell][room_index]")
+TEST_CASE("room_by_id_ reflects a wholesale room-list replacement", "[shell][room_index]")
 {
     ShellWarmSubscriptionsTestShell s;
     s.set_rooms_for_test({room("!a:x"), room("!b:x")});
@@ -184,7 +184,7 @@ TEST_CASE("prune_warm_subscriptions_ drops pagination_ state for evicted rooms",
 
     s.prune_warm_subscriptions_();
 
-    CHECK(s.pagination_.count("!a") == 0);     // evicted → state dropped
-    CHECK(s.pagination_.count("!e") == 1);     // retained → state kept
-    CHECK(s.pagination_["!e"].reached_start);  // unchanged
+    CHECK(s.pagination_.count("!a") == 0);    // evicted → state dropped
+    CHECK(s.pagination_.count("!e") == 1);    // retained → state kept
+    CHECK(s.pagination_["!e"].reached_start); // unchanged
 }

@@ -25,7 +25,10 @@ namespace
 struct Stage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(200, 120);
-    LayoutCtx lc() { return LayoutCtx{surface->factory(), Theme::light()}; }
+    LayoutCtx lc()
+    {
+        return LayoutCtx{surface->factory(), Theme::light()};
+    }
 };
 } // namespace
 
@@ -41,7 +44,7 @@ TEST_CASE("visible() reflects a hidden ancestor", "[tk][widget][visibility]")
 
     box.set_visible(false);
     CHECK_FALSE(box.visible());
-    CHECK_FALSE(a->visible());   // cascaded down
+    CHECK_FALSE(a->visible()); // cascaded down
     CHECK_FALSE(leaf->visible());
 
     // The leaf's own flag is untouched — it re-emerges when the ancestor does.

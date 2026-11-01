@@ -18,4 +18,3 @@ namespace tesseract
 {
 CallWindowBase* make_mac_call_window(ShellBase* shell);
 } // namespace tesseract
-

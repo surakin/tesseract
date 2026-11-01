@@ -71,15 +71,27 @@ public:
 
     // --- Inspection ---
 
-    bool active() const { return active_; }
-    Pref pref() const { return pref_; }
-    bool has_pending() const { return pending_.has_value(); }
-    std::chrono::seconds debounce() const { return debounce_; }
+    bool active() const
+    {
+        return active_;
+    }
+    Pref pref() const
+    {
+        return pref_;
+    }
+    bool has_pending() const
+    {
+        return pending_.has_value();
+    }
+    std::chrono::seconds debounce() const
+    {
+        return debounce_;
+    }
 
 private:
-    bool target_() const;          // pure truth table over pref_ + signals
-    void reevaluate_signals_();     // arm / cancel the debounce (Auto only)
-    void commit_(bool want);        // set active_ + emit on change
+    bool target_() const;       // pure truth table over pref_ + signals
+    void reevaluate_signals_(); // arm / cancel the debounce (Auto only)
+    void commit_(bool want);    // set active_ + emit on change
 
     NowProvider now_;
     Pref pref_ = Pref::Auto;

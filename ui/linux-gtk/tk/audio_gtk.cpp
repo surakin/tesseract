@@ -32,8 +32,7 @@ public:
         teardown_pipeline_();
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view /*mime*/) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view /*mime*/) override
     {
         reached_end_ = false;
         // The old pipeline reads bytes_ through its memory stream, so it must
@@ -88,8 +87,8 @@ public:
             return;
         }
 
-        GInputStream* stream = g_memory_input_stream_new_from_data(
-            bytes_.data(), bytes_.size(), nullptr);
+        GInputStream* stream =
+            g_memory_input_stream_new_from_data(bytes_.data(), bytes_.size(), nullptr);
         g_object_set(src, "stream", stream, nullptr);
         g_object_unref(stream);
 
@@ -97,14 +96,12 @@ public:
         gst_element_link(src, dec);
         gst_element_link(conv, sink);
         // decodebin's audio pad shows up dynamically; wire it to audioconvert.
-        g_signal_connect(dec, "pad-added",
-                         G_CALLBACK(&GtkAudioPlayer::on_pad_added), conv);
+        g_signal_connect(dec, "pad-added", G_CALLBACK(&GtkAudioPlayer::on_pad_added), conv);
 
         current_pipeline_ = pipe;
 
         GstBus* bus = gst_element_get_bus(pipe);
-        bus_watch_id_ =
-            gst_bus_add_watch(bus, &GtkAudioPlayer::on_bus_message, this);
+        bus_watch_id_ = gst_bus_add_watch(bus, &GtkAudioPlayer::on_bus_message, this);
         gst_object_unref(bus);
 
         gst_element_set_state(pipe, GST_STATE_PLAYING);
@@ -152,8 +149,7 @@ public:
             return 0;
         }
         gint64 pos = 0;
-        if (gst_element_query_position(current_pipeline_, GST_FORMAT_TIME,
-                                       &pos))
+        if (gst_element_query_position(current_pipeline_, GST_FORMAT_TIME, &pos))
         {
             return static_cast<std::uint64_t>(pos / GST_MSECOND);
         }
@@ -166,8 +162,7 @@ public:
             return 0;
         }
         gint64 dur = 0;
-        if (gst_element_query_duration(current_pipeline_, GST_FORMAT_TIME,
-                                       &dur))
+        if (gst_element_query_duration(current_pipeline_, GST_FORMAT_TIME, &dur))
         {
             return static_cast<std::uint64_t>(dur / GST_MSECOND);
         }
@@ -209,8 +204,7 @@ public:
             return;
         }
         gint64 pos = 0;
-        if (!gst_element_query_position(current_pipeline_, GST_FORMAT_TIME,
-                                        &pos))
+        if (!gst_element_query_position(current_pipeline_, GST_FORMAT_TIME, &pos))
         {
             pos = 0;
         }
@@ -228,12 +222,9 @@ private:
         {
             return;
         }
-        gst_element_seek(current_pipeline_, static_cast<gdouble>(rate_),
-                         GST_FORMAT_TIME,
-                         static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                                   GST_SEEK_FLAG_ACCURATE),
-                         GST_SEEK_TYPE_SET, position_ns, GST_SEEK_TYPE_NONE,
-                         GST_CLOCK_TIME_NONE);
+        gst_element_seek(current_pipeline_, static_cast<gdouble>(rate_), GST_FORMAT_TIME,
+                         static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE),
+                         GST_SEEK_TYPE_SET, position_ns, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
     }
 
 private:
@@ -268,8 +259,7 @@ private:
         return self->playing_ ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
     }
 
-    static void on_pad_added(GstElement* /*src*/, GstPad* new_pad,
-                             gpointer user_data)
+    static void on_pad_added(GstElement* /*src*/, GstPad* new_pad, gpointer user_data)
     {
         auto* conv = static_cast<GstElement*>(user_data);
         GstPad* sink_pad = gst_element_get_static_pad(conv, "sink");
@@ -280,8 +270,7 @@ private:
         gst_object_unref(sink_pad);
     }
 
-    static gboolean on_bus_message(GstBus* /*bus*/, GstMessage* msg,
-                                   gpointer user_data)
+    static gboolean on_bus_message(GstBus* /*bus*/, GstMessage* msg, gpointer user_data)
     {
         auto* self = static_cast<GtkAudioPlayer*>(user_data);
         switch (GST_MESSAGE_TYPE(msg))

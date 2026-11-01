@@ -69,7 +69,11 @@ void recording_writer(const std::string& user, const std::string& json)
     {
         sink().entered = true;
         sink().cv.notify_all();
-        sink().cv.wait(lk, [] { return sink().release; });
+        sink().cv.wait(lk,
+                       []
+                       {
+                           return sink().release;
+                       });
     }
     sink().calls.emplace_back(user, json);
     sink().latest[user] = json;
@@ -78,8 +82,7 @@ void recording_writer(const std::string& user, const std::string& json)
 }
 } // namespace
 
-TEST_CASE("SessionPersistQueue writes a single enqueued job",
-          "[session_persist_queue]")
+TEST_CASE("SessionPersistQueue writes a single enqueued job", "[session_persist_queue]")
 {
     sink().reset();
     SessionPersistQueue q(&recording_writer);
@@ -109,7 +112,11 @@ TEST_CASE("SessionPersistQueue coalesces pending jobs for the same user "
     // guaranteed to queue *behind* it and coalesce into a single pending job.
     {
         std::unique_lock<std::mutex> lk(sink().m);
-        sink().cv.wait(lk, [] { return sink().entered; });
+        sink().cv.wait(lk,
+                       []
+                       {
+                           return sink().entered;
+                       });
     }
     q.enqueue("@a:hs", "tok2");
     q.enqueue("@a:hs", "tok3");
@@ -133,8 +140,7 @@ TEST_CASE("SessionPersistQueue coalesces pending jobs for the same user "
     REQUIRE(sink().latest["@a:hs"] == "tok4");
 }
 
-TEST_CASE("SessionPersistQueue keeps distinct users independent",
-          "[session_persist_queue]")
+TEST_CASE("SessionPersistQueue keeps distinct users independent", "[session_persist_queue]")
 {
     sink().reset();
     {
@@ -146,7 +152,11 @@ TEST_CASE("SessionPersistQueue keeps distinct users independent",
     q.enqueue("@a:hs", "a1"); // in-flight (gated)
     {
         std::unique_lock<std::mutex> lk(sink().m);
-        sink().cv.wait(lk, [] { return sink().entered; });
+        sink().cv.wait(lk,
+                       []
+                       {
+                           return sink().entered;
+                       });
     }
     // While @a's first write is pinned, queue work for both users. @b coalesces
     // b1 -> b2; @a's a2 queues behind the in-flight a1.
@@ -166,8 +176,7 @@ TEST_CASE("SessionPersistQueue keeps distinct users independent",
     REQUIRE(sink().latest["@b:hs"] == "b2");
 }
 
-TEST_CASE("SessionPersistQueue drains all pending work on destruction",
-          "[session_persist_queue]")
+TEST_CASE("SessionPersistQueue drains all pending work on destruction", "[session_persist_queue]")
 {
     sink().reset();
     {
@@ -194,17 +203,27 @@ TEST_CASE("SessionPersistQueue discard drops pending jobs and waits for the "
     q.enqueue("@a:hs", "a1"); // in-flight (gated)
     {
         std::unique_lock<std::mutex> lk(sink().m);
-        sink().cv.wait(lk, [] { return sink().entered; });
+        sink().cv.wait(lk,
+                       []
+                       {
+                           return sink().entered;
+                       });
     }
     q.enqueue("@a:hs", "a2"); // pending — must never be written
     q.enqueue("@b:hs", "b1"); // another account — unaffected
 
     REQUIRE(q.pending() == 2);
-    std::thread discarder([&] { q.discard("@a:hs"); });
+    std::thread discarder(
+        [&]
+        {
+            q.discard("@a:hs");
+        });
     // discard() removes a2 immediately, then blocks on the in-flight a1.
     // Release a1 only after that, so the worker can't pick a2 up first.
     while (q.pending() != 1)
+    {
         std::this_thread::yield();
+    }
     {
         std::lock_guard<std::mutex> lk(sink().m);
         sink().release = true;
@@ -224,12 +243,15 @@ TEST_CASE("SessionPersistQueue discard drops pending jobs and waits for the "
     REQUIRE(sink().total == 2);
 }
 
-TEST_CASE("save_with_retries retries until an attempt succeeds",
-          "[session_persist_queue]")
+TEST_CASE("save_with_retries retries until an attempt succeeds", "[session_persist_queue]")
 {
     int calls = 0;
-    CHECK(tesseract::save_with_retries([&] { return ++calls == 3; }, 4,
-                                       std::chrono::milliseconds(0)));
+    CHECK(tesseract::save_with_retries(
+        [&]
+        {
+            return ++calls == 3;
+        },
+        4, std::chrono::milliseconds(0)));
     CHECK(calls == 3);
 }
 
@@ -247,8 +269,7 @@ TEST_CASE("save_with_retries gives up after its attempts, counting throws",
     CHECK(calls == 3);
 }
 
-TEST_CASE("save_with_retries stops once cancelled, mid-backoff included",
-          "[session_persist_queue]")
+TEST_CASE("save_with_retries stops once cancelled, mid-backoff included", "[session_persist_queue]")
 {
     int calls = 0;
     bool cancel = false;
@@ -260,7 +281,11 @@ TEST_CASE("save_with_retries stops once cancelled, mid-backoff included",
             cancel = true; // the account signs out after the first failure
             return false;
         },
-        4, std::chrono::seconds(30), [&] { return cancel; }));
+        4, std::chrono::seconds(30),
+        [&]
+        {
+            return cancel;
+        }));
     CHECK(calls == 1);
     CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(5));
 }
@@ -291,7 +316,11 @@ TEST_CASE("session save failure reports reach the registered handler until it is
           "[session_persist_queue]")
 {
     std::vector<std::string> seen;
-    tesseract::set_session_save_failed_handler([&](const std::string& u) { seen.push_back(u); });
+    tesseract::set_session_save_failed_handler(
+        [&](const std::string& u)
+        {
+            seen.push_back(u);
+        });
     tesseract::report_session_save_failed("@a:hs");
     tesseract::set_session_save_failed_handler({});
     tesseract::report_session_save_failed("@b:hs"); // no handler: ignored

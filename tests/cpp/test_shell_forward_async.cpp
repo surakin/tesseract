@@ -21,13 +21,17 @@ namespace
 struct ForwardShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::handle_forward_done_ui_;
     using ShellBase::handle_forward_failed_ui_;
@@ -40,8 +44,7 @@ struct ForwardShell : tesseract::test::TestShellBase
 
 // ── handle_forward_done_ui_ ───────────────────────────────────────────────
 
-TEST_CASE("handle_forward_done_ui_ erases the completed entry",
-          "[shell][forward_async]")
+TEST_CASE("handle_forward_done_ui_ erases the completed entry", "[shell][forward_async]")
 {
     ForwardShell s;
     s.pending_forwards_[42] = "!room:x";
@@ -60,8 +63,7 @@ TEST_CASE("handle_forward_done_ui_ does not disturb other in-flight requests",
     REQUIRE(s.pending_forwards_.count(2) == 1);
 }
 
-TEST_CASE("handle_forward_done_ui_ with unknown request_id is a no-op",
-          "[shell][forward_async]")
+TEST_CASE("handle_forward_done_ui_ with unknown request_id is a no-op", "[shell][forward_async]")
 {
     ForwardShell s;
     s.pending_forwards_[1] = "!room:x";
@@ -71,8 +73,7 @@ TEST_CASE("handle_forward_done_ui_ with unknown request_id is a no-op",
 
 // ── handle_forward_failed_ui_ ────────────────────────────────────────────
 
-TEST_CASE("handle_forward_failed_ui_ ignores unknown request_id",
-          "[shell][forward_async]")
+TEST_CASE("handle_forward_failed_ui_ ignores unknown request_id", "[shell][forward_async]")
 {
     ForwardShell s;
     s.pending_forwards_[1] = "!room:x";
@@ -80,8 +81,7 @@ TEST_CASE("handle_forward_failed_ui_ ignores unknown request_id",
     REQUIRE(s.pending_forwards_.size() == 1);
 }
 
-TEST_CASE("handle_forward_failed_ui_ erases the failed entry",
-          "[shell][forward_async]")
+TEST_CASE("handle_forward_failed_ui_ erases the failed entry", "[shell][forward_async]")
 {
     ForwardShell s;
     s.pending_forwards_[7] = "!room:x";
@@ -112,13 +112,12 @@ TEST_CASE("handle_forward_failed_ui_ falls back to room_id when room unknown",
     REQUIRE(s.pending_forwards_.empty());
 }
 
-TEST_CASE("handle_forward_failed_ui_ uses room name when room is known",
-          "[shell][forward_async]")
+TEST_CASE("handle_forward_failed_ui_ uses room name when room is known", "[shell][forward_async]")
 {
     ForwardShell s;
     s.my_user_id_ = "@me:x";
     tesseract::RoomInfo r;
-    r.id   = "!a:x";
+    r.id = "!a:x";
     r.name = "General";
     s.push_rooms_("@me:x", {r});
 

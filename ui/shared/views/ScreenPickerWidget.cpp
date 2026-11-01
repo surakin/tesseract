@@ -10,40 +10,40 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kPad    = 24.0f;
-constexpr float kHdrH   = 48.0f;
-constexpr float kTileW  = 220.0f;
-constexpr float kTileH  = 140.0f;
-constexpr float kScreenPickerGap    = 16.0f;
-constexpr float kScreenPickerBtnW   = 100.0f;
-constexpr float kScreenPickerBtnH   = 36.0f;
+constexpr float kPad = 24.0f;
+constexpr float kHdrH = 48.0f;
+constexpr float kTileW = 220.0f;
+constexpr float kTileH = 140.0f;
+constexpr float kScreenPickerGap = 16.0f;
+constexpr float kScreenPickerBtnW = 100.0f;
+constexpr float kScreenPickerBtnH = 36.0f;
 
-constexpr tk::Color kBackdrop  {  0,   0,   0, 180};
-constexpr tk::Color kCardBg    { 30,  30,  30, 245};
-constexpr tk::Color kCardBd    { 80,  80,  80, 180};
-constexpr tk::Color kTileNorm  { 50,  50,  50, 255};
-constexpr tk::Color kTileHov   { 60,  80, 120, 255};
-constexpr tk::Color kTileBdN   { 70,  70,  70, 255};
-constexpr tk::Color kTileBdH   { 90, 130, 200, 255};
-constexpr tk::Color kTextTitle {220, 220, 220, 255};
-constexpr tk::Color kTextLabel {200, 200, 200, 255};
+constexpr tk::Color kBackdrop{0, 0, 0, 180};
+constexpr tk::Color kCardBg{30, 30, 30, 245};
+constexpr tk::Color kCardBd{80, 80, 80, 180};
+constexpr tk::Color kTileNorm{50, 50, 50, 255};
+constexpr tk::Color kTileHov{60, 80, 120, 255};
+constexpr tk::Color kTileBdN{70, 70, 70, 255};
+constexpr tk::Color kTileBdH{90, 130, 200, 255};
+constexpr tk::Color kTextTitle{220, 220, 220, 255};
+constexpr tk::Color kTextLabel{200, 200, 200, 255};
 
 // The dialog is always dark; High Contrast uses the theme palette instead.
 struct PickerColours
 {
-    tk::Color backdrop, card_bg, card_bd, tile_norm, tile_hov, tile_bd_n, tile_bd_h,
-        text_title, text_label;
+    tk::Color backdrop, card_bg, card_bd, tile_norm, tile_hov, tile_bd_n, tile_bd_h, text_title,
+        text_label;
 };
 
 PickerColours picker_colours(const tk::Theme& theme)
 {
     if (!theme.high_contrast)
     {
-        return {kBackdrop, kCardBg, kCardBd, kTileNorm, kTileHov,
+        return {kBackdrop, kCardBg,  kCardBd,    kTileNorm, kTileHov,
                 kTileBdN,  kTileBdH, kTextTitle, kTextLabel};
     }
     const auto& p = theme.palette;
-    return {p.bg,     p.chrome_bg, p.border,       p.bg,           p.bg,
+    return {p.bg,     p.chrome_bg, p.border,       p.bg,          p.bg,
             p.border, p.accent,    p.text_primary, p.text_primary};
 }
 } // namespace
@@ -51,19 +51,23 @@ PickerColours picker_colours(const tk::Theme& theme)
 ScreenPickerWidget::ScreenPickerWidget(std::vector<tk::ScreenSource> sources)
     : sources_(std::move(sources))
 {
-    auto btn = tk::create_widget<tk::Button>(this, tk::tr("Cancel"),
-                                            std::function<void()>{},
-                                            tk::Button::Variant::Subtle);
+    auto btn = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                             tk::Button::Variant::Subtle);
     cancel_btn_ = add_child(std::move(btn));
     // Move the callback to a local before invoking — the callback will call
     // unmount_screen_picker() which destroys `this`, so on_cancelled must not
     // be accessed after the call. std::exchange rather than std::move: a
     // moved-from std::function isn't guaranteed empty (libc++ keeps small
     // callables), and the callback must fire only once.
-    cancel_btn_->set_on_click([this] {
-        auto cb = std::exchange(on_cancelled, nullptr);
-        if (cb) cb();
-    });
+    cancel_btn_->set_on_click(
+        [this]
+        {
+            auto cb = std::exchange(on_cancelled, nullptr);
+            if (cb)
+            {
+                cb();
+            }
+        });
     tile_rects_.resize(sources_.size());
     thumbs_.resize(sources_.size());
 
@@ -75,18 +79,22 @@ ScreenPickerWidget::ScreenPickerWidget(std::vector<tk::ScreenSource> sources)
         // platform's own monitor name, when it has one, goes in the
         // description.
         if (sources_[i].is_window)
+        {
             t->set_accessible_name(sources_[i].display_name);
+        }
         else
         {
-            t->set_accessible_name(
-                tk::trf(tk::tr("Screen {0}"), {std::to_string(++screen_no)}));
+            t->set_accessible_name(tk::trf(tk::tr("Screen {0}"), {std::to_string(++screen_no)}));
             t->set_accessible_description(sources_[i].display_name);
         }
         t->on_activate = [this, i]
         {
             // Same as a tile click: the callback unmounts (destroys) us.
             auto cb = std::exchange(on_source_selected, nullptr);
-            if (cb) cb(sources_[i].id);
+            if (cb)
+            {
+                cb(sources_[i].id);
+            }
         };
         tile_targets_.push_back(t);
     }
@@ -103,11 +111,13 @@ void ScreenPickerWidget::set_thumbnail(std::size_t index, std::vector<std::uint8
                                        std::uint32_t w, std::uint32_t h)
 {
     if (index >= thumbs_.size())
+    {
         return;
+    }
     TileThumb& t = thumbs_[index];
-    t.rgba  = std::move(rgba);
-    t.w     = w;
-    t.h     = h;
+    t.rgba = std::move(rgba);
+    t.w = w;
+    t.h = h;
     t.image.reset(); // rebuild lazily in paint()
     // Caller (ShellBase) triggers the repaint after this call, mirroring the
     // generic request_relayout_() hook used throughout that file.
@@ -116,7 +126,9 @@ void ScreenPickerWidget::set_thumbnail(std::size_t index, std::vector<std::uint8
 tk::Size ScreenPickerWidget::measure(tk::LayoutCtx& ctx, tk::Size constraints)
 {
     if (cancel_btn_)
+    {
         cancel_btn_->measure(ctx, {kScreenPickerBtnW, kScreenPickerBtnH});
+    }
     return constraints;
 }
 
@@ -124,39 +136,40 @@ void ScreenPickerWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
 
-    header_rect_ = tk::Rect{bounds.x + kPad, bounds.y + kPad,
-                             bounds.w - kPad * 2.0f, kHdrH};
+    header_rect_ = tk::Rect{bounds.x + kPad, bounds.y + kPad, bounds.w - kPad * 2.0f, kHdrH};
 
-    const int icols = std::max(1, static_cast<int>(
-        std::floor((bounds.w - kPad * 2.0f + kScreenPickerGap) / (kTileW + kScreenPickerGap))));
+    const int icols =
+        std::max(1, static_cast<int>(std::floor((bounds.w - kPad * 2.0f + kScreenPickerGap) /
+                                                (kTileW + kScreenPickerGap))));
     const float fcols = static_cast<float>(icols);
     const float grid_w = fcols * (kTileW + kScreenPickerGap) - kScreenPickerGap;
     const float grid_x = bounds.x + (bounds.w - grid_w) / 2.0f;
     const float grid_y = header_rect_.y + kHdrH + kScreenPickerGap;
 
     grid_rect_ = tk::Rect{grid_x, grid_y, grid_w,
-                           bounds.h - (grid_y - bounds.y) - kScreenPickerBtnH - kPad * 2.0f};
+                          bounds.h - (grid_y - bounds.y) - kScreenPickerBtnH - kPad * 2.0f};
 
-    const int nrows = sources_.empty() ? 0
-        : (static_cast<int>(sources_.size()) + icols - 1) / icols;
-    content_h_ = nrows > 0 ? static_cast<float>(nrows) * (kTileH + kScreenPickerGap) - kScreenPickerGap : 0.0f;
+    const int nrows =
+        sources_.empty() ? 0 : (static_cast<int>(sources_.size()) + icols - 1) / icols;
+    content_h_ = nrows > 0
+                     ? static_cast<float>(nrows) * (kTileH + kScreenPickerGap) - kScreenPickerGap
+                     : 0.0f;
     clamp_scroll();
 
     for (std::size_t i = 0; i < sources_.size(); ++i)
     {
         const float col = static_cast<float>(static_cast<int>(i) % icols);
         const float row = static_cast<float>(static_cast<int>(i) / icols);
-        tile_rects_[i] = tk::Rect{
-            grid_x + col * (kTileW + kScreenPickerGap),
-            grid_y + row * (kTileH + kScreenPickerGap),
-            kTileW, kTileH};
+        tile_rects_[i] = tk::Rect{grid_x + col * (kTileW + kScreenPickerGap),
+                                  grid_y + row * (kTileH + kScreenPickerGap), kTileW, kTileH};
     }
 
     if (cancel_btn_)
-        cancel_btn_->arrange(ctx, tk::Rect{
-            bounds.x + bounds.w - kPad - kScreenPickerBtnW,
-            bounds.y + bounds.h - kPad - kScreenPickerBtnH,
-            kScreenPickerBtnW, kScreenPickerBtnH});
+    {
+        cancel_btn_->arrange(ctx, tk::Rect{bounds.x + bounds.w - kPad - kScreenPickerBtnW,
+                                           bounds.y + bounds.h - kPad - kScreenPickerBtnH,
+                                           kScreenPickerBtnW, kScreenPickerBtnH});
+    }
 }
 
 void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
@@ -168,8 +181,7 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
     const PickerColours col = picker_colours(ctx.theme);
     ctx.canvas.fill_rect(b, col.backdrop);
 
-    const tk::Rect card{b.x + kPad, b.y + kPad,
-                        b.w - kPad * 2.0f, b.h - kPad * 2.0f};
+    const tk::Rect card{b.x + kPad, b.y + kPad, b.w - kPad * 2.0f, b.h - kPad * 2.0f};
     ctx.canvas.fill_rect(card, col.card_bg);
     ctx.canvas.stroke_rect(card, col.card_bd, 1.0f);
 
@@ -191,7 +203,9 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
     {
         image_factory_ = &ctx.factory;
         for (auto& t : thumbs_)
+        {
             t.image.reset();
+        }
     }
 
     {
@@ -203,11 +217,15 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
             tk::Rect r = tile_rects_[i];
             r.y -= scroll_y_;
             if (i < tile_targets_.size())
+            {
                 tile_targets_[i]->set_target_rect(r);
+            }
 
             // Skip tiles entirely outside the viewport.
             if (r.y + r.h <= grid_rect_.y || r.y >= grid_rect_.y + grid_rect_.h)
+            {
                 continue;
+            }
 
             const bool hov = (static_cast<int>(i) == hovered_idx_);
 
@@ -237,12 +255,11 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
             ctx.canvas.stroke_rect(r, hov ? col.tile_bd_h : col.tile_bd_n,
                                    ctx.theme.high_contrast && hov ? 3.0f : 1.5f);
 
-            const std::string& label = sources_[i].is_window
-                ? sources_[i].display_name
-                : std::string(tk::tr("Screen"));
+            const std::string& label =
+                sources_[i].is_window ? sources_[i].display_name : std::string(tk::tr("Screen"));
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Body;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Body;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = r.w - 16.0f;
             auto lbl = ctx.factory.build_text(label, ts);
             if (lbl)
@@ -266,19 +283,22 @@ bool ScreenPickerWidget::on_pointer_down(tk::Point local)
 {
     // Scrollbar thumb wins over any tile beneath it.
     if (scrollbar_on_pointer_down(local))
+    {
         return true;
+    }
 
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
     pressed_tile_idx_ = -1;
     for (std::size_t i = 0; i < tile_rects_.size(); ++i)
     {
-        const tk::Rect& r  = tile_rects_[i];
-        const float     vy = r.y - scroll_y_; // visual (scrolled) top
+        const tk::Rect& r = tile_rects_[i];
+        const float vy = r.y - scroll_y_; // visual (scrolled) top
         // Ignore tiles scrolled outside the grid viewport.
         if (vy + r.h <= grid_rect_.y || vy >= grid_rect_.y + grid_rect_.h)
+        {
             continue;
-        if (world.x >= r.x && world.x < r.x + r.w &&
-            world.y >= vy    && world.y < vy + r.h)
+        }
+        if (world.x >= r.x && world.x < r.x + r.w && world.y >= vy && world.y < vy + r.h)
         {
             pressed_tile_idx_ = static_cast<int>(i);
             break;
@@ -309,15 +329,22 @@ void ScreenPickerWidget::on_pointer_drag(tk::Point local)
 void ScreenPickerWidget::on_pointer_up(tk::Point /*local*/, bool inside_self)
 {
     if (scrollbar_on_pointer_up())
+    {
         return;
+    }
     const int idx = pressed_tile_idx_;
     pressed_tile_idx_ = -1;
     if (idx < 0 || !inside_self)
+    {
         return;
+    }
     // Move to a local before calling — unmount_screen_picker() will destroy
     // `this` (and on_source_selected with it) during the call.
     auto cb = std::exchange(on_source_selected, nullptr);
-    if (cb) cb(sources_[static_cast<std::size_t>(idx)].id);
+    if (cb)
+    {
+        cb(sources_[static_cast<std::size_t>(idx)].id);
+    }
 }
 
 } // namespace tesseract::views

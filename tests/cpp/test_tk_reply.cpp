@@ -52,15 +52,13 @@ Button* find_send(ComposeBar& bar)
 // MessageRowData
 // ---------------------------------------------------------------------------
 
-TEST_CASE("MessageRowData has_reply is false when in_reply_to_id is empty",
-          "[reply][row]")
+TEST_CASE("MessageRowData has_reply is false when in_reply_to_id is empty", "[reply][row]")
 {
     MessageRowData row;
     CHECK_FALSE(row.has_reply());
 }
 
-TEST_CASE("MessageRowData has_reply is true when in_reply_to_id is set",
-          "[reply][row]")
+TEST_CASE("MessageRowData has_reply is true when in_reply_to_id is set", "[reply][row]")
 {
     MessageRowData row;
     row.in_reply_to_id = "$abc123";
@@ -104,13 +102,12 @@ TEST_CASE("ComposeBar natural_height grows by kReplyBandH + kReplyBandGap when "
     bar.set_reply_to("$evt1", "Alice", "Hello there");
     // arrange() insets the first band 8 px (kPadY) from the widget top, so
     // recompute_height() adds kPadY once whenever any top band is active.
-    CHECK(bar.natural_height() == Approx(baseline + ComposeBar::kReplyBandH +
-                                         ComposeBar::kReplyBandGap + 8.0f));
+    CHECK(bar.natural_height() ==
+          Approx(baseline + ComposeBar::kReplyBandH + ComposeBar::kReplyBandGap + 8.0f));
 }
 
-TEST_CASE(
-    "ComposeBar natural_height shrinks back to baseline when reply is cleared",
-    "[reply][compose]")
+TEST_CASE("ComposeBar natural_height shrinks back to baseline when reply is cleared",
+          "[reply][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
@@ -155,8 +152,7 @@ TEST_CASE("ComposeBar on_send_reply fires with reply_event_id and body when "
     CHECK(plain_fires == 0);
 }
 
-TEST_CASE("ComposeBar on_send fires normally when no reply is pending",
-          "[reply][compose]")
+TEST_CASE("ComposeBar on_send fires normally when no reply is pending", "[reply][compose]")
 {
     TkReplyStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -203,8 +199,7 @@ TEST_CASE("ComposeBar send clears reply state afterward", "[reply][compose]")
     CHECK_FALSE(bar.has_reply());
 }
 
-TEST_CASE("ComposeBar on_size_changed fires when reply is set and cleared",
-          "[reply][compose]")
+TEST_CASE("ComposeBar on_size_changed fires when reply is set and cleared", "[reply][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
@@ -252,8 +247,7 @@ TEST_CASE("ComposeBar clear_editing disables has_editing", "[edit][compose]")
     CHECK(bar.edit_event_id().empty());
 }
 
-TEST_CASE("ComposeBar set_editing defaults to a non-caption text edit",
-          "[edit][compose]")
+TEST_CASE("ComposeBar set_editing defaults to a non-caption text edit", "[edit][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
@@ -261,8 +255,7 @@ TEST_CASE("ComposeBar set_editing defaults to a non-caption text edit",
     CHECK_FALSE(bar.editing_is_caption());
 }
 
-TEST_CASE("ComposeBar set_editing(event_id, true) marks a caption edit",
-          "[edit][compose]")
+TEST_CASE("ComposeBar set_editing(event_id, true) marks a caption edit", "[edit][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
@@ -273,21 +266,19 @@ TEST_CASE("ComposeBar set_editing(event_id, true) marks a caption edit",
     CHECK_FALSE(bar.editing_is_caption());
 }
 
-TEST_CASE(
-    "ComposeBar natural_height grows by kEditBandH + kEditBandGap when editing",
-    "[edit][compose]")
+TEST_CASE("ComposeBar natural_height grows by kEditBandH + kEditBandGap when editing",
+          "[edit][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
     bar.set_editing("$edit_evt");
     // +8.0f is the kPadY top-band inset added by recompute_height() (same as the reply case).
-    CHECK(bar.natural_height() == Approx(baseline + ComposeBar::kEditBandH +
-                                         ComposeBar::kEditBandGap + 8.0f));
+    CHECK(bar.natural_height() ==
+          Approx(baseline + ComposeBar::kEditBandH + ComposeBar::kEditBandGap + 8.0f));
 }
 
-TEST_CASE("ComposeBar natural_height shrinks back when editing is cleared",
-          "[edit][compose]")
+TEST_CASE("ComposeBar natural_height shrinks back when editing is cleared", "[edit][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
@@ -298,9 +289,8 @@ TEST_CASE("ComposeBar natural_height shrinks back when editing is cleared",
     CHECK(bar.natural_height() == Approx(baseline));
 }
 
-TEST_CASE(
-    "ComposeBar on_send_edit fires with event_id and new body when editing",
-    "[edit][compose]")
+TEST_CASE("ComposeBar on_send_edit fires with event_id and new body when editing",
+          "[edit][compose]")
 {
     TkReplyStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -310,8 +300,7 @@ TEST_CASE(
 
     std::string got_id, got_body;
     bool got_is_caption = true;
-    bar.on_send_edit = [&](const std::string& id, const std::string& body,
-                           bool is_caption)
+    bar.on_send_edit = [&](const std::string& id, const std::string& body, bool is_caption)
     {
         got_id = id;
         got_body = body;
@@ -336,9 +325,7 @@ TEST_CASE(
     CHECK(plain_fires == 0);
 }
 
-TEST_CASE(
-    "ComposeBar on_send_edit fires is_caption=true for a caption edit",
-    "[edit][compose]")
+TEST_CASE("ComposeBar on_send_edit fires is_caption=true for a caption edit", "[edit][compose]")
 {
     TkReplyStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -347,8 +334,7 @@ TEST_CASE(
     bar.set_current_text("new caption");
 
     bool got_is_caption = false;
-    bar.on_send_edit = [&](const std::string&, const std::string&,
-                           bool is_caption)
+    bar.on_send_edit = [&](const std::string&, const std::string&, bool is_caption)
     {
         got_is_caption = is_caption;
     };
@@ -381,8 +367,7 @@ TEST_CASE("ComposeBar send clears edit state afterward", "[edit][compose]")
     CHECK_FALSE(bar.has_editing());
 }
 
-TEST_CASE("ComposeBar set_editing clears any active reply mode",
-          "[edit][compose]")
+TEST_CASE("ComposeBar set_editing clears any active reply mode", "[edit][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
@@ -394,8 +379,7 @@ TEST_CASE("ComposeBar set_editing clears any active reply mode",
     CHECK(bar.has_editing());
 }
 
-TEST_CASE("ComposeBar on_size_changed fires when editing is set and cleared",
-          "[edit][compose]")
+TEST_CASE("ComposeBar on_size_changed fires when editing is set and cleared", "[edit][compose]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;

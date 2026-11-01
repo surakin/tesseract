@@ -115,13 +115,17 @@
 {
     self = [super init];
     if (self)
+    {
         _cb = std::move(cb);
+    }
     return self;
 }
 - (void)fire:(id)sender
 {
     if (_cb)
+    {
         _cb();
+    }
 }
 @end
 
@@ -130,9 +134,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 @interface InflightDotView : NSView
-@property (nonatomic) uint32_t  inflightCount;
-@property (nonatomic) tk::Color dotColor;
-@property (nonatomic) float     spinPhase;
+@property(nonatomic) uint32_t inflightCount;
+@property(nonatomic) tk::Color dotColor;
+@property(nonatomic) float spinPhase;
 @end
 
 @implementation InflightDotView
@@ -149,17 +153,17 @@
     (void)dirtyRect;
     CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
     auto cv = tk::cg::make_canvas(ctx);
-    const CGSize sz  = self.bounds.size;
-    const float  c   = static_cast<float>(sz.width) / 2.0f;
+    const CGSize sz = self.bounds.size;
+    const float c = static_cast<float>(sz.width) / 2.0f;
     constexpr tk::Color kRingColor = tk::Color::rgb(0xA0A0A6);
-    tk::draw_inflight_indicator(*cv, {c, c},
-                                tk::kInflightDotR, tk::kInflightOrbitR,
-                                tk::kInflightRingDotR,
-                                _dotColor, kRingColor,
-                                _spinPhase,
+    tk::draw_inflight_indicator(*cv, {c, c}, tk::kInflightDotR, tk::kInflightOrbitR,
+                                tk::kInflightRingDotR, _dotColor, kRingColor, _spinPhase,
                                 _inflightCount >= 2);
 }
-- (BOOL)isFlipped { return YES; }
+- (BOOL)isFlipped
+{
+    return YES;
+}
 @end
 
 namespace tesseract::macos
@@ -180,16 +184,21 @@ MainWindow::~MainWindow()
     [presence_tick_timer_ invalidate];
     // The key-monitor block captures `this`.
     if (escape_monitor_)
+    {
         [NSEvent removeMonitor:escape_monitor_];
+    }
     NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
     if (backing_properties_observer_)
+    {
         [nc removeObserver:backing_properties_observer_];
+    }
     if (system_colors_observer_)
+    {
         [nc removeObserver:system_colors_observer_];
+    }
 }
 
-std::unique_ptr<tesseract::IEventHandler>
-MainWindow::make_account_bridge_(const std::string& uid)
+std::unique_ptr<tesseract::IEventHandler> MainWindow::make_account_bridge_(const std::string& uid)
 {
     auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
     bridge->set_user_id(uid);
@@ -210,7 +219,9 @@ void MainWindow::post_to_ui_(std::function<void()> fn)
     auto* heap = new std::function<void()>(std::move(fn));
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!alive.expired())
+        {
             (*heap)();
+        }
         delete heap;
     });
 }
@@ -219,13 +230,14 @@ void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
 {
     std::weak_ptr<bool> alive = weak_flag();
     auto* heap = new std::function<void()>(std::move(fn));
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, (int64_t)ms * NSEC_PER_MSEC),
-        dispatch_get_main_queue(), ^{
-            if (!alive.expired())
-                (*heap)();
-            delete heap;
-        });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)ms * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+                       if (!alive.expired())
+                       {
+                           (*heap)();
+                       }
+                       delete heap;
+                   });
 }
 
 void MainWindow::request_relayout_()
@@ -247,7 +259,9 @@ void MainWindow::request_repaint_()
 void MainWindow::focus_forward_picker_field_()
 {
     if (!main_app_ || !main_app_->forward_picker())
+    {
         return;
+    }
     if (auto* f = main_app_->forward_picker()->search_field())
     {
         f->set_text("");
@@ -258,8 +272,12 @@ void MainWindow::focus_forward_picker_field_()
 void MainWindow::hide_forward_picker_field_()
 {
     if (main_app_ && main_app_->forward_picker())
+    {
         if (auto* f = main_app_->forward_picker()->search_field())
+        {
             f->set_visible(false);
+        }
+    }
 }
 
 void MainWindow::after_rooms_updated_ui_()
@@ -295,17 +313,15 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
 
 void MainWindow::on_dock_badge_changed_(uint64_t count)
 {
-    NSString* label = count > 0
-        ? [NSString stringWithFormat:@"%llu", (unsigned long long)count]
-        : @"";
+    NSString* label =
+        count > 0 ? [NSString stringWithFormat:@"%llu", (unsigned long long)count] : @"";
     [NSApp.dockTile setBadgeLabel:label];
 }
 
-void MainWindow::ingest_tile_media_(const tk::CacheKey& key,
-                                    std::vector<std::uint8_t> bytes)
+void MainWindow::ingest_tile_media_(const tk::CacheKey& key, std::vector<std::uint8_t> bytes)
 {
-    CFDataRef data = CFDataCreate(kCFAllocatorDefault, bytes.data(),
-                                  static_cast<CFIndex>(bytes.size()));
+    CFDataRef data =
+        CFDataCreate(kCFAllocatorDefault, bytes.data(), static_cast<CFIndex>(bytes.size()));
     if (!data)
     {
         return;
@@ -328,9 +344,8 @@ void MainWindow::ingest_tile_media_(const tk::CacheKey& key,
     notify_secondary_media_ready_(key.id, MediaKind::Tile);
 }
 
-void MainWindow::decode_video_first_frame_(
-    std::vector<std::uint8_t> bytes,
-    std::function<void(std::vector<std::uint8_t>)> done)
+void MainWindow::decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                           std::function<void(std::vector<std::uint8_t>)> done)
 {
     if (!ctrl_)
     {
@@ -342,25 +357,20 @@ void MainWindow::decode_video_first_frame_(
     // prefix AVFoundation can't parse).
     // Called on the UI thread — do the AVFoundation work directly.
     NSString* tmpDir = NSTemporaryDirectory();
-    NSString* tmpPath =
-        [tmpDir stringByAppendingPathComponent:
-                    [NSString stringWithFormat:@"vtmp_%@.mp4",
-                                         [[NSUUID UUID] UUIDString]]];
-    NSData* data = [NSData dataWithBytes:bytes.data()
-                                  length:bytes.size()];
+    NSString* tmpPath = [tmpDir
+        stringByAppendingPathComponent:[NSString stringWithFormat:@"vtmp_%@.mp4",
+                                                                  [[NSUUID UUID] UUIDString]]];
+    NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
     [data writeToFile:tmpPath atomically:YES];
     NSURL* url = [NSURL fileURLWithPath:tmpPath];
     AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-    AVAssetImageGenerator* gen =
-        [[AVAssetImageGenerator alloc] initWithAsset:asset];
+    AVAssetImageGenerator* gen = [[AVAssetImageGenerator alloc] initWithAsset:asset];
     gen.appliesPreferredTrackTransform = YES;
     CMTime t = CMTimeMake(0, 1);
     NSError* err = nil;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    CGImageRef frame = [gen copyCGImageAtTime:t
-                                   actualTime:nil
-                                        error:&err];
+    CGImageRef frame = [gen copyCGImageAtTime:t actualTime:nil error:&err];
 #pragma clang diagnostic pop
     [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
     if (!frame)
@@ -372,20 +382,17 @@ void MainWindow::decode_video_first_frame_(
     // encode_for_send).
     CFMutableDataRef out_data = CFDataCreateMutable(nullptr, 0);
     CGImageDestinationRef dst = CGImageDestinationCreateWithData(
-        out_data, (__bridge CFStringRef)UTTypeJPEG.identifier, 1,
-        nullptr);
+        out_data, (__bridge CFStringRef)UTTypeJPEG.identifier, 1, nullptr);
     std::vector<std::uint8_t> jpeg;
     if (dst)
     {
         NSDictionary* opts = @{
             (NSString*)kCGImageDestinationLossyCompressionQuality : @0.85,
         };
-        CGImageDestinationAddImage(dst, frame,
-                                   (__bridge CFDictionaryRef)opts);
+        CGImageDestinationAddImage(dst, frame, (__bridge CFDictionaryRef)opts);
         if (CGImageDestinationFinalize(dst))
         {
-            const std::uint8_t* p =
-                CFDataGetBytePtr(out_data);
+            const std::uint8_t* p = CFDataGetBytePtr(out_data);
             CFIndex len = CFDataGetLength(out_data);
             jpeg.assign(p, p + len);
         }
@@ -400,131 +407,123 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::u
                                    tesseract::views::ComposeBar* target,
                                    std::shared_ptr<bool> target_alive)
 {
-    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
-                bytes = std::move(bytes)]() mutable
-    {
-        tesseract::views::MediaInfo info;
-        info.pending_gen = pending_gen;
-        NSString* tmpPath =
-            [NSTemporaryDirectory() stringByAppendingPathComponent:
-                [NSString stringWithFormat:@"tesseract_drop_%@",
-                    [[NSUUID UUID] UUIDString]]];
-        NSData* nsdata = [NSData dataWithBytes:bytes.data()
-                                        length:bytes.size()];
-        [nsdata writeToFile:tmpPath atomically:NO];
-        NSURL* url = [NSURL fileURLWithPath:tmpPath];
-
-        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-
-        // Duration
-        CMTime dur = asset.duration;
-        if (CMTIME_IS_VALID(dur) && !CMTIME_IS_INDEFINITE(dur))
+    run_async_(
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes)]() mutable
         {
-            double secs = CMTimeGetSeconds(dur);
-            if (secs > 0.0)
-                info.duration_ms = static_cast<std::uint64_t>(secs * 1000.0);
-        }
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            NSString* tmpPath = [NSTemporaryDirectory()
+                stringByAppendingPathComponent:[NSString
+                                                   stringWithFormat:@"tesseract_drop_%@",
+                                                                    [[NSUUID UUID] UUIDString]]];
+            NSData* nsdata = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+            [nsdata writeToFile:tmpPath atomically:NO];
+            NSURL* url = [NSURL fileURLWithPath:tmpPath];
+
+            AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+
+            // Duration
+            CMTime dur = asset.duration;
+            if (CMTIME_IS_VALID(dur) && !CMTIME_IS_INDEFINITE(dur))
+            {
+                double secs = CMTimeGetSeconds(dur);
+                if (secs > 0.0)
+                {
+                    info.duration_ms = static_cast<std::uint64_t>(secs * 1000.0);
+                }
+            }
 
         // Video dimensions (apply preferred transform to handle rotation)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        NSArray<AVAssetTrack*>* vTracks =
-            [asset tracksWithMediaType:AVMediaTypeVideo];
+            NSArray<AVAssetTrack*>* vTracks = [asset tracksWithMediaType:AVMediaTypeVideo];
 #pragma clang diagnostic pop
-        if (vTracks.count > 0)
-        {
-            AVAssetTrack* track = vTracks[0];
-            CGAffineTransform t = track.preferredTransform;
-            CGSize natural = track.naturalSize;
-            CGSize sz = CGSizeApplyAffineTransform(natural, t);
-            info.video_w =
-                static_cast<std::uint32_t>(std::abs(sz.width));
-            info.video_h =
-                static_cast<std::uint32_t>(std::abs(sz.height));
-        }
+            if (vTracks.count > 0)
+            {
+                AVAssetTrack* track = vTracks[0];
+                CGAffineTransform t = track.preferredTransform;
+                CGSize natural = track.naturalSize;
+                CGSize sz = CGSizeApplyAffineTransform(natural, t);
+                info.video_w = static_cast<std::uint32_t>(std::abs(sz.width));
+                info.video_h = static_cast<std::uint32_t>(std::abs(sz.height));
+            }
 
-        // First-frame thumbnail → JPEG bytes
-        AVAssetImageGenerator* gen =
-            [[AVAssetImageGenerator alloc] initWithAsset:asset];
-        gen.appliesPreferredTrackTransform = YES;
-        NSError* err = nil;
+            // First-frame thumbnail → JPEG bytes
+            AVAssetImageGenerator* gen = [[AVAssetImageGenerator alloc] initWithAsset:asset];
+            gen.appliesPreferredTrackTransform = YES;
+            NSError* err = nil;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        CGImageRef frame = [gen copyCGImageAtTime:kCMTimeZero
-                                       actualTime:nil
-                                            error:&err];
+            CGImageRef frame = [gen copyCGImageAtTime:kCMTimeZero actualTime:nil error:&err];
 #pragma clang diagnostic pop
-        if (frame)
-        {
-            NSBitmapImageRep* rep =
-                [[NSBitmapImageRep alloc] initWithCGImage:frame];
-            CGImageRelease(frame);
-            NSData* jpeg = [rep
-                representationUsingType:NSBitmapImageFileTypeJPEG
-                             properties:@{
-                                 NSImageCompressionFactor : @0.85
-                             }];
-            if (jpeg)
+            if (frame)
             {
-                const auto* p =
-                    static_cast<const std::uint8_t*>(jpeg.bytes);
-                info.thumb_bytes.assign(p, p + jpeg.length);
-                info.thumb_w = static_cast<std::uint32_t>(rep.pixelsWide);
-                info.thumb_h = static_cast<std::uint32_t>(rep.pixelsHigh);
+                NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithCGImage:frame];
+                CGImageRelease(frame);
+                NSData* jpeg = [rep representationUsingType:NSBitmapImageFileTypeJPEG
+                                                 properties:@{
+                                                     NSImageCompressionFactor : @0.85
+                                                 }];
+                if (jpeg)
+                {
+                    const auto* p = static_cast<const std::uint8_t*>(jpeg.bytes);
+                    info.thumb_bytes.assign(p, p + jpeg.length);
+                    info.thumb_w = static_cast<std::uint32_t>(rep.pixelsWide);
+                    info.thumb_h = static_cast<std::uint32_t>(rep.pixelsHigh);
+                }
             }
-        }
 
-        [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+            [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
 
-        post_pending_attachment_(std::move(info), target,
-                                 std::move(target_alive));
-    });
+            post_pending_attachment_(std::move(info), target, std::move(target_alive));
+        });
 }
 
 void MainWindow::probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                                    tesseract::views::ComposeBar* target,
                                    std::shared_ptr<bool> target_alive)
 {
-    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
-                bytes = std::move(bytes)]() mutable
-    {
-        tesseract::views::MediaInfo info;
-        info.pending_gen = pending_gen;
-        NSString* tmpPath =
-            [NSTemporaryDirectory() stringByAppendingPathComponent:
-                [NSString stringWithFormat:@"tesseract_drop_%@",
-                    [[NSUUID UUID] UUIDString]]];
-        NSData* nsdata = [NSData dataWithBytes:bytes.data()
-                                        length:bytes.size()];
-        [nsdata writeToFile:tmpPath atomically:NO];
-        NSURL* url = [NSURL fileURLWithPath:tmpPath];
-
-        AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        CMTime dur = asset.duration;
-        if (CMTIME_IS_VALID(dur) && !CMTIME_IS_INDEFINITE(dur))
+    run_async_(
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes)]() mutable
         {
-            double secs = CMTimeGetSeconds(dur);
-            if (secs > 0.0)
-                info.duration_ms = static_cast<std::uint64_t>(secs * 1000.0);
-        }
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            NSString* tmpPath = [NSTemporaryDirectory()
+                stringByAppendingPathComponent:[NSString
+                                                   stringWithFormat:@"tesseract_drop_%@",
+                                                                    [[NSUUID UUID] UUIDString]]];
+            NSData* nsdata = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+            [nsdata writeToFile:tmpPath atomically:NO];
+            NSURL* url = [NSURL fileURLWithPath:tmpPath];
 
-        [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+            AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
+            CMTime dur = asset.duration;
+            if (CMTIME_IS_VALID(dur) && !CMTIME_IS_INDEFINITE(dur))
+            {
+                double secs = CMTimeGetSeconds(dur);
+                if (secs > 0.0)
+                {
+                    info.duration_ms = static_cast<std::uint64_t>(secs * 1000.0);
+                }
+            }
 
-        post_pending_attachment_(std::move(info), target,
-                                 std::move(target_alive));
-    });
+            [[NSFileManager defaultManager] removeItemAtPath:tmpPath error:nil];
+
+            post_pending_attachment_(std::move(info), target, std::move(target_alive));
+        });
 }
 
-void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
-                                 std::vector<uint8_t> rgba)
+void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h, std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key))
     {
         return;
     }
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx = CGBitmapContextCreate(rgba.data(), w, h, 8, w * 4, cs,
-                                             kCGImageAlphaPremultipliedLast);
+    CGContextRef ctx =
+        CGBitmapContextCreate(rgba.data(), w, h, 8, w * 4, cs, kCGImageAlphaPremultipliedLast);
     CGColorSpaceRelease(cs);
     if (!ctx)
     {
@@ -541,8 +540,7 @@ void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
     request_relayout_();
 }
 
-void MainWindow::pick_image_file_(
-    std::function<void(std::vector<uint8_t>, std::string)> cb)
+void MainWindow::pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb)
 {
     NSOpenPanel* panel = [NSOpenPanel openPanel];
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
@@ -550,28 +548,39 @@ void MainWindow::pick_image_file_(
 #else
     panel.allowedFileTypes = @[ @"public.image" ];
 #endif
-    panel.canChooseFiles         = YES;
+    panel.canChooseFiles = YES;
     panel.allowsMultipleSelection = NO;
     [panel beginWithCompletionHandler:^(NSModalResponse result) {
         if (result != NSModalResponseOK)
+        {
             return;
+        }
         NSURL* url = panel.URLs.firstObject;
         if (!url)
+        {
             return;
+        }
         NSData* data = [NSData dataWithContentsOfURL:url];
         if (!data || data.length == 0)
+        {
             return;
-        std::vector<uint8_t> bytes(
-            static_cast<const uint8_t*>(data.bytes),
-            static_cast<const uint8_t*>(data.bytes) + data.length);
+        }
+        std::vector<uint8_t> bytes(static_cast<const uint8_t*>(data.bytes),
+                                   static_cast<const uint8_t*>(data.bytes) + data.length);
         std::string mime = "image/jpeg";
         NSString* ext = url.pathExtension.lowercaseString;
         if ([ext isEqualToString:@"png"])
+        {
             mime = "image/png";
+        }
         else if ([ext isEqualToString:@"gif"])
+        {
             mime = "image/gif";
+        }
         else if ([ext isEqualToString:@"webp"])
+        {
             mime = "image/webp";
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
             auto callback = std::move(cb);
             callback(std::move(bytes), mime);
@@ -585,18 +594,20 @@ void MainWindow::pick_image_file_(
 // attachment preview (tk::cg::decode_image_bytes in canvas_cg.cpp) and
 // returning a DecodedImage so the shared ensure_picker_image_/
 // finalize_picker_image_ path can route it.
-tesseract::ShellBase::DecodedImage
-MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                        int max_h)
+tesseract::ShellBase::DecodedImage MainWindow::decode_image_(const std::vector<uint8_t>& bytes,
+                                                             int max_w, int max_h)
 {
     if (tesseract::is_jxl_data(bytes))
+    {
         return tesseract::jxl::decode_image(bytes, max_w, max_h, tk::cg::make_image_rgba);
+    }
     // Untrusted bytes: refuse over-budget images before any codec allocates (tk/image_sniff.h).
     if (!tk::decode_size_allowed(bytes, tk::bytes_may_be_animated(bytes)))
+    {
         return DecodedImage{};
+    }
     DecodedImage d;
-    tk::cg::DecodedFrames decoded =
-        tk::cg::decode_image_bytes(bytes, max_w, max_h);
+    tk::cg::DecodedFrames decoded = tk::cg::decode_image_bytes(bytes, max_w, max_h);
     d.still = std::move(decoded.still);
     d.frames = std::move(decoded.frames);
     d.delays_ms = std::move(decoded.delays_ms);
@@ -609,10 +620,14 @@ bool MainWindow::decode_image_streamed_(
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
+    {
         return tesseract::jxl::decode_streamed(bytes, max_w, max_h, tk::cg::make_image_rgba,
                                                on_first_frame, on_frame);
+    }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     bool got_first = false;
     std::function<void(std::unique_ptr<tk::Image>, int)> first_cb =
         [&](std::unique_ptr<tk::Image> img, int delay_ms)
@@ -627,39 +642,38 @@ bool MainWindow::decode_image_streamed_(
 bool MainWindow::decode_image_streamed_windowed_(
     const std::vector<uint8_t>& bytes, int max_w, int max_h,
     const std::function<void(std::unique_ptr<tk::Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t)>& on_first_frame,
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>& on_first_frame,
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
-        return tesseract::jxl::decode_streamed_windowed(bytes, max_w, max_h, tk::cg::make_image_rgba,
-                                                        on_first_frame, on_frame);
+    {
+        return tesseract::jxl::decode_streamed_windowed(
+            bytes, max_w, max_h, tk::cg::make_image_rgba, on_first_frame, on_frame);
+    }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     bool got_first = false;
-    std::function<void(std::unique_ptr<tk::Image>, int,
-                       std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>
+    std::function<void(std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession>,
+                       std::size_t)>
         first_cb = [&](std::unique_ptr<tk::Image> img, int delay_ms,
-                       std::shared_ptr<tk::AnimDecodeSession> session,
-                       std::size_t total_frames)
+                       std::shared_ptr<tk::AnimDecodeSession> session, std::size_t total_frames)
     {
         got_first = true;
-        on_first_frame(std::move(img), delay_ms, std::move(session),
-                       total_frames);
+        on_first_frame(std::move(img), delay_ms, std::move(session), total_frames);
     };
     // Animations at or under tk::kAnimDecodeWindowThresholdFrames decode
     // whole (unwindowed) — matches AnimImageCache's own tuning for "not
     // worth the complexity".
-    tk::cg::decode_image_bytes_windowed(bytes, max_w, max_h,
-                                        tk::kAnimDecodeWindowThresholdFrames,
+    tk::cg::decode_image_bytes_windowed(bytes, max_w, max_h, tk::kAnimDecodeWindowThresholdFrames,
                                         first_cb, on_frame);
     return got_first;
 }
 
 std::int64_t MainWindow::monotonic_ms_()
 {
-    return static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] *
-                                     1000.0);
+    return static_cast<std::int64_t>([[NSDate date] timeIntervalSince1970] * 1000.0);
 }
 
 void MainWindow::start_anim_tick_()
@@ -673,10 +687,11 @@ void MainWindow::start_anim_tick_()
                                                   repeats:YES
                                                     block:^(NSTimer*) {
                                                         if (!alive.expired())
+                                                        {
                                                             tick_anim_();
+                                                        }
                                                     }];
-    [[NSRunLoop currentRunLoop] addTimer:anim_timer_
-                                 forMode:NSRunLoopCommonModes];
+    [[NSRunLoop currentRunLoop] addTimer:anim_timer_ forMode:NSRunLoopCommonModes];
 }
 
 void MainWindow::stop_anim_tick_()
@@ -696,16 +711,19 @@ void MainWindow::update_main_anim_regions_()
 void MainWindow::start_inflight_tick_()
 {
     if (inflight_timer_)
+    {
         return;
+    }
     std::weak_ptr<bool> alive = weak_flag();
     inflight_timer_ = [NSTimer scheduledTimerWithTimeInterval:0.016
                                                       repeats:YES
                                                         block:^(NSTimer*) {
                                                             if (!alive.expired())
+                                                            {
                                                                 inflight_tick_();
+                                                            }
                                                         }];
-    [[NSRunLoop currentRunLoop] addTimer:inflight_timer_
-                                 forMode:NSRunLoopCommonModes];
+    [[NSRunLoop currentRunLoop] addTimer:inflight_timer_ forMode:NSRunLoopCommonModes];
 }
 
 void MainWindow::stop_inflight_tick_()
@@ -729,37 +747,31 @@ void MainWindow::repaint_inflight_spinner_()
 // secondary windows. See the MainWindow class declaration for the rationale.
 
 void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
-                                     std::string description, bool soft_logout)
+                                       std::string description, bool soft_logout)
 {
     // Agnostic state machine lives in ShellBase; this shell only supplies the
     // native restart timer (post_to_ui_after_), status label, user strip
     // (refresh_user_strip_).
-    handle_sync_error_impl_(std::move(context), std::move(user_id),
-                            std::move(description), soft_logout);
+    handle_sync_error_impl_(std::move(context), std::move(user_id), std::move(description),
+                            soft_logout);
 }
 
-void MainWindow::deliver_notification_(const std::string& user_id,
-                                       const tesseract::Notification& n)
+void MainWindow::deliver_notification_(const std::string& user_id, const tesseract::Notification& n)
 {
-    UNMutableNotificationContent* content =
-        [[UNMutableNotificationContent alloc] init];
+    UNMutableNotificationContent* content = [[UNMutableNotificationContent alloc] init];
     content.title = [NSString stringWithUTF8String:n.sender.c_str()] ?: @"";
     if (n.room_name != n.sender)
     {
-        content.subtitle =
-            [NSString stringWithUTF8String:n.room_name.c_str()] ?: @"";
+        content.subtitle = [NSString stringWithUTF8String:n.room_name.c_str()] ?: @"";
     }
-    std::string preview =
-        n.body.size() > 120 ? n.body.substr(0, 120) + "\xe2\x80\xa6" : n.body;
+    std::string preview = n.body.size() > 120 ? n.body.substr(0, 120) + "\xe2\x80\xa6" : n.body;
     content.body = [NSString stringWithUTF8String:preview.c_str()] ?: @"";
     content.sound = [UNNotificationSound defaultSound];
-    content.threadIdentifier =
-        [NSString stringWithUTF8String:n.room_id.c_str()] ?: @"";
+    content.threadIdentifier = [NSString stringWithUTF8String:n.room_id.c_str()] ?: @"";
     NSString* nsRoomId = content.threadIdentifier;
     NSString* nsUserId = [NSString stringWithUTF8String:user_id.c_str()] ?: @"";
     NSString* nsEventId = [NSString stringWithUTF8String:n.event_id.c_str()] ?: @"";
-    content.userInfo =
-        @{@"room_id" : nsRoomId, @"user_id" : nsUserId, @"event_id" : nsEventId};
+    content.userInfo = @{@"room_id" : nsRoomId, @"user_id" : nsUserId, @"event_id" : nsEventId};
     content.categoryIdentifier = @"ROOM_MESSAGE";
 
     // Notification picture: prefer the message image/sticker (already
@@ -767,38 +779,34 @@ void MainWindow::deliver_notification_(const std::string& user_id,
     // has no app-icon override, so it shows as the banner thumbnail.
     // Written to a stable per-room temp file (bounded; macOS purges the
     // temp dir, and UN moves the file into its own store on success).
-    const std::vector<std::uint8_t>& pic =
-        !n.image_bytes.empty() ? n.image_bytes : n.avatar_bytes;
+    const std::vector<std::uint8_t>& pic = !n.image_bytes.empty() ? n.image_bytes : n.avatar_bytes;
     if (!pic.empty())
     {
         NSString* ext = @"png";
-        if (pic.size() >= 3 && pic[0] == 0xFF && pic[1] == 0xD8 &&
-            pic[2] == 0xFF)
+        if (pic.size() >= 3 && pic[0] == 0xFF && pic[1] == 0xD8 && pic[2] == 0xFF)
         {
             ext = @"jpg";
         }
-        else if (pic.size() >= 4 && pic[0] == 'G' && pic[1] == 'I' &&
-                 pic[2] == 'F' && pic[3] == '8')
+        else if (pic.size() >= 4 && pic[0] == 'G' && pic[1] == 'I' && pic[2] == 'F' &&
+                 pic[3] == '8')
         {
             ext = @"gif";
         }
-        else if (pic.size() >= 12 && pic[0] == 'R' && pic[1] == 'I' &&
-                 pic[2] == 'F' && pic[3] == 'F' && pic[8] == 'W' &&
-                 pic[9] == 'E' && pic[10] == 'B' && pic[11] == 'P')
+        else if (pic.size() >= 12 && pic[0] == 'R' && pic[1] == 'I' && pic[2] == 'F' &&
+                 pic[3] == 'F' && pic[8] == 'W' && pic[9] == 'E' && pic[10] == 'B' &&
+                 pic[11] == 'P')
         {
             ext = @"webp";
         }
         NSData* data = [NSData dataWithBytes:pic.data() length:pic.size()];
-        NSString* dir = [NSTemporaryDirectory()
-            stringByAppendingPathComponent:@"Tesseract/notif"];
+        NSString* dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"Tesseract/notif"];
         [[NSFileManager defaultManager] createDirectoryAtPath:dir
                                   withIntermediateDirectories:YES
                                                    attributes:nil
                                                         error:nil];
-        NSString* file = [NSString
-            stringWithFormat:@"%zu.%@", std::hash<std::string>{}(n.room_id), ext];
-        NSURL* url =
-            [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:file]];
+        NSString* file =
+            [NSString stringWithFormat:@"%zu.%@", std::hash<std::string>{}(n.room_id), ext];
+        NSURL* url = [NSURL fileURLWithPath:[dir stringByAppendingPathComponent:file]];
         if ([data writeToURL:url atomically:YES])
         {
             NSError* attErr = nil;
@@ -818,24 +826,20 @@ void MainWindow::deliver_notification_(const std::string& user_id,
         [UNNotificationRequest requestWithIdentifier:[NSUUID UUID].UUIDString
                                              content:content
                                              trigger:nil];
-    [[UNUserNotificationCenter currentNotificationCenter]
-        addNotificationRequest:req
-         withCompletionHandler:nil];
+    [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:req
+                                                           withCompletionHandler:nil];
 }
-
 
 // Suppress banner when the app is in the foreground and the relevant room
 // is already open.
 void MainWindow::will_present_notification(
-    UNNotification* notification,
-    void (^completionHandler)(UNNotificationPresentationOptions))
+    UNNotification* notification, void (^completionHandler)(UNNotificationPresentationOptions))
 {
     NSDictionary* info = notification.request.content.userInfo;
     NSString* rid = info[@"room_id"];
     NSString* uid = info[@"user_id"];
     BOOL activeAccount =
-        uid && active_account_ &&
-        active_account_->user_id == std::string(uid.UTF8String ?: "");
+        uid && active_account_ && active_account_->user_id == std::string(uid.UTF8String ?: "");
     if (ctrl_.window.isVisible && ctrl_.window.isKeyWindow && activeAccount && rid &&
         current_room_id_ == std::string(rid.UTF8String ?: ""))
     {
@@ -854,8 +858,8 @@ void MainWindow::will_present_notification(
 }
 
 // Navigate to the room when the user taps/clicks the notification.
-void MainWindow::did_receive_notification_response(
-    UNNotificationResponse* response, void (^completionHandler)(void))
+void MainWindow::did_receive_notification_response(UNNotificationResponse* response,
+                                                   void (^completionHandler)(void))
 {
     NSDictionary* info = response.notification.request.content.userInfo;
     NSString* rid = info[@"room_id"];
@@ -872,10 +876,8 @@ void MainWindow::did_receive_notification_response(
         if (text.length > 0 && uid && rid)
         {
             send_notification_reply_(
-                std::string(uid.UTF8String ?: ""),
-                std::string(rid.UTF8String ?: ""),
-                std::string(eid.UTF8String ?: ""),
-                std::string(text.UTF8String ?: ""));
+                std::string(uid.UTF8String ?: ""), std::string(rid.UTF8String ?: ""),
+                std::string(eid.UTF8String ?: ""), std::string(text.UTF8String ?: ""));
         }
         completionHandler();
         return;
@@ -886,9 +888,8 @@ void MainWindow::did_receive_notification_response(
     {
         std::string target_uid(uid.UTF8String ?: "");
         // Another window holds the account: open the room there instead.
-        if (rid && open_room_in_holder_window_(
-                       target_uid, std::string(rid.UTF8String ?: ""),
-                       std::string(eid.UTF8String ?: "")))
+        if (rid && open_room_in_holder_window_(target_uid, std::string(rid.UTF8String ?: ""),
+                                               std::string(eid.UTF8String ?: "")))
         {
             completionHandler();
             return;
@@ -918,7 +919,9 @@ void MainWindow::on_room_list_state_ui_()
         // Seed the Spotlight index promptly once initial sync settles,
         // rather than only relying on the on_rooms_updated_ debounce.
         if (last_room_list_state_ == tesseract::RoomListState::Running)
+        {
             schedule_spotlight_reindex_();
+        }
         refresh_sync_status_();
         on_inflight_ui_();
     }
@@ -927,13 +930,14 @@ void MainWindow::on_room_list_state_ui_()
 void MainWindow::on_inflight_ui_()
 {
     if (!inflight_dot_view_)
+    {
         return;
-    inflight_dot_view_.dotColor      = inflight_dot_color_();
+    }
+    inflight_dot_view_.dotColor = inflight_dot_color_();
     inflight_dot_view_.inflightCount = inflight_total_();
-    inflight_dot_view_.spinPhase     = inflight_spin_phase_();
+    inflight_dot_view_.spinPhase = inflight_spin_phase_();
     [inflight_dot_view_ setNeedsDisplay:YES];
-    inflight_dot_view_.toolTip =
-        [NSString stringWithUTF8String:inflight_tooltip_text_().c_str()];
+    inflight_dot_view_.toolTip = [NSString stringWithUTF8String:inflight_tooltip_text_().c_str()];
 }
 
 void MainWindow::on_low_power_mode_ui_(bool active)
@@ -974,8 +978,7 @@ void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
     }
 }
 
-tesseract::RoomWindowBase*
-MainWindow::create_secondary_room_window_(const std::string& room_id)
+tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(const std::string& room_id)
 {
     return tesseract::make_mac_room_window(this, room_id);
 }
@@ -991,9 +994,13 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     // instance reads them in main() (--relaunch makes it wait for our lock).
     NSURL* bundle_url = NSBundle.mainBundle.bundleURL;
     if (!bundle_url)
+    {
         return false;
+    }
     if (!mac::write_relaunch_handoff(args))
+    {
         return false;
+    }
     NSWorkspaceOpenConfiguration* cfg = [NSWorkspaceOpenConfiguration configuration];
     cfg.createsNewApplicationInstance = YES;
 
@@ -1004,16 +1011,17 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     __block BOOL launched = NO;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     const pid_t self_pid = NSProcessInfo.processInfo.processIdentifier;
-    [NSWorkspace.sharedWorkspace
-        openApplicationAtURL:bundle_url
-               configuration:cfg
-           completionHandler:^(NSRunningApplication* app, NSError* error)
-           {
-               if (error)
-                   NSLog(@"relaunch failed: %@", error);
-               launched = app && !error && app.processIdentifier != self_pid;
-               dispatch_semaphore_signal(done);
-           }];
+    [NSWorkspace.sharedWorkspace openApplicationAtURL:bundle_url
+                                        configuration:cfg
+                                    completionHandler:^(NSRunningApplication* app, NSError* error) {
+                                        if (error)
+                                        {
+                                            NSLog(@"relaunch failed: %@", error);
+                                        }
+                                        launched =
+                                            app && !error && app.processIdentifier != self_pid;
+                                        dispatch_semaphore_signal(done);
+                                    }];
     if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0)
     {
         NSLog(@"relaunch failed: LaunchServices did not answer");
@@ -1021,7 +1029,9 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
         return false;
     }
     if (!launched)
+    {
         mac::discard_relaunch_handoff();
+    }
     return launched;
 #else
     // Exec the bundle's binary directly rather than via LaunchServices, which
@@ -1029,13 +1039,17 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     // terminal launch does; --relaunch makes it wait for our lock.
     NSString* exe = NSBundle.mainBundle.executablePath;
     if (!exe)
+    {
         return false;
+    }
     std::string program = exe.fileSystemRepresentation;
     std::vector<char*> argv;
     argv.push_back(program.data());
     std::vector<std::string> owned(args);
     for (auto& a : owned)
+    {
         argv.push_back(a.data());
+    }
     argv.push_back(nullptr);
 
     // Pass on only stdin/stdout/stderr; the single-instance lock and every
@@ -1046,10 +1060,12 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
     posix_spawn_file_actions_init(&actions);
     for (int fd = 0; fd <= 2; ++fd)
+    {
         posix_spawn_file_actions_addinherit_np(&actions, fd);
+    }
     pid_t pid = 0;
-    const int rc = posix_spawn(&pid, program.c_str(), &actions, &attr,
-                               argv.data(), *_NSGetEnviron());
+    const int rc =
+        posix_spawn(&pid, program.c_str(), &actions, &attr, argv.data(), *_NSGetEnviron());
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attr);
     return rc == 0;
@@ -1073,11 +1089,14 @@ void MainWindow::raise_and_activate_()
 void MainWindow::set_window_fullscreen_(bool on)
 {
     if (!ctrl_ || !ctrl_.window)
+    {
         return;
-    const bool is_fs =
-        (ctrl_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+    }
+    const bool is_fs = (ctrl_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
     if (is_fs != on)
+    {
         [ctrl_.window toggleFullScreen:nil];
+    }
     // Drop the bottom status strip too, matching the Qt6/GTK4/Win32 shells.
     set_status_bar_hidden_(on);
 }
@@ -1085,7 +1104,9 @@ void MainWindow::set_window_fullscreen_(bool on)
 void MainWindow::rebuild_tray_()
 {
     if (!tray_ || !tray_->is_available())
+    {
         return;
+    }
 
     auto items = build_tray_items_();
     tray_->rebuild_menu(std::move(items));
@@ -1101,17 +1122,14 @@ bool MainWindow::is_ctrl_held_() const
 // (see window_should_close).
 static NSMutableArray<MainWindowController*>* spawned_controllers()
 {
-    static NSMutableArray<MainWindowController*>* controllers =
-        [NSMutableArray new];
+    static NSMutableArray<MainWindowController*>* controllers = [NSMutableArray new];
     return controllers;
 }
 
-void MainWindow::spawn_main_window_(
-    std::shared_ptr<tesseract::AccountSession> account)
+void MainWindow::spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account)
 {
     MainWindowController* ctrl =
-        [[MainWindowController alloc]
-            _initWithSharedAccountManager:&account_manager_];
+        [[MainWindowController alloc] _initWithSharedAccountManager:&account_manager_];
     [spawned_controllers() addObject:ctrl];
     MainWindow* win = ctrl.mainWindow;
     win->set_initial_account(account);
@@ -1135,8 +1153,7 @@ tk::ThemeMode MainWindow::os_color_scheme_() const
     NSApp.appearance = nil;
     NSAppearanceName name = NSApp.effectiveAppearance.name;
     setting_own_appearance_ = false;
-    return [name containsString:@"Dark"] ? tk::ThemeMode::Dark
-                                         : tk::ThemeMode::Light;
+    return [name containsString:@"Dark"] ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
 }
 
 std::optional<tk::Color> MainWindow::os_accent_color_() const
@@ -1152,13 +1169,13 @@ std::optional<tk::Color> MainWindow::os_accent_color_() const
         c = [NSColor.controlAccentColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
     }];
     if (!c)
+    {
         return std::nullopt;
-    return tk::Color::rgba(
-        static_cast<std::uint8_t>(std::lround(c.redComponent * 255.0)),
-        static_cast<std::uint8_t>(std::lround(c.greenComponent * 255.0)),
-        static_cast<std::uint8_t>(std::lround(c.blueComponent * 255.0)), 255);
+    }
+    return tk::Color::rgba(static_cast<std::uint8_t>(std::lround(c.redComponent * 255.0)),
+                           static_cast<std::uint8_t>(std::lround(c.greenComponent * 255.0)),
+                           static_cast<std::uint8_t>(std::lround(c.blueComponent * 255.0)), 255);
 }
-
 
 void MainWindow::apply_native_theme_(const tk::Theme& t)
 {
@@ -1168,8 +1185,7 @@ void MainWindow::apply_native_theme_(const tk::Theme& t)
 void MainWindow::after_theme_applied_(const tk::Theme& t)
 {
     setting_own_appearance_ = true;
-    if (tesseract::Settings::instance().theme_pref ==
-        tesseract::Settings::ThemePreference::System)
+    if (tesseract::Settings::instance().theme_pref == tesseract::Settings::ThemePreference::System)
     {
         // Leave NSApp.appearance nil so effectiveAppearance keeps tracking
         // the OS setting (and our KVO observer keeps firing on future OS
@@ -1179,9 +1195,8 @@ void MainWindow::after_theme_applied_(const tk::Theme& t)
     }
     else
     {
-        NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
-                                    ? NSAppearanceNameDarkAqua
-                                    : NSAppearanceNameAqua;
+        NSAppearanceName name =
+            (t.mode == tk::ThemeMode::Dark) ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
         NSApp.appearance = [NSAppearance appearanceNamed:name];
     }
     setting_own_appearance_ = false;
@@ -1189,13 +1204,16 @@ void MainWindow::after_theme_applied_(const tk::Theme& t)
     refresh_low_power_icon_(); // re-tint the status-bar glyph
 }
 
-void MainWindow::for_each_shell_surface_(
-    const std::function<void(tk::SurfaceBase&)>& fn)
+void MainWindow::for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn)
 {
     if (branding_surface_)
+    {
         fn(*branding_surface_);
+    }
     if (main_app_surface_)
+    {
         fn(*main_app_surface_);
+    }
 }
 
 void MainWindow::on_os_appearance_changed()
@@ -1207,8 +1225,7 @@ void MainWindow::on_os_appearance_changed()
     {
         return;
     }
-    if (tesseract::Settings::instance().theme_pref ==
-        tesseract::Settings::ThemePreference::System)
+    if (tesseract::Settings::instance().theme_pref == tesseract::Settings::ThemePreference::System)
     {
         apply_current_theme_();
     }
@@ -1222,28 +1239,31 @@ void MainWindow::observe_system_changes()
     // Re-rasterize native-control image captures (tk::NativeTextField/
     // NativeTextArea) when this window's backing scale factor changes
     // (dragged to a Retina/non-Retina or differently-scaled display).
-    backing_properties_observer_ = [nc
-        addObserverForName:NSWindowDidChangeBackingPropertiesNotification
-                    object:ctrl_.window
-                     queue:nil
-                usingBlock:^(NSNotification*) {
-                    if (!alive.expired())
-                        on_backing_scale_changed_();
-                }];
+    backing_properties_observer_ =
+        [nc addObserverForName:NSWindowDidChangeBackingPropertiesNotification
+                        object:ctrl_.window
+                         queue:nil
+                    usingBlock:^(NSNotification*) {
+                        if (!alive.expired())
+                        {
+                            on_backing_scale_changed_();
+                        }
+                    }];
 
     // Live-watch the OS accent colour (System Settings > Appearance >
     // Accent color) so AccentTheme::System picks up a change without
     // requiring app restart. This notification also fires for unrelated
     // system-colour changes; on_system_accent_changed_()'s equality check
     // absorbs that.
-    system_colors_observer_ = [nc
-        addObserverForName:NSSystemColorsDidChangeNotification
-                    object:nil
-                     queue:nil
-                usingBlock:^(NSNotification*) {
-                    if (!alive.expired())
-                        on_system_accent_changed_();
-                }];
+    system_colors_observer_ = [nc addObserverForName:NSSystemColorsDidChangeNotification
+                                              object:nil
+                                               queue:nil
+                                          usingBlock:^(NSNotification*) {
+                                              if (!alive.expired())
+                                              {
+                                                  on_system_accent_changed_();
+                                              }
+                                          }];
 }
 
 void MainWindow::on_backing_scale_changed_()
@@ -1259,11 +1279,17 @@ void MainWindow::on_backing_scale_changed_()
     // registers its own NSWindowDidChangeBackingPropertiesNotification
     // observer for that (see RoomWindowController.mm/CallWindowController.mm).
     if (branding_surface_)
+    {
         branding_surface_->apply_scale_change(scale);
+    }
     if (main_app_surface_)
+    {
         main_app_surface_->apply_scale_change(scale);
+    }
     if (settings_surface_)
+    {
         settings_surface_->apply_scale_change(scale);
+    }
     apply_scale_to_login_surface_(scale);
 }
 
@@ -1273,22 +1299,21 @@ void MainWindow::start_presence_tick_timer()
 {
     // 30 s periodic tick for the idle-decay check.
     std::weak_ptr<bool> alive = weak_flag();
-    presence_tick_timer_ =
-        [NSTimer scheduledTimerWithTimeInterval:30.0
-                                        repeats:YES
-                                          block:^(NSTimer*) {
-                                              if (!alive.expired())
-                                                  notify_presence_tick_();
-                                          }];
-    [[NSRunLoop currentRunLoop] addTimer:presence_tick_timer_
-                                 forMode:NSRunLoopCommonModes];
+    presence_tick_timer_ = [NSTimer scheduledTimerWithTimeInterval:30.0
+                                                           repeats:YES
+                                                             block:^(NSTimer*) {
+                                                                 if (!alive.expired())
+                                                                 {
+                                                                     notify_presence_tick_();
+                                                                 }
+                                                             }];
+    [[NSRunLoop currentRunLoop] addTimer:presence_tick_timer_ forMode:NSRunLoopCommonModes];
 }
 
 void MainWindow::after_room_set_()
 {
     request_relayout_();
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Account restore
@@ -1297,7 +1322,9 @@ void MainWindow::after_room_set_()
 void MainWindow::apply_window_title_ui_(const std::string& title)
 {
     if (ctrl_)
+    {
         ctrl_.window.title = [NSString stringWithUTF8String:title.c_str()] ?: @"";
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1336,15 +1363,18 @@ void MainWindow::build_status_bar(NSView* content)
     // segments). Safe to fire unconditionally: trigger_persistent_status_click_()
     // no-ops unless something (currently: an in-progress history export)
     // has claimed the persistent-status slot.
-    status_click_action_ = [[_TkMenuAction alloc]
-        initWithCallback:[this] { trigger_persistent_status_click_(); }];
-    NSClickGestureRecognizer* statusClick = [[NSClickGestureRecognizer alloc]
-        initWithTarget:status_click_action_ action:@selector(fire:)];
+    status_click_action_ = [[_TkMenuAction alloc] initWithCallback:[this]
+                                                  {
+                                                      trigger_persistent_status_click_();
+                                                  }];
+    NSClickGestureRecognizer* statusClick =
+        [[NSClickGestureRecognizer alloc] initWithTarget:status_click_action_
+                                                  action:@selector(fire:)];
     [status_label_ addGestureRecognizer:statusClick];
 
     const CGFloat dotViewSz = static_cast<CGFloat>(tk::kInflightViewSize);
-    inflight_dot_view_ = [[InflightDotView alloc]
-        initWithFrame:NSMakeRect(0, 0, dotViewSz, dotViewSz)];
+    inflight_dot_view_ =
+        [[InflightDotView alloc] initWithFrame:NSMakeRect(0, 0, dotViewSz, dotViewSz)];
     inflight_dot_view_.translatesAutoresizingMaskIntoConstraints = NO;
     [status_bar_view_ addSubview:inflight_dot_view_];
 
@@ -1352,54 +1382,44 @@ void MainWindow::build_status_bar(NSView* content)
     low_power_label_.translatesAutoresizingMaskIntoConstraints = NO;
     low_power_label_.imageScaling = NSImageScaleProportionallyUpOrDown;
     low_power_label_.toolTip =
-        [NSString stringWithUTF8String:
-                      tk::tr("Low power mode — background sync paused").c_str()]
-        ?: @"";
+        [NSString stringWithUTF8String:tk::tr("Low power mode — background sync paused").c_str()]
+            ?: @"";
     low_power_label_.hidden = YES;
     [status_bar_view_ addSubview:low_power_label_];
     refresh_low_power_icon_();
 
     [content addSubview:status_bar_view_];
 
-    status_bar_height_constraint_ =
-        [status_bar_view_.heightAnchor constraintEqualToConstant:22];
+    status_bar_height_constraint_ = [status_bar_view_.heightAnchor constraintEqualToConstant:22];
 
     [NSLayoutConstraint activateConstraints:@[
-        [status_bar_view_.leadingAnchor
-            constraintEqualToAnchor:content.leadingAnchor],
-        [status_bar_view_.trailingAnchor
-            constraintEqualToAnchor:content.trailingAnchor],
-        [status_bar_view_.bottomAnchor
-            constraintEqualToAnchor:content.bottomAnchor],
+        [status_bar_view_.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [status_bar_view_.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [status_bar_view_.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
         status_bar_height_constraint_,
 
         [sep.topAnchor constraintEqualToAnchor:status_bar_view_.topAnchor],
         [sep.leadingAnchor constraintEqualToAnchor:status_bar_view_.leadingAnchor],
-        [sep.trailingAnchor
-            constraintEqualToAnchor:status_bar_view_.trailingAnchor],
+        [sep.trailingAnchor constraintEqualToAnchor:status_bar_view_.trailingAnchor],
         [sep.heightAnchor constraintEqualToConstant:1],
 
         [inflight_dot_view_.widthAnchor constraintEqualToConstant:dotViewSz],
         [inflight_dot_view_.heightAnchor constraintEqualToConstant:dotViewSz],
-        [inflight_dot_view_.trailingAnchor
-            constraintEqualToAnchor:status_bar_view_.trailingAnchor constant:-4],
-        [inflight_dot_view_.centerYAnchor
-            constraintEqualToAnchor:status_bar_view_.centerYAnchor],
+        [inflight_dot_view_.trailingAnchor constraintEqualToAnchor:status_bar_view_.trailingAnchor
+                                                          constant:-4],
+        [inflight_dot_view_.centerYAnchor constraintEqualToAnchor:status_bar_view_.centerYAnchor],
 
         [low_power_label_.widthAnchor constraintEqualToConstant:14],
         [low_power_label_.heightAnchor constraintEqualToConstant:14],
-        [low_power_label_.trailingAnchor
-            constraintEqualToAnchor:inflight_dot_view_.leadingAnchor constant:-4],
-        [low_power_label_.centerYAnchor
-            constraintEqualToAnchor:status_bar_view_.centerYAnchor],
+        [low_power_label_.trailingAnchor constraintEqualToAnchor:inflight_dot_view_.leadingAnchor
+                                                        constant:-4],
+        [low_power_label_.centerYAnchor constraintEqualToAnchor:status_bar_view_.centerYAnchor],
 
-        [status_label_.leadingAnchor
-            constraintEqualToAnchor:status_bar_view_.leadingAnchor constant:8],
-        [status_label_.centerYAnchor
-            constraintEqualToAnchor:status_bar_view_.centerYAnchor],
-        [status_label_.trailingAnchor
-            constraintEqualToAnchor:inflight_dot_view_.leadingAnchor
-                           constant:-4],
+        [status_label_.leadingAnchor constraintEqualToAnchor:status_bar_view_.leadingAnchor
+                                                    constant:8],
+        [status_label_.centerYAnchor constraintEqualToAnchor:status_bar_view_.centerYAnchor],
+        [status_label_.trailingAnchor constraintEqualToAnchor:inflight_dot_view_.leadingAnchor
+                                                     constant:-4],
     ]];
 
     init_pool_callbacks_();
@@ -1414,7 +1434,9 @@ void MainWindow::build_status_bar(NSView* content)
 void MainWindow::set_status_bar_hidden_(bool hidden)
 {
     if (!status_bar_view_ || !status_bar_height_constraint_)
+    {
         return;
+    }
     status_bar_view_.hidden = hidden;
     status_bar_height_constraint_.constant = hidden ? 0 : 22;
     // Just mark the tree dirty — no synchronous layoutSubtreeIfNeeded. This is
@@ -1426,7 +1448,9 @@ void MainWindow::set_status_bar_hidden_(bool hidden)
 void MainWindow::set_status_label_text(NSString* text)
 {
     if (!status_label_)
+    {
         return;
+    }
     // Status messages may carry markdown-style "[label](url)" hyperlinks
     // (see app/status_links.h). Plain messages keep the exact legacy
     // non-selectable NSTextField behavior; linked messages use the
@@ -1447,13 +1471,14 @@ void MainWindow::set_status_label_text(NSString* text)
     NSMutableParagraphStyle* para = [[NSMutableParagraphStyle alloc] init];
     para.lineBreakMode = NSLineBreakByTruncatingTail;
     NSFont* font = [NSFont systemFontOfSize:11];
-    NSMutableAttributedString* att =
-        [[NSMutableAttributedString alloc] init];
+    NSMutableAttributedString* att = [[NSMutableAttributedString alloc] init];
     for (const auto& seg : segs)
     {
         NSString* run = @(seg.text.c_str());
         if (!run.length)
+        {
             continue;
+        }
         NSMutableDictionary* attrs = [@{
             NSFontAttributeName : font,
             NSParagraphStyleAttributeName : para,
@@ -1462,11 +1487,12 @@ void MainWindow::set_status_label_text(NSString* text)
         if (!seg.url.empty())
         {
             if (NSURL* url = [NSURL URLWithString:@(seg.url.c_str())])
+            {
                 attrs[NSLinkAttributeName] = url;
+            }
         }
-        [att appendAttributedString:[[NSAttributedString alloc]
-                                        initWithString:run
-                                            attributes:attrs]];
+        [att appendAttributedString:[[NSAttributedString alloc] initWithString:run
+                                                                    attributes:attrs]];
     }
     status_label_.selectable = YES;
     status_label_.allowsEditingTextAttributes = YES;
@@ -1476,66 +1502,67 @@ void MainWindow::set_status_label_text(NSString* text)
 void MainWindow::show_sync_status_text_(const std::string& text)
 {
     if (status_label_)
+    {
         set_status_label_text([NSString stringWithUTF8String:text.c_str()]);
+    }
 }
 
 void MainWindow::refresh_low_power_icon_()
 {
     if (!low_power_label_)
+    {
         return;
+    }
     const CGFloat scale = ctrl_.window.backingScaleFactor ?: 2.0;
     const int phys = std::max(1, static_cast<int>(std::lround(14.0 * scale)));
     const tk::Color tint = current_theme_.palette.text_secondary;
-    std::vector<std::uint8_t> rgba =
-        tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys, tint);
+    std::vector<std::uint8_t> rgba = tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys, tint);
     if (static_cast<int>(rgba.size()) != phys * phys * 4)
+    {
         return;
-    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc]
-        initWithBitmapDataPlanes:nullptr
-                      pixelsWide:phys
-                      pixelsHigh:phys
-                   bitsPerSample:8
-                 samplesPerPixel:4
-                        hasAlpha:YES
-                        isPlanar:NO
-                  colorSpaceName:NSDeviceRGBColorSpace
-                     bytesPerRow:phys * 4
-                    bitsPerPixel:32];
+    }
+    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nullptr
+                                                                    pixelsWide:phys
+                                                                    pixelsHigh:phys
+                                                                 bitsPerSample:8
+                                                               samplesPerPixel:4
+                                                                      hasAlpha:YES
+                                                                      isPlanar:NO
+                                                                colorSpaceName:NSDeviceRGBColorSpace
+                                                                   bytesPerRow:phys * 4
+                                                                  bitsPerPixel:32];
     std::memcpy(rep.bitmapData, rgba.data(), rgba.size());
     NSImage* img = [[NSImage alloc] initWithSize:NSMakeSize(14, 14)];
     [img addRepresentation:rep];
     low_power_label_.image = img;
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tray, Now Playing, Spotlight, dock attention
 // ─────────────────────────────────────────────────────────────────────────────
 
-std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(
-    const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h)
+std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
+                                                          std::uint32_t h)
 {
     std::vector<std::uint8_t> jpeg;
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGDataProviderRef dp = CGDataProviderCreateWithData(
-        nullptr, bgra, static_cast<std::size_t>(w) * h * 4, nullptr);
-    CGImageRef cgImg = CGImageCreate(
-        w, h, 8, 32, static_cast<std::size_t>(w) * 4, cs,
-        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) |
-            kCGBitmapByteOrder32Little,
-        dp, nullptr, false, kCGRenderingIntentDefault);
+    CGDataProviderRef dp =
+        CGDataProviderCreateWithData(nullptr, bgra, static_cast<std::size_t>(w) * h * 4, nullptr);
+    CGImageRef cgImg = CGImageCreate(w, h, 8, 32, static_cast<std::size_t>(w) * 4, cs,
+                                     static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) |
+                                         kCGBitmapByteOrder32Little,
+                                     dp, nullptr, false, kCGRenderingIntentDefault);
     CGDataProviderRelease(dp);
     CGColorSpaceRelease(cs);
-    NSBitmapImageRep* rep =
-        cgImg ? [[NSBitmapImageRep alloc] initWithCGImage:cgImg] : nullptr;
+    NSBitmapImageRep* rep = cgImg ? [[NSBitmapImageRep alloc] initWithCGImage:cgImg] : nullptr;
     if (cgImg)
+    {
         CGImageRelease(cgImg);
+    }
     if (rep)
     {
-        NSDictionary* props = @{NSImageCompressionFactor: @0.9f};
-        NSData* data =
-            [rep representationUsingType:NSBitmapImageFileTypeJPEG
-                              properties:props];
+        NSDictionary* props = @{NSImageCompressionFactor : @0.9f};
+        NSData* data = [rep representationUsingType:NSBitmapImageFileTypeJPEG properties:props];
         if (data)
         {
             const auto* d = static_cast<const std::uint8_t*>(data.bytes);
@@ -1568,7 +1595,14 @@ void MainWindow::start_tray_if_needed()
     if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<MacOSTrayIcon>(
-            [this] { post_to_ui_alive_([this] { tray_toggle_(); }); },
+            [this]
+            {
+                post_to_ui_alive_(
+                    [this]
+                    {
+                        tray_toggle_();
+                    });
+            },
             []
             {
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -1593,8 +1627,7 @@ void MainWindow::start_tray_if_needed()
 // (multi-window) — same claim idiom as the tray icon above.
 void MainWindow::start_now_playing_if_needed()
 {
-    if (!now_playing_ &&
-        account_manager_.claim_mpris_owner(this))
+    if (!now_playing_ && account_manager_.claim_mpris_owner(this))
     {
         now_playing_ = std::make_unique<MacNowPlaying>(account_manager_);
         if (now_playing_ && !now_playing_->is_available())
@@ -1609,11 +1642,9 @@ void MainWindow::start_now_playing_if_needed()
 // idiom as the tray icon above.
 void MainWindow::start_spotlight_search_if_needed()
 {
-    if (!spotlight_search_ &&
-        account_manager_.claim_search_provider_owner(this))
+    if (!spotlight_search_ && account_manager_.claim_search_provider_owner(this))
     {
-        spotlight_search_ =
-            std::make_unique<MacSpotlightSearch>(account_manager_);
+        spotlight_search_ = std::make_unique<MacSpotlightSearch>(account_manager_);
         if (spotlight_search_ && !spotlight_search_->is_available())
         {
             spotlight_search_.reset();
@@ -1629,13 +1660,15 @@ void MainWindow::start_spotlight_search_if_needed()
             std::weak_ptr<bool> alive = weak_flag();
             spotlight_periodic_timer_ =
                 [NSTimer scheduledTimerWithTimeInterval:300.0
-                                                 repeats:YES
-                                                   block:^(NSTimer*) {
-                                                       if (!alive.expired())
-                                                           schedule_spotlight_reindex_();
-                                                   }];
+                                                repeats:YES
+                                                  block:^(NSTimer*) {
+                                                      if (!alive.expired())
+                                                      {
+                                                          schedule_spotlight_reindex_();
+                                                      }
+                                                  }];
             [[NSRunLoop currentRunLoop] addTimer:spotlight_periodic_timer_
-                                          forMode:NSRunLoopCommonModes];
+                                         forMode:NSRunLoopCommonModes];
         }
     }
 }
@@ -1647,24 +1680,29 @@ void MainWindow::start_spotlight_search_if_needed()
 void MainWindow::schedule_spotlight_reindex_()
 {
     if (!spotlight_search_)
+    {
         return;
+    }
     [spotlight_reindex_timer_ invalidate];
     std::weak_ptr<bool> alive = weak_flag();
     spotlight_reindex_timer_ =
         [NSTimer scheduledTimerWithTimeInterval:5.0
-                                         repeats:NO
-                                           block:^(NSTimer*) {
-                                               if (!alive.expired() && spotlight_search_)
-                                                   spotlight_search_->reindex();
-                                           }];
-    [[NSRunLoop currentRunLoop] addTimer:spotlight_reindex_timer_
-                                  forMode:NSRunLoopCommonModes];
+                                        repeats:NO
+                                          block:^(NSTimer*) {
+                                              if (!alive.expired() && spotlight_search_)
+                                              {
+                                                  spotlight_search_->reindex();
+                                              }
+                                          }];
+    [[NSRunLoop currentRunLoop] addTimer:spotlight_reindex_timer_ forMode:NSRunLoopCommonModes];
 }
 
 void MainWindow::reindex_spotlight_now()
 {
     if (spotlight_search_)
+    {
         spotlight_search_->reindex();
+    }
 }
 
 void MainWindow::request_user_attention()
@@ -1673,8 +1711,7 @@ void MainWindow::request_user_attention()
     {
         return;
     }
-    attention_request_token_ =
-        [NSApp requestUserAttention:NSInformationalRequest];
+    attention_request_token_ = [NSApp requestUserAttention:NSInformationalRequest];
 }
 
 void MainWindow::cancel_user_attention()
@@ -1725,12 +1762,9 @@ std::unique_ptr<tk::SurfaceBase> MainWindow::create_settings_surface_ui_()
     [content addSubview:settingsView];
     [NSLayoutConstraint activateConstraints:@[
         [settingsView.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [settingsView.leadingAnchor
-            constraintEqualToAnchor:content.leadingAnchor],
-        [settingsView.trailingAnchor
-            constraintEqualToAnchor:content.trailingAnchor],
-        [settingsView.bottomAnchor
-            constraintEqualToAnchor:status_bar_view_.topAnchor],
+        [settingsView.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [settingsView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [settingsView.bottomAnchor constraintEqualToAnchor:status_bar_view_.topAnchor],
     ]];
     return surface;
 }
@@ -1738,13 +1772,17 @@ std::unique_ptr<tk::SurfaceBase> MainWindow::create_settings_surface_ui_()
 void MainWindow::unmount_settings_surface_ui_()
 {
     if (settings_surface_)
+    {
         [settings_native_view_() removeFromSuperview];
+    }
 }
 
 void MainWindow::grab_main_surface_focus_()
 {
     if (!main_app_surface_)
+    {
         return;
+    }
     NSView* view = (__bridge NSView*)main_app_surface_->view_handle();
     [view.window makeFirstResponder:view];
 }
@@ -1757,9 +1795,13 @@ tk::SurfaceBase* MainWindow::main_surface_()
 void MainWindow::open_app_settings_ui_()
 {
     if (!prepare_settings_view_())
+    {
         return;
+    }
     if (settings_from_login_() && login_surface_)
+    {
         login_native_view_().hidden = YES;
+    }
 
     NSView* mainAppView = (__bridge NSView*)main_app_surface_->view_handle();
     mainAppView.hidden = YES;
@@ -1771,7 +1813,9 @@ void MainWindow::open_app_settings_ui_()
 void MainWindow::close_app_settings_ui_()
 {
     if (!settings_surface_)
+    {
         return;
+    }
     stop_search_index_stats_poll_();
     // Opened from the login screen: go back to it, not the main content.
     const bool toLogin = take_settings_from_login_() && login_surface_;
@@ -1783,7 +1827,9 @@ void MainWindow::close_app_settings_ui_()
         // A proxy change made in Settings replaced the client: re-run the
         // homeserver check against it.
         if (take_login_recheck_() && login_view_)
+        {
             login_view_->reset();
+        }
     }
     settings_native_view_().hidden = YES;
     set_app_settings_open_(false);
@@ -1793,7 +1839,9 @@ void MainWindow::close_app_settings_ui_()
 void MainWindow::hide_settings_surface()
 {
     if (settings_surface_)
+    {
         settings_native_view_().hidden = YES;
+    }
 }
 
 bool MainWindow::has_save_file_dialog_() const
@@ -1801,25 +1849,27 @@ bool MainWindow::has_save_file_dialog_() const
     return true;
 }
 
-void MainWindow::prompt_passphrase_(std::string title,
-                                    std::function<void(std::string)> cb)
+void MainWindow::prompt_passphrase_(std::string title, std::function<void(std::string)> cb)
 {
     NSAlert* alert = [[NSAlert alloc] init];
     alert.messageText = [NSString stringWithUTF8String:title.c_str()];
     alert.alertStyle = NSAlertStyleInformational;
-    NSSecureTextField* field = [[NSSecureTextField alloc]
-        initWithFrame:NSMakeRect(0, 0, 260, 24)];
+    NSSecureTextField* field = [[NSSecureTextField alloc] initWithFrame:NSMakeRect(0, 0, 260, 24)];
     field.placeholderString = TkTr("Passphrase");
     alert.accessoryView = field;
     [alert addButtonWithTitle:TkTr("OK")];
     [alert addButtonWithTitle:TkTr("Cancel")];
     [alert beginSheetModalForWindow:ctrl_.window
                   completionHandler:^(NSModalResponse resp) {
-        if (resp == NSAlertFirstButtonReturn) {
-            std::string pass = field.stringValue.UTF8String ?: "";
-            if (!pass.empty()) cb(std::move(pass));
-        }
-    }];
+                      if (resp == NSAlertFirstButtonReturn)
+                      {
+                          std::string pass = field.stringValue.UTF8String ?: "";
+                          if (!pass.empty())
+                          {
+                              cb(std::move(pass));
+                          }
+                      }
+                  }];
 }
 
 void MainWindow::pick_save_file_(std::string title, std::string suggested_name,
@@ -1827,17 +1877,17 @@ void MainWindow::pick_save_file_(std::string title, std::string suggested_name,
 {
     NSSavePanel* panel = [NSSavePanel savePanel];
     panel.message = [NSString stringWithUTF8String:title.c_str()];
-    panel.nameFieldStringValue =
-        [NSString stringWithUTF8String:suggested_name.c_str()];
+    panel.nameFieldStringValue = [NSString stringWithUTF8String:suggested_name.c_str()];
     [panel beginSheetModalForWindow:ctrl_.window
                   completionHandler:^(NSModalResponse result) {
-        if (result == NSModalResponseOK && panel.URL)
-            cb(panel.URL.path.UTF8String ?: "");
-    }];
+                      if (result == NSModalResponseOK && panel.URL)
+                      {
+                          cb(panel.URL.path.UTF8String ?: "");
+                      }
+                  }];
 }
 
-void MainWindow::pick_open_file_(std::string title,
-                                 std::function<void(std::string)> cb)
+void MainWindow::pick_open_file_(std::string title, std::function<void(std::string)> cb)
 {
     NSOpenPanel* panel = [NSOpenPanel openPanel];
     panel.message = [NSString stringWithUTF8String:title.c_str()];
@@ -1845,13 +1895,14 @@ void MainWindow::pick_open_file_(std::string title,
     panel.allowsMultipleSelection = NO;
     [panel beginSheetModalForWindow:ctrl_.window
                   completionHandler:^(NSModalResponse result) {
-        if (result == NSModalResponseOK && panel.URL)
-            cb(panel.URL.path.UTF8String ?: "");
-    }];
+                      if (result == NSModalResponseOK && panel.URL)
+                      {
+                          cb(panel.URL.path.UTF8String ?: "");
+                      }
+                  }];
 }
 
-void MainWindow::pick_folder_(std::string title,
-                              std::function<void(std::string)> cb)
+void MainWindow::pick_folder_(std::string title, std::function<void(std::string)> cb)
 {
     NSOpenPanel* panel = [NSOpenPanel openPanel];
     panel.message = [NSString stringWithUTF8String:title.c_str()];
@@ -1860,13 +1911,14 @@ void MainWindow::pick_folder_(std::string title,
     panel.allowsMultipleSelection = NO;
     [panel beginSheetModalForWindow:ctrl_.window
                   completionHandler:^(NSModalResponse result) {
-        if (result == NSModalResponseOK && panel.URL)
-            cb(panel.URL.path.UTF8String ?: "");
-    }];
+                      if (result == NSModalResponseOK && panel.URL)
+                      {
+                          cb(panel.URL.path.UTF8String ?: "");
+                      }
+                  }];
 }
 
-void MainWindow::show_message_dialog_(std::string title, std::string text,
-                                      bool is_error)
+void MainWindow::show_message_dialog_(std::string title, std::string text, bool is_error)
 {
     NSAlert* alert = [[NSAlert alloc] init];
     alert.messageText = [NSString stringWithUTF8String:title.c_str()];
@@ -1895,24 +1947,16 @@ void MainWindow::initialize()
         {
             // Convert stored top-left coords to Cocoa bottom-left.
             NSArray<NSScreen*>* screens = [NSScreen screens];
-            const CGFloat primaryTop =
-                screens.count > 0
-                    ? ([[screens firstObject] frame].origin.y +
-                       [[screens firstObject] frame].size.height)
-                    : 768.0;
-            NSRect f = NSMakeRect(saved.x,
-                                  primaryTop - saved.y - saved.h,
-                                  saved.w,
-                                  saved.h);
+            const CGFloat primaryTop = screens.count > 0
+                                           ? ([[screens firstObject] frame].origin.y +
+                                              [[screens firstObject] frame].size.height)
+                                           : 768.0;
+            NSRect f = NSMakeRect(saved.x, primaryTop - saved.y - saved.h, saved.w, saved.h);
             // Validate with clamp_to_screens_: re-centre if off-screen.
-            auto clamped = clamp_to_screens_(saved, 1100, 768,
-                                             get_screen_work_areas_());
+            auto clamped = clamp_to_screens_(saved, 1100, 768, get_screen_work_areas_());
             if (clamped.valid)
             {
-                f = NSMakeRect(clamped.x,
-                               primaryTop - clamped.y - clamped.h,
-                               clamped.w,
-                               clamped.h);
+                f = NSMakeRect(clamped.x, primaryTop - clamped.y - clamped.h, clamped.w, clamped.h);
             }
             [window setFrame:f display:NO];
         }
@@ -1949,11 +1993,26 @@ void MainWindow::build_chrome_()
         main_app_->user_info()->on_secondary = [this](tk::Point p)
         {
             const auto items = build_user_menu_items_(
-                [this] { open_app_settings_ui_(); },
-                [this] { begin_add_account(); },
-                [this] { start_qr_grant_overlay(); },
-                [this] { logout_active_account_ui_(); },
-                [] { [NSApp terminate:nil]; },
+                [this]
+                {
+                    open_app_settings_ui_();
+                },
+                [this]
+                {
+                    begin_add_account();
+                },
+                [this]
+                {
+                    start_qr_grant_overlay();
+                },
+                [this]
+                {
+                    logout_active_account_ui_();
+                },
+                []
+                {
+                    [NSApp terminate:nil];
+                },
                 verify_session_menu_callback_());
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
             NSMutableArray<_TkMenuAction*>* actions = [NSMutableArray new];
@@ -1964,22 +2023,19 @@ void MainWindow::build_chrome_()
                     [menu addItem:[NSMenuItem separatorItem]];
                     continue;
                 }
-                NSString* title =
-                    [NSString stringWithUTF8String:item.label.c_str()];
-                _TkMenuAction* act =
-                    [[_TkMenuAction alloc] initWithCallback:item.callback];
+                NSString* title = [NSString stringWithUTF8String:item.label.c_str()];
+                _TkMenuAction* act = [[_TkMenuAction alloc] initWithCallback:item.callback];
                 [actions addObject:act];
-                NSMenuItem* mi = [[NSMenuItem alloc]
-                    initWithTitle:title
-                           action:@selector(fire:)
-                    keyEquivalent:@""];
+                NSMenuItem* mi = [[NSMenuItem alloc] initWithTitle:title
+                                                            action:@selector(fire:)
+                                                     keyEquivalent:@""];
                 [mi setTarget:act];
                 [menu addItem:mi];
             }
             NSView* view = (__bridge NSView*)main_app_surface_->view_handle();
             NSPoint local = NSMakePoint(p.x, p.y);
-            NSPoint screen = [view.window
-                convertPointToScreen:[view convertPoint:local toView:nil]];
+            NSPoint screen = [view.window convertPointToScreen:[view convertPoint:local
+                                                                           toView:nil]];
             [menu popUpMenuPositioningItem:nil atLocation:screen inView:nil];
         };
 
@@ -2005,11 +2061,14 @@ void MainWindow::build_chrome_()
         {
             MainWindowController* ctrl = ctrl_;
             if (!ctrl || !main_app_ || !main_app_surface_)
+            {
                 return;
+            }
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
             NSMenuItem* item = [[NSMenuItem alloc]
-                initWithTitle:[NSString stringWithUTF8String:
-                                  main_app_->room_view()->copy_menu_label().c_str()]
+                initWithTitle:[NSString stringWithUTF8String:main_app_->room_view()
+                                                                 ->copy_menu_label()
+                                                                 .c_str()]
                        action:@selector(copy:)
                 keyEquivalent:@""];
             // Explicit target: with nil, copy: walks the responder chain and a
@@ -2020,7 +2079,9 @@ void MainWindow::build_chrome_()
             NSEvent* event = [NSApp currentEvent];
             NSView* view = (__bridge NSView*)main_app_surface_->view_handle();
             if (event && view)
+            {
                 [NSMenu popUpContextMenu:menu withEvent:event forView:view];
+            }
         };
         // on_image_clicked / on_avatar_clicked / on_video_clicked (both
         // room_view()'s and room_media_view()'s gallery-reuse alias) are
@@ -2032,27 +2093,35 @@ void MainWindow::build_chrome_()
         {
             // 0 = none pushed, 1 = pointing hand, 2 = I-beam.
             auto hovered = std::make_shared<int>(0);
-            main_app_->room_view()->on_link_hovered =
-                [hovered](const std::string& url)
+            main_app_->room_view()->on_link_hovered = [hovered](const std::string& url)
             {
                 const auto hc = tesseract::views::MessageListView::hover_cursor_for(url);
                 const int want = hc == tesseract::views::MessageListView::HoverCursor::Text ? 2
-                                 : hc == tesseract::views::MessageListView::HoverCursor::Pointer ? 1 : 0;
+                                 : hc == tesseract::views::MessageListView::HoverCursor::Pointer
+                                     ? 1
+                                     : 0;
                 if (want == *hovered)
+                {
                     return;
+                }
                 if (*hovered != 0)
+                {
                     [NSCursor pop];
+                }
                 if (want == 2)
+                {
                     [[NSCursor IBeamCursor] push];
+                }
                 else if (want == 1)
+                {
                     [[NSCursor pointingHandCursor] push];
+                }
                 *hovered = want;
             };
         }
         {
             auto hovered = std::make_shared<bool>(false);
-            main_app_->space_root()->on_link_hovered =
-                [hovered](const std::string& url)
+            main_app_->space_root()->on_link_hovered = [hovered](const std::string& url)
             {
                 if (!url.empty() && !*hovered)
                 {
@@ -2073,16 +2142,23 @@ void MainWindow::build_chrome_()
                 [pushed](tesseract::views::MainAppWidget::SidebarCursor c)
             {
                 using SC = tesseract::views::MainAppWidget::SidebarCursor;
-                const int want =
-                    c == SC::Resize ? 1 : c == SC::Toggle ? 2 : 0;
+                const int want = c == SC::Resize ? 1 : c == SC::Toggle ? 2 : 0;
                 if (want == *pushed)
+                {
                     return;
+                }
                 if (*pushed != 0)
+                {
                     [NSCursor pop];
+                }
                 if (want == 1)
+                {
                     [[NSCursor resizeLeftRightCursor] push];
+                }
                 else if (want == 2)
+                {
                     [[NSCursor pointingHandCursor] push];
+                }
                 *pushed = want;
             };
         }
@@ -2090,7 +2166,10 @@ void MainWindow::build_chrome_()
         // above (RoomPane::wire_room_view_) and ShellBase::wire_view_callbacks_.
 
         main_app_surface_->set_on_right_click(
-            [this](tk::Point p) { handle_main_right_click(p); });
+            [this](tk::Point p)
+            {
+                handle_main_right_click(p);
+            });
 
         main_app_surface_->set_root(std::move(main_app_owner));
 
@@ -2123,12 +2202,9 @@ void MainWindow::build_chrome_()
     [NSLayoutConstraint activateConstraints:@[
         // All content views stop above the status bar.
         [mainAppView.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [mainAppView.leadingAnchor
-            constraintEqualToAnchor:content.leadingAnchor],
-        [mainAppView.trailingAnchor
-            constraintEqualToAnchor:content.trailingAnchor],
-        [mainAppView.bottomAnchor
-            constraintEqualToAnchor:status_bar_view_.topAnchor],
+        [mainAppView.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [mainAppView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [mainAppView.bottomAnchor constraintEqualToAnchor:status_bar_view_.topAnchor],
     ]];
 }
 
@@ -2146,86 +2222,97 @@ void MainWindow::build_chrome_()
 void MainWindow::install_key_monitor_()
 {
     escape_monitor_ = [NSEvent
-        addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown |
-                                             NSEventMaskFlagsChanged
+        addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskFlagsChanged
                                      handler:^(NSEvent* event) {
-        // Dispatches a synthesized ⌘ shortcut to the main app widget.
-        auto dispatch_cmd = [this](const char* text, bool shift) {
-            if (!main_app_)
-                return;
-            tk::KeyEvent key{};
-            key.key = tk::Key::Character;
-            key.text = text;
-            key.meta = true;
-            key.shift = shift;
-            main_app_->dispatch_key_down(key);
-        };
-        const NSEventModifierFlags flags = event.modifierFlags;
-        if (event.type == NSEventTypeFlagsChanged)
-        {
-            // A flagsChanged event fires on every modifier transition, not
-            // just Control's — checking "Control isn't currently held" is a
-            // safe proxy for "Control was just released" since
-            // commit_mru_cycle() is a no-op when no cycle is active.
-            if (!(flags & NSEventModifierFlagControl) && main_app_)
-                main_app_->commit_mru_cycle();
-            return event;
-        }
-        // Ctrl+Tab / Ctrl+Shift+Tab → advance the MRU switcher.
-        // keyCode 48 is kVK_Tab.
-        if ((flags & NSEventModifierFlagControl) && event.keyCode == 48)
-        {
-            if (main_app_)
-            {
-                tk::KeyEvent key{};
-                key.key = tk::Key::Tab;
-                key.ctrl = true;
-                key.shift = (flags & NSEventModifierFlagShift) != 0;
-                main_app_->dispatch_key_down(key);
-            }
-            return (NSEvent*)nil;
-        }
-        const bool cmd = (flags & NSEventModifierFlagCommand) != 0;
-        const bool shift = (flags & NSEventModifierFlagShift) != 0;
-        NSString* ch = event.charactersIgnoringModifiers;
-        // ⌘K → open quick switcher.
-        if (cmd && [ch isEqualToString:@"k"])
-        {
-            dispatch_cmd("k", false);
-            return (NSEvent*)nil;
-        }
-        // ⌘⇧F → open global message search.
-        if (cmd && shift && [[ch lowercaseString] isEqualToString:@"f"])
-        {
-            dispatch_cmd("f", true);
-            return (NSEvent*)nil;
-        }
-        // ⌘F → open per-room find in conversation.
-        if (cmd && !shift && [[ch lowercaseString] isEqualToString:@"f"])
-        {
-            dispatch_cmd("f", false);
-            return (NSEvent*)nil;
-        }
-        // ⌘[ → navigate room history back.
-        if (cmd && [ch isEqualToString:@"["])
-        {
-            dispatch_cmd("[", false);
-            return (NSEvent*)nil;
-        }
-        // ⌘] → navigate room history forward.
-        if (cmd && [ch isEqualToString:@"]"])
-        {
-            dispatch_cmd("]", false);
-            return (NSEvent*)nil;
-        }
-        if (event.keyCode == 53 && handle_escape_key_())
-        { // Escape
-            if (room_text_area() && !main_app_->compose_text_area_rect().empty())
-                room_text_area()->set_focused(true);
-            return (NSEvent*)nil;
-        }
-        return event;
-    }];
+                                         // Dispatches a synthesized ⌘ shortcut to the main app widget.
+                                         auto dispatch_cmd = [this](const char* text, bool shift)
+                                         {
+                                             if (!main_app_)
+                                             {
+                                                 return;
+                                             }
+                                             tk::KeyEvent key{};
+                                             key.key = tk::Key::Character;
+                                             key.text = text;
+                                             key.meta = true;
+                                             key.shift = shift;
+                                             main_app_->dispatch_key_down(key);
+                                         };
+                                         const NSEventModifierFlags flags = event.modifierFlags;
+                                         if (event.type == NSEventTypeFlagsChanged)
+                                         {
+                                             // A flagsChanged event fires on every modifier transition, not
+                                             // just Control's — checking "Control isn't currently held" is a
+                                             // safe proxy for "Control was just released" since
+                                             // commit_mru_cycle() is a no-op when no cycle is active.
+                                             if (!(flags & NSEventModifierFlagControl) && main_app_)
+                                             {
+                                                 main_app_->commit_mru_cycle();
+                                             }
+                                             return event;
+                                         }
+                                         // Ctrl+Tab / Ctrl+Shift+Tab → advance the MRU switcher.
+                                         // keyCode 48 is kVK_Tab.
+                                         if ((flags & NSEventModifierFlagControl) &&
+                                             event.keyCode == 48)
+                                         {
+                                             if (main_app_)
+                                             {
+                                                 tk::KeyEvent key{};
+                                                 key.key = tk::Key::Tab;
+                                                 key.ctrl = true;
+                                                 key.shift =
+                                                     (flags & NSEventModifierFlagShift) != 0;
+                                                 main_app_->dispatch_key_down(key);
+                                             }
+                                             return (NSEvent*)nil;
+                                         }
+                                         const bool cmd = (flags & NSEventModifierFlagCommand) != 0;
+                                         const bool shift = (flags & NSEventModifierFlagShift) != 0;
+                                         NSString* ch = event.charactersIgnoringModifiers;
+                                         // ⌘K → open quick switcher.
+                                         if (cmd && [ch isEqualToString:@"k"])
+                                         {
+                                             dispatch_cmd("k", false);
+                                             return (NSEvent*)nil;
+                                         }
+                                         // ⌘⇧F → open global message search.
+                                         if (cmd && shift &&
+                                             [[ch lowercaseString] isEqualToString:@"f"])
+                                         {
+                                             dispatch_cmd("f", true);
+                                             return (NSEvent*)nil;
+                                         }
+                                         // ⌘F → open per-room find in conversation.
+                                         if (cmd && !shift &&
+                                             [[ch lowercaseString] isEqualToString:@"f"])
+                                         {
+                                             dispatch_cmd("f", false);
+                                             return (NSEvent*)nil;
+                                         }
+                                         // ⌘[ → navigate room history back.
+                                         if (cmd && [ch isEqualToString:@"["])
+                                         {
+                                             dispatch_cmd("[", false);
+                                             return (NSEvent*)nil;
+                                         }
+                                         // ⌘] → navigate room history forward.
+                                         if (cmd && [ch isEqualToString:@"]"])
+                                         {
+                                             dispatch_cmd("]", false);
+                                             return (NSEvent*)nil;
+                                         }
+                                         if (event.keyCode == 53 && handle_escape_key_())
+                                         { // Escape
+                                             if (room_text_area() &&
+                                                 !main_app_->compose_text_area_rect().empty())
+                                             {
+                                                 room_text_area()->set_focused(true);
+                                             }
+                                             return (NSEvent*)nil;
+                                         }
+                                         return event;
+                                     }];
 }
 
 // ── Window lifecycle (the controller's NSWindowDelegate methods forward here) ──
@@ -2234,18 +2321,23 @@ void MainWindow::install_key_monitor_()
 // Uses top-left-origin coords: y=0 at the top of the primary display.
 void MainWindow::save_window_geometry()
 {
-    if (!ctrl_) return;
+    if (!ctrl_)
+    {
+        return;
+    }
     NSRect f = ctrl_.window.frame;
     NSArray<NSScreen*>* screens = [NSScreen screens];
-    if (!screens.count) return;
+    if (!screens.count)
+    {
+        return;
+    }
     const CGFloat primaryTop =
-        [[screens firstObject] frame].origin.y +
-        [[screens firstObject] frame].size.height;
+        [[screens firstObject] frame].origin.y + [[screens firstObject] frame].size.height;
     auto& g = tesseract::Settings::instance().main_window_geometry;
-    g.x     = static_cast<int>(f.origin.x);
-    g.y     = static_cast<int>(primaryTop - f.origin.y - f.size.height);
-    g.w     = static_cast<int>(f.size.width);
-    g.h     = static_cast<int>(f.size.height);
+    g.x = static_cast<int>(f.origin.x);
+    g.y = static_cast<int>(primaryTop - f.origin.y - f.size.height);
+    g.w = static_cast<int>(f.size.width);
+    g.h = static_cast<int>(f.size.height);
     g.valid = (g.w > 0 && g.h > 0);
     save_settings_debounced_();
 }
@@ -2256,8 +2348,14 @@ void MainWindow::window_did_resize()
     // recomputed — leaving one open across a resize would strand it away
     // from whatever control anchored it. Close everything instead (mirrors
     // ShellBase::notify_window_active_'s dismissal on OS focus loss).
-    if (main_app_surface_) main_app_surface_->host().dismiss_active_popup();
-    if (room_view_) room_view_->dismiss_popups();
+    if (main_app_surface_)
+    {
+        main_app_surface_->host().dismiss_active_popup();
+    }
+    if (room_view_)
+    {
+        room_view_->dismiss_popups();
+    }
     hide_compose_popups_();
     close_account_picker_();
 }
@@ -2303,8 +2401,9 @@ bool MainWindow::window_should_close(NSWindow* sender)
     // so for it this does nothing.
     if (MainWindowController* closing = ctrl_)
     {
-        dispatch_async(dispatch_get_main_queue(),
-                       ^{ [spawned_controllers() removeObject:closing]; });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [spawned_controllers() removeObject:closing];
+        });
     }
     return true; // spawned window: allow normal close
 }
@@ -2334,7 +2433,9 @@ void MainWindow::window_did_deminiaturize()
 void MainWindow::window_did_change_occlusion_state()
 {
     if (ctrl_.window.occlusionState & NSWindowOcclusionStateVisible)
+    {
         start_anim_tick_();
+    }
     update_video_playback_suspension_();
 }
 
@@ -2365,7 +2466,9 @@ void MainWindow::stop_sync()
         for (auto& acc : account_manager_.accounts())
         {
             if (acc->sync_started)
+            {
                 acc->client->stop_sync();
+            }
         }
     }
     pool_.drain();
@@ -2376,16 +2479,19 @@ void MainWindow::stop_sync()
 void MainWindow::activate_spotlight_result(NSString* identifier)
 {
     if (!identifier)
+    {
         return;
+    }
     const std::string id = [identifier UTF8String];
     if (id.empty())
+    {
         return;
+    }
     // SearchBackend::Result::id is self-describing: room ids start with
     // '!', mxids with '@' (see SearchBackend.h) — no separate kind needs to
     // travel with the Spotlight item.
-    const auto kind = id.front() == '@'
-                           ? tesseract::SearchBackend::ResultKind::Contact
-                           : tesseract::SearchBackend::ResultKind::Room;
+    const auto kind = id.front() == '@' ? tesseract::SearchBackend::ResultKind::Contact
+                                        : tesseract::SearchBackend::ResultKind::Room;
     account_manager_.search_backend().activate(id, kind);
 }
 
@@ -2397,7 +2503,9 @@ void MainWindow::show_emoji_picker()
     // requested wiring). RoomView::show_emoji_picker() anchors on the
     // compose bar's emoji button instead and always opens in compose mode.
     if (main_app_ && main_app_->room_view())
+    {
         main_app_->room_view()->show_emoji_picker();
+    }
 }
 
 bool MainWindow::can_copy_selection() const
@@ -2409,7 +2517,9 @@ bool MainWindow::can_copy_selection() const
 void MainWindow::copy_selection()
 {
     if (main_app_)
+    {
         main_app_->room_view()->copy_context_menu_target();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2432,7 +2542,9 @@ void MainWindow::apply_screenshot_theme(bool dark)
 bool MainWindow::prepare_screenshot_view()
 {
     if (!seed_screenshot_fixture_(main_app_surface_->factory()))
+    {
         return false;
+    }
     refresh_user_strip_();
     hide_branding();
     hide_login_view();
@@ -2467,9 +2579,13 @@ void MainWindow::menu_open_settings()
 void MainWindow::menu_add_room()
 {
     if (main_app_ && main_app_->add_room_view())
+    {
         main_app_->add_room_view()->open();
+    }
     if (main_app_surface_)
+    {
         main_app_surface_->relayout();
+    }
 }
 
 void MainWindow::menu_show_room_info()
@@ -2511,29 +2627,35 @@ void MainWindow::menu_go_forward()
 void MainWindow::bring_main_window_forward_for_overlay_()
 {
     if (![ctrl_.window isKeyWindow])
+    {
         [ctrl_.window makeKeyAndOrderFront:nil];
+    }
 }
 
-std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
-    int w, int h, const std::uint8_t* bgra)
+std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(int w, int h, const std::uint8_t* bgra)
 {
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
     CGContextRef ctx = CGBitmapContextCreate(
-        nullptr, static_cast<size_t>(w), static_cast<size_t>(h), 8,
-        static_cast<size_t>(w) * 4, cs,
+        nullptr, static_cast<size_t>(w), static_cast<size_t>(h), 8, static_cast<size_t>(w) * 4, cs,
         kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
 #pragma clang diagnostic pop
     CGColorSpaceRelease(cs);
     if (!ctx)
+    {
         return nullptr;
+    }
     if (auto* dst = static_cast<std::uint8_t*>(CGBitmapContextGetData(ctx)))
+    {
         std::memcpy(dst, bgra, static_cast<size_t>(w) * h * 4);
+    }
     CGImageRef cg = CGBitmapContextCreateImage(ctx);
     CGContextRelease(ctx);
     if (!cg)
+    {
         return nullptr;
+    }
     auto img = tk::cg::make_image(cg);
     CGImageRelease(cg);
     return img;
@@ -2547,19 +2669,27 @@ void MainWindow::menu_open_quick_switcher()
 void MainWindow::menu_cycle_recent_rooms(int direction)
 {
     if (![ctrl_.window isKeyWindow])
+    {
         [ctrl_.window makeKeyAndOrderFront:nil];
+    }
     // Mirror MainAppWidget::handle_mru_shortcut_: open the overlay on the
     // first invocation, step through it on repeats. The ⌃-release commit is
     // handled by escape_monitor_'s flagsChanged branch.
     if (main_app_)
     {
         if (main_app_->mru_cycle_active())
+        {
             main_app_->advance_mru_cycle(direction);
+        }
         else
+        {
             main_app_->begin_mru_cycle();
+        }
     }
     if (main_app_surface_)
+    {
         main_app_surface_->relayout();
+    }
 }
 
 void MainWindow::menu_show_keyboard_shortcuts()
@@ -2573,9 +2703,13 @@ void MainWindow::menu_show_keyboard_shortcuts()
         const auto& chords =
             tesseract::views::shortcut(tesseract::views::ShortcutId::ShowShortcuts).chords;
         if (!chords.empty())
+        {
             main_app_->dispatch_key_down(tk::to_key_event(chords.front()));
+        }
         if (main_app_surface_)
+        {
             main_app_surface_->relayout();
+        }
     }
 }
 
@@ -2590,8 +2724,7 @@ bool MainWindow::validate_menu_action(SEL action) const
         return app_ui_ready_();
     }
     if (action == @selector(findInConversationMenuAction:) ||
-        action == @selector(showRoomInfoMenuAction:) ||
-        action == @selector(goBackMenuAction:) ||
+        action == @selector(showRoomInfoMenuAction:) || action == @selector(goBackMenuAction:) ||
         action == @selector(goForwardMenuAction:) ||
         action == @selector(cycleRecentRoomsMenuAction:) ||
         action == @selector(cycleRecentRoomsBackwardMenuAction:))
@@ -2633,30 +2766,29 @@ void MainWindow::build_branding(NSView* content)
     brandingView.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Above the main app view, below the status bar (which must stay on top).
-    [content addSubview:brandingView
-             positioned:NSWindowBelow
-             relativeTo:status_bar_view_];
+    [content addSubview:brandingView positioned:NSWindowBelow relativeTo:status_bar_view_];
     [NSLayoutConstraint activateConstraints:@[
         [brandingView.topAnchor constraintEqualToAnchor:content.topAnchor],
-        [brandingView.leadingAnchor
-            constraintEqualToAnchor:content.leadingAnchor],
-        [brandingView.trailingAnchor
-            constraintEqualToAnchor:content.trailingAnchor],
-        [brandingView.bottomAnchor
-            constraintEqualToAnchor:status_bar_view_.topAnchor],
+        [brandingView.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [brandingView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor],
+        [brandingView.bottomAnchor constraintEqualToAnchor:status_bar_view_.topAnchor],
     ]];
 }
 
 void MainWindow::hide_branding()
 {
     if (branding_surface_)
+    {
         ((__bridge NSView*)branding_surface_->view_handle()).hidden = YES;
+    }
 }
 
 void MainWindow::hide_login_view()
 {
     if (login_surface_)
+    {
         login_native_view_().hidden = YES;
+    }
 }
 
 bool MainWindow::login_view_visible() const
@@ -2684,7 +2816,9 @@ std::unique_ptr<tk::SurfaceBase> MainWindow::create_login_surface_ui_()
 void MainWindow::unmount_login_surface_ui_()
 {
     if (login_surface_)
+    {
         [login_native_view_() removeFromSuperview];
+    }
 }
 
 void MainWindow::show_login_page_ui_()
@@ -2699,7 +2833,9 @@ void MainWindow::show_main_content_()
     NSView* mainAppView = (__bridge NSView*)main_app_surface_->view_handle();
     mainAppView.hidden = NO;
     if (login_surface_)
+    {
         login_native_view_().hidden = YES;
+    }
     teardown_login_view_();
     mark_main_content_ready_();
 }
@@ -2729,37 +2865,39 @@ void MainWindow::begin_login()
     std::weak_ptr<bool> alive = weak_flag();
     restore_all_accounts_async_(
         [this, alive](RestoreResult restore)
-    {
-        if (alive.expired())
         {
-            return;
-        }
-
-        hide_branding();
-
-        if (!restore.any_accounts)
-        {
-            // Nothing to silently restore, so an autostart launch can't
-            // stay hidden — the user needs to log in.
-            MainWindowController* ctrl = ctrl_;
-            if (ctrl.startedHidden)
+            if (alive.expired())
             {
-                ctrl.startedHidden = NO;
-                [ctrl showWindow:ctrl];
-                [ctrl.window makeKeyAndOrderFront:ctrl];
-                [NSApp activateIgnoringOtherApps:YES];
+                return;
             }
-            show_login_after_restore_(restore,
-                                      [this, alive]
-                                      {
-                                          if (!alive.expired())
-                                              begin_login();
-                                      });
-            return;
-        }
 
-        finish_login_ui_(restore.active_uid);
-    },
+            hide_branding();
+
+            if (!restore.any_accounts)
+            {
+                // Nothing to silently restore, so an autostart launch can't
+                // stay hidden — the user needs to log in.
+                MainWindowController* ctrl = ctrl_;
+                if (ctrl.startedHidden)
+                {
+                    ctrl.startedHidden = NO;
+                    [ctrl showWindow:ctrl];
+                    [ctrl.window makeKeyAndOrderFront:ctrl];
+                    [NSApp activateIgnoringOtherApps:YES];
+                }
+                show_login_after_restore_(restore,
+                                          [this, alive]
+                                          {
+                                              if (!alive.expired())
+                                              {
+                                                  begin_login();
+                                              }
+                                          });
+                return;
+            }
+
+            finish_login_ui_(restore.active_uid);
+        },
         networkAvailable);
 }
 
@@ -2771,15 +2909,15 @@ void MainWindow::start_platform_services_ui_()
     if (!notifications_set_up_)
     {
         notifications_set_up_ = true;
-        UNUserNotificationCenter* center =
-            [UNUserNotificationCenter currentNotificationCenter];
+        UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
         // The delegate is weak: only the primary window (never closed while the
         // app runs) may own it, or closing a spawned window would clear it.
         if (!is_pinned_window_)
+        {
             center.delegate = ctrl_;
-        UNAuthorizationOptions opts = UNAuthorizationOptionAlert |
-                                      UNAuthorizationOptionSound |
-                                      UNAuthorizationOptionBadge;
+        }
+        UNAuthorizationOptions opts =
+            UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
         [center requestAuthorizationWithOptions:opts
                               completionHandler:^(BOOL granted, NSError* err) {
                                   (void)granted;
@@ -2790,23 +2928,21 @@ void MainWindow::start_platform_services_ui_()
         // UNNotificationActionOptionForeground: unlike Windows/unpackaged toast
         // activation, macOS can deliver the typed reply without raising the app.
         // Idempotent — safe to call on every account switch.
-        NSString* replyTitle =
-            [NSString stringWithUTF8String:tk::tr("Reply").c_str()] ?: @"";
-        NSString* sendTitle =
-            [NSString stringWithUTF8String:tk::tr("Send").c_str()] ?: @"";
+        NSString* replyTitle = [NSString stringWithUTF8String:tk::tr("Reply").c_str()] ?: @"";
+        NSString* sendTitle = [NSString stringWithUTF8String:tk::tr("Send").c_str()] ?: @"";
         NSString* replyPlaceholder =
             [NSString stringWithUTF8String:tk::tr("Reply…").c_str()] ?: @"";
-        UNTextInputNotificationAction* replyAction = [UNTextInputNotificationAction
-            actionWithIdentifier:@"REPLY_ACTION"
-                           title:replyTitle
-                         options:UNNotificationActionOptionNone
-            textInputButtonTitle:sendTitle
-            textInputPlaceholder:replyPlaceholder];
-        UNNotificationCategory* roomMessageCategory = [UNNotificationCategory
-            categoryWithIdentifier:@"ROOM_MESSAGE"
-                            actions:@[ replyAction ]
-                  intentIdentifiers:@[]
-                            options:UNNotificationCategoryOptionNone];
+        UNTextInputNotificationAction* replyAction =
+            [UNTextInputNotificationAction actionWithIdentifier:@"REPLY_ACTION"
+                                                          title:replyTitle
+                                                        options:UNNotificationActionOptionNone
+                                           textInputButtonTitle:sendTitle
+                                           textInputPlaceholder:replyPlaceholder];
+        UNNotificationCategory* roomMessageCategory =
+            [UNNotificationCategory categoryWithIdentifier:@"ROOM_MESSAGE"
+                                                   actions:@[ replyAction ]
+                                         intentIdentifiers:@[]
+                                                   options:UNNotificationCategoryOptionNone];
         [center setNotificationCategories:[NSSet setWithObject:roomMessageCategory]];
     }
 }

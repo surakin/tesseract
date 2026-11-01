@@ -34,10 +34,10 @@ constexpr float kRoomListAvatarSize = tesseract::visual::kRoomAvatarSize; // 36
 constexpr float kRoomListPadX = 6.0f; // halved from kSpaceMD (12)
 constexpr float kRoomListPadY = 4.0f; // halved from kSpaceSM (8)
 // Slight left/right margin so room rows don't touch the list edges.
-constexpr float kRoomRowOuterPadX = tesseract::visual::kSpaceSM; // 8
-constexpr float kRoomListAvatarGap = tesseract::visual::kSpaceMD;             // 12
+constexpr float kRoomRowOuterPadX = tesseract::visual::kSpaceSM;      // 8
+constexpr float kRoomListAvatarGap = tesseract::visual::kSpaceMD;     // 12
 constexpr float kBadgeMinW = tesseract::visual::kUnreadBadgeMinWidth; // 20
-constexpr float kBadgeBaseH = tesseract::visual::kUnreadBadgeHeight; // 18
+constexpr float kBadgeBaseH = tesseract::visual::kUnreadBadgeHeight;  // 18
 // Sized for the default fonts; grown with the user's font config.
 inline float badge_h()
 {
@@ -66,8 +66,7 @@ constexpr float kRoomListHeaderBaseH = 28.0f;
 // Sized for the default fonts; grown in step with the user's font config.
 inline float room_list_header_h()
 {
-    return std::ceil(kRoomListHeaderBaseH *
-                     tk::font_height_scale(tk::FontRole::Caption));
+    return std::ceil(kRoomListHeaderBaseH * tk::font_height_scale(tk::FontRole::Caption));
 }
 constexpr float kHeaderPadX = 10.0f;
 constexpr float kHeaderChevronPx = 14.0f; // Lucide chevron-up / chevron-down
@@ -106,10 +105,9 @@ std::string preview_text_for(const tesseract::RoomInfo& room)
     {
         return {};
     }
-    const std::string& kind   = room.last_message_kind;
-    const std::string  sender = room.last_message_sender_name.empty()
-                                    ? tk::tr("You")
-                                    : room.last_message_sender_name;
+    const std::string& kind = room.last_message_kind;
+    const std::string sender =
+        room.last_message_sender_name.empty() ? tk::tr("You") : room.last_message_sender_name;
     if (kind == "text")
     {
         if (!room.is_direct)
@@ -118,14 +116,38 @@ std::string preview_text_for(const tesseract::RoomInfo& room)
         }
         return room.last_message_body;
     }
-    if (kind == "image")   return tk::trf(tk::tr("{0} sent an image"), {sender});
-    if (kind == "video")   return tk::trf(tk::tr("{0} sent a video"), {sender});
-    if (kind == "gif")     return tk::trf(tk::tr("{0} sent a GIF"), {sender});
-    if (kind == "file")    return tk::trf(tk::tr("{0} sent a file"), {sender});
-    if (kind == "audio")   return tk::trf(tk::tr("{0} sent a voice message"), {sender});
-    if (kind == "sticker") return tk::trf(tk::tr("{0} sent a sticker"), {sender});
-    if (kind == "gallery") return tk::trf(tk::tr("{0} sent a gallery"), {sender});
-    if (kind == "poll")    return tk::trf(tk::tr("{0} started a poll"), {sender});
+    if (kind == "image")
+    {
+        return tk::trf(tk::tr("{0} sent an image"), {sender});
+    }
+    if (kind == "video")
+    {
+        return tk::trf(tk::tr("{0} sent a video"), {sender});
+    }
+    if (kind == "gif")
+    {
+        return tk::trf(tk::tr("{0} sent a GIF"), {sender});
+    }
+    if (kind == "file")
+    {
+        return tk::trf(tk::tr("{0} sent a file"), {sender});
+    }
+    if (kind == "audio")
+    {
+        return tk::trf(tk::tr("{0} sent a voice message"), {sender});
+    }
+    if (kind == "sticker")
+    {
+        return tk::trf(tk::tr("{0} sent a sticker"), {sender});
+    }
+    if (kind == "gallery")
+    {
+        return tk::trf(tk::tr("{0} sent a gallery"), {sender});
+    }
+    if (kind == "poll")
+    {
+        return tk::trf(tk::tr("{0} started a poll"), {sender});
+    }
     return {};
 }
 
@@ -135,21 +157,27 @@ using tesseract::text::name_matches;
 
 // ─────────────────────────────────────────────────────────────────────────
 
-std::vector<tesseract::RoomInfo> filter_root_rooms(
-    const std::vector<tesseract::RoomInfo>& rooms,
-    const std::unordered_map<std::string, std::vector<std::string>>& sc_cache,
-    bool group_unread_rooms)
+std::vector<tesseract::RoomInfo>
+filter_root_rooms(const std::vector<tesseract::RoomInfo>& rooms,
+                  const std::unordered_map<std::string, std::vector<std::string>>& sc_cache,
+                  bool group_unread_rooms)
 {
     // Build the set of rooms that are children of any space.
     std::unordered_set<std::string> in_space;
     for (const auto& r : rooms)
     {
         if (!r.is_space)
+        {
             continue;
+        }
         auto it = sc_cache.find(r.id);
         if (it != sc_cache.end())
+        {
             for (const auto& id : it->second)
+            {
                 in_space.insert(id);
+            }
+        }
     }
 
     std::vector<tesseract::RoomInfo> filtered;
@@ -159,15 +187,19 @@ std::vector<tesseract::RoomInfo> filter_root_rooms(
     for (const auto& r : rooms)
     {
         if (r.is_space)
+        {
             continue;
+        }
         if (in_space.count(r.id) && !r.is_favorite)
         {
             // Space-child and not a favorite: include only if group_unread is on
             // and the room has a visible unread indicator.
             if (!group_unread_rooms ||
-                unread_style_for(r.notification_count, r.highlight_count,
-                                 r.unread_count, r.muted) == UnreadStyle::None)
+                unread_style_for(r.notification_count, r.highlight_count, r.unread_count,
+                                 r.muted) == UnreadStyle::None)
+            {
                 continue;
+            }
         }
         filtered.push_back(r);
     }
@@ -176,19 +208,22 @@ std::vector<tesseract::RoomInfo> filter_root_rooms(
     for (const auto& r : rooms)
     {
         if (r.is_space && (!in_space.count(r.id) || r.is_favorite))
+        {
             filtered.push_back(r);
+        }
     }
 
     return filtered;
 }
 
-int classify_room_section(const tesseract::RoomInfo& r,
-                          bool group_unread, bool group_inactive,
+int classify_room_section(const tesseract::RoomInfo& r, bool group_unread, bool group_inactive,
                           int threshold_days, std::uint64_t now_ms)
 {
     // Favorites and Spaces are never moved to Unread or Inactive.
     if (r.is_favorite)
+    {
         return RoomListView::kSecFavorites;
+    }
 
     // Unread check runs before Inactive so an inactive+unread room surfaces
     // in the Unread section where the user can find it. Applies to DMs and
@@ -197,34 +232,41 @@ int classify_room_section(const tesseract::RoomInfo& r,
     {
         using tesseract::views::UnreadStyle;
         using tesseract::views::unread_style_for;
-        if (unread_style_for(r.notification_count, r.highlight_count,
-                             r.unread_count, r.muted) != UnreadStyle::None)
+        if (unread_style_for(r.notification_count, r.highlight_count, r.unread_count, r.muted) !=
+            UnreadStyle::None)
+        {
             return RoomListView::kSecUnread;
+        }
     }
 
     if (group_inactive && !r.is_space && r.last_activity_ts != 0)
     {
-        std::uint64_t threshold_ms =
-            static_cast<std::uint64_t>(threshold_days) * 86'400'000ULL;
-        if (r.last_activity_ts <= now_ms &&
-            now_ms - r.last_activity_ts > threshold_ms)
+        std::uint64_t threshold_ms = static_cast<std::uint64_t>(threshold_days) * 86'400'000ULL;
+        if (r.last_activity_ts <= now_ms && now_ms - r.last_activity_ts > threshold_ms)
+        {
             return RoomListView::kSecInactive;
+        }
     }
 
     if (!r.is_space && r.is_call_room)
+    {
         return RoomListView::kSecCallRooms;
+    }
 
     if (r.is_direct)
+    {
         return RoomListView::kSecDMs;
+    }
     if (!r.is_space)
+    {
         return RoomListView::kSecRooms;
+    }
     return RoomListView::kSecSpaces;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 
-class RoomListView::Adapter : public tk::ListAdapter,
-                              public tk::ListAdapterAccessibility
+class RoomListView::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(RoomListView& owner) : owner_(owner)
@@ -236,8 +278,7 @@ public:
         return owner_.items_.size();
     }
 
-    float measure_row_height(std::size_t index, tk::LayoutCtx&,
-                             float /*width*/) override
+    float measure_row_height(std::size_t index, tk::LayoutCtx&, float /*width*/) override
     {
         if (index >= owner_.items_.size())
         {
@@ -247,8 +288,8 @@ public:
                                                                : owner_.row_h_();
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool selected, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override
     {
         // Flush all cached layouts when the factory changes (DPI migration).
         if (&ctx.factory != factory_seen_)
@@ -256,7 +297,9 @@ public:
             factory_seen_ = &ctx.factory;
             room_cache_.clear();
             for (auto& h : header_cache_)
+            {
                 h = {};
+            }
             preview_metrics_layout_.reset();
         }
 
@@ -277,24 +320,22 @@ public:
                 return;
             }
             const auto& inv = *owner_.invites_;
-            if (item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(inv.size()))
+            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(inv.size()))
             {
                 return;
             }
-            paint_invite(inv[static_cast<std::size_t>(item.room_idx)], ctx,
-                         bounds, selected, hovered);
+            paint_invite(inv[static_cast<std::size_t>(item.room_idx)], ctx, bounds, selected,
+                         hovered);
         }
         else if (item.kind == Item::Kind::SpaceUnjoined)
         {
             const auto& unjoined = owner_.space_unjoined_rooms_;
-            if (item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(unjoined.size()))
+            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(unjoined.size()))
             {
                 return;
             }
-            paint_unjoined_room(unjoined[static_cast<std::size_t>(item.room_idx)],
-                                ctx, bounds, selected, hovered);
+            paint_unjoined_room(unjoined[static_cast<std::size_t>(item.room_idx)], ctx, bounds,
+                                selected, hovered);
         }
         else if (item.kind == Item::Kind::Knock)
         {
@@ -303,19 +344,17 @@ public:
                 return;
             }
             const auto& knocks = *owner_.my_knocks_;
-            if (item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(knocks.size()))
+            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(knocks.size()))
             {
                 return;
             }
-            paint_knock_row(knocks[static_cast<std::size_t>(item.room_idx)], ctx,
-                            bounds, selected, hovered);
+            paint_knock_row(knocks[static_cast<std::size_t>(item.room_idx)], ctx, bounds, selected,
+                            hovered);
         }
         else
         {
             const auto& rooms = owner_.section_rooms_[item.section];
-            if (item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(rooms.size()))
+            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
             {
                 return;
             }
@@ -323,16 +362,13 @@ public:
             {
                 // No horizontal inset: the avatar-only row centres in the
                 // whole strip.
-                paint_room_icon_only(*rooms[item.room_idx], ctx, bounds,
-                                     selected, hovered);
+                paint_room_icon_only(*rooms[item.room_idx], ctx, bounds, selected, hovered);
             }
             else
             {
                 const tk::Rect room_bounds{bounds.x + kRoomRowOuterPadX, bounds.y,
-                                          bounds.w - 2.0f * kRoomRowOuterPadX,
-                                          bounds.h};
-                paint_room(*rooms[item.room_idx], ctx, room_bounds, selected,
-                           hovered);
+                                           bounds.w - 2.0f * kRoomRowOuterPadX, bounds.h};
+                paint_room(*rooms[item.room_idx], ctx, room_bounds, selected, hovered);
             }
         }
     }
@@ -345,7 +381,9 @@ public:
     tk::Role access_role_for_row(std::size_t index) const override
     {
         if (index >= owner_.items_.size())
+        {
             return tk::Role::None;
+        }
         // Headers toggle their section's collapsed state on click — expose
         // them as buttons (with expanded state below) rather than plain
         // list items, matching their actual interactive behavior.
@@ -356,7 +394,9 @@ public:
     std::string access_name_for_row(std::size_t index) const override
     {
         if (index >= owner_.items_.size())
+        {
             return {};
+        }
         const auto& item = owner_.items_[index];
 
         if (item.kind == Item::Kind::Header)
@@ -381,16 +421,19 @@ public:
         {
             if (!owner_.invites_ || item.room_idx < 0 ||
                 item.room_idx >= static_cast<int>(owner_.invites_->size()))
+            {
                 return {};
+            }
             const auto& inv = (*owner_.invites_)[static_cast<std::size_t>(item.room_idx)];
             return inv.room_name.empty() ? tk::tr("Invitation") : inv.room_name;
         }
         if (item.kind == Item::Kind::SpaceUnjoined)
         {
             const auto& unjoined = owner_.space_unjoined_rooms_;
-            if (item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(unjoined.size()))
+            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(unjoined.size()))
+            {
                 return {};
+            }
             const auto& s = unjoined[static_cast<std::size_t>(item.room_idx)];
             // Empty name means the summary hasn't been fetched yet — see
             // on_unjoined_room_summary_needed's own doc comment.
@@ -398,7 +441,9 @@ public:
         }
         const auto& rooms = owner_.section_rooms_[item.section];
         if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        {
             return {};
+        }
         return rooms[item.room_idx]->name;
     }
 
@@ -406,10 +451,14 @@ public:
     {
         tk::AccessState state;
         if (index >= owner_.items_.size())
+        {
             return state;
+        }
         const auto& item = owner_.items_[index];
         if (item.kind == Item::Kind::Header)
+        {
             state.expanded = !owner_.collapsed_[item.section];
+        }
         return state;
     }
 
@@ -420,7 +469,9 @@ public:
     bool access_activate_row(std::size_t index) override
     {
         if (index >= owner_.items_.size())
+        {
             return false;
+        }
         owner_.activate_row_(index);
         return true;
     }
@@ -468,10 +519,10 @@ private:
     {
         // key — if any field differs the layouts are rebuilt
         std::string display_name;
-        float       text_w     = -1.f;
+        float text_w = -1.f;
         std::string preview;
         std::string badge_text;
-        bool        unread     = false; // bold title when there are unreads
+        bool unread = false; // bold title when there are unreads
         // cached layouts (nullptr when not applicable for this row)
         std::unique_ptr<tk::TextLayout> name_layout;
         std::unique_ptr<tk::TextLayout> preview_layout;
@@ -482,34 +533,32 @@ private:
     struct HeaderRowCache
     {
         // key
-        std::string   title;            // full rendered title string
-        bool          collapsed       = false;
-        std::uint64_t section_unread       = 0;
-        bool          section_mention      = false;
-        bool          section_quiet_unread = false;
-        bool          valid           = false; // false forces rebuild on first use
+        std::string title; // full rendered title string
+        bool collapsed = false;
+        std::uint64_t section_unread = 0;
+        bool section_mention = false;
+        bool section_quiet_unread = false;
+        bool valid = false; // false forces rebuild on first use
         // cached layouts
         std::unique_ptr<tk::TextLayout> title_layout;
-        tk::IconCache                   chevron_icon; // reset on rebuild: keyed on tint/size, not SVG
+        tk::IconCache chevron_icon; // reset on rebuild: keyed on tint/size, not SVG
         std::unique_ptr<tk::TextLayout> badge_layout; // nullptr when unread == 0
     };
 
-    void paint_header(const Item& item, tk::PaintCtx& ctx, tk::Rect bounds,
-                      bool hovered)
+    void paint_header(const Item& item, tk::PaintCtx& ctx, tk::Rect bounds, bool hovered)
     {
-        ctx.canvas.fill_rect(bounds,
-                             hovered
-                                 ? ctx.theme.palette.section_header_hover
-                                 : ctx.theme.palette.section_header_bg);
+        ctx.canvas.fill_rect(bounds, hovered ? ctx.theme.palette.section_header_hover
+                                             : ctx.theme.palette.section_header_bg);
         if (hovered)
+        {
             tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
         // Build the title string. Invitations and Inactive sections include counts.
         std::string title_str;
         if (item.section == RoomListView::kSecInvites)
         {
-            const std::size_t n =
-                owner_.invites_ ? owner_.invites_->size() : 0u;
+            const std::size_t n = owner_.invites_ ? owner_.invites_->size() : 0u;
             title_str = tk::trf(tk::tr("Invitations ({0})"), {std::to_string(n)});
         }
         else if (item.section == RoomListView::kSecInactive)
@@ -519,53 +568,50 @@ private:
         }
         else if (item.section == RoomListView::kSecKnocks)
         {
-            const std::size_t n =
-                owner_.my_knocks_ ? owner_.my_knocks_->size() : 0u;
+            const std::size_t n = owner_.my_knocks_ ? owner_.my_knocks_->size() : 0u;
             title_str = tk::trf(tk::tr("Requests to Join ({0})"), {std::to_string(n)});
         }
         else
         {
             title_str = tk::tr(RoomListView::kSectionTitles[item.section]);
         }
-        const std::string& title  = title_str;
-        bool               collapsed = owner_.collapsed_[item.section];
+        const std::string& title = title_str;
+        bool collapsed = owner_.collapsed_[item.section];
 
         // Sum notification counts and check for mentions (badge when collapsed).
         // Invitations have no unread badge.
-        std::uint64_t section_unread       = 0;
-        bool          section_mention      = false;
-        bool          section_quiet_unread = false;
+        std::uint64_t section_unread = 0;
+        bool section_mention = false;
+        bool section_quiet_unread = false;
         if (collapsed && item.section != RoomListView::kSecInvites &&
             item.section != RoomListView::kSecKnocks)
         {
             for (const auto* r : owner_.section_rooms_[item.section])
             {
-                section_unread  += r->notification_count;
-                section_mention  = section_mention || (r->highlight_count > 0);
+                section_unread += r->notification_count;
+                section_mention = section_mention || (r->highlight_count > 0);
                 section_quiet_unread =
                     section_quiet_unread ||
-                    unread_style_for(r->notification_count, r->highlight_count,
-                                     r->unread_count, r->muted) ==
-                        UnreadStyle::Dot;
+                    unread_style_for(r->notification_count, r->highlight_count, r->unread_count,
+                                     r->muted) == UnreadStyle::Dot;
             }
         }
 
         // Rebuild layouts when any key field changes.
         auto& cache = header_cache_[item.section];
         if (!cache.valid || cache.title != title || cache.collapsed != collapsed ||
-            cache.section_unread != section_unread ||
-            cache.section_mention != section_mention ||
+            cache.section_unread != section_unread || cache.section_mention != section_mention ||
             cache.section_quiet_unread != section_quiet_unread)
         {
-            cache.title                = title;
-            cache.collapsed            = collapsed;
-            cache.section_unread       = section_unread;
-            cache.section_mention      = section_mention;
+            cache.title = title;
+            cache.collapsed = collapsed;
+            cache.section_unread = section_unread;
+            cache.section_mention = section_mention;
             cache.section_quiet_unread = section_quiet_unread;
-            cache.valid                = true;
+            cache.valid = true;
 
             tk::TextStyle ts{};
-            ts.role            = tk::FontRole::Caption;
+            ts.role = tk::FontRole::Caption;
             cache.title_layout = ctx.factory.build_text(title, ts);
 
             cache.chevron_icon = tk::IconCache{};
@@ -573,9 +619,8 @@ private:
             if (collapsed && section_unread > 0)
             {
                 tk::TextStyle bs{};
-                bs.role           = tk::FontRole::UnreadBadge;
-                cache.badge_layout = ctx.factory.build_text(
-                    format_unread(section_unread), bs);
+                bs.role = tk::FontRole::UnreadBadge;
+                cache.badge_layout = ctx.factory.build_text(format_unread(section_unread), bs);
             }
             else
             {
@@ -587,49 +632,41 @@ private:
         float chevron_x = bounds.x + bounds.w - kHeaderPadX;
         if (cache.title_layout)
         {
-            float ty = bounds.y +
-                       (bounds.h - cache.title_layout->measure().h) * 0.5f;
-            ctx.canvas.draw_text(*cache.title_layout,
-                                 {bounds.x + kHeaderPadX, ty},
+            float ty = bounds.y + (bounds.h - cache.title_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.title_layout, {bounds.x + kHeaderPadX, ty},
                                  ctx.theme.palette.text_primary);
         }
         // Accordion convention (chevron sits at the trailing edge): down =
         // collapsed, up = expanded.
         chevron_x -= kHeaderChevronPx;
-        cache.chevron_icon.draw(
-            ctx.canvas, ctx.factory,
-            collapsed ? std::span<const std::uint8_t>(kChevronDownSvg)
-                      : std::span<const std::uint8_t>(kChevronUpSvg),
-            {chevron_x, bounds.y, kHeaderChevronPx, bounds.h}, kHeaderChevronPx,
-            ctx.theme.palette.text_muted);
+        cache.chevron_icon.draw(ctx.canvas, ctx.factory,
+                                collapsed ? std::span<const std::uint8_t>(kChevronDownSvg)
+                                          : std::span<const std::uint8_t>(kChevronUpSvg),
+                                {chevron_x, bounds.y, kHeaderChevronPx, bounds.h}, kHeaderChevronPx,
+                                ctx.theme.palette.text_muted);
         if (collapsed && section_unread > 0 && cache.badge_layout)
         {
-            tk::Size ts2    = cache.badge_layout->measure();
-            float    pill_w = std::max(kBadgeMinW, ts2.w + kBadgePadX * 2);
-            tk::Rect pill{chevron_x - kBadgePadX - pill_w,
-                          bounds.y + (bounds.h - badge_h()) * 0.5f,
+            tk::Size ts2 = cache.badge_layout->measure();
+            float pill_w = std::max(kBadgeMinW, ts2.w + kBadgePadX * 2);
+            tk::Rect pill{chevron_x - kBadgePadX - pill_w, bounds.y + (bounds.h - badge_h()) * 0.5f,
                           pill_w, badge_h()};
-            const tk::Color sec_pill_bg   = section_mention
-                                              ? ctx.theme.palette.accent
-                                              : ctx.theme.palette.unread_bg;
-            const tk::Color sec_pill_text = section_mention
-                                              ? ctx.theme.palette.text_on_accent
-                                              : ctx.theme.palette.unread_text;
+            const tk::Color sec_pill_bg =
+                section_mention ? ctx.theme.palette.accent : ctx.theme.palette.unread_bg;
+            const tk::Color sec_pill_text =
+                section_mention ? ctx.theme.palette.text_on_accent : ctx.theme.palette.unread_text;
             ctx.canvas.fill_rounded_rect(pill, (badge_h() * 0.5f), sec_pill_bg);
-            ctx.canvas.draw_text(*cache.badge_layout,
-                                 {pill.x + (pill.w - ts2.w) * 0.5f,
-                                  pill.y + (pill.h - ts2.h) * 0.5f},
-                                 sec_pill_text);
+            ctx.canvas.draw_text(
+                *cache.badge_layout,
+                {pill.x + (pill.w - ts2.w) * 0.5f, pill.y + (pill.h - ts2.h) * 0.5f},
+                sec_pill_text);
         }
         else if (collapsed && section_quiet_unread)
         {
             // No notifying rooms, but some collapsed room has quiet unread:
             // mirror the per-row dot on the section header.
-            tk::Rect dot{chevron_x - kBadgePadX - kDotSize,
-                         bounds.y + (bounds.h - kDotSize) * 0.5f,
+            tk::Rect dot{chevron_x - kBadgePadX - kDotSize, bounds.y + (bounds.h - kDotSize) * 0.5f,
                          kDotSize, kDotSize};
-            ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
-                                         ctx.theme.palette.unread_bg);
+            ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f, ctx.theme.palette.unread_bg);
         }
     }
 
@@ -642,7 +679,9 @@ private:
     {
         tk::Host* h = ctx.host ? ctx.host : owner_.host();
         if (!h)
+        {
             return;
+        }
         if (owner_.compact_ && hovered)
         {
             const std::string preview = preview_text_for(room);
@@ -663,8 +702,8 @@ private:
 
     std::string tooltip_room_id_;
 
-    void paint_room(const tesseract::RoomInfo& room, tk::PaintCtx& ctx,
-                    tk::Rect bounds, bool selected, bool hovered)
+    void paint_room(const tesseract::RoomInfo& room, tk::PaintCtx& ctx, tk::Rect bounds,
+                    bool selected, bool hovered)
     {
         update_compact_tooltip_(room, ctx, bounds, hovered);
 
@@ -675,18 +714,14 @@ private:
         // Selection is instant; the passive hover fill eases in/out.
         if (selected)
         {
-            const tk::Rect highlight{
-                bounds.x + tesseract::visual::kSpaceXS,
-                bounds.y,
-                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
-                bounds.h};
+            const tk::Rect highlight{bounds.x + tesseract::visual::kSpaceXS, bounds.y,
+                                     bounds.w - 2.0f * tesseract::visual::kSpaceXS, bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
                                          ctx.theme.palette.sidebar_selected);
             // Wash the accent colour over the base fill so the active room
             // reads more strongly than a merely-hovered one.
-            ctx.canvas.fill_rounded_rect(
-                highlight, tesseract::visual::kRadiusSM,
-                ctx.theme.palette.accent.with_alpha(kActiveTintAlpha));
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
+                                         ctx.theme.palette.accent.with_alpha(kActiveTintAlpha));
 
             // Active-room indicator: mirrors the web build's
             // `box-shadow: inset 3px 0 0 0 accent` (docs/index.html
@@ -700,30 +735,25 @@ private:
             // rounded corners exactly reproduce the shifted box's boundary,
             // so the remaining sliver tapers through the corners exactly
             // like the CSS version — no per-pixel math, no banding.
-            const tk::Color composite = tk::Color::lerp(
-                ctx.theme.palette.sidebar_selected, ctx.theme.palette.accent,
-                kActiveTintAlpha / 255.0f);
+            const tk::Color composite =
+                tk::Color::lerp(ctx.theme.palette.sidebar_selected, ctx.theme.palette.accent,
+                                kActiveTintAlpha / 255.0f);
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
                                          tk::on_selected(ctx.theme, ctx.theme.palette.accent));
-            const tk::Rect punch{highlight.x + kActiveBarW, highlight.y,
-                                 highlight.w - kActiveBarW, highlight.h};
-            ctx.canvas.fill_rounded_rect(punch, tesseract::visual::kRadiusSM,
-                                         composite);
+            const tk::Rect punch{highlight.x + kActiveBarW, highlight.y, highlight.w - kActiveBarW,
+                                 highlight.h};
+            ctx.canvas.fill_rounded_rect(punch, tesseract::visual::kRadiusSM, composite);
         }
         else
         {
             const float fade = update_hover_fade(room.id, hovered);
             if (fade > 0.0f)
             {
-                const tk::Rect highlight{
-                    bounds.x + tesseract::visual::kSpaceXS,
-                    bounds.y,
-                    bounds.w - 2.0f * tesseract::visual::kSpaceXS,
-                    bounds.h};
+                const tk::Rect highlight{bounds.x + tesseract::visual::kSpaceXS, bounds.y,
+                                         bounds.w - 2.0f * tesseract::visual::kSpaceXS, bounds.h};
                 const tk::Color fill = ctx.theme.palette.sidebar_hover.with_alpha(
                     static_cast<std::uint8_t>(fade * 255.0f));
-                ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
-                                             fill);
+                ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
                 tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
                                            tesseract::visual::kRadiusSM);
             }
@@ -747,12 +777,13 @@ private:
             // the avatar on a cache miss. Collapsed / off-screen rooms never
             // reach paint, so they never trigger a fetch.
             if (!avatar && owner_.on_room_avatar_needed)
+            {
                 owner_.on_room_avatar_needed(room);
+            }
         }
 
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    room.name, pal.avatar_initials_bg,
-                    pal.avatar_initials_text);
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(), room.name,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
 
         // Presence dot — bottom-right of avatar, DM rooms only.
         if (!room.dm_counterpart_user_id.empty() && owner_.presence_provider_)
@@ -776,27 +807,26 @@ private:
             {
                 constexpr float kDotD = 8.0f;
                 constexpr float kRing = 2.0f;
-                const float outer_d   = kDotD + kRing * 2.0f;
-                const float dot_cx    = avatar_cx + owner_.avatar_size_() * 0.5f;
-                const float dot_cy    = avatar_cy + owner_.avatar_size_() * 0.5f;
-                const tk::Color ring_col = selected ? pal.sidebar_selected
-                                         : hovered  ? pal.sidebar_hover
-                                                    : pal.sidebar_bg;
+                const float outer_d = kDotD + kRing * 2.0f;
+                const float dot_cx = avatar_cx + owner_.avatar_size_() * 0.5f;
+                const float dot_cy = avatar_cy + owner_.avatar_size_() * 0.5f;
+                const tk::Color ring_col = selected  ? pal.sidebar_selected
+                                           : hovered ? pal.sidebar_hover
+                                                     : pal.sidebar_bg;
                 ctx.canvas.fill_rounded_rect(
-                    {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f,
-                     outer_d, outer_d},
+                    {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d},
                     outer_d * 0.5f, ring_col);
                 ctx.canvas.fill_rounded_rect(
-                    {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
-                    kDotD * 0.5f, dot_color);
+                    {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD}, kDotD * 0.5f,
+                    dot_color);
                 // High Contrast, selected row: both states are the same colour
                 // on Highlight, so show "away" as a ring.
                 if (hc_sel && ps == tesseract::PresenceState::Unavailable)
                 {
                     constexpr float kHole = 4.0f;
                     ctx.canvas.fill_rounded_rect(
-                        {dot_cx - kHole * 0.5f, dot_cy - kHole * 0.5f, kHole, kHole},
-                        kHole * 0.5f, ring_col);
+                        {dot_cx - kHole * 0.5f, dot_cy - kHole * 0.5f, kHole, kHole}, kHole * 0.5f,
+                        ring_col);
                 }
             }
         }
@@ -809,20 +839,18 @@ private:
         // across frames so the name/preview layouts aren't rebuilt every time
         // the notification count increments by 1).
         const UnreadStyle unread_style = unread_style_for(
-            room.notification_count, room.highlight_count, room.unread_count,
-            room.muted);
-        const bool show_count = unread_style == UnreadStyle::Count ||
-                                unread_style == UnreadStyle::Mention;
+            room.notification_count, room.highlight_count, room.unread_count, room.muted);
+        const bool show_count =
+            unread_style == UnreadStyle::Count || unread_style == UnreadStyle::Mention;
         const bool show_dot = unread_style == UnreadStyle::Dot;
 
-        float       badge_width = 0;
+        float badge_width = 0;
         std::string badge_text;
         if (show_count)
         {
             badge_text = format_unread(room.notification_count);
-            badge_width = std::max(
-                kBadgeMinW,
-                kBadgePadX * 2 + 7.0f * static_cast<float>(badge_text.size()));
+            badge_width =
+                std::max(kBadgeMinW, kBadgePadX * 2 + 7.0f * static_cast<float>(badge_text.size()));
             text_w -= (badge_width + kRoomListPadX);
         }
         else if (show_dot)
@@ -832,11 +860,9 @@ private:
         }
         // Reserve space for the active-call indicator (phone icon, right-aligned
         // to the right of the badge/dot slot).
-        constexpr float kCallIconPx  = 14.0f;
+        constexpr float kCallIconPx = 14.0f;
         constexpr float kCallIconGap = 4.0f;
-        const float call_icon_w = room.has_active_call
-                                      ? kCallIconPx + kCallIconGap
-                                      : 0.f;
+        const float call_icon_w = room.has_active_call ? kCallIconPx + kCallIconGap : 0.f;
         text_w -= call_icon_w;
         if (text_w < 0)
         {
@@ -847,19 +873,18 @@ private:
         bool has_preview = !compact && !room.last_message_kind.empty();
 
         // Thumbnail lookup.
-        const tk::Image* thumb     = nullptr;
-        std::string      thumb_url;
+        const tk::Image* thumb = nullptr;
+        std::string thumb_url;
         const bool is_own_sender = room.last_message_sender_name.empty();
-        const bool media_ok      = !owner_.media_allowed_provider_
-                                   || owner_.media_allowed_provider_(room.id, is_own_sender);
-        if (!compact && !room.is_space && room.successor_room_id.empty() &&
-            has_preview && owner_.sticker_provider_ && media_ok)
+        const bool media_ok = !owner_.media_allowed_provider_ ||
+                              owner_.media_allowed_provider_(room.id, is_own_sender);
+        if (!compact && !room.is_space && room.successor_room_id.empty() && has_preview &&
+            owner_.sticker_provider_ && media_ok)
         {
             const std::string& kind = room.last_message_kind;
-            thumb_url = kind == "sticker" ? room.last_message_sticker_url
-                                          : (kind == "image"
-                                                 ? room.last_message_thumbnail_url
-                                                 : std::string{});
+            thumb_url = kind == "sticker"
+                            ? room.last_message_sticker_url
+                            : (kind == "image" ? room.last_message_thumbnail_url : std::string{});
             if (!thumb_url.empty())
             {
                 thumb = owner_.sticker_provider_(thumb_url);
@@ -890,35 +915,32 @@ private:
         // ── Text-layout cache lookup / rebuild ────────────────────────────
         // build_text is expensive (font shaping + measurement); we rebuild
         // only when the inputs that determine the layout actually change.
-        const std::string display_name =
-            room.name.empty() ? room.id : room.name;
+        const std::string display_name = room.name.empty() ? room.id : room.name;
         const bool unread = unread_style != UnreadStyle::None;
         auto& cache = room_cache_[room.id];
 
         if (cache.display_name != display_name || cache.text_w != text_w ||
-            cache.preview != preview || cache.badge_text != badge_text ||
-            cache.unread != unread)
+            cache.preview != preview || cache.badge_text != badge_text || cache.unread != unread)
         {
             cache.display_name = display_name;
-            cache.text_w       = text_w;
-            cache.preview      = preview;
-            cache.badge_text   = badge_text;
-            cache.unread       = unread;
+            cache.text_w = text_w;
+            cache.preview = preview;
+            cache.badge_text = badge_text;
+            cache.unread = unread;
 
             // Unread rooms get a semibold title (SidebarName is the Body
             // point-size at DemiBold weight); read rooms stay regular Body.
             tk::TextStyle name_style{};
-            name_style.role      = unread ? tk::FontRole::SidebarName
-                                          : tk::FontRole::Body;
-            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.role = unread ? tk::FontRole::SidebarName : tk::FontRole::Body;
+            name_style.trim = tk::TextTrim::Ellipsis;
             name_style.max_width = text_w;
-            cache.name_layout    = ctx.factory.build_text(display_name, name_style);
+            cache.name_layout = ctx.factory.build_text(display_name, name_style);
 
             if (!preview.empty())
             {
                 tk::TextStyle prev_style{};
-                prev_style.role      = tk::FontRole::SidebarPreview;
-                prev_style.trim      = tk::TextTrim::Ellipsis;
+                prev_style.role = tk::FontRole::SidebarPreview;
+                prev_style.trim = tk::TextTrim::Ellipsis;
                 prev_style.max_width = text_w;
 
                 // build_text folds hard line breaks for wrap=false styles
@@ -938,7 +960,7 @@ private:
             if (!badge_text.empty())
             {
                 tk::TextStyle badge_style{};
-                badge_style.role   = tk::FontRole::UnreadBadge;
+                badge_style.role = tk::FontRole::UnreadBadge;
                 cache.badge_layout = ctx.factory.build_text(badge_text, badge_style);
             }
             else
@@ -954,15 +976,11 @@ private:
             // sits below it, else the whole row) so a large inline-emoji
             // glyph in the name — which overshoots the reported one-line
             // box — can't bleed into the preview line or the next row.
-            const tk::Rect name_band{
-                text_x, bounds.y, text_w,
-                has_preview ? bounds.h * 0.5f : bounds.h};
-            float name_y =
-                bounds.y +
-                (name_band.h - cache.name_layout->measure().h) * 0.5f;
+            const tk::Rect name_band{text_x, bounds.y, text_w,
+                                     has_preview ? bounds.h * 0.5f : bounds.h};
+            float name_y = bounds.y + (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
-            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
-                                 pal.text_primary);
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y}, pal.text_primary);
         }
 
         if (has_preview)
@@ -981,12 +999,10 @@ private:
                     // the same code path for their ascent()s to be
                     // comparable.
                     metrics_style.trim = tk::TextTrim::Ellipsis;
-                    preview_metrics_layout_ =
-                        ctx.factory.build_text(" ", metrics_style);
+                    preview_metrics_layout_ = ctx.factory.build_text(" ", metrics_style);
                 }
 
-                tk::Rect preview_area{text_x, bounds.y + bounds.h * 0.5f,
-                                      text_w, bounds.h * 0.5f};
+                tk::Rect preview_area{text_x, bounds.y + bounds.h * 0.5f, text_w, bounds.h * 0.5f};
                 // An inline-emoji run inflates measure()/ascent() (it's
                 // taller than plain SidebarPreview text), so centering by the
                 // *actual* layout's height would move its baseline — and with
@@ -999,70 +1015,63 @@ private:
                 // an unmoved baseline, clipped by preview_area.
                 const float baseline_y =
                     preview_area.y +
-                    (preview_area.h - preview_metrics_layout_->measure().h) *
-                        0.5f +
+                    (preview_area.h - preview_metrics_layout_->measure().h) * 0.5f +
                     preview_metrics_layout_->ascent();
                 const float prev_y = baseline_y - cache.preview_layout->ascent();
                 tk::ClipScope clip(ctx.canvas, preview_area);
-                ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
-                                     pal.text_secondary);
+                ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y}, pal.text_secondary);
             }
 
             if (thumb)
             {
                 float thumb_right = bounds.x + bounds.w - kRoomListPadX - call_icon_w -
                                     (badge_width > 0 ? badge_width + kRoomListPadX : 0.0f);
-                float iw = thumb->width()  > 0 ? static_cast<float>(thumb->width())  : owner_.thumb_();
-                float ih = thumb->height() > 0 ? static_cast<float>(thumb->height()) : owner_.thumb_();
-                float s  = std::min(owner_.thumb_() / iw, owner_.thumb_() / ih);
+                float iw =
+                    thumb->width() > 0 ? static_cast<float>(thumb->width()) : owner_.thumb_();
+                float ih =
+                    thumb->height() > 0 ? static_cast<float>(thumb->height()) : owner_.thumb_();
+                float s = std::min(owner_.thumb_() / iw, owner_.thumb_() / ih);
                 float fw = iw * s;
                 float fh = ih * s;
                 tk::Rect dst{thumb_right - owner_.thumb_() + (owner_.thumb_() - fw) * 0.5f,
-                             bounds.y + (bounds.h - fh) * 0.5f,
-                             fw, fh};
+                             bounds.y + (bounds.h - fh) * 0.5f, fw, fh};
                 ctx.canvas.draw_image(*thumb, dst);
                 if (ctx.anim_damage)
+                {
                     ctx.anim_damage->note_image(tk::CacheKey::media(thumb_url), dst);
+                }
             }
         }
 
         if (!badge_text.empty() && cache.badge_layout)
         {
             tk::Size badge_sz = cache.badge_layout->measure();
-            float    pill_w   = std::max(kBadgeMinW, badge_sz.w + kBadgePadX * 2);
+            float pill_w = std::max(kBadgeMinW, badge_sz.w + kBadgePadX * 2);
             tk::Rect pill{bounds.x + bounds.w - kRoomListPadX - call_icon_w - pill_w,
-                          bounds.y + (bounds.h - badge_h()) * 0.5f,
-                          pill_w, badge_h()};
-            const bool      is_mention = room.highlight_count > 0;
-            const tk::Color pill_bg    = is_mention ? pal.accent
-                                                    : pal.unread_bg;
-            const tk::Color pill_text  = is_mention
-                                             ? pal.text_on_accent
-                                             : pal.unread_text;
+                          bounds.y + (bounds.h - badge_h()) * 0.5f, pill_w, badge_h()};
+            const bool is_mention = room.highlight_count > 0;
+            const tk::Color pill_bg = is_mention ? pal.accent : pal.unread_bg;
+            const tk::Color pill_text = is_mention ? pal.text_on_accent : pal.unread_text;
             ctx.canvas.fill_rounded_rect(pill, (badge_h() * 0.5f), pill_bg);
-            ctx.canvas.draw_text(*cache.badge_layout,
-                                 {pill.x + (pill.w - badge_sz.w) * 0.5f,
-                                  pill.y + (pill.h - badge_sz.h) * 0.5f},
-                                 pill_text);
+            ctx.canvas.draw_text(
+                *cache.badge_layout,
+                {pill.x + (pill.w - badge_sz.w) * 0.5f, pill.y + (pill.h - badge_sz.h) * 0.5f},
+                pill_text);
         }
         else if (show_dot)
         {
             // Quiet unread (messages but no notification): a small neutral dot
             // where the count pill would sit.
             tk::Rect dot{bounds.x + bounds.w - kRoomListPadX - call_icon_w - kDotSize,
-                         bounds.y + (bounds.h - kDotSize) * 0.5f,
-                         kDotSize, kDotSize};
-            ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
-                                         pal.unread_bg);
+                         bounds.y + (bounds.h - kDotSize) * 0.5f, kDotSize, kDotSize};
+            ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f, pal.unread_bg);
         }
 
         if (room.has_active_call)
         {
             tk::Rect icon_box{bounds.x + bounds.w - kRoomListPadX - kCallIconPx,
-                              bounds.y + (bounds.h - kCallIconPx) * 0.5f,
-                              kCallIconPx, kCallIconPx};
-            owner_.call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
-                                   icon_box, kCallIconPx,
+                              bounds.y + (bounds.h - kCallIconPx) * 0.5f, kCallIconPx, kCallIconPx};
+            owner_.call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg, icon_box, kCallIconPx,
                                    pal.accent);
         }
     }
@@ -1071,8 +1080,8 @@ private:
     // Just the avatar, centred in the strip, plus a selection / hover
     // affordance and a corner unread indicator. The full row is shown on
     // hover as a flyout (RoomListView::paint_overlay).
-    void paint_room_icon_only(const tesseract::RoomInfo& room, tk::PaintCtx& ctx,
-                              tk::Rect bounds, bool selected, bool hovered)
+    void paint_room_icon_only(const tesseract::RoomInfo& room, tk::PaintCtx& ctx, tk::Rect bounds,
+                              bool selected, bool hovered)
     {
         const auto& pal = ctx.theme.palette;
         const float av = owner_.avatar_size_(); // 36
@@ -1083,26 +1092,22 @@ private:
         if (selected || fade > 0.0f)
         {
             constexpr float kPad = 4.0f;
-            const tk::Rect hl{cx - av * 0.5f - kPad, cy - av * 0.5f - kPad,
-                              av + kPad * 2.0f, av + kPad * 2.0f};
+            const tk::Rect hl{cx - av * 0.5f - kPad, cy - av * 0.5f - kPad, av + kPad * 2.0f,
+                              av + kPad * 2.0f};
             if (selected)
             {
                 ctx.canvas.fill_rounded_rect(hl, tesseract::visual::kRadiusSM,
                                              pal.sidebar_selected);
-                ctx.canvas.fill_rounded_rect(
-                    hl, tesseract::visual::kRadiusSM,
-                    pal.accent.with_alpha(kActiveTintAlpha));
-                ctx.canvas.fill_rect({bounds.x, bounds.y, kActiveBarW, bounds.h},
-                                     pal.accent);
+                ctx.canvas.fill_rounded_rect(hl, tesseract::visual::kRadiusSM,
+                                             pal.accent.with_alpha(kActiveTintAlpha));
+                ctx.canvas.fill_rect({bounds.x, bounds.y, kActiveBarW, bounds.h}, pal.accent);
             }
             else
             {
                 ctx.canvas.fill_rounded_rect(
                     hl, tesseract::visual::kRadiusSM,
-                    pal.sidebar_hover.with_alpha(
-                        static_cast<std::uint8_t>(fade * 255.0f)));
-                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, hl,
-                                           tesseract::visual::kRadiusSM);
+                    pal.sidebar_hover.with_alpha(static_cast<std::uint8_t>(fade * 255.0f)));
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, hl, tesseract::visual::kRadiusSM);
             }
         }
 
@@ -1112,26 +1117,24 @@ private:
         {
             avatar = owner_.avatar_provider_(av_mxc);
             if (!avatar && owner_.on_room_avatar_needed)
+            {
                 owner_.on_room_avatar_needed(room);
+            }
         }
-        draw_avatar(ctx.canvas, avatar, {cx, cy}, av, room.name,
-                    pal.avatar_initials_bg, pal.avatar_initials_text);
+        draw_avatar(ctx.canvas, avatar, {cx, cy}, av, room.name, pal.avatar_initials_bg,
+                    pal.avatar_initials_text);
 
-        const UnreadStyle us =
-            unread_style_for(room.notification_count, room.highlight_count,
-                             room.unread_count, room.muted);
+        const UnreadStyle us = unread_style_for(room.notification_count, room.highlight_count,
+                                                room.unread_count, room.muted);
         if (us != UnreadStyle::None)
         {
-            const bool mention =
-                us == UnreadStyle::Mention || room.highlight_count > 0;
-            const bool count =
-                us == UnreadStyle::Count || us == UnreadStyle::Mention;
-            const float d  = count ? 10.0f : kDotSize;
+            const bool mention = us == UnreadStyle::Mention || room.highlight_count > 0;
+            const bool count = us == UnreadStyle::Count || us == UnreadStyle::Mention;
+            const float d = count ? 10.0f : kDotSize;
             const float dx = cx + av * 0.5f - d;
             const float dy = cy - av * 0.5f;
-            ctx.canvas.fill_rounded_rect(
-                {dx - 2.0f, dy - 2.0f, d + 4.0f, d + 4.0f}, (d + 4.0f) * 0.5f,
-                pal.sidebar_bg);
+            ctx.canvas.fill_rounded_rect({dx - 2.0f, dy - 2.0f, d + 4.0f, d + 4.0f},
+                                         (d + 4.0f) * 0.5f, pal.sidebar_bg);
             ctx.canvas.fill_rounded_rect({dx, dy, d, d}, d * 0.5f,
                                          mention ? pal.accent : pal.unread_bg);
         }
@@ -1149,7 +1152,10 @@ public:
         for (auto it = hover_fade_.begin(); it != hover_fade_.end();)
         {
             const bool present = std::any_of(rooms.begin(), rooms.end(),
-                [&](const tesseract::RoomInfo& r) { return r.id == it->first; });
+                                             [&](const tesseract::RoomInfo& r)
+                                             {
+                                                 return r.id == it->first;
+                                             });
             it = present ? std::next(it) : hover_fade_.erase(it);
         }
     }
@@ -1161,75 +1167,71 @@ public:
                                  const tesseract::RoomInfo& room)
     {
         const std::string name = room.name.empty() ? room.id : room.name;
-        const UnreadStyle us =
-            unread_style_for(room.notification_count, room.highlight_count,
-                             room.unread_count, room.muted);
+        const UnreadStyle us = unread_style_for(room.notification_count, room.highlight_count,
+                                                room.unread_count, room.muted);
         const bool unread = us != UnreadStyle::None;
 
         tk::TextStyle ns{};
         ns.role = unread ? tk::FontRole::SidebarName : tk::FontRole::Body;
-        auto  nl      = factory.build_text(name, ns);
+        auto nl = factory.build_text(name, ns);
         float content = nl ? nl->measure().w : 0.0f;
 
-        const std::string preview =
-            owner_.compact_ ? std::string{} : preview_text_for(room);
+        const std::string preview = owner_.compact_ ? std::string{} : preview_text_for(room);
         if (!preview.empty())
         {
             tk::TextStyle ps{};
             ps.role = tk::FontRole::SidebarPreview;
             tk::TextSpan whole;
             whole.text = tk::fold_hard_breaks_utf8(preview);
-            auto pl = factory.build_rich_text(
-                tesseract::views::segment_emoji_runs(whole), ps);
+            auto pl = factory.build_rich_text(tesseract::views::segment_emoji_runs(whole), ps);
             if (pl)
+            {
                 content = std::max(content, pl->measure().w);
+            }
         }
 
         return 2.0f * kRoomRowOuterPadX + kRoomListPadX + owner_.avatar_size_() +
-               kRoomListAvatarGap + std::ceil(content) + kRoomListPadX +
-               kBadgeMinW + kRoomListPadX;
+               kRoomListAvatarGap + std::ceil(content) + kRoomListPadX + kBadgeMinW + kRoomListPadX;
     }
 
     // Paint one full (non-icon-only) room row into `bounds` regardless of the
     // owner's current mode — used for the icon-only hover flyout.
-    void paint_room_row_expanded(const tesseract::RoomInfo& room,
-                                 tk::PaintCtx& ctx, tk::Rect bounds, bool selected)
+    void paint_room_row_expanded(const tesseract::RoomInfo& room, tk::PaintCtx& ctx,
+                                 tk::Rect bounds, bool selected)
     {
-        const bool saved   = owner_.icon_only_;
-        owner_.icon_only_  = false;
+        const bool saved = owner_.icon_only_;
+        owner_.icon_only_ = false;
         paint_room(room, ctx, bounds, selected, /*hovered=*/false);
         owner_.icon_only_ = saved;
     }
 
 private:
-    void paint_invite(const tesseract::InviteInfo& inv, tk::PaintCtx& ctx,
-                      tk::Rect bounds, bool selected, bool hovered)
+    void paint_invite(const tesseract::InviteInfo& inv, tk::PaintCtx& ctx, tk::Rect bounds,
+                      bool selected, bool hovered)
     {
         const auto pal = tk::row_palette(ctx.theme, selected);
 
         // Row background — same treatment as room rows.
         if (selected || hovered)
         {
-            const tk::Color fill = selected ? ctx.theme.palette.sidebar_selected
-                                            : ctx.theme.palette.sidebar_hover;
-            const tk::Rect highlight{
-                bounds.x + tesseract::visual::kSpaceXS,
-                bounds.y,
-                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
-                bounds.h};
+            const tk::Color fill =
+                selected ? ctx.theme.palette.sidebar_selected : ctx.theme.palette.sidebar_hover;
+            const tk::Rect highlight{bounds.x + tesseract::visual::kSpaceXS, bounds.y,
+                                     bounds.w - 2.0f * tesseract::visual::kSpaceXS, bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
             if (!selected)
+            {
                 tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
                                            tesseract::visual::kRadiusSM);
+            }
             if (selected)
             {
                 // Selection here is otherwise color-fill-only, at a
                 // deliberately subtle contrast — mirror paint_room()'s
                 // accent left bar so it isn't the sole cue.
                 tk::ClipScope clip(ctx.canvas, highlight, tesseract::visual::kRadiusSM);
-                ctx.canvas.fill_rect(
-                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
-                    pal.accent);
+                ctx.canvas.fill_rect({highlight.x, highlight.y, kActiveBarW, highlight.h},
+                                     pal.accent);
             }
         }
 
@@ -1238,13 +1240,11 @@ private:
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         // DM invite: show inviter avatar. Group invite: show room avatar.
-        const std::string& av_mxc =
-            inv.is_direct ? inv.inviter_avatar_url : inv.room_avatar_url;
+        const std::string& av_mxc = inv.is_direct ? inv.inviter_avatar_url : inv.room_avatar_url;
         // Fallback initials text: inviter name for DM, room name for group.
         const std::string& initials_name =
-            inv.is_direct ? (inv.inviter_display_name.empty()
-                                 ? inv.inviter_user_id
-                                 : inv.inviter_display_name)
+            inv.is_direct ? (inv.inviter_display_name.empty() ? inv.inviter_user_id
+                                                              : inv.inviter_display_name)
                           : (inv.room_name.empty() ? inv.room_id : inv.room_name);
 
         // MSC4278: suppress invite avatars when disabled → initials fallback.
@@ -1256,8 +1256,7 @@ private:
         }
 
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    initials_name, pal.avatar_initials_bg,
-                    pal.avatar_initials_text);
+                    initials_name, pal.avatar_initials_bg, pal.avatar_initials_text);
 
         // Text column geometry (no badge reserved).
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
@@ -1271,38 +1270,34 @@ private:
         // DM invite:    primary = inviter display name, secondary = @user_id
         // Group invite: primary = room name, secondary = "Invited by <name>"
         const std::string primary =
-            inv.is_direct
-                ? (inv.inviter_display_name.empty() ? inv.inviter_user_id
-                                                    : inv.inviter_display_name)
-                : (inv.room_name.empty() ? inv.room_id : inv.room_name);
+            inv.is_direct ? (inv.inviter_display_name.empty() ? inv.inviter_user_id
+                                                              : inv.inviter_display_name)
+                          : (inv.room_name.empty() ? inv.room_id : inv.room_name);
 
         const std::string secondary =
-            inv.is_direct
-                ? inv.inviter_user_id
-                : tk::trf(tk::tr("Invited by {0}"),
-                          {inv.inviter_display_name.empty()
-                               ? inv.inviter_user_id
-                               : inv.inviter_display_name});
+            inv.is_direct ? inv.inviter_user_id
+                          : tk::trf(tk::tr("Invited by {0}"),
+                                    {inv.inviter_display_name.empty() ? inv.inviter_user_id
+                                                                      : inv.inviter_display_name});
 
         // Cache keyed on room_id.
         auto& cache = room_cache_[inv.room_id];
-        if (cache.display_name != primary || cache.text_w != text_w ||
-            cache.preview != secondary)
+        if (cache.display_name != primary || cache.text_w != text_w || cache.preview != secondary)
         {
             cache.display_name = primary;
-            cache.text_w       = text_w;
-            cache.preview      = secondary;
-            cache.badge_text   = {};
+            cache.text_w = text_w;
+            cache.preview = secondary;
+            cache.badge_text = {};
 
             tk::TextStyle name_style{};
-            name_style.role      = tk::FontRole::Body;
-            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.role = tk::FontRole::Body;
+            name_style.trim = tk::TextTrim::Ellipsis;
             name_style.max_width = text_w;
-            cache.name_layout    = ctx.factory.build_text(primary, name_style);
+            cache.name_layout = ctx.factory.build_text(primary, name_style);
 
             tk::TextStyle prev_style{};
-            prev_style.role      = tk::FontRole::SidebarPreview;
-            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.role = tk::FontRole::SidebarPreview;
+            prev_style.trim = tk::TextTrim::Ellipsis;
             prev_style.max_width = text_w;
             cache.preview_layout = ctx.factory.build_text(secondary, prev_style);
 
@@ -1312,57 +1307,49 @@ private:
         if (cache.name_layout)
         {
             const tk::Rect name_band{text_x, bounds.y, text_w,
-                                       owner_.compact_ ? bounds.h : bounds.h * 0.5f};
-            float name_y =
-                bounds.y +
-                (name_band.h - cache.name_layout->measure().h) * 0.5f;
+                                     owner_.compact_ ? bounds.h : bounds.h * 0.5f};
+            float name_y = bounds.y + (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
-            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
-                                 pal.text_primary);
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y}, pal.text_primary);
         }
         if (cache.preview_layout && !owner_.compact_)
         {
-            float prev_y =
-                bounds.y + bounds.h * 0.5f +
-                (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
-            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
-                                 pal.text_secondary);
+            float prev_y = bounds.y + bounds.h * 0.5f +
+                           (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y}, pal.text_secondary);
         }
     }
 
-    void paint_knock_row(const tesseract::KnockedRoomInfo& k, tk::PaintCtx& ctx,
-                         tk::Rect bounds, bool selected, bool hovered)
+    void paint_knock_row(const tesseract::KnockedRoomInfo& k, tk::PaintCtx& ctx, tk::Rect bounds,
+                         bool selected, bool hovered)
     {
         const auto pal = tk::row_palette(ctx.theme, selected);
 
         // Row background — same treatment as invite/room rows.
         if (selected || hovered)
         {
-            const tk::Color fill = selected ? ctx.theme.palette.sidebar_selected
-                                            : ctx.theme.palette.sidebar_hover;
-            const tk::Rect highlight{
-                bounds.x + tesseract::visual::kSpaceXS,
-                bounds.y,
-                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
-                bounds.h};
+            const tk::Color fill =
+                selected ? ctx.theme.palette.sidebar_selected : ctx.theme.palette.sidebar_hover;
+            const tk::Rect highlight{bounds.x + tesseract::visual::kSpaceXS, bounds.y,
+                                     bounds.w - 2.0f * tesseract::visual::kSpaceXS, bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
             if (!selected)
+            {
                 tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
                                            tesseract::visual::kRadiusSM);
+            }
             if (selected)
             {
                 tk::ClipScope clip(ctx.canvas, highlight, tesseract::visual::kRadiusSM);
-                ctx.canvas.fill_rect(
-                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
-                    pal.accent);
+                ctx.canvas.fill_rect({highlight.x, highlight.y, kActiveBarW, highlight.h},
+                                     pal.accent);
             }
         }
 
         float avatar_cx = bounds.x + kRoomListPadX + owner_.avatar_size_() * 0.5f;
         float avatar_cy = bounds.y + bounds.h * 0.5f;
 
-        const std::string& initials_name =
-            k.room_name.empty() ? k.room_id : k.room_name;
+        const std::string& initials_name = k.room_name.empty() ? k.room_id : k.room_name;
 
         const tk::Image* avatar = nullptr;
         if (owner_.avatar_provider_ && !k.room_avatar_url.empty())
@@ -1371,8 +1358,7 @@ private:
         }
 
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    initials_name, pal.avatar_initials_bg,
-                    pal.avatar_initials_text);
+                    initials_name, pal.avatar_initials_bg, pal.avatar_initials_text);
 
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
@@ -1388,23 +1374,22 @@ private:
         // room can't be both joined/invited and knocked at once, so ids
         // never collide across those callers.
         auto& cache = room_cache_[k.room_id];
-        if (cache.display_name != primary || cache.text_w != text_w ||
-            cache.preview != secondary)
+        if (cache.display_name != primary || cache.text_w != text_w || cache.preview != secondary)
         {
             cache.display_name = primary;
-            cache.text_w       = text_w;
-            cache.preview      = secondary;
-            cache.badge_text   = {};
+            cache.text_w = text_w;
+            cache.preview = secondary;
+            cache.badge_text = {};
 
             tk::TextStyle name_style{};
-            name_style.role      = tk::FontRole::Body;
-            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.role = tk::FontRole::Body;
+            name_style.trim = tk::TextTrim::Ellipsis;
             name_style.max_width = text_w;
-            cache.name_layout    = ctx.factory.build_text(primary, name_style);
+            cache.name_layout = ctx.factory.build_text(primary, name_style);
 
             tk::TextStyle prev_style{};
-            prev_style.role      = tk::FontRole::SidebarPreview;
-            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.role = tk::FontRole::SidebarPreview;
+            prev_style.trim = tk::TextTrim::Ellipsis;
             prev_style.max_width = text_w;
             cache.preview_layout = ctx.factory.build_text(secondary, prev_style);
 
@@ -1414,49 +1399,40 @@ private:
         if (cache.name_layout)
         {
             const tk::Rect name_band{text_x, bounds.y, text_w,
-                                       owner_.compact_ ? bounds.h : bounds.h * 0.5f};
-            float name_y =
-                bounds.y +
-                (name_band.h - cache.name_layout->measure().h) * 0.5f;
+                                     owner_.compact_ ? bounds.h : bounds.h * 0.5f};
+            float name_y = bounds.y + (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
-            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
-                                 pal.text_primary);
+            ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y}, pal.text_primary);
         }
         if (cache.preview_layout && !owner_.compact_)
         {
-            float prev_y =
-                bounds.y + bounds.h * 0.5f +
-                (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
-            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
-                                 pal.text_secondary);
+            float prev_y = bounds.y + bounds.h * 0.5f +
+                           (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
+            ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y}, pal.text_secondary);
         }
     }
 
-    void paint_unjoined_room(const tesseract::RoomSummary& s,
-                             tk::PaintCtx& ctx, tk::Rect bounds,
+    void paint_unjoined_room(const tesseract::RoomSummary& s, tk::PaintCtx& ctx, tk::Rect bounds,
                              bool selected, bool hovered)
     {
         const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected || hovered)
         {
-            const tk::Rect highlight{
-                bounds.x + tesseract::visual::kSpaceXS,
-                bounds.y,
-                bounds.w - 2.0f * tesseract::visual::kSpaceXS,
-                bounds.h};
-            ctx.canvas.fill_rounded_rect(
-                highlight, tesseract::visual::kRadiusSM,
-                selected ? pal.sidebar_selected : pal.sidebar_hover);
+            const tk::Rect highlight{bounds.x + tesseract::visual::kSpaceXS, bounds.y,
+                                     bounds.w - 2.0f * tesseract::visual::kSpaceXS, bounds.h};
+            ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
+                                         selected ? pal.sidebar_selected : pal.sidebar_hover);
             if (!selected)
+            {
                 tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
                                            tesseract::visual::kRadiusSM);
+            }
             if (selected)
             {
                 tk::ClipScope clip(ctx.canvas, highlight, tesseract::visual::kRadiusSM);
-                ctx.canvas.fill_rect(
-                    {highlight.x, highlight.y, kActiveBarW, highlight.h},
-                    pal.accent);
+                ctx.canvas.fill_rect({highlight.x, highlight.y, kActiveBarW, highlight.h},
+                                     pal.accent);
             }
         }
 
@@ -1467,27 +1443,35 @@ private:
 
         // Per-row lazy fetch: fire once per room_id; host deduplicates in-flight requests.
         if (loading && owner_.on_unjoined_room_summary_needed)
+        {
             owner_.on_unjoined_room_summary_needed(s.room_id);
+        }
 
         const tk::Image* avatar = nullptr;
         if (!loading && owner_.avatar_provider_ && !s.avatar_url.empty())
         {
             avatar = owner_.avatar_provider_(s.avatar_url);
             if (!avatar && owner_.on_unjoined_room_avatar_needed)
+            {
                 owner_.on_unjoined_room_avatar_needed(s);
+            }
         }
         // Use room_id for the initials disc even while loading so each row has a
         // distinct placeholder colour.
         const std::string& initials_src = loading ? s.room_id : s.name;
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    initials_src, pal.avatar_initials_bg, pal.avatar_initials_text);
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(), initials_src,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
 
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
-        if (text_w < 0) text_w = 0;
+        if (text_w < 0)
+        {
+            text_w = 0;
+        }
 
         // Name + members/join-rule on two lines, muted to signal unjoined.
-        const std::uint8_t kAlpha = ctx.theme.high_contrast ? 255 : 153; // ~60%; no dimming in High Contrast
+        const std::uint8_t kAlpha =
+            ctx.theme.high_contrast ? 255 : 153; // ~60%; no dimming in High Contrast
 
         const std::string display = loading ? tk::tr("Loading\xe2\x80\xa6") : s.name;
         std::string meta;
@@ -1497,32 +1481,40 @@ private:
         }
         else
         {
-            meta = tk::trf(tk::trn("{0} member", "{0} members",
-                                   static_cast<long>(s.num_joined_members)),
-                           {std::to_string(s.num_joined_members)});
-            if (s.join_rule == "knock")            meta += " \xc2\xb7 " + tk::tr("Knock");
-            else if (s.join_rule == "invite")      meta += " \xc2\xb7 " + tk::tr("Invite-only");
-            else if (s.join_rule == "restricted")  meta += " \xc2\xb7 " + tk::tr("Restricted");
+            meta = tk::trf(
+                tk::trn("{0} member", "{0} members", static_cast<long>(s.num_joined_members)),
+                {std::to_string(s.num_joined_members)});
+            if (s.join_rule == "knock")
+            {
+                meta += " \xc2\xb7 " + tk::tr("Knock");
+            }
+            else if (s.join_rule == "invite")
+            {
+                meta += " \xc2\xb7 " + tk::tr("Invite-only");
+            }
+            else if (s.join_rule == "restricted")
+            {
+                meta += " \xc2\xb7 " + tk::tr("Restricted");
+            }
         }
 
         auto& cache = room_cache_[s.room_id];
-        if (cache.display_name != display || cache.text_w != text_w ||
-            cache.preview != meta)
+        if (cache.display_name != display || cache.text_w != text_w || cache.preview != meta)
         {
             cache.display_name = display;
-            cache.text_w       = text_w;
-            cache.preview      = meta;
+            cache.text_w = text_w;
+            cache.preview = meta;
             cache.badge_layout = nullptr;
 
             tk::TextStyle name_style{};
-            name_style.role      = tk::FontRole::Body;
-            name_style.trim      = tk::TextTrim::Ellipsis;
+            name_style.role = tk::FontRole::Body;
+            name_style.trim = tk::TextTrim::Ellipsis;
             name_style.max_width = text_w;
-            cache.name_layout    = ctx.factory.build_text(display, name_style);
+            cache.name_layout = ctx.factory.build_text(display, name_style);
 
             tk::TextStyle prev_style{};
-            prev_style.role      = tk::FontRole::SidebarPreview;
-            prev_style.trim      = tk::TextTrim::Ellipsis;
+            prev_style.role = tk::FontRole::SidebarPreview;
+            prev_style.trim = tk::TextTrim::Ellipsis;
             prev_style.max_width = text_w;
             cache.preview_layout = ctx.factory.build_text(meta, prev_style);
         }
@@ -1530,9 +1522,8 @@ private:
         if (cache.name_layout)
         {
             const tk::Rect name_band{text_x, bounds.y, text_w,
-                                       owner_.compact_ ? bounds.h : bounds.h * 0.5f};
-            float name_y = bounds.y +
-                           (name_band.h - cache.name_layout->measure().h) * 0.5f;
+                                     owner_.compact_ ? bounds.h : bounds.h * 0.5f};
+            float name_y = bounds.y + (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
                                  pal.text_primary.with_alpha(kAlpha));
@@ -1557,7 +1548,7 @@ private:
     // baseline in paint_row — see the comment at its use site.
     std::unique_ptr<tk::TextLayout> preview_metrics_layout_;
 
-    std::unordered_map<std::string, RoomRowCache>           room_cache_;
+    std::unordered_map<std::string, RoomRowCache> room_cache_;
     HeaderRowCache header_cache_[RoomListView::kNumSections] = {};
 };
 
@@ -1565,8 +1556,7 @@ private:
 
 RoomListView::~RoomListView() = default;
 
-RoomListView::RoomListView()
-    : adapter_(std::make_unique<Adapter>(*this))
+RoomListView::RoomListView() : adapter_(std::make_unique<Adapter>(*this))
 {
     collapsed_[kSecInactive] = true; // Inactive starts collapsed to declutter.
 
@@ -1616,7 +1606,9 @@ RoomListView::RoomListView()
             [this]
             {
                 if (on_add_room_requested)
+                {
                     on_add_room_requested();
+                }
             });
         join_btn_ = add_child(std::move(join));
         join_btn_->set_visible(false);
@@ -1630,7 +1622,9 @@ RoomListView::RoomListView()
             [this]
             {
                 if (on_search_clear)
+                {
                     on_search_clear();
+                }
             });
         clear_btn_ = add_child(std::move(clear));
         clear_btn_->set_visible(false);
@@ -1638,8 +1632,7 @@ RoomListView::RoomListView()
 
     if (host())
     {
-        auto search = tk::create_widget<tk::TextField>(
-            this, kSearchBarH - 2.0f * kSearchBarInsetY);
+        auto search = tk::create_widget<tk::TextField>(this, kSearchBarH - 2.0f * kSearchBarInsetY);
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
         search_field_ = add_child(std::move(search));
     }
@@ -1674,7 +1667,9 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
     }
     // Forget the hover fade of rooms that left the list.
     if (adapter_)
+    {
         adapter_->prune_hover_fade(rooms);
+    }
     // heights_dirty_ is true until the first paint pass, so visible_range()
     // returns {0,-1} and visible_room_ids() returns {} on the very first call.
     // Track the empty→non-empty transition separately so the initial load
@@ -1688,8 +1683,7 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
     // Capturing here means we read the rebuilt items_ with the pre-rebuild
     // row offsets (still valid since heights haven't been remeasured yet),
     // giving a correct comparison even when rows are uniform height.
-    bool layout_changed = on_scroll &&
-        (first_load || visible_room_ids() != prev_visible);
+    bool layout_changed = on_scroll && (first_load || visible_room_ids() != prev_visible);
     if (list_)
     {
         list_->invalidate_data();
@@ -1699,7 +1693,9 @@ void RoomListView::set_rooms(std::vector<tesseract::RoomInfo> rooms)
     // into view if new activity arrived (and the user enabled the behavior).
     autoscroll_to_unread_();
     if (layout_changed)
+    {
         on_scroll();
+    }
 }
 
 void RoomListView::set_invites(const std::vector<tesseract::InviteInfo>* invites)
@@ -1724,8 +1720,7 @@ void RoomListView::set_my_knocks(const std::vector<tesseract::KnockedRoomInfo>* 
     set_selected_room(selected_room_id_cache_);
 }
 
-void RoomListView::set_space_unjoined_rooms(
-    std::vector<tesseract::RoomSummary> rooms)
+void RoomListView::set_space_unjoined_rooms(std::vector<tesseract::RoomSummary> rooms)
 {
     space_unjoined_rooms_ = std::move(rooms);
     rebuild_items();
@@ -1756,7 +1751,9 @@ void RoomListView::update_unjoined_room_summary(const tesseract::RoomSummary& s)
         }
     }
     if (list_)
+    {
         list_->invalidate_data();
+    }
 }
 
 int RoomListView::unjoined_room_count() const
@@ -1767,7 +1764,9 @@ int RoomListView::unjoined_room_count() const
 bool RoomListView::unjoined_rows_visible() const
 {
     if (space_unjoined_rooms_.empty())
+    {
         return false;
+    }
     return !collapsed_[kSecSpaceUnjoined];
 }
 
@@ -1781,8 +1780,7 @@ void RoomListView::refresh()
     set_selected_room(selected_room_id_cache_);
 }
 
-float RoomListView::longest_visible_row_width(tk::CanvasFactory& factory,
-                                              const tk::Theme& theme)
+float RoomListView::longest_visible_row_width(tk::CanvasFactory& factory, const tk::Theme& theme)
 {
     // Only the room rows currently on screen are measured — a full pass over
     // every room in a large account froze the UI on startup. The result is
@@ -1795,47 +1793,54 @@ float RoomListView::longest_visible_row_width(tk::CanvasFactory& factory,
         first = vr.first;
         last = vr.second;
     }
-    if (longest_row_w_cache_ >= 0.0f &&
-        longest_row_cache_epoch_ == layout_epoch_ &&
-        longest_row_cache_factory_ == &factory &&
-        longest_row_cache_first_ == first && longest_row_cache_last_ == last)
+    if (longest_row_w_cache_ >= 0.0f && longest_row_cache_epoch_ == layout_epoch_ &&
+        longest_row_cache_factory_ == &factory && longest_row_cache_first_ == first &&
+        longest_row_cache_last_ == last)
     {
         return longest_row_w_cache_;
     }
 
     float widest = 0.0f;
-    for (int i = first; i <= last && static_cast<std::size_t>(i) < items_.size();
-         ++i)
+    for (int i = first; i <= last && static_cast<std::size_t>(i) < items_.size(); ++i)
     {
         const auto& item = items_[static_cast<std::size_t>(i)];
         if (item.kind != Item::Kind::Room)
+        {
             continue;
+        }
         const auto& rooms = section_rooms_[item.section];
         if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        {
             continue;
-        widest = std::max(
-            widest,
-            adapter_->room_row_content_width(factory, theme, *rooms[item.room_idx]));
+        }
+        widest = std::max(widest,
+                          adapter_->room_row_content_width(factory, theme, *rooms[item.room_idx]));
     }
 
-    longest_row_w_cache_       = widest;
-    longest_row_cache_epoch_   = layout_epoch_;
+    longest_row_w_cache_ = widest;
+    longest_row_cache_epoch_ = layout_epoch_;
     longest_row_cache_factory_ = &factory;
-    longest_row_cache_first_   = first;
-    longest_row_cache_last_    = last;
+    longest_row_cache_first_ = first;
+    longest_row_cache_last_ = last;
     return widest;
 }
 
 void RoomListView::set_compact(bool on)
 {
     if (compact_ == on)
+    {
         return;
+    }
     compact_ = on;
     if (adapter_)
+    {
         adapter_->clear_row_caches();
+    }
     ++layout_epoch_;
     if (list_)
+    {
         list_->invalidate_data();
+    }
     if (auto* h = host())
     {
         h->request_relayout();
@@ -1846,7 +1851,9 @@ void RoomListView::set_compact(bool on)
 float RoomListView::avatar_size_() const
 {
     if (!compact_)
+    {
         return kRoomListAvatarSize;
+    }
     // A little bigger than the name's glyph height so the avatar reads as
     // inline with the text.
     return std::round(21.0f * tk::font_height_scale(tk::FontRole::SidebarName));
@@ -1855,11 +1862,12 @@ float RoomListView::avatar_size_() const
 float RoomListView::row_h_() const
 {
     if (compact_)
+    {
         return avatar_size_() + kRoomListPadY * 2.0f;
+    }
     // Two text lines (name + preview) beside the avatar: grow with the larger.
-    const float scale =
-        std::max(tk::font_height_scale(tk::FontRole::SidebarName),
-                 tk::font_height_scale(tk::FontRole::SidebarPreview));
+    const float scale = std::max(tk::font_height_scale(tk::FontRole::SidebarName),
+                                 tk::font_height_scale(tk::FontRole::SidebarPreview));
     return std::ceil(kRoomListRowH * scale);
 }
 
@@ -1871,13 +1879,19 @@ float RoomListView::thumb_() const
 void RoomListView::set_icon_only(bool on)
 {
     if (icon_only_ == on)
+    {
         return;
+    }
     icon_only_ = on;
     if (!on)
+    {
         icon_only_hover_room_.clear();
+    }
     rebuild_items();
     if (list_)
+    {
         list_->invalidate_data();
+    }
     set_selected_room(selected_room_id_cache_);
     if (auto* h = host())
     {
@@ -1891,14 +1905,20 @@ void RoomListView::paint_overlay(tk::PaintCtx& ctx)
     tk::Widget::paint_overlay(ctx);
 
     if (!icon_only_ || icon_only_hover_room_.empty() || !adapter_ || !list_)
+    {
         return;
+    }
 
     const int idx = item_index_for_room_(icon_only_hover_room_);
     if (idx < 0)
+    {
         return;
+    }
     const tk::Rect row = list_->row_world_rect(idx);
     if (row.empty())
+    {
         return;
+    }
 
     // Resolve the RoomInfo* for the hovered id.
     const tesseract::RoomInfo* room = nullptr;
@@ -1908,53 +1928,58 @@ void RoomListView::paint_overlay(tk::PaintCtx& ctx)
         if (item.kind == Item::Kind::Room)
         {
             const auto& rooms = section_rooms_[item.section];
-            if (item.room_idx >= 0 &&
-                item.room_idx < static_cast<int>(rooms.size()))
+            if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()))
+            {
                 room = rooms[item.room_idx];
+            }
         }
     }
     if (!room)
+    {
         return;
+    }
 
     // Flyout panel: starts at the sidebar's left edge and extends rightward
     // over the chat pane, sized to the room's full row content (bounded so a
     // pathological name can't run off a reasonable window).
     constexpr float kFlyoutMaxW = 460.0f;
     const float w =
-        std::min(kFlyoutMaxW,
-                 adapter_->room_row_content_width(ctx.factory, ctx.theme, *room));
+        std::min(kFlyoutMaxW, adapter_->room_row_content_width(ctx.factory, ctx.theme, *room));
     const tk::Rect panel{bounds_.x, row.y, w, row.h};
 
     const auto& pal = ctx.theme.palette;
     // Faux elevation: a translucent dark halo behind the panel, then the
     // panel fill and a hairline border.
-    ctx.canvas.fill_rounded_rect({panel.x - 1.0f, panel.y - 1.0f, panel.w + 3.0f,
-                                  panel.h + 3.0f},
-                                 tesseract::visual::kRadiusSM + 1.0f,
-                                 tk::Color{0, 0, 0, 48});
-    ctx.canvas.fill_rounded_rect(panel, tesseract::visual::kRadiusSM,
-                                 pal.sidebar_bg);
-    ctx.canvas.stroke_rounded_rect(panel, tesseract::visual::kRadiusSM,
-                                   pal.separator, 1.0f);
+    ctx.canvas.fill_rounded_rect({panel.x - 1.0f, panel.y - 1.0f, panel.w + 3.0f, panel.h + 3.0f},
+                                 tesseract::visual::kRadiusSM + 1.0f, tk::Color{0, 0, 0, 48});
+    ctx.canvas.fill_rounded_rect(panel, tesseract::visual::kRadiusSM, pal.sidebar_bg);
+    ctx.canvas.stroke_rounded_rect(panel, tesseract::visual::kRadiusSM, pal.separator, 1.0f);
 
     const tk::Rect row_bounds{panel.x + kRoomRowOuterPadX, panel.y,
                               panel.w - 2.0f * kRoomRowOuterPadX, panel.h};
-    adapter_->paint_room_row_expanded(*room, ctx, row_bounds,
-                                      room->id == selected_room_id_cache_);
+    adapter_->paint_room_row_expanded(*room, ctx, row_bounds, room->id == selected_room_id_cache_);
 }
 
 void RoomListView::set_section_collapsed(int section, bool collapsed)
 {
     if (section < 0 || section >= kNumSections)
+    {
         return;
+    }
     if (collapsed_[section] == collapsed)
+    {
         return;
+    }
     collapsed_[section] = collapsed;
     rebuild_items();
     if (list_)
+    {
         list_->invalidate_data();
+    }
     if (on_scroll)
+    {
         on_scroll();
+    }
 }
 
 float RoomListView::scroll_fraction() const
@@ -1965,7 +1990,9 @@ float RoomListView::scroll_fraction() const
 void RoomListView::scroll_to_offset(float t)
 {
     if (list_)
+    {
         list_->scroll_to_offset(t);
+    }
 }
 
 std::array<bool, RoomListView::kNumSections> RoomListView::collapsed_state() const
@@ -2019,8 +2046,7 @@ int RoomListView::item_index_for_room_(const std::string& id) const
             continue;
         }
         const auto& rooms = section_rooms_[item.section];
-        if (item.room_idx >= 0 &&
-            item.room_idx < static_cast<int>(rooms.size()) &&
+        if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()) &&
             rooms[item.room_idx]->id == id)
         {
             return i;
@@ -2095,8 +2121,7 @@ std::string RoomListView::selected_room_id() const
         if (item.kind == Item::Kind::Room)
         {
             const auto& rooms = section_rooms_[item.section];
-            if (item.room_idx >= 0 &&
-                item.room_idx < static_cast<int>(rooms.size()))
+            if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()))
             {
                 return rooms[item.room_idx]->id;
             }
@@ -2139,10 +2164,14 @@ void RoomListView::on_fonts_changed()
     // Row heights, cached row layouts and the widest-row memo all depend on
     // the fonts.
     if (adapter_)
+    {
         adapter_->clear_row_caches();
+    }
     ++layout_epoch_;
     if (list_)
+    {
         list_->invalidate_data();
+    }
     tk::Widget::on_fonts_changed();
 }
 
@@ -2187,15 +2216,13 @@ std::vector<std::string> RoomListView::visible_room_ids() const
         return {};
     }
     std::vector<std::string> ids;
-    for (int i = first;
-         i <= last && static_cast<std::size_t>(i) < items_.size(); ++i)
+    for (int i = first; i <= last && static_cast<std::size_t>(i) < items_.size(); ++i)
     {
         const auto& item = items_[static_cast<std::size_t>(i)];
         if (item.kind == Item::Kind::Room)
         {
             const auto& rooms = section_rooms_[item.section];
-            if (item.room_idx >= 0 &&
-                item.room_idx < static_cast<int>(rooms.size()))
+            if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()))
             {
                 ids.push_back(rooms[item.room_idx]->id);
             }
@@ -2216,8 +2243,7 @@ std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys(
     {
         return keys;
     }
-    for (int i = first;
-         i <= last && static_cast<std::size_t>(i) < items_.size(); ++i)
+    for (int i = first; i <= last && static_cast<std::size_t>(i) < items_.size(); ++i)
     {
         const auto& item = items_[static_cast<std::size_t>(i)];
         if (item.kind != Item::Kind::Room)
@@ -2235,9 +2261,8 @@ std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys(
         // (space or not), unlike the last-message thumbnail below.
         if (const std::string& av_mxc = room.effective_avatar_url(); !av_mxc.empty())
         {
-            keys.push_back({tk::CacheKey::thumbnail(
-                                av_mxc, tesseract::visual::kAvatarCacheSize,
-                                tesseract::visual::kAvatarCacheSize),
+            keys.push_back({tk::CacheKey::thumbnail(av_mxc, tesseract::visual::kAvatarCacheSize,
+                                                    tesseract::visual::kAvatarCacheSize),
                             tk::MediaKind::RoomAvatar});
         }
         // Mirrors Adapter::paint_room's thumbnail-lookup (see its use of
@@ -2247,14 +2272,12 @@ std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys(
             continue;
         }
         const std::string& kind = room.last_message_kind;
-        std::string thumb_url = kind == "sticker" ? room.last_message_sticker_url
-                                                  : (kind == "image"
-                                                         ? room.last_message_thumbnail_url
-                                                         : std::string{});
+        std::string thumb_url =
+            kind == "sticker" ? room.last_message_sticker_url
+                              : (kind == "image" ? room.last_message_thumbnail_url : std::string{});
         if (!thumb_url.empty())
         {
-            keys.push_back({tk::CacheKey::media(std::move(thumb_url)),
-                            tk::MediaKind::MediaImage});
+            keys.push_back({tk::CacheKey::media(std::move(thumb_url)), tk::MediaKind::MediaImage});
         }
     }
     return keys;
@@ -2270,21 +2293,20 @@ void RoomListView::rebuild_items()
 
     // 2. Classify each room into a section, applying the search filter.
     const auto& settings = tesseract::Settings::instance();
-    const bool group_unread   = settings.group_unread_rooms;
+    const bool group_unread = settings.group_unread_rooms;
     const bool group_inactive = settings.group_inactive_rooms;
     const int threshold_days = settings.inactive_room_threshold_days;
-    const std::uint64_t now_ms = static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
+    const std::uint64_t now_ms =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count());
 
     for (const auto& r : rooms_)
     {
         // An upgraded (tombstoned) room is a dead end once its successor is
         // joined; until then it stays listed (its banner offers "Join the new
         // room"). Keep the open one so the selection doesn't vanish under it.
-        if (!r.successor_room_id.empty() && r.successor_joined &&
-            r.id != selected_room_id_cache_)
+        if (!r.successor_room_id.empty() && r.successor_joined && r.id != selected_room_id_cache_)
         {
             continue;
         }
@@ -2339,13 +2361,17 @@ void RoomListView::rebuild_items()
                 const auto* r = section_rooms_[kSecUnread][i];
                 if (r->notification_count > 0 || r->highlight_count > 0 ||
                     r->id == selected_room_id_cache_)
+                {
                     items_.push_back({Item::Kind::Room, kSecUnread, i});
+                }
             }
         }
         else
         {
             for (int i = 0; i < static_cast<int>(section_rooms_[kSecUnread].size()); ++i)
+            {
                 items_.push_back({Item::Kind::Room, kSecUnread, i});
+            }
         }
     }
 
@@ -2354,7 +2380,9 @@ void RoomListView::rebuild_items()
     for (int s = kSecFavorites; s < kNumSections; ++s)
     {
         if (s == kSecSpaceUnjoined || s == kSecUnread || s == kSecKnocks)
+        {
             continue; // handled separately above/below
+        }
         if (section_rooms_[s].empty())
         {
             continue;
@@ -2386,11 +2414,9 @@ void RoomListView::rebuild_items()
         items_.push_back({Item::Kind::Header, kSecSpaceUnjoined, 0});
         if (!collapsed_[kSecSpaceUnjoined])
         {
-            for (int i = 0;
-                 i < static_cast<int>(space_unjoined_rooms_.size()); ++i)
+            for (int i = 0; i < static_cast<int>(space_unjoined_rooms_.size()); ++i)
             {
-                items_.push_back(
-                    {Item::Kind::SpaceUnjoined, kSecSpaceUnjoined, i});
+                items_.push_back({Item::Kind::SpaceUnjoined, kSecSpaceUnjoined, i});
             }
         }
     }
@@ -2400,8 +2426,11 @@ void RoomListView::rebuild_items()
     // painters, so they're simply hidden until the sidebar is expanded again).
     if (icon_only_)
     {
-        std::erase_if(items_, [](const Item& it)
-                      { return it.kind != Item::Kind::Room; });
+        std::erase_if(items_,
+                      [](const Item& it)
+                      {
+                          return it.kind != Item::Kind::Room;
+                      });
     }
 
     // Invalidate longest_visible_row_width()'s memo — the set of rows or the
@@ -2446,8 +2475,7 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         search_field_rect_ = {
             bounds.x + kSearchBarInsetX,
             bounds.y + kSearchBarInsetY,
-            std::max(0.0f, join_room_rect_.x - kSearchBarInsetX -
-                               (bounds.x + kSearchBarInsetX)),
+            std::max(0.0f, join_room_rect_.x - kSearchBarInsetX - (bounds.x + kSearchBarInsetX)),
             std::max(0.0f, kSearchBarH - 2 * kSearchBarInsetY),
         };
 
@@ -2462,8 +2490,7 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 btn_side,
                 btn_side,
             };
-            search_field_rect_.w =
-                std::max(0.0f, btn_x - kSearchBarInsetX - search_field_rect_.x);
+            search_field_rect_.w = std::max(0.0f, btn_x - kSearchBarInsetX - search_field_rect_.x);
         }
         else
         {
@@ -2491,7 +2518,9 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     else
     {
         if (search_field_)
+        {
             search_field_->set_visible(false);
+        }
         search_field_rect_ = {};
         search_clear_rect_ = {};
         join_room_rect_ = {};
@@ -2505,7 +2534,9 @@ void RoomListView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // native popup surface, positioned against its anchor + the screen, not
     // this view's local bounds (see PopupMenu's own doc comment).
     if (room_context_menu_)
+    {
         room_context_menu_->arrange(ctx, bounds_);
+    }
 }
 
 void RoomListView::toggle_section_collapsed_(int section)
@@ -2516,14 +2547,18 @@ void RoomListView::toggle_section_collapsed_(int section)
     }
     collapsed_[section] = !collapsed_[section];
     if (on_section_toggled)
+    {
         on_section_toggled(section, collapsed_[section]);
+    }
     rebuild_items();
     list_->invalidate_data();
     // Re-apply selection — the selected room may have just been hidden or
     // revealed by the toggle.
     set_selected_room(selected_room_id_cache_);
     if (on_scroll)
+    {
         on_scroll();
+    }
 }
 
 void RoomListView::activate_row_(std::size_t idx)
@@ -2542,13 +2577,11 @@ void RoomListView::activate_row_(std::size_t idx)
 
     if (item.kind == Item::Kind::Invite)
     {
-        if (!invites_ || item.room_idx < 0 ||
-            item.room_idx >= static_cast<int>(invites_->size()))
+        if (!invites_ || item.room_idx < 0 || item.room_idx >= static_cast<int>(invites_->size()))
         {
             return;
         }
-        const std::string& rid =
-            (*invites_)[static_cast<std::size_t>(item.room_idx)].room_id;
+        const std::string& rid = (*invites_)[static_cast<std::size_t>(item.room_idx)].room_id;
         if (on_invite_selected)
         {
             on_invite_selected(rid);
@@ -2558,8 +2591,7 @@ void RoomListView::activate_row_(std::size_t idx)
 
     if (item.kind == Item::Kind::SpaceUnjoined)
     {
-        if (item.room_idx < 0 ||
-            item.room_idx >= static_cast<int>(space_unjoined_rooms_.size()))
+        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(space_unjoined_rooms_.size()))
         {
             return;
         }
@@ -2578,8 +2610,7 @@ void RoomListView::activate_row_(std::size_t idx)
         {
             return;
         }
-        const std::string& rid =
-            (*my_knocks_)[static_cast<std::size_t>(item.room_idx)].room_id;
+        const std::string& rid = (*my_knocks_)[static_cast<std::size_t>(item.room_idx)].room_id;
         if (on_knock_row_selected)
         {
             on_knock_row_selected(rid);
@@ -2588,8 +2619,7 @@ void RoomListView::activate_row_(std::size_t idx)
     }
 
     const auto& rooms = section_rooms_[item.section];
-    if (item.room_idx < 0 ||
-        item.room_idx >= static_cast<int>(rooms.size()))
+    if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
     {
         return;
     }
@@ -2616,7 +2646,7 @@ RoomListView::StickyHeader RoomListView::sticky_header_() const
 
     // Find the header item for the section whose rows sit at the viewport top.
     const int section = items_[static_cast<std::size_t>(first)].section;
-    int       hdr     = -1;
+    int hdr = -1;
     if (items_[static_cast<std::size_t>(first)].kind == Item::Kind::Header)
     {
         hdr = first;
@@ -2662,23 +2692,22 @@ RoomListView::StickyHeader RoomListView::sticky_header_() const
         }
     }
 
-    s.show        = true;
+    s.show = true;
     s.header_item = hdr;
-    s.section     = section;
-    s.world_y     = world_y;
+    s.section = section;
+    s.world_y = world_y;
     return s;
 }
 
-bool RoomListView::sticky_band_contains_(const StickyHeader& s,
-                                         tk::Point world) const
+bool RoomListView::sticky_band_contains_(const StickyHeader& s, tk::Point world) const
 {
     if (!s.show)
     {
         return false;
     }
     const float list_top = bounds_.y + search_header_h();
-    return world.x >= bounds_.x && world.x < bounds_.x + bounds_.w &&
-           world.y >= list_top && world.y < s.world_y + room_list_header_h();
+    return world.x >= bounds_.x && world.x < bounds_.x + bounds_.w && world.y >= list_top &&
+           world.y < s.world_y + room_list_header_h();
 }
 
 tk::Widget* RoomListView::dispatch_pointer_down(tk::Point world)
@@ -2708,12 +2737,16 @@ tk::Widget* RoomListView::dispatch_pointer_move(tk::Point world, bool* dirty)
             {
                 sticky_hovered_ = true;
                 if (dirty)
+                {
                     *dirty = true;
+                }
             }
             // Clear any row hover beneath the pinned header so two rows don't
             // appear highlighted at once.
             if (list_)
+            {
                 list_->on_pointer_leave();
+            }
             return this;
         }
     }
@@ -2721,7 +2754,9 @@ tk::Widget* RoomListView::dispatch_pointer_move(tk::Point world, bool* dirty)
     {
         sticky_hovered_ = false;
         if (dirty)
+        {
             *dirty = true;
+        }
     }
 
     // Icon-only mode: track which room the pointer is over so paint_overlay()
@@ -2734,17 +2769,25 @@ tk::Widget* RoomListView::dispatch_pointer_move(tk::Point world, bool* dirty)
         const tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
         std::string hovered;
         if (const auto* r = room_row_at_(local)) // spaces included in icon mode
+        {
             hovered = r->id;
+        }
         if (hovered != icon_only_hover_room_)
         {
             icon_only_hover_room_ = std::move(hovered);
             if (dirty)
+            {
                 *dirty = true;
+            }
             if (auto* h = host())
+            {
                 h->request_repaint();
+            }
         }
         if (list_)
+        {
             list_->on_pointer_leave(); // the flyout is the hover feedback
+        }
         return this;
     }
 
@@ -2755,29 +2798,41 @@ void RoomListView::on_pointer_leave()
 {
     sticky_hovered_ = false;
     if (list_)
+    {
         list_->on_pointer_leave();
+    }
     if (!icon_only_hover_room_.empty())
     {
         icon_only_hover_room_.clear();
         if (auto* h = host())
+        {
             h->request_repaint();
+        }
     }
 }
 
 const tesseract::RoomInfo* RoomListView::room_row_at_(tk::Point local) const
 {
     if (!list_ || local.y < search_header_h())
+    {
         return nullptr;
+    }
     tk::Point list_local{local.x, local.y - search_header_h()};
     int idx = list_->index_at(list_local);
     if (idx < 0 || static_cast<std::size_t>(idx) >= items_.size())
+    {
         return nullptr;
+    }
     const auto& item = items_[static_cast<std::size_t>(idx)];
     if (item.kind != Item::Kind::Room)
+    {
         return nullptr;
+    }
     const auto& rooms = section_rooms_[item.section];
     if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+    {
         return nullptr;
+    }
     return rooms[item.room_idx];
 }
 
@@ -2792,49 +2847,59 @@ std::string RoomListView::room_id_at_(tk::Point local) const
 {
     const auto* r = room_at_(local);
     if (!r)
+    {
         return {};
+    }
     return r->id;
 }
 
 bool RoomListView::on_right_click(tk::Point local)
 {
     if (!room_context_menu_)
+    {
         return false;
+    }
 
     const auto* row = room_row_at_(local);
     if (!row)
+    {
         return false;
+    }
     if (row->is_space)
+    {
         return open_space_context_menu_(*row, local);
+    }
     const auto* room = row;
     const std::string room_id = room->id;
 
-    const bool in_tab =
-        room_open_in_tab_provider_ && room_open_in_tab_provider_(room_id);
-    const bool in_window =
-        room_open_in_window_provider_ && room_open_in_window_provider_(room_id);
+    const bool in_tab = room_open_in_tab_provider_ && room_open_in_tab_provider_(room_id);
+    const bool in_window = room_open_in_window_provider_ && room_open_in_window_provider_(room_id);
 
     std::vector<PopupMenu::Item> items;
 
     PopupMenu::Item open_tab;
-    open_tab.svg_icon    = kOpenInTabSvg;
-    open_tab.label       = tk::tr("Open in tab");
-    open_tab.enabled     = !in_tab;
+    open_tab.svg_icon = kOpenInTabSvg;
+    open_tab.label = tk::tr("Open in tab");
+    open_tab.enabled = !in_tab;
     open_tab.on_selected = [this, room_id]
     {
         if (on_open_in_tab_requested)
+        {
             on_open_in_tab_requested(room_id);
+        }
     };
     items.push_back(std::move(open_tab));
 
     PopupMenu::Item open_window;
-    open_window.svg_icon    = kOpenInWindowSvg;
-    open_window.label       = tk::tr("Open in window");
-    open_window.enabled     = !in_window;
+    open_window.svg_icon = kOpenInWindowSvg;
+    open_window.label = tk::tr("Open in window");
+    open_window.enabled = !in_window;
     open_window.on_selected = [this, room_id]
     {
         if (on_open_in_window_requested)
+        {
             on_open_in_window_requested(room_id);
+        }
     };
     items.push_back(std::move(open_window));
 
@@ -2843,13 +2908,15 @@ bool RoomListView::on_right_click(tk::Point local)
     items.push_back(std::move(sep));
 
     PopupMenu::Item mark_read;
-    mark_read.svg_icon    = kMarkReadSvg;
-    mark_read.label       = tk::tr("Mark as read");
-    mark_read.enabled     = room->unread_count > 0 || room->notification_count > 0;
+    mark_read.svg_icon = kMarkReadSvg;
+    mark_read.label = tk::tr("Mark as read");
+    mark_read.enabled = room->unread_count > 0 || room->notification_count > 0;
     mark_read.on_selected = [this, room_id]
     {
         if (on_mark_read_requested)
+        {
             on_mark_read_requested(room_id);
+        }
     };
     items.push_back(std::move(mark_read));
 
@@ -2858,13 +2925,15 @@ bool RoomListView::on_right_click(tk::Point local)
     items.push_back(std::move(sep2));
 
     PopupMenu::Item leave;
-    leave.svg_icon    = kLeaveRoomSvg;
-    leave.label       = tk::tr("Leave room");
+    leave.svg_icon = kLeaveRoomSvg;
+    leave.label = tk::tr("Leave room");
     leave.destructive = true;
     leave.on_selected = [this, room_id]
     {
         if (on_leave_room_requested)
+        {
             on_leave_room_requested(room_id);
+        }
     };
     items.push_back(std::move(leave));
 
@@ -2872,25 +2941,25 @@ bool RoomListView::on_right_click(tk::Point local)
     // give the anchor a width of exactly PopupMenu::kWidth starting at the
     // click point — that puts the anchor's right edge (and thus the menu's
     // left edge) at the cursor, opening the menu to the right of it.
-    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y,
-                                PopupMenu::kWidth, 0.0f};
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, PopupMenu::kWidth, 0.0f};
     room_context_menu_->open(std::move(items), anchor_world);
     return true;
 }
 
-bool RoomListView::open_space_context_menu_(const tesseract::RoomInfo& space,
-                                            tk::Point local)
+bool RoomListView::open_space_context_menu_(const tesseract::RoomInfo& space, tk::Point local)
 {
     const std::string space_id = space.id;
     std::vector<PopupMenu::Item> items;
 
     PopupMenu::Item pin;
-    pin.svg_icon    = kPinSvg;
-    pin.label       = tk::tr("Pin to sidebar");
+    pin.svg_icon = kPinSvg;
+    pin.label = tk::tr("Pin to sidebar");
     pin.on_selected = [this, space_id]
     {
         if (on_pin_space_requested)
+        {
             on_pin_space_requested(space_id);
+        }
     };
     items.push_back(std::move(pin));
 
@@ -2899,18 +2968,19 @@ bool RoomListView::open_space_context_menu_(const tesseract::RoomInfo& space,
     items.push_back(std::move(sep));
 
     PopupMenu::Item leave;
-    leave.svg_icon    = kLeaveRoomSvg;
-    leave.label       = tk::tr("Leave space");
+    leave.svg_icon = kLeaveRoomSvg;
+    leave.label = tk::tr("Leave space");
     leave.destructive = true;
     leave.on_selected = [this, space_id]
     {
         if (on_leave_room_requested)
+        {
             on_leave_room_requested(space_id);
+        }
     };
     items.push_back(std::move(leave));
 
-    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y,
-                                PopupMenu::kWidth, 0.0f};
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, PopupMenu::kWidth, 0.0f};
     room_context_menu_->open(std::move(items), anchor_world);
     return true;
 }
@@ -2918,17 +2988,23 @@ bool RoomListView::open_space_context_menu_(const tesseract::RoomInfo& space,
 void RoomListView::on_popup_dismiss()
 {
     if (room_context_menu_)
+    {
         room_context_menu_->close();
+    }
 }
 
 tk::Rect RoomListView::room_row_rect_for_test(const std::string& room_id) const
 {
     int idx = item_index_for_room_(room_id);
     if (idx < 0 || !list_)
+    {
         return {};
+    }
     tk::Rect r = list_->row_world_rect(idx);
     if (r.empty())
+    {
         return r;
+    }
     // row_world_rect() returns true world coords (list_'s own bounds_ already
     // account for this view's world offset + the search header). Convert to
     // THIS view's own local coords, which on_right_click expects.
@@ -2949,8 +3025,7 @@ void RoomListView::paint_before_children(tk::PaintCtx& ctx)
     {
         tk::Rect header_rect{bounds_.x, bounds_.y, bounds_.w, kSearchBarH};
         ctx.canvas.fill_rect(header_rect, ctx.theme.palette.sidebar_bg);
-        tk::Rect sep{bounds_.x, bounds_.y + kSearchBarH - 1.0f, bounds_.w,
-                     1.0f};
+        tk::Rect sep{bounds_.x, bounds_.y + kSearchBarH - 1.0f, bounds_.w, 1.0f};
         ctx.canvas.fill_rect(sep, ctx.theme.palette.border);
 
         // Search field card — same style as the compose input.
@@ -2982,17 +3057,19 @@ void RoomListView::paint_after_children(tk::PaintCtx& ctx)
     // freshly-drawn rows. Reuses the adapter's header renderer so it is
     // pixel-identical to a real header.
     if (!list_ || !list_->visible())
+    {
         return;
+    }
     StickyHeader s = sticky_header_();
     if (s.show && adapter_)
     {
         const float list_top = bounds_.y + search_header_h();
-        tk::Rect    area{bounds_.x, list_top, bounds_.w,
+        tk::Rect area{bounds_.x, list_top, bounds_.w,
                       std::max(0.0f, bounds_.h - search_header_h())};
         tk::ClipScope clip(ctx.canvas, area);
         tk::Rect sb{bounds_.x, s.world_y, bounds_.w, room_list_header_h()};
-        adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb,
-                            false, sticky_hovered_);
+        adapter_->paint_row(static_cast<std::size_t>(s.header_item), ctx, sb, false,
+                            sticky_hovered_);
     }
 }
 
@@ -3016,11 +3093,11 @@ void RoomListView::on_pointer_up(tk::Point local, bool inside_self)
     // dispatch_pointer_down). Only fires when released back over the band.
     if (press_sticky_section_ >= 0)
     {
-        int sec               = press_sticky_section_;
+        int sec = press_sticky_section_;
         press_sticky_section_ = -1;
         if (inside_self)
         {
-            tk::Point    world{local.x + bounds_.x, local.y + bounds_.y};
+            tk::Point world{local.x + bounds_.x, local.y + bounds_.y};
             StickyHeader s = sticky_header_();
             if (s.section == sec && sticky_band_contains_(s, world))
             {

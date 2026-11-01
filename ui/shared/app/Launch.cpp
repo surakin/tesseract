@@ -67,8 +67,8 @@ std::string help_for(std::string_view id)
     return {};
 }
 
-void write_or_default(const std::function<void(std::string_view)>& fn,
-                      std::FILE* fallback, std::string_view text)
+void write_or_default(const std::function<void(std::string_view)>& fn, std::FILE* fallback,
+                      std::string_view text)
 {
     if (fn)
     {
@@ -82,7 +82,9 @@ void write_or_default(const std::function<void(std::string_view)>& fn,
 int run_logout_all(const LaunchHooks& hooks)
 {
     auto err = [&hooks](const std::string& line)
-    { write_or_default(hooks.write_stderr, stderr, line + "\n"); };
+    {
+        write_or_default(hooks.write_stderr, stderr, line + "\n");
+    };
 
     if (hooks.acquire_instance_lock && !hooks.acquire_instance_lock())
     {
@@ -127,13 +129,11 @@ int run_logout_all(const LaunchHooks& hooks)
 std::string launch_help_text(std::string_view program_name)
 {
     const auto specs = launch_option_specs(help_for);
-    return cli::format_usage(specs, program_name,
-                             tk::tr("[OPTIONS] [MATRIX-URI]"),
+    return cli::format_usage(specs, program_name, tk::tr("[OPTIONS] [MATRIX-URI]"),
                              tk::tr("Usage:"), tk::tr("Options:"));
 }
 
-LaunchPlan prepare_launch(const std::vector<std::string>& args,
-                          const LaunchHooks& hooks)
+LaunchPlan prepare_launch(const std::vector<std::string>& args, const LaunchHooks& hooks)
 {
     LaunchPlan plan;
     plan.args = parse_launch_args(args);
@@ -184,15 +184,13 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
 
     if (plan.args.version)
     {
-        write_or_default(hooks.write_stdout, stdout,
-                         std::string(kAppName) + " " + kVersion + "\n");
+        write_or_default(hooks.write_stdout, stdout, std::string(kAppName) + " " + kVersion + "\n");
         plan.exit_code = 0;
         return plan;
     }
     if (plan.args.help)
     {
-        write_or_default(hooks.write_stdout, stdout,
-                         launch_help_text(hooks.program_name));
+        write_or_default(hooks.write_stdout, stdout, launch_help_text(hooks.program_name));
         plan.exit_code = 0;
         return plan;
     }

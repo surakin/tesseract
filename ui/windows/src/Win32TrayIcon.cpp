@@ -4,7 +4,7 @@
 #include "tk/i18n.h"
 
 #include <shellapi.h>
-#include <ole2.h>   // IStream + DEFINE_GUID — required before gdiplus.h
+#include <ole2.h> // IStream + DEFINE_GUID — required before gdiplus.h
 #include <algorithm>
 #include <cwchar>
 #include <utility>
@@ -32,15 +32,13 @@ std::wstring widen_capped(const std::string& s, std::size_t max_chars)
     {
         return {};
     }
-    int needed = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                     static_cast<int>(s.size()), nullptr, 0);
+    int needed = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
     if (needed <= 0)
     {
         return {};
     }
     std::wstring out(static_cast<std::size_t>(needed), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), needed);
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), needed);
     if (out.size() > max_chars)
     {
         out.resize(max_chars);
@@ -59,11 +57,9 @@ UINT taskbar_created_message()
 
 } // namespace
 
-LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                         LPARAM lParam)
+LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    auto* self = reinterpret_cast<Win32TrayIcon*>(
-        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    auto* self = reinterpret_cast<Win32TrayIcon*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     if (self && msg == taskbar_created_message())
     {
@@ -106,10 +102,8 @@ LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             }
             if (cmd >= kMenuWinBase)
             {
-                const std::size_t idx =
-                    static_cast<std::size_t>(cmd - kMenuWinBase);
-                if (idx < self->window_items_.size() &&
-                    self->window_items_[idx].second)
+                const std::size_t idx = static_cast<std::size_t>(cmd - kMenuWinBase);
+                if (idx < self->window_items_.size() && self->window_items_[idx].second)
                 {
                     self->window_items_[idx].second();
                 }
@@ -122,10 +116,9 @@ LRESULT CALLBACK Win32TrayIcon::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 }
 
 Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show,
-                             std::function<void()> on_toggle,
-                             std::function<void()> on_quit)
-    : hInst_(hInst), on_show_(std::move(on_show)),
-      on_toggle_(std::move(on_toggle)), on_quit_(std::move(on_quit))
+                             std::function<void()> on_toggle, std::function<void()> on_quit)
+    : hInst_(hInst), on_show_(std::move(on_show)), on_toggle_(std::move(on_toggle)),
+      on_quit_(std::move(on_quit))
 {
     if (!class_registered_)
     {
@@ -134,8 +127,7 @@ Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show,
         wc.lpfnWndProc = &Win32TrayIcon::wnd_proc;
         wc.hInstance = hInst_;
         wc.lpszClassName = CLASS_NAME;
-        if (!RegisterClassExW(&wc) &&
-            GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+        if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         {
             return;
         }
@@ -144,8 +136,8 @@ Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show,
 
     // Message-only window — invisible, no taskbar entry, just a wnd_proc to
     // receive Shell_NotifyIcon callbacks and the popup menu's WM_COMMAND.
-    hwnd_ = CreateWindowExW(0, CLASS_NAME, L"", 0, 0, 0, 0, 0, HWND_MESSAGE,
-                            nullptr, hInst_, nullptr);
+    hwnd_ =
+        CreateWindowExW(0, CLASS_NAME, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, hInst_, nullptr);
     if (!hwnd_)
     {
         return;
@@ -156,18 +148,16 @@ Win32TrayIcon::Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show,
     // menu's owner — see the menu_hwnd_ comment in the header for why
     // hwnd_ itself can't be used for this. WS_EX_TOOLWINDOW keeps it out of
     // the taskbar and Alt+Tab on the off chance it's ever made visible.
-    menu_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, CLASS_NAME, L"", WS_POPUP,
-                                 0, 0, 0, 0, nullptr, nullptr, hInst_, nullptr);
+    menu_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, CLASS_NAME, L"", WS_POPUP, 0, 0, 0, 0, nullptr,
+                                 nullptr, hInst_, nullptr);
     if (menu_hwnd_)
     {
-        SetWindowLongPtrW(menu_hwnd_, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(this));
+        SetWindowLongPtrW(menu_hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     }
 
-    hIcon_ = static_cast<HICON>(
-        LoadImageW(hInst_, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
-                   GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
-                   LR_DEFAULTCOLOR));
+    hIcon_ = static_cast<HICON>(LoadImageW(hInst_, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
+                                           GetSystemMetrics(SM_CXSMICON),
+                                           GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
     if (!hIcon_)
     {
         hIcon_ = LoadIconW(nullptr, IDI_APPLICATION);
@@ -189,8 +179,7 @@ bool Win32TrayIcon::add_icon_()
 
     // NIM_ADD fails when the icon is still registered (a repeated broadcast);
     // updating it in place leaves the same icon in the same state.
-    if (Shell_NotifyIconW(NIM_ADD, &nid) == FALSE &&
-        Shell_NotifyIconW(NIM_MODIFY, &nid) == FALSE)
+    if (Shell_NotifyIconW(NIM_ADD, &nid) == FALSE && Shell_NotifyIconW(NIM_MODIFY, &nid) == FALSE)
     {
         return false;
     }
@@ -307,22 +296,21 @@ HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
     // 32-bpp top-down DIB so the colour bitmap carries premultiplied alpha
     // straight into CreateIconIndirect.
     BITMAPV5HEADER bi{};
-    bi.bV5Size        = sizeof(bi);
-    bi.bV5Width       = cx;
-    bi.bV5Height      = -cy; // negative → top-down
-    bi.bV5Planes      = 1;
-    bi.bV5BitCount    = 32;
+    bi.bV5Size = sizeof(bi);
+    bi.bV5Width = cx;
+    bi.bV5Height = -cy; // negative → top-down
+    bi.bV5Planes = 1;
+    bi.bV5BitCount = 32;
     bi.bV5Compression = BI_BITFIELDS;
-    bi.bV5RedMask     = 0x00FF0000;
-    bi.bV5GreenMask   = 0x0000FF00;
-    bi.bV5BlueMask    = 0x000000FF;
-    bi.bV5AlphaMask   = 0xFF000000;
+    bi.bV5RedMask = 0x00FF0000;
+    bi.bV5GreenMask = 0x0000FF00;
+    bi.bV5BlueMask = 0x000000FF;
+    bi.bV5AlphaMask = 0xFF000000;
 
     HDC screen_dc = GetDC(nullptr);
     void* bits = nullptr;
-    HBITMAP color = CreateDIBSection(screen_dc,
-                                     reinterpret_cast<BITMAPINFO*>(&bi),
-                                     DIB_RGB_COLORS, &bits, nullptr, 0);
+    HBITMAP color = CreateDIBSection(screen_dc, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS,
+                                     &bits, nullptr, 0);
     ReleaseDC(nullptr, screen_dc);
     if (!color || !bits)
     {
@@ -347,11 +335,11 @@ HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
         Gdiplus::Graphics g(mem_dc);
         g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
 
-        const int side  = std::min(cx, cy);
-        const int dot   = tesseract::badge_dot_px(side);
+        const int side = std::min(cx, cy);
+        const int dot = tesseract::badge_dot_px(side);
         const int inset = tesseract::badge_inset_px(side);
-        const int x     = cx - dot - inset;
-        const int y     = cy - dot - inset;
+        const int x = cx - dot - inset;
+        const int y = cy - dot - inset;
 
         Gdiplus::Color fill(dot_color_argb);
         Gdiplus::SolidBrush brush(fill);
@@ -374,8 +362,7 @@ HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
     // may not.
     const SIZE_T mask_stride = ((cx + 15) / 16) * 2; // 1bpp scanlines are WORD-aligned
     std::vector<BYTE> mask_bits(mask_stride * cy, 0);
-    HBITMAP mask =
-        CreateBitmap(cx, cy, 1, 1, mask_bits.data());
+    HBITMAP mask = CreateBitmap(cx, cy, 1, 1, mask_bits.data());
     if (!mask)
     {
         DeleteObject(color);
@@ -383,8 +370,8 @@ HICON Win32TrayIcon::make_overlay_icon_(UINT32 dot_color_argb) const
     }
 
     ICONINFO ii{};
-    ii.fIcon    = TRUE;
-    ii.hbmMask  = mask;
+    ii.fIcon = TRUE;
+    ii.hbmMask = mask;
     ii.hbmColor = color;
     HICON ico = CreateIconIndirect(&ii);
 
@@ -422,10 +409,10 @@ void Win32TrayIcon::set_unread(bool has_unread, bool has_highlight)
 
     NOTIFYICONDATAW nid{};
     nid.cbSize = sizeof(nid);
-    nid.hWnd   = hwnd_;
-    nid.uID    = kIconId;
+    nid.hWnd = hwnd_;
+    nid.uID = kIconId;
     nid.uFlags = NIF_ICON;
-    nid.hIcon  = new_icon ? new_icon : hIcon_;
+    nid.hIcon = new_icon ? new_icon : hIcon_;
     if (Shell_NotifyIconW(NIM_MODIFY, &nid) == FALSE)
     {
         if (new_icon)
@@ -458,8 +445,7 @@ void Win32TrayIcon::show_menu()
         {
             const int id = kMenuWinBase + static_cast<int>(i);
             std::wstring wlabel = widen_capped(window_items_[i].first, 256);
-            AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(id),
-                        wlabel.c_str());
+            AppendMenuW(menu, MF_STRING, static_cast<UINT_PTR>(id), wlabel.c_str());
         }
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -483,8 +469,8 @@ void Win32TrayIcon::show_menu()
     // Shell_NotifyIcon footgun: the menu sticks around after a click outside
     // unless the window is foregrounded first.
     SetForegroundWindow(owner);
-    TrackPopupMenuEx(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN,
-                     pt.x, pt.y, owner, nullptr);
+    TrackPopupMenuEx(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, pt.x, pt.y, owner,
+                     nullptr);
     PostMessageW(owner, WM_NULL, 0, 0); // dismiss-fix per MSDN
     DestroyMenu(menu);
 }

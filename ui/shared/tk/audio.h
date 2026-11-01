@@ -30,8 +30,7 @@ public:
     // bytes are copied into a backend-owned buffer, so the caller may free
     // them immediately after this returns. Replaces any currently-playing
     // clip with no transition.
-    virtual void play(const std::uint8_t* data, std::size_t size,
-                      std::string_view mime) = 0;
+    virtual void play(const std::uint8_t* data, std::size_t size, std::string_view mime) = 0;
 
     virtual void pause() = 0;
     virtual void resume() = 0;
@@ -67,7 +66,10 @@ public:
     // this precisely may leave the default (false); callers should combine
     // this with the position_ms()==0 check so behavior is unchanged where a
     // backend doesn't override it.
-    virtual bool reached_end() const { return false; }
+    virtual bool reached_end() const
+    {
+        return false;
+    }
 
     // Fired on the UI thread roughly every 60 ms while playing, and once
     // more on completion / error. Implementations marshal through

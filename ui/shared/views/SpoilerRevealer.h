@@ -26,9 +26,15 @@ public:
         return revealed_.count(event_id) > 0;
     }
 
-    void reveal(const std::string& event_id) { revealed_.insert(event_id); }
+    void reveal(const std::string& event_id)
+    {
+        revealed_.insert(event_id);
+    }
 
-    void clear() { revealed_.clear(); }
+    void clear()
+    {
+        revealed_.clear();
+    }
 
 private:
     std::unordered_set<std::string> revealed_;

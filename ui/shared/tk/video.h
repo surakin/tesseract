@@ -32,8 +32,7 @@ public:
     // Load and begin playback of `data[0..size)`. `mime` is a format hint
     // ("video/mp4", "video/webm", …). Bytes are copied into a backend-owned
     // buffer. Replaces any currently-playing clip with no transition.
-    virtual void play(const std::uint8_t* data, std::size_t size,
-                      std::string_view mime) = 0;
+    virtual void play(const std::uint8_t* data, std::size_t size, std::string_view mime) = 0;
 
     virtual void pause() = 0;
     virtual void resume() = 0;
@@ -99,8 +98,7 @@ public:
     // Threading: feed_chunk/end_stream/fail_stream are called on the UI
     // thread, same as play(). Backends marshal to their own decode/network
     // threads exactly as play() already does.
-    virtual bool begin_stream(std::string_view /*mime*/,
-                              std::uint64_t /*total_size_hint*/)
+    virtual bool begin_stream(std::string_view /*mime*/, std::uint64_t /*total_size_hint*/)
     {
         return false;
     }

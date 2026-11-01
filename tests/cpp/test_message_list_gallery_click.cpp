@@ -166,20 +166,29 @@ TEST_CASE("a gallery past the painted cap opens the viewer on every stored item"
     CHECK(fired[0].items.size() == 30);
 }
 
-TEST_CASE("clicking a hidden gallery reveals it instead of opening", 
+TEST_CASE("clicking a hidden gallery reveals it instead of opening",
           "[message_list][gallery][click]")
 {
     GalStage st;
     MessageListView view;
     view.set_media_hidden_predicate(
-        [](const std::string&, bool) { return true; });
+        [](const std::string&, bool)
+        {
+            return true;
+        });
     view.set_messages({gallery_row("$g2")});
     st.run(view);
 
     std::string revealed;
     int opened = 0;
-    view.on_reveal_media = [&](const std::string& eid) { revealed = eid; };
-    view.on_gallery_item_clicked = [&](const MessageListView::GalleryHit&) { ++opened; };
+    view.on_reveal_media = [&](const std::string& eid)
+    {
+        revealed = eid;
+    };
+    view.on_gallery_item_clicked = [&](const MessageListView::GalleryHit&)
+    {
+        ++opened;
+    };
 
     Point c{};
     REQUIRE(cell_centre(view, 0, c)); // the placeholder is recorded as item 0
@@ -232,12 +241,19 @@ TEST_CASE("a hidden gallery row offers Show hidden media instead",
 {
     GalStage st;
     MessageListView view;
-    view.set_media_hidden_predicate([](const std::string&, bool) { return true; });
+    view.set_media_hidden_predicate(
+        [](const std::string&, bool)
+        {
+            return true;
+        });
     view.set_messages({gallery_row("$g5")});
     st.run(view);
 
     std::string revealed;
-    view.on_reveal_media = [&](const std::string& eid) { revealed = eid; };
+    view.on_reveal_media = [&](const std::string& eid)
+    {
+        revealed = eid;
+    };
 
     AccessNode tree = build_access_tree(&view);
     CHECK(access_test::find_named(tree, "Open gallery") == nullptr);

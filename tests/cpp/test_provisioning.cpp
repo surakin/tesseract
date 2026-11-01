@@ -59,7 +59,8 @@ TEST_CASE("parse_provisioning_values reads both keys independently", "[provision
     CHECK(both.homeserver == "example.org");
     CHECK(both.username == "alice");
 
-    auto user_only = parse_provisioning_values(R"({"default_username": "bob", "default_homeserver": 3})");
+    auto user_only =
+        parse_provisioning_values(R"({"default_username": "bob", "default_homeserver": 3})");
     CHECK_FALSE(user_only.homeserver.has_value());
     CHECK(user_only.username == "bob");
 

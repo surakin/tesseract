@@ -41,8 +41,8 @@ public:
     {
         return value_;
     }
-    void set_limit(double v);        // highest selectable value; default = max
-    void set_buffered(double v);     // band from min to v; below min = none
+    void set_limit(double v);    // highest selectable value; default = max
+    void set_buffered(double v); // band from min to v; below min = none
     void set_keyboard_focusable(bool f);
     void set_colors(std::optional<Colors> c); // nullopt = theme palette
     void set_accessible_name(std::string name);

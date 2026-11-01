@@ -37,16 +37,13 @@
 // version/launch path — best-effort by design (see MacAutostart).
 - (BOOL)_wasLaunchedAsLoginItem
 {
-    NSAppleEventDescriptor* event =
-        NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
+    NSAppleEventDescriptor* event = NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
     if (event.eventClass != kCoreEventClass || event.eventID != kAEOpenApplication)
     {
         return NO;
     }
-    NSAppleEventDescriptor* propData =
-        [event paramDescriptorForKeyword:keyAEPropData];
-    return propData != nil &&
-           propData.enumCodeValue == keyAELaunchedAsLogInItem;
+    NSAppleEventDescriptor* propData = [event paramDescriptorForKeyword:keyAEPropData];
+    return propData != nil && propData.enumCodeValue == keyAELaunchedAsLogInItem;
 }
 
 // Distributed notification a duplicate-launch process posts to ask the
@@ -61,8 +58,8 @@
 static NSString* activateRequestNotificationName()
 {
     return [@"io.gnomos.Tesseract.ActivateRequest"
-        stringByAppendingString:[NSString stringWithUTF8String:
-                                              tesseract::profile_suffix().c_str()]];
+        stringByAppendingString:[NSString
+                                    stringWithUTF8String:tesseract::profile_suffix().c_str()]];
 }
 
 // userInfo keys of the activate-request notification. All optional.
@@ -76,19 +73,20 @@ static NSString* const kActivateRoomKey = @"room_id";
     [self applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
 
     NSDictionary* info = note.userInfo;
-    NSString* uri = [info[kActivateUriKey] isKindOfClass:NSString.class]
-                        ? info[kActivateUriKey] : nil;
-    NSString* action = [info[kActivateActionKey] isKindOfClass:NSString.class]
-                           ? info[kActivateActionKey] : nil;
-    NSString* roomId = [info[kActivateRoomKey] isKindOfClass:NSString.class]
-                           ? info[kActivateRoomKey] : nil;
+    NSString* uri =
+        [info[kActivateUriKey] isKindOfClass:NSString.class] ? info[kActivateUriKey] : nil;
+    NSString* action =
+        [info[kActivateActionKey] isKindOfClass:NSString.class] ? info[kActivateActionKey] : nil;
+    NSString* roomId =
+        [info[kActivateRoomKey] isKindOfClass:NSString.class] ? info[kActivateRoomKey] : nil;
     if (uri.length > 0)
+    {
         [_windowController openMatrixLink:uri];
+    }
     if (action.length > 0)
     {
         [_windowController
-            dispatchLaunchAction:tesseract::launch_action_from_option_id(
-                                     [action UTF8String])
+            dispatchLaunchAction:tesseract::launch_action_from_option_id([action UTF8String])
                           roomId:roomId ?: @""];
     }
 }
@@ -97,15 +95,16 @@ static NSString* const kActivateRoomKey = @"room_id";
 {
     _launchedAsLoginItem = [self _wasLaunchedAsLoginItem];
 
-    [NSDistributedNotificationCenter.defaultCenter
-        addObserver:self
-           selector:@selector(handleActivateRequest:)
-               name:activateRequestNotificationName()
-             object:nil];
+    [NSDistributedNotificationCenter.defaultCenter addObserver:self
+                                                      selector:@selector(handleActivateRequest:)
+                                                          name:activateRequestNotificationName()
+                                                        object:nil];
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     if (_launchPlan.args.screenshot_dir)
+    {
         return; // Screenshot builds may run beside an installed instance.
+    }
 #endif
 
     // Raise the existing instance of this --profile and abort if we are a
@@ -124,8 +123,7 @@ static NSString* const kActivateRoomKey = @"room_id";
         if (!_launchedAsLoginItem && _launchPlan.should_raise_existing_instance())
         {
             if (NSRunningApplication* other = [NSRunningApplication
-                    runningApplicationWithProcessIdentifier:
-                        tk::single_instance_owner_pid()])
+                    runningApplicationWithProcessIdentifier:tk::single_instance_owner_pid()])
             {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -135,17 +133,19 @@ static NSString* const kActivateRoomKey = @"room_id";
             const tesseract::LaunchArgs& a = _launchPlan.args;
             NSMutableDictionary* info = [NSMutableDictionary dictionary];
             if (a.matrix_uri)
-                info[kActivateUriKey] =
-                    [NSString stringWithUTF8String:a.matrix_uri->c_str()];
+            {
+                info[kActivateUriKey] = [NSString stringWithUTF8String:a.matrix_uri->c_str()];
+            }
             if (a.action != tesseract::LaunchAction::None)
+            {
                 info[kActivateActionKey] = [NSString
-                    stringWithUTF8String:std::string(
-                                             tesseract::launch_action_option_id(
-                                                 a.action))
+                    stringWithUTF8String:std::string(tesseract::launch_action_option_id(a.action))
                                              .c_str()];
+            }
             if (a.room_id)
-                info[kActivateRoomKey] =
-                    [NSString stringWithUTF8String:a.room_id->c_str()];
+            {
+                info[kActivateRoomKey] = [NSString stringWithUTF8String:a.room_id->c_str()];
+            }
             [NSDistributedNotificationCenter.defaultCenter
                 postNotificationName:activateRequestNotificationName()
                               object:nil
@@ -190,8 +190,7 @@ static NSString* const kActivateRoomKey = @"room_id";
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         if (launch.screenshot_dir)
         {
-            NSString* dir =
-                [NSString stringWithUTF8String:launch.screenshot_dir->c_str()];
+            NSString* dir = [NSString stringWithUTF8String:launch.screenshot_dir->c_str()];
             [_windowController captureScreenshotsToDirectory:dir];
             return;
         }
@@ -202,14 +201,13 @@ static NSString* const kActivateRoomKey = @"room_id";
         if (launch.matrix_uri)
         {
             [_windowController
-                openMatrixLink:[NSString
-                                   stringWithUTF8String:launch.matrix_uri->c_str()]];
+                openMatrixLink:[NSString stringWithUTF8String:launch.matrix_uri->c_str()]];
         }
         [_windowController
             dispatchLaunchAction:launch.action
-                          roomId:[NSString stringWithUTF8String:
-                                               launch.room_id.value_or(std::string{})
-                                                   .c_str()]];
+                          roomId:[NSString
+                                     stringWithUTF8String:launch.room_id.value_or(std::string{})
+                                                              .c_str()]];
     });
 }
 
@@ -219,7 +217,9 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
 {
     const auto& chords = tesseract::views::shortcut(id).chords;
     if (chords.empty())
+    {
         return;
+    }
     const tk::KeyChord& c = chords.front();
     NSString* key = @"";
     switch (c.key)
@@ -227,18 +227,29 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
     case tk::Key::Character:
         key = [NSString stringWithUTF8String:c.text.c_str()];
         break;
-    case tk::Key::Tab: key = @"\t"; break;
-    default: return;
+    case tk::Key::Tab:
+        key = @"\t";
+        break;
+    default:
+        return;
     }
     NSEventModifierFlags mask = 0;
     if (c.mods & (tk::ModPrimary | tk::ModMeta))
+    {
         mask |= NSEventModifierFlagCommand;
+    }
     if (c.mods & tk::ModCtrl)
+    {
         mask |= NSEventModifierFlagControl;
+    }
     if (c.mods & tk::ModShift)
+    {
         mask |= NSEventModifierFlagShift;
+    }
     if (c.mods & tk::ModAlt)
+    {
         mask |= NSEventModifierFlagOption;
+    }
     item.keyEquivalent = key;
     item.keyEquivalentModifierMask = mask;
 }
@@ -259,9 +270,7 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
                                 keyEquivalent:@""],
                     tesseract::views::ShortcutId::Settings);
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:TkTr("Hide Tesseract")
-                       action:@selector(hide:)
-                keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:TkTr("Hide Tesseract") action:@selector(hide:) keyEquivalent:@"h"];
     [appMenu addItemWithTitle:TkTr("Quit Tesseract")
                        action:@selector(terminate:)
                 keyEquivalent:@"q"];
@@ -280,30 +289,17 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
     // ── Edit menu ─────────────────────────────────────────────────────
     NSMenuItem* editItem = [[NSMenuItem alloc] init];
     NSMenu* editMenu = [[NSMenu alloc] initWithTitle:TkTr("Edit")];
-    [editMenu addItemWithTitle:TkTr("Undo")
-                        action:@selector(undo:)
-                 keyEquivalent:@"z"];
-    [editMenu addItemWithTitle:TkTr("Redo")
-                        action:@selector(redo:)
-                 keyEquivalent:@"Z"];
+    [editMenu addItemWithTitle:TkTr("Undo") action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItemWithTitle:TkTr("Redo") action:@selector(redo:) keyEquivalent:@"Z"];
     [editMenu addItem:[NSMenuItem separatorItem]];
-    [editMenu addItemWithTitle:TkTr("Cut")
-                        action:@selector(cut:)
-                 keyEquivalent:@"x"];
-    [editMenu addItemWithTitle:TkTr("Copy")
-                        action:@selector(copy:)
-                 keyEquivalent:@"c"];
-    [editMenu addItemWithTitle:TkTr("Paste")
-                        action:@selector(paste:)
-                 keyEquivalent:@"v"];
-    [editMenu addItemWithTitle:TkTr("Select All")
-                        action:@selector(selectAll:)
-                 keyEquivalent:@"a"];
+    [editMenu addItemWithTitle:TkTr("Cut") action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:TkTr("Copy") action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:TkTr("Paste") action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:TkTr("Select All") action:@selector(selectAll:) keyEquivalent:@"a"];
     [editMenu addItem:[NSMenuItem separatorItem]];
 
     // Edit ▸ Find submenu (macOS convention for search commands).
-    NSMenuItem* findItem =
-        [editMenu addItemWithTitle:TkTr("Find") action:nil keyEquivalent:@""];
+    NSMenuItem* findItem = [editMenu addItemWithTitle:TkTr("Find") action:nil keyEquivalent:@""];
     NSMenu* findMenu = [[NSMenu alloc] initWithTitle:TkTr("Find")];
     TkApplyShortcut([findMenu addItemWithTitle:TkTr("Find\xe2\x80\xa6")
                                         action:@selector(findInConversationMenuAction:)
@@ -316,10 +312,9 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
     findItem.submenu = findMenu;
 
     [editMenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem* emojiItem =
-        [editMenu addItemWithTitle:TkTr("Insert Emoji\xe2\x80\xa6")
-                            action:@selector(showEmojiPicker:)
-                     keyEquivalent:@"e"];
+    NSMenuItem* emojiItem = [editMenu addItemWithTitle:TkTr("Insert Emoji\xe2\x80\xa6")
+                                                action:@selector(showEmojiPicker:)
+                                         keyEquivalent:@"e"];
     emojiItem.keyEquivalentModifierMask = NSEventModifierFlagCommand;
     editItem.submenu = editMenu;
     [mainMenu addItem:editItem];
@@ -363,9 +358,7 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
     [winMenu addItemWithTitle:TkTr("Minimize")
                        action:@selector(performMiniaturize:)
                 keyEquivalent:@"m"];
-    [winMenu addItemWithTitle:TkTr("Zoom")
-                       action:@selector(performZoom:)
-                keyEquivalent:@""];
+    [winMenu addItemWithTitle:TkTr("Zoom") action:@selector(performZoom:) keyEquivalent:@""];
     winItem.submenu = winMenu;
     [mainMenu addItem:winItem];
     NSApp.windowsMenu = winMenu;
@@ -387,24 +380,28 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
 - (void)application:(NSApplication*)app openURLs:(NSArray<NSURL*>*)urls
 {
     for (NSURL* url in urls)
+    {
         [_windowController openMatrixLink:[url absoluteString]];
+    }
 }
 
 // Fired when the user activates a room/contact from Spotlight (see
 // MacSpotlightSearch, which indexes them as CSSearchableItems).
 - (BOOL)application:(NSApplication*)application
     continueUserActivity:(NSUserActivity*)userActivity
-      restorationHandler:
-          (void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler
+      restorationHandler:(void (^)(NSArray<id<NSUserActivityRestoring>>*))restorationHandler
 {
     (void)application;
     (void)restorationHandler;
     if (![userActivity.activityType isEqualToString:CSSearchableItemActionType])
+    {
         return NO;
-    NSString* identifier =
-        userActivity.userInfo[CSSearchableItemActivityIdentifier];
+    }
+    NSString* identifier = userActivity.userInfo[CSSearchableItemActivityIdentifier];
     if (identifier.length == 0)
+    {
         return NO;
+    }
     [_windowController activateSpotlightResult:identifier];
     return YES;
 }
@@ -423,7 +420,7 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)sender
-                     hasVisibleWindows:(BOOL)hasVisibleWindows
+                    hasVisibleWindows:(BOOL)hasVisibleWindows
 {
     [_windowController.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
@@ -490,12 +487,10 @@ static void TkApplyShortcut(NSMenuItem* item, tesseract::views::ShortcutId id)
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
 {
     SEL action = [item action];
-    if (action == @selector(openSettingsMenuAction:) ||
-        action == @selector(addRoomMenuAction:) ||
+    if (action == @selector(openSettingsMenuAction:) || action == @selector(addRoomMenuAction:) ||
         action == @selector(findInConversationMenuAction:) ||
         action == @selector(searchAllMessagesMenuAction:) ||
-        action == @selector(goBackMenuAction:) ||
-        action == @selector(goForwardMenuAction:) ||
+        action == @selector(goBackMenuAction:) || action == @selector(goForwardMenuAction:) ||
         action == @selector(openQuickSwitcherMenuAction:) ||
         action == @selector(showRoomInfoMenuAction:) ||
         action == @selector(cycleRecentRoomsMenuAction:) ||

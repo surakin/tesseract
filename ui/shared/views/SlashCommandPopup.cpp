@@ -58,7 +58,7 @@ void SlashCommandPopup::paint_hint_row(tk::PaintCtx& ctx, const tk::Rect& row)
 {
     const auto& pal = ctx.theme.palette;
     tk::TextStyle st{};
-    st.role   = tk::FontRole::Body;
+    st.role = tk::FontRole::Body;
     st.halign = tk::TextHAlign::Leading;
     st.valign = tk::TextVAlign::Top;
     auto layout = ctx.factory.build_text(hint_text_, st);
@@ -72,9 +72,8 @@ void SlashCommandPopup::paint_hint_row(tk::PaintCtx& ctx, const tk::Rect& row)
                          hint_is_error_ ? pal.destructive : pal.text_muted);
 }
 
-void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
-                                  size_t index, bool selected,
-                                  bool /*hovered*/)
+void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index,
+                                  bool selected, bool /*hovered*/)
 {
     if (hint_mode_)
     {
@@ -83,7 +82,7 @@ void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
     }
 
     const auto pal = tk::row_palette(ctx.theme, selected);
-    const auto& s   = suggestions_[index];
+    const auto& s = suggestions_[index];
 
     // Primary text: "/name <args_hint>" — top half of row with 6px left margin
     std::string primary = "/" + s.name;
@@ -92,7 +91,7 @@ void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
         primary += " " + s.args_hint;
     }
     tk::TextStyle pst{};
-    pst.role   = tk::FontRole::Body;
+    pst.role = tk::FontRole::Body;
     pst.halign = tk::TextHAlign::Leading;
     pst.valign = tk::TextVAlign::Top;
     auto pl = ctx.factory.build_text(primary, pst);
@@ -112,23 +111,22 @@ void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
     std::string secondary = s.description;
     if (!s.is_builtin)
     {
-        const std::string& who =
-            s.bot_display_name.empty() ? s.bot_sender_id : s.bot_display_name;
+        const std::string& who = s.bot_display_name.empty() ? s.bot_sender_id : s.bot_display_name;
         std::string via = tk::trf(tk::tr("via {0}"), {who});
         secondary = secondary.empty() ? via : (secondary + "  \xC2\xB7  " + via);
     }
     if (!secondary.empty())
     {
         tk::TextStyle sst{};
-        sst.role   = tk::FontRole::Small;
+        sst.role = tk::FontRole::Small;
         sst.halign = tk::TextHAlign::Leading;
         sst.valign = tk::TextVAlign::Top;
         auto sl = ctx.factory.build_text(secondary, sst);
         if (sl)
         {
             tk::Size ssz = sl->measure();
-            float half   = kRowHeight * 0.5f;
-            float ly     = row.y + half + (half - ssz.h) * 0.5f;
+            float half = kRowHeight * 0.5f;
+            float ly = row.y + half + (half - ssz.h) * 0.5f;
             ctx.canvas.draw_text(*sl, {row.x + 6.0f, ly}, pal.text_muted);
         }
     }

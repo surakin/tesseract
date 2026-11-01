@@ -30,11 +30,14 @@ struct VideoFrame
 inline VideoFrame downscale_bgra(VideoFrame src, int max_w, int max_h)
 {
     if (max_w <= 0 || max_h <= 0 || src.w <= 0 || src.h <= 0)
+    {
         return src;
+    }
     if (src.w <= max_w && src.h <= max_h)
+    {
         return src;
-    const double s =
-        std::min(double(max_w) / src.w, double(max_h) / src.h);
+    }
+    const double s = std::min(double(max_w) / src.w, double(max_h) / src.h);
     const int tw = std::max(1, static_cast<int>(src.w * s));
     const int th = std::max(1, static_cast<int>(src.h * s));
     VideoFrame out;
@@ -45,19 +48,16 @@ inline VideoFrame downscale_bgra(VideoFrame src, int max_w, int max_h)
     for (int ty = 0; ty < th; ++ty)
     {
         const int sy0 = static_cast<int>(std::int64_t(ty) * src.h / th);
-        const int sy1 =
-            std::max(sy0 + 1, static_cast<int>(std::int64_t(ty + 1) * src.h / th));
+        const int sy1 = std::max(sy0 + 1, static_cast<int>(std::int64_t(ty + 1) * src.h / th));
         for (int tx = 0; tx < tw; ++tx)
         {
             const int sx0 = static_cast<int>(std::int64_t(tx) * src.w / tw);
-            const int sx1 = std::max(
-                sx0 + 1, static_cast<int>(std::int64_t(tx + 1) * src.w / tw));
+            const int sx1 = std::max(sx0 + 1, static_cast<int>(std::int64_t(tx + 1) * src.w / tw));
             std::uint32_t b = 0, g = 0, r = 0, a = 0, n = 0;
             for (int sy = sy0; sy < sy1; ++sy)
             {
                 const std::uint8_t* p =
-                    src.bgra.data() +
-                    (static_cast<std::size_t>(sy) * src.w + sx0) * 4;
+                    src.bgra.data() + (static_cast<std::size_t>(sy) * src.w + sx0) * 4;
                 for (int sx = sx0; sx < sx1; ++sx)
                 {
                     b += p[0];
@@ -68,8 +68,7 @@ inline VideoFrame downscale_bgra(VideoFrame src, int max_w, int max_h)
                     ++n;
                 }
             }
-            std::uint8_t* d =
-                out.bgra.data() + (static_cast<std::size_t>(ty) * tw + tx) * 4;
+            std::uint8_t* d = out.bgra.data() + (static_cast<std::size_t>(ty) * tw + tx) * 4;
             d[0] = static_cast<std::uint8_t>(b / n);
             d[1] = static_cast<std::uint8_t>(g / n);
             d[2] = static_cast<std::uint8_t>(r / n);
@@ -92,9 +91,7 @@ struct DecodedVideoFrames
 // max_frames: stop decoding after this many frames (e.g. 1 for a still
 // thumbnail, avoiding the cost of decoding an entire clip). 0 means no
 // limit (backend's own cap, e.g. the GIF strip's frame ceiling).
-DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
-                                       std::size_t size,
-                                       int max_w, int max_h,
-                                       int max_frames = 0);
+DecodedVideoFrames decode_video_frames(const std::uint8_t* data, std::size_t size, int max_w,
+                                       int max_h, int max_frames = 0);
 
 } // namespace tk

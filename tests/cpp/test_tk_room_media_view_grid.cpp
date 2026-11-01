@@ -54,16 +54,23 @@ MessageRowData rmv_row(const std::string& id, MessageRowData::Kind kind, int mon
 struct RmvStage : vt::Stage
 {
     std::unique_ptr<RoomMediaView> view = tk::create_root_widget<RoomMediaView>(&host);
-    void run() { mount(*view, {0, 0, 800, 600}); }
+    void run()
+    {
+        mount(*view, {0, 0, 800, 600});
+    }
     std::vector<tk::AccessNode> cells()
     {
         std::vector<tk::AccessNode> out;
         std::function<void(const tk::AccessNode&)> walk = [&](const tk::AccessNode& n)
         {
             if (n.role == tk::Role::Button && n.name != "Close")
+            {
                 out.push_back(n);
+            }
             for (const auto& c : n.children)
+            {
                 walk(c);
+            }
         };
         walk(tk::build_access_tree(view.get()));
         return out;
@@ -87,20 +94,25 @@ TEST_CASE("RoomMediaView filters non-media rows, de-duplicates and groups by "
     text.event_id = "$t";
     s.view->set_media({rmv_row("$a", MessageRowData::Kind::Image, 3),
                        rmv_row("$a", MessageRowData::Kind::Image, 3), // duplicate
-                       text,
-                       rmv_row("$b", MessageRowData::Kind::Video, 4),
+                       text, rmv_row("$b", MessageRowData::Kind::Video, 4),
                        rmv_row("$c", MessageRowData::Kind::Image, 3)});
     CHECK(s.view->item_count() == 3);
     s.run();
 
     auto names = vt::all_names(*s.view);
     auto has = [&](const std::string& n)
-    { return std::find(names.begin(), names.end(), n) != names.end(); };
+    {
+        return std::find(names.begin(), names.end(), n) != names.end();
+    };
     // Two month headers (March, April) are exposed as static text rows.
     int headers = 0;
     for (const auto& n : names)
+    {
         if (n.find("2026") != std::string::npos)
+        {
             ++headers;
+        }
+    }
     CHECK(headers >= 2);
 
     // prepend/append respect the same filters.
@@ -117,14 +129,15 @@ TEST_CASE("RoomMediaView filters non-media rows, de-duplicates and groups by "
     s.run();
 }
 
-TEST_CASE("RoomMediaView wraps cells into strips by available width",
-          "[tk][view][room_media_grid]")
+TEST_CASE("RoomMediaView wraps cells into strips by available width", "[tk][view][room_media_grid]")
 {
     RmvStage s;
     s.view->open("!r:x", "Room");
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 20; ++i)
+    {
         rows.push_back(rmv_row("$m" + std::to_string(i), MessageRowData::Kind::Image, 3));
+    }
     s.view->set_media(std::move(rows));
     s.run();
     // 800px wide: (800 - 32) / 122 = 6 columns; capacity is rows * cols.
@@ -150,7 +163,10 @@ TEST_CASE("RoomMediaView activating cells routes images and videos to the "
     s.run();
 
     std::vector<std::string> images, videos;
-    s.view->on_image_clicked = [&](const MessageListView::ImageHit& h) { images.push_back(h.event_id); };
+    s.view->on_image_clicked = [&](const MessageListView::ImageHit& h)
+    {
+        images.push_back(h.event_id);
+    };
     s.view->on_video_clicked = [&](const MessageListView::VideoHit& h)
     {
         videos.push_back(h.event_id + ":" + h.mime_type);
@@ -161,12 +177,16 @@ TEST_CASE("RoomMediaView activating cells routes images and videos to the "
     auto cells = s.cells();
     REQUIRE(cells.size() == 2);
     for (const auto& c : cells)
+    {
         CHECK(tk::invoke_default_action(c));
+    }
     CHECK(images == std::vector<std::string>{"$i"});
     CHECK(videos == std::vector<std::string>{"$v:video/mp4"});
     bool saw_sender = false;
     for (const auto& c : cells)
+    {
         saw_sender |= c.name.find("from Bob") != std::string::npos;
+    }
     CHECK(saw_sender);
 
     // Real pointer click on a cell.
@@ -184,11 +204,12 @@ TEST_CASE("RoomMediaView activating cells routes images and videos to the "
     s.view->on_image_clicked = nullptr;
     s.view->on_video_clicked = nullptr;
     for (const auto& c : s.cells())
+    {
         tk::invoke_default_action(c);
+    }
 }
 
-TEST_CASE("RoomMediaView ignores clicks on a strip's blank space",
-          "[tk][view][room_media_grid]")
+TEST_CASE("RoomMediaView ignores clicks on a strip's blank space", "[tk][view][room_media_grid]")
 {
     RmvStage s;
     s.view->open("!r:x", "Room");
@@ -239,11 +260,12 @@ TEST_CASE("RoomMediaView paints thumbnails via the image provider and shows "
     auto img = s.surface->factory().create_image_rgba(px.data(), 8, 8);
     REQUIRE(img != nullptr);
     std::vector<std::string> asked;
-    s.view->set_image_provider([&](const std::string& key) -> const tk::Image*
-                               {
-                                   asked.push_back(key);
-                                   return asked.size() % 2 ? img.get() : nullptr;
-                               });
+    s.view->set_image_provider(
+        [&](const std::string& key) -> const tk::Image*
+        {
+            asked.push_back(key);
+            return asked.size() % 2 ? img.get() : nullptr;
+        });
     s.view->set_media({rmv_row("$i", MessageRowData::Kind::Image, 3),
                        rmv_row("$v", MessageRowData::Kind::Video, 3)});
     s.run();
@@ -263,13 +285,18 @@ TEST_CASE("RoomMediaView keyboard navigation moves between cells and "
                        rmv_row("$c", MessageRowData::Kind::Image, 4)});
     s.run();
     std::vector<std::string> images;
-    s.view->on_image_clicked = [&](const MessageListView::ImageHit& h) { images.push_back(h.event_id); };
+    s.view->on_image_clicked = [&](const MessageListView::ImageHit& h)
+    {
+        images.push_back(h.event_id);
+    };
 
     auto* list = vt::find<tk::ListView>(*s.view);
     REQUIRE(list != nullptr);
     s.host.request_focus(list);
     if (!list->has_focus())
+    {
         SKIP("grid list not focusable in this configuration");
+    }
     s.host.dispatch_key_down(vt::key(tk::Key::Right)); // lands on first cell
     s.host.dispatch_key_down(vt::key(tk::Key::Right));
     s.host.dispatch_key_down(vt::key(tk::Key::Left));
@@ -281,12 +308,14 @@ TEST_CASE("RoomMediaView keyboard navigation moves between cells and "
     CHECK_FALSE(images.empty());
 }
 
-TEST_CASE("RoomMediaView near-top callback and close",
-          "[tk][view][room_media_grid]")
+TEST_CASE("RoomMediaView near-top callback and close", "[tk][view][room_media_grid]")
 {
     RmvStage s;
     int closed = 0;
-    s.view->on_close = [&] { ++closed; };
+    s.view->on_close = [&]
+    {
+        ++closed;
+    };
     s.view->close(); // not open: no-op
     CHECK(closed == 0);
     s.view->open("!r:x", "Room");

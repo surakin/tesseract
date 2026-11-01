@@ -27,7 +27,8 @@
 namespace tesseract::views
 {
 
-class ThreadListView : public tk::ListView, public tk::ListAdapter,
+class ThreadListView : public tk::ListView,
+                       public tk::ListAdapter,
                        public tk::ListAdapterAccessibility
 {
 public:
@@ -35,22 +36,34 @@ public:
     ~ThreadListView() override = default;
 
     void set_threads(std::vector<tesseract::ThreadInfo> threads);
-    const std::vector<tesseract::ThreadInfo>& threads() const { return threads_; }
+    const std::vector<tesseract::ThreadInfo>& threads() const
+    {
+        return threads_;
+    }
 
     // Filters visible rows to threads whose root/latest preview text matches
     // `q` (case-insensitive substring, empty = show all). Wired to the
     // header's search field.
     void set_search_text(std::string q);
-    const std::string& search_text() const { return search_text_; }
+    const std::string& search_text() const
+    {
+        return search_text_;
+    }
 
     // MSC4306: whether the homeserver supports thread subscriptions. Shows
     // the "followed only" filter button and the per-row bell; both stay
     // hidden when unsupported (and the filter is dropped).
     void set_subscriptions_supported(bool supported);
-    bool subscriptions_supported() const { return subscriptions_supported_; }
+    bool subscriptions_supported() const
+    {
+        return subscriptions_supported_;
+    }
     // Restrict the list to followed threads. Ignored while unsupported.
     void set_only_followed(bool only);
-    bool only_followed() const { return only_followed_; }
+    bool only_followed() const
+    {
+        return only_followed_;
+    }
 
     // Shell callbacks.
     std::function<void()> on_close;
@@ -63,20 +76,19 @@ public:
 
     // tk::ListView / tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     // Overrides paint() directly (rather than paint_before_children()) since
     // the base tk::ListView already overrides paint() itself — see the .cpp
     // for why that makes paint_before_children() unreachable here.
-    void     paint(tk::PaintCtx&) override;
-    void     on_theme_changed(const tk::Theme&) override;
+    void paint(tk::PaintCtx&) override;
+    void on_theme_changed(const tk::Theme&) override;
 
     // tk::ListAdapter overrides.
     std::size_t count() const override;
-    float       measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
-                                   float available_width) override;
-    void        paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                          bool selected, bool hovered) override;
-    bool        is_selectable(std::size_t index) const override;
+    float measure_row_height(std::size_t index, tk::LayoutCtx& ctx, float available_width) override;
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override;
+    bool is_selectable(std::size_t index) const override;
 
     // tk::ListAdapterAccessibility overrides. Mirrors paint_row's own
     // index-0-is-header-spacer convention.
@@ -89,13 +101,13 @@ public:
     // Layout constants — exposed for tests.
     // A header strip sits above the scrollable rows to house the search
     // field and close button.
-    static constexpr float kHeaderH    = 48.0f;
-    static constexpr float kRowH       = 64.0f;
-    static constexpr float kCloseSz    = 32.0f;
+    static constexpr float kHeaderH = 48.0f;
+    static constexpr float kRowH = 64.0f;
+    static constexpr float kCloseSz = 32.0f;
     static constexpr float kCloseInset = 8.0f;
-    static constexpr float kPadX       = 12.0f;
-    static constexpr float kPadY       = 8.0f;
-    static constexpr float kSearchGap  = 8.0f;
+    static constexpr float kPadX = 12.0f;
+    static constexpr float kPadY = 8.0f;
+    static constexpr float kSearchGap = 8.0f;
     static constexpr float kSearchInsetY = 8.0f;
     // Gap between the two header icon buttons (mark-all / close).
     static constexpr float kHeaderBtnGap = 4.0f;

@@ -12,7 +12,9 @@ std::vector<BadgeFlow::Badge> badges(std::initializer_list<const char*> labels)
 {
     std::vector<BadgeFlow::Badge> out;
     for (const char* l : labels)
+    {
         out.push_back({l, {}, {}});
+    }
     return out;
 }
 } // namespace

@@ -40,8 +40,7 @@ QString write_image_path(const std::vector<uint8_t>& pic)
         return {};
     }
     QImage img;
-    if (!img.loadFromData(reinterpret_cast<const uchar*>(pic.data()),
-                          static_cast<int>(pic.size())))
+    if (!img.loadFromData(reinterpret_cast<const uchar*>(pic.data()), static_cast<int>(pic.size())))
     {
         return {};
     }
@@ -53,15 +52,14 @@ QString write_image_path(const std::vector<uint8_t>& pic)
     // 0600 file exclusively. The daemon reads the file when it handles Notify,
     // so the previous image is removed only once the next one is written.
     static QString last_path;
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
-        QStringLiteral("/notifications");
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+                        QStringLiteral("/notifications");
     if (!QDir().mkpath(dir))
     {
         return {};
     }
-    QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                   QFileDevice::ExeOwner);
+    QFile::setPermissions(dir,
+                          QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     QTemporaryFile file(dir + QStringLiteral("/notif-XXXXXX.png"));
     file.setAutoRemove(false);
     if (!file.open())
@@ -86,47 +84,43 @@ QString write_image_path(const std::vector<uint8_t>& pic)
 
 LinuxNotifierQt::LinuxNotifierQt(
     std::function<void(std::string, std::string, std::string)> on_activate,
-    std::function<void(std::string, std::string, std::string)> on_reply,
-    QObject* parent)
-    : QObject(parent),
-      iface_("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-             "org.freedesktop.Notifications", QDBusConnection::sessionBus()),
-      portal_(
-          "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
-          "org.freedesktop.portal.Notification", QDBusConnection::sessionBus()),
-      on_activate_(std::move(on_activate)),
-      on_reply_(std::move(on_reply))
+    std::function<void(std::string, std::string, std::string)> on_reply, QObject* parent)
+    : QObject(parent), iface_("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                              "org.freedesktop.Notifications", QDBusConnection::sessionBus()),
+      portal_("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+              "org.freedesktop.portal.Notification", QDBusConnection::sessionBus()),
+      on_activate_(std::move(on_activate)), on_reply_(std::move(on_reply))
 {
     iface_.setTimeout(kNotifyBusTimeoutMs);
     portal_.setTimeout(kNotifyBusTimeoutMs);
-    QDBusConnection::sessionBus().connect(
-        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-        "org.freedesktop.Notifications", "ActionInvoked", this,
-        SLOT(onActionInvoked(uint, const QString&)));
+    QDBusConnection::sessionBus().connect("org.freedesktop.Notifications",
+                                          "/org/freedesktop/Notifications",
+                                          "org.freedesktop.Notifications", "ActionInvoked", this,
+                                          SLOT(onActionInvoked(uint, const QString&)));
 
-    QDBusConnection::sessionBus().connect(
-        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-        "org.freedesktop.Notifications", "NotificationClosed", this,
-        SLOT(onNotificationClosed(uint, uint)));
+    QDBusConnection::sessionBus().connect("org.freedesktop.Notifications",
+                                          "/org/freedesktop/Notifications",
+                                          "org.freedesktop.Notifications", "NotificationClosed",
+                                          this, SLOT(onNotificationClosed(uint, uint)));
 
     // KDE/GNOME de-facto extension (not in the base freedesktop.org spec):
     // fires just before ActionInvoked with a Wayland xdg_activation_v1 token,
     // provided notify() sends a "desktop-entry" hint the daemon can resolve
     // to this app. Daemons that don't implement it simply never fire this,
     // so subscribing unconditionally is safe.
-    QDBusConnection::sessionBus().connect(
-        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-        "org.freedesktop.Notifications", "ActivationToken", this,
-        SLOT(onActivationToken(uint, const QString&)));
+    QDBusConnection::sessionBus().connect("org.freedesktop.Notifications",
+                                          "/org/freedesktop/Notifications",
+                                          "org.freedesktop.Notifications", "ActivationToken", this,
+                                          SLOT(onActivationToken(uint, const QString&)));
 
     // KDE Plasma-only extension: fired when the user submits text via the
     // inline-reply action (see ui/shared/platform/linux/linux_notification_reply.h). Other
     // daemons never emit this signal, so this connection is simply dormant
     // there — no capability check needed before subscribing.
-    QDBusConnection::sessionBus().connect(
-        "org.freedesktop.Notifications", "/org/freedesktop/Notifications",
-        "org.freedesktop.Notifications", "NotificationReplied", this,
-        SLOT(onNotificationReplied(uint, const QString&)));
+    QDBusConnection::sessionBus().connect("org.freedesktop.Notifications",
+                                          "/org/freedesktop/Notifications",
+                                          "org.freedesktop.Notifications", "NotificationReplied",
+                                          this, SLOT(onNotificationReplied(uint, const QString&)));
 
     // XDG Desktop Portal notification signal — includes an xdg_activation_v1
     // token on Wayland, enabling reliable window focus after notification click.
@@ -172,13 +166,12 @@ bool LinuxNotifierQt::use_portal() const
 void LinuxNotifierQt::notify(const tesseract::Notification& n)
 {
     // Prefer the message image / sticker, fall back to the room avatar.
-    const std::vector<uint8_t>& pic =
-        !n.image_bytes.empty() ? n.image_bytes : n.avatar_bytes;
+    const std::vector<uint8_t>& pic = !n.image_bytes.empty() ? n.image_bytes : n.avatar_bytes;
 
     if (use_portal())
     {
-        const QString pid = QString::fromStdString(
-            tesseract::linux_portal::sanitize_notification_id(n.room_id));
+        const QString pid =
+            QString::fromStdString(tesseract::linux_portal::sanitize_notification_id(n.room_id));
         // Record mapping so onPortalActionInvoked can look up the room. Each
         // notification for the same room reuses the same id (replacing the
         // prior one), so this just tracks the latest event_id per room.
@@ -198,14 +191,11 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
             // extension below), so it's localized.
             portalMap[QStringLiteral("category")] =
                 QString::fromUtf8(tesseract::linux_notify::kPortalImCategory);
-            QVariantMap button{
-                {QStringLiteral("label"),
-                 QString::fromStdString(tk::tr("Reply"))},
-                {QStringLiteral("action"),
-                 QString::fromUtf8(tesseract::linux_notify::kPortalReplyAction)},
-                {QStringLiteral("purpose"),
-                 QString::fromUtf8(
-                     tesseract::linux_notify::kPortalReplyPurpose)}};
+            QVariantMap button{{QStringLiteral("label"), QString::fromStdString(tk::tr("Reply"))},
+                               {QStringLiteral("action"),
+                                QString::fromUtf8(tesseract::linux_notify::kPortalReplyAction)},
+                               {QStringLiteral("purpose"),
+                                QString::fromUtf8(tesseract::linux_notify::kPortalReplyPurpose)}};
             // "buttons" is aa{sv} (array of dict), not av (array of variant)
             // — a plain QVariantList of QVariantMap would marshal as the
             // latter. Building the QDBusArgument explicitly is the
@@ -214,8 +204,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
             buttons_arg.beginArray(qMetaTypeId<QVariantMap>());
             buttons_arg << button;
             buttons_arg.endArray();
-            portalMap[QStringLiteral("buttons")] =
-                QVariant::fromValue(buttons_arg);
+            portalMap[QStringLiteral("buttons")] = QVariant::fromValue(buttons_arg);
         }
         // Portal "icon" uses (sv); themed icons are simplest to marshal.
         // Avatar bytes require GIcon serialisation which is not straightforward
@@ -262,8 +251,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
         // The label is unused by KDE for this special action id — it renders
         // its own hardcoded reply affordance instead. Not localized: this is
         // a protocol-level literal, must match KDE's hardcoded string.
-        actions << QString::fromUtf8(
-                       tesseract::linux_notify::kInlineReplyAction)
+        actions << QString::fromUtf8(tesseract::linux_notify::kInlineReplyAction)
                 << QStringLiteral("Reply");
         // Plain text, not markup — these render as a widget placeholder /
         // button label in Plasma's own reply UI, not Pango-parsed body text,
@@ -277,13 +265,11 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
     // for its later ActionInvoked, so it is recorded when the reply arrives.
     // A slow or starting daemon must not hold the UI thread for the call.
     QDBusPendingCall pending =
-        iface_.asyncCall("Notify", QString("Tesseract"), 0u, QString(""),
-                         escape_markup(n.sender), escape_markup(n.body), actions,
-                         hints, 5000);
+        iface_.asyncCall("Notify", QString("Tesseract"), 0u, QString(""), escape_markup(n.sender),
+                         escape_markup(n.body), actions, hints, 5000);
     auto* watcher = new QDBusPendingCallWatcher(pending, this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this,
-            [this, room_id = n.room_id, event_id = n.event_id](
-                QDBusPendingCallWatcher* w)
+            [this, room_id = n.room_id, event_id = n.event_id](QDBusPendingCallWatcher* w)
             {
                 QDBusPendingReply<uint> reply = *w;
                 if (!reply.isError())
@@ -301,8 +287,7 @@ void LinuxNotifierQt::onActionInvoked(uint id, const QString& /*action*/)
         // ActivationToken (if the daemon supports it) always arrives before
         // ActionInvoked for the same id — take_token() returns empty if the
         // daemon never sent one.
-        on_activate_(found->room_id, found->event_id,
-                     correlation_.take_token(id));
+        on_activate_(found->room_id, found->event_id, correlation_.take_token(id));
     }
 }
 
@@ -326,8 +311,7 @@ void LinuxNotifierQt::onNotificationReplied(uint id, const QString& text)
     on_reply_(found->room_id, found->event_id, text.toStdString());
 }
 
-void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
-                                            const QString& action,
+void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id, const QString& action,
                                             const QVariantList& parameter)
 {
     auto found = correlation_.find_portal(notification_id.toStdString());
@@ -343,8 +327,7 @@ void LinuxNotifierQt::onPortalActionInvoked(const QString& notification_id,
         // element (index 2) of this signal's parameter array.
         if (parameter.size() >= 3)
         {
-            on_reply_(found->room_id, found->event_id,
-                      parameter.at(2).toString().toStdString());
+            on_reply_(found->room_id, found->event_id, parameter.at(2).toString().toStdString());
         }
         return;
     }

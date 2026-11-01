@@ -14,9 +14,9 @@ class Client;
 
 struct SlashCommandDescriptor
 {
-    std::string name;         // canonical name without leading slash, e.g. "me"
-    std::string args_hint;    // e.g. "<action>" or "" for argless commands
-    std::string description;  // one-line user-facing description
+    std::string name;        // canonical name without leading slash, e.g. "me"
+    std::string args_hint;   // e.g. "<action>" or "" for argless commands
+    std::string description; // one-line user-facing description
 };
 
 // Returns the canonical command list. Stable order — the popup uses this
@@ -32,8 +32,7 @@ bool is_slash_command_no_arg(const std::string& body, const char* cmd);
 // If `body` starts with "/<cmd> " and has at least one non-whitespace
 // character following, returns the trimmed argument string. Returns nullopt
 // when the command prefix doesn't match or the argument is blank.
-std::optional<std::string> parse_slash_arg(const std::string& body,
-                                            const char* cmd);
+std::optional<std::string> parse_slash_arg(const std::string& body, const char* cmd);
 
 // If `body` starts with "/<cmd> ", tokenizes the remainder on runs of
 // whitespace and returns the tokens — an empty vector when only whitespace
@@ -43,14 +42,13 @@ std::optional<std::string> parse_slash_arg(const std::string& body,
 // the command prefix doesn't match, mirroring `parse_slash_arg`. Generic —
 // not specific to any one command — so multi-argument built-ins (e.g.
 // `/invite <user> [reason]`) don't need their own bespoke splitter.
-std::optional<std::vector<std::string>> parse_slash_args(
-    const std::string& body, const char* cmd);
+std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd);
 
 // The plain + HTML pair produced by `/spoiler`.
 struct SpoilerMessage
 {
-    std::string body;            // plain-text fallback, prefixed "(Spoiler…)"
-    std::string formatted_body;  // <span data-mx-spoiler[="reason"]>…</span>
+    std::string body;           // plain-text fallback, prefixed "(Spoiler…)"
+    std::string formatted_body; // <span data-mx-spoiler[="reason"]>…</span>
 };
 
 /// `html` (the composer's rendered `formatted_body`) with the leading
@@ -106,9 +104,7 @@ std::optional<std::string> slash_success_message(const std::string& body);
 //
 // The returned `Result` is the underlying `Client` call's result, so callers
 // can clear the composer on success.
-Result dispatch_compose_send(Client& client,
-                             const std::string& room_id,
-                             const std::string& body,
+Result dispatch_compose_send(Client& client, const std::string& room_id, const std::string& body,
                              const std::string& formatted_body,
                              const std::string& url_previews_json = "");
 
@@ -130,8 +126,7 @@ std::string describe_param_type(const ParamSchema& schema);
 // parameter has been provided. Purely informational — see
 // Client::match_bot_command_arguments's doc comment for why this doesn't
 // attempt to be a fully accurate live validator.
-std::string next_bot_command_arg_hint(const CommandDescription& desc,
-                                      std::size_t tokens_typed);
+std::string next_bot_command_arg_hint(const CommandDescription& desc, std::size_t tokens_typed);
 
 // Result of attempting to send an MSC4391 bot command invocation.
 struct BotCommandSendResult
@@ -149,9 +144,8 @@ struct BotCommandSendResult
 // send via `Client::send_bot_command`. Does not touch composer/UI state —
 // the caller (SlashCommandController) owns clearing the composer on success
 // and keeping the error visible (not clearing) on failure.
-BotCommandSendResult dispatch_bot_command_send(Client& client,
-                                               const std::string& room_id,
+BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string& room_id,
                                                const CommandDescription& desc,
                                                const std::string& args_text);
 
-}  // namespace tesseract
+} // namespace tesseract

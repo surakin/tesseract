@@ -32,8 +32,8 @@ struct AccountEntry
 {
     std::string user_id; // canonical "@alice:example.org"
     std::string display_name;
-    std::string avatar_url; // mxc://… (empty → initials fallback)
-    bool active = false; // true on the row representing the foreground account
+    std::string avatar_url;  // mxc://… (empty → initials fallback)
+    bool active = false;     // true on the row representing the foreground account
     bool has_unread = false; // true if this account has an unread notification
 };
 
@@ -93,8 +93,8 @@ private:
     std::vector<AccountEntry> entries_;
     ImageProvider image_provider_;
     tk::ScrollView* scroll_ = nullptr; // owned via children()
-    tk::Widget* column_ = nullptr; // owned by scroll_; parent of every row
-    std::vector<UserInfo*> rows_; // borrowed; ownership in column_
+    tk::Widget* column_ = nullptr;     // owned by scroll_; parent of every row
+    std::vector<UserInfo*> rows_;      // borrowed; ownership in column_
 };
 
 } // namespace tesseract::views

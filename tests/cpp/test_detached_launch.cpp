@@ -24,9 +24,8 @@ void write_detached_launch_script(const fs::path& path, const std::string& body)
         std::ofstream f(path);
         f << "#!/bin/sh\n" << body << "\n";
     }
-    fs::permissions(path,
-                    fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
-                        fs::perms::others_read | fs::perms::others_exec);
+    fs::permissions(path, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                              fs::perms::others_read | fs::perms::others_exec);
 }
 
 std::string read_detached_launch_file(const fs::path& path)
@@ -77,7 +76,9 @@ TEST_CASE("launch_detached passes the argument to the opener unchanged", "[detac
 
     // The opener runs in the background, so wait for its output.
     for (int i = 0; i < 100 && read_detached_launch_file(out) != arg; ++i)
+    {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
     CHECK(read_detached_launch_file(out) == arg);
 }
 

@@ -124,25 +124,46 @@ QKeySequence to_qt_sequence_(const tk::KeyChord& chord)
         // Qt's key code for a printable ASCII character is the character
         // itself, with letters in upper case (Qt::Key_K == 'K').
         if (chord.text.size() == 1)
+        {
             key = std::toupper(static_cast<unsigned char>(chord.text.front()));
+        }
         break;
-    case tk::Key::Tab: key = Qt::Key_Tab; break;
-    case tk::Key::Left: key = Qt::Key_Left; break;
-    case tk::Key::Right: key = Qt::Key_Right; break;
-    case tk::Key::F1: key = Qt::Key_F1; break;
-    default: break;
+    case tk::Key::Tab:
+        key = Qt::Key_Tab;
+        break;
+    case tk::Key::Left:
+        key = Qt::Key_Left;
+        break;
+    case tk::Key::Right:
+        key = Qt::Key_Right;
+        break;
+    case tk::Key::F1:
+        key = Qt::Key_F1;
+        break;
+    default:
+        break;
     }
     if (key == 0)
+    {
         return {};
+    }
     int mods = 0;
     if (chord.mods & (tk::ModPrimary | tk::ModCtrl))
+    {
         mods |= Qt::CTRL;
+    }
     if (chord.mods & tk::ModShift)
+    {
         mods |= Qt::SHIFT;
+    }
     if (chord.mods & tk::ModAlt)
+    {
         mods |= Qt::ALT;
+    }
     if (chord.mods & tk::ModMeta)
+    {
         mods |= Qt::META;
+    }
     return QKeySequence(mods | key);
 }
 
@@ -156,17 +177,17 @@ QKeySequence to_qt_sequence_(const tk::KeyChord& chord)
 // MainWindow constructor
 // ---------------------------------------------------------------------------
 
-MainWindow::MainWindow(tesseract::AccountManager& account_manager,
-                       QWidget* parent, bool start_hidden
+MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* parent,
+                       bool start_hidden
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                       , bool screenshot_mode
+                       ,
+                       bool screenshot_mode
 #endif
                        )
-    : QMainWindow(parent)
-    , ShellBase(account_manager)
-    , start_hidden_(start_hidden)
+    : QMainWindow(parent), ShellBase(account_manager), start_hidden_(start_hidden)
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    , screenshot_mode_(screenshot_mode)
+      ,
+      screenshot_mode_(screenshot_mode)
 #endif
 {
     qRegisterMetaType<std::vector<tesseract::RoomInfo>>();
@@ -178,7 +199,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
 
     setWindowTitle("Tesseract");
     setMinimumSize(static_cast<int>(tesseract::visual::kMinWindowWidth),
-                    static_cast<int>(tesseract::visual::kMinWindowHeight));
+                   static_cast<int>(tesseract::visual::kMinWindowHeight));
     resize(1100, 768);
 
     contentStack_ = new QStackedWidget(this);
@@ -213,20 +234,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // is up, so ticks before then are cheap no-ops.
     presence_tick_timer_ = new QTimer(this);
     connect(presence_tick_timer_, &QTimer::timeout, this,
-            [this] { notify_presence_tick_(); });
+            [this]
+            {
+                notify_presence_tick_();
+            });
     presence_tick_timer_->start(30000);
 
     tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
     // Apply saved window geometry, or use the platform default.
     {
-        const auto geom = clamp_to_screens_(
-            tesseract::Settings::instance().main_window_geometry,
-            1100, 768, get_screen_work_areas_());
+        const auto geom = clamp_to_screens_(tesseract::Settings::instance().main_window_geometry,
+                                            1100, 768, get_screen_work_areas_());
         if (geom.valid)
+        {
             setGeometry(geom.x, geom.y, geom.w, geom.h);
+        }
         else
+        {
             resize(1100, 768);
+        }
     }
 
     {
@@ -270,16 +297,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             menu->setAttribute(Qt::WA_DeleteOnClose);
             menu->setStyleSheet(tk::qt6::build_menu_qss(current_theme_));
             QAction* copyAct = menu->addAction(QString::fromStdString(rv->copy_menu_label()));
-            QObject::connect(copyAct, &QAction::triggered, [rv]()
-            {
-                rv->copy_context_menu_target();
-            });
+            QObject::connect(copyAct, &QAction::triggered,
+                             [rv]()
+                             {
+                                 rv->copy_context_menu_target();
+                             });
             menu->popup(QCursor::pos());
         };
         {
             QPointer<tk::qt6::Surface> sfp = mainAppSurface_;
-            main_app_->room_view()->on_link_hovered =
-                [sfp](const std::string& url)
+            main_app_->room_view()->on_link_hovered = [sfp](const std::string& url)
             {
                 if (sfp)
                 {
@@ -290,19 +317,19 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                        : Qt::ArrowCursor);
                 }
             };
-            main_app_->space_root()->on_link_hovered =
-                [sfp](const std::string& url)
+            main_app_->space_root()->on_link_hovered = [sfp](const std::string& url)
             {
                 if (sfp)
                 {
-                    sfp->setCursor(url.empty() ? Qt::ArrowCursor
-                                               : Qt::PointingHandCursor);
+                    sfp->setCursor(url.empty() ? Qt::ArrowCursor : Qt::PointingHandCursor);
                 }
             };
-            main_app_->on_sidebar_cursor =
-                [sfp](tesseract::views::MainAppWidget::SidebarCursor c)
+            main_app_->on_sidebar_cursor = [sfp](tesseract::views::MainAppWidget::SidebarCursor c)
             {
-                if (!sfp) return;
+                if (!sfp)
+                {
+                    return;
+                }
                 using SC = tesseract::views::MainAppWidget::SidebarCursor;
                 sfp->setCursor(c == SC::Resize   ? Qt::SplitHCursor
                                : c == SC::Toggle ? Qt::PointingHandCursor
@@ -355,12 +382,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     for (const auto& def : tesseract::views::shortcuts())
     {
         if (def.scope == tesseract::views::ShortcutScope::Contextual)
+        {
             continue;
+        }
         for (const auto& chord : def.chords)
         {
             const QKeySequence seq = to_qt_sequence_(chord);
             if (seq.isEmpty())
+            {
                 continue;
+            }
             auto* sc = new QShortcut(seq, this);
             sc->setContext(def.scope == tesseract::views::ShortcutScope::Application
                                ? Qt::ApplicationShortcut
@@ -369,33 +400,31 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     [this, event = tk::to_key_event(chord)]
                     {
                         if (main_app_)
+                        {
                             main_app_->dispatch_key_down(event);
+                        }
                     });
         }
     }
 
-
     // Right-click: user-strip actions (lower-left corner). The chat area has its
     // own tk popup menu.
     mainAppSurface_->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(
-        mainAppSurface_, &QWidget::customContextMenuRequested, this,
-        [this](const QPoint& pos)
-        {
-            const bool in_user_strip =
-                main_app_ && main_app_->user_info() &&
-                [&]
+    connect(mainAppSurface_, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint& pos)
             {
-                const auto& r = main_app_->user_info()->bounds();
-                return pos.x() >= r.x && pos.x() < r.right() &&
-                       pos.y() >= r.y && pos.y() < r.bottom();
-            }();
-            if (in_user_strip)
-            {
-                onUserStripContextMenu(mainAppSurface_->mapToGlobal(pos));
-                return;
-            }
-        });
+                const bool in_user_strip = main_app_ && main_app_->user_info() && [&]
+                {
+                    const auto& r = main_app_->user_info()->bounds();
+                    return pos.x() >= r.x && pos.x() < r.right() && pos.y() >= r.y &&
+                           pos.y() < r.bottom();
+                }();
+                if (in_user_strip)
+                {
+                    onUserStripContextMenu(mainAppSurface_->mapToGlobal(pos));
+                    return;
+                }
+            });
 
     refresh_sync_status_(); // "Not logged in" until a session restores
     // Generic status-bar click (distinct from statusLinkLabel_'s
@@ -406,8 +435,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     statusBar()->installEventFilter(this);
     lowPowerLabel_ = new QLabel(this);
     lowPowerLabel_->setContentsMargins(0, 0, 4, 0);
-    lowPowerLabel_->setToolTip(QString::fromStdString(
-        tk::tr("Low power mode — background sync paused")));
+    lowPowerLabel_->setToolTip(
+        QString::fromStdString(tk::tr("Low power mode — background sync paused")));
     lowPowerLabel_->setVisible(false);
     statusBar()->addPermanentWidget(lowPowerLabel_);
     refreshLowPowerIcon_();
@@ -424,8 +453,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     QDBusConnection::sessionBus().connect(
         QStringLiteral("org.freedesktop.portal.Desktop"),
         QStringLiteral("/org/freedesktop/portal/desktop"),
-        QStringLiteral("org.freedesktop.portal.Settings"),
-        QStringLiteral("SettingChanged"), this,
+        QStringLiteral("org.freedesktop.portal.Settings"), QStringLiteral("SettingChanged"), this,
         SLOT(on_portal_setting_changed_(QString, QString, QDBusVariant)));
     apply_current_theme_();
 
@@ -433,8 +461,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // colorSchemeChanged was added in Qt 6.5; on older Qt the XDG portal
     // signal already handles this via on_portal_setting_changed_.
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
-            this,
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this,
             [this]
             {
                 if (tesseract::Settings::instance().theme_pref ==
@@ -458,19 +485,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // `onMessageAnimTick_` when `anim_cache_` empties.
     tk_anim_timer_ = new QTimer(this);
     tk_anim_timer_->setInterval(16);
-    connect(tk_anim_timer_, &QTimer::timeout, this,
-            &MainWindow::onMessageAnimTick_);
+    connect(tk_anim_timer_, &QTimer::timeout, this, &MainWindow::onMessageAnimTick_);
 
     tk_inflight_timer_ = new QTimer(this);
     tk_inflight_timer_->setInterval(16);
-    connect(tk_inflight_timer_, &QTimer::timeout, this,
-            &MainWindow::onInflightTick_);
+    connect(tk_inflight_timer_, &QTimer::timeout, this, &MainWindow::onInflightTick_);
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     if (!screenshot_mode_)
 #endif
-        QMetaObject::invokeMethod(this, &MainWindow::doLogin,
-                                  Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, &MainWindow::doLogin, Qt::QueuedConnection);
     setupActivationListener_();
 
     account_manager_.register_window(this);
@@ -484,23 +508,25 @@ namespace
 class QtScreenshotHost final : public tesseract::screenshot::ScreenshotHost
 {
 public:
-    QtScreenshotHost(MainWindow& window, QString dir)
-        : window_(window), dir_(std::move(dir))
+    QtScreenshotHost(MainWindow& window, QString dir) : window_(window), dir_(std::move(dir))
     {
     }
 
     void apply_theme(tesseract::screenshot::ScreenshotTheme theme) override
     {
-        window_.apply_screenshot_theme_(
-            theme == tesseract::screenshot::ScreenshotTheme::Dark);
+        window_.apply_screenshot_theme_(theme == tesseract::screenshot::ScreenshotTheme::Dark);
     }
-    void refresh() override { window_.refresh_for_screenshot_(); }
+    void refresh() override
+    {
+        window_.refresh_for_screenshot_();
+    }
     bool save_png(const std::string& filename) override
     {
-        const QString path =
-            QDir(dir_).filePath(QString::fromStdString(filename));
+        const QString path = QDir(dir_).filePath(QString::fromStdString(filename));
         if (window_.grab().save(path, "PNG"))
+        {
             return true;
+        }
         qCritical("Could not save screenshot: %s", qPrintable(path));
         return false;
     }
@@ -508,7 +534,10 @@ public:
     {
         QTimer::singleShot(ms, &window_, std::move(fn));
     }
-    void finish(bool ok) override { qApp->exit(ok ? 0 : 1); }
+    void finish(bool ok) override
+    {
+        qApp->exit(ok ? 0 : 1);
+    }
 
 private:
     MainWindow& window_;
@@ -546,8 +575,7 @@ void MainWindow::captureScreenshots(const std::string& output_dir)
     const QString dir = QString::fromStdString(output_dir);
     if (!QDir().mkpath(dir))
     {
-        qCritical("Could not create screenshot directory: %s",
-                  qPrintable(dir));
+        qCritical("Could not create screenshot directory: %s", qPrintable(dir));
         std::exit(EXIT_FAILURE);
     }
 
@@ -594,12 +622,16 @@ MainWindow::~MainWindow()
         for (auto& a : account_manager_.accounts())
         {
             if (a && a->client)
+            {
                 a->client->request_stop();
+            }
         }
         for (auto& a : account_manager_.accounts())
         {
             if (a && a->client)
+            {
                 a->client->stop_sync();
+            }
         }
     }
     if (pending_login_client_)
@@ -631,23 +663,25 @@ namespace
 // the main thread so no locking is needed.
 xdg_activation_v1* s_xdgActivation = nullptr;
 
-void registry_global_cb(void*, wl_registry* reg, uint32_t name,
-                         const char* iface, uint32_t)
+void registry_global_cb(void*, wl_registry* reg, uint32_t name, const char* iface, uint32_t)
 {
-    if (!s_xdgActivation &&
-        strcmp(iface, xdg_activation_v1_interface.name) == 0)
+    if (!s_xdgActivation && strcmp(iface, xdg_activation_v1_interface.name) == 0)
     {
         s_xdgActivation = static_cast<xdg_activation_v1*>(
             wl_registry_bind(reg, name, &xdg_activation_v1_interface, 1));
     }
 }
-void registry_global_remove_cb(void*, wl_registry*, uint32_t) {}
+void registry_global_remove_cb(void*, wl_registry*, uint32_t)
+{
+}
 
-const wl_registry_listener kRegistryListener = {registry_global_cb,
-                                                 registry_global_remove_cb};
+const wl_registry_listener kRegistryListener = {registry_global_cb, registry_global_remove_cb};
 
 // Token-request callback: stores the compositor-issued token string.
-struct TokenResult { std::string value; };
+struct TokenResult
+{
+    std::string value;
+};
 
 void s_token_done(void* data, xdg_activation_token_v1* tok, const char* token)
 {
@@ -672,23 +706,24 @@ void MainWindow::setupActivationListener_()
             {
                 openMatrixLink(req.uri);
             }
-            dispatch_launch_action_(
-                tesseract::launch_action_from_option_id(req.action),
-                std::move(req.room_id));
+            dispatch_launch_action_(tesseract::launch_action_from_option_id(req.action),
+                                    std::move(req.room_id));
         });
     if (activationListener_->fd() >= 0)
     {
-        activationNotifier_ = new QSocketNotifier(
-            activationListener_->fd(), QSocketNotifier::Read, this);
+        activationNotifier_ =
+            new QSocketNotifier(activationListener_->fd(), QSocketNotifier::Read, this);
         connect(activationNotifier_, &QSocketNotifier::activated, this,
-                [this]() { activationListener_->on_readable(); });
+                [this]()
+                {
+                    activationListener_->on_readable();
+                });
     }
 
 #ifdef HAVE_XDG_ACTIVATION
     // Bind xdg_activation_v1 from the Wayland registry so we can pass
     // compositor-issued tokens directly without going through Qt private API.
-    auto* waylandApp =
-        qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+    auto* waylandApp = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
     if (waylandApp)
     {
         auto* wl_disp = waylandApp->display();
@@ -708,14 +743,15 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
     show();
     raise();
 #ifdef HAVE_XDG_ACTIVATION
-    auto* waylandApp =
-        qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+    auto* waylandApp = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
     auto* wl_disp = waylandApp ? waylandApp->display() : nullptr;
     // wl_surface* has no public Qt 6 accessor; nativeResourceForWindow is the
     // only non-private path available.
     auto* ni = QGuiApplication::platformNativeInterface();
-    auto* surf = (ni && windowHandle()) ? static_cast<wl_surface*>(
-        ni->nativeResourceForWindow("surface", windowHandle())) : nullptr;
+    auto* surf =
+        (ni && windowHandle())
+            ? static_cast<wl_surface*>(ni->nativeResourceForWindow("surface", windowHandle()))
+            : nullptr;
 
     if (wl_disp && surf && s_xdgActivation)
     {
@@ -752,18 +788,15 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
             // the launcher; a token-less launch (terminal/IDE) cannot steal
             // focus by design.
             TokenResult result;
-            xdg_activation_token_v1* tok =
-                xdg_activation_v1_get_activation_token(s_xdgActivation);
+            xdg_activation_token_v1* tok = xdg_activation_v1_get_activation_token(s_xdgActivation);
             xdg_activation_token_v1_set_app_id(tok, "tesseract");
             xdg_activation_token_v1_set_surface(tok, surf);
             if (waylandApp->lastInputSerial() && waylandApp->lastInputSeat())
             {
-                xdg_activation_token_v1_set_serial(
-                    tok, waylandApp->lastInputSerial(),
-                    waylandApp->lastInputSeat());
+                xdg_activation_token_v1_set_serial(tok, waylandApp->lastInputSerial(),
+                                                   waylandApp->lastInputSeat());
             }
-            xdg_activation_token_v1_add_listener(
-                tok, &kTokenDoneListener, &result);
+            xdg_activation_token_v1_add_listener(tok, &kTokenDoneListener, &result);
             xdg_activation_token_v1_commit(tok);
             wl_display_roundtrip(wl_disp);
             token = result.value;
@@ -771,8 +804,7 @@ void MainWindow::activateWindowWithToken_(const QString& external_token)
 
         if (!token.empty())
         {
-            xdg_activation_v1_activate(
-                s_xdgActivation, token.c_str(), surf);
+            xdg_activation_v1_activate(s_xdgActivation, token.c_str(), surf);
             wl_display_flush(wl_disp);
             return;
         }
@@ -787,7 +819,11 @@ void MainWindow::activateOnStartup()
     const QString token = (env_tok && *env_tok) ? QString::fromUtf8(env_tok) : QString{};
     // Defer by one event-loop tick so the Wayland surface is fully mapped
     // before we attempt activation.
-    QTimer::singleShot(0, this, [this, token]() { activateWindowWithToken_(token); });
+    QTimer::singleShot(0, this,
+                       [this, token]()
+                       {
+                           activateWindowWithToken_(token);
+                       });
 }
 
 // ---------------------------------------------------------------------------
@@ -798,7 +834,9 @@ void MainWindow::activateOnStartup()
 void MainWindow::focus_forward_picker_field_()
 {
     if (!main_app_ || !main_app_->forward_picker())
+    {
         return;
+    }
     if (auto* f = main_app_->forward_picker()->search_field())
     {
         f->set_text("");
@@ -809,8 +847,12 @@ void MainWindow::focus_forward_picker_field_()
 void MainWindow::hide_forward_picker_field_()
 {
     if (main_app_ && main_app_->forward_picker())
+    {
         if (auto* f = main_app_->forward_picker()->search_field())
+        {
             f->set_visible(false);
+        }
+    }
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* ev)
@@ -830,15 +872,24 @@ void MainWindow::resizeEvent(QResizeEvent* ev)
     QMainWindow::resizeEvent(ev);
     auto& g = tesseract::Settings::instance().main_window_geometry;
     const QRect r = geometry();
-    g.x = r.x(); g.y = r.y(); g.w = r.width(); g.h = r.height();
+    g.x = r.x();
+    g.y = r.y();
+    g.w = r.width();
+    g.h = r.height();
     g.valid = (g.w > 0 && g.h > 0);
     save_settings_debounced_();
 
     // A popup's screen position is captured once when it opens and never
     // recomputed — leaving one open across a resize would strand it away
     // from whatever control anchored it. Close everything instead.
-    if (mainAppSurface_) mainAppSurface_->host().dismiss_active_popup();
-    if (room_view_) room_view_->dismiss_popups();
+    if (mainAppSurface_)
+    {
+        mainAppSurface_->host().dismiss_active_popup();
+    }
+    if (room_view_)
+    {
+        room_view_->dismiss_popups();
+    }
     hide_compose_popups_();
     close_account_picker_();
 }
@@ -848,7 +899,10 @@ void MainWindow::moveEvent(QMoveEvent* ev)
     QMainWindow::moveEvent(ev);
     auto& g = tesseract::Settings::instance().main_window_geometry;
     const QRect r = geometry();
-    g.x = r.x(); g.y = r.y(); g.w = r.width(); g.h = r.height();
+    g.x = r.x();
+    g.y = r.y();
+    g.w = r.width();
+    g.h = r.height();
     g.valid = (g.w > 0 && g.h > 0);
     save_settings_debounced_();
 }
@@ -859,10 +913,8 @@ std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
     for (QScreen* s : QGuiApplication::screens())
     {
         const QRect r = s->availableGeometry();
-        result.push_back({static_cast<float>(r.x()),
-                          static_cast<float>(r.y()),
-                          static_cast<float>(r.width()),
-                          static_cast<float>(r.height())});
+        result.push_back({static_cast<float>(r.x()), static_cast<float>(r.y()),
+                          static_cast<float>(r.width()), static_cast<float>(r.height())});
     }
     return result;
 }
@@ -880,7 +932,9 @@ void MainWindow::changeEvent(QEvent* ev)
     else if (ev->type() == QEvent::WindowStateChange)
     {
         if (!isMinimized() && isVisible())
+        {
             start_anim_tick_();
+        }
         update_video_playback_suspension_();
     }
     else if (ev->type() == QEvent::ApplicationPaletteChange)
@@ -912,7 +966,9 @@ void MainWindow::hideEvent(QHideEvent* ev)
 void MainWindow::close_app_settings_ui_()
 {
     if (!settings_surface_ || contentStack_->currentWidget() != settings_native_())
+    {
         return;
+    }
     stop_search_index_stats_poll_();
     leaveSettings_();
 }
@@ -920,7 +976,9 @@ void MainWindow::close_app_settings_ui_()
 void MainWindow::rebind_login_client_ui_()
 {
     if (!login_view_)
+    {
         return;
+    }
     login_view_->set_client(reset_pending_login_client_());
     // Swap only. Settings is open on top of the login view, and reset() would
     // refocus its homeserver field mid-typing; the homeserver check is re-run
@@ -938,10 +996,14 @@ void MainWindow::leaveSettings_()
         // homeserver check against it (a failed lookup made before the proxy
         // was fixed would otherwise stay on screen).
         if (take_login_recheck_())
+        {
             login_view_->reset();
+        }
     }
     else
+    {
         show_main_content_();
+    }
     set_app_settings_open_(false);
     teardown_settings_view_();
 }
@@ -1012,7 +1074,11 @@ void MainWindow::doLogin()
                     show();
                 }
                 add_account_return_uid_.clear();
-                show_login_after_restore_(restore, [this] { doLogin(); });
+                show_login_after_restore_(restore,
+                                          [this]
+                                          {
+                                              doLogin();
+                                          });
                 return;
             }
 
@@ -1021,8 +1087,7 @@ void MainWindow::doLogin()
         network_available);
 }
 
-std::unique_ptr<tesseract::IEventHandler>
-MainWindow::make_account_bridge_(const std::string& uid)
+std::unique_ptr<tesseract::IEventHandler> MainWindow::make_account_bridge_(const std::string& uid)
 {
     auto bridge = std::make_unique<EventBridge>(this);
     bridge->set_user_id(uid);
@@ -1034,19 +1099,16 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
     // Per-account notifier: click switches to this account then navigates.
     const std::string uid = session.user_id;
     session.notifier = std::make_unique<LinuxNotifierQt>(
-        [this, uid](std::string room_id, std::string event_id,
-                    std::string token)
+        [this, uid](std::string room_id, std::string event_id, std::string token)
         {
-            on_notification_clicked_(uid, std::move(room_id),
-                                     std::move(event_id), std::move(token));
+            on_notification_clicked_(uid, std::move(room_id), std::move(event_id),
+                                     std::move(token));
         },
-        [this, uid](std::string room_id, std::string event_id,
-                    std::string reply_text)
+        [this, uid](std::string room_id, std::string event_id, std::string reply_text)
         {
             // Deliberately does not switch account or navigate — matches
             // KDE's own reply UX of not raising the app on submit.
-            send_notification_reply_(uid, std::move(room_id),
-                                     std::move(event_id),
+            send_notification_reply_(uid, std::move(room_id), std::move(event_id),
                                      std::move(reply_text));
         });
 }
@@ -1061,9 +1123,15 @@ void MainWindow::install_account_up_connector_(tesseract::AccountSession& sessio
     // Per-account UnifiedPush connector (registers with distributor on start).
     auto up = std::make_unique<LinuxUpConnectorQt>();
     up->set_run_async(
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
+        [this](std::function<void()> fn)
+        {
+            run_async_(std::move(fn));
+        });
     up->set_post_to_ui(
-        [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
+        [this](std::function<void()> fn)
+        {
+            post_to_ui_(std::move(fn));
+        });
     up->start(session.client.get(), session.user_id);
     session.up_connector = std::move(up);
 }
@@ -1085,11 +1153,10 @@ tesseract::AuxWindowBase* MainWindow::create_aux_window_(std::string title,
     return new qt6::AuxWindow(title, std::move(root), width, height, current_theme_);
 }
 
-std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(
-    const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h)
+std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
+                                                          std::uint32_t h)
 {
-    QImage img(bgra, static_cast<int>(w), static_cast<int>(h),
-               QImage::Format_ARGB32);
+    QImage img(bgra, static_cast<int>(w), static_cast<int>(h), QImage::Format_ARGB32);
     QBuffer buf;
     buf.open(QIODevice::WriteOnly);
     img.save(&buf, "JPEG", 90);
@@ -1157,12 +1224,13 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     // Inside an AppImage the running binary lives on a mount that goes away
     // with this process; relaunch the .AppImage itself.
     const QByteArray appimage = qgetenv("APPIMAGE");
-    const QString program = appimage.isEmpty()
-                                ? QCoreApplication::applicationFilePath()
-                                : QString::fromLocal8Bit(appimage);
+    const QString program = appimage.isEmpty() ? QCoreApplication::applicationFilePath()
+                                               : QString::fromLocal8Bit(appimage);
     QStringList qargs;
     for (const auto& a : args)
+    {
         qargs << QString::fromStdString(a);
+    }
     return QProcess::startDetached(program, qargs);
 }
 
@@ -1208,7 +1276,9 @@ void MainWindow::closeEvent(QCloseEvent* ev)
     on_window_closing_();
     account_manager_.unregister_window(this);
     if (account_manager_.window_count() == 0)
+    {
         QApplication::quit();
+    }
     ev->accept();
 }
 
@@ -1250,7 +1320,9 @@ void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
 void MainWindow::repaint_pickers_native_()
 {
     if (compose_popups_)
+    {
         compose_popups_->on_image_loaded();
+    }
 }
 
 void MainWindow::request_relayout_()
@@ -1289,13 +1361,11 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     }
 }
 
-std::unique_ptr<tk::Image>
-MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
+std::unique_ptr<tk::Image> MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
 {
     // QImage/QImageReader are safe on a worker, and make_image wraps a QImage
     // (not a QPixmap). First frame only, scaled to the avatar cache size.
-    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                  static_cast<int>(bytes.size()));
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()), static_cast<int>(bytes.size()));
     QBuffer buf(&qb);
     buf.open(QIODevice::ReadOnly);
     QImageReader reader(&buf);
@@ -1308,8 +1378,7 @@ MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
             native.scaled(kAvatarCacheSize, kAvatarCacheSize, Qt::KeepAspectRatio));
     }
     QImage img = reader.read();
-    if (!img.isNull() &&
-        (img.width() > kAvatarCacheSize || img.height() > kAvatarCacheSize))
+    if (!img.isNull() && (img.width() > kAvatarCacheSize || img.height() > kAvatarCacheSize))
     {
         img = img.scaled(kAvatarCacheSize, kAvatarCacheSize, Qt::KeepAspectRatio,
                          Qt::SmoothTransformation);
@@ -1321,8 +1390,7 @@ MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
     return tk::qt6::make_image(std::move(img));
 }
 
-void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key,
-                                    std::vector<std::uint8_t> bytes)
+void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key, std::vector<std::uint8_t> bytes)
 {
     // Map tiles are small; decode off the UI thread anyway.
     run_async_(
@@ -1342,8 +1410,8 @@ void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key,
                     {
                         return;
                     }
-                    account_manager_.image_cache().store(
-                        cache_key, tk::qt6::make_image(std::move(*decoded)));
+                    account_manager_.image_cache().store(cache_key,
+                                                         tk::qt6::make_image(std::move(*decoded)));
                     if (mainAppSurface_)
                     {
                         mainAppSurface_->update();
@@ -1353,77 +1421,87 @@ void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key,
         });
 }
 
-void MainWindow::prompt_passphrase_(std::string title,
-                                    std::function<void(std::string)> cb)
+void MainWindow::prompt_passphrase_(std::string title, std::function<void(std::string)> cb)
 {
     bool ok = false;
-    const QString pass = QInputDialog::getText(
-        this, QString::fromStdString(title),
-        QString::fromStdString(tk::tr("Passphrase")), QLineEdit::Password, "",
-        &ok);
+    const QString pass = QInputDialog::getText(this, QString::fromStdString(title),
+                                               QString::fromStdString(tk::tr("Passphrase")),
+                                               QLineEdit::Password, "", &ok);
     if (ok && !pass.isEmpty())
+    {
         cb(pass.toStdString());
+    }
 }
 
-void MainWindow::pick_open_file_(std::string title,
-                                 std::function<void(std::string)> cb)
+void MainWindow::pick_open_file_(std::string title, std::function<void(std::string)> cb)
 {
-    const QString path =
-        QFileDialog::getOpenFileName(this, QString::fromStdString(title));
+    const QString path = QFileDialog::getOpenFileName(this, QString::fromStdString(title));
     if (!path.isEmpty())
+    {
         cb(path.toStdString());
+    }
 }
 
-void MainWindow::pick_folder_(std::string title,
-                              std::function<void(std::string)> cb)
+void MainWindow::pick_folder_(std::string title, std::function<void(std::string)> cb)
 {
-    const QString dir =
-        QFileDialog::getExistingDirectory(this, QString::fromStdString(title));
+    const QString dir = QFileDialog::getExistingDirectory(this, QString::fromStdString(title));
     if (!dir.isEmpty())
+    {
         cb(dir.toStdString());
+    }
 }
 
-void MainWindow::show_message_dialog_(std::string title, std::string text,
-                                      bool is_error)
+void MainWindow::show_message_dialog_(std::string title, std::string text, bool is_error)
 {
     const QString t = QString::fromStdString(title);
     const QString m = QString::fromStdString(text);
     if (is_error)
+    {
         QMessageBox::warning(this, t, m);
+    }
     else
+    {
         QMessageBox::information(this, t, m);
+    }
 }
 
 void MainWindow::pick_save_file_(std::string title, std::string suggested_name,
                                  std::function<void(std::string)> cb)
 {
-    const QString path = QFileDialog::getSaveFileName(
-        this, QString::fromStdString(title), QString::fromStdString(suggested_name));
+    const QString path = QFileDialog::getSaveFileName(this, QString::fromStdString(title),
+                                                      QString::fromStdString(suggested_name));
     if (!path.isEmpty())
+    {
         cb(path.toStdString());
+    }
 }
 
 void MainWindow::pick_media_save_path_(const tesseract::views::MediaSaveSpec& spec,
                                        std::function<void(std::string)> cb)
 {
-    const QString path = QFileDialog::getSaveFileName(
-        this, QString::fromStdString(spec.title),
-        QString::fromStdString(spec.suggested_name), save_filter_for(spec));
+    const QString path = QFileDialog::getSaveFileName(this, QString::fromStdString(spec.title),
+                                                      QString::fromStdString(spec.suggested_name),
+                                                      save_filter_for(spec));
     if (!path.isEmpty())
+    {
         cb(path.toStdString());
+    }
 }
 
-void MainWindow::pick_image_file_(
-    std::function<void(std::vector<uint8_t>, std::string)> cb)
+void MainWindow::pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb)
 {
     const QString path = QFileDialog::getOpenFileName(
         this, QString::fromStdString(tk::tr("Select image")), {},
         QString::fromStdString(tk::tr("Images (*.png *.jpg *.jpeg *.gif *.webp)")));
     if (path.isEmpty())
+    {
         return;
+    }
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
+    {
         return;
+    }
     // The file is chosen by the user but read here on the UI thread, so refuse
     // anything too large to be a still worth sending before reading it.
     constexpr qint64 kMaxPickedImageBytes = 64LL * 1024 * 1024;
@@ -1443,28 +1521,31 @@ void MainWindow::pick_image_file_(
         return;
     }
     const std::string mime(sniffed);
-    post_to_ui_([cb = std::move(cb), bytes = std::move(bytes), mime]() mutable
-    {
-        cb(std::move(bytes), mime);
-    });
+    post_to_ui_(
+        [cb = std::move(cb), bytes = std::move(bytes), mime]() mutable
+        {
+            cb(std::move(bytes), mime);
+        });
 }
 
-MainWindow::DecodedImage
-MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                          int max_h)
+MainWindow::DecodedImage MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                                                   int max_h)
 {
     if (tesseract::is_jxl_data(bytes))
+    {
         return tesseract::jxl::decode_image(bytes, max_w, max_h, tk::qt6::make_image_rgba);
+    }
     // Untrusted bytes: refuse over-budget images before any codec allocates (tk/image_sniff.h).
     if (!tk::decode_size_allowed(bytes, tk::bytes_may_be_animated(bytes)))
+    {
         return DecodedImage{};
+    }
     DecodedImage d;
     if (bytes.empty())
     {
         return d;
     }
-    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                  static_cast<int>(bytes.size()));
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()), static_cast<int>(bytes.size()));
     QBuffer buf(&qb);
     buf.open(QIODevice::ReadOnly);
     QImageReader reader(&buf);
@@ -1475,11 +1556,9 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
     // setScaledSize() makes the codec decode directly to the target size without
     // ever allocating the oversized intermediate buffer.
     const QSize native_size = reader.size();
-    if (native_size.isValid() &&
-        (native_size.width() > max_w || native_size.height() > max_h))
+    if (native_size.isValid() && (native_size.width() > max_w || native_size.height() > max_h))
     {
-        reader.setScaledSize(
-            native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
+        reader.setScaledSize(native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
     }
 
     if (reader.supportsAnimation() && reader.imageCount() > 1)
@@ -1496,8 +1575,7 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
             // Safety clamp — no-op when setScaledSize already handled it.
             if (frame.width() > max_w || frame.height() > max_h)
             {
-                frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
-                                     Qt::SmoothTransformation);
+                frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             d.frames.push_back(tk::qt6::make_image(std::move(frame)));
             d.delays_ms.push_back(delay);
@@ -1518,20 +1596,19 @@ MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
         QImageReader still_reader(&still_buf);
         still_reader.setAutoTransform(true);
         const QSize native = still_reader.size();
-        if (native.isValid() &&
-            (native.width() > max_w || native.height() > max_h))
+        if (native.isValid() && (native.width() > max_w || native.height() > max_h))
         {
-            still_reader.setScaledSize(
-                native.scaled(max_w, max_h, Qt::KeepAspectRatio));
+            still_reader.setScaledSize(native.scaled(max_w, max_h, Qt::KeepAspectRatio));
         }
         QImage img = still_reader.read();
         if (img.isNull())
+        {
             return d;
+        }
         // Safety clamp if the format plugin ignored setScaledSize.
         if (img.width() > max_w || img.height() > max_h)
         {
-            img = img.scaled(max_w, max_h, Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
+            img = img.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
         d.still = tk::qt6::make_image(std::move(img));
     }
@@ -1544,27 +1621,28 @@ bool MainWindow::decode_image_streamed_(
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
+    {
         return tesseract::jxl::decode_streamed(bytes, max_w, max_h, tk::qt6::make_image_rgba,
                                                on_first_frame, on_frame);
+    }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     if (bytes.empty())
     {
         return false;
     }
-    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                  static_cast<int>(bytes.size()));
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()), static_cast<int>(bytes.size()));
     QBuffer buf(&qb);
     buf.open(QIODevice::ReadOnly);
     QImageReader reader(&buf);
     reader.setAutoTransform(true);
 
     const QSize native_size = reader.size();
-    if (native_size.isValid() &&
-        (native_size.width() > max_w || native_size.height() > max_h))
+    if (native_size.isValid() && (native_size.width() > max_w || native_size.height() > max_h))
     {
-        reader.setScaledSize(
-            native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
+        reader.setScaledSize(native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
     }
 
     if (!reader.supportsAnimation() || reader.imageCount() <= 1)
@@ -1583,8 +1661,7 @@ bool MainWindow::decode_image_streamed_(
         // Safety clamp — no-op when setScaledSize already handled it.
         if (frame.width() > max_w || frame.height() > max_h)
         {
-            frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
-                                 Qt::SmoothTransformation);
+            frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
         auto img = tk::qt6::make_image(std::move(frame));
         if (index == 0)
@@ -1618,20 +1695,16 @@ class Qt6AnimSession final : public tk::AnimDecodeSession
 {
 public:
     Qt6AnimSession(QByteArray bytes, int max_w, int max_h, int total_frames)
-        : bytes_(std::move(bytes)), max_w_(max_w), max_h_(max_h),
-          total_frames_(total_frames)
+        : bytes_(std::move(bytes)), max_w_(max_w), max_h_(max_h), total_frames_(total_frames)
     {
         open_();
     }
 
     int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) override
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         int produced = 0;
-        for (int attempted = 0; attempted < n && cursor_ < total_frames_;
-             ++attempted)
+        for (int attempted = 0; attempted < n && cursor_ < total_frames_; ++attempted)
         {
             QImage frame;
             if (!reader_->read(&frame))
@@ -1647,8 +1720,7 @@ public:
             int delay = tk::normalize_frame_delay_ms(reader_->nextImageDelay());
             if (frame.width() > max_w_ || frame.height() > max_h_)
             {
-                frame = frame.scaled(max_w_, max_h_, Qt::KeepAspectRatio,
-                                     Qt::SmoothTransformation);
+                frame = frame.scaled(max_w_, max_h_, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             const int idx = cursor_++;
             on_frame(idx, tk::qt6::make_image(std::move(frame)), delay);
@@ -1657,7 +1729,10 @@ public:
         return produced;
     }
 
-    bool exhausted() const override { return cursor_ >= total_frames_; }
+    bool exhausted() const override
+    {
+        return cursor_ >= total_frames_;
+    }
 
     void restart() override
     {
@@ -1678,11 +1753,9 @@ private:
         reader_ = std::make_unique<QImageReader>(buf_.get());
         reader_->setAutoTransform(true);
         const QSize native = reader_->size();
-        if (native.isValid() &&
-            (native.width() > max_w_ || native.height() > max_h_))
+        if (native.isValid() && (native.width() > max_w_ || native.height() > max_h_))
         {
-            reader_->setScaledSize(
-                native.scaled(max_w_, max_h_, Qt::KeepAspectRatio));
+            reader_->setScaledSize(native.scaled(max_w_, max_h_, Qt::KeepAspectRatio));
         }
     }
 
@@ -1699,32 +1772,32 @@ private:
 bool MainWindow::decode_image_streamed_windowed_(
     const std::vector<uint8_t>& bytes, int max_w, int max_h,
     const std::function<void(std::unique_ptr<tk::Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t)>& on_first_frame,
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>& on_first_frame,
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
-        return tesseract::jxl::decode_streamed_windowed(bytes, max_w, max_h, tk::qt6::make_image_rgba,
-                                                        on_first_frame, on_frame);
+    {
+        return tesseract::jxl::decode_streamed_windowed(
+            bytes, max_w, max_h, tk::qt6::make_image_rgba, on_first_frame, on_frame);
+    }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     if (bytes.empty())
     {
         return false;
     }
-    QByteArray qb(reinterpret_cast<const char*>(bytes.data()),
-                  static_cast<int>(bytes.size()));
+    QByteArray qb(reinterpret_cast<const char*>(bytes.data()), static_cast<int>(bytes.size()));
     QBuffer buf(&qb);
     buf.open(QIODevice::ReadOnly);
     QImageReader reader(&buf);
     reader.setAutoTransform(true);
 
     const QSize native_size = reader.size();
-    if (native_size.isValid() &&
-        (native_size.width() > max_w || native_size.height() > max_h))
+    if (native_size.isValid() && (native_size.width() > max_w || native_size.height() > max_h))
     {
-        reader.setScaledSize(
-            native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
+        reader.setScaledSize(native_size.scaled(max_w, max_h, Qt::KeepAspectRatio));
     }
 
     if (!reader.supportsAnimation() || reader.imageCount() <= 1)
@@ -1754,8 +1827,7 @@ bool MainWindow::decode_image_streamed_windowed_(
             int delay = tk::normalize_frame_delay_ms(reader.nextImageDelay());
             if (frame.width() > max_w || frame.height() > max_h)
             {
-                frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio,
-                                     Qt::SmoothTransformation);
+                frame = frame.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             auto img = tk::qt6::make_image(std::move(frame));
             if (index == 0)
@@ -1775,24 +1847,22 @@ bool MainWindow::decode_image_streamed_windowed_(
     // Windowed path: qb is copied into the session (its own retained
     // source-byte copy), so the caller's buf/reader/qb above can be
     // discarded once we're done sniffing the header here.
-    auto session =
-        std::make_shared<Qt6AnimSession>(qb, max_w, max_h, frame_count);
+    auto session = std::make_shared<Qt6AnimSession>(qb, max_w, max_h, frame_count);
     bool got_first = false;
-    session->decode_next_batch(
-        tk::kAnimDecodeInitialBatchFrames,
-        [&](int idx, std::unique_ptr<tk::Image> img, int delay_ms)
-        {
-            if (!got_first)
-            {
-                got_first = true;
-                on_first_frame(std::move(img), delay_ms, session,
-                               static_cast<std::size_t>(frame_count));
-            }
-            else
-            {
-                on_frame(idx, std::move(img), delay_ms);
-            }
-        });
+    session->decode_next_batch(tk::kAnimDecodeInitialBatchFrames,
+                               [&](int idx, std::unique_ptr<tk::Image> img, int delay_ms)
+                               {
+                                   if (!got_first)
+                                   {
+                                       got_first = true;
+                                       on_first_frame(std::move(img), delay_ms, session,
+                                                      static_cast<std::size_t>(frame_count));
+                                   }
+                                   else
+                                   {
+                                       on_frame(idx, std::move(img), delay_ms);
+                                   }
+                               });
     return got_first;
 }
 
@@ -1814,10 +1884,9 @@ void MainWindow::start_anim_tick_()
 // the player and its copy of the file would live until the window closed.
 constexpr int kMediaProbeTimeoutMs = 10000;
 
-void MainWindow::probe_drop_video_(std::uint32_t pending_gen,
-                                   std::vector<std::uint8_t> bytes,
+void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                                    tesseract::views::ComposeBar* target,
-                                     std::shared_ptr<bool> target_alive)
+                                   std::shared_ptr<bool> target_alive)
 {
     auto* player = new QMediaPlayer(this);
     auto* sink = new QVideoSink(player);
@@ -1838,40 +1907,44 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen,
     state->info.pending_gen = pending_gen;
 
     QObject::connect(sink, &QVideoSink::videoFrameChanged, sink,
-        [this, player, state, target, target_alive](const QVideoFrame& frame)
-        {
-            if (state->done || !frame.isValid())
-                return;
-            state->done = true;
-            state->info.duration_ms = static_cast<std::uint64_t>(
-                std::max(qint64(0), player->duration()));
-            player->stop();
-            player->deleteLater();
-            QImage img = frame.toImage();
-            if (!img.isNull())
-            {
-                state->info.video_w = static_cast<std::uint32_t>(img.width());
-                state->info.video_h = static_cast<std::uint32_t>(img.height());
-                state->info.thumb_w = state->info.video_w;
-                state->info.thumb_h = state->info.video_h;
-                QByteArray enc;
-                QBuffer encbuf(&enc);
-                encbuf.open(QIODevice::WriteOnly);
-                img.save(&encbuf, "JPEG", 85);
-                state->info.thumb_bytes.assign(
-                    reinterpret_cast<const std::uint8_t*>(enc.constData()),
-                    reinterpret_cast<const std::uint8_t*>(enc.constData()) +
-                        enc.size());
-            }
-            post_pending_attachment_(state->info, target, target_alive);
-        });
-    QObject::connect(player,
-        qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
+                     [this, player, state, target, target_alive](const QVideoFrame& frame)
+                     {
+                         if (state->done || !frame.isValid())
+                         {
+                             return;
+                         }
+                         state->done = true;
+                         state->info.duration_ms =
+                             static_cast<std::uint64_t>(std::max(qint64(0), player->duration()));
+                         player->stop();
+                         player->deleteLater();
+                         QImage img = frame.toImage();
+                         if (!img.isNull())
+                         {
+                             state->info.video_w = static_cast<std::uint32_t>(img.width());
+                             state->info.video_h = static_cast<std::uint32_t>(img.height());
+                             state->info.thumb_w = state->info.video_w;
+                             state->info.thumb_h = state->info.video_h;
+                             QByteArray enc;
+                             QBuffer encbuf(&enc);
+                             encbuf.open(QIODevice::WriteOnly);
+                             img.save(&encbuf, "JPEG", 85);
+                             state->info.thumb_bytes.assign(
+                                 reinterpret_cast<const std::uint8_t*>(enc.constData()),
+                                 reinterpret_cast<const std::uint8_t*>(enc.constData()) +
+                                     enc.size());
+                         }
+                         post_pending_attachment_(state->info, target, target_alive);
+                     });
+    QObject::connect(
+        player, qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
         player,
-        [this, player, state, target, target_alive](QMediaPlayer::Error,
-                                                     const QString&)
+        [this, player, state, target, target_alive](QMediaPlayer::Error, const QString&)
         {
-            if (state->done) return;
+            if (state->done)
+            {
+                return;
+            }
             state->done = true;
             player->deleteLater();
             post_pending_attachment_(state->info, target, target_alive);
@@ -1879,22 +1952,24 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen,
     auto* timeout = new QTimer(player);
     timeout->setSingleShot(true);
     QObject::connect(timeout, &QTimer::timeout, player,
-        [this, player, state, target, target_alive]()
-        {
-            if (state->done) return;
-            state->done = true;
-            player->stop();
-            player->deleteLater();
-            post_pending_attachment_(state->info, target, target_alive);
-        });
+                     [this, player, state, target, target_alive]()
+                     {
+                         if (state->done)
+                         {
+                             return;
+                         }
+                         state->done = true;
+                         player->stop();
+                         player->deleteLater();
+                         post_pending_attachment_(state->info, target, target_alive);
+                     });
     timeout->start(kMediaProbeTimeoutMs);
     player->play();
 }
 
-void MainWindow::probe_drop_audio_(std::uint32_t pending_gen,
-                                   std::vector<std::uint8_t> bytes,
+void MainWindow::probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                                    tesseract::views::ComposeBar* target,
-                                     std::shared_ptr<bool> target_alive)
+                                   std::shared_ptr<bool> target_alive)
 {
     auto* player = new QMediaPlayer(this);
     auto* buf = new QBuffer(player);
@@ -1906,31 +1981,36 @@ void MainWindow::probe_drop_audio_(std::uint32_t pending_gen,
 
     auto done = std::make_shared<bool>(false);
 
-    QObject::connect(player, &QMediaPlayer::mediaStatusChanged, player,
-        [this, player, pending_gen, done, target,
-         target_alive](QMediaPlayer::MediaStatus status)
+    QObject::connect(
+        player, &QMediaPlayer::mediaStatusChanged, player,
+        [this, player, pending_gen, done, target, target_alive](QMediaPlayer::MediaStatus status)
         {
-            if (*done) return;
-            if (status != QMediaPlayer::LoadedMedia &&
-                status != QMediaPlayer::BufferedMedia &&
-                status != QMediaPlayer::EndOfMedia)
+            if (*done)
+            {
                 return;
+            }
+            if (status != QMediaPlayer::LoadedMedia && status != QMediaPlayer::BufferedMedia &&
+                status != QMediaPlayer::EndOfMedia)
+            {
+                return;
+            }
             *done = true;
             tesseract::views::MediaInfo info;
             info.pending_gen = pending_gen;
-            info.duration_ms = static_cast<std::uint64_t>(
-                std::max(qint64(0), player->duration()));
+            info.duration_ms = static_cast<std::uint64_t>(std::max(qint64(0), player->duration()));
             player->stop();
             player->deleteLater();
             post_pending_attachment_(info, target, target_alive);
         });
-    QObject::connect(player,
-        qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
+    QObject::connect(
+        player, qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
         player,
-        [this, player, pending_gen, done, target,
-         target_alive](QMediaPlayer::Error, const QString&)
+        [this, player, pending_gen, done, target, target_alive](QMediaPlayer::Error, const QString&)
         {
-            if (*done) return;
+            if (*done)
+            {
+                return;
+            }
             *done = true;
             player->deleteLater();
             tesseract::views::MediaInfo info;
@@ -1940,23 +2020,25 @@ void MainWindow::probe_drop_audio_(std::uint32_t pending_gen,
     auto* timeout = new QTimer(player);
     timeout->setSingleShot(true);
     QObject::connect(timeout, &QTimer::timeout, player,
-        [this, player, pending_gen, done, target, target_alive]()
-        {
-            if (*done) return;
-            *done = true;
-            player->stop();
-            player->deleteLater();
-            tesseract::views::MediaInfo info;
-            info.pending_gen = pending_gen;
-            post_pending_attachment_(info, target, target_alive);
-        });
+                     [this, player, pending_gen, done, target, target_alive]()
+                     {
+                         if (*done)
+                         {
+                             return;
+                         }
+                         *done = true;
+                         player->stop();
+                         player->deleteLater();
+                         tesseract::views::MediaInfo info;
+                         info.pending_gen = pending_gen;
+                         post_pending_attachment_(info, target, target_alive);
+                     });
     timeout->start(kMediaProbeTimeoutMs);
     player->play();
 }
 
-void MainWindow::decode_video_first_frame_(
-    std::vector<std::uint8_t> bytes,
-    std::function<void(std::vector<std::uint8_t>)> done)
+void MainWindow::decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                           std::function<void(std::vector<std::uint8_t>)> done)
 {
     // Runs the QMediaPlayer/QVideoSink decode + JPEG-encode against `bytes`
     // and invokes `done(jpeg)` exactly once (empty jpeg on any failure,
@@ -1976,60 +2058,62 @@ void MainWindow::decode_video_first_frame_(
     // Both signal handlers can fire (e.g. an error after a partial
     // frame) — `fired` ensures `done` runs exactly once.
     auto fired = std::make_shared<bool>(false);
-    QObject::connect(
-        sink, &QVideoSink::videoFrameChanged, sink,
-        [done, player, fired](const QVideoFrame& frame) mutable
-        {
-            if (*fired || !frame.isValid())
-                return;
-            *fired = true;
-            player->stop();
-            player->deleteLater();
-            QImage img = frame.toImage();
-            if (img.isNull())
-            {
-                done({});
-                return;
-            }
-            QByteArray enc;
-            QBuffer encbuf(&enc);
-            encbuf.open(QIODevice::WriteOnly);
-            img.save(&encbuf, "JPEG", 85);
-            if (enc.isEmpty())
-            {
-                done({});
-                return;
-            }
-            std::vector<std::uint8_t> v(
-                reinterpret_cast<const std::uint8_t*>(enc.constData()),
-                reinterpret_cast<const std::uint8_t*>(enc.constData()) +
-                    enc.size());
-            done(std::move(v));
-        });
-    QObject::connect(
-        player, &QMediaPlayer::errorOccurred, player,
-        [done, player, fired](QMediaPlayer::Error error,
-                              const QString&) mutable
-        {
-            if (*fired || error == QMediaPlayer::NoError)
-                return;
-            *fired = true;
-            player->stop();
-            player->deleteLater();
-            done({});
-        });
+    QObject::connect(sink, &QVideoSink::videoFrameChanged, sink,
+                     [done, player, fired](const QVideoFrame& frame) mutable
+                     {
+                         if (*fired || !frame.isValid())
+                         {
+                             return;
+                         }
+                         *fired = true;
+                         player->stop();
+                         player->deleteLater();
+                         QImage img = frame.toImage();
+                         if (img.isNull())
+                         {
+                             done({});
+                             return;
+                         }
+                         QByteArray enc;
+                         QBuffer encbuf(&enc);
+                         encbuf.open(QIODevice::WriteOnly);
+                         img.save(&encbuf, "JPEG", 85);
+                         if (enc.isEmpty())
+                         {
+                             done({});
+                             return;
+                         }
+                         std::vector<std::uint8_t> v(
+                             reinterpret_cast<const std::uint8_t*>(enc.constData()),
+                             reinterpret_cast<const std::uint8_t*>(enc.constData()) + enc.size());
+                         done(std::move(v));
+                     });
+    QObject::connect(player, &QMediaPlayer::errorOccurred, player,
+                     [done, player, fired](QMediaPlayer::Error error, const QString&) mutable
+                     {
+                         if (*fired || error == QMediaPlayer::NoError)
+                         {
+                             return;
+                         }
+                         *fired = true;
+                         player->stop();
+                         player->deleteLater();
+                         done({});
+                     });
     auto* timeout = new QTimer(player);
     timeout->setSingleShot(true);
     QObject::connect(timeout, &QTimer::timeout, player,
-        [done, player, fired]() mutable
-        {
-            if (*fired)
-                return;
-            *fired = true;
-            player->stop();
-            player->deleteLater();
-            done({});
-        });
+                     [done, player, fired]() mutable
+                     {
+                         if (*fired)
+                         {
+                             return;
+                         }
+                         *fired = true;
+                         player->stop();
+                         player->deleteLater();
+                         done({});
+                     });
     timeout->start(kMediaProbeTimeoutMs);
     player->play();
 }
@@ -2055,19 +2139,25 @@ void MainWindow::onInflightTick_()
 void MainWindow::start_inflight_tick_()
 {
     if (tk_inflight_timer_ && !tk_inflight_timer_->isActive())
+    {
         tk_inflight_timer_->start();
+    }
 }
 
 void MainWindow::stop_inflight_tick_()
 {
     if (tk_inflight_timer_)
+    {
         tk_inflight_timer_->stop();
+    }
 }
 
 void MainWindow::refreshLowPowerIcon_()
 {
     if (!lowPowerLabel_)
+    {
         return;
+    }
     const qreal dpr = devicePixelRatioF();
     const int phys = std::max(1, static_cast<int>(std::lround(14.0 * dpr)));
     auto rgba = tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys,
@@ -2086,7 +2176,9 @@ void MainWindow::refreshLowPowerIcon_()
 void MainWindow::on_low_power_mode_ui_(bool active)
 {
     if (lowPowerLabel_)
+    {
         lowPowerLabel_->setVisible(active);
+    }
 }
 
 void MainWindow::repaint_inflight_spinner_()
@@ -2106,8 +2198,7 @@ void MainWindow::update_main_anim_regions_()
     }
 }
 
-void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
-                                   std::vector<uint8_t> rgba)
+void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h, std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key))
     {
@@ -2123,7 +2214,6 @@ void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
 }
 
 // ---------------------------------------------------------------------------
-
 
 void MainWindow::show_sync_status_text_(const std::string& text)
 {
@@ -2154,11 +2244,26 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
     menu->setAttribute(Qt::WA_DeleteOnClose);
     menu->setStyleSheet(tk::qt6::build_menu_qss(current_theme_));
     const auto items = build_user_menu_items_(
-        [this] { openSettings(); },
-        [this] { begin_add_account(); },
-        [this] { start_qr_grant_overlay(); },
-        [this] { logout_active_account_ui_(); },
-        [this] { do_quit_(); },
+        [this]
+        {
+            openSettings();
+        },
+        [this]
+        {
+            begin_add_account();
+        },
+        [this]
+        {
+            start_qr_grant_overlay();
+        },
+        [this]
+        {
+            logout_active_account_ui_();
+        },
+        [this]
+        {
+            do_quit_();
+        },
         verify_session_menu_callback_());
     for (const auto& item : items)
     {
@@ -2169,7 +2274,10 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
         }
         auto* act = menu->addAction(QString::fromStdString(item.label));
         QObject::connect(act, &QAction::triggered, this,
-                         [cb = item.callback] { cb(); });
+                         [cb = item.callback]
+                         {
+                             cb();
+                         });
     }
     menu->popup(global_pos);
 }
@@ -2189,9 +2297,13 @@ void MainWindow::show_login_page_ui_()
 bool MainWindow::open_login_url_ui_(const std::string& url)
 {
     if (!tesseract::Client::is_launchable_url(url))
+    {
         return true; // nothing to open, nothing to report
+    }
     if (QDesktopServices::openUrl(QUrl(QString::fromStdString(url))))
+    {
         return true;
+    }
     return tesseract::Client::open_in_browser(url);
 }
 
@@ -2205,7 +2317,9 @@ std::unique_ptr<tk::SurfaceBase> MainWindow::create_settings_surface_ui_()
 void MainWindow::grab_main_surface_focus_()
 {
     if (mainAppSurface_)
+    {
         mainAppSurface_->setFocus();
+    }
 }
 
 tk::SurfaceBase* MainWindow::main_surface_()
@@ -2216,7 +2330,9 @@ tk::SurfaceBase* MainWindow::main_surface_()
 void MainWindow::openSettings()
 {
     if (!prepare_settings_view_())
+    {
         return;
+    }
 
     contentStack_->setCurrentWidget(settings_native_());
     set_app_settings_open_(true);
@@ -2230,7 +2346,9 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     // QtPopupSurfaceHandle::on_dismiss_requested, wired to each controller's
     // hide() at construction) — no block needed here anymore.
     if (obj == statusBar() && event->type() == QEvent::MouseButtonRelease)
+    {
         trigger_persistent_status_click_();
+    }
     return QMainWindow::eventFilter(obj, event);
 }
 
@@ -2239,19 +2357,16 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 // ---------------------------------------------------------------------------
 
 void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
-                                       std::string description,
-                                       bool soft_logout)
+                                       std::string description, bool soft_logout)
 {
     // Agnostic state machine lives in ShellBase; this shell only supplies the
     // native restart timer (post_to_ui_after_), status bar, user strip
     // (refresh_user_strip_).
-    handle_sync_error_impl_(std::move(context), std::move(user_id),
-                            std::move(description), soft_logout);
+    handle_sync_error_impl_(std::move(context), std::move(user_id), std::move(description),
+                            soft_logout);
 }
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
-
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2268,13 +2383,15 @@ bool MainWindow::tray_available_() const
 
 void MainWindow::on_inflight_ui_()
 {
-    const auto c  = inflight_dot_color_();
+    const auto c = inflight_dot_color_();
     inflightDot_->update_state(inflight_total_(), c);
     const QString tip = QString::fromStdString(inflight_tooltip_text_());
     inflightDot_->setToolTip(tip);
     // Force-refresh the tooltip window if it is currently shown over this widget.
     if (inflightDot_->underMouse())
+    {
         QToolTip::showText(QCursor::pos(), tip, inflightDot_);
+    }
 }
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
@@ -2304,7 +2421,9 @@ void MainWindow::on_show_status_message_ui_(const std::string& msg)
         statusLinkLabel_->setOpenExternalLinks(false);
         connect(statusLinkLabel_, &QLabel::linkActivated, this,
                 [](const QString& url)
-                { tesseract::Client::open_in_browser(url.toStdString()); });
+                {
+                    tesseract::Client::open_in_browser(url.toStdString());
+                });
         statusBar()->addWidget(statusLinkLabel_, 1);
     }
     QString html;
@@ -2318,8 +2437,7 @@ void MainWindow::on_show_status_message_ui_(const std::string& msg)
         else
         {
             html += QStringLiteral("<a href=\"%1\">%2</a>")
-                        .arg(QString::fromStdString(seg.url).toHtmlEscaped(),
-                             text);
+                        .arg(QString::fromStdString(seg.url).toHtmlEscaped(), text);
         }
     }
     statusBar()->clearMessage();
@@ -2349,8 +2467,19 @@ void MainWindow::start_platform_services_ui_()
     if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<LinuxQtTrayIcon>(
-            [this] { tray_activate_(); }, [this] { tray_toggle_(); },
-            [this] { do_quit_(); }, this);
+            [this]
+            {
+                tray_activate_();
+            },
+            [this]
+            {
+                tray_toggle_();
+            },
+            [this]
+            {
+                do_quit_();
+            },
+            this);
         if (tray_->is_available())
         {
             qApp->setQuitOnLastWindowClosed(false);
@@ -2377,14 +2506,12 @@ tk::ThemeMode MainWindow::os_color_scheme_() const
     const auto qt_scheme = QGuiApplication::styleHints()->colorScheme();
     if (qt_scheme != Qt::ColorScheme::Unknown)
     {
-        return qt_scheme == Qt::ColorScheme::Dark ? tk::ThemeMode::Dark
-                                                  : tk::ThemeMode::Light;
+        return qt_scheme == Qt::ColorScheme::Dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
     }
 #endif
     // Qt could not determine the OS color scheme (common on GNOME without
     // QGnomePlatform / Qt < 6.5). Fall back to the XDG portal value.
-    return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark
-                                     : tk::ThemeMode::Light;
+    return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
 }
 
 std::optional<tk::Color> MainWindow::os_accent_color_() const
@@ -2399,8 +2526,8 @@ std::optional<tk::Color> MainWindow::os_accent_color_() const
     // current style's generic highlight otherwise.
     const QColor hl = qApp->palette().color(QPalette::Active, QPalette::Highlight);
     return tk::Color::rgba(static_cast<std::uint8_t>(hl.red()),
-                            static_cast<std::uint8_t>(hl.green()),
-                            static_cast<std::uint8_t>(hl.blue()), 255);
+                           static_cast<std::uint8_t>(hl.green()),
+                           static_cast<std::uint8_t>(hl.blue()), 255);
 }
 
 namespace
@@ -2448,8 +2575,8 @@ std::optional<tk::Color> parse_portal_accent_(const QVariant& v)
         return std::nullopt;
     }
     return tk::Color::rgba(static_cast<std::uint8_t>(qRound(t.r * 255.0)),
-                            static_cast<std::uint8_t>(qRound(t.g * 255.0)),
-                            static_cast<std::uint8_t>(qRound(t.b * 255.0)), 255);
+                           static_cast<std::uint8_t>(qRound(t.g * 255.0)),
+                           static_cast<std::uint8_t>(qRound(t.b * 255.0)), 255);
 }
 } // namespace
 
@@ -2460,17 +2587,15 @@ std::optional<tk::Color> parse_portal_accent_(const QVariant& v)
 // ReadOne (portal interface v2+), not the deprecated Read: Read double-wraps its
 // return value in an extra D-Bus variant layer, which makes QVariant::toInt()
 // silently yield 0 instead of the real setting.
-void MainWindow::read_portal_setting_async_(
-    const QString& key, std::function<void(const QVariant&)> apply)
+void MainWindow::read_portal_setting_async_(const QString& key,
+                                            std::function<void(const QVariant&)> apply)
 {
     QDBusMessage msg = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.portal.Desktop"),
         QStringLiteral("/org/freedesktop/portal/desktop"),
-        QStringLiteral("org.freedesktop.portal.Settings"),
-        QStringLiteral("ReadOne"));
+        QStringLiteral("org.freedesktop.portal.Settings"), QStringLiteral("ReadOne"));
     msg << QStringLiteral("org.freedesktop.appearance") << key;
-    auto* watcher = new QDBusPendingCallWatcher(
-        QDBusConnection::sessionBus().asyncCall(msg), this);
+    auto* watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this,
             [watcher, apply = std::move(apply)]
             {
@@ -2487,14 +2612,18 @@ void MainWindow::read_portal_accent_color_()
 {
     read_portal_setting_async_(QStringLiteral("accent-color"),
                                [this](const QVariant& v)
-                               { apply_portal_accent_(v); });
+                               {
+                                   apply_portal_accent_(v);
+                               });
 }
 
 void MainWindow::read_portal_color_scheme_()
 {
     read_portal_setting_async_(QStringLiteral("color-scheme"),
                                [this](const QVariant& v)
-                               { apply_portal_color_scheme_(v.toInt()); });
+                               {
+                                   apply_portal_color_scheme_(v.toInt());
+                               });
 }
 
 // Applies the new OS theme when it differs from the one on screen and the user
@@ -2524,8 +2653,7 @@ void MainWindow::apply_portal_accent_(const QVariant& value)
     on_system_accent_changed_();
 }
 
-void MainWindow::on_portal_setting_changed_(const QString& ns,
-                                            const QString& key,
+void MainWindow::on_portal_setting_changed_(const QString& ns, const QString& key,
                                             const QDBusVariant& value)
 {
     if (ns != QLatin1String("org.freedesktop.appearance"))
@@ -2548,8 +2676,7 @@ void MainWindow::on_portal_setting_changed_(const QString& ns,
 
 // ── Slash-command popup ─────────────────────────────────────────────────────
 
-std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
-    int w, int h, const std::uint8_t* bgra)
+std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(int w, int h, const std::uint8_t* bgra)
 {
     QImage qi(bgra, w, h, QImage::Format_ARGB32);
     return tk::qt6::make_image(qi.copy());
@@ -2571,11 +2698,10 @@ void MainWindow::after_theme_applied_(const tk::Theme& t)
     {
         const auto& p = t.palette;
         QPalette pal = statusBar()->palette();
-        pal.setColor(QPalette::Window, QColor(p.chrome_bg.r, p.chrome_bg.g,
-                                              p.chrome_bg.b, p.chrome_bg.a));
-        pal.setColor(QPalette::WindowText,
-                     QColor(p.text_secondary.r, p.text_secondary.g,
-                            p.text_secondary.b, p.text_secondary.a));
+        pal.setColor(QPalette::Window,
+                     QColor(p.chrome_bg.r, p.chrome_bg.g, p.chrome_bg.b, p.chrome_bg.a));
+        pal.setColor(QPalette::WindowText, QColor(p.text_secondary.r, p.text_secondary.g,
+                                                  p.text_secondary.b, p.text_secondary.a));
         // Rich-text status links (statusLinkLabel_) take their colour from
         // QPalette::Link, which otherwise stays Qt's dark blue.
         const QColor link(p.accent.r, p.accent.g, p.accent.b, p.accent.a);
@@ -2591,13 +2717,16 @@ void MainWindow::after_theme_applied_(const tk::Theme& t)
     }
 }
 
-void MainWindow::for_each_shell_surface_(
-    const std::function<void(tk::SurfaceBase&)>& fn)
+void MainWindow::for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn)
 {
     if (brandingSurface_)
+    {
         fn(*brandingSurface_);
+    }
     if (mainAppSurface_)
+    {
         fn(*mainAppSurface_);
+    }
 }
 
 void MainWindow::raise_and_activate_()
@@ -2609,7 +2738,9 @@ void MainWindow::raise_and_activate_()
 void MainWindow::set_window_fullscreen_(bool on)
 {
     if (on == isFullScreen())
+    {
         return;
+    }
     // Drop the status bar too — a lone strip along the bottom looks wrong
     // behind full-screen media.
     statusBar()->setVisible(!on);
@@ -2631,7 +2762,9 @@ void MainWindow::set_window_fullscreen_(bool on)
 void MainWindow::rebuild_tray_()
 {
     if (!tray_ || !tray_->is_available())
+    {
         return;
+    }
 
     auto items = build_tray_items_();
     tray_->rebuild_menu(std::move(items));
@@ -2642,8 +2775,7 @@ bool MainWindow::is_ctrl_held_() const
     return QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier);
 }
 
-void MainWindow::spawn_main_window_(
-    std::shared_ptr<tesseract::AccountSession> account)
+void MainWindow::spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account)
 {
     auto* win = new qt6::MainWindow(account_manager_);
     win->setAttribute(Qt::WA_DeleteOnClose);

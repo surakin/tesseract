@@ -41,7 +41,10 @@ class CallOverlayWidget : public tk::Widget
 {
 public:
     // The duration layout is rebuilt only when its string changes.
-    void on_fonts_changed() override { cached_duration_str_.clear(); }
+    void on_fonts_changed() override
+    {
+        cached_duration_str_.clear();
+    }
 
     enum class Mode
     {
@@ -55,16 +58,16 @@ public:
     // before teardown and restore() after the new widget is mounted.
     struct OverlayState
     {
-        double      elapsed_seconds   = 0.0;
-        bool        show_video_button = true;
-        bool        audio_muted       = false;
-        bool        video_muted       = false;
-        bool        screen_sharing    = false;
+        double elapsed_seconds = 0.0;
+        bool show_video_button = true;
+        bool audio_muted = false;
+        bool video_muted = false;
+        bool screen_sharing = false;
         std::string local_user_id;
     };
 
     OverlayState snapshot() const;
-    void         restore(const OverlayState& s);
+    void restore(const OverlayState& s);
 
     CallOverlayWidget();
     ~CallOverlayWidget() override;
@@ -78,17 +81,15 @@ public:
     // push_video_frame() can stay repaint-only (no layout, full 30fps).
     // Falls back to repaint_requester_ when not set.
     void set_relayout_requester(std::function<void()> fn);
-    void set_avatar_provider(
-        std::function<const tk::Image*(const std::string& mxc_url)> fn);
-    void set_display_name_provider(
-        std::function<std::string(const std::string& user_id)> fn);
+    void set_avatar_provider(std::function<const tk::Image*(const std::string& mxc_url)> fn);
+    void set_display_name_provider(std::function<std::string(const std::string& user_id)> fn);
 
     // Start/stop the elapsed-time counter. Pass initial_seconds to resume a
     // previously-running timer (e.g. after a mode switch). Using double allows
     // mode switches to preserve sub-second precision: elapsed_seconds() returns
     // the true wall-clock offset, not just the integer tick count.
-    void   start_timer(double initial_seconds = 0.0);
-    void   stop_timer();
+    void start_timer(double initial_seconds = 0.0);
+    void stop_timer();
     double elapsed_seconds() const;
 
     // Diff the incoming participant list against `tiles_` and add/remove/update
@@ -97,14 +98,12 @@ public:
 
     // Deliver a pre-converted premultiplied BGRA video frame for participant_id.
     // Called on the UI thread; bgra is forwarded zero-copy to the matching tile.
-    void on_video_frame(const std::string& participant_id,
-                        std::uint32_t w, std::uint32_t h,
+    void on_video_frame(const std::string& participant_id, std::uint32_t w, std::uint32_t h,
                         std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
     // Deliver a screen-share frame. tile_id must include the ":screen" suffix
     // (appended by ShellBase::handle_rtc_screen_frame_ui_ before calling here).
-    void on_screen_frame(const std::string& tile_id,
-                         std::uint32_t w, std::uint32_t h,
+    void on_screen_frame(const std::string& tile_id, std::uint32_t w, std::uint32_t h,
                          std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
     // Reflect local screen-sharing state on the share button icon.
@@ -124,12 +123,18 @@ public:
     void hang_up();
 
     // Set the local user's Matrix user_id so the self tile can be mirrored.
-    void set_local_user_id(std::string id) { local_user_id_ = std::move(id); }
+    void set_local_user_id(std::string id)
+    {
+        local_user_id_ = std::move(id);
+    }
 
     // Switch to a different display mode. The parent shell must re-arrange
     // after this call.
     void set_mode(Mode m);
-    Mode mode() const { return mode_; }
+    Mode mode() const
+    {
+        return mode_;
+    }
 
     // Whether the call's room is the one currently being viewed. Docked/
     // DockedExpanded only make sense while true; when false, the expand
@@ -137,7 +142,10 @@ public:
     // Floating. Defaults to true so callers that don't track room navigation
     // (audio-only test harnesses, etc.) see unchanged behavior.
     void set_room_active(bool active);
-    bool room_active() const { return room_active_; }
+    bool room_active() const
+    {
+        return room_active_;
+    }
 
     // Test-only accessors: exercise the pip/expand buttons' click handlers
     // and visibility without needing real pointer-event dispatch.
@@ -145,34 +153,37 @@ public:
     void click_pip_button_for_test();
 
     // Floating mode position (top-left corner, parent-local coordinates).
-    void      set_float_position(float x, float y);
-    tk::Point float_position() const { return {float_x_, float_y_}; }
+    void set_float_position(float x, float y);
+    tk::Point float_position() const
+    {
+        return {float_x_, float_y_};
+    }
 
     // Callbacks fired by control buttons and user interaction.
-    std::function<void()>             on_hang_up;
-    std::function<void(bool)>         on_toggle_audio;
-    std::function<void(bool)>         on_toggle_video;
-    std::function<void(bool)>         on_toggle_screen_share;
-    std::function<void()>             on_controls_changed;
-    std::function<void(Mode)>         on_mode_change_requested;
+    std::function<void()> on_hang_up;
+    std::function<void(bool)> on_toggle_audio;
+    std::function<void(bool)> on_toggle_video;
+    std::function<void(bool)> on_toggle_screen_share;
+    std::function<void()> on_controls_changed;
+    std::function<void(Mode)> on_mode_change_requested;
     std::function<void(float, float)> on_float_position_changed;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_drag(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool cancelled) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_drag(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool cancelled) override;
 
 private:
     void schedule_tick_();
 
     // ── Providers ─────────────────────────────────────────────────────────────
-    PostDelayedFn                                        post_delayed_;
-    std::function<void()>                                repaint_requester_;
-    std::function<void()>                                relayout_requester_;
+    PostDelayedFn post_delayed_;
+    std::function<void()> repaint_requester_;
+    std::function<void()> relayout_requester_;
     std::function<const tk::Image*(const std::string&)> avatar_provider_;
-    std::function<std::string(const std::string&)>      display_name_provider_;
+    std::function<std::string(const std::string&)> display_name_provider_;
     // participant_id → user_id from the last update_participants(), for the
     // join / leave announcements.
     std::unordered_map<std::string, std::string> announced_participants_;
@@ -181,52 +192,52 @@ private:
     void announce_participant_changes_(const std::vector<tesseract::RtcParticipantInfo>& ps);
 
     // ── Timer ─────────────────────────────────────────────────────────────────
-    std::uint64_t         timer_gen_      = 0;
-    bool                  timer_running_  = false;
+    std::uint64_t timer_gen_ = 0;
+    bool timer_running_ = false;
     // Wall-clock start point + initial offset: elapsed_seconds() = elapsed_offset_
     // + seconds since start_time_. Storing as double lets mode switches preserve
     // sub-second precision when snapshotting mid-tick.
-    double                elapsed_offset_ = 0.0;
+    double elapsed_offset_ = 0.0;
     std::chrono::steady_clock::time_point start_time_{};
 
     // ── Participant tiles ──────────────────────────────────────────────────────
     // Borrowed pointers into children_; ownership is in the widget tree.
     // tile_ids_ and tile_states_ are parallel to tiles_ and track participant
     // identity and non-video metadata (needed by on_video_frame to rebuild state).
-    std::vector<ParticipantTile*>       tiles_;
-    std::vector<std::string>            tile_ids_;
+    std::vector<ParticipantTile*> tiles_;
+    std::vector<std::string> tile_ids_;
     std::vector<ParticipantTile::State> tile_states_;
-    std::string                         pinned_participant_;
-    std::string                         local_user_id_;
+    std::string pinned_participant_;
+    std::string local_user_id_;
 
     // ── Mode / float position ─────────────────────────────────────────────────
-    Mode  mode_    = Mode::Docked;
+    Mode mode_ = Mode::Docked;
     float float_x_ = 40.0f;
     float float_y_ = 40.0f;
-    bool  room_active_ = true; // see set_room_active()
+    bool room_active_ = true; // see set_room_active()
 
     // ── Drag state (Floating mode only) ───────────────────────────────────────
-    bool      dragging_       = false;
+    bool dragging_ = false;
     tk::Point drag_start_pos_ = {};
-    float     drag_start_fx_  = 0.0f;
-    float     drag_start_fy_  = 0.0f;
+    float drag_start_fx_ = 0.0f;
+    float drag_start_fy_ = 0.0f;
 
     // ── Local mute / share state ──────────────────────────────────────────────
-    bool audio_muted_      = false;
-    bool video_muted_      = false;
-    bool show_video_btn_   = true;
-    bool screen_sharing_   = false;
+    bool audio_muted_ = false;
+    bool video_muted_ = false;
+    bool show_video_btn_ = true;
+    bool screen_sharing_ = false;
 
     // ── Control buttons (always present, managed by the widget tree) ──────────
-    tk::Button* mute_btn_   = nullptr;
-    tk::Button* video_btn_  = nullptr;
+    tk::Button* mute_btn_ = nullptr;
+    tk::Button* video_btn_ = nullptr;
     tk::Button* screen_btn_ = nullptr; // Share screen toggle
     tk::Button* hangup_btn_ = nullptr;
     tk::Button* expand_btn_ = nullptr; // Docked ↔ DockedExpanded toggle
-    tk::Button* pip_btn_    = nullptr; // Popout (picture-in-picture) window
+    tk::Button* pip_btn_ = nullptr;    // Popout (picture-in-picture) window
 
     // ── Duration label cache ──────────────────────────────────────────────────
-    std::string                     cached_duration_str_;
+    std::string cached_duration_str_;
     tk::CachedTextLayout cached_duration_layout_;
 
     // ── Cached layout rects ───────────────────────────────────────────────────

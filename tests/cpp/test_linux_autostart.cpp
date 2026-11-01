@@ -34,9 +34,13 @@ struct ScopedConfigHome
     ~ScopedConfigHome()
     {
         if (had_old_)
+        {
             ::setenv("XDG_CONFIG_HOME", old_.c_str(), 1);
+        }
         else
+        {
             ::unsetenv("XDG_CONFIG_HOME");
+        }
         std::error_code ec;
         fs::remove_all(root_, ec);
     }
@@ -48,14 +52,12 @@ struct ScopedConfigHome
 
 } // namespace
 
-TEST_CASE("LinuxAutostart writes and removes the .desktop file",
-          "[linux_autostart]")
+TEST_CASE("LinuxAutostart writes and removes the .desktop file", "[linux_autostart]")
 {
     ScopedConfigHome home;
     LinuxAutostart autostart("tesseract-matrix-test");
     const fs::path file = tesseract::config_dir().parent_path() / "autostart" /
-                          ("tesseract-matrix-test" + tesseract::profile_suffix() +
-                           ".desktop");
+                          ("tesseract-matrix-test" + tesseract::profile_suffix() + ".desktop");
 
     CHECK_FALSE(autostart.is_enabled());
 

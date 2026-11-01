@@ -91,8 +91,7 @@ TEST_CASE("sessionless Client: permission and capability queries are false",
     CHECK_FALSE(c.can_set_room_image_packs(kRoom));
 }
 
-TEST_CASE("sessionless Client: list and value queries come back empty",
-          "[client][sessionless]")
+TEST_CASE("sessionless Client: list and value queries come back empty", "[client][sessionless]")
 {
     Client c;
     CHECK(c.get_room_members(kRoom).empty());
@@ -109,8 +108,7 @@ TEST_CASE("sessionless Client: list and value queries come back empty",
     CHECK_FALSE(c.paginate_room_threads(kRoom).ok);
 }
 
-TEST_CASE("sessionless Client: fire-and-forget calls are harmless no-ops",
-          "[client][sessionless]")
+TEST_CASE("sessionless Client: fire-and-forget calls are harmless no-ops", "[client][sessionless]")
 {
     Client c;
     CHECK_NOTHROW(c.request_stop());
@@ -179,8 +177,7 @@ TEST_CASE("sessionless Client: absent prefs load as an empty JSON document",
     CHECK((json.empty() || json.front() == '{'));
 }
 
-TEST_CASE("sessionless Client: settings-style notification toggles fail",
-          "[client][sessionless]")
+TEST_CASE("sessionless Client: settings-style notification toggles fail", "[client][sessionless]")
 {
     Client c;
     CHECK_FALSE(c.set_mentions_enabled(true));

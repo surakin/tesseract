@@ -55,12 +55,10 @@ public:
         // switches itself).
         std::function<void(const std::string&)> on_text_changed;
         // Add commands only the main window has (/selfie) to the slash hooks.
-        std::function<void(views::SlashCommandController::Hooks&)>
-            extend_slash_hooks;
+        std::function<void(views::SlashCommandController::Hooks&)> extend_slash_hooks;
         // Image lookup for custom-emoticon thumbnails that also fetches on a
         // miss; the default only peeks the shell's cache.
-        std::function<const tk::Image*(const std::string&)>
-            shortcode_image_provider;
+        std::function<const tk::Image*(const std::string&)> shortcode_image_provider;
     };
 
     // Takes over text_area's on_changed / on_submit / popup-nav callbacks.
@@ -93,10 +91,8 @@ public:
 
     // Async GIF search results; only the controller that issued the request
     // matches, so every pop-out can forward every result.
-    void on_gif_results(std::uint64_t request_id,
-                        std::vector<GifResult> results);
-    void on_gif_search_failed(std::uint64_t request_id,
-                              const std::string& message);
+    void on_gif_results(std::uint64_t request_id, std::vector<GifResult> results);
+    void on_gif_search_failed(std::uint64_t request_id, const std::string& message);
 
     // Re-theme the popup surfaces (all four popup surfaces).
     void apply_theme(const tk::Theme& theme);
@@ -111,7 +107,7 @@ private:
     RoomPane* pane_;
     views::RoomView* room_view_;
     Options options_;
-    bool typing_active_ = false; // typing-notice debounce
+    bool typing_active_ = false;        // typing-notice debounce
     bool anim_partial_repaint_ = false; // the strip has the shared anim cache
 
     std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;

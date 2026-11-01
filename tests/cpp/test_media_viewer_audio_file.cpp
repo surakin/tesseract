@@ -95,7 +95,10 @@ struct AudioFx
         auto p = std::make_unique<FakeAudioPlayer>();
         fake = p.get();
         overlay.set_audio_player(std::move(p));
-        overlay.on_playback_started = [this] { ++started; };
+        overlay.on_playback_started = [this]
+        {
+            ++started;
+        };
     }
 };
 
@@ -249,7 +252,10 @@ TEST_CASE("without an audio backend the page reports it and Save still works",
     AfStage st;
     MediaViewerOverlay overlay;
     std::vector<MediaViewerItem> saved;
-    overlay.on_save = [&](const MediaViewerItem& i) { saved.push_back(i); };
+    overlay.on_save = [&](const MediaViewerItem& i)
+    {
+        saved.push_back(i);
+    };
 
     overlay.open(audio_item());
     st.run(overlay);
@@ -274,7 +280,10 @@ TEST_CASE("on_playback_started fires when a video starts playing", "[mediaviewer
     auto* fake = player.get();
     overlay.set_video_player(std::move(player));
     int started = 0;
-    overlay.on_playback_started = [&] { ++started; };
+    overlay.on_playback_started = [&]
+    {
+        ++started;
+    };
 
     overlay.open(video_item("{}", "", "video/mp4", 5000, 640, 360));
     st.run(overlay);
@@ -300,7 +309,10 @@ TEST_CASE("file page shows a labelled Save button and no copy button", "[mediavi
     AfStage st;
     MediaViewerOverlay overlay;
     std::vector<MediaViewerItem> saved;
-    overlay.on_save = [&](const MediaViewerItem& i) { saved.push_back(i); };
+    overlay.on_save = [&](const MediaViewerItem& i)
+    {
+        saved.push_back(i);
+    };
 
     overlay.open(file_item());
     st.run(overlay);
@@ -437,8 +449,12 @@ TEST_CASE("audio page: pressing the scrub slider seeks the player", "[mediaviewe
 
     std::vector<Slider*> sliders;
     for (const auto& c : f.overlay.children())
+    {
         if (auto* s = dynamic_cast<Slider*>(c.get()); s && s->visible())
+        {
             sliders.push_back(s); // the video page owns a hidden one too
+        }
+    }
     REQUIRE(sliders.size() == 1);
 
     const Rect r = sliders[0]->bounds();

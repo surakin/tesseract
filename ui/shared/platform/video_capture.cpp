@@ -17,7 +17,9 @@ std::function<std::unique_ptr<VideoCapture>()>& test_factory()
 std::unique_ptr<VideoCapture> VideoCapture::create()
 {
     if (test_factory())
+    {
         return test_factory()();
+    }
 #if defined(__linux__)
     return make_video_capture_gst();
 #elif defined(__APPLE__)
@@ -29,8 +31,7 @@ std::unique_ptr<VideoCapture> VideoCapture::create()
 #endif
 }
 
-void VideoCapture::set_factory_for_testing(
-    std::function<std::unique_ptr<VideoCapture>()> factory)
+void VideoCapture::set_factory_for_testing(std::function<std::unique_ptr<VideoCapture>()> factory)
 {
     test_factory() = std::move(factory);
 }
@@ -44,17 +45,23 @@ void VideoCapture::set_error_callback(ErrorCallback cb)
 void VideoCapture::report_error_(Error e)
 {
     if (e == Error::None)
+    {
         return;
+    }
     Error expected = Error::None;
     if (!error_.compare_exchange_strong(expected, e, std::memory_order_acq_rel))
+    {
         return;
+    }
     ErrorCallback cb;
     {
         std::lock_guard<std::mutex> lk(error_cb_mu_);
         cb = error_cb_;
     }
     if (cb)
+    {
         cb(e);
+    }
 }
 
 std::string VideoCapture::describe(Error e)

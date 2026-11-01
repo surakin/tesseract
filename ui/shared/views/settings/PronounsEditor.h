@@ -59,7 +59,10 @@ public:
     void set_editable(bool editable);
     void set_busy(bool busy);
     void set_error(std::string error);
-    const std::string& error() const { return error_; }
+    const std::string& error() const
+    {
+        return error_;
+    }
 
     // Shadows Widget::set_visible (not virtual) so hiding this widget always
     // also hides every row's native TextField/LanguagePicker overlays —
@@ -92,20 +95,20 @@ public:
     void flush();
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    void     paint_after_children(tk::PaintCtx&) override;
-    void     on_theme_changed(const tk::Theme& t) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
+    void on_theme_changed(const tk::Theme& t) override;
 
 private:
     struct Row
     {
-        LanguagePicker* lang    = nullptr;
-        tk::TextField*  summary = nullptr;
-        tk::Button*     remove  = nullptr;
+        LanguagePicker* lang = nullptr;
+        tk::TextField* summary = nullptr;
+        tk::Button* remove = nullptr;
     };
 
-    void refresh_slots_();     // pushes entries_ into the fixed row widgets
+    void refresh_slots_(); // pushes entries_ into the fixed row widgets
     void add_row_();
     void remove_row_(std::size_t index);
     void notify_changed_();
@@ -124,7 +127,7 @@ private:
     tk::Button* add_button_ = nullptr;
 
     bool editable_ = false;
-    bool busy_     = false;
+    bool busy_ = false;
     std::string error_;
     mutable tk::CachedTextLayout error_layout_;
 
@@ -136,23 +139,23 @@ private:
     // position.
     tk::IconCache remove_icon_;
 
-    static constexpr int   kMaxRows    = 8;
-    static constexpr float kRowH       = 32.0f;
+    static constexpr int kMaxRows = 8;
+    static constexpr float kRowH = 32.0f;
     // Wide enough to clear two rows' card padding (kCardPadY on each side)
     // plus a visible gap between adjacent cards — see paint()'s per-row
     // fill_rounded_rect card background.
-    static constexpr float kRowGap     = 20.0f;
-    static constexpr float kLangW      = 96.0f;
-    static constexpr float kSummaryW   = 240.0f; // capped, not stretched — see arrange()
-    static constexpr float kRemoveW    = 28.0f;
-    static constexpr float kFieldGap   = 6.0f;
+    static constexpr float kRowGap = 20.0f;
+    static constexpr float kLangW = 96.0f;
+    static constexpr float kSummaryW = 240.0f; // capped, not stretched — see arrange()
+    static constexpr float kRemoveW = 28.0f;
+    static constexpr float kFieldGap = 6.0f;
     static constexpr float kAddButtonH = 28.0f;
-    static constexpr float kErrorH     = 14.0f;
-    static constexpr float kErrorGap   = 4.0f;
+    static constexpr float kErrorH = 14.0f;
+    static constexpr float kErrorGap = 4.0f;
     // Padding between a row's actual controls and its card background's
     // edge (see paint()).
-    static constexpr float kCardPadX   = 10.0f;
-    static constexpr float kCardPadY   = 6.0f;
+    static constexpr float kCardPadX = 10.0f;
+    static constexpr float kCardPadY = 6.0f;
 };
 
 } // namespace tesseract::views

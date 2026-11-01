@@ -67,11 +67,10 @@ public:
     // `filename` (empty if unavailable) seeds the new tile's shortcode via
     // suggest_pack_shortcode_from_filename, de-duped against the other
     // staged images.
-    void add_dropped_image(tk::Point world, std::vector<std::uint8_t> bytes,
-                           std::string mime, std::string filename = {});
+    void add_dropped_image(tk::Point world, std::vector<std::uint8_t> bytes, std::string mime,
+                           std::string filename = {});
 
-    std::function<void(std::uint64_t local_id,
-                       const std::vector<std::uint8_t>& bytes,
+    std::function<void(std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                        const std::string& mime)>
         on_pending_image_added;
 
@@ -79,23 +78,30 @@ public:
     // shortcode_field_ below (a self-owned tk::TextField) — mirrors
     // ImagePackEditorView's shortcode_edit_rect/set_editing_shortcode_text/
     // commit_editing_shortcode, which own their own fields the same way.
-    tk::Rect    shortcode_edit_rect() const;
-    std::string shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
+    tk::Rect shortcode_edit_rect() const;
+    std::string
+    shortcode_edit_initial_text() const; // seed text once, per shortcode_edit_reset_generation()
     // Bumped every time a *different* tile starts being edited — see
     // ImagePackEditorView::shortcode_edit_reset_generation()'s doc comment
     // for why a visibility rising edge alone isn't enough.
-    std::uint64_t shortcode_edit_reset_generation() const { return shortcode_edit_reset_gen_; }
-    void        set_editing_shortcode_text(std::string text);
-    void        commit_editing_shortcode(); // called by the host on submit/Enter
+    std::uint64_t shortcode_edit_reset_generation() const
+    {
+        return shortcode_edit_reset_gen_;
+    }
+    void set_editing_shortcode_text(std::string text);
+    void commit_editing_shortcode(); // called by the host on submit/Enter
     // Discards any edits made since this tile's shortcode field was
     // opened — called by the host when focus leaves the field by any
     // means other than Enter.
-    void        cancel_editing_shortcode();
+    void cancel_editing_shortcode();
 
     // True once the user has made any edit since the last set_images()
     // baseline (add/remove/rename) — drives ImagePacksSection's Save button
     // enabled state.
-    bool has_changes() const { return dirty_; }
+    bool has_changes() const
+    {
+        return dirty_;
+    }
 
     struct Result
     {
@@ -117,17 +123,20 @@ public:
     std::function<void()> on_layout_changed;
 
     // Drop-target scope for the host's drag-drop hit-test.
-    tk::Rect list_rect() const { return bounds(); }
+    tk::Rect list_rect() const
+    {
+        return bounds();
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_drag(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_drag(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
 
     // Tree-dispatched drop (see tk::Widget::on_file_drop) — forwards to the
     // existing add_dropped_image, which already ignores position (single
@@ -143,19 +152,40 @@ public:
     // mirroring ImagePackSectionList. The keyboard walks the same rows
     // (tk::RowKeyboardCursor).
     std::size_t access_row_count() const override;
-    tk::Role    access_role_for_widget_row(std::size_t i) const override;
+    tk::Role access_role_for_widget_row(std::size_t i) const override;
     std::string access_name_for_widget_row(std::size_t i) const override;
-    bool        access_activate_widget_row(std::size_t i) override;
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override;
-    bool focusable() const override { return enabled_ && !images_.empty() && !committing_; }
-    bool focus_on_click() const override { return false; }
-    bool on_key_down(const tk::KeyEvent& e) override { return kbd_.handle_key(*this, *this, e); }
-    void paint_own_focus_ring(tk::PaintCtx& ctx) override { kbd_.paint_ring(ctx, *this, *this); }
-    void on_focus_lost() override { kbd_.reset(); }
+    bool access_activate_widget_row(std::size_t i) override;
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override;
+    bool focusable() const override
+    {
+        return enabled_ && !images_.empty() && !committing_;
+    }
+    bool focus_on_click() const override
+    {
+        return false;
+    }
+    bool on_key_down(const tk::KeyEvent& e) override
+    {
+        return kbd_.handle_key(*this, *this, e);
+    }
+    void paint_own_focus_ring(tk::PaintCtx& ctx) override
+    {
+        kbd_.paint_ring(ctx, *this, *this);
+    }
+    void on_focus_lost() override
+    {
+        kbd_.reset();
+    }
 
     // Test accessors.
-    const std::vector<StagedPackImage>& images() const { return images_; }
-    bool drag_hover() const { return native_drag_hover_; }
+    const std::vector<StagedPackImage>& images() const
+    {
+        return images_;
+    }
+    bool drag_hover() const
+    {
+        return native_drag_hover_;
+    }
 
 protected:
     float content_height() const override;
@@ -173,7 +203,7 @@ private:
     mutable std::vector<tk::Rect> access_tiles_;
     std::vector<std::string> removed_shortcodes_;
     bool committing_ = false;
-    bool dirty_      = false;
+    bool dirty_ = false;
     bool native_drag_hover_ = false; // true while claiming on_native_drag_hover
     std::uint64_t next_local_id_ = 0;
 

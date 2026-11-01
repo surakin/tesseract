@@ -19,8 +19,7 @@ constexpr float kGroupBoxTitleGap = 4.0f;
 
 } // namespace
 
-GroupBox::GroupBox(std::string title)
-    : title_(std::move(title))
+GroupBox::GroupBox(std::string title) : title_(std::move(title))
 {
 }
 
@@ -32,13 +31,17 @@ Size GroupBox::measure(LayoutCtx&, Size constraints)
 void GroupBox::paint(PaintCtx& ctx)
 {
     if (bounds_.empty())
+    {
         return;
+    }
 
     const auto& pal = ctx.theme.palette;
     ctx.canvas.stroke_rounded_rect(bounds_, kGroupBoxRadius, pal.border, kGroupBoxBorderW);
 
     if (title_.empty())
+    {
         return;
+    }
 
     if (!title_layout_)
     {
@@ -50,8 +53,7 @@ void GroupBox::paint(PaintCtx& ctx)
     if (title_layout_)
     {
         const float title_h = title_layout_->measure().h;
-        ctx.canvas.draw_text(*title_layout_,
-                             {bounds_.x, bounds_.y - kGroupBoxTitleGap - title_h},
+        ctx.canvas.draw_text(*title_layout_, {bounds_.x, bounds_.y - kGroupBoxTitleGap - title_h},
                              pal.text_secondary);
     }
 }

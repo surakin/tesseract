@@ -19,18 +19,16 @@ public:
     // see ui/shared/platform/linux/linux_notification_reply.h for both. Never fires when
     // neither is supported. Deliberately separate from on_activate — a
     // reply must not switch account or navigate, unlike a click.
-    explicit LinuxNotifierQt(
-        std::function<void(std::string, std::string, std::string)> on_activate,
-        std::function<void(std::string, std::string, std::string)> on_reply,
-        QObject* parent = nullptr);
+    explicit LinuxNotifierQt(std::function<void(std::string, std::string, std::string)> on_activate,
+                             std::function<void(std::string, std::string, std::string)> on_reply,
+                             QObject* parent = nullptr);
     ~LinuxNotifierQt() override = default;
     void notify(const tesseract::Notification& n) override;
 
 private slots:
     void onActionInvoked(uint id, const QString& action);
     void onNotificationClosed(uint id, uint reason);
-    void onPortalActionInvoked(const QString& notification_id,
-                               const QString& action,
+    void onPortalActionInvoked(const QString& notification_id, const QString& action,
                                const QVariantList& parameter);
     void onNotificationReplied(uint id, const QString& text);
     // KDE/GNOME de-facto extension: fires before ActionInvoked with a

@@ -18,14 +18,18 @@
 #include "tk/compressed_image_cache.h"
 #include "app/SearchBackend.h"
 #include "app/MediaPlaybackHub.h"
-#include <tesseract/paths.h>           // tesseract::cache_dir()
+#include <tesseract/paths.h> // tesseract::cache_dir()
 
 #include <chrono>
 #include <cstdint>
 
-namespace tesseract { class ShellBase; }
+namespace tesseract
+{
+class ShellBase;
+}
 
-namespace tesseract {
+namespace tesseract
+{
 
 class AccountManager
 {
@@ -61,17 +65,31 @@ public:
     // false on timeout — the flag is left set on timeout, not force-cleared,
     // so a later caller still sees the truth and can wait again rather than
     // racing the still-in-flight drain.
-    bool wait_until_drained(std::string_view user_id,
-                            std::chrono::milliseconds timeout) const;
+    bool wait_until_drained(std::string_view user_id, std::chrono::milliseconds timeout) const;
 
     // Shared media caches — previously owned by ShellBase.
-    tk::PixmapCache& thumbnail_cache() { return thumbnail_cache_; }
-    tk::PixmapCache& image_cache()     { return image_cache_; }
-    tk::AnimImageCache& anim_cache()   { return anim_cache_; }
-    tk::MediaDiskCache& media_disk_cache() { return media_disk_cache_; }
+    tk::PixmapCache& thumbnail_cache()
+    {
+        return thumbnail_cache_;
+    }
+    tk::PixmapCache& image_cache()
+    {
+        return image_cache_;
+    }
+    tk::AnimImageCache& anim_cache()
+    {
+        return anim_cache_;
+    }
+    tk::MediaDiskCache& media_disk_cache()
+    {
+        return media_disk_cache_;
+    }
     // L1 tier of still-encoded bytes in front of media_disk_cache() — see
     // tk::CompressedImageCache. Keyed by the same disk-cache key.
-    tk::CompressedImageCache& compressed_cache() { return compressed_cache_; }
+    tk::CompressedImageCache& compressed_cache()
+    {
+        return compressed_cache_;
+    }
 
     // ── Image GC gating (see ShellBase::run_image_gc_) ─────────────────────────
     // Every shell forwards user input here. The GC cycle only runs while the
@@ -140,11 +158,17 @@ public:
     // SearchBackend.h). One instance per process, alongside the window
     // registry above — every ShellBase registers here regardless of shell,
     // since only the Linux D-Bus adapters ever query it.
-    SearchBackend& search_backend() { return search_backend_; }
+    SearchBackend& search_backend()
+    {
+        return search_backend_;
+    }
 
     // Process-wide "now playing" surface backing MPRIS (GtkMprisPlayer /
     // QtMprisPlayer) — see MediaPlaybackHub.h.
-    MediaPlaybackHub& media_playback_hub() { return media_playback_hub_; }
+    MediaPlaybackHub& media_playback_hub()
+    {
+        return media_playback_hub_;
+    }
 
     // Process-wide correlation IDs for user-initiated message-media uploads.
     // Zero is deliberately skipped because older callers used it as a
@@ -161,28 +185,28 @@ private:
     mutable std::condition_variable draining_cv_;
     std::unordered_set<std::string> draining_ids_;
 
-    std::vector<ShellBase*>                     all_windows_;
+    std::vector<ShellBase*> all_windows_;
     std::unordered_map<std::string, ShellBase*> dedicated_windows_;
-    ShellBase*                                  primary_window_        = nullptr;
-    ShellBase*                                  tray_owner_            = nullptr;
-    ShellBase*                                  search_provider_owner_ = nullptr;
-    ShellBase*                                  mpris_owner_           = nullptr;
+    ShellBase* primary_window_ = nullptr;
+    ShellBase* tray_owner_ = nullptr;
+    ShellBase* search_provider_owner_ = nullptr;
+    ShellBase* mpris_owner_ = nullptr;
 
     // The decoded (L0) caches are GC'd to the on-screen set by a generational
     // mark-and-sweep (peek() is the mark; ShellBase::run_image_gc_ +
     // PixmapCache::retain_recent are the sweep). The byte budgets are just a
     // safety ceiling. TTL is unused (retain_recent is the eviction policy).
-    tk::PixmapCache    thumbnail_cache_{48u * 1024u * 1024u};
-    tk::PixmapCache    image_cache_{64u * 1024u * 1024u};
+    tk::PixmapCache thumbnail_cache_{48u * 1024u * 1024u};
+    tk::PixmapCache image_cache_{64u * 1024u * 1024u};
     tk::AnimImageCache anim_cache_;
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     tk::CompressedImageCache compressed_cache_{32u * 1024u * 1024u};
 
     std::chrono::steady_clock::time_point last_gc_activity_{};
     std::chrono::steady_clock::time_point last_gc_run_{};
-    SearchBackend      search_backend_;
-    MediaPlaybackHub   media_playback_hub_;
-    std::uint64_t      next_upload_request_id_ = 1;
+    SearchBackend search_backend_;
+    MediaPlaybackHub media_playback_hub_;
+    std::uint64_t next_upload_request_id_ = 1;
 };
 
 } // namespace tesseract

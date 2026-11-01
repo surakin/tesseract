@@ -2,9 +2,10 @@
 #include <tesseract/session_store.h>
 #include <algorithm>
 
-namespace tesseract {
+namespace tesseract
+{
 
-AccountManager::AccountManager()  = default;
+AccountManager::AccountManager() = default;
 AccountManager::~AccountManager()
 {
     // Destroying a session stops its client, which can report a last token
@@ -23,23 +24,31 @@ void AccountManager::add_account(std::shared_ptr<AccountSession> session)
     // A null session is refused: every later lookup reads the user id from each
     // entry, so one null entry would crash find() and remove_account().
     if (!session || find(session->user_id))
+    {
         return;
+    }
     accounts_.push_back(std::move(session));
 }
 
 void AccountManager::remove_account(std::string_view user_id)
 {
-    accounts_.erase(
-        std::remove_if(accounts_.begin(), accounts_.end(),
-                       [&](const auto& s) { return s->user_id == user_id; }),
-        accounts_.end());
+    accounts_.erase(std::remove_if(accounts_.begin(), accounts_.end(),
+                                   [&](const auto& s)
+                                   {
+                                       return s->user_id == user_id;
+                                   }),
+                    accounts_.end());
 }
 
 std::shared_ptr<AccountSession> AccountManager::find(std::string_view user_id) const
 {
     for (const auto& s : accounts_)
+    {
         if (s->user_id == user_id)
+        {
             return s;
+        }
+    }
     return nullptr;
 }
 
@@ -69,9 +78,11 @@ bool AccountManager::wait_until_drained(std::string_view user_id,
 {
     const std::string uid(user_id);
     std::unique_lock<std::mutex> lk(draining_mu_);
-    return draining_cv_.wait_for(lk, timeout, [this, &uid] {
-        return draining_ids_.count(uid) == 0;
-    });
+    return draining_cv_.wait_for(lk, timeout,
+                                 [this, &uid]
+                                 {
+                                     return draining_ids_.count(uid) == 0;
+                                 });
 }
 
 std::span<std::shared_ptr<AccountSession> const> AccountManager::accounts() const
@@ -83,24 +94,33 @@ void AccountManager::register_window(ShellBase* w)
 {
     all_windows_.push_back(w);
     if (!primary_window_)
+    {
         primary_window_ = w;
+    }
 }
 
 void AccountManager::unregister_window(ShellBase* w)
 {
-    all_windows_.erase(
-        std::remove(all_windows_.begin(), all_windows_.end(), w),
-        all_windows_.end());
+    all_windows_.erase(std::remove(all_windows_.begin(), all_windows_.end(), w),
+                       all_windows_.end());
     // Defensive: under hide-to-tray the startup window never unregisters, but if
     // the primary ever goes away, fall back to the oldest surviving window.
     if (primary_window_ == w)
+    {
         primary_window_ = all_windows_.empty() ? nullptr : all_windows_.front();
+    }
     if (tray_owner_ == w)
+    {
         tray_owner_ = nullptr;
+    }
     if (search_provider_owner_ == w)
+    {
         search_provider_owner_ = nullptr;
+    }
     if (mpris_owner_ == w)
+    {
         mpris_owner_ = nullptr;
+    }
 }
 
 ShellBase* AccountManager::primary_window() const
@@ -111,14 +131,18 @@ ShellBase* AccountManager::primary_window() const
 bool AccountManager::claim_tray_owner(ShellBase* w)
 {
     if (!tray_owner_)
+    {
         tray_owner_ = w;
+    }
     return tray_owner_ == w;
 }
 
 void AccountManager::release_tray_owner(ShellBase* w)
 {
     if (tray_owner_ == w)
+    {
         tray_owner_ = nullptr;
+    }
 }
 
 bool AccountManager::is_tray_owner(ShellBase* w) const
@@ -134,14 +158,18 @@ ShellBase* AccountManager::tray_owner() const
 bool AccountManager::claim_search_provider_owner(ShellBase* w)
 {
     if (!search_provider_owner_)
+    {
         search_provider_owner_ = w;
+    }
     return search_provider_owner_ == w;
 }
 
 void AccountManager::release_search_provider_owner(ShellBase* w)
 {
     if (search_provider_owner_ == w)
+    {
         search_provider_owner_ = nullptr;
+    }
 }
 
 bool AccountManager::is_search_provider_owner(ShellBase* w) const
@@ -152,14 +180,18 @@ bool AccountManager::is_search_provider_owner(ShellBase* w) const
 bool AccountManager::claim_mpris_owner(ShellBase* w)
 {
     if (!mpris_owner_)
+    {
         mpris_owner_ = w;
+    }
     return mpris_owner_ == w;
 }
 
 void AccountManager::release_mpris_owner(ShellBase* w)
 {
     if (mpris_owner_ == w)
+    {
         mpris_owner_ = nullptr;
+    }
 }
 
 bool AccountManager::is_mpris_owner(ShellBase* w) const
@@ -197,7 +229,9 @@ std::uint64_t AccountManager::next_upload_request_id()
 {
     const auto id = next_upload_request_id_++;
     if (next_upload_request_id_ == 0)
+    {
         next_upload_request_id_ = 1;
+    }
     return id;
 }
 

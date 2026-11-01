@@ -43,14 +43,17 @@ struct EaShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_(std::function<void()> fn) override
     {
         std::lock_guard<std::mutex> lk(mu);
@@ -65,15 +68,26 @@ struct EaShell : tesseract::test::TestShellBase
     {
         statuses.push_back(m);
     }
-    void on_restore_status_ui_() override { ++restores; }
-    void navigate_to_room_(const std::string& id) override { navigated.push_back(id); }
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)> cb) override
+    void on_restore_status_ui_() override
+    {
+        ++restores;
+    }
+    void navigate_to_room_(const std::string& id) override
+    {
+        navigated.push_back(id);
+    }
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) override
     {
         picker = std::move(cb);
     }
-    void bind_settings_controller_() override { ++binds; }
-    void request_repaint_() override { ++repaints; }
+    void bind_settings_controller_() override
+    {
+        ++binds;
+    }
+    void request_repaint_() override
+    {
+        ++repaints;
+    }
     void pump()
     {
         for (int i = 0; i < 50; ++i)
@@ -87,9 +101,13 @@ struct EaShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
 
@@ -142,8 +160,7 @@ struct EaFx
 
 } // namespace
 
-TEST_CASE("the settings controller is rebuilt and bound on every call",
-          "[shell][export_avatar]")
+TEST_CASE("the settings controller is rebuilt and bound on every call", "[shell][export_avatar]")
 {
     EaFx f;
     f.s.ensure_settings_controller_();

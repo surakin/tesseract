@@ -13,7 +13,7 @@ namespace tesseract
 struct UrlSpan
 {
     std::size_t start = 0;
-    std::size_t end   = 0;
+    std::size_t end = 0;
     std::string url;
 };
 

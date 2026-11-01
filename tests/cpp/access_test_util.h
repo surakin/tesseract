@@ -14,10 +14,16 @@ namespace access_test
 inline const tk::AccessNode* find_named(const tk::AccessNode& node, const std::string& name)
 {
     if (node.name == name)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const tk::AccessNode* f = find_named(ch, name))
+        {
             return f;
+        }
+    }
     return nullptr;
 }
 
@@ -25,10 +31,16 @@ inline const tk::AccessNode* find_named(const tk::AccessNode& node, const std::s
 inline const tk::AccessNode* find_prefix(const tk::AccessNode& node, const std::string& prefix)
 {
     if (node.name.rfind(prefix, 0) == 0)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const tk::AccessNode* f = find_prefix(ch, prefix))
+        {
             return f;
+        }
+    }
     return nullptr;
 }
 

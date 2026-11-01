@@ -35,9 +35,18 @@ namespace
 
 struct MiFakeImg : tk::Image
 {
-    int width() const override { return 1; }
-    int height() const override { return 1; }
-    std::size_t memory_bytes() const override { return 4; }
+    int width() const override
+    {
+        return 1;
+    }
+    int height() const override
+    {
+        return 1;
+    }
+    std::size_t memory_bytes() const override
+    {
+        return 4;
+    }
 };
 
 struct MediaShell : tesseract::test::TestShellBase
@@ -50,14 +59,17 @@ struct MediaShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     // Worker threads post here, so guard the queue.
     void post_to_ui_(std::function<void()> fn) override
@@ -70,17 +82,28 @@ struct MediaShell : tesseract::test::TestShellBase
         std::lock_guard<std::mutex> lk(mu);
         delayed.push_back(std::move(fn));
     }
-    void request_relayout_() override { ++relayouts; }
-    void request_repaint_() override { ++repaints; }
-    void repaint_pickers_() override { ++picker_repaints; }
-    void start_anim_tick_() override { ++anim_ticks; }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
+    void request_repaint_() override
+    {
+        ++repaints;
+    }
+    void repaint_pickers_() override
+    {
+        ++picker_repaints;
+    }
+    void start_anim_tick_() override
+    {
+        ++anim_ticks;
+    }
     void on_media_bytes_ready_(const tk::CacheKey& k, MediaKind kind,
                                std::vector<uint8_t> b) override
     {
         delivered.emplace_back(k.to_string(), kind, std::move(b));
     }
-    void cache_rgba_image_(const tk::CacheKey& k, int w, int h,
-                           std::vector<uint8_t>) override
+    void cache_rgba_image_(const tk::CacheKey& k, int w, int h, std::vector<uint8_t>) override
     {
         rgba.emplace_back(k.to_string(), w, h);
     }
@@ -89,10 +112,14 @@ struct MediaShell : tesseract::test::TestShellBase
         ++decodes;
         DecodedImage d;
         if (!b.empty() && decode_ok)
+        {
             d.still = std::make_unique<MiFakeImg>();
+        }
         return d;
     }
-    void on_invites_updated_() override {}
+    void on_invites_updated_() override
+    {
+    }
 
     // Run queued UI work and let worker jobs settle, until quiescent.
     void pump()
@@ -108,9 +135,13 @@ struct MediaShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
     // The single pending media request id (REQUIREs there is exactly one).
@@ -124,8 +155,7 @@ struct MediaShell : tesseract::test::TestShellBase
     std::vector<std::function<void()>> queue, delayed;
     std::vector<std::tuple<std::string, MediaKind, std::vector<uint8_t>>> delivered;
     std::vector<std::tuple<std::string, int, int>> rgba;
-    int relayouts = 0, repaints = 0, picker_repaints = 0, anim_ticks = 0,
-        decodes = 0;
+    int relayouts = 0, repaints = 0, picker_repaints = 0, anim_ticks = 0, decodes = 0;
     bool decode_ok = true;
 
     using ShellBase::account_manager_;
@@ -224,7 +254,6 @@ struct MediaShell : tesseract::test::TestShellBase
     using MediaKind = ShellBase::MediaKind;
 };
 
-
 tesseract::MediaSourceRef mi_src(const std::string& u)
 {
     return MediaSource::plain(u);
@@ -301,8 +330,7 @@ TEST_CASE("ensure_media_image_ dedups in flight and delivers fetched bytes",
     CHECK(f.s.media_fetches_in_flight_.empty());
     CHECK(f.s.media_key_to_req_.empty());
     // The bytes were persisted for the next session.
-    CHECK(f.s.load_media_bytes_(tk::CacheKey::media(f.url)) ==
-          std::vector<uint8_t>{1, 2, 3});
+    CHECK(f.s.load_media_bytes_(tk::CacheKey::media(f.url)) == std::vector<uint8_t>{1, 2, 3});
 
     // A late duplicate completion is a no-op.
     f.s.handle_media_ready_ui_(id, {9});
@@ -322,8 +350,7 @@ TEST_CASE("a disk-cache hit is delivered without a network request",
     CHECK(f.s.media_fetches_in_flight_.empty());
 }
 
-TEST_CASE("an empty network response backs the url off",
-          "[shell][media_images][pipeline]")
+TEST_CASE("an empty network response backs the url off", "[shell][media_images][pipeline]")
 {
     MiFx f;
     f.s.ensure_media_image_(f.url, 0, 0);
@@ -377,8 +404,7 @@ TEST_CASE("cancelling the room's media group frees its in-flight keys",
 
 // ── thumbnails, avatars ──────────────────────────────────────────────────────
 
-TEST_CASE("ensure_media_thumbnail_ keys by size and scale",
-          "[shell][media_images]")
+TEST_CASE("ensure_media_thumbnail_ keys by size and scale", "[shell][media_images]")
 {
     MiFx f;
     f.s.current_scale_ = 2.0f;
@@ -403,8 +429,7 @@ TEST_CASE("ensure_user_avatar_ tracks the mxc and skips cached or failed ones",
 
     f.s.ensure_user_avatar_("mxc://hs/a1");
     CHECK(f.s.avatar_mxcs_.count("mxc://hs/a1") == 1);
-    const auto key = MediaShell::thumb_key("mxc://hs/a1", f.s.avatar_px_(),
-                                            f.s.avatar_px_());
+    const auto key = MediaShell::thumb_key("mxc://hs/a1", f.s.avatar_px_(), f.s.avatar_px_());
     CHECK(f.s.media_fetches_in_flight_.count(key) == 1);
 
     f.s.account_manager_.thumbnail_cache().store(tk::CacheKey::media("mxc://hs/a2"),
@@ -417,8 +442,7 @@ TEST_CASE("ensure_user_avatar_ tracks the mxc and skips cached or failed ones",
     CHECK(f.s.avatar_mxcs_.count("mxc://hs/a3") == 0);
 }
 
-TEST_CASE("prefetch_full_media also warms the full-size avatar",
-          "[shell][media_images][avatar]")
+TEST_CASE("prefetch_full_media also warms the full-size avatar", "[shell][media_images][avatar]")
 {
     MiFx f;
     tesseract::Settings::instance().prefetch_full_media = true;
@@ -434,8 +458,8 @@ TEST_CASE("animated avatars use their own namespaced thumbnail key",
     tesseract::Settings::instance().animate_avatars = true;
     CHECK(f.s.animate_avatars_effective_());
     f.s.ensure_user_avatar_("mxc://hs/a1");
-    CHECK(f.s.media_fetches_in_flight_.count(MediaShell::thumb_key(
-              "anim:mxc://hs/a1", f.s.avatar_px_(), f.s.avatar_px_())) == 1);
+    CHECK(f.s.media_fetches_in_flight_.count(
+              MediaShell::thumb_key("anim:mxc://hs/a1", f.s.avatar_px_(), f.s.avatar_px_())) == 1);
 }
 
 TEST_CASE("ensure_room_avatar_ prefers the room avatar, falls back to the DM one",
@@ -477,10 +501,8 @@ TEST_CASE("avatar animation toggle evicts only avatar entries and bumps the "
     tesseract::Settings::instance().animate_avatars = true;
     f.s.handle_setting_changed_(tesseract::views::SettingKey::AnimateAvatars);
     CHECK(f.s.avatar_mode_gen_ == gen + 1);
-    CHECK_FALSE(f.s.account_manager_.thumbnail_cache().contains(
-        tk::CacheKey::media("mxc://hs/a")));
-    CHECK(f.s.account_manager_.thumbnail_cache().contains(
-        tk::CacheKey::media("mxc://hs/other")));
+    CHECK_FALSE(f.s.account_manager_.thumbnail_cache().contains(tk::CacheKey::media("mxc://hs/a")));
+    CHECK(f.s.account_manager_.thumbnail_cache().contains(tk::CacheKey::media("mxc://hs/other")));
     CHECK(f.s.media_decode_failed_.count("mxc://hs/a") == 0);
 
     f.s.on_avatar_animation_mode_changed_(false);
@@ -495,8 +517,7 @@ TEST_CASE("deliver_animated_avatar_ decodes and stores, or falls back to the "
     f.s.deliver_animated_avatar_("mxc://hs/a", MediaShell::MediaKind::UserAvatar, {1, 2});
     f.s.pump();
     CHECK(f.s.decodes == 1);
-    CHECK(f.s.account_manager_.thumbnail_cache().contains(
-        tk::CacheKey::media("mxc://hs/a")));
+    CHECK(f.s.account_manager_.thumbnail_cache().contains(tk::CacheKey::media("mxc://hs/a")));
     CHECK(f.s.repaints >= 1);
 
     // Already stored: the early-out skips decoding.
@@ -592,20 +613,17 @@ TEST_CASE("sticker picker uses the sticker set and clears it on failure",
     f.s.ensure_picker_image_("mxc://hs/disk", true);
     f.s.pump();
     CHECK(f.s.pending_media_.empty());
-    CHECK_FALSE(f.s.account_manager_.image_cache().contains(
-        tk::CacheKey::media("mxc://hs/disk")));
+    CHECK_FALSE(f.s.account_manager_.image_cache().contains(tk::CacheKey::media("mxc://hs/disk")));
 }
 
-TEST_CASE("picker stickers are keyed by picker size and deduped",
-          "[shell][media_images][picker]")
+TEST_CASE("picker stickers are keyed by picker size and deduped", "[shell][media_images][picker]")
 {
     MiFx f;
     f.s.ensure_picker_sticker_("");
     f.s.ensure_picker_sticker_(f.url);
     f.s.ensure_picker_sticker_(f.url);
     CHECK(f.s.media_fetches_in_flight_.size() == 1);
-    CHECK(f.s.media_fetches_in_flight_.count(
-              f.s.picker_sticker_key_(f.url).to_string()) == 1);
+    CHECK(f.s.media_fetches_in_flight_.count(f.s.picker_sticker_key_(f.url).to_string()) == 1);
 }
 
 TEST_CASE("shell_sticker_ requests an uncached sticker and returns cached ones",
@@ -619,8 +637,7 @@ TEST_CASE("shell_sticker_ requests an uncached sticker and returns cached ones",
     CHECK(f.s.shell_sticker_("mxc://hs/s") != nullptr);
 }
 
-TEST_CASE("viewer full-res load: miss, download, decode, store", 
-          "[shell][media_images][viewer]")
+TEST_CASE("viewer full-res load: miss, download, decode, store", "[shell][media_images][viewer]")
 {
     MiFx f;
     f.s.ensure_viewer_fullres_("");
@@ -657,8 +674,7 @@ TEST_CASE("viewer full-res: failures, undecodable data and the FIFO cap",
     f.s.pump();
     f.s.handle_media_ready_ui_(f.s.only_pending(), {1});
     f.s.pump();
-    CHECK(f.s.media_decode_failed_.count(
-              MediaShell::fullres_key_("mxc://hs/undecodable")) == 1);
+    CHECK(f.s.media_decode_failed_.count(MediaShell::fullres_key_("mxc://hs/undecodable")) == 1);
 
     f.s.decode_ok = true;
     for (int i = 0; i < 8; ++i)
@@ -682,8 +698,7 @@ TEST_CASE("viewer full-res without a client releases its in-flight key",
     CHECK(f.s.viewer_fullres_in_flight_.empty());
 }
 
-TEST_CASE("viewer_image_lookup_ falls back through the caches",
-          "[shell][media_images][viewer]")
+TEST_CASE("viewer_image_lookup_ falls back through the caches", "[shell][media_images][viewer]")
 {
     MiFx f;
     CHECK(f.s.viewer_image_lookup_(f.url) == nullptr);
@@ -709,8 +724,7 @@ TEST_CASE("URL preview request lifecycle", "[shell][media_images][preview]")
     CHECK(f.s.url_preview_in_flight_.count("https://a.example/") == 1);
 
     f.s.handle_url_preview_ready_ui_(
-        f.s.only_pending(),
-        R"({"og:title":"T","og:description":"D","og:image":"mxc://i/1"})");
+        f.s.only_pending(), R"({"og:title":"T","og:description":"D","og:image":"mxc://i/1"})");
     CHECK(f.s.url_preview_in_flight_.empty());
     REQUIRE(f.s.url_preview_data_.count("https://a.example/") == 1);
     CHECK(f.s.url_preview_data_.at("https://a.example/").title == "T");
@@ -734,8 +748,7 @@ TEST_CASE("a failed URL preview records the failure without a card",
     f.s.on_url_preview_failed_("https://b.example/"); // no views: harmless
 }
 
-TEST_CASE("URL preview cancel frees the in-flight key",
-          "[shell][media_images][preview]")
+TEST_CASE("URL preview cancel frees the in-flight key", "[shell][media_images][preview]")
 {
     MiFx f;
     f.s.ensure_url_preview_("https://c.example/");
@@ -743,8 +756,7 @@ TEST_CASE("URL preview cancel frees the in-flight key",
     CHECK(f.s.url_preview_in_flight_.empty());
 }
 
-TEST_CASE("blurhash placeholders are decoded once per event",
-          "[shell][media_images][blurhash]")
+TEST_CASE("blurhash placeholders are decoded once per event", "[shell][media_images][blurhash]")
 {
     MiFx f;
     const std::string hash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";
@@ -765,8 +777,7 @@ TEST_CASE("blurhash placeholders are decoded once per event",
 
 // ── ensure_row_media_ (Event) ───────────────────────────────────────────────
 
-TEST_CASE("event media: image with thumbnail and full-media prefetch",
-          "[shell][media_images][row]")
+TEST_CASE("event media: image with thumbnail and full-media prefetch", "[shell][media_images][row]")
 {
     MiFx f;
     auto img = std::make_unique<tesseract::ImageEvent>();
@@ -781,12 +792,11 @@ TEST_CASE("event media: image with thumbnail and full-media prefetch",
 
     f.s.ensure_row_media_(*img, true);
     CHECK(f.s.avatar_mxcs_.count("mxc://hs/avatar") == 1);
-    const int w = static_cast<int>(std::lround(
-        tesseract::visual::kMaxInlineImageWidth * f.s.current_scale_));
-    const int h = static_cast<int>(std::lround(
-        tesseract::visual::kMaxInlineImageHeight * f.s.current_scale_));
-    CHECK(f.s.media_fetches_in_flight_.count(
-              MediaShell::thumb_key("mxc://hs/thumb", w, h)) == 1);
+    const int w =
+        static_cast<int>(std::lround(tesseract::visual::kMaxInlineImageWidth * f.s.current_scale_));
+    const int h = static_cast<int>(
+        std::lround(tesseract::visual::kMaxInlineImageHeight * f.s.current_scale_));
+    CHECK(f.s.media_fetches_in_flight_.count(MediaShell::thumb_key("mxc://hs/thumb", w, h)) == 1);
     CHECK(f.s.media_fetches_in_flight_.count("mxc://hs/full") == 0);
     CHECK(f.s.rgba.size() == 1);
 
@@ -806,12 +816,10 @@ TEST_CASE("event media: an image with no thumbnail fetches the source",
     CHECK(f.s.media_fetches_in_flight_.count("mxc://hs/full") == 1);
 }
 
-TEST_CASE("event media: previews off suppresses media until revealed",
-          "[shell][media_images][row]")
+TEST_CASE("event media: previews off suppresses media until revealed", "[shell][media_images][row]")
 {
     MiFx f;
-    tesseract::Settings::instance().media_previews =
-        tesseract::Settings::MediaPreviews::Off;
+    tesseract::Settings::instance().media_previews = tesseract::Settings::MediaPreviews::Off;
     auto img = std::make_unique<tesseract::ImageEvent>();
     img->event_id = "$i";
     img->sender = "@a:x";
@@ -826,12 +834,10 @@ TEST_CASE("event media: previews off suppresses media until revealed",
     CHECK(f.s.media_fetches_in_flight_.count("mxc://hs/full") == 1);
 }
 
-TEST_CASE("event media: your own media is exempt in Private mode",
-          "[shell][media_images][row]")
+TEST_CASE("event media: your own media is exempt in Private mode", "[shell][media_images][row]")
 {
     MiFx f;
-    tesseract::Settings::instance().media_previews =
-        tesseract::Settings::MediaPreviews::Private;
+    tesseract::Settings::instance().media_previews = tesseract::Settings::MediaPreviews::Private;
     f.s.room_preview_overrides_["!r:x"].join_rule = "public";
     auto mine = std::make_unique<tesseract::ImageEvent>();
     mine->event_id = "$mine";
@@ -931,8 +937,7 @@ TEST_CASE("event media: video uses the server thumbnail or generates one",
     f.s.pump(); // no cached frame; with no session nothing more happens
 }
 
-TEST_CASE("event media: reactions with images are fetched", 
-          "[shell][media_images][row]")
+TEST_CASE("event media: reactions with images are fetched", "[shell][media_images][row]")
 {
     MiFx f;
     auto t = std::make_unique<tesseract::Event>();
@@ -950,8 +955,7 @@ TEST_CASE("event media: reactions with images are fetched",
     CHECK(f.s.media_fetches_in_flight_.size() == 1);
 }
 
-TEST_CASE("event media: text links request a homeserver preview",
-          "[shell][media_images][row]")
+TEST_CASE("event media: text links request a homeserver preview", "[shell][media_images][row]")
 {
     MiFx f;
     auto t = std::make_unique<tesseract::Event>();
@@ -964,8 +968,7 @@ TEST_CASE("event media: text links request a homeserver preview",
     auto h = std::make_unique<tesseract::Event>();
     h->event_id = "$h";
     h->type = tesseract::EventType::Text;
-    h->formatted_body =
-        "<a href=\"https://example.org/x\">https://example.org/x</a>";
+    h->formatted_body = "<a href=\"https://example.org/x\">https://example.org/x</a>";
     f.s.ensure_row_media_(*h, false);
     CHECK(f.s.url_preview_in_flight_.count("https://example.org/x") == 1);
 }
@@ -1095,8 +1098,7 @@ TEST_CASE("row media: kinds mirror the event path", "[shell][media_images][row]"
     MessageRowData html;
     html.kind = K::Notice;
     html.event_id = "$h";
-    html.formatted_body =
-        "<a href=\"https://example.net/y\">https://example.net/y</a>";
+    html.formatted_body = "<a href=\"https://example.net/y\">https://example.net/y</a>";
     f.s.ensure_row_media_(html, false);
     CHECK(f.s.url_preview_in_flight_.count("https://example.net/y") == 1);
 
@@ -1110,18 +1112,15 @@ TEST_CASE("row media: kinds mirror the event path", "[shell][media_images][row]"
     p2.matched_url = "https://example.com/ask";
     bundled.bundled_previews = {p1, p2};
     f.s.ensure_row_media_(bundled, false);
-    CHECK(f.s.media_fetches_in_flight_.count(
-              MediaShell::thumb_key("mxc://hs/bimg", 64, 64)) == 1);
+    CHECK(f.s.media_fetches_in_flight_.count(MediaShell::thumb_key("mxc://hs/bimg", 64, 64)) == 1);
     CHECK(f.s.url_preview_in_flight_.count("https://example.com/ask") == 1);
 }
 
-TEST_CASE("row media: suppressed rows stay unfetched until revealed",
-          "[shell][media_images][row]")
+TEST_CASE("row media: suppressed rows stay unfetched until revealed", "[shell][media_images][row]")
 {
     using K = MessageRowData::Kind;
     MiFx f;
-    tesseract::Settings::instance().media_previews =
-        tesseract::Settings::MediaPreviews::Off;
+    tesseract::Settings::instance().media_previews = tesseract::Settings::MediaPreviews::Off;
     MessageRowData img;
     img.kind = K::Image;
     img.event_id = "$i";
@@ -1132,8 +1131,7 @@ TEST_CASE("row media: suppressed rows stay unfetched until revealed",
     CHECK(f.s.media_fetches_in_flight_.count("mxc://hs/f") == 1);
 }
 
-TEST_CASE("reveal_media_fetch_ covers every media kind",
-          "[shell][media_images][reveal]")
+TEST_CASE("reveal_media_fetch_ covers every media kind", "[shell][media_images][reveal]")
 {
     using K = MessageRowData::Kind;
     MiFx f;
@@ -1214,8 +1212,7 @@ TEST_CASE("room preview override fetch: request, ready, updated, commit",
     REQUIRE(f.s.pending_preview_overrides_.size() == 1);
     const auto id = f.s.pending_preview_overrides_.begin()->first;
 
-    f.s.handle_room_preview_override_ready_ui_(
-        999, R"({})"); // unknown request
+    f.s.handle_room_preview_override_ready_ui_(999, R"({})"); // unknown request
     CHECK(f.s.room_preview_overrides_.empty());
     f.s.handle_room_preview_override_ready_ui_(
         id, R"({"has_media_previews":true,"media_previews":0,"join_rule":"public"})");
@@ -1228,27 +1225,26 @@ TEST_CASE("room preview override fetch: request, ready, updated, commit",
     CHECK(f.s.pending_preview_overrides_.empty());
 
     // Live update only applies for the active account.
-    f.s.handle_room_media_preview_override_updated_ui_(
-        "@me:x", "!r:x", R"({"has_media_previews":false})");
+    f.s.handle_room_media_preview_override_updated_ui_("@me:x", "!r:x",
+                                                       R"({"has_media_previews":false})");
     CHECK(f.s.room_preview_overrides_["!r:x"].has_media_previews); // no account yet
     f.s.active_account_ = std::make_shared<tesseract::AccountSession>();
     f.s.active_account_->user_id = "@me:x";
-    f.s.handle_room_media_preview_override_updated_ui_(
-        "@other:x", "!r:x", R"({"has_media_previews":false})");
+    f.s.handle_room_media_preview_override_updated_ui_("@other:x", "!r:x",
+                                                       R"({"has_media_previews":false})");
     CHECK(f.s.room_preview_overrides_["!r:x"].has_media_previews);
-    f.s.handle_room_media_preview_override_updated_ui_(
-        "@me:x", "!r:x", R"({"has_media_previews":false})");
+    f.s.handle_room_media_preview_override_updated_ui_("@me:x", "!r:x",
+                                                       R"({"has_media_previews":false})");
     CHECK_FALSE(f.s.room_preview_overrides_["!r:x"].has_media_previews);
 
-    f.s.commit_room_media_preview_override_(
-        "", true, tesseract::MediaPreviewConfig::Mode::Off);
-    f.s.commit_room_media_preview_override_(
-        "!r:x", true, tesseract::MediaPreviewConfig::Mode::Private);
+    f.s.commit_room_media_preview_override_("", true, tesseract::MediaPreviewConfig::Mode::Off);
+    f.s.commit_room_media_preview_override_("!r:x", true,
+                                            tesseract::MediaPreviewConfig::Mode::Private);
     CHECK(f.s.room_preview_overrides_["!r:x"].has_media_previews);
     CHECK(f.s.room_preview_overrides_["!r:x"].media_previews ==
           tesseract::MediaPreviewConfig::Mode::Private);
-    f.s.commit_room_media_preview_override_(
-        "!r:x", false, tesseract::MediaPreviewConfig::Mode::Off);
+    f.s.commit_room_media_preview_override_("!r:x", false,
+                                            tesseract::MediaPreviewConfig::Mode::Off);
     CHECK_FALSE(f.s.room_preview_overrides_["!r:x"].has_media_previews);
     f.s.seed_room_media_section_("!r:x"); // no room view: no-op
 }
@@ -1271,12 +1267,11 @@ TEST_CASE("global media preview config: apply, updated and fetched",
     f.s.apply_media_preview_config_();
     CHECK(st.media_previews == P::On);
 
-    f.s.handle_media_preview_config_fetched_ui_(
-        1, R"({"media_previews":1,"invite_avatars":false})");
+    f.s.handle_media_preview_config_fetched_ui_(1,
+                                                R"({"media_previews":1,"invite_avatars":false})");
     CHECK(tesseract::Settings::instance().media_previews == P::Private);
     CHECK_FALSE(tesseract::Settings::instance().invite_avatars);
-    f.s.handle_media_preview_config_fetched_ui_(
-        2, R"({"media_previews":2,"invite_avatars":true})");
+    f.s.handle_media_preview_config_fetched_ui_(2, R"({"media_previews":2,"invite_avatars":true})");
     CHECK(tesseract::Settings::instance().media_previews == P::On);
 
     const auto rid = f.s.next_request_id_;
@@ -1328,7 +1323,10 @@ TEST_CASE("media chunks: stream, finish and fail", "[shell][media_images][stream
             totals.push_back(t);
             got.insert(got.end(), c.begin(), c.end());
         },
-        [&] { ++done; },
+        [&]
+        {
+            ++done;
+        },
         [&](std::uint8_t st)
         {
             ++failed;
@@ -1345,12 +1343,17 @@ TEST_CASE("media chunks: stream, finish and fail", "[shell][media_images][stream
     f.s.handle_media_chunk_ui_(id, {}, 1, 10); // gone
     CHECK(done == 1);
 
-    auto id2 = f.s.begin_media_stream_req_(0, nullptr, [&] { ++done; },
-                                           [&](std::uint8_t st)
-                                           {
-                                               ++failed;
-                                               fail_status = st;
-                                           });
+    auto id2 = f.s.begin_media_stream_req_(
+        0, nullptr,
+        [&]
+        {
+            ++done;
+        },
+        [&](std::uint8_t st)
+        {
+            ++failed;
+            fail_status = st;
+        });
     f.s.handle_media_chunk_ui_(id2, {}, 3, 0);
     CHECK(failed == 1);
     CHECK(fail_status == 3);
@@ -1376,8 +1379,7 @@ TEST_CASE("visible rows prioritise in-flight requests and lazily fetch media",
     CHECK(f.s.media_prepped_event_ids_.empty());
 }
 
-TEST_CASE("media preview gating hooks the message list",
-          "[shell][media_images][policy]")
+TEST_CASE("media preview gating hooks the message list", "[shell][media_images][policy]")
 {
     MiFx f;
     f.s.wire_media_preview_gating_(nullptr);
@@ -1400,8 +1402,7 @@ TEST_CASE("media preview gating hooks the message list",
     CHECK(f.s.media_fetches_in_flight_.count("mxc://hs/f") == 1);
 }
 
-TEST_CASE("member profile events patch the shown rows", 
-          "[shell][media_images][member]")
+TEST_CASE("member profile events patch the shown rows", "[shell][media_images][member]")
 {
     MiFx f;
     auto rv = tk::create_root_widget<tesseract::views::RoomView>(nullptr);

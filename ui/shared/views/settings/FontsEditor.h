@@ -28,7 +28,10 @@ protected:
 public:
     // Silently replace the shown preferences (no on_changed).
     void set_prefs(const tesseract::Settings::FontPrefs& prefs);
-    const tesseract::Settings::FontPrefs& prefs() const { return prefs_; }
+    const tesseract::Settings::FontPrefs& prefs() const
+    {
+        return prefs_;
+    }
 
     // Fired after every user edit with the full new preferences.
     std::function<void(const tesseract::Settings::FontPrefs&)> on_changed;
@@ -37,13 +40,21 @@ public:
     void on_fonts_changed() override;
 
     // Test hooks: press the stepper / reset buttons without hit-testing.
-    void step_base_for_test(int dir) { step_base_(dir); }
-    void step_category_for_test(std::size_t cat, int dir) { step_category_(cat, dir); }
-    void reset_all_for_test() { reset_all_(); }
+    void step_base_for_test(int dir)
+    {
+        step_base_(dir);
+    }
+    void step_category_for_test(std::size_t cat, int dir)
+    {
+        step_category_(cat, dir);
+    }
+    void reset_all_for_test()
+    {
+        reset_all_();
+    }
 
 private:
-    static constexpr std::size_t kCats =
-        tesseract::Settings::FontPrefs::kCategoryCount;
+    static constexpr std::size_t kCats = tesseract::Settings::FontPrefs::kCategoryCount;
 
     struct CategoryRow
     {

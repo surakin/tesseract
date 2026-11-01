@@ -16,7 +16,8 @@
 namespace tesseract::views
 {
 
-class ActivityMonitorView : public tk::ListView, public tk::ListAdapter,
+class ActivityMonitorView : public tk::ListView,
+                            public tk::ListAdapter,
                             public tk::ListAdapterAccessibility
 {
 public:
@@ -28,18 +29,24 @@ public:
     void set_snapshot(std::vector<tesseract::ActivityEntry> entries, std::int64_t now_ms);
 
     // Number of job (non-header) rows; exposed for tests.
-    std::size_t job_count() const { return job_count_; }
+    std::size_t job_count() const
+    {
+        return job_count_;
+    }
 
     // "3s", "5m", "2h" or "1d" for a millisecond duration (clamped at 0).
     static std::string format_duration(std::int64_t ms);
 
     // tk::ListAdapter
     std::size_t count() const override;
-    float measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
-                             float available_width) override;
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool selected, bool hovered) override;
-    bool is_selectable(std::size_t index) const override { (void) index; return false; }
+    float measure_row_height(std::size_t index, tk::LayoutCtx& ctx, float available_width) override;
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override;
+    bool is_selectable(std::size_t index) const override
+    {
+        (void)index;
+        return false;
+    }
     std::string row_key(std::size_t index) const override;
 
     // tk::ListAdapterAccessibility
@@ -47,15 +54,20 @@ public:
     std::string access_name_for_row(std::size_t index) const override;
 
     static constexpr float kSummaryH = 40.0f;
-    static constexpr float kGroupH   = 28.0f;
-    static constexpr float kJobH     = 52.0f;
-    static constexpr float kPadX     = 16.0f;
-    static constexpr float kDotD     = 10.0f;
+    static constexpr float kGroupH = 28.0f;
+    static constexpr float kJobH = 52.0f;
+    static constexpr float kPadX = 16.0f;
+    static constexpr float kDotD = 10.0f;
 
 private:
     struct Row
     {
-        enum class Kind { Summary, Group, Job };
+        enum class Kind
+        {
+            Summary,
+            Group,
+            Job
+        };
         Kind kind = Kind::Job;
         std::string text; // Summary / Group title
         tesseract::ActivityEntry job;

@@ -19,7 +19,7 @@
 /// window was therefore not shown. -beginLogin's async restore completion
 /// reads this: stays hidden on a successful silent restore, force-shows
 /// the window (and clears this back to NO) if there's no saved session.
-@property (nonatomic) BOOL startedHidden;
+@property(nonatomic) BOOL startedHidden;
 
 /// Kick off the sign-in flow. Called from AppDelegate after the window
 /// is on screen (or, when startedHidden, without showing it).
@@ -66,8 +66,7 @@
 /// Held until the main content is showing — see
 /// ShellBase::dispatch_launch_action_. `roomId` is used only for
 /// LaunchAction::Room.
-- (void)dispatchLaunchAction:(tesseract::LaunchAction)action
-                      roomId:(NSString*)roomId;
+- (void)dispatchLaunchAction:(tesseract::LaunchAction)action roomId:(NSString*)roomId;
 
 /// Navigate to the highest-priority unread room across all signed-in accounts.
 /// No-op when there is nothing unread.

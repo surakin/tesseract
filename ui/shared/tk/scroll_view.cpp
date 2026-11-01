@@ -40,7 +40,9 @@ void ScrollView::arrange(LayoutCtx& ctx, Rect bounds)
 void ScrollView::paint(PaintCtx& ctx)
 {
     if (!child_)
+    {
         return;
+    }
     {
         ClipScope clip(ctx.canvas, bounds_);
         child_->paint(ctx);
@@ -51,11 +53,15 @@ void ScrollView::paint(PaintCtx& ctx)
 bool ScrollView::on_wheel(Point, float, float dy, bool is_touchpad)
 {
     if (!child_)
+    {
         return false;
+    }
     const float prev = scroll_y_;
     const bool consumed = on_wheel_scroll(dy, is_touchpad);
     if (scroll_y_ != prev && on_layout_changed)
+    {
         on_layout_changed();
+    }
     return consumed;
 }
 
@@ -69,7 +75,9 @@ void ScrollView::on_pointer_drag(Point local)
     const float prev = scroll_y_;
     scrollbar_on_pointer_drag(local);
     if (scroll_y_ != prev && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void ScrollView::on_pointer_up(Point, bool)

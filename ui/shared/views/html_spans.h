@@ -27,8 +27,7 @@ namespace tesseract::views
 // span. Topic/non-message callers may leave `dark` at its default.
 //
 // Returns a single plain-text span when `html` is empty.
-std::vector<tk::TextSpan> html_to_spans(std::string_view html,
-                                        bool             dark = false);
+std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark = false);
 
 // Return the URL a message's preview card should show: the first bare
 // http(s) URL in the HTML `formatted_body` (a link whose visible text is the
@@ -52,8 +51,7 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text);
 // html_to_spans()/html_to_blocks(), and directly by callers building spans
 // from plain m.body text (no formatted_body) so a literal "@room" in a
 // plain m.text event still renders as a pill, matching the HTML path.
-std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans,
-                                              bool dark);
+std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans, bool dark);
 
 // Replaces a literal U+FFFC in the text of every non-image span with U+FFFD.
 // U+FFFC is the inline-image carrier, and a renderer pairs each image span
@@ -104,9 +102,9 @@ struct TableCell
 // <thead>.
 struct BodyTable
 {
-    std::vector<TableAlign>             col_align;
+    std::vector<TableAlign> col_align;
     std::vector<std::vector<TableCell>> rows;
-    int                                header_rows = 0;
+    int header_rows = 0;
 };
 
 struct BodyBlock
@@ -120,11 +118,11 @@ struct BodyBlock
         OrderedItem,
         Table,
     };
-    Kind kind  = Kind::Paragraph;
-    int  level = 0;  // heading: 1–6; blockquote/list: nesting depth (1-based)
-    int  index = 0;  // ordered list: item number (honours <ol start>, so not necessarily 1-based)
-    std::vector<tk::TextSpan> spans;  // empty when kind == Table
-    BodyTable                 table;  // populated only when kind == Table
+    Kind kind = Kind::Paragraph;
+    int level = 0; // heading: 1–6; blockquote/list: nesting depth (1-based)
+    int index = 0; // ordered list: item number (honours <ol start>, so not necessarily 1-based)
+    std::vector<tk::TextSpan> spans; // empty when kind == Table
+    BodyTable table;                 // populated only when kind == Table
 };
 
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark = false);

@@ -47,22 +47,23 @@ static std::string spans_to_plain(const std::vector<tk::TextSpan>& spans)
 {
     std::string out;
     for (const auto& s : spans)
+    {
         out += s.is_image ? s.image_alt : s.text;
+    }
     return out;
 }
 
 // Locate the table cell under `world` within a Table section. Returns the
 // cell (or nullptr) and, via `local_out`, the point in the cell layout's own
 // coordinate space (text_dx removed).
-static const TableCellBox* table_cell_at(const SectionLayout& sec,
-                                         tk::Point world, tk::Point& local_out)
+static const TableCellBox* table_cell_at(const SectionLayout& sec, tk::Point world,
+                                         tk::Point& local_out)
 {
     for (const auto& cb : sec.cells)
     {
         const float rx = sec.origin.x + cb.rect.x;
         const float ry = sec.origin.y + cb.rect.y;
-        if (world.x >= rx && world.x < rx + cb.rect.w && world.y >= ry &&
-            world.y < ry + cb.rect.h)
+        if (world.x >= rx && world.x < rx + cb.rect.w && world.y >= ry && world.y < ry + cb.rect.h)
         {
             local_out = {world.x - rx - cb.text_dx, world.y - ry};
             return &cb;
@@ -75,8 +76,12 @@ static const TableCellBox* table_cell_at(const SectionLayout& sec,
 static const TableCellBox* cell_of(const SectionLayout& sec, int row, int col)
 {
     for (const auto& cb : sec.cells)
+    {
         if (cb.row == row && cb.col == col)
+        {
             return &cb;
+        }
+    }
     return nullptr;
 }
 
@@ -84,15 +89,16 @@ static const TableCellBox* cell_of(const SectionLayout& sec, int row, int col)
 static tk::Rect table_bounds(const SectionLayout& sec)
 {
     if (sec.col_w.empty())
+    {
         return {};
+    }
     const float w = sec.col_x.back() + sec.col_w.back() + kTableBorder;
     return {sec.origin.x, sec.origin.y, w, sec.height};
 }
 
 // Row/column band a world point falls into, clamped to the grid — so a drag
 // that leaves the table still resolves to an edge cell.
-static std::pair<int, int> table_row_col_at(const SectionLayout& sec,
-                                            tk::Point world)
+static std::pair<int, int> table_row_col_at(const SectionLayout& sec, tk::Point world)
 {
     const int nr = static_cast<int>(sec.row_h.size());
     const int nc = static_cast<int>(sec.col_w.size());
@@ -100,61 +106,79 @@ static std::pair<int, int> table_row_col_at(const SectionLayout& sec,
     const float lx = world.x - sec.origin.x;
     int row = nr - 1;
     for (int r = 0; r < nr; ++r)
+    {
         if (ly < sec.row_y[r] + sec.row_h[r])
         {
             row = r;
             break;
         }
+    }
     int col = nc - 1;
     for (int c = 0; c < nc; ++c)
+    {
         if (lx < sec.col_x[c] + sec.col_w[c])
         {
             col = c;
             break;
         }
-    return {std::clamp(row, 0, std::max(0, nr - 1)),
-            std::clamp(col, 0, std::max(0, nc - 1))};
+    }
+    return {std::clamp(row, 0, std::max(0, nr - 1)), std::clamp(col, 0, std::max(0, nc - 1))};
 }
 
 // Long code blocks: more than kCodeCollapseMinLines lines collapse to their
 // first kCodeCollapsedLines with an Expand / Collapse button below the panel.
-constexpr int   kCodeCollapseMinLines = 15;
-constexpr int   kCodeCollapsedLines   = 10;
-constexpr float kCodePanelPad         =  4.0f; // code_bg panel overhang, top/bottom
-constexpr float kCodeToggleGap        =  4.0f; // panel bottom to button top
-constexpr float kCodeTogglePadX       = 12.0f;
-constexpr float kCodeTogglePadY       =  4.0f;
+constexpr int kCodeCollapseMinLines = 15;
+constexpr int kCodeCollapsedLines = 10;
+constexpr float kCodePanelPad = 4.0f;  // code_bg panel overhang, top/bottom
+constexpr float kCodeToggleGap = 4.0f; // panel bottom to button top
+constexpr float kCodeTogglePadX = 12.0f;
+constexpr float kCodeTogglePadY = 4.0f;
 
 // True when every span of a (non-empty) block is fenced-code text.
 static bool is_code_block_spans(const std::vector<tk::TextSpan>& spans)
 {
     if (spans.empty())
+    {
         return false;
+    }
     for (const auto& sp : spans)
+    {
         if (!sp.code_block)
+        {
             return false;
+        }
+    }
     return true;
 }
 
 // For a shaped code block with more than kCodeCollapseMinLines VISUAL (wrapped)
 // lines, the y of the top of line kCodeCollapsedLines + 1, i.e. the height of
 // the collapsed head; -1 when the block is short.
-static float code_collapse_clip_h(const std::vector<tk::TextSpan>& spans,
-                                  tk::TextLayout& layout)
+static float code_collapse_clip_h(const std::vector<tk::TextSpan>& spans, tk::TextLayout& layout)
 {
     int len = 0;
     for (const auto& sp : spans)
+    {
         len += static_cast<int>(sp.text.size());
+    }
     std::vector<float> tops;
     for (const tk::Rect& r : layout.selection_rects(0, len))
+    {
         tops.push_back(r.y);
+    }
     std::sort(tops.begin(), tops.end());
     std::vector<float> lines;
     for (float t : tops)
+    {
         if (lines.empty() || t - lines.back() > 1.0f)
+        {
             lines.push_back(t);
+        }
+    }
     if (static_cast<int>(lines.size()) <= kCodeCollapseMinLines)
+    {
         return -1.0f;
+    }
     return lines[static_cast<std::size_t>(kCodeCollapsedLines)];
 }
 
@@ -164,24 +188,28 @@ static float code_collapse_clip_h(const std::vector<tk::TextSpan>& spans,
 static float section_text_h(const SectionLayout& sec)
 {
     if (sec.code_block < 0)
+    {
         return sec.height;
+    }
     return sec.collapsed ? sec.clip_h : sec.layout->measure().h;
 }
 
 // The Expand / Collapse button under the pointer, if any (needs the
 // paint-stamped section origins).
-static const SectionLayout* code_toggle_at(const LinkLayout& le,
-                                           tk::Point world)
+static const SectionLayout* code_toggle_at(const LinkLayout& le, tk::Point world)
 {
     for (const auto& sec : le.sections)
     {
         if (sec.code_block < 0)
+        {
             continue;
-        const tk::Rect r{sec.origin.x + sec.toggle_btn.x,
-                         sec.origin.y + sec.toggle_btn.y, sec.toggle_btn.w,
-                         sec.toggle_btn.h};
+        }
+        const tk::Rect r{sec.origin.x + sec.toggle_btn.x, sec.origin.y + sec.toggle_btn.y,
+                         sec.toggle_btn.w, sec.toggle_btn.h};
         if (rect_contains(r, world))
+        {
             return &sec;
+        }
     }
     return nullptr;
 }
@@ -200,44 +228,68 @@ static std::string link_at_world(const LinkLayout& le, tk::Point world)
                 if (cb && cb->layout)
                 {
                     std::string url = cb->layout->link_at(ll);
-                    if (!url.empty()) return url;
+                    if (!url.empty())
+                    {
+                        return url;
+                    }
                 }
                 continue;
             }
-            if (!sec.layout) continue;
+            if (!sec.layout)
+            {
+                continue;
+            }
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
-            if (ll.y < 0.0f || ll.y >= section_text_h(sec)) continue;
+            if (ll.y < 0.0f || ll.y >= section_text_h(sec))
+            {
+                continue;
+            }
             std::string url = sec.layout->link_at(ll);
-            if (!url.empty()) return url;
+            if (!url.empty())
+            {
+                return url;
+            }
         }
         return {};
     }
-    if (!le.layout) return {};
+    if (!le.layout)
+    {
+        return {};
+    }
     tk::Point ll{world.x - le.origin.x, world.y - le.origin.y};
     // Qt's FuzzyHit hit-test (canvas_qpainter.cpp) matches the nearest
     // character regardless of distance, so an unbounded call here would
     // resolve clicks anywhere below a caption's origin (e.g. on the image
     // itself) to whatever link is nearest. Bound to the layout's own height,
     // matching the sections branch above.
-    if (ll.y < 0.0f || ll.y >= le.layout->measure().h) return {};
+    if (ll.y < 0.0f || ll.y >= le.layout->measure().h)
+    {
+        return {};
+    }
     return le.layout->link_at(ll);
 }
 
 // Hit-test result for an inline MSC2545 custom emoji under the pointer:
 // its world-space box and its ":shortcode:" text (TextSpan::image_alt).
 // `shortcode` is empty when no emoji span is under the point.
-struct EmojiHit { tk::Rect rect; std::string shortcode; };
+struct EmojiHit
+{
+    tk::Rect rect;
+    std::string shortcode;
+};
 
 // Section-aware hit-test mirroring paint_span_images' box walk: for each
 // is_image span, look up its glyph box(es) via selection_rects() over the
 // span's byte range and check whether `world` falls inside one.
 static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
 {
-    auto scan = [&](const std::vector<tk::TextSpan>& spans,
-                    tk::TextLayout* layout, tk::Point origin) -> EmojiHit
+    auto scan = [&](const std::vector<tk::TextSpan>& spans, tk::TextLayout* layout,
+                    tk::Point origin) -> EmojiHit
     {
         if (!layout)
+        {
             return {};
+        }
         int boff = 0;
         for (const auto& sp : spans)
         {
@@ -248,7 +300,9 @@ static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
                 {
                     tk::Rect world_r{r.x + origin.x, r.y + origin.y, r.w, r.h};
                     if (rect_contains(world_r, world))
+                    {
                         return {world_r, sp.image_alt};
+                    }
                 }
             }
             boff += len;
@@ -264,17 +318,20 @@ static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
             {
                 for (const auto& cb : sec.cells)
                 {
-                    tk::Point o{sec.origin.x + cb.rect.x + cb.text_dx,
-                                sec.origin.y + cb.rect.y};
+                    tk::Point o{sec.origin.x + cb.rect.x + cb.text_dx, sec.origin.y + cb.rect.y};
                     EmojiHit hit = scan(cb.spans, cb.layout.get(), o);
                     if (!hit.shortcode.empty())
+                    {
                         return hit;
+                    }
                 }
                 continue;
             }
             EmojiHit hit = scan(sec.spans, sec.layout.get(), sec.origin);
             if (!hit.shortcode.empty())
+            {
                 return hit;
+            }
         }
         return {};
     }
@@ -284,18 +341,26 @@ static EmojiHit emoji_at_world(const LinkLayout& le, tk::Point world)
 // Hit-test result for an inline hyperlink span under the pointer: its
 // world-space box, target URL, display text, and whether it's a
 // matrix.to mention pill (PillKind::User/Room/Event).
-struct LinkHit { tk::Rect rect; std::string url; std::string text; bool is_mention = false; };
+struct LinkHit
+{
+    tk::Rect rect;
+    std::string url;
+    std::string text;
+    bool is_mention = false;
+};
 
 // Section-aware hit-test mirroring emoji_at_world's box walk, but scanning
 // for TextSpan::url (any span with a non-empty link target) instead of
 // TextSpan::is_image.
 static LinkHit link_span_at_world(const LinkLayout& le, tk::Point world)
 {
-    auto scan = [&](const std::vector<tk::TextSpan>& spans,
-                    tk::TextLayout* layout, tk::Point origin) -> LinkHit
+    auto scan = [&](const std::vector<tk::TextSpan>& spans, tk::TextLayout* layout,
+                    tk::Point origin) -> LinkHit
     {
         if (!layout)
+        {
             return {};
+        }
         int boff = 0;
         for (const auto& sp : spans)
         {
@@ -306,7 +371,9 @@ static LinkHit link_span_at_world(const LinkLayout& le, tk::Point world)
                 {
                     tk::Rect world_r{r.x + origin.x, r.y + origin.y, r.w, r.h};
                     if (rect_contains(world_r, world))
+                    {
                         return {world_r, sp.url, sp.text, sp.is_mention};
+                    }
                 }
             }
             boff += len;
@@ -322,17 +389,20 @@ static LinkHit link_span_at_world(const LinkLayout& le, tk::Point world)
             {
                 for (const auto& cb : sec.cells)
                 {
-                    tk::Point o{sec.origin.x + cb.rect.x + cb.text_dx,
-                                sec.origin.y + cb.rect.y};
+                    tk::Point o{sec.origin.x + cb.rect.x + cb.text_dx, sec.origin.y + cb.rect.y};
                     LinkHit hit = scan(cb.spans, cb.layout.get(), o);
                     if (!hit.url.empty())
+                    {
                         return hit;
+                    }
                 }
                 continue;
             }
             LinkHit hit = scan(sec.spans, sec.layout.get(), sec.origin);
             if (!hit.url.empty())
+            {
                 return hit;
+            }
         }
         return {};
     }
@@ -348,19 +418,30 @@ static int char_at_world(const LinkLayout& le, tk::Point world)
             // Table sections are not char-selectable (in-cell text selection
             // is unsupported); link and emoji hit-testing use their own
             // walkers. `sec.layout` is null for a table, so this skips it.
-            if (!sec.layout) continue;
+            if (!sec.layout)
+            {
+                continue;
+            }
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
-            if (ll.y < 0.0f || ll.y >= section_text_h(sec)) continue;
+            if (ll.y < 0.0f || ll.y >= section_text_h(sec))
+            {
+                continue;
+            }
             int idx = sec.layout->char_index_at(ll);
             // Section-local → message-global (an offset into le.plain), so
             // the selection knows which section it's in.
-            if (idx >= 0) return sec.plain_base + idx;
+            if (idx >= 0)
+            {
+                return sec.plain_base + idx;
+            }
         }
         return -1;
     }
-    if (!le.layout) return -1;
-    return le.layout->char_index_at(
-        {world.x - le.origin.x, world.y - le.origin.y});
+    if (!le.layout)
+    {
+        return -1;
+    }
+    return le.layout->char_index_at({world.x - le.origin.x, world.y - le.origin.y});
 }
 
 // True when `ll` (layout-local) lies inside one of the layout's line boxes:
@@ -372,9 +453,12 @@ static bool over_text_line(const tk::TextLayout& layout, tk::Point ll)
 {
     constexpr int kWholeText = 1 << 30; // backends clamp to the text length
     for (const auto& r : layout.selection_rects(0, kWholeText))
-        if (ll.x >= r.x && ll.x < r.x + r.w && ll.y >= r.y &&
-            ll.y < r.y + r.h)
+    {
+        if (ll.x >= r.x && ll.x < r.x + r.w && ll.y >= r.y && ll.y < r.y + r.h)
+        {
             return true;
+        }
+    }
     return false;
 }
 
@@ -385,16 +469,27 @@ static bool text_at_world(const LinkLayout& le, tk::Point world)
     {
         for (const auto& sec : le.sections)
         {
-            if (!sec.layout) continue;
+            if (!sec.layout)
+            {
+                continue;
+            }
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
-            if (ll.y < 0.0f || ll.y >= section_text_h(sec)) continue;
-            if (over_text_line(*sec.layout, ll)) return true;
+            if (ll.y < 0.0f || ll.y >= section_text_h(sec))
+            {
+                continue;
+            }
+            if (over_text_line(*sec.layout, ll))
+            {
+                return true;
+            }
         }
         return false;
     }
-    if (!le.layout) return false;
-    return over_text_line(*le.layout,
-                      {world.x - le.origin.x, world.y - le.origin.y});
+    if (!le.layout)
+    {
+        return false;
+    }
+    return over_text_line(*le.layout, {world.x - le.origin.x, world.y - le.origin.y});
 }
 
 // If `url` is a matrix.to (or matrix:) *user* permalink, return the Matrix
@@ -410,35 +505,45 @@ static std::string mention_user_id_from_url(const std::string& url)
     return link.kind == Kind::User ? link.primary : std::string{};
 }
 
-static std::pair<int, int> word_range_in_text(const std::string& text,
-                                               int byte_offset)
+static std::pair<int, int> word_range_in_text(const std::string& text, int byte_offset)
 {
     int n = static_cast<int>(text.size());
     byte_offset = std::clamp(byte_offset, 0, n);
     auto is_word = [](unsigned char c)
-    { return c >= 0x80 || std::isalnum(c) || c == '_'; };
+    {
+        return c >= 0x80 || std::isalnum(c) || c == '_';
+    };
     int lo = byte_offset;
     while (lo > 0 && is_word(static_cast<unsigned char>(text[lo - 1])))
+    {
         --lo;
+    }
     int hi = byte_offset;
     while (hi < n && is_word(static_cast<unsigned char>(text[hi])))
+    {
         ++hi;
+    }
     if (lo == hi) // on a non-word char: select just that char
+    {
         hi = std::min(hi + 1, n);
+    }
     return {lo, hi};
 }
 
-static std::pair<int, int> line_range_in_text(const std::string& text,
-                                               int byte_offset)
+static std::pair<int, int> line_range_in_text(const std::string& text, int byte_offset)
 {
     int n = static_cast<int>(text.size());
     byte_offset = std::clamp(byte_offset, 0, n);
     int lo = byte_offset;
     while (lo > 0 && text[lo - 1] != '\n')
+    {
         --lo;
+    }
     int hi = byte_offset;
     while (hi < n && text[hi] != '\n')
+    {
         ++hi;
+    }
     return {lo, hi};
 }
 
@@ -456,10 +561,14 @@ constexpr std::size_t kMaxStatusEmojiBytes = 32;
 LiveLocationPhase live_location_phase(const MessageRowData& m, std::uint64_t now_ms)
 {
     if (!m.location_live_share)
+    {
         return LiveLocationPhase::NotLive;
+    }
     const bool active = m.location_live && now_ms < m.location_live_expires_ms;
     if (!active)
+    {
         return LiveLocationPhase::Ended;
+    }
     return m.location_awaiting_fix ? LiveLocationPhase::Waiting : LiveLocationPhase::Live;
 }
 
@@ -490,20 +599,17 @@ MapViewport next_map_viewport(const MessageRowData& old_row, const MessageRowDat
     const bool same_share = old_row.kind == MessageRowData::Kind::Location &&
                             new_row.kind == MessageRowData::Kind::Location &&
                             old_row.event_id == new_row.event_id;
-    return same_share && old_row.map_viewport_touched ? old_row.map_viewport
-                                                      : new_row.map_viewport;
+    return same_share && old_row.map_viewport_touched ? old_row.map_viewport : new_row.map_viewport;
 }
 
 static std::uint64_t live_now_ms()
 {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
 }
 
-MessageRowData make_row_data(const tesseract::Event& ev,
-                             const std::string& my_user_id)
+MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_user_id)
 {
     using Kind = MessageRowData::Kind;
     MessageRowData row;
@@ -556,7 +662,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         std::string flat;
         flat.reserve(ev.in_reply_to_body.size());
         for (char c : sdk_text::localize(ev.in_reply_to_body))
+        {
             flat += (c == '\n' || c == '\r') ? ' ' : c;
+        }
         row.in_reply_to_body = std::move(flat);
     }
     if (!ev.in_reply_to_image_url.empty())
@@ -613,7 +721,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     {
         row.kind = Kind::Image;
         const auto& img = static_cast<const tesseract::ImageEvent&>(ev);
-        row.source    = img.source;
+        row.source = img.source;
         row.thumbnail = img.thumbnail;
         row.media_w = static_cast<int>(img.width);
         row.media_h = static_cast<int>(img.height);
@@ -628,7 +736,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     {
         row.kind = Kind::Sticker;
         const auto& s = static_cast<const tesseract::StickerEvent&>(ev);
-        row.source    = s.source;
+        row.source = s.source;
         row.thumbnail = s.thumbnail;
         row.media_w = static_cast<int>(s.width);
         row.media_h = static_cast<int>(s.height);
@@ -642,10 +750,10 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::File;
         const auto& f = static_cast<const tesseract::FileEvent&>(ev);
         row.file_source = f.source;
-        row.file_name   = f.filename.empty() ? f.body : f.filename;
-        row.file_size   = f.file_size;
+        row.file_name = f.filename.empty() ? f.body : f.filename;
+        row.file_size = f.file_size;
         row.has_filename_caption = !f.filename.empty();
-        row.media_mime  = f.mime_type;
+        row.media_mime = f.mime_type;
         break;
     }
     case tesseract::EventType::Audio:
@@ -653,10 +761,10 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::Audio;
         const auto& a = static_cast<const tesseract::AudioEvent&>(ev);
         row.audio_source = a.source;
-        row.audio_mime   = a.mime_type;
-        row.duration_ms  = a.duration_ms;
-        row.file_name    = a.filename;
-        row.file_size    = a.file_size;
+        row.audio_mime = a.mime_type;
+        row.duration_ms = a.duration_ms;
+        row.file_name = a.filename;
+        row.file_size = a.file_size;
         break;
     }
     case tesseract::EventType::Voice:
@@ -664,24 +772,23 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::Voice;
         const auto& v = static_cast<const tesseract::VoiceEvent&>(ev);
         row.audio_source = v.source;
-        row.audio_mime   = v.mime_type;
-        row.duration_ms  = v.duration_ms;
-        row.waveform     = v.waveform;
+        row.audio_mime = v.mime_type;
+        row.duration_ms = v.duration_ms;
+        row.waveform = v.waveform;
         break;
     }
     case tesseract::EventType::Video:
     {
         row.kind = Kind::Video;
         const auto& vid = static_cast<const tesseract::VideoEvent&>(ev);
-        row.source    = vid.source;
+        row.source = vid.source;
         // When the server omits a thumbnail, the client-side first-frame
         // generator fills image_provider_ under a "thumb::<event_id>" key.
         // Store it as a PlainMediaSource so fetch_token() / image provider
         // lookups are uniform.  mxc_url() on this sentinel returns a non-mxc
         // string — it must only be used as a cache key, never sent to a server.
-        row.thumbnail = vid.thumbnail
-                            ? vid.thumbnail
-                            : tesseract::MediaSource::plain("thumb::" + ev.event_id);
+        row.thumbnail =
+            vid.thumbnail ? vid.thumbnail : tesseract::MediaSource::plain("thumb::" + ev.event_id);
         row.video_has_server_thumbnail = static_cast<bool>(vid.thumbnail);
         row.video_mime = vid.mime_type;
         row.media_w = static_cast<int>(vid.width);
@@ -721,7 +828,9 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.poll_results_visible = p.results_visible;
         row.poll_total_votes = p.total_votes;
         for (const auto& a : p.answers)
+        {
             row.poll_answers.push_back({a.id, a.text, a.votes, a.mine});
+        }
         break;
     }
     case tesseract::EventType::Redacted:
@@ -781,8 +890,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.kind = Kind::Gallery;
         const auto& gal = static_cast<const tesseract::GalleryEvent&>(ev);
         row.gallery_total = gal.items.size();
-        const std::size_t keep =
-            std::min(gal.items.size(), MessageRowData::kMaxGalleryViewerItems);
+        const std::size_t keep = std::min(gal.items.size(), MessageRowData::kMaxGalleryViewerItems);
         row.gallery_items.reserve(keep);
         for (std::size_t gi_idx = 0; gi_idx < keep; ++gi_idx)
         {
@@ -822,8 +930,8 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     }
 
     // Extract the first URL from text messages for preview card display.
-    if (row.kind == Kind::Text || row.kind == Kind::Notice ||
-        row.kind == Kind::Emote || row.kind == Kind::Unhandled)
+    if (row.kind == Kind::Text || row.kind == Kind::Notice || row.kind == Kind::Emote ||
+        row.kind == Kind::Unhandled)
     {
         row.first_url = first_preview_url(row.formatted_body, row.body);
     }
@@ -831,18 +939,20 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     return row;
 }
 
-bool is_membership_group_start(const std::vector<MessageRowData>& msgs,
-                               std::size_t index)
+bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::size_t index)
 {
     if (msgs[index].kind != MessageRowData::Kind::Membership)
+    {
         return false;
+    }
     if (index == 0)
+    {
         return true;
+    }
     return msgs[index - 1].kind != MessageRowData::Kind::Membership;
 }
 
-std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
-                                 std::size_t start)
+std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::size_t start)
 {
     std::size_t j = start + 1;
     while (j < msgs.size() && msgs[j].kind == MessageRowData::Kind::Membership)
@@ -852,16 +962,17 @@ std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
     return j;
 }
 
-std::vector<MembershipActionRun>
-membership_group_actions(const std::vector<MessageRowData>& msgs,
-                         std::size_t start, std::size_t end)
+std::vector<MembershipActionRun> membership_group_actions(const std::vector<MessageRowData>& msgs,
+                                                          std::size_t start, std::size_t end)
 {
     std::vector<MembershipActionRun> runs;
     for (std::size_t i = start; i < end; ++i)
     {
-        auto it = std::find_if(runs.begin(), runs.end(), [&](const auto& r) {
-            return r.action == msgs[i].membership_action;
-        });
+        auto it = std::find_if(runs.begin(), runs.end(),
+                               [&](const auto& r)
+                               {
+                                   return r.action == msgs[i].membership_action;
+                               });
         if (it == runs.end())
         {
             runs.push_back({msgs[i].membership_action, {}});
@@ -872,15 +983,13 @@ membership_group_actions(const std::vector<MessageRowData>& msgs,
     return runs;
 }
 
-bool membership_group_expandable(const std::vector<MessageRowData>& msgs,
-                                 std::size_t start)
+bool membership_group_expandable(const std::vector<MessageRowData>& msgs, std::size_t start)
 {
     const std::size_t end = membership_group_end(msgs, start);
     return end - start > membership_group_actions(msgs, start, end).size();
 }
 
-std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
-                                      std::size_t index)
+std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs, std::size_t index)
 {
     while (!is_membership_group_start(msgs, index))
     {
@@ -892,14 +1001,14 @@ std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
 namespace
 {
 
-constexpr float kMsgListPadX = tesseract::visual::kSpaceMD;                  // 12
-constexpr float kMsgListPadY = tesseract::visual::kMsgRowVerticalPad;        // 6
+constexpr float kMsgListPadX = tesseract::visual::kSpaceMD;           // 12
+constexpr float kMsgListPadY = tesseract::visual::kMsgRowVerticalPad; // 6
 // Row hover-highlight cross-fade duration (see Adapter::update_hover_fade).
 constexpr float kRowHoverFadeMs = 110.0f;
 // Reaction-chip click "pop" settle duration (see chip_press_scale_).
 constexpr float kChipPopMs = 160.0f;
-constexpr float kMsgListAvatarSize = tesseract::visual::kMsgAvatarSize;      // 32
-constexpr float kMsgListAvatarGap = tesseract::visual::kMsgAvatarGap;        // 8
+constexpr float kMsgListAvatarSize = tesseract::visual::kMsgAvatarSize;   // 32
+constexpr float kMsgListAvatarGap = tesseract::visual::kMsgAvatarGap;     // 8
 constexpr float kSenderHBase = tesseract::visual::kMsgSenderNameHeight;   // 16
 constexpr float kTimestampHBase = tesseract::visual::kMsgTimestampHeight; // 14
 // Sized for the default fonts; grown in step with the user's font config.
@@ -914,13 +1023,13 @@ inline float timestamp_h()
 constexpr float kMsgListChipPadX = 10.0f;
 
 // Block-level rendering constants.
-constexpr float kSectionGap       =  4.0f; // vertical gap between body sections
+constexpr float kSectionGap = 4.0f;        // vertical gap between body sections
 constexpr float kBlockquoteIndent = 12.0f; // x-indent per blockquote nesting level
-constexpr float kBlockquoteBarW   =  3.0f; // width of the blockquote accent bar
-constexpr float kBlockquoteBarGap =  6.0f; // gap between bar right edge and text
-constexpr float kListIndent       = 20.0f; // x-indent per list nesting level
-constexpr float kBulletGap        = 10.0f; // gap between bullet/number right edge and text
-constexpr float kHeadingRuleGap   =  4.0f; // space below h1/h2 text before rule
+constexpr float kBlockquoteBarW = 3.0f;    // width of the blockquote accent bar
+constexpr float kBlockquoteBarGap = 6.0f;  // gap between bar right edge and text
+constexpr float kListIndent = 20.0f;       // x-indent per list nesting level
+constexpr float kBulletGap = 10.0f;        // gap between bullet/number right edge and text
+constexpr float kHeadingRuleGap = 4.0f;    // space below h1/h2 text before rule
 
 // Read-receipt avatar cluster — painted at the bottom-right of each row,
 // inside the existing bounds. Discs overlap by (kReceiptSize - kReceiptStride)
@@ -937,22 +1046,19 @@ constexpr float kReceiptOverflowGap = 4.0f; // gap between "+N" pill and discs
 inline float chip_h()
 {
     // Sized for the default fonts; grown with the user's reaction emoji size.
-    return std::ceil(
-        static_cast<float>(tesseract::Settings::instance().reaction_chip_height) *
-        tk::font_height_scale(tk::FontRole::ReactionEmoji));
+    return std::ceil(static_cast<float>(tesseract::Settings::instance().reaction_chip_height) *
+                     tk::font_height_scale(tk::FontRole::ReactionEmoji));
 }
 inline float chip_gap()
 {
-    return static_cast<float>(
-        tesseract::Settings::instance().reaction_chip_gap);
+    return static_cast<float>(tesseract::Settings::instance().reaction_chip_gap);
 }
 // Fixed, deliberately not fully-rounded (rectangle with soft corners) —
 // unlike chip_h()/2, this does not scale with reaction_chip_height.
 constexpr float kReactionChipRadius = tesseract::visual::kRadiusMD;
 inline float reaction_chip_pad_x()
 {
-    return static_cast<float>(
-        tesseract::Settings::instance().reaction_chip_pad_x);
+    return static_cast<float>(tesseract::Settings::instance().reaction_chip_pad_x);
 }
 
 // The action-icon toolbar (react/reply/thread/edit/more, painted top-right on
@@ -1008,16 +1114,16 @@ constexpr float kMsgListVoiceSpeedPillW = 30.0f; // "1×" / "1.5×" / "2×"
 constexpr float kMsgListVoiceSpeedPillH = 20.0f;
 
 // Reply quote block — painted above the body block when m.has_reply().
-constexpr float kQuoteBlockH = 44.0f;          // total height of the quote band
+constexpr float kQuoteBlockH = 44.0f;                    // total height of the quote band
 constexpr float kQuoteImageBlockH = kQuoteBlockH * 2.0f; // quote block for image replies
-constexpr float kQuoteAccentW = 3.0f; // left accent stripe width
+constexpr float kQuoteAccentW = 3.0f;                    // left accent stripe width
 constexpr float kQuotePadX = 8.0f;
 constexpr float kQuoteGapAfter = 4.0f; // gap between quote and body
 // "Forwarded from …" attribution line (MSC4553) — painted above the reply
 // context and body of a forwarded message.
-constexpr float kForwardIconPx = 12.0f;   // forward glyph, drawn in text_muted
-constexpr float kForwardIconGap = 4.0f;   // glyph -> label
-constexpr float kForwardGapAfter = 4.0f;  // gap between the line and what follows
+constexpr float kForwardIconPx = 12.0f;  // forward glyph, drawn in text_muted
+constexpr float kForwardIconGap = 4.0f;  // glyph -> label
+constexpr float kForwardGapAfter = 4.0f; // gap between the line and what follows
 // Reply hover button ("↩") — right-aligned in the chip strip.
 constexpr float kReplyBtnW = 28.0f;
 constexpr float kReplyBtnPadX = 8.0f;
@@ -1043,7 +1149,7 @@ constexpr float kTimelineStartH = 20.0f;
 // Extra height under the "start of conversation" label for the "View older
 // messages" button when the room replaced an older one.
 constexpr float kPredecessorLinkH = 28.0f;
-constexpr float kPinnedEventH   = 24.0f;  // m.room.pinned_events state row
+constexpr float kPinnedEventH = 24.0f; // m.room.pinned_events state row
 // Diameter of the target avatar on a single membership line. Shared by paint
 // and membership_avatar_hit so they can't drift apart.
 constexpr float kMembershipAvatarD = 18.0f;
@@ -1063,9 +1169,9 @@ constexpr int kJustSentHighlightMs = 2000;
 
 // Jump-highlight flash timing (see MessageListView::start_jump_highlight):
 // quick fade in, a hold at full opacity, then a slower fade out.
-constexpr float kJumpHighlightFadeInMs  = 150.0f;
+constexpr float kJumpHighlightFadeInMs = 150.0f;
 constexpr float kJumpHighlightFadeOutMs = 400.0f;
-constexpr int   kJumpHighlightHoldMs    = 1600;
+constexpr int kJumpHighlightHoldMs = 1600;
 // Peak tint alpha — stronger than the search-match tint's 25 so a jump flash
 // is unmistakably distinct from mere search highlighting or row hover.
 constexpr std::uint8_t kJumpHighlightPeakAlpha = 70;
@@ -1079,9 +1185,8 @@ std::string format_mmss(std::uint64_t ms)
     std::uint64_t total_s = ms / 1000;
     std::uint64_t mm = total_s / 60;
     std::uint64_t ss = total_s % 60;
-    char buf[48];  // worst case: two 20-digit uint64 fields + ':' + NUL
-    std::snprintf(buf, sizeof(buf), "%llu:%02llu",
-                  static_cast<unsigned long long>(mm),
+    char buf[48]; // worst case: two 20-digit uint64 fields + ':' + NUL
+    std::snprintf(buf, sizeof(buf), "%llu:%02llu", static_cast<unsigned long long>(mm),
                   static_cast<unsigned long long>(ss));
     return std::string(buf);
 }
@@ -1198,7 +1303,8 @@ static FileIconInfo file_icon_info(std::string_view filename)
 
 float body_text_max_width(float row_width)
 {
-    return std::max(0.0f, row_width - kMsgListPadX - kMsgListAvatarSize - kMsgListAvatarGap - kMsgListPadX);
+    return std::max(0.0f, row_width - kMsgListPadX - kMsgListAvatarSize - kMsgListAvatarGap -
+                              kMsgListPadX);
 }
 
 // Width to reserve on the right of the body column for a read-receipt cluster.
@@ -1206,8 +1312,7 @@ float body_text_max_width(float row_width)
 // cluster then floats beside the chip strip, not overlapping body text).
 // Includes the "+N" overflow pill's own width when the row has more than
 // kReceiptCap receipts — otherwise body text can wrap underneath it.
-inline float receipt_reserve_width(const MessageRowData& m,
-                                   tk::CanvasFactory& factory)
+inline float receipt_reserve_width(const MessageRowData& m, tk::CanvasFactory& factory)
 {
     if (m.read_receipts.empty() || !m.reactions.empty())
     {
@@ -1215,16 +1320,14 @@ inline float receipt_reserve_width(const MessageRowData& m,
     }
     const std::size_t total = m.read_receipts.size();
     const std::size_t n = std::min(total, kReceiptCap);
-    float w = kReceiptSize + static_cast<float>(n - 1) * kReceiptStride +
-              chip_gap();
+    float w = kReceiptSize + static_cast<float>(n - 1) * kReceiptStride + chip_gap();
 
     const std::size_t overflow = total - n;
     if (overflow > 0)
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::UiSemibold;
-        auto layout =
-            factory.build_text(std::string("+") + std::to_string(overflow), st);
+        auto layout = factory.build_text(std::string("+") + std::to_string(overflow), st);
         if (layout)
         {
             w += layout->measure().w + kMsgListChipPadX + kReceiptOverflowGap;
@@ -1292,9 +1395,8 @@ std::string membership_expanded_phrase(const MessageRowData& m)
 std::string membership_expanded_phrase_base(const MessageRowData& m)
 {
     using A = tesseract::MembershipAction;
-    const std::string t = m.membership_target_name.empty()
-                              ? m.membership_target_user_id
-                              : m.membership_target_name;
+    const std::string t =
+        m.membership_target_name.empty() ? m.membership_target_user_id : m.membership_target_name;
     const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
     const bool by_actor = m.sender != m.membership_target_user_id;
     switch (m.membership_action)
@@ -1316,31 +1418,25 @@ std::string membership_expanded_phrase_base(const MessageRowData& m)
         return by_actor ? tk::trf(tk::tr("{0} was invited by {1}"), {t, s})
                         : tk::trf(tk::tr("{0} received an invitation"), {t});
     case A::KickedAndBanned:
-        return by_actor
-                   ? tk::trf(tk::tr("{0} was removed and banned by {1}"), {t, s})
-                   : tk::trf(tk::tr("{0} was kicked and banned"), {t});
+        return by_actor ? tk::trf(tk::tr("{0} was removed and banned by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0} was kicked and banned"), {t});
     case A::InvitationAccepted:
         return tk::trf(tk::tr("{0} has accepted the invitation"), {t});
     case A::InvitationRejected:
         return tk::trf(tk::tr("{0} has rejected the invitation"), {t});
     case A::InvitationRevoked:
-        return by_actor
-                   ? tk::trf(tk::tr("{0}'s invitation was revoked by {1}"), {t, s})
-                   : tk::trf(tk::tr("{0}'s invitation was revoked"), {t});
+        return by_actor ? tk::trf(tk::tr("{0}'s invitation was revoked by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0}'s invitation was revoked"), {t});
     case A::Knocked:
         return tk::trf(tk::tr("{0} requested to join"), {t});
     case A::KnockAccepted:
-        return by_actor
-                   ? tk::trf(tk::tr("{0}'s request to join was approved by {1}"),
-                            {t, s})
-                   : tk::trf(tk::tr("{0}'s join request was approved"), {t});
+        return by_actor ? tk::trf(tk::tr("{0}'s request to join was approved by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0}'s join request was approved"), {t});
     case A::KnockRetracted:
         return tk::trf(tk::tr("{0} withdrew {1} request to join"), {t, m.target_pronoun});
     case A::KnockDenied:
-        return by_actor
-                   ? tk::trf(tk::tr("{0}'s request to join was denied by {1}"),
-                            {t, s})
-                   : tk::trf(tk::tr("{0}'s join request was denied"), {t});
+        return by_actor ? tk::trf(tk::tr("{0}'s request to join was denied by {1}"), {t, s})
+                        : tk::trf(tk::tr("{0}'s join request was denied"), {t});
     case A::AvatarChanged:
         return tk::trf(tk::tr("{0} changed their avatar"), {t});
     case A::AvatarRemoved:
@@ -1365,9 +1461,13 @@ std::string room_name_change_phrase(const MessageRowData& m)
 {
     const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
     if (m.room_name_new.empty())
+    {
         return tk::trf(tk::tr("{0} removed the room name"), {s});
+    }
     if (m.room_name_old.empty())
+    {
         return tk::trf(tk::tr("{0} set the room name to {1}"), {s, m.room_name_new});
+    }
     return tk::trf(tk::tr("{0} changed the room name to {1}"), {s, m.room_name_new});
 }
 
@@ -1378,7 +1478,9 @@ std::string room_tombstone_phrase(const MessageRowData& m)
     const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
     std::string line = tk::trf(tk::tr("{0} upgraded this room"), {s});
     if (!m.body.empty())
+    {
         line = tk::trf(tk::tr("{0}: {1}"), {line, m.body});
+    }
     return line;
 }
 
@@ -1387,14 +1489,19 @@ std::string room_tombstone_phrase(const MessageRowData& m)
 std::string membership_names_label(const std::vector<std::string>& names)
 {
     if (names.empty())
+    {
         return {};
+    }
     if (names.size() == 1)
+    {
         return names[0];
+    }
     if (names.size() == 2)
+    {
         return tk::trf(tk::tr("{0} and {1}"), {names[0], names[1]});
+    }
     const long others = static_cast<long>(names.size() - 2);
-    return tk::trf(tk::trn("{0}, {1} and {2} other", "{0}, {1} and {2} others",
-                          others),
+    return tk::trf(tk::trn("{0}, {1} and {2} other", "{0}, {1} and {2} others", others),
                    {names[0], names[1], std::to_string(others)});
 }
 
@@ -1418,68 +1525,59 @@ std::string membership_summary_phrase(tesseract::MembershipAction action,
     case A::Left:
         return tk::trf(tk::tr("{0} left the room"), {label});
     case A::Banned:
-        return tk::trf(tk::trn("{0} was banned from the room",
-                              "{0} were banned from the room", n),
+        return tk::trf(tk::trn("{0} was banned from the room", "{0} were banned from the room", n),
                        {label});
     case A::Unbanned:
-        return tk::trf(tk::trn("{0} was unbanned", "{0} were unbanned", n),
-                       {label});
+        return tk::trf(tk::trn("{0} was unbanned", "{0} were unbanned", n), {label});
     case A::Kicked:
-        return tk::trf(tk::trn("{0} was removed from the room",
-                              "{0} were removed from the room", n),
-                       {label});
+        return tk::trf(
+            tk::trn("{0} was removed from the room", "{0} were removed from the room", n), {label});
     case A::Invited:
-        return tk::trf(tk::trn("{0} was invited", "{0} were invited", n),
-                       {label});
+        return tk::trf(tk::trn("{0} was invited", "{0} were invited", n), {label});
     case A::KickedAndBanned:
-        return tk::trf(tk::trn("{0} was removed and banned",
-                              "{0} were removed and banned", n),
+        return tk::trf(tk::trn("{0} was removed and banned", "{0} were removed and banned", n),
                        {label});
     case A::InvitationAccepted:
-        return tk::trf(tk::trn("{0} accepted the invitation",
-                              "{0} accepted their invitations", n),
+        return tk::trf(tk::trn("{0} accepted the invitation", "{0} accepted their invitations", n),
                        {label});
     case A::InvitationRejected:
-        return tk::trf(tk::trn("{0} rejected the invitation",
-                              "{0} rejected their invitations", n),
+        return tk::trf(tk::trn("{0} rejected the invitation", "{0} rejected their invitations", n),
                        {label});
     case A::InvitationRevoked:
-        return tk::trf(tk::trn("{0} had {1} invitation revoked",
-                              "{0} had {1} invitations revoked", n),
-                       {label, singleton_pronoun});
+        return tk::trf(
+            tk::trn("{0} had {1} invitation revoked", "{0} had {1} invitations revoked", n),
+            {label, singleton_pronoun});
     case A::Knocked:
         return tk::trf(tk::tr("{0} requested to join"), {label});
     case A::KnockAccepted:
         return tk::trf(tk::trn("{0}'s request to join was approved",
-                              "{0}'s requests to join were approved", n),
+                               "{0}'s requests to join were approved", n),
                        {label});
     case A::KnockRetracted:
-        return tk::trf(tk::trn("{0} cancelled {1} request to join",
-                              "{0} cancelled {1} requests to join", n),
-                       {label, singleton_pronoun});
+        return tk::trf(
+            tk::trn("{0} cancelled {1} request to join", "{0} cancelled {1} requests to join", n),
+            {label, singleton_pronoun});
     case A::KnockDenied:
-        return tk::trf(tk::trn("{0}'s request to join was denied",
-                              "{0}'s requests to join were denied", n),
-                       {label});
+        return tk::trf(
+            tk::trn("{0}'s request to join was denied", "{0}'s requests to join were denied", n),
+            {label});
     case A::AvatarChanged:
-        return tk::trf(tk::trn("{0} updated their avatar",
-                              "{0} updated their avatars", n),
+        return tk::trf(tk::trn("{0} updated their avatar", "{0} updated their avatars", n),
                        {label});
     case A::AvatarRemoved:
-        return tk::trf(tk::trn("{0} cleared their avatar",
-                              "{0} cleared their avatars", n),
+        return tk::trf(tk::trn("{0} cleared their avatar", "{0} cleared their avatars", n),
                        {label});
     case A::DisplayNameChanged:
-        return tk::trf(tk::trn("{0} updated their display name",
-                              "{0} updated their display names", n),
-                       {label});
+        return tk::trf(
+            tk::trn("{0} updated their display name", "{0} updated their display names", n),
+            {label});
     case A::DisplayNameRemoved:
-        return tk::trf(tk::trn("{0} cleared their display name",
-                              "{0} cleared their display names", n),
-                       {label});
+        return tk::trf(
+            tk::trn("{0} cleared their display name", "{0} cleared their display names", n),
+            {label});
     case A::ProfileChanged:
         return tk::trf(tk::trn("{0} updated their display name and avatar",
-                              "{0} updated their display names and avatars", n),
+                               "{0} updated their display names and avatars", n),
                        {label});
     }
     return label;
@@ -1495,7 +1593,7 @@ std::string membership_target_label(const MessageRowData& m)
 
 bool membership_avatar_hit(tk::Rect row_rect, tk::Point world)
 {
-    const float r  = kMembershipAvatarD * 0.5f;
+    const float r = kMembershipAvatarD * 0.5f;
     const float dx = world.x - (row_rect.x + kMsgListPadX + r);
     const float dy = world.y - (row_rect.y + kPinnedEventH * 0.5f);
     return dx * dx + dy * dy <= r * r;
@@ -1517,27 +1615,31 @@ std::string membership_run_phrase(const std::vector<MessageRowData>& msgs,
         const MessageRowData& m = msgs[i];
         const std::string& id = m.membership_target_user_id;
         // Rows without a target id (shouldn't happen) are never merged.
-        if (!id.empty() &&
-            std::find(seen_ids.begin(), seen_ids.end(), id) != seen_ids.end())
+        if (!id.empty() && std::find(seen_ids.begin(), seen_ids.end(), id) != seen_ids.end())
+        {
             continue;
+        }
         seen_ids.push_back(id);
         names.push_back(membership_target_label(m));
     }
     const MessageRowData& first = msgs[run.rows.front()];
     if (run.rows.size() == 1)
+    {
         return with_membership_reason(
             membership_summary_phrase(run.action, names, first.target_pronoun), first);
+    }
     if (names.size() == 1)
+    {
         return membership_summary_phrase(run.action, names, first.target_pronoun);
+    }
     return membership_summary_phrase(run.action, names, "their");
 }
 
 static bool is_virtual_event(MessageRowData::Kind k)
 {
     using Kind = MessageRowData::Kind;
-    return k == Kind::DaySeparator || k == Kind::ReadMarker ||
-           k == Kind::TimelineStart || k == Kind::PinnedEvent ||
-           k == Kind::CallNotification || k == Kind::Membership ||
+    return k == Kind::DaySeparator || k == Kind::ReadMarker || k == Kind::TimelineStart ||
+           k == Kind::PinnedEvent || k == Kind::CallNotification || k == Kind::Membership ||
            k == Kind::RoomName || k == Kind::RoomTombstone;
 }
 
@@ -1553,8 +1655,7 @@ static bool is_virtual_event(MessageRowData::Kind k)
 static bool is_editable_kind(MessageRowData::Kind k)
 {
     using Kind = MessageRowData::Kind;
-    return k == Kind::Text || k == Kind::Image || k == Kind::File ||
-           k == Kind::Video;
+    return k == Kind::Text || k == Kind::Image || k == Kind::File || k == Kind::Video;
 }
 
 // Name an emote row ("* Alice waves") attributes the action to. A forwarded
@@ -1574,8 +1675,9 @@ static std::string emote_author_name(const MessageRowData& m)
 static const std::string& emote_author_id(const MessageRowData& m)
 {
     if (m.forwarded)
-        return m.forwarded_sender.empty() ? m.forwarded_sender_name
-                                          : m.forwarded_sender;
+    {
+        return m.forwarded_sender.empty() ? m.forwarded_sender_name : m.forwarded_sender;
+    }
     return m.sender;
 }
 
@@ -1626,15 +1728,20 @@ public:
     // after the Adapter class (this declaration precedes it).
 
     // Message body renders in the platform monospace face.
-    virtual bool monospace_body() const { return false; }
+    virtual bool monospace_body() const
+    {
+        return false;
+    }
 
     // Membership rows draw the target user's avatar (clickable → profile).
-    virtual bool membership_avatars() const { return true; }
+    virtual bool membership_avatars() const
+    {
+        return true;
+    }
 
     // "[HH:MM] <nick> " spans baked onto the front of a flat single-section
     // body so wrapped lines fall flush-left (mIRC). Empty = no prefix.
-    virtual std::vector<tk::TextSpan>
-    body_prefix_spans(const MessageRowData&, bool /*dark*/) const
+    virtual std::vector<tk::TextSpan> body_prefix_spans(const MessageRowData&, bool /*dark*/) const
     {
         return {};
     }
@@ -1645,14 +1752,13 @@ public:
     }
 
     // Spans for an m.emote ("/me") row.
-    virtual std::vector<tk::TextSpan>
-    emote_spans(const MessageRowData&, bool revealed, bool dark,
-                const Adapter&) const;
+    virtual std::vector<tk::TextSpan> emote_spans(const MessageRowData&, bool revealed, bool dark,
+                                                  const Adapter&) const;
 
     // Virtual/system rows. Return true when handled; false → the Adapter
     // draws its default (Classic/Bubble) rendering.
-    virtual bool paint_day_separator(const MessageRowData&, tk::PaintCtx&,
-                                     tk::Rect, const Adapter&) const
+    virtual bool paint_day_separator(const MessageRowData&, tk::PaintCtx&, tk::Rect,
+                                     const Adapter&) const
     {
         return false;
     }
@@ -1660,13 +1766,12 @@ public:
     {
         return false;
     }
-    virtual bool paint_membership_line(const MessageRowData&, tk::PaintCtx&,
-                                       tk::Rect, const Adapter&) const
+    virtual bool paint_membership_line(const MessageRowData&, tk::PaintCtx&, tk::Rect,
+                                       const Adapter&) const
     {
         return false;
     }
-    virtual bool paint_membership_summary(std::size_t /*start*/,
-                                          std::size_t /*end*/, tk::PaintCtx&,
+    virtual bool paint_membership_summary(std::size_t /*start*/, std::size_t /*end*/, tk::PaintCtx&,
                                           tk::Rect, const Adapter&) const
     {
         return false;
@@ -1675,29 +1780,26 @@ public:
     // Forward attribution — "Forwarded from …" above a forwarded (MSC4553)
     // row, before the reply context. Defaults (defined after the Adapter) draw
     // the glyph + muted label; IRC overrides with a plain scrollback line.
-    virtual float measure_forward_context(const MessageRowData& m,
-                                          tk::LayoutCtx&, float col_w,
+    virtual float measure_forward_context(const MessageRowData& m, tk::LayoutCtx&, float col_w,
                                           const Adapter&) const;
-    virtual float paint_forward_context(const MessageRowData& m, tk::PaintCtx&,
-                                        float x, float y, float col_w,
-                                        const Adapter&) const;
+    virtual float paint_forward_context(const MessageRowData& m, tk::PaintCtx&, float x, float y,
+                                        float col_w, const Adapter&) const;
 
     // Reply context — the message this row is a reply to.
-    virtual float measure_reply_context(const MessageRowData& m, tk::LayoutCtx&,
-                                        float /*col_w*/, const Adapter&) const
+    virtual float measure_reply_context(const MessageRowData& m, tk::LayoutCtx&, float /*col_w*/,
+                                        const Adapter&) const
     {
         if (!m.has_reply())
+        {
             return 0.0f;
-        return (m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH) +
-               kQuoteGapAfter;
+        }
+        return (m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH) + kQuoteGapAfter;
     }
-    virtual float paint_reply_context(const MessageRowData& m, tk::PaintCtx&,
-                                      float x, float y, float col_w,
-                                      const Adapter&) const;
+    virtual float paint_reply_context(const MessageRowData& m, tk::PaintCtx&, float x, float y,
+                                      float col_w, const Adapter&) const;
 };
 
-std::unique_ptr<MessageRowRenderer>
-make_row_renderer(tesseract::Settings::MessageLayout);
+std::unique_ptr<MessageRowRenderer> make_row_renderer(tesseract::Settings::MessageLayout);
 
 // Screen-reader description of a message's content (not its sender):
 // deleted / undecryptable text, the media kind or caption, the file name,
@@ -1725,9 +1827,13 @@ std::string message_access_body(const MessageRowData& m)
         return m.has_filename_caption && !m.body.empty() ? m.body : tk::tr("Video");
     case Kind::Location:
         if (!m.location_description.empty())
+        {
             return m.location_description;
+        }
         if (m.location_live_share)
+        {
             return live_location_status_text(m, live_now_ms());
+        }
         return tk::tr("Location");
     case Kind::Poll:
         return m.body.empty() ? tk::tr("Poll") : m.body;
@@ -1749,15 +1855,21 @@ std::string message_access_body(const MessageRowData& m)
         static const tk::SipKey sip_key = tk::random_sip_key();
         const tk::SipDigest body_key = tk::siphash128(sip_key, m.formatted_body);
         if (auto it = table_text_cache.find(body_key); it != table_text_cache.end())
+        {
             return it->second.empty() ? m.body : it->second;
+        }
         if (table_text_cache.size() > 256)
+        {
             table_text_cache.clear();
+        }
         std::string& cached = table_text_cache[body_key];
         auto spans_text = [](const std::vector<tk::TextSpan>& spans)
         {
             std::string t;
             for (const auto& sp : spans)
+            {
                 t += sp.text;
+            }
             return t;
         };
         std::string out;
@@ -1773,7 +1885,9 @@ std::string message_access_body(const MessageRowData& m)
                 {
                     std::string line;
                     for (std::size_t c = 0; c < rows[r].size(); ++c)
+                    {
                         line += (c ? tk::tr(", ") : std::string()) + spans_text(rows[r][c].spans);
+                    }
                     cells += (r ? tk::tr("; ") : std::string()) + line;
                 }
                 piece = tk::trf(tk::tr("Table, {0} rows, {1} columns: {2}"),
@@ -1784,17 +1898,20 @@ std::string message_access_body(const MessageRowData& m)
                 piece = spans_text(block.spans);
             }
             if (!piece.empty())
+            {
                 out += (out.empty() ? std::string() : std::string(" ")) + piece;
+            }
         }
         cached = out;
         if (!out.empty())
+        {
             return out;
+        }
     }
     return m.body;
 }
 
-class MessageListView::Adapter : public tk::ListAdapter,
-                                 public tk::ListAdapterAccessibility
+class MessageListView::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(MessageListView& owner) : owner_(owner)
@@ -1818,7 +1935,9 @@ public:
         for (std::size_t j = index + 1; j < owner_.messages_.size(); ++j)
         {
             if (!is_virtual_event(owner_.messages_[j].kind))
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -1833,9 +1952,13 @@ public:
         {
             const MessageRowData::Kind k = owner_.messages_[j].kind;
             if (k == MessageRowData::Kind::DaySeparator)
+            {
                 return false;
+            }
             if (!is_virtual_event(k))
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -1845,8 +1968,7 @@ public:
     // is unit-testable without a live MessageListView/Adapter.
     bool is_membership_group_start(std::size_t index) const
     {
-        return tesseract::views::is_membership_group_start(owner_.messages_,
-                                                            index);
+        return tesseract::views::is_membership_group_start(owner_.messages_, index);
     }
     std::size_t membership_group_end(std::size_t start) const
     {
@@ -1854,27 +1976,23 @@ public:
     }
     std::size_t membership_group_start_of(std::size_t index) const
     {
-        return tesseract::views::membership_group_start_of(owner_.messages_,
-                                                            index);
+        return tesseract::views::membership_group_start_of(owner_.messages_, index);
     }
     std::vector<MembershipActionRun> membership_group_actions(std::size_t start,
                                                               std::size_t end) const
     {
-        return tesseract::views::membership_group_actions(owner_.messages_,
-                                                           start, end);
+        return tesseract::views::membership_group_actions(owner_.messages_, start, end);
     }
     bool membership_group_expandable(std::size_t start) const
     {
-        return tesseract::views::membership_group_expandable(owner_.messages_,
-                                                              start);
+        return tesseract::views::membership_group_expandable(owner_.messages_, start);
     }
     // A group start row shows its collapsed summary (one line per action)
     // when it can't be expanded or isn't expanded right now.
     bool membership_group_collapsed(std::size_t start) const
     {
         return !membership_group_expandable(start) ||
-               !owner_.membership_groups_.is_expanded(
-                   owner_.messages_[start].event_id);
+               !owner_.membership_groups_.is_expanded(owner_.messages_[start].event_id);
     }
 
     // Whether Membership row `index` is actually painted (a group start, or a
@@ -1882,7 +2000,9 @@ public:
     bool membership_row_painted(std::size_t index) const
     {
         if (is_membership_group_start(index))
+        {
             return true;
+        }
         return owner_.membership_groups_.is_expanded(
             owner_.messages_[membership_group_start_of(index)].event_id);
     }
@@ -1894,18 +2014,23 @@ public:
     // expands it — and so does any row on a renderer without avatars.
     std::vector<std::size_t> membership_avatar_rows(std::size_t index) const
     {
-        if (!row_renderer_->membership_avatars() ||
-            !membership_row_painted(index))
+        if (!row_renderer_->membership_avatars() || !membership_row_painted(index))
+        {
             return {};
-        if (!is_membership_group_start(index) ||
-            !membership_group_collapsed(index))
+        }
+        if (!is_membership_group_start(index) || !membership_group_collapsed(index))
+        {
             return {index};
+        }
         if (membership_group_expandable(index))
+        {
             return {};
+        }
         std::vector<std::size_t> rows;
-        for (const auto& run :
-             membership_group_actions(index, membership_group_end(index)))
+        for (const auto& run : membership_group_actions(index, membership_group_end(index)))
+        {
             rows.push_back(run.rows.front());
+        }
         return rows;
     }
 
@@ -1976,8 +2101,7 @@ public:
         std::size_t prev_idx = index - 1;
         if (owner_.suppress_read_marker_)
         {
-            while (prev_idx > 0 &&
-                   owner_.messages_[prev_idx].kind == Kind::ReadMarker)
+            while (prev_idx > 0 && owner_.messages_[prev_idx].kind == Kind::ReadMarker)
             {
                 --prev_idx;
             }
@@ -1995,8 +2119,7 @@ public:
         {
             return false;
         }
-        int interval_s =
-            tesseract::Settings::instance().message_group_interval_s;
+        int interval_s = tesseract::Settings::instance().message_group_interval_s;
         if (interval_s <= 0)
         {
             return false;
@@ -2017,8 +2140,7 @@ public:
     // that bounded neighbourhood. (Rare visibility flips of a *distant* trailing
     // read marker self-heal on the next full rebuild — width/theme change or
     // set_messages — and any read-marker update forces a full rebuild anyway.)
-    void height_dependency_span(std::size_t i, std::size_t& lo,
-                                std::size_t& hi) const override
+    void height_dependency_span(std::size_t i, std::size_t& lo, std::size_t& hi) const override
     {
         const auto& msgs = owner_.messages_;
         const std::size_t n = msgs.size();
@@ -2032,7 +2154,10 @@ public:
         {
             i = n - 1;
         }
-        auto is_virtual = [](MessageRowData::Kind k) { return is_virtual_event(k); };
+        auto is_virtual = [](MessageRowData::Kind k)
+        {
+            return is_virtual_event(k);
+        };
         // Backward: consecutive virtual rows immediately before i (their
         // visibility flips exactly when content appears/disappears beside them).
         std::size_t a = i;
@@ -2056,8 +2181,7 @@ public:
         hi = b;
     }
 
-    float measure_row_height(std::size_t index, tk::LayoutCtx& ctx,
-                             float width) override
+    float measure_row_height(std::size_t index, tk::LayoutCtx& ctx, float width) override
     {
         // Keep row_renderer_ current before any helper (including the
         // virtual-row height math and the shared body helpers) consults it.
@@ -2079,13 +2203,12 @@ public:
         }
         if (m.kind == Kind::ReadMarker)
         {
-            return (owner_.suppress_read_marker_ || !has_content_after(index))
-                       ? 0.0f : kReadMarkerH;
+            return (owner_.suppress_read_marker_ || !has_content_after(index)) ? 0.0f
+                                                                               : kReadMarkerH;
         }
         if (m.kind == Kind::TimelineStart)
         {
-            return kTimelineStartH +
-                   (owner_.predecessor_available_ ? kPredecessorLinkH : 0.0f);
+            return kTimelineStartH + (owner_.predecessor_available_ ? kPredecessorLinkH : 0.0f);
         }
         if (m.kind == Kind::PinnedEvent)
         {
@@ -2109,15 +2232,15 @@ public:
             if (is_membership_group_start(index))
             {
                 if (!membership_group_collapsed(index))
+                {
                     return kPinnedEventH;
+                }
                 const std::size_t lines =
-                    membership_group_actions(index, membership_group_end(index))
-                        .size();
+                    membership_group_actions(index, membership_group_end(index)).size();
                 return kPinnedEventH * static_cast<float>(lines);
             }
             std::size_t start = membership_group_start_of(index);
-            return owner_.membership_groups_.is_expanded(
-                       owner_.messages_[start].event_id)
+            return owner_.membership_groups_.is_expanded(owner_.messages_[start].event_id)
                        ? kPinnedEventH
                        : 0.0f;
         }
@@ -2134,8 +2257,8 @@ public:
         tk::LayoutCtx& ctx = mc.ctx;
         const float width = mc.width;
         const bool cont = mc.cont;
-        float body_w = std::max(0.0f, body_text_max_width(width) -
-                                          receipt_reserve_width(m, ctx.factory));
+        float body_w =
+            std::max(0.0f, body_text_max_width(width) - receipt_reserve_width(m, ctx.factory));
         float body_h = measure_body_block_height(m, ctx, body_w);
         float eff_chip_h = chip_h();
         float chips_h = !m.reactions.empty() ? eff_chip_h : 0.0f;
@@ -2159,18 +2282,18 @@ public:
     static tk::Color sender_color(const std::string& name, const tk::Theme& theme)
     {
         if (theme.high_contrast)
+        {
             return theme.palette.text_primary;
+        }
         const tk::ThemeMode mode = theme.mode;
         static constexpr tk::Color kLight[] = {
-            tk::Color::rgb(0xC0392B), tk::Color::rgb(0xD35400),
-            tk::Color::rgb(0x6E7D00), tk::Color::rgb(0x1E8449),
-            tk::Color::rgb(0x117A65), tk::Color::rgb(0x1565C0),
+            tk::Color::rgb(0xC0392B), tk::Color::rgb(0xD35400), tk::Color::rgb(0x6E7D00),
+            tk::Color::rgb(0x1E8449), tk::Color::rgb(0x117A65), tk::Color::rgb(0x1565C0),
             tk::Color::rgb(0x6A1B9A), tk::Color::rgb(0xAD1457),
         };
         static constexpr tk::Color kDark[] = {
-            tk::Color::rgb(0xFF8A80), tk::Color::rgb(0xFFAB40),
-            tk::Color::rgb(0xD4E157), tk::Color::rgb(0x69F0AE),
-            tk::Color::rgb(0x4DD0E1), tk::Color::rgb(0x82B1FF),
+            tk::Color::rgb(0xFF8A80), tk::Color::rgb(0xFFAB40), tk::Color::rgb(0xD4E157),
+            tk::Color::rgb(0x69F0AE), tk::Color::rgb(0x4DD0E1), tk::Color::rgb(0x82B1FF),
             tk::Color::rgb(0xCE93D8), tk::Color::rgb(0xF48FB1),
         };
         // FNV-1a: std::hash<std::string> differs between standard libraries,
@@ -2182,12 +2305,14 @@ public:
             h *= 16777619u;
         }
         if (mode == tk::ThemeMode::Dark)
+        {
             return kDark[h % std::size(kDark)];
+        }
         return kLight[h % std::size(kLight)];
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool /*selected*/, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool /*selected*/,
+                   bool hovered) override
     {
         // Keep row_renderer_ current before any helper (including the
         // virtual-row system-line painters) consults it.
@@ -2196,7 +2321,9 @@ public:
         // Everything but a day separator lays out inside the content column.
         if (index >= owner_.messages_.size() ||
             owner_.messages_[index].kind != MessageRowData::Kind::DaySeparator)
+        {
             bounds = owner_.column_rect_(bounds);
+        }
         if (is_typing_index(index))
         {
             paint_typing_row(ctx, bounds);
@@ -2257,8 +2384,7 @@ public:
             {
                 if (membership_group_collapsed(index))
                 {
-                    paint_membership_summary(index, membership_group_end(index),
-                                             ctx, bounds);
+                    paint_membership_summary(index, membership_group_end(index), ctx, bounds);
                 }
                 else
                 {
@@ -2268,8 +2394,7 @@ public:
             else
             {
                 std::size_t start = membership_group_start_of(index);
-                if (owner_.membership_groups_.is_expanded(
-                        owner_.messages_[start].event_id))
+                if (owner_.membership_groups_.is_expanded(owner_.messages_[start].event_id))
                 {
                     paint_membership_line(m, ctx, bounds);
                 }
@@ -2277,8 +2402,7 @@ public:
             return;
         }
 
-        row_renderer_->paint(
-            {*this, m, ctx, bounds, index, hovered, is_cont(index)});
+        row_renderer_->paint({*this, m, ctx, bounds, index, hovered, is_cont(index)});
     }
 
     // Historical message-row paint. ClassicRowRenderer::paint delegates
@@ -2295,22 +2419,17 @@ public:
         begin_row_hover_capture_(rp);
 
         // Avatar column centre — also the hover-timestamp centre.
-        const float avatar_cx =
-            bounds.x + kMsgListPadX + kMsgListAvatarSize * 0.5f;
-        const float avatar_cy =
-            bounds.y + kMsgListPadY + kMsgListAvatarSize * 0.5f;
+        const float avatar_cx = bounds.x + kMsgListPadX + kMsgListAvatarSize * 0.5f;
+        const float avatar_cy = bounds.y + kMsgListPadY + kMsgListAvatarSize * 0.5f;
         // Right-of-avatar body column (same indent for cont + non-cont).
-        const float col_x =
-            bounds.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
-        const float col_w =
-            std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX -
-                               receipt_reserve_width(m, ctx.factory));
+        const float col_x = bounds.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
+        const float col_w = std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX -
+                                               receipt_reserve_width(m, ctx.factory));
 
         paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x, col_w);
 
         const float body_top =
-            cont ? (bounds.y + kContPadY)
-                 : (bounds.y + kMsgListPadY + kMsgListAvatarSize);
+            cont ? (bounds.y + kContPadY) : (bounds.y + kMsgListPadY + kMsgListAvatarSize);
         const float cursor = paint_body_block(m, ctx, col_x, body_top, col_w);
 
         const float right_edge_base = bounds.x + bounds.w - kMsgListPadX;
@@ -2321,7 +2440,9 @@ public:
         paint_hover_timestamp_(rp, avatar_cx);
 
         if (m.is_thread_root && m.thread_reply_count > 0)
+        {
             paint_thread_chip(m, ctx, bounds, col_x, col_w);
+        }
     }
 
     // ── Shared per-row paint helpers ─────────────────────────────────────
@@ -2341,16 +2462,12 @@ public:
         // and rounded, so hover/search-match tint float within the row
         // rather than touching the timeline edges (matches the room-list
         // treatment and Slack/Discord message-hover conventions).
-        const tk::Rect highlight_bounds{
-            bounds.x + tesseract::visual::kSpaceXS,
-            bounds.y,
-            bounds.w - 2.0f * tesseract::visual::kSpaceXS,
-            bounds.h};
+        const tk::Rect highlight_bounds{bounds.x + tesseract::visual::kSpaceXS, bounds.y,
+                                        bounds.w - 2.0f * tesseract::visual::kSpaceXS, bounds.h};
 
         // Search match tint — subtle accent fill behind the row.
         // Painted before the hover highlight so hover layers on top.
-        if (!owner_.search_match_ids_.empty() &&
-            !m.event_id.empty() &&
+        if (!owner_.search_match_ids_.empty() && !m.event_id.empty() &&
             owner_.search_match_ids_.count(m.event_id))
         {
             ctx.canvas.fill_rounded_rect(highlight_bounds, tesseract::visual::kRadiusSM,
@@ -2361,10 +2478,9 @@ public:
         if (row_hover_fade > 0.0f)
         {
             const tk::Color subtle = ctx.theme.palette.subtle_hover;
-            ctx.canvas.fill_rounded_rect(
-                highlight_bounds, tesseract::visual::kRadiusSM,
-                subtle.with_alpha(static_cast<std::uint8_t>(
-                    row_hover_fade * static_cast<float>(subtle.a))));
+            ctx.canvas.fill_rounded_rect(highlight_bounds, tesseract::visual::kRadiusSM,
+                                         subtle.with_alpha(static_cast<std::uint8_t>(
+                                             row_hover_fade * static_cast<float>(subtle.a))));
         }
 
         // Jump-highlight flash — brief accent tint on the row just landed on
@@ -2375,8 +2491,8 @@ public:
             m.event_id == owner_.jump_highlight_event_id_)
         {
             const float duration_ms = (owner_.jump_highlight_fade_.target() > 0.5f)
-                                           ? kJumpHighlightFadeInMs
-                                           : kJumpHighlightFadeOutMs;
+                                          ? kJumpHighlightFadeInMs
+                                          : kJumpHighlightFadeOutMs;
             const float fade = owner_.jump_highlight_fade_.step(duration_ms);
             if (owner_.jump_highlight_fade_.still_animating() && owner_.request_repaint_)
             {
@@ -2424,9 +2540,8 @@ public:
     // `sender_x` is where the name is drawn; `sender_max_w` is how wide it may
     // be before ellipsising. In bubble mode the two differ from the body
     // column — the name gets the full row width, not the hugged bubble width.
-    void paint_avatar_and_sender_(const RowPaintCtx& rp, float avatar_cx,
-                                  float avatar_cy, float sender_x,
-                                  float sender_max_w, bool draw_name = true,
+    void paint_avatar_and_sender_(const RowPaintCtx& rp, float avatar_cx, float avatar_cy,
+                                  float sender_x, float sender_max_w, bool draw_name = true,
                                   bool right_align = false)
     {
         const MessageRowData& m = rp.m;
@@ -2448,14 +2563,15 @@ public:
                         ctx.theme.palette.avatar_initials_bg,
                         ctx.theme.palette.avatar_initials_text);
             if (!draw_name)
+            {
                 return;
+            }
             // right_align: sender_x is the RIGHT edge of name+status.
 
             // Sender name — vertically centered against the avatar disc.
             float sender_y = bounds.y + kMsgListPadY + (kMsgListAvatarSize - sender_h()) * 0.5f;
             auto& rc = cache_for(index);
-            const std::string skey =
-                m.sender_name.empty() ? m.sender : m.sender_name;
+            const std::string skey = m.sender_name.empty() ? m.sender : m.sender_name;
 
             // Opt-in MSC4426 status emoji after the name. Built first so the
             // name can be ellipsised to leave room for it.
@@ -2492,13 +2608,11 @@ public:
                 }
                 rc.sender_col_w = -1;
             }
-            const float status_w =
-                rc.status ? rc.status->measure().w + kStatusGap : 0.0f;
+            const float status_w = rc.status ? rc.status->measure().w + kStatusGap : 0.0f;
             const float tz_w = rc.tz ? rc.tz->measure().w + kStatusGap : 0.0f;
             const float name_max_w = std::max(0.0f, sender_max_w - status_w - tz_w);
 
-            if (!rc.sender || rc.sender_key != skey ||
-                rc.sender_col_w != name_max_w)
+            if (!rc.sender || rc.sender_key != skey || rc.sender_col_w != name_max_w)
             {
                 tk::TextStyle s{};
                 s.role = tk::FontRole::SenderName;
@@ -2525,11 +2639,12 @@ public:
                 const tk::Size esz = rc.status->measure();
                 const float ex = sender_x + nsz.w + kStatusGap;
                 const float ey = sender_y + (sender_h() - esz.h) * 0.5f;
-                ctx.canvas.draw_text(*rc.status, {ex, ey},
-                                     sender_color(m.sender, ctx.theme));
+                ctx.canvas.draw_text(*rc.status, {ex, ey}, sender_color(m.sender, ctx.theme));
                 if (rp.hovered)
+                {
                     owner_.hovered_row_geom_.status_emoji =
                         tk::Rect{ex, sender_y, esz.w, sender_h()};
+                }
             }
             if (rc.sender && rc.tz)
             {
@@ -2605,20 +2720,17 @@ public:
                 switch (act.id)
                 {
                 case Id::React:
-                    cells.push_back({&ic_react_, act.svg,
-                                     &owner_.hovered_row_geom_.react_button});
+                    cells.push_back({&ic_react_, act.svg, &owner_.hovered_row_geom_.react_button});
                     break;
                 case Id::Reply:
-                    cells.push_back({&ic_reply_, act.svg,
-                                     &owner_.hovered_row_geom_.reply_button});
+                    cells.push_back({&ic_reply_, act.svg, &owner_.hovered_row_geom_.reply_button});
                     break;
                 case Id::ReplyInThread:
-                    cells.push_back({&ic_thread_, act.svg,
-                                     &owner_.hovered_row_geom_.thread_button});
+                    cells.push_back(
+                        {&ic_thread_, act.svg, &owner_.hovered_row_geom_.thread_button});
                     break;
                 case Id::Edit:
-                    cells.push_back({&ic_edit_, act.svg,
-                                     &owner_.hovered_row_geom_.edit_button});
+                    cells.push_back({&ic_edit_, act.svg, &owner_.hovered_row_geom_.edit_button});
                     break;
                 default:
                     break;
@@ -2626,17 +2738,15 @@ public:
             }
             if (has_overflow)
             {
-                cells.push_back({&ic_more_, kMoreSvg,
-                                 &owner_.hovered_row_geom_.more_button});
+                cells.push_back({&ic_more_, kMoreSvg, &owner_.hovered_row_geom_.more_button});
             }
 
             if (!cells.empty())
             {
                 const float cell_side = kActionToolbarCellSide;
                 const float div_w = 1.0f;
-                const float pill_w =
-                    cell_side * static_cast<float>(cells.size()) +
-                    div_w * static_cast<float>(cells.size() - 1);
+                const float pill_w = cell_side * static_cast<float>(cells.size()) +
+                                     div_w * static_cast<float>(cells.size() - 1);
                 const float pill_h = cell_side;
                 const float pill_r = kActionToolbarCellSide * 0.5f;
 
@@ -2651,10 +2761,8 @@ public:
                 // inset when the row itself is narrower than the pill (e.g.
                 // the thread side panel with several action buttons enabled).
                 const float min_pill_x = bounds.x + kMsgListPadX + pill_r;
-                tk::Rect pill{std::max(min_pill_x, right_edge - pill_w), pill_y,
-                             pill_w, pill_h};
-                tk::Rect pill_visual{pill.x - pill_r, pill.y,
-                                     pill.w + 2.0f * pill_r, pill.h};
+                tk::Rect pill{std::max(min_pill_x, right_edge - pill_w), pill_y, pill_w, pill_h};
+                tk::Rect pill_visual{pill.x - pill_r, pill.y, pill.w + 2.0f * pill_r, pill.h};
                 // Record the pill's full bounds so on_pointer_move can hold
                 // the hover on this row while the pointer is over the pill,
                 // which always sits above the row's own bounds.
@@ -2666,56 +2774,47 @@ public:
                 // most commonly the row above's read-receipt cluster — a
                 // translucent fill would let those receipts show straight
                 // through, which is exactly what must never happen.
-                ctx.canvas.fill_rounded_rect(
-                    pill_visual, pill_r, ctx.theme.palette.chrome_bg);
+                ctx.canvas.fill_rounded_rect(pill_visual, pill_r, ctx.theme.palette.chrome_bg);
 
                 // Pointer in world-coords for per-cell hover detection.
                 // The reply/edit/delete/pin/thread cells use press_*_btn_
                 // rather than HoverTarget, so the hover indicator can't be
                 // derived from hover_target_ — read the latest pointer
                 // position directly.
-                const tk::Point world_ptr{
-                    owner_.last_pointer_local_.x + owner_.bounds().x,
-                    owner_.last_pointer_local_.y + owner_.bounds().y};
+                const tk::Point world_ptr{owner_.last_pointer_local_.x + owner_.bounds().x,
+                                          owner_.last_pointer_local_.y + owner_.bounds().y};
 
                 for (std::size_t i = 0; i < cells.size(); ++i)
                 {
-                    tk::Rect cell_rect{
-                        pill.x +
-                            static_cast<float>(i) * (cell_side + div_w),
-                        pill.y, cell_side, pill.h};
+                    tk::Rect cell_rect{pill.x + static_cast<float>(i) * (cell_side + div_w), pill.y,
+                                       cell_side, pill.h};
 
                     if (rect_contains(cell_rect, world_ptr))
                     {
-                        ctx.canvas.fill_rect(
-                            cell_rect, ctx.theme.palette.subtle_pressed);
+                        ctx.canvas.fill_rect(cell_rect, ctx.theme.palette.subtle_pressed);
                     }
 
                     if (cells[i].cache)
-                        cells[i].cache->draw(ctx.canvas, ctx.factory,
-                                             cells[i].svg, cell_rect,
+                    {
+                        cells[i].cache->draw(ctx.canvas, ctx.factory, cells[i].svg, cell_rect,
                                              kActionIconPx, action_tint);
+                    }
                     *cells[i].geom_out = cell_rect;
                 }
 
                 // 1px dividers between cells. Use border colour at reduced
                 // alpha so they read as subtle separators rather than the
                 // pill's own outline.
-                const tk::Color div_col =
-                    ctx.theme.palette.border.with_alpha(static_cast<
-                        std::uint8_t>(ctx.theme.palette.border.a * 0.6f));
+                const tk::Color div_col = ctx.theme.palette.border.with_alpha(
+                    static_cast<std::uint8_t>(ctx.theme.palette.border.a * 0.6f));
                 for (std::size_t i = 1; i < cells.size(); ++i)
                 {
-                    float x = pill.x +
-                              static_cast<float>(i) * cell_side +
+                    float x = pill.x + static_cast<float>(i) * cell_side +
                               static_cast<float>(i - 1) * div_w;
-                    ctx.canvas.fill_rect({x, pill.y + 2.0f, div_w,
-                                          pill.h - 4.0f},
-                                         div_col);
+                    ctx.canvas.fill_rect({x, pill.y + 2.0f, div_w, pill.h - 4.0f}, div_col);
                 }
 
-                ctx.canvas.stroke_rounded_rect(
-                    pill_visual, pill_r, ctx.theme.palette.border, 1.0f);
+                ctx.canvas.stroke_rounded_rect(pill_visual, pill_r, ctx.theme.palette.border, 1.0f);
             }
         }
     }
@@ -2764,8 +2863,7 @@ public:
                     rxc.count = r.count;
                     tk::TextStyle cst{};
                     cst.role = tk::FontRole::UiSemibold;
-                    rxc.count_layout =
-                        ctx.factory.build_text(std::to_string(r.count), cst);
+                    rxc.count_layout = ctx.factory.build_text(std::to_string(r.count), cst);
                     rxc.glyph_runs.clear();
                     if (r.source == nullptr)
                     {
@@ -2779,13 +2877,11 @@ public:
                         for (auto& seg : segment_emoji_runs(whole))
                         {
                             tk::TextStyle est{};
-                            est.role = seg.is_emoji_run
-                                           ? tk::FontRole::ReactionEmoji
-                                           : tk::FontRole::ReactionText;
+                            est.role = seg.is_emoji_run ? tk::FontRole::ReactionEmoji
+                                                        : tk::FontRole::ReactionText;
                             if (auto lo = ctx.factory.build_text(seg.text, est))
                             {
-                                rxc.glyph_runs.push_back(
-                                    {std::move(lo), seg.is_emoji_run});
+                                rxc.glyph_runs.push_back({std::move(lo), seg.is_emoji_run});
                             }
                         }
                     }
@@ -2807,8 +2903,7 @@ public:
                 if (is_img)
                 {
                     float img_side = eff_chip_h - kImgPad * 2;
-                    content_w = img_side +
-                                (show_count ? kChipInnerGap + csz.w : 0.0f);
+                    content_w = img_side + (show_count ? kChipInnerGap + csz.w : 0.0f);
                 }
                 else
                 {
@@ -2824,24 +2919,20 @@ public:
                     {
                         glyph_total_w += run.layout->measure().w;
                     }
-                    content_w = glyph_total_w +
-                                (show_count ? kChipInnerGap + csz.w : 0.0f);
+                    content_w = glyph_total_w + (show_count ? kChipInnerGap + csz.w : 0.0f);
                 }
-                float w = std::max(content_w + reaction_chip_pad_x() * 2,
-                                   eff_chip_h + 8.0f);
+                float w = std::max(content_w + reaction_chip_pad_x() * 2, eff_chip_h + 8.0f);
                 tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
 
                 // Click "pop" — brief scale-up eased back to normal. Looked
                 // up (not inserted) so chips that were never clicked don't
                 // grow the map.
                 {
-                    auto pop_it = owner_.chip_press_scale_.find(m.event_id +
-                                                                "|" + r.key);
+                    auto pop_it = owner_.chip_press_scale_.find(m.event_id + "|" + r.key);
                     if (pop_it != owner_.chip_press_scale_.end())
                     {
                         const float scale = pop_it->second.step(kChipPopMs);
-                        if (pop_it->second.still_animating() &&
-                            owner_.request_repaint_)
+                        if (pop_it->second.still_animating() && owner_.request_repaint_)
                         {
                             owner_.request_repaint_();
                         }
@@ -2849,24 +2940,21 @@ public:
                         {
                             const float ccx = pill.x + pill.w * 0.5f;
                             const float ccy = pill.y + pill.h * 0.5f;
-                            const float sw  = pill.w * scale;
-                            const float sh  = pill.h * scale;
+                            const float sw = pill.w * scale;
+                            const float sh = pill.h * scale;
                             pill = {ccx - sw * 0.5f, ccy - sh * 0.5f, sw, sh};
                         }
                     }
                 }
 
-                bool chip_hovered =
-                    hovered && owner_.hover_target_ == HoverTarget::Chip &&
-                    owner_.hover_chip_idx_ == static_cast<int>(ri);
-                tk::Color bg = r.reacted_by_me ? ctx.theme.palette.chip_bg_me
-                                               : ctx.theme.palette.chip_bg;
-                tk::Color border = r.reacted_by_me
-                                       ? ctx.theme.palette.chip_border_me
-                                       : ctx.theme.palette.chip_border;
-                tk::Color text = r.reacted_by_me
-                                     ? ctx.theme.palette.chip_text_me
-                                     : ctx.theme.palette.chip_text;
+                bool chip_hovered = hovered && owner_.hover_target_ == HoverTarget::Chip &&
+                                    owner_.hover_chip_idx_ == static_cast<int>(ri);
+                tk::Color bg =
+                    r.reacted_by_me ? ctx.theme.palette.chip_bg_me : ctx.theme.palette.chip_bg;
+                tk::Color border = r.reacted_by_me ? ctx.theme.palette.chip_border_me
+                                                   : ctx.theme.palette.chip_border;
+                tk::Color text =
+                    r.reacted_by_me ? ctx.theme.palette.chip_text_me : ctx.theme.palette.chip_text;
                 if (chip_hovered)
                 {
                     border = ctx.theme.palette.accent;
@@ -2885,32 +2973,28 @@ public:
                 if (is_img)
                 {
                     float img_side = eff_chip_h - kImgPad * 2;
-                    tk::Rect img_dst{left_x, pill.y + kImgPad, img_side,
-                                     img_side};
-                    const tk::Image* img =
-                        (owner_.image_provider_ && r.source)
-                            // Reaction-pill custom emoji have no hover
-                            // surface of their own; always play (out of
-                            // scope for low-power-mode animation gating).
-                            ? owner_.image_provider_(r.source->fetch_token(),
-                                                     /*hovered=*/true)
-                            : nullptr;
+                    tk::Rect img_dst{left_x, pill.y + kImgPad, img_side, img_side};
+                    const tk::Image* img = (owner_.image_provider_ && r.source)
+                                               // Reaction-pill custom emoji have no hover
+                                               // surface of their own; always play (out of
+                                               // scope for low-power-mode animation gating).
+                                               ? owner_.image_provider_(r.source->fetch_token(),
+                                                                        /*hovered=*/true)
+                                               : nullptr;
                     if (img)
                     {
                         ctx.canvas.draw_image(*img, img_dst);
                     }
                     else
                     {
-                        ctx.canvas.fill_rect(img_dst,
-                                             ctx.theme.high_contrast
-                                                 ? ctx.theme.palette.text_disabled
-                                                 : tk::Color{0xCC, 0xCC, 0xCC});
+                        ctx.canvas.fill_rect(img_dst, ctx.theme.high_contrast
+                                                          ? ctx.theme.palette.text_disabled
+                                                          : tk::Color{0xCC, 0xCC, 0xCC});
                     }
                     if (show_count)
                     {
-                        ctx.canvas.draw_text(
-                            *count_layout,
-                            {left_x + img_side + kChipInnerGap, count_y}, text);
+                        ctx.canvas.draw_text(*count_layout,
+                                             {left_x + img_side + kChipInnerGap, count_y}, text);
                     }
                 }
                 else
@@ -2920,8 +3004,7 @@ public:
                     // centering for the whole glyph cluster — centre by
                     // ascent() rather than full line-height because the
                     // colour-emoji font's descent region is empty.
-                    const RowLayoutCache::GlyphRun* reference =
-                        &rxc.glyph_runs[0];
+                    const RowLayoutCache::GlyphRun* reference = &rxc.glyph_runs[0];
                     for (const auto& run : rxc.glyph_runs)
                     {
                         if (run.is_emoji)
@@ -2931,28 +3014,23 @@ public:
                         }
                     }
                     float ref_h = reference->layout->measure().h;
-                    float emoji_y =
-                        pill.y + (pill.h - reference->layout->ascent()) * 0.5f;
+                    float emoji_y = pill.y + (pill.h - reference->layout->ascent()) * 0.5f;
                     float run_x = left_x;
                     for (const auto& run : rxc.glyph_runs)
                     {
                         // A smaller text run beside emoji is centred against
                         // the reference (emoji) run's own box rather than
                         // sharing its ascent-based baseline.
-                        float run_y =
-                            (&run == reference)
-                                ? emoji_y
-                                : emoji_y +
-                                      (ref_h - run.layout->measure().h) * 0.5f;
+                        float run_y = (&run == reference)
+                                          ? emoji_y
+                                          : emoji_y + (ref_h - run.layout->measure().h) * 0.5f;
                         ctx.canvas.draw_text(*run.layout, {run_x, run_y}, text);
                         run_x += run.layout->measure().w;
                     }
                     if (show_count)
                     {
                         ctx.canvas.draw_text(
-                            *count_layout,
-                            {left_x + glyph_total_w + kChipInnerGap, count_y},
-                            text);
+                            *count_layout, {left_x + glyph_total_w + kChipInnerGap, count_y}, text);
                     }
                 }
                 if (hovered)
@@ -2976,18 +3054,15 @@ public:
                 constexpr float kAddIconPx = 16.0f;
                 float w = eff_chip_h + 8.0f;
                 tk::Rect pill{chip_x, chip_y, w, eff_chip_h};
-                bool add_hovered =
-                    owner_.hover_target_ == HoverTarget::AddButton;
-                tk::Color bg = add_hovered
-                                   ? ctx.theme.palette.subtle_pressed
-                                   : ctx.theme.palette.subtle_hover;
-                tk::Color border = add_hovered ? ctx.theme.palette.accent
-                                               : ctx.theme.palette.border;
+                bool add_hovered = owner_.hover_target_ == HoverTarget::AddButton;
+                tk::Color bg =
+                    add_hovered ? ctx.theme.palette.subtle_pressed : ctx.theme.palette.subtle_hover;
+                tk::Color border =
+                    add_hovered ? ctx.theme.palette.accent : ctx.theme.palette.border;
                 ctx.canvas.fill_rounded_rect(pill, eff_chip_r, bg);
-                ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border,
-                                               add_hovered ? 1.5f : 1.0f);
-                ic_add_reaction_.draw(ctx.canvas, ctx.factory, kPlusSvg, pill,
-                                     kAddIconPx, ctx.theme.palette.text_secondary);
+                ctx.canvas.stroke_rounded_rect(pill, eff_chip_r, border, add_hovered ? 1.5f : 1.0f);
+                ic_add_reaction_.draw(ctx.canvas, ctx.factory, kPlusSvg, pill, kAddIconPx,
+                                      ctx.theme.palette.text_secondary);
                 owner_.hovered_row_geom_.add_button = pill;
                 owner_.hovered_row_geom_.add_visible = true;
             }
@@ -2996,8 +3071,7 @@ public:
     }
 
     // Read-receipt avatar cluster + "+N" overflow pill.
-    void paint_read_receipts_(const RowPaintCtx& rp, float right_edge_base,
-                              float receipt_disc_cy)
+    void paint_read_receipts_(const RowPaintCtx& rp, float right_edge_base, float receipt_disc_cy)
     {
         const MessageRowData& m = rp.m;
         tk::PaintCtx& ctx = rp.ctx;
@@ -3023,41 +3097,37 @@ public:
             {
                 tk::TextStyle st{};
                 st.role = tk::FontRole::UiSemibold;
-                overflow_layout = ctx.factory.build_text(
-                    std::string("+") + std::to_string(overflow), st);
+                overflow_layout =
+                    ctx.factory.build_text(std::string("+") + std::to_string(overflow), st);
                 if (overflow_layout)
                 {
-                    overflow_pill_w =
-                        overflow_layout->measure().w + kMsgListChipPadX;
+                    overflow_pill_w = overflow_layout->measure().w + kMsgListChipPadX;
                 }
             }
-            const float disc_span =
-                kReceiptSize + static_cast<float>(visible - 1) * kReceiptStride;
+            const float disc_span = kReceiptSize + static_cast<float>(visible - 1) * kReceiptStride;
             const float cluster_span =
-                disc_span +
-                (overflow_layout ? kReceiptOverflowGap + overflow_pill_w : 0.0f);
+                disc_span + (overflow_layout ? kReceiptOverflowGap + overflow_pill_w : 0.0f);
 
             // Never let the cluster draw left of the row's own edge inset —
             // own-message bubbles anchor furniture to their dynamic left
             // edge, which collapses to ~0 when a long message hugs the full
             // row width in a narrow panel (e.g. the thread side panel).
-            const float right_edge = std::max(
-                right_edge_base, bounds.x + kMsgListPadX + cluster_span);
+            const float right_edge =
+                std::max(right_edge_base, bounds.x + kMsgListPadX + cluster_span);
 
             for (std::size_t i = 0; i < visible; ++i)
             {
                 // m.read_receipts is newest-first; paint them in that
                 // order so the most-recent receipt sits on top of the stack.
                 const auto& rr = m.read_receipts[i];
-                float cx = right_edge - kReceiptSize * 0.5f -
-                           static_cast<float>(i) * kReceiptStride;
+                float cx =
+                    right_edge - kReceiptSize * 0.5f - static_cast<float>(i) * kReceiptStride;
                 tk::Point centre{cx, disc_cy};
                 if (hovered)
                 {
                     owner_.hovered_row_geom_.receipt_discs.push_back(
-                        {centre.x - kReceiptSize * 0.5f,
-                         centre.y - kReceiptSize * 0.5f, kReceiptSize,
-                         kReceiptSize});
+                        {centre.x - kReceiptSize * 0.5f, centre.y - kReceiptSize * 0.5f,
+                         kReceiptSize, kReceiptSize});
                 }
                 const tk::Image* img = nullptr;
                 if (owner_.avatar_provider_ && !rr.avatar_url.empty())
@@ -3065,8 +3135,7 @@ public:
                     img = owner_.avatar_provider_(rr.avatar_url);
                 }
                 draw_avatar(ctx.canvas, img, centre, kReceiptSize,
-                            rr.display_name.empty() ? rr.user_id
-                                                    : rr.display_name,
+                            rr.display_name.empty() ? rr.user_id : rr.display_name,
                             ctx.theme.palette.avatar_initials_bg,
                             ctx.theme.palette.avatar_initials_text);
             }
@@ -3090,20 +3159,17 @@ public:
                 {
                     owner_.hovered_row_geom_.receipt_overflow = pill;
                 }
-                ctx.canvas.fill_rounded_rect(pill, pill_h * 0.5f,
-                                             ctx.theme.palette.chip_bg);
-                ctx.canvas.draw_text(*layout,
-                                     {pill.x + (pill_w - sz.w) * 0.5f,
-                                      pill.y + (pill_h - sz.h) * 0.5f},
-                                     ctx.theme.palette.text_secondary);
+                ctx.canvas.fill_rounded_rect(pill, pill_h * 0.5f, ctx.theme.palette.chip_bg);
+                ctx.canvas.draw_text(
+                    *layout, {pill.x + (pill_w - sz.w) * 0.5f, pill.y + (pill_h - sz.h) * 0.5f},
+                    ctx.theme.palette.text_secondary);
             }
         }
     }
 
     // Pending-send indicator (own messages). `cursor` is the baseline the
     // glyphs sit above.
-    void paint_pending_indicator_(const RowPaintCtx& rp, float right_edge_base,
-                                  float cursor)
+    void paint_pending_indicator_(const RowPaintCtx& rp, float right_edge_base, float cursor)
     {
         const MessageRowData& m = rp.m;
         tk::PaintCtx& ctx = rp.ctx;
@@ -3122,8 +3188,7 @@ public:
         {
             using PS = MessageRowData::PendingState;
             const bool show_check = m.just_sent;
-            const bool show_clock =
-                (m.pending_state == PS::Sending && !m.just_sent);
+            const bool show_clock = (m.pending_state == PS::Sending && !m.just_sent);
             const bool show_failed = (m.pending_state == PS::Failed);
             if (show_check || show_clock || show_failed)
             {
@@ -3139,8 +3204,7 @@ public:
                 {
                     const std::size_t total = m.read_receipts.size();
                     const std::size_t n = std::min(total, kReceiptCap);
-                    float cluster_w = kReceiptSize + static_cast<float>(n - 1) *
-                                                         kReceiptStride;
+                    float cluster_w = kReceiptSize + static_cast<float>(n - 1) * kReceiptStride;
                     right_edge -= cluster_w + chip_gap();
 
                     const std::size_t overflow = total - n;
@@ -3149,14 +3213,11 @@ public:
                         tk::TextStyle ov_st{};
                         ov_st.role = tk::FontRole::UiSemibold;
                         auto ov_layout = ctx.factory.build_text(
-                            std::string("+") + std::to_string(overflow),
-                            ov_st);
+                            std::string("+") + std::to_string(overflow), ov_st);
                         if (ov_layout)
                         {
-                            const float overflow_pill_w =
-                                ov_layout->measure().w + kMsgListChipPadX;
-                            right_edge -=
-                                overflow_pill_w + kReceiptOverflowGap;
+                            const float overflow_pill_w = ov_layout->measure().w + kMsgListChipPadX;
+                            right_edge -= overflow_pill_w + kReceiptOverflowGap;
                         }
                     }
                 }
@@ -3181,8 +3242,7 @@ public:
                         tk::Size sz = lo->measure();
                         float tx = std::max(min_edge_x, right_edge - sz.w);
                         float ty = cursor - sz.h;
-                        ctx.canvas.draw_text(*lo, {tx, ty},
-                                             ctx.theme.palette.accent);
+                        ctx.canvas.draw_text(*lo, {tx, ty}, ctx.theme.palette.accent);
                     }
                 }
                 else if (show_clock)
@@ -3194,17 +3254,15 @@ public:
                         tk::Size sz = lo->measure();
                         float tx = std::max(min_edge_x, right_edge - sz.w);
                         float ty = cursor - sz.h;
-                        ctx.canvas.draw_text(*lo, {tx, ty},
-                                             ctx.theme.palette.text_muted);
+                        ctx.canvas.draw_text(*lo, {tx, ty}, ctx.theme.palette.text_muted);
                     }
                 }
                 else if (show_failed)
                 {
                     // ⚠
-                    auto warn_lo =
-                        ctx.factory.build_text("\xE2\x9A\xA0", small_st);
+                    auto warn_lo = ctx.factory.build_text("\xE2\x9A\xA0", small_st);
                     const tk::Color kRed = ctx.theme.high_contrast ? ctx.theme.palette.text_error
-                                                                : tk::Color::rgb(0xE53935);
+                                                                   : tk::Color::rgb(0xE53935);
                     float cur_right = right_edge;
 
                     if (m.pending_recoverable)
@@ -3217,12 +3275,10 @@ public:
                             float bx = std::max(min_edge_x, cur_right - bsz.w);
                             float by = cursor - bsz.h;
                             tk::Rect btn_rect{bx, by, bsz.w, bsz.h};
-                            ctx.canvas.draw_text(*btn_lo, {bx, by},
-                                                 ctx.theme.palette.accent);
+                            ctx.canvas.draw_text(*btn_lo, {bx, by}, ctx.theme.palette.accent);
                             if (hovered)
                             {
-                                owner_.hovered_row_geom_.retry_button =
-                                    btn_rect;
+                                owner_.hovered_row_geom_.retry_button = btn_rect;
                             }
                             cur_right = bx;
                         }
@@ -3230,8 +3286,7 @@ public:
                     else
                     {
                         // ✕ abort button
-                        auto btn_lo =
-                            ctx.factory.build_text("\xE2\x9C\x95", small_st);
+                        auto btn_lo = ctx.factory.build_text("\xE2\x9C\x95", small_st);
                         if (btn_lo)
                         {
                             tk::Size bsz = btn_lo->measure();
@@ -3241,8 +3296,7 @@ public:
                             ctx.canvas.draw_text(*btn_lo, {bx, by}, kRed);
                             if (hovered)
                             {
-                                owner_.hovered_row_geom_.abort_button =
-                                    btn_rect;
+                                owner_.hovered_row_geom_.abort_button = btn_rect;
                             }
                             cur_right = bx;
                         }
@@ -3251,14 +3305,12 @@ public:
                     if (warn_lo)
                     {
                         tk::Size wsz = warn_lo->measure();
-                        float wx =
-                            std::max(min_edge_x, cur_right - kPendingGap - wsz.w);
+                        float wx = std::max(min_edge_x, cur_right - kPendingGap - wsz.w);
                         float wy = cursor - wsz.h;
                         ctx.canvas.draw_text(*warn_lo, {wx, wy}, kRed);
                         if (hovered)
                         {
-                            owner_.hovered_row_geom_.failed_marker =
-                                tk::Rect{wx, wy, wsz.w, wsz.h};
+                            owner_.hovered_row_geom_.failed_marker = tk::Rect{wx, wy, wsz.w, wsz.h};
                         }
                     }
                 }
@@ -3298,17 +3350,15 @@ public:
                         // Centre against the first line of the message body
                         // (the only thing in a continuation row).
                         static_cache_.ensure(ctx.factory);
-                        float line_h = static_cache_.body_line_h > 0.0f
-                                           ? static_cache_.body_line_h
-                                           : sz.h;
+                        float line_h =
+                            static_cache_.body_line_h > 0.0f ? static_cache_.body_line_h : sz.h;
                         ty = bounds.y + kContPadY + (line_h - sz.h) * 0.5f;
                     }
                     else
                     {
                         ty = bounds.y + kMsgListPadY + kMsgListAvatarSize + 2.0f;
                     }
-                    ctx.canvas.draw_text(*layout, {tx, ty},
-                                         ctx.theme.palette.text_muted);
+                    ctx.canvas.draw_text(*layout, {tx, ty}, ctx.theme.palette.text_muted);
                 }
             }
         }
@@ -3320,14 +3370,15 @@ public:
     // single-layout bodies report their longest wrapped line; multi-section
     // bodies (tables/lists/quotes) fill the bubble; URL preview cards and
     // media widen it to their own width (body_block_natural_width_).
-    float body_text_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
-                                   float w) const
+    float body_text_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w) const
     {
         const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
         if (!e.sections.empty())
+        {
             return w; // multi-section bodies (tables/lists/quotes) fill the bubble
+        }
         if (!e.spans.empty())
         {
             // Rich body (mentions, bold, links, inline emoji, …). A
@@ -3341,16 +3392,14 @@ public:
             {
                 tk::TextStyle st = body_style(-1.0f, e.emoji_only);
                 auto nat = ctx.factory.build_rich_text(e.spans, st);
-                e.natural_w = nat ? nat->measure().w
-                                  : (e.layout ? e.layout->measure().w : 0.0f);
+                e.natural_w = nat ? nat->measure().w : (e.layout ? e.layout->measure().w : 0.0f);
             }
             return std::min(e.natural_w, w);
         }
         return e.layout ? e.layout->measure().w : 0.0f; // plain: already tight
     }
 
-    float body_block_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
-                                    float w) const
+    float body_block_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w) const
     {
         using Kind = MessageRowData::Kind;
         float nat = w;
@@ -3363,7 +3412,9 @@ public:
             if (m.is_edited)
             {
                 if (auto lo = ctx.factory.build_text(tk::tr("(edited)"), body_style(w, false)))
+                {
                     nat = std::max(nat, lo->measure().w);
+                }
             }
             break;
         case Kind::Emote:
@@ -3374,20 +3425,23 @@ public:
             // the bubble too narrow, so the painted line wraps below a
             // one-line-tall bubble. Measure the real emote spans unconstrained
             // instead (mirrors the reshape trick in body_text_natural_width_).
-            const bool dark    = ctx.theme.mode == tk::ThemeMode::Dark;
+            const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
             const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-            auto spans =
-                row_renderer_->emote_spans(m, revealed, dark, *this);
+            auto spans = row_renderer_->emote_spans(m, revealed, dark, *this);
             nat = 0.0f;
             if (!spans.empty())
             {
                 if (auto lo = ctx.factory.build_rich_text(spans, body_style(-1.0f)))
+                {
                     nat = std::min(lo->measure().w, w);
+                }
             }
             if (m.is_edited)
             {
                 if (auto lo = ctx.factory.build_text(tk::tr("(edited)"), body_style(w, false)))
+                {
                     nat = std::max(nat, lo->measure().w);
+                }
             }
             break;
         }
@@ -3397,7 +3451,9 @@ public:
             tk::Size sz = fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             nat = sz.w > 0.0f ? sz.w : max_w;
             if (m.has_filename_caption && !m.body.empty())
+            {
                 nat = std::max(nat, body_text_natural_width_(m, ctx, w));
+            }
             break;
         }
         case Kind::Sticker:
@@ -3414,13 +3470,17 @@ public:
             tk::Size sz = fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             nat = sz.w > 0.0f ? sz.w : max_w;
             if (m.has_filename_caption && !m.body.empty())
+            {
                 nat = std::max(nat, body_text_natural_width_(m, ctx, w));
+            }
             break;
         }
         case Kind::File:
             nat = std::min(kFileCardW, w);
             if (m.has_filename_caption && !m.body.empty())
+            {
                 nat = std::max(nat, body_text_natural_width_(m, ctx, w));
+            }
             break;
         case Kind::Audio:
             nat = std::min(kAudioCardW, w);
@@ -3440,9 +3500,13 @@ public:
         }
         nat = std::max(nat, owner_.previews_.stack_width(m, w));
         if (m.has_reply())
+        {
             nat = std::max(nat, msgbubble::kQuoteMinW);
+        }
         if (m.forwarded)
+        {
             nat = std::max(nat, forward_natural_width_(m, ctx, w));
+        }
         // No lower bound: the bubble hugs its content (see msgbubble::layout).
         return std::min(nat, w);
     }
@@ -3454,26 +3518,26 @@ public:
         const bool cont = mc.cont;
         const bool right = bubble_right_(m);
         const bool own_av = own_avatar_shown_(m);
-        const float shp = msgbubble::shaping_width(
-            mc.width, right, receipt_reserve_width(m, ctx.factory), own_av);
+        const float shp = msgbubble::shaping_width(mc.width, right,
+                                                   receipt_reserve_width(m, ctx.factory), own_av);
         const float body_h = measure_body_block_height(m, ctx, shp);
         const float chips_h = m.reactions.empty() ? 0.0f : chip_h();
         const float top_pad = cont ? kContPadY : kMsgListPadY;
-        const float header_h =
-            (cont || (right && !own_av)) ? 0.0f : kMsgListAvatarSize;
-        float raw_h = top_pad + header_h + 2.0f * msgbubble::kBubblePadY +
-                      body_h + chips_h + kMsgListPadY;
+        const float header_h = (cont || (right && !own_av)) ? 0.0f : kMsgListAvatarSize;
+        float raw_h =
+            top_pad + header_h + 2.0f * msgbubble::kBubblePadY + body_h + chips_h + kMsgListPadY;
         // Not inflated to fit the hover action pill — see measure_classic_row_.
         if (m.is_thread_root && m.thread_reply_count > 0)
+        {
             raw_h += kThreadChipH + kThreadChipGap;
+        }
         return raw_h;
     }
 
     // Bubbles layout: draw the local user's avatar in the right gutter.
     bool own_avatar_shown_(const MessageRowData& m) const
     {
-        return bubble_right_(m) &&
-               tesseract::Settings::instance().bubbles_show_own_avatar;
+        return bubble_right_(m) && tesseract::Settings::instance().bubbles_show_own_avatar;
     }
 
     // Own rows are right-anchored, except while a side panel is open: the
@@ -3495,12 +3559,11 @@ public:
 
         const bool right = bubble_right_(m);
         const bool own_av = own_avatar_shown_(m);
-        const float shp = msgbubble::shaping_width(
-            bounds.w, right, receipt_reserve_width(m, ctx.factory), own_av);
+        const float shp = msgbubble::shaping_width(bounds.w, right,
+                                                   receipt_reserve_width(m, ctx.factory), own_av);
         tk::LayoutCtx lc{ctx.factory, ctx.theme};
         const float natural_w = body_block_natural_width_(m, lc, shp);
-        const msgbubble::Box box =
-            msgbubble::layout(bounds.w, right, cont, natural_w, own_av);
+        const msgbubble::Box box = msgbubble::layout(bounds.w, right, cont, natural_w, own_av);
 
         const float col_x = bounds.x + box.content_x;
         const float col_w = box.content_w;
@@ -3508,20 +3571,15 @@ public:
         // right padding. Unlike col_w (hugged to the body's natural width),
         // furniture that should fill the row rather than the bubble — the
         // sender name, the thread-reply chip — sizes against this instead.
-        const float row_max_w =
-            std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX);
+        const float row_max_w = std::max(0.0f, bounds.x + bounds.w - col_x - kMsgListPadX);
         const float right_edge_base = bounds.x + box.furniture_right_x;
         const float avatar_cx =
-            right
-                ? bounds.x + bounds.w - msgbubble::kEdgePadX -
-                      msgbubble::kAvatarSize * 0.5f
-                : bounds.x + msgbubble::kEdgePadX + msgbubble::kAvatarSize * 0.5f;
-        const float avatar_cy =
-            bounds.y + kMsgListPadY + msgbubble::kAvatarSize * 0.5f;
+            right ? bounds.x + bounds.w - msgbubble::kEdgePadX - msgbubble::kAvatarSize * 0.5f
+                  : bounds.x + msgbubble::kEdgePadX + msgbubble::kAvatarSize * 0.5f;
+        const float avatar_cy = bounds.y + kMsgListPadY + msgbubble::kAvatarSize * 0.5f;
 
         const float top_pad = cont ? kContPadY : kMsgListPadY;
-        const float body_top =
-            bounds.y + top_pad + box.header_h + msgbubble::kBubblePadY;
+        const float body_top = bounds.y + top_pad + box.header_h + msgbubble::kBubblePadY;
 
         if (box.draw_avatar || box.draw_sender)
         {
@@ -3539,8 +3597,7 @@ public:
             }
             else
             {
-                paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x,
-                                         row_max_w);
+                paint_avatar_and_sender_(rp, avatar_cx, avatar_cy, col_x, row_max_w);
             }
         }
 
@@ -3549,13 +3606,10 @@ public:
         // every wrapped line already fits col_w, so the height is stable).
         {
             const float body_h = measure_body_block_height(m, lc, shp);
-            const tk::Rect bubble{bounds.x + box.bubble_x,
-                                  body_top - msgbubble::kBubblePadY,
-                                  box.bubble_w,
-                                  body_h + 2.0f * msgbubble::kBubblePadY};
-            const tk::Color fill = m.is_own
-                                       ? ctx.theme.palette.bubble_bg_me
-                                       : ctx.theme.palette.bubble_bg;
+            const tk::Rect bubble{bounds.x + box.bubble_x, body_top - msgbubble::kBubblePadY,
+                                  box.bubble_w, body_h + 2.0f * msgbubble::kBubblePadY};
+            const tk::Color fill =
+                m.is_own ? ctx.theme.palette.bubble_bg_me : ctx.theme.palette.bubble_bg;
             ctx.canvas.fill_rounded_rect(bubble, msgbubble::kBubbleRadius, fill);
         }
 
@@ -3567,12 +3621,13 @@ public:
         // own/other or bubble width, same as Classic/IRC.
         const float pill_right_edge = bounds.x + bounds.w - msgbubble::kEdgePadX;
         paint_hover_action_pill_(rp, pill_right_edge);
-        const float disc_cy =
-            paint_reaction_strip_(rp, bounds.x + box.chip_x, cursor);
+        const float disc_cy = paint_reaction_strip_(rp, bounds.x + box.chip_x, cursor);
         paint_read_receipts_(rp, right_edge_base, disc_cy);
         paint_pending_indicator_(rp, right_edge_base, cursor);
         if (!right)
+        {
             paint_hover_timestamp_(rp, avatar_cx);
+        }
 
         if (m.is_thread_root && m.thread_reply_count > 0)
         {
@@ -3584,19 +3639,15 @@ public:
             // leftward instead.
             if (right)
             {
-                const float gutter =
-                    own_av ? msgbubble::kAvatarSize + msgbubble::kAvatarGap : 0.0f;
-                const float avail =
-                    std::max(0.0f, bounds.w - 2.0f * msgbubble::kEdgePadX - gutter);
-                const float right_edge =
-                    bounds.x + bounds.w - msgbubble::kEdgePadX - gutter;
+                const float gutter = own_av ? msgbubble::kAvatarSize + msgbubble::kAvatarGap : 0.0f;
+                const float avail = std::max(0.0f, bounds.w - 2.0f * msgbubble::kEdgePadX - gutter);
+                const float right_edge = bounds.x + bounds.w - msgbubble::kEdgePadX - gutter;
                 paint_thread_chip(m, ctx, bounds, right_edge, avail,
                                   /*right_align=*/true);
             }
             else
             {
-                paint_thread_chip(m, ctx, bounds, bounds.x + box.chip_x,
-                                  row_max_w);
+                paint_thread_chip(m, ctx, bounds, bounds.x + box.chip_x, row_max_w);
             }
         }
     }
@@ -3615,32 +3666,28 @@ public:
                       msgirc::PrefixKind kind = msgirc::PrefixKind::Message)
     {
         std::vector<tk::TextSpan> out;
-        const std::string ts =
-            msgirc::timestamp_part(format_hhmm(m.timestamp_ms));
+        const std::string ts = msgirc::timestamp_part(format_hhmm(m.timestamp_ms));
         if (!ts.empty())
         {
             tk::TextSpan t;
-            t.text      = ts;
+            t.text = ts;
             t.has_color = true;
-            t.color     = tk::Color::rgb(0x8A8F98); // legible on light + dark
+            t.color = tk::Color::rgb(0x8A8F98); // legible on light + dark
             out.push_back(std::move(t));
         }
         tk::TextSpan n;
-        n.text      = msgirc::nick_part(
-            m.sender_name.empty() ? m.sender : m.sender_name, kind);
+        n.text = msgirc::nick_part(m.sender_name.empty() ? m.sender : m.sender_name, kind);
         n.has_color = true;
-        n.color     = msgirc::nick_color(m.sender, mode);
+        n.color = msgirc::nick_color(m.sender, mode);
         out.push_back(std::move(n));
         return out;
     }
 
     // Plain "[HH:MM] <nick> " string (the concatenation of the spans above).
-    static std::string irc_prefix_plain_(const MessageRowData& m,
-                                         msgirc::PrefixKind kind)
+    static std::string irc_prefix_plain_(const MessageRowData& m, msgirc::PrefixKind kind)
     {
-        return msgirc::line_prefix(
-            format_hhmm(m.timestamp_ms),
-            m.sender_name.empty() ? m.sender : m.sender_name, kind);
+        return msgirc::line_prefix(format_hhmm(m.timestamp_ms),
+                                   m.sender_name.empty() ? m.sender : m.sender_name, kind);
     }
 
     // Which nick delimiter this row uses.
@@ -3648,21 +3695,27 @@ public:
     {
         using K = MessageRowData::Kind;
         if (m.kind == K::Emote)
+        {
             return msgirc::PrefixKind::Action;
+        }
         if (m.kind == K::Notice)
+        {
             return msgirc::PrefixKind::Notice;
+        }
         return msgirc::PrefixKind::Message;
     }
 
     // True when the prefix is baked into the body's own wrapped layout
     // (flush-wrap). Text-ish flat bodies only; media / tables / lists fall
     // back to a standalone prefix line.
-    bool irc_prefix_is_inline_(const MessageRowData& m, tk::CanvasFactory& f,
-                               float col_w, bool dark, bool revealed) const
+    bool irc_prefix_is_inline_(const MessageRowData& m, tk::CanvasFactory& f, float col_w,
+                               bool dark, bool revealed) const
     {
         using K = MessageRowData::Kind;
         if (m.kind != K::Text && m.kind != K::Notice && m.kind != K::Unhandled)
+        {
             return false;
+        }
         return body_layout_for(m, f, col_w, dark, revealed).sections.empty();
     }
 
@@ -3672,9 +3725,8 @@ public:
         tk::LayoutCtx& ctx = mc.ctx;
         const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-        const float col_w = std::max(
-            0.0f, mc.width - 2.0f * msgirc::kIrcPadX -
-                      receipt_reserve_width(m, ctx.factory));
+        const float col_w = std::max(0.0f, mc.width - 2.0f * msgirc::kIrcPadX -
+                                               receipt_reserve_width(m, ctx.factory));
 
         float prefix_h = 0.0f;
         // Emote rows carry the prefix inside their own spans (build_emote_
@@ -3683,9 +3735,7 @@ public:
             !irc_prefix_is_inline_(m, ctx.factory, col_w, dark, revealed))
         {
             static_cache_.ensure(ctx.factory);
-            prefix_h = (static_cache_.mono_line_h > 0.0f
-                            ? static_cache_.mono_line_h
-                            : 16.0f) +
+            prefix_h = (static_cache_.mono_line_h > 0.0f ? static_cache_.mono_line_h : 16.0f) +
                        msgirc::kIrcPrefixGap;
         }
 
@@ -3694,11 +3744,12 @@ public:
         // line for this layout).
         const float body_h = measure_body_block_height(m, ctx, col_w);
         const float chips_h = m.reactions.empty() ? 0.0f : chip_h();
-        float raw_h = msgirc::kIrcRowGapY + prefix_h + body_h + chips_h +
-                      msgirc::kIrcRowGapY;
+        float raw_h = msgirc::kIrcRowGapY + prefix_h + body_h + chips_h + msgirc::kIrcRowGapY;
         // Not inflated to fit the hover action pill — see measure_classic_row_.
         if (m.is_thread_root && m.thread_reply_count > 0)
+        {
             raw_h += kThreadChipH + kThreadChipGap;
+        }
         return raw_h;
     }
 
@@ -3714,9 +3765,8 @@ public:
         begin_row_hover_capture_(rp);
 
         const float col_x = bounds.x + msgirc::kIrcPadX;
-        const float col_w = std::max(
-            0.0f, bounds.w - 2.0f * msgirc::kIrcPadX -
-                      receipt_reserve_width(m, ctx.factory));
+        const float col_w = std::max(0.0f, bounds.w - 2.0f * msgirc::kIrcPadX -
+                                               receipt_reserve_width(m, ctx.factory));
         const float right_edge_base = bounds.x + bounds.w - msgirc::kIrcPadX;
 
         float body_top = bounds.y + msgirc::kIrcRowGapY;
@@ -3726,22 +3776,21 @@ public:
         if (!irc_prefix_is_inline_(m, ctx.factory, col_w, dark, revealed) &&
             m.kind != MessageRowData::Kind::Emote)
         {
-            auto spans = irc_prefix_spans_(m, ctx.theme.mode,
-                                           irc_prefix_kind_(m));
+            auto spans = irc_prefix_spans_(m, ctx.theme.mode, irc_prefix_kind_(m));
             if (ctx.theme.high_contrast)
+            {
                 flatten_span_colours(spans);
+            }
             tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
+            st.role = tk::FontRole::Body;
             st.monospace = true;
-            st.wrap      = false;
+            st.wrap = false;
             if (auto lo = ctx.factory.build_rich_text(spans, st))
             {
-                ctx.canvas.draw_text(*lo, {col_x, body_top},
-                                     ctx.theme.palette.text_primary);
+                ctx.canvas.draw_text(*lo, {col_x, body_top}, ctx.theme.palette.text_primary);
                 static_cache_.ensure(ctx.factory);
-                body_top += (static_cache_.mono_line_h > 0.0f
-                                 ? static_cache_.mono_line_h
-                                 : lo->measure().h) +
+                body_top += (static_cache_.mono_line_h > 0.0f ? static_cache_.mono_line_h
+                                                              : lo->measure().h) +
                             msgirc::kIrcPrefixGap;
             }
         }
@@ -3754,7 +3803,9 @@ public:
         paint_pending_indicator_(rp, right_edge_base, cursor);
 
         if (m.is_thread_root && m.thread_reply_count > 0)
+        {
             paint_thread_chip(m, ctx, bounds, col_x, col_w);
+        }
     }
 
     // ── tk::ListAdapterAccessibility ─────────────────────────────────────
@@ -3771,22 +3822,30 @@ public:
     tk::Role access_role_for_row(std::size_t index) const override
     {
         if (access_name_for_row(index).empty())
+        {
             return tk::Role::None;
+        }
         // Typing row and out-of-range both read as static text / None —
         // row_role_ itself indexes owner_.messages_[index] unconditionally,
         // so it must never be called for either (the typing row's index
         // equals owner_.messages_.size(), one past the end).
         if (is_typing_index(index) || index >= owner_.messages_.size())
+        {
             return tk::Role::StaticText;
+        }
         return row_role_(index);
     }
 
     std::string access_name_for_row(std::size_t index) const override
     {
         if (is_typing_index(index))
+        {
             return owner_.typing_text_;
+        }
         if (index >= owner_.messages_.size())
+        {
             return {};
+        }
 
         using Kind = MessageRowData::Kind;
         const auto& m = owner_.messages_[index];
@@ -3794,13 +3853,12 @@ public:
         switch (m.kind)
         {
         case Kind::DaySeparator:
-            return has_content_before_next_separator(index)
-                      ? format_day_label(m.timestamp_ms)
-                      : std::string{};
+            return has_content_before_next_separator(index) ? format_day_label(m.timestamp_ms)
+                                                            : std::string{};
         case Kind::ReadMarker:
             return (!owner_.suppress_read_marker_ && has_content_after(index))
-                      ? tk::tr("New messages")
-                      : std::string{};
+                       ? tk::tr("New messages")
+                       : std::string{};
         case Kind::TimelineStart:
             return owner_.predecessor_available_
                        ? tk::tr("This room continues an older conversation.")
@@ -3811,10 +3869,10 @@ public:
         case Kind::CallNotification:
         {
             const bool is_video = (m.body == "video");
-            const std::string intent =
-                is_video ? tk::tr("started a video call")
-                        : (m.body == "audio" ? tk::tr("started a voice call")
-                                             : tk::tr("started a call"));
+            const std::string intent = is_video
+                                           ? tk::tr("started a video call")
+                                           : (m.body == "audio" ? tk::tr("started a voice call")
+                                                                : tk::tr("started a call"));
             return m.sender_name.empty() ? intent
                                          : tk::trf(tk::tr("{0} {1}"), {m.sender_name, intent});
         }
@@ -3831,23 +3889,22 @@ public:
                     // Every per-action summary line, read as one sentence
                     // list.
                     std::string text;
-                    for (const auto& run : membership_group_actions(
-                             index, membership_group_end(index)))
+                    for (const auto& run :
+                         membership_group_actions(index, membership_group_end(index)))
                     {
-                        std::string phrase =
-                            membership_run_phrase(owner_.messages_, run);
-                        text = text.empty()
-                                   ? std::move(phrase)
-                                   : tk::trf(tk::tr("{0}; {1}"), {text, phrase});
+                        std::string phrase = membership_run_phrase(owner_.messages_, run);
+                        text = text.empty() ? std::move(phrase)
+                                            : tk::trf(tk::tr("{0}; {1}"), {text, phrase});
                     }
                     return text;
                 }
                 return membership_expanded_phrase(m);
             }
             std::size_t start = membership_group_start_of(index);
-            if (owner_.membership_groups_.is_expanded(
-                    owner_.messages_[start].event_id))
+            if (owner_.membership_groups_.is_expanded(owner_.messages_[start].event_id))
+            {
                 return membership_expanded_phrase(m);
+            }
             return {};
         }
         default:
@@ -3861,9 +3918,8 @@ public:
         // piece is its own translatable phrase, joined by a translatable
         // separator.
         const std::string body = message_row_access_body_(m);
-        std::string name = m.sender_name.empty()
-                               ? body
-                               : tk::trf(tk::tr("{0}: {1}"), {m.sender_name, body});
+        std::string name =
+            m.sender_name.empty() ? body : tk::trf(tk::tr("{0}: {1}"), {m.sender_name, body});
         // Opt-in sender status (emoji is only drawn, so announce it too).
         if (!m.sender_name.empty() &&
             tesseract::Settings::instance().show_sender_status_in_timeline &&
@@ -3872,10 +3928,10 @@ public:
             (!m.sender_status_emoji.empty() || !m.sender_status_text.empty()))
         {
             const std::string status =
-                m.sender_status_text.empty()  ? m.sender_status_emoji
-                : m.sender_status_emoji.empty() ? m.sender_status_text
-                : tk::trf(tk::tr("{0} {1}"),
-                          {m.sender_status_emoji, m.sender_status_text});
+                m.sender_status_text.empty() ? m.sender_status_emoji
+                : m.sender_status_emoji.empty()
+                    ? m.sender_status_text
+                    : tk::trf(tk::tr("{0} {1}"), {m.sender_status_emoji, m.sender_status_text});
             name = tk::trf(tk::tr("{0} ({1}): {2}"), {m.sender_name, status, body});
         }
         if (!m.sender_name.empty() &&
@@ -3885,43 +3941,61 @@ public:
         {
             if (const auto it = owner_.sender_tz_diffs_.find(m.sender);
                 it != owner_.sender_tz_diffs_.end() && !it->second.empty())
-                name = tk::trf(tk::tr("{0} ({1} from you): {2}"),
-                               {m.sender_name, it->second, body});
+            {
+                name =
+                    tk::trf(tk::tr("{0} ({1} from you): {2}"), {m.sender_name, it->second, body});
+            }
         }
         std::vector<std::string> extras;
         if (m.pending_state == MessageRowData::PendingState::Failed)
+        {
             extras.push_back(tk::tr("not sent"));
+        }
         else if (m.pending_state == MessageRowData::PendingState::Sending)
+        {
             extras.push_back(tk::tr("sending"));
+        }
         if (m.has_reply())
+        {
             extras.push_back(m.in_reply_to_sender_name.empty()
                                  ? tk::tr("in reply")
-                                 : tk::trf(tk::tr("replying to {0}"),
-                                           {m.in_reply_to_sender_name}));
+                                 : tk::trf(tk::tr("replying to {0}"), {m.in_reply_to_sender_name}));
+        }
         if (m.forwarded)
+        {
             extras.push_back(m.forwarded_author().empty()
                                  ? tk::tr("forwarded message")
-                                 : tk::trf(tk::tr("forwarded from {0}"),
-                                           {m.forwarded_author()}));
+                                 : tk::trf(tk::tr("forwarded from {0}"), {m.forwarded_author()}));
+        }
         if (m.is_edited)
+        {
             extras.push_back(tk::tr("edited"));
+        }
         if (m.timestamp_ms != 0)
+        {
             extras.push_back(format_hhmm(m.timestamp_ms));
+        }
         if (m.thread_reply_count > 0)
+        {
             extras.push_back(tk::trf(tk::trn("{0} reply in thread", "{0} replies in thread",
                                              static_cast<long>(m.thread_reply_count)),
                                      {std::to_string(m.thread_reply_count)}));
+        }
         if (!m.reactions.empty())
         {
             std::uint64_t total = 0;
             for (const auto& r : m.reactions)
+            {
                 total += r.count;
-            extras.push_back(tk::trf(tk::trn("{0} reaction", "{0} reactions",
-                                             static_cast<long>(total)),
-                                     {std::to_string(total)}));
+            }
+            extras.push_back(
+                tk::trf(tk::trn("{0} reaction", "{0} reactions", static_cast<long>(total)),
+                        {std::to_string(total)}));
         }
         for (const auto& e : extras)
+        {
             name = tk::trf(tk::tr("{0}, {1}"), {name, e});
+        }
         return name;
     }
 
@@ -3936,26 +4010,27 @@ public:
     // bounded on a long timeline; off-screen rows keep just their flattened
     // name node. Each child carries an `activate` closure routing through the
     // exact same callback the mouse path fires.
-    static tk::AccessNode action_node_(std::string name,
-                                       std::function<bool()> activate)
+    static tk::AccessNode action_node_(std::string name, std::function<bool()> activate)
     {
         tk::AccessNode n;
-        n.role     = tk::Role::Button;
-        n.name     = std::move(name);
+        n.role = tk::Role::Button;
+        n.name = std::move(name);
         n.activate = std::move(activate);
         return n;
     }
 
-    std::vector<tk::AccessNode>
-    access_subtree_for_row(std::size_t index) const override
+    std::vector<tk::AccessNode> access_subtree_for_row(std::size_t index) const override
     {
         std::vector<tk::AccessNode> out;
         if (index >= owner_.messages_.size())
+        {
             return out;
+        }
         auto [first, last] = owner_.visible_range();
-        if (first < 0 || static_cast<int>(index) + 4 < first ||
-            static_cast<int>(index) > last + 4)
+        if (first < 0 || static_cast<int>(index) + 4 < first || static_cast<int>(index) > last + 4)
+        {
             return out;
+        }
 
         const MessageRowData& m = owner_.messages_[index];
         if (m.kind == MessageRowData::Kind::Membership)
@@ -3967,16 +4042,18 @@ public:
             {
                 const MessageRowData& t = owner_.messages_[r];
                 if (t.membership_target_user_id.empty())
+                {
                     continue;
+                }
                 out.push_back(action_node_(
-                    tk::trf(tk::tr("View profile of {0}"),
-                            {membership_target_label(t)}),
-                    [v, uid = t.membership_target_user_id,
-                     name = t.membership_target_name,
+                    tk::trf(tk::tr("View profile of {0}"), {membership_target_label(t)}),
+                    [v, uid = t.membership_target_user_id, name = t.membership_target_name,
                      av = t.membership_target_avatar_url]
                     {
                         if (!v->on_sender_clicked)
+                        {
                             return false;
+                        }
                         v->on_sender_clicked(uid, name, av);
                         return true;
                     }));
@@ -3984,7 +4061,9 @@ public:
             return out;
         }
         if (is_virtual_event(m.kind))
+        {
             return out;
+        }
         using Kind = MessageRowData::Kind;
         MessageListView* v = &owner_;
         const std::string ev = m.event_id;
@@ -3993,15 +4072,17 @@ public:
         if (!m.sender.empty() && owner_.on_sender_clicked)
         {
             const std::string who = m.sender_name.empty() ? m.sender : m.sender_name;
-            out.push_back(action_node_(
-                tk::trf(tk::tr("View profile of {0}"), {who}),
-                [v, uid = m.sender, name = m.sender_name, av = m.sender_avatar_url]
-                {
-                    if (!v->on_sender_clicked)
-                        return false;
-                    v->on_sender_clicked(uid, name, av);
-                    return true;
-                }));
+            out.push_back(
+                action_node_(tk::trf(tk::tr("View profile of {0}"), {who}),
+                             [v, uid = m.sender, name = m.sender_name, av = m.sender_avatar_url]
+                             {
+                                 if (!v->on_sender_clicked)
+                                 {
+                                     return false;
+                                 }
+                                 v->on_sender_clicked(uid, name, av);
+                                 return true;
+                             }));
         }
 
         // ── Content: reply quote, links, preview cards, thread, media ──
@@ -4018,43 +4099,60 @@ public:
                                        }));
         }
         if (const LinkLayout* cle = owner_.link_cache_.peek(ev))
+        {
             for (const SectionLayout& sec : cle->sections)
+            {
                 if (sec.code_block >= 0)
-                    out.push_back(action_node_(
-                        sec.collapsed ? tk::tr("Expand code block")
-                                      : tk::tr("Collapse code block"),
-                        [v, ev, blk = sec.code_block]
-                        {
-                            v->code_blocks_.toggle(ev, blk);
-                            v->invalidate_data();
-                            return true;
-                        }));
-        if (m.has_reply())
-            out.push_back(action_node_(tk::tr("Jump to replied message"),
-                                       [v, ev] { return v->jump_to_reply_original_(ev); }));
-        if (m.has_forward_link() && owner_.on_forward_origin_clicked)
-            out.push_back(action_node_(
-                tk::tr("View original message"),
-                [v, rid = m.forwarded_room_id, eid = m.forwarded_event_id]
                 {
-                    if (!v->on_forward_origin_clicked)
-                        return false;
-                    v->on_forward_origin_clicked(rid, eid);
-                    return true;
-                }));
+                    out.push_back(action_node_(sec.collapsed ? tk::tr("Expand code block")
+                                                             : tk::tr("Collapse code block"),
+                                               [v, ev, blk = sec.code_block]
+                                               {
+                                                   v->code_blocks_.toggle(ev, blk);
+                                                   v->invalidate_data();
+                                                   return true;
+                                               }));
+                }
+            }
+        }
+        if (m.has_reply())
+        {
+            out.push_back(action_node_(tk::tr("Jump to replied message"),
+                                       [v, ev]
+                                       {
+                                           return v->jump_to_reply_original_(ev);
+                                       }));
+        }
+        if (m.has_forward_link() && owner_.on_forward_origin_clicked)
+        {
+            out.push_back(action_node_(tk::tr("View original message"),
+                                       [v, rid = m.forwarded_room_id, eid = m.forwarded_event_id]
+                                       {
+                                           if (!v->on_forward_origin_clicked)
+                                           {
+                                               return false;
+                                           }
+                                           v->on_forward_origin_clicked(rid, eid);
+                                           return true;
+                                       }));
+        }
 
         if (m.kind == Kind::Text || m.kind == Kind::Notice || m.kind == Kind::Emote)
         {
-            const std::vector<tk::TextSpan> spans =
-                m.formatted_body.empty() ? autolink_plain_to_spans(m.body)
-                                         : html_to_spans(m.formatted_body);
+            const std::vector<tk::TextSpan> spans = m.formatted_body.empty()
+                                                        ? autolink_plain_to_spans(m.body)
+                                                        : html_to_spans(m.formatted_body);
             for (const auto& sp : spans)
             {
                 if (sp.url.empty())
+                {
                     continue;
-                tk::AccessNode link = action_node_(
-                    sp.text.empty() ? sp.url : sp.text,
-                    [v, url = sp.url] { return v->open_link_(url); });
+                }
+                tk::AccessNode link = action_node_(sp.text.empty() ? sp.url : sp.text,
+                                                   [v, url = sp.url]
+                                                   {
+                                                       return v->open_link_(url);
+                                                   });
                 link.role = tk::Role::Link;
                 out.push_back(std::move(link));
             }
@@ -4063,17 +4161,23 @@ public:
         for (const UrlPreviewData* card : owner_.previews_.cards_for(m))
         {
             if (!card)
+            {
                 continue;
+            }
             const std::string url = !card->matched_url.empty() ? card->matched_url : m.first_url;
             if (url.empty())
+            {
                 continue;
+            }
             tk::AccessNode node = action_node_(
                 card->title.empty() ? tk::trf(tk::tr("Link preview: {0}"), {url})
                                     : tk::trf(tk::tr("Link preview: {0}"), {card->title}),
                 [v, url]
                 {
                     if (!v->on_link_clicked)
+                    {
                         return false;
+                    }
                     v->on_link_clicked(url);
                     return true;
                 });
@@ -4083,30 +4187,34 @@ public:
 
         if (m.is_thread_root && m.thread_reply_count > 0)
         {
-            tk::AccessNode chip = action_node_(
-                tk::trf(tk::trn("Open thread, {0} reply", "Open thread, {0} replies",
-                                static_cast<long>(m.thread_reply_count)),
-                        {std::to_string(m.thread_reply_count)}),
-                [v, ev]
-                {
-                    if (!v->on_thread_preview_clicked)
-                        return false;
-                    v->on_thread_preview_clicked(ev);
-                    return true;
-                });
+            tk::AccessNode chip =
+                action_node_(tk::trf(tk::trn("Open thread, {0} reply", "Open thread, {0} replies",
+                                             static_cast<long>(m.thread_reply_count)),
+                                     {std::to_string(m.thread_reply_count)}),
+                             [v, ev]
+                             {
+                                 if (!v->on_thread_preview_clicked)
+                                 {
+                                     return false;
+                                 }
+                                 v->on_thread_preview_clicked(ev);
+                                 return true;
+                             });
             chip.subtree_id = "thread";
             out.push_back(std::move(chip));
         }
 
         const bool hidden_media = owner_.media_is_hidden_by_eid_(ev);
-        if (hidden_media && (m.kind == Kind::Image || m.kind == Kind::Video ||
-                             m.kind == Kind::Gallery))
+        if (hidden_media &&
+            (m.kind == Kind::Image || m.kind == Kind::Video || m.kind == Kind::Gallery))
         {
             out.push_back(action_node_(tk::tr("Show hidden media"),
                                        [v, ev]
                                        {
                                            if (!v->on_reveal_media)
+                                           {
                                                return false;
+                                           }
                                            v->on_reveal_media(ev);
                                            return true;
                                        }));
@@ -4118,7 +4226,9 @@ public:
                                        {
                                            auto it = v->image_geom_.find(ev);
                                            if (it == v->image_geom_.end() || !v->on_image_clicked)
+                                           {
                                                return false;
+                                           }
                                            v->on_image_clicked(it->second);
                                            return true;
                                        }));
@@ -4127,7 +4237,9 @@ public:
         {
             out.push_back(action_node_(tk::tr("Open gallery"),
                                        [v, ev]
-                                       { return v->fire_gallery_clicked_(ev, 0); }));
+                                       {
+                                           return v->fire_gallery_clicked_(ev, 0);
+                                       }));
         }
         else if (m.kind == Kind::Video)
         {
@@ -4136,7 +4248,9 @@ public:
                                        {
                                            auto it = v->video_geom_.find(ev);
                                            if (it == v->video_geom_.end() || !v->on_video_clicked)
+                                           {
                                                return false;
+                                           }
                                            v->on_video_clicked(it->second);
                                            return true;
                                        }));
@@ -4148,7 +4262,9 @@ public:
                                        {
                                            auto it = v->file_geom_.find(ev);
                                            if (it == v->file_geom_.end() || !v->on_file_clicked)
+                                           {
                                                return false;
+                                           }
                                            v->on_file_clicked(it->second);
                                            return true;
                                        }));
@@ -4156,22 +4272,27 @@ public:
         else if (m.kind == Kind::Audio || m.kind == Kind::Voice)
         {
             const bool playing = owner_.media_.playing_event_id() == ev;
-            tk::AccessNode play = action_node_(
-                playing ? tk::tr("Pause") : tk::tr("Play"),
-                [v, ev, voice = m.kind == Kind::Voice]
-                {
-                    for (const auto& row : v->messages_)
-                    {
-                        if (row.event_id != ev)
-                            continue;
-                        if (voice)
-                            v->media_.handle_voice_play_click(row);
-                        else
-                            v->media_.handle_audio_play_click(row);
-                        return true;
-                    }
-                    return false;
-                });
+            tk::AccessNode play = action_node_(playing ? tk::tr("Pause") : tk::tr("Play"),
+                                               [v, ev, voice = m.kind == Kind::Voice]
+                                               {
+                                                   for (const auto& row : v->messages_)
+                                                   {
+                                                       if (row.event_id != ev)
+                                                       {
+                                                           continue;
+                                                       }
+                                                       if (voice)
+                                                       {
+                                                           v->media_.handle_voice_play_click(row);
+                                                       }
+                                                       else
+                                                       {
+                                                           v->media_.handle_audio_play_click(row);
+                                                       }
+                                                       return true;
+                                                   }
+                                                   return false;
+                                               });
             play.subtree_id = "media:play";
             out.push_back(std::move(play));
         }
@@ -4186,22 +4307,24 @@ public:
             for (const auto& r : m.reactions)
             {
                 tk::AccessNode chip;
-                chip.role          = tk::Role::Switch;
-                chip.subtree_id    = "reaction:" + r.key;
+                chip.role = tk::Role::Switch;
+                chip.subtree_id = "reaction:" + r.key;
                 chip.state.checked = r.reacted_by_me;
                 chip.name = tk::trf(
-                    tk::trn("{0}, {1} reaction", "{0}, {1} reactions",
-                            static_cast<int>(r.count)),
+                    tk::trn("{0}, {1} reaction", "{0}, {1} reactions", static_cast<int>(r.count)),
                     {r.key, std::to_string(r.count)});
                 if (r.reacted_by_me)
+                {
                     chip.name = tk::trf(tk::tr("{0}, {1}"), {chip.name, tk::tr("reacted by you")});
+                }
                 const std::string key = r.key;
-                const std::string src =
-                    r.source ? r.source->mxc_url() : std::string{};
+                const std::string src = r.source ? r.source->mxc_url() : std::string{};
                 chip.activate = [v, ev, key, src]
                 {
                     if (!v->on_reaction_toggled)
+                    {
                         return false;
+                    }
                     v->on_reaction_toggled(ev, key, src);
                     return true;
                 };
@@ -4215,8 +4338,7 @@ public:
         {
             // Always exposed (read-only polls too) so screen readers get the
             // options and results; activation is attached only when interactive.
-            const bool interactive =
-                poll_card_interactive(m, static_cast<bool>(v->on_poll_vote));
+            const bool interactive = poll_card_interactive(m, static_cast<bool>(v->on_poll_vote));
             tk::AccessNode group;
             group.role = tk::Role::Group;
             group.name = m.body.empty() ? tk::tr("Poll") : m.body;
@@ -4224,22 +4346,26 @@ public:
             group.subtree_id = "poll";
             std::vector<std::string> mine;
             for (const auto& a : m.poll_answers)
+            {
                 if (a.mine)
+                {
                     mine.push_back(a.id);
+                }
+            }
             std::size_t idx = 0;
             for (const auto& a : m.poll_answers)
             {
                 tk::AccessNode opt;
-                opt.role = m.poll_max_selections > 1 ? tk::Role::CheckBox
-                                                     : tk::Role::RadioButton;
+                opt.role = m.poll_max_selections > 1 ? tk::Role::CheckBox : tk::Role::RadioButton;
                 // Index (not answer id) keeps foreign polls with duplicate ids distinct.
                 opt.subtree_id = "poll:" + std::to_string(idx++) + ":" + a.id;
                 opt.state.checked = a.mine;
-                opt.name = m.poll_results_visible
-                               ? tk::trf(tk::tr("{0}, {1}%"),
-                                         {a.text, std::to_string(poll_percent(
-                                                      a.votes, m.poll_total_votes))})
-                               : a.text;
+                opt.name =
+                    m.poll_results_visible
+                        ? tk::trf(
+                              tk::tr("{0}, {1}%"),
+                              {a.text, std::to_string(poll_percent(a.votes, m.poll_total_votes))})
+                        : a.text;
                 if (interactive)
                 {
                     const std::string aid = a.id;
@@ -4248,7 +4374,9 @@ public:
                     {
                         auto next = next_poll_selection(mine, aid, max);
                         if (!next || !v->on_poll_vote)
+                        {
                             return false;
+                        }
                         v->on_poll_vote(ev, std::move(*next));
                         return true;
                     };
@@ -4261,7 +4389,9 @@ public:
                                                   [v, ev]
                                                   {
                                                       if (!v->on_poll_end_requested)
+                                                      {
                                                           return false;
+                                                      }
                                                       v->on_poll_end_requested(ev);
                                                       return true;
                                                   });
@@ -4286,49 +4416,56 @@ public:
                     continue;
                 }
                 const Id id = act.id;
-                actions.children.push_back(action_node_(
-                    act.label,
-                    [v, ev, id]
-                    { return v->invoke_message_action(id, ev, v->anchor_for_event_(ev)); }));
+                actions.children.push_back(action_node_(act.label,
+                                                        [v, ev, id]
+                                                        {
+                                                            return v->invoke_message_action(
+                                                                id, ev, v->anchor_for_event_(ev));
+                                                        }));
             }
             if (has_overflow)
             {
-                actions.children.push_back(action_node_(
-                    tk::tr("More options"),
-                    [v, ev]
-                    {
-                        return v->open_actions_menu_(v->message_index_of(ev),
-                                                     v->anchor_for_event_(ev),
-                                                     /*full=*/false, false, false);
-                    }));
+                actions.children.push_back(action_node_(tk::tr("More options"),
+                                                        [v, ev]
+                                                        {
+                                                            return v->open_actions_menu_(
+                                                                v->message_index_of(ev),
+                                                                v->anchor_for_event_(ev),
+                                                                /*full=*/false, false, false);
+                                                        }));
                 actions.children.back().subtree_id = "action:more";
             }
         }
-        if (m.pending_state == MessageRowData::PendingState::Failed &&
-            !m.pending_txn_id.empty())
+        if (m.pending_state == MessageRowData::PendingState::Failed && !m.pending_txn_id.empty())
         {
             if (m.pending_recoverable)
-                actions.children.push_back(action_node_(
-                    tk::tr("Retry sending"),
-                    [v, txn = m.pending_txn_id]
-                    {
-                        if (!v->on_retry_send)
-                            return false;
-                        v->on_retry_send(txn);
-                        return true;
-                    }));
-            actions.children.push_back(action_node_(
-                tk::tr("Cancel sending"),
-                [v, txn = m.pending_txn_id]
-                {
-                    if (!v->on_abort_send)
-                        return false;
-                    v->on_abort_send(txn);
-                    return true;
-                }));
+            {
+                actions.children.push_back(action_node_(tk::tr("Retry sending"),
+                                                        [v, txn = m.pending_txn_id]
+                                                        {
+                                                            if (!v->on_retry_send)
+                                                            {
+                                                                return false;
+                                                            }
+                                                            v->on_retry_send(txn);
+                                                            return true;
+                                                        }));
+            }
+            actions.children.push_back(action_node_(tk::tr("Cancel sending"),
+                                                    [v, txn = m.pending_txn_id]
+                                                    {
+                                                        if (!v->on_abort_send)
+                                                        {
+                                                            return false;
+                                                        }
+                                                        v->on_abort_send(txn);
+                                                        return true;
+                                                    }));
         }
         if (!actions.children.empty())
+        {
             out.push_back(std::move(actions));
+        }
 
         // ── Read receipts ─────────────────────────────────────────────
         if (!m.read_receipts.empty())
@@ -4337,7 +4474,9 @@ public:
             for (const auto& rr : m.read_receipts)
             {
                 if (!names.empty())
+                {
                     names += ", ";
+                }
                 names += rr.display_name.empty() ? rr.user_id : rr.display_name;
             }
             tk::AccessNode rr_node;
@@ -4350,12 +4489,14 @@ public:
             {
                 rr_node.role = tk::Role::Button;
                 rr_node.activate =
-                    [v, ev, hidden = std::vector<tesseract::ReadReceipt>(
-                                m.read_receipts.begin() + kReceiptCap,
-                                m.read_receipts.end())]
+                    [v, ev,
+                     hidden = std::vector<tesseract::ReadReceipt>(
+                         m.read_receipts.begin() + kReceiptCap, m.read_receipts.end())]
                 {
                     if (!v->on_receipt_overflow_clicked)
+                    {
                         return false;
+                    }
                     v->on_receipt_overflow_clicked(ev, v->anchor_for_event_(ev), hidden);
                     return true;
                 };
@@ -4375,9 +4516,8 @@ public:
     // always filling `max_w` — a short preview gets a short chip. `anchor_x`
     // is the chip's left edge normally, or its right edge when `right_align`
     // is set (own/right-anchored bubbles, whose bubble hugs from the right).
-    void paint_thread_chip(const MessageRowData& m, tk::PaintCtx& ctx,
-                           tk::Rect bounds, float anchor_x, float max_w,
-                           bool right_align = false)
+    void paint_thread_chip(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
+                           float anchor_x, float max_w, bool right_align = false)
     {
         max_w = std::min(max_w, 360.0f);
         if (max_w <= 0.0f)
@@ -4387,10 +4527,9 @@ public:
 
         // Right-side reply-count label ("N replies") — measured first so the
         // left-side preview knows how much room it has left.
-        const std::string count_buf = tk::trf(
-            tk::trn("{0} reply", "{0} replies",
-                    static_cast<long>(m.thread_reply_count)),
-            {std::to_string(m.thread_reply_count)});
+        const std::string count_buf =
+            tk::trf(tk::trn("{0} reply", "{0} replies", static_cast<long>(m.thread_reply_count)),
+                    {std::to_string(m.thread_reply_count)});
         tk::TextStyle cs{};
         cs.role = tk::FontRole::Small;
         cs.wrap = false;
@@ -4425,8 +4564,7 @@ public:
             {
                 std::size_t cut = kMaxBodyBytes;
                 // Back off into a UTF-8 start byte.
-                while (cut > 0 &&
-                       (static_cast<unsigned char>(body[cut]) & 0xC0) == 0x80)
+                while (cut > 0 && (static_cast<unsigned char>(body[cut]) & 0xC0) == 0x80)
                 {
                     --cut;
                 }
@@ -4437,8 +4575,7 @@ public:
         }
 
         const float gap_w = count_w > 0.0f ? 8.0f : 0.0f;
-        const float preview_max = std::max(
-            0.0f, max_w - 2.0f * kThreadChipPadX - count_w - gap_w);
+        const float preview_max = std::max(0.0f, max_w - 2.0f * kThreadChipPadX - count_w - gap_w);
         std::unique_ptr<tk::TextLayout> p_layout;
         float preview_w = 0.0f;
         if (!preview.empty())
@@ -4457,29 +4594,25 @@ public:
 
         // Hug the measured content instead of always filling max_w.
         const float content_w =
-            2.0f * kThreadChipPadX + count_w +
-            (preview_w > 0.0f ? gap_w + preview_w : 0.0f);
+            2.0f * kThreadChipPadX + count_w + (preview_w > 0.0f ? gap_w + preview_w : 0.0f);
         const float chip_w = std::min(content_w, max_w);
         const float chip_x = right_align ? anchor_x - chip_w : anchor_x;
-        tk::Rect chip{chip_x, bounds.y + bounds.h - kMsgListPadY - kThreadChipH,
-                      chip_w, kThreadChipH};
+        tk::Rect chip{chip_x, bounds.y + bounds.h - kMsgListPadY - kThreadChipH, chip_w,
+                      kThreadChipH};
 
         // Background — slightly darker when the list is dimmed so the chip
         // stays distinguishable from the dim overlay.
-        tk::Color bg = owner_.dimmed_
-                           ? ctx.theme.palette.subtle_pressed
-                           : ctx.theme.palette.subtle_hover;
+        tk::Color bg =
+            owner_.dimmed_ ? ctx.theme.palette.subtle_pressed : ctx.theme.palette.subtle_hover;
         ctx.canvas.fill_rounded_rect(chip, kThreadChipRadius, bg);
-        ctx.canvas.stroke_rounded_rect(chip, kThreadChipRadius,
-                                       ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(chip, kThreadChipRadius, ctx.theme.palette.border, 1.0f);
 
         if (count_layout)
         {
             tk::Size csz = count_layout->measure();
             float cx = chip.x + chip.w - kThreadChipPadX - csz.w;
             float cy = chip.y + (chip.h - csz.h) * 0.5f;
-            ctx.canvas.draw_text(*count_layout, {cx, cy},
-                                 ctx.theme.palette.text_secondary);
+            ctx.canvas.draw_text(*count_layout, {cx, cy}, ctx.theme.palette.text_secondary);
         }
         if (p_layout)
         {
@@ -4504,7 +4637,9 @@ public:
     float sender_name_max_w_for_test(std::size_t index) const
     {
         if (index >= layout_cache_.size() || !layout_cache_[index].sender)
+        {
             return -1.0f;
+        }
         return layout_cache_[index].sender_col_w;
     }
     void insert_layout_cache_at(std::size_t index)
@@ -4590,8 +4725,7 @@ private:
 
     // ── Virtual timeline item paint helpers ──────────────────────────────────
 
-    void paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx,
-                             tk::Rect bounds) const
+    void paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         std::string label = format_day_label(m.timestamp_ms);
         if (label.empty())
@@ -4599,7 +4733,9 @@ private:
             return;
         }
         if (row_renderer_->paint_day_separator(m, ctx, bounds, *this))
+        {
             return;
+        }
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
@@ -4634,7 +4770,9 @@ private:
     void paint_read_marker(tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         if (row_renderer_->paint_read_marker(ctx, bounds, *this))
+        {
             return;
+        }
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
@@ -4652,18 +4790,15 @@ private:
         float ly = std::round(cy);
         if (lx > bounds.x + kMsgListPadX)
         {
-            ctx.canvas.fill_rect(
-                {bounds.x + kMsgListPadX, ly, lx - bounds.x - kMsgListPadX, 1.0f},
-                ctx.theme.palette.accent);
+            ctx.canvas.fill_rect({bounds.x + kMsgListPadX, ly, lx - bounds.x - kMsgListPadX, 1.0f},
+                                 ctx.theme.palette.accent);
         }
         if (rx < bounds.x + bounds.w - kMsgListPadX)
         {
-            ctx.canvas.fill_rect(
-                {rx, ly, bounds.x + bounds.w - kMsgListPadX - rx, 1.0f},
-                ctx.theme.palette.accent);
+            ctx.canvas.fill_rect({rx, ly, bounds.x + bounds.w - kMsgListPadX - rx, 1.0f},
+                                 ctx.theme.palette.accent);
         }
-        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
-                             ctx.theme.palette.accent);
+        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f}, ctx.theme.palette.accent);
     }
 
     void paint_timeline_start(tk::PaintCtx& ctx, tk::Rect bounds) const
@@ -4671,11 +4806,10 @@ private:
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
-        auto lo = ctx.factory.build_text(
-            owner_.predecessor_available_
-                ? tk::tr("This room continues an older conversation.")
-                : tk::tr("Start of conversation"),
-            st);
+        auto lo = ctx.factory.build_text(owner_.predecessor_available_
+                                             ? tk::tr("This room continues an older conversation.")
+                                             : tk::tr("Start of conversation"),
+                                         st);
         if (!lo)
         {
             return;
@@ -4687,13 +4821,10 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
-    void paint_pinned_event(const MessageRowData& m, tk::PaintCtx& ctx,
-                            tk::Rect bounds) const
+    void paint_pinned_event(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         // "{sender_name} {body}" e.g. "Alice pinned a message"
-        std::string label = m.sender_name.empty()
-            ? m.body
-            : m.sender_name + " " + m.body;
+        std::string label = m.sender_name.empty() ? m.body : m.sender_name + " " + m.body;
         if (label.empty())
         {
             return;
@@ -4731,11 +4862,13 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
-    void paint_room_name_change(const MessageRowData& m, tk::PaintCtx& ctx,
-                                tk::Rect bounds, std::string label = {}) const
+    void paint_room_name_change(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
+                                std::string label = {}) const
     {
         if (label.empty())
+        {
             label = room_name_change_phrase(m);
+        }
         if (label.empty())
         {
             return;
@@ -4773,24 +4906,19 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
-    void paint_call_notification(const MessageRowData& m, tk::PaintCtx& ctx,
-                                 tk::Rect bounds) const
+    void paint_call_notification(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         const bool is_video = (m.body == "video");
 
         const std::string intent_label =
             is_video
                 ? tk::tr("started a video call")
-                : (m.body == "audio"
-                       ? tk::tr("started a voice call")
-                       : tk::tr("started a call"));
+                : (m.body == "audio" ? tk::tr("started a voice call") : tk::tr("started a call"));
         const std::string label =
-            m.sender_name.empty()
-                ? intent_label
-                : m.sender_name + " " + intent_label;
+            m.sender_name.empty() ? intent_label : m.sender_name + " " + intent_label;
 
-        constexpr float kIconSz    = 12.0f;
-        constexpr float kIconGap   = 4.0f;
+        constexpr float kIconSz = 12.0f;
+        constexpr float kIconGap = 4.0f;
         constexpr float kLabelPadX = 8.0f;
 
         tk::TextStyle st{};
@@ -4800,55 +4928,65 @@ private:
         st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2 - kIconSz - kIconGap);
         auto lo = ctx.factory.build_text(label, st);
         if (!lo)
+        {
             return;
+        }
 
-        const tk::Size sz      = lo->measure();
-        const float content_w  = kIconSz + kIconGap + sz.w;
-        const float cx         = bounds.x + bounds.w * 0.5f;
-        const float cy         = bounds.y + kPinnedEventH * 0.5f;
-        const float icon_x     = cx - content_w * 0.5f;
-        const float text_x     = icon_x + kIconSz + kIconGap;
-        const float label_l    = cx - content_w * 0.5f - kLabelPadX;
-        const float label_r    = cx + content_w * 0.5f + kLabelPadX;
-        const float line_y     = std::round(cy);
+        const tk::Size sz = lo->measure();
+        const float content_w = kIconSz + kIconGap + sz.w;
+        const float cx = bounds.x + bounds.w * 0.5f;
+        const float cy = bounds.y + kPinnedEventH * 0.5f;
+        const float icon_x = cx - content_w * 0.5f;
+        const float text_x = icon_x + kIconSz + kIconGap;
+        const float label_l = cx - content_w * 0.5f - kLabelPadX;
+        const float label_r = cx + content_w * 0.5f + kLabelPadX;
+        const float line_y = std::round(cy);
 
         if (label_l > bounds.x + kMsgListPadX)
+        {
             ctx.canvas.fill_rect(
                 {bounds.x + kMsgListPadX, line_y, label_l - bounds.x - kMsgListPadX, 1.0f},
                 ctx.theme.palette.border);
+        }
         if (label_r < bounds.x + bounds.w - kMsgListPadX)
+        {
             ctx.canvas.fill_rect(
                 {label_r, line_y, bounds.x + bounds.w - kMsgListPadX - label_r, 1.0f},
                 ctx.theme.palette.border);
+        }
 
         const tk::Rect icon_rect{icon_x, cy - kIconSz * 0.5f, kIconSz, kIconSz};
         if (is_video)
-            ic_call_video_.draw(ctx.canvas, ctx.factory, kVideoSvg, icon_rect,
-                                kIconSz, ctx.theme.palette.text_muted);
+        {
+            ic_call_video_.draw(ctx.canvas, ctx.factory, kVideoSvg, icon_rect, kIconSz,
+                                ctx.theme.palette.text_muted);
+        }
         else
-            ic_call_phone_.draw(ctx.canvas, ctx.factory, kPhoneSvg, icon_rect,
-                                kIconSz, ctx.theme.palette.text_muted);
-        ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f},
-                             ctx.theme.palette.text_muted);
+        {
+            ic_call_phone_.draw(ctx.canvas, ctx.factory, kPhoneSvg, icon_rect, kIconSz,
+                                ctx.theme.palette.text_muted);
+        }
+        ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f}, ctx.theme.palette.text_muted);
     }
 
     // A one-line monospace system row for the IRC layout: left-aligned text
     // at the IRC column, vertically centred, with an optional 1px rule
     // filling the rest of the row (used by the day / read-marker separators).
-    void paint_irc_system_line_(tk::PaintCtx& ctx, tk::Rect bounds,
-                                float row_h, const std::string& text,
-                                tk::Color color, bool rule) const
+    void paint_irc_system_line_(tk::PaintCtx& ctx, tk::Rect bounds, float row_h,
+                                const std::string& text, tk::Color color, bool rule) const
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
+        st.role = tk::FontRole::Small;
         st.monospace = true;
-        st.wrap      = false;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
         const float x = bounds.x + msgirc::kIrcPadX;
         st.max_width = std::max(0.0f, bounds.x + bounds.w - msgirc::kIrcPadX - x);
         auto lo = ctx.factory.build_text(text, st);
         if (!lo)
+        {
             return;
+        }
         const tk::Size sz = lo->measure();
         const float cy = bounds.y + row_h * 0.5f;
         ctx.canvas.draw_text(*lo, {x, cy - sz.h * 0.5f}, color);
@@ -4857,7 +4995,9 @@ private:
             const float rx = x + sz.w + 8.0f;
             const float rr = bounds.x + bounds.w - msgirc::kIrcPadX;
             if (rr > rx)
+            {
                 ctx.canvas.fill_rect({rx, std::round(cy), rr - rx, 1.0f}, color);
+            }
         }
     }
 
@@ -4866,11 +5006,12 @@ private:
     // timestamp right-aligned. Left-aligned like a compact row header
     // (rather than the pinned/call-notification centred-banner style) so a
     // stack of these reads naturally as a small list.
-    void paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx,
-                               tk::Rect bounds) const
+    void paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         if (row_renderer_->paint_membership_line(m, ctx, bounds, *this))
+        {
             return;
+        }
 
         constexpr float kAvatarD = kMembershipAvatarD;
         constexpr float kGap = 6.0f;
@@ -4881,13 +5022,10 @@ private:
         {
             img = owner_.avatar_provider_(m.membership_target_avatar_url);
         }
-        draw_avatar(ctx.canvas, img, {bounds.x + kMsgListPadX + kAvatarD * 0.5f, cy},
-                    kAvatarD,
-                    m.membership_target_name.empty()
-                        ? m.membership_target_user_id
-                        : m.membership_target_name,
-                    ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+        draw_avatar(ctx.canvas, img, {bounds.x + kMsgListPadX + kAvatarD * 0.5f, cy}, kAvatarD,
+                    m.membership_target_name.empty() ? m.membership_target_user_id
+                                                     : m.membership_target_name,
+                    ctx.theme.palette.avatar_initials_bg, ctx.theme.palette.avatar_initials_text);
 
         const float text_x = bounds.x + kMsgListPadX + kAvatarD + kGap;
 
@@ -4895,15 +5033,13 @@ private:
         tk::TextStyle ts_st{};
         ts_st.role = tk::FontRole::Timestamp;
         auto ts_layout = ts.empty() ? nullptr : ctx.factory.build_text(ts, ts_st);
-        const float ts_w =
-            ts_layout ? ts_layout->measure().w + kMsgListPadX : 0.0f;
+        const float ts_w = ts_layout ? ts_layout->measure().w + kMsgListPadX : 0.0f;
 
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width =
-            std::max(0.0f, bounds.x + bounds.w - kMsgListPadX - ts_w - text_x);
+        st.max_width = std::max(0.0f, bounds.x + bounds.w - kMsgListPadX - ts_w - text_x);
         // Lazily resolve the target's pronoun — gated to the one action
         // whose expanded phrase actually uses one (KnockRetracted), and only
         // while this row is actually being painted (i.e. visible). Never a
@@ -4919,16 +5055,14 @@ private:
         if (lo)
         {
             tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f},
-                                 ctx.theme.palette.text_muted);
+            ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f}, ctx.theme.palette.text_muted);
         }
         if (ts_layout)
         {
             tk::Size tsz = ts_layout->measure();
-            ctx.canvas.draw_text(
-                *ts_layout,
-                {bounds.x + bounds.w - kMsgListPadX - tsz.w, cy - tsz.h * 0.5f},
-                ctx.theme.palette.text_muted);
+            ctx.canvas.draw_text(*ts_layout,
+                                 {bounds.x + bounds.w - kMsgListPadX - tsz.w, cy - tsz.h * 0.5f},
+                                 ctx.theme.palette.text_muted);
         }
     }
 
@@ -4936,24 +5070,24 @@ private:
     // messages_: one line per distinct action, in first-appearance order,
     // each with up to 3 stacked target avatars and a pluralised phrase
     // (e.g. "Alice, Bob and 3 others joined the room").
-    void paint_membership_summary(std::size_t start, std::size_t end,
-                                  tk::PaintCtx& ctx, tk::Rect bounds) const
+    void paint_membership_summary(std::size_t start, std::size_t end, tk::PaintCtx& ctx,
+                                  tk::Rect bounds) const
     {
-        if (row_renderer_->paint_membership_summary(start, end, ctx, bounds,
-                                                    *this))
+        if (row_renderer_->paint_membership_summary(start, end, ctx, bounds, *this))
+        {
             return;
+        }
 
         float y = bounds.y;
         for (const auto& run : membership_group_actions(start, end))
         {
-            paint_membership_summary_line_(run, ctx,
-                                           {bounds.x, y, bounds.w, kPinnedEventH});
+            paint_membership_summary_line_(run, ctx, {bounds.x, y, bounds.w, kPinnedEventH});
             y += kPinnedEventH;
         }
     }
 
-    void paint_membership_summary_line_(const MembershipActionRun& run,
-                                        tk::PaintCtx& ctx, tk::Rect bounds) const
+    void paint_membership_summary_line_(const MembershipActionRun& run, tk::PaintCtx& ctx,
+                                        tk::Rect bounds) const
     {
         const auto& msgs = owner_.messages_;
         constexpr float kAvatarD = kMembershipAvatarD;
@@ -4968,22 +5102,19 @@ private:
         {
             const auto& mm = msgs[run.rows[i]];
             const tk::Image* img = nullptr;
-            if (owner_.avatar_provider_ &&
-                !mm.membership_target_avatar_url.empty())
+            if (owner_.avatar_provider_ && !mm.membership_target_avatar_url.empty())
             {
                 img = owner_.avatar_provider_(mm.membership_target_avatar_url);
             }
-            draw_avatar(ctx.canvas, img, {cx, cy}, kAvatarD,
-                        membership_target_label(mm),
+            draw_avatar(ctx.canvas, img, {cx, cy}, kAvatarD, membership_target_label(mm),
                         ctx.theme.palette.avatar_initials_bg,
                         ctx.theme.palette.avatar_initials_text);
             cx += kStride;
         }
 
-        const float text_x =
-            bounds.x + kMsgListPadX + kAvatarD +
-            (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) +
-            6.0f;
+        const float text_x = bounds.x + kMsgListPadX + kAvatarD +
+                             (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) +
+                             6.0f;
 
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
@@ -4998,11 +5129,9 @@ private:
         using A = tesseract::MembershipAction;
         const auto& first = msgs[run.rows.front()];
         const bool singleton_uses_pronoun =
-            total == 1 && (run.action == A::InvitationRevoked ||
-                           run.action == A::KnockRetracted);
+            total == 1 && (run.action == A::InvitationRevoked || run.action == A::KnockRetracted);
         if (singleton_uses_pronoun && !first.pronoun_resolved &&
-            !first.membership_target_user_id.empty() &&
-            owner_.on_member_pronoun_needed)
+            !first.membership_target_user_id.empty() && owner_.on_member_pronoun_needed)
         {
             owner_.on_member_pronoun_needed(first.membership_target_user_id);
         }
@@ -5010,8 +5139,7 @@ private:
         if (lo)
         {
             tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f},
-                                 ctx.theme.palette.text_muted);
+            ctx.canvas.draw_text(*lo, {text_x, cy - sz.h * 0.5f}, ctx.theme.palette.text_muted);
         }
     }
 
@@ -5029,9 +5157,8 @@ private:
             return;
         }
         tk::Size sz = lo->measure();
-        ctx.canvas.draw_text(
-            *lo, {bounds.x + kMsgListPadX, bounds.y + (kTypingRowH - sz.h) * 0.5f},
-            ctx.theme.palette.text_muted);
+        ctx.canvas.draw_text(*lo, {bounds.x + kMsgListPadX, bounds.y + (kTypingRowH - sz.h) * 0.5f},
+                             ctx.theme.palette.text_muted);
     }
 
     // ── Message row paint helpers ─────────────────────────────────────────────
@@ -5041,11 +5168,17 @@ private:
     static std::string hidden_media_label(MessageRowData::Kind kind)
     {
         if (kind == MessageRowData::Kind::Video)
+        {
             return tk::tr("Load video");
+        }
         if (kind == MessageRowData::Kind::Sticker)
+        {
             return tk::tr("Load sticker");
+        }
         if (kind == MessageRowData::Kind::Gallery)
+        {
             return tk::tr("Load gallery");
+        }
         return tk::tr("Load image");
     }
 
@@ -5053,8 +5186,7 @@ private:
     // matching the geometry in paint_hidden_media_placeholder) without
     // clipping. Shared by the measure and paint passes so a hidden-media
     // tile is never reserved/drawn smaller than the button it must contain.
-    static tk::Size hidden_media_pill_size(tk::CanvasFactory& factory,
-                                           MessageRowData::Kind kind)
+    static tk::Size hidden_media_pill_size(tk::CanvasFactory& factory, MessageRowData::Kind kind)
     {
         tk::TextStyle ts{};
         ts.role = tk::FontRole::UiSemibold;
@@ -5091,34 +5223,33 @@ private:
         // box stable regardless of decode timing. Only fall back to the
         // decoded image's own size when the event didn't provide one.
         if (m.media_w > 0 && m.media_h > 0)
+        {
             return fit_media(m.media_w, m.media_h, max_w, kStickerSize);
+        }
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
-        const std::string sticker_key =
-            look ? look->fetch_token() : std::string{};
-        const auto& provider = owner_.sticker_image_provider_
-                                    ? owner_.sticker_image_provider_
-                                    : owner_.image_provider_;
-        const tk::Image* img =
-            (provider && !sticker_key.empty())
-                // Measurement-only lookup: paint_inline_media's own call
-                // (further down the paint pass, for this same key) is what
-                // actually gates low-power-mode playback on hover.
-                ? provider(sticker_key, /*hovered=*/true)
-                : nullptr;
+        const std::string sticker_key = look ? look->fetch_token() : std::string{};
+        const auto& provider = owner_.sticker_image_provider_ ? owner_.sticker_image_provider_
+                                                              : owner_.image_provider_;
+        const tk::Image* img = (provider && !sticker_key.empty())
+                                   // Measurement-only lookup: paint_inline_media's own call
+                                   // (further down the paint pass, for this same key) is what
+                                   // actually gates low-power-mode playback on hover.
+                                   ? provider(sticker_key, /*hovered=*/true)
+                                   : nullptr;
         if (img && img->width() > 0 && img->height() > 0)
+        {
             return fit_media(img->width(), img->height(), max_w, kStickerSize);
+        }
         return {max_w, max_w};
     }
 
-    float measure_body_block_height(const MessageRowData& m, tk::LayoutCtx& ctx,
-                                    float col_w) const
+    float measure_body_block_height(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
     {
         // The renderer owns how a reply's context is shown (framed card vs
         // mIRC scrollback line) and its height.
         // The forward attribution (MSC4553) sits above the reply context.
-        float quote_h =
-            row_renderer_->measure_forward_context(m, ctx, col_w, *this) +
-            row_renderer_->measure_reply_context(m, ctx, col_w, *this);
+        float quote_h = row_renderer_->measure_forward_context(m, ctx, col_w, *this) +
+                        row_renderer_->measure_reply_context(m, ctx, col_w, *this);
         switch (m.kind)
         {
         case MessageRowData::Kind::Text:
@@ -5129,22 +5260,18 @@ private:
             float badge_h = 0.0f;
             if (m.is_edited)
             {
-                badge_h = kEditedBadgeGap +
-                          measure_text_height(tk::tr("(edited)"), ctx, col_w);
+                badge_h = kEditedBadgeGap + measure_text_height(tk::tr("(edited)"), ctx, col_w);
             }
             float preview_h = 0.0f;
-            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
-                sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w); sh > 0.0f)
             {
                 preview_h = kPreviewCardGapTop + sh;
             }
             return quote_h + th + badge_h + preview_h;
         }
         case MessageRowData::Kind::Redacted:
-            return quote_h +
-                   measure_text_height(
-                       m.body.empty() ? tk::tr("(empty message)") : m.body,
-                       ctx, col_w);
+            return quote_h + measure_text_height(
+                                 m.body.empty() ? tk::tr("(empty message)") : m.body, ctx, col_w);
 
         case MessageRowData::Kind::Utd:
             return quote_h + measure_text_height(m.body, ctx, col_w);
@@ -5154,29 +5281,26 @@ private:
             float max_w = std::min(col_w, kImageMaxW);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string img_key = look ? look->fetch_token() : std::string{};
-            const tk::Image* img =
-                (owner_.image_provider_ && !img_key.empty())
-                    // Sizing-only lookup: paint_inline_media's own call
-                    // (measure pass, or later in the same paint pass) is
-                    // what actually gates low-power-mode playback.
-                    ? owner_.image_provider_(img_key, /*hovered=*/true)
-                    : nullptr;
+            const tk::Image* img = (owner_.image_provider_ && !img_key.empty())
+                                       // Sizing-only lookup: paint_inline_media's own call
+                                       // (measure pass, or later in the same paint pass) is
+                                       // what actually gates low-power-mode playback.
+                                       ? owner_.image_provider_(img_key, /*hovered=*/true)
+                                       : nullptr;
             // Prefer the event's own stable media_w/media_h over the
             // currently-decoded image's dimensions — see sticker_fit_box_'s
             // doc comment for why: the same mxc can be decoded/cached at
             // more than one size if a different MediaKind elsewhere
             // requests the same content, and sizing from a volatile decode
             // would make the box flicker as that race resolves.
-            tk::Size sz =
-                (m.media_w > 0 && m.media_h > 0)
-                    ? fit_media(m.media_w, m.media_h, max_w, kImageMaxH)
-                : (img && img->width() > 0 && img->height() > 0)
-                    ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
-                    : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
+            tk::Size sz = (m.media_w > 0 && m.media_h > 0)
+                              ? fit_media(m.media_w, m.media_h, max_w, kImageMaxH)
+                          : (img && img->width() > 0 && img->height() > 0)
+                              ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
+                              : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             if (owner_.media_is_hidden_(m))
             {
-                tk::Size pill_min =
-                    hidden_media_pill_size(ctx.factory, m.kind);
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
@@ -5186,8 +5310,7 @@ private:
                 h += 4.0f + measure_body_text(m, ctx, col_w);
                 if (m.is_edited)
                 {
-                    h += kEditedBadgeGap +
-                         measure_text_height(tk::tr("(edited)"), ctx, col_w);
+                    h += kEditedBadgeGap + measure_text_height(tk::tr("(edited)"), ctx, col_w);
                 }
             }
             return quote_h + h;
@@ -5202,8 +5325,7 @@ private:
             tk::Size sz = sticker_fit_box_(m, max_w);
             if (owner_.media_is_hidden_(m))
             {
-                tk::Size pill_min =
-                    hidden_media_pill_size(ctx.factory, m.kind);
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kStickerSize));
             }
@@ -5217,8 +5339,7 @@ private:
                 h += 4.0f + measure_body_text(m, ctx, col_w);
                 if (m.is_edited)
                 {
-                    h += kEditedBadgeGap +
-                         measure_text_height(tk::tr("(edited)"), ctx, col_w);
+                    h += kEditedBadgeGap + measure_text_height(tk::tr("(edited)"), ctx, col_w);
                 }
             }
             return quote_h + h;
@@ -5230,15 +5351,13 @@ private:
         case MessageRowData::Kind::Video:
         {
             int vw = m.media_w, vh = m.media_h;
-            tk::Size sz =
-                (vw > 0 && vh > 0)
-                    ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
-                    : tk::Size{std::min(col_w, kImageMaxW),
-                               std::min(col_w, kImageMaxW) * 9.0f / 16.0f};
+            tk::Size sz = (vw > 0 && vh > 0)
+                              ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
+                              : tk::Size{std::min(col_w, kImageMaxW),
+                                         std::min(col_w, kImageMaxW) * 9.0f / 16.0f};
             if (owner_.media_is_hidden_(m))
             {
-                tk::Size pill_min =
-                    hidden_media_pill_size(ctx.factory, m.kind);
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
@@ -5248,8 +5367,7 @@ private:
                 h += 4.0f + measure_body_text(m, ctx, col_w);
                 if (m.is_edited)
                 {
-                    h += kEditedBadgeGap +
-                         measure_text_height(tk::tr("(edited)"), ctx, col_w);
+                    h += kEditedBadgeGap + measure_text_height(tk::tr("(edited)"), ctx, col_w);
                 }
             }
             return quote_h + h;
@@ -5257,25 +5375,22 @@ private:
         case MessageRowData::Kind::Emote:
         {
             bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-            auto spans = row_renderer_->emote_spans(
-                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark, *this);
+            auto spans = row_renderer_->emote_spans(m, revealed,
+                                                    ctx.theme.mode == tk::ThemeMode::Dark, *this);
             float th = 0.0f;
             if (!spans.empty())
             {
-                auto layout =
-                    ctx.factory.build_rich_text(spans, body_style(col_w));
+                auto layout = ctx.factory.build_rich_text(spans, body_style(col_w));
                 if (layout)
                 {
                     th = layout->measure().h;
                 }
             }
             float badge_h =
-                m.is_edited ? kEditedBadgeGap +
-                                  measure_text_height(tk::tr("(edited)"), ctx, col_w)
+                m.is_edited ? kEditedBadgeGap + measure_text_height(tk::tr("(edited)"), ctx, col_w)
                             : 0.0f;
             float preview_h = 0.0f;
-            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
-                sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w); sh > 0.0f)
             {
                 preview_h = kPreviewCardGapTop + sh;
             }
@@ -5293,7 +5408,9 @@ private:
                 st.role = tk::FontRole::Small;
                 st.max_width = col_w;
                 if (auto lo = ctx.factory.build_text(live_status, st))
+                {
                     status_h = lo->measure().h;
+                }
             }
             if (!live_location_has_map(m))
             {
@@ -5303,9 +5420,7 @@ private:
             float desc_h = 0.0f;
             if (!m.location_description.empty())
             {
-                desc_h =
-                    measure_text_height(m.location_description, ctx, col_w) +
-                    kMsgListPadY;
+                desc_h = measure_text_height(m.location_description, ctx, col_w) + kMsgListPadY;
             }
             if (!live_status.empty())
             {
@@ -5314,22 +5429,21 @@ private:
             return quote_h + kMapRowH + desc_h;
         }
         case MessageRowData::Kind::Poll:
-            return quote_h + owner_.polls_.height(m, ctx.factory, col_w,
-                                                  owner_.poll_end_shown_(m));
+            return quote_h + owner_.polls_.height(m, ctx.factory, col_w, owner_.poll_end_shown_(m));
         case MessageRowData::Kind::Gallery:
         {
             float max_w = std::min(col_w, kImageMaxW);
             int n = static_cast<int>(m.gallery_painted_count());
-            int cols = std::max(
-                1, static_cast<int>((max_w + kGalleryCellSpacing) /
-                                    (kGalleryCellSize + kGalleryCellSpacing)));
+            int cols = std::max(1, static_cast<int>((max_w + kGalleryCellSpacing) /
+                                                    (kGalleryCellSize + kGalleryCellSpacing)));
             cols = std::min(cols, std::max(n, 1));
             int rows = (n + cols - 1) / cols;
             if (rows < 1)
+            {
                 rows = 1;
+            }
             float grid_h = static_cast<float>(rows) * kGalleryCellSize +
-                          static_cast<float>(std::max(0, rows - 1)) *
-                              kGalleryCellSpacing;
+                           static_cast<float>(std::max(0, rows - 1)) * kGalleryCellSpacing;
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
@@ -5356,20 +5470,23 @@ private:
         return quote_h;
     }
 
-    float paint_body_block(const MessageRowData& m, tk::PaintCtx& ctx, float x,
-                           float y, float col_w) const
+    float paint_body_block(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                           float col_w) const
     {
         if (m.forwarded)
+        {
             y = row_renderer_->paint_forward_context(m, ctx, x, y, col_w, *this);
+        }
         if (m.has_reply())
+        {
             y = row_renderer_->paint_reply_context(m, ctx, x, y, col_w, *this);
+        }
         switch (m.kind)
         {
         case MessageRowData::Kind::Text:
         case MessageRowData::Kind::Unhandled:
         {
-            float h = paint_body_text(m, ctx, x, y, col_w,
-                                      ctx.theme.palette.text_primary);
+            float h = paint_body_text(m, ctx, x, y, col_w, ctx.theme.palette.text_primary);
             float end_y = y + h;
             // "(edited)" badge on a new inline line below the body.
             if (m.is_edited)
@@ -5386,8 +5503,7 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
-                sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w); sh > 0.0f)
             {
                 end_y += kPreviewCardGapTop;
                 owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
@@ -5397,8 +5513,7 @@ private:
         }
         case MessageRowData::Kind::Notice:
         {
-            float h = paint_body_text(m, ctx, x, y, col_w,
-                                      ctx.theme.palette.text_muted);
+            float h = paint_body_text(m, ctx, x, y, col_w, ctx.theme.palette.text_muted);
             float end_y = y + h;
             if (m.is_edited)
             {
@@ -5414,8 +5529,7 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
-                sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w); sh > 0.0f)
             {
                 end_y += kPreviewCardGapTop;
                 owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
@@ -5426,31 +5540,28 @@ private:
         case MessageRowData::Kind::Emote:
         {
             bool revealed = owner_.spoilers_.is_revealed(m.event_id);
-            auto spans = row_renderer_->emote_spans(
-                m, revealed, ctx.theme.mode == tk::ThemeMode::Dark, *this);
+            auto spans = row_renderer_->emote_spans(m, revealed,
+                                                    ctx.theme.mode == tk::ThemeMode::Dark, *this);
             float end_y = y;
             if (!spans.empty())
             {
-                auto layout =
-                    ctx.factory.build_rich_text(spans, body_style(col_w));
+                auto layout = ctx.factory.build_rich_text(spans, body_style(col_w));
                 if (layout)
                 {
-                    ctx.canvas.draw_text(*layout, {x, y},
-                                         ctx.theme.palette.text_primary);
+                    ctx.canvas.draw_text(*layout, {x, y}, ctx.theme.palette.text_primary);
                     end_y = y + layout->measure().h;
                     // Emote bodies aren't routed through body_layout_for; this
                     // entry exists only for link/selection hit-testing. Tag it
                     // with a fresh LRU tick so the shared cache's eviction does
                     // not reclaim a still-visible row's layout.
-                    owner_.link_cache_.put_unkeyed(
-                        m.event_id,
-                        [&](LinkLayout& le)
-                        {
-                            le.layout = std::move(layout);
-                            le.origin = {x, y};
-                            le.plain = spans_to_plain(spans);
-                            le.spans.clear();
-                        });
+                    owner_.link_cache_.put_unkeyed(m.event_id,
+                                                   [&](LinkLayout& le)
+                                                   {
+                                                       le.layout = std::move(layout);
+                                                       le.origin = {x, y};
+                                                       le.plain = spans_to_plain(spans);
+                                                       le.spans.clear();
+                                                   });
                 }
             }
             if (m.is_edited)
@@ -5467,8 +5578,7 @@ private:
                     end_y += kEditedBadgeGap + lo->measure().h;
                 }
             }
-            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w);
-                sh > 0.0f)
+            if (float sh = owner_.previews_.stack_height(m, ctx.factory, col_w); sh > 0.0f)
             {
                 end_y += kPreviewCardGapTop;
                 owner_.previews_.paint_cards(m, ctx, x, end_y, col_w);
@@ -5487,8 +5597,7 @@ private:
             // `body` already carries the cause-aware reason from the Rust
             // converter (e.g. "🔒 Unable to decrypt"). Render muted, single
             // line — same style as the redacted tombstone above.
-            float h = paint_wrapped_text(m.body, ctx, x, y, col_w,
-                                         ctx.theme.palette.text_muted);
+            float h = paint_wrapped_text(m.body, ctx, x, y, col_w, ctx.theme.palette.text_muted);
             return y + h;
         }
         case MessageRowData::Kind::Image:
@@ -5496,29 +5605,26 @@ private:
             float max_w = std::min(col_w, kImageMaxW);
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string img_key = look ? look->fetch_token() : std::string{};
-            const tk::Image* img =
-                (owner_.image_provider_ && !img_key.empty())
-                    // Sizing-only lookup: paint_inline_media's own call
-                    // (measure pass, or later in the same paint pass) is
-                    // what actually gates low-power-mode playback.
-                    ? owner_.image_provider_(img_key, /*hovered=*/true)
-                    : nullptr;
+            const tk::Image* img = (owner_.image_provider_ && !img_key.empty())
+                                       // Sizing-only lookup: paint_inline_media's own call
+                                       // (measure pass, or later in the same paint pass) is
+                                       // what actually gates low-power-mode playback.
+                                       ? owner_.image_provider_(img_key, /*hovered=*/true)
+                                       : nullptr;
             // Prefer the event's own stable media_w/media_h over the
             // currently-decoded image's dimensions — see sticker_fit_box_'s
             // doc comment for why: the same mxc can be decoded/cached at
             // more than one size if a different MediaKind elsewhere
             // requests the same content, and sizing from a volatile decode
             // would make the box flicker as that race resolves.
-            tk::Size sz =
-                (m.media_w > 0 && m.media_h > 0)
-                    ? fit_media(m.media_w, m.media_h, max_w, kImageMaxH)
-                : (img && img->width() > 0 && img->height() > 0)
-                    ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
-                    : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
+            tk::Size sz = (m.media_w > 0 && m.media_h > 0)
+                              ? fit_media(m.media_w, m.media_h, max_w, kImageMaxH)
+                          : (img && img->width() > 0 && img->height() > 0)
+                              ? fit_media(img->width(), img->height(), max_w, kImageMaxH)
+                              : fit_media(m.media_w, m.media_h, max_w, kImageMaxH);
             if (owner_.media_is_hidden_(m))
             {
-                tk::Size pill_min =
-                    hidden_media_pill_size(ctx.factory, m.kind);
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
@@ -5536,12 +5642,9 @@ private:
                     constexpr float kBadgePadX = 6.0f, kBadgePadY = 3.0f;
                     float bx = r.x + r.w - lsz.w - kBadgePadX * 2 - 4.0f;
                     float by = r.y + r.h - lsz.h - kBadgePadY * 2 - 4.0f;
-                    tk::Rect badge{bx, by, lsz.w + kBadgePadX * 2,
-                                   lsz.h + kBadgePadY * 2};
-                    ctx.canvas.fill_rounded_rect(badge, 4.0f,
-                                                 tk::Color{0, 0, 0, 140});
-                    ctx.canvas.draw_text(*lo,
-                                         {bx + kBadgePadX, by + kBadgePadY},
+                    tk::Rect badge{bx, by, lsz.w + kBadgePadX * 2, lsz.h + kBadgePadY * 2};
+                    ctx.canvas.fill_rounded_rect(badge, 4.0f, tk::Color{0, 0, 0, 140});
+                    ctx.canvas.draw_text(*lo, {bx + kBadgePadX, by + kBadgePadY},
                                          tk::Color{255, 255, 255, 230});
                 }
             }
@@ -5552,18 +5655,17 @@ private:
                 // the downscaled inline thumbnail. Fall back to the
                 // decoded size only when metadata is absent.
                 int iw = (m.media_w > 0) ? m.media_w : (img ? img->width() : 0);
-                int ih =
-                    (m.media_h > 0) ? m.media_h : (img ? img->height() : 0);
+                int ih = (m.media_h > 0) ? m.media_h : (img ? img->height() : 0);
                 owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.source, m.thumbnail, m.body, iw, ih, r,
-                    m.media_filename, m.media_mime};
+                    m.event_id, m.source, m.thumbnail,      m.body,      iw,
+                    ih,         r,        m.media_filename, m.media_mime};
             }
             float cursor = y + sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
-                float ch = paint_body_text(m, ctx, x, cursor, col_w,
-                                           ctx.theme.palette.text_primary);
+                float ch =
+                    paint_body_text(m, ctx, x, cursor, col_w, ctx.theme.palette.text_primary);
                 cursor += ch;
                 if (m.is_edited)
                 {
@@ -5592,19 +5694,17 @@ private:
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
             const std::string sticker_key = look ? look->fetch_token() : std::string{};
             const auto& sticker_provider = owner_.sticker_image_provider_
-                                                ? owner_.sticker_image_provider_
-                                                : owner_.image_provider_;
-            const tk::Image* sticker_img =
-                (sticker_provider && !sticker_key.empty())
-                    // Sizing-only lookup: paint_inline_media's own call
-                    // (below) is what actually gates low-power playback.
-                    ? sticker_provider(sticker_key, /*hovered=*/true)
-                    : nullptr;
+                                               ? owner_.sticker_image_provider_
+                                               : owner_.image_provider_;
+            const tk::Image* sticker_img = (sticker_provider && !sticker_key.empty())
+                                               // Sizing-only lookup: paint_inline_media's own call
+                                               // (below) is what actually gates low-power playback.
+                                               ? sticker_provider(sticker_key, /*hovered=*/true)
+                                               : nullptr;
             tk::Size sz = sticker_fit_box_(m, max_w);
             if (owner_.media_is_hidden_(m))
             {
-                tk::Size pill_min =
-                    hidden_media_pill_size(ctx.factory, m.kind);
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 sz.w = std::max(sz.w, std::min(pill_min.w, max_w));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kStickerSize));
             }
@@ -5614,14 +5714,12 @@ private:
             {
                 owner_.sticker_geom_[m.event_id] = MessageListView::StickerHit{
                     m.event_id, m.source, m.body, m.sticker_info_json, r};
-                int iw = (sticker_img && sticker_img->width() > 0)
-                             ? sticker_img->width()
-                             : m.media_w;
-                int ih = (sticker_img && sticker_img->height() > 0)
-                             ? sticker_img->height()
-                             : m.media_h;
-                owner_.image_geom_[m.event_id] = MessageListView::ImageHit{
-                    m.event_id, m.source, m.thumbnail, m.body, iw, ih, r};
+                int iw =
+                    (sticker_img && sticker_img->width() > 0) ? sticker_img->width() : m.media_w;
+                int ih =
+                    (sticker_img && sticker_img->height() > 0) ? sticker_img->height() : m.media_h;
+                owner_.image_geom_[m.event_id] =
+                    MessageListView::ImageHit{m.event_id, m.source, m.thumbnail, m.body, iw, ih, r};
             }
             return y + sz.h;
         }
@@ -5632,17 +5730,15 @@ private:
             paint_file_card(m, ctx, r);
             if (!m.event_id.empty())
             {
-                owner_.file_geom_[m.event_id] =
-                    MessageListView::FileHit{m.event_id, m.file_source,
-                                              m.file_name, m.file_size, r,
-                                              m.media_mime};
+                owner_.file_geom_[m.event_id] = MessageListView::FileHit{
+                    m.event_id, m.file_source, m.file_name, m.file_size, r, m.media_mime};
             }
             float cursor = y + kFileCardH;
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
-                float ch = paint_body_text(m, ctx, x, cursor, col_w,
-                                           ctx.theme.palette.text_primary);
+                float ch =
+                    paint_body_text(m, ctx, x, cursor, col_w, ctx.theme.palette.text_primary);
                 cursor += ch;
                 if (m.is_edited)
                 {
@@ -5678,15 +5774,13 @@ private:
         case MessageRowData::Kind::Video:
         {
             int vw = m.media_w, vh = m.media_h;
-            tk::Size sz =
-                (vw > 0 && vh > 0)
-                    ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
-                    : tk::Size{std::min(col_w, kImageMaxW),
-                               std::min(col_w, kImageMaxW) * 9.0f / 16.0f};
+            tk::Size sz = (vw > 0 && vh > 0)
+                              ? fit_media(vw, vh, std::min(col_w, kImageMaxW), kImageMaxH)
+                              : tk::Size{std::min(col_w, kImageMaxW),
+                                         std::min(col_w, kImageMaxW) * 9.0f / 16.0f};
             if (owner_.media_is_hidden_(m))
             {
-                tk::Size pill_min =
-                    hidden_media_pill_size(ctx.factory, m.kind);
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
@@ -5694,28 +5788,27 @@ private:
             paint_video_card(m, ctx, r);
             if (!m.event_id.empty())
             {
-                owner_.video_geom_[m.event_id] =
-                    MessageListView::VideoHit{m.event_id,
-                                              m.source,
-                                              m.thumbnail,
-                                              m.video_mime,
-                                              m.media_w,
-                                              m.media_h,
-                                              m.duration_ms,
-                                              m.video_autoplay,
-                                              m.video_loop,
-                                              m.video_no_audio,
-                                              m.video_hide_controls,
-                                              m.video_gif,
-                                              r,
-                                              m.media_filename};
+                owner_.video_geom_[m.event_id] = MessageListView::VideoHit{m.event_id,
+                                                                           m.source,
+                                                                           m.thumbnail,
+                                                                           m.video_mime,
+                                                                           m.media_w,
+                                                                           m.media_h,
+                                                                           m.duration_ms,
+                                                                           m.video_autoplay,
+                                                                           m.video_loop,
+                                                                           m.video_no_audio,
+                                                                           m.video_hide_controls,
+                                                                           m.video_gif,
+                                                                           r,
+                                                                           m.media_filename};
             }
             float cursor = y + sz.h;
             if (m.has_filename_caption && !m.body.empty())
             {
                 cursor += 4.0f;
-                float ch = paint_body_text(m, ctx, x, cursor, col_w,
-                                           ctx.theme.palette.text_primary);
+                float ch =
+                    paint_body_text(m, ctx, x, cursor, col_w, ctx.theme.palette.text_primary);
                 cursor += ch;
                 if (m.is_edited)
                 {
@@ -5739,8 +5832,7 @@ private:
             constexpr float kMapRowH = 240.0f;
             const std::uint64_t now_ms = live_now_ms();
             const std::string live_status = live_location_status_text(m, now_ms);
-            const bool waiting =
-                !live_location_has_map(m);
+            const bool waiting = !live_location_has_map(m);
             float bottom = y;
             if (!waiting)
             {
@@ -5748,7 +5840,9 @@ private:
                 paint_location_map(m, ctx, map_rect);
                 bottom = y + kMapRowH;
                 if (!live_status.empty())
+                {
                     bottom += kMsgListPadY;
+                }
             }
             if (!live_status.empty())
             {
@@ -5764,44 +5858,43 @@ private:
             return waiting ? bottom : (live_status.empty() ? y + kMapRowH : bottom);
         }
         case MessageRowData::Kind::Poll:
-            return owner_.polls_.paint(m, ctx, x, y, col_w,
-                                       owner_.poll_interactive_(m),
+            return owner_.polls_.paint(m, ctx, x, y, col_w, owner_.poll_interactive_(m),
                                        owner_.poll_end_shown_(m));
         case MessageRowData::Kind::Gallery:
         {
             float max_w = std::min(col_w, kImageMaxW);
             int n = static_cast<int>(m.gallery_painted_count());
-            int cols = std::max(
-                1, static_cast<int>((max_w + kGalleryCellSpacing) /
-                                    (kGalleryCellSize + kGalleryCellSpacing)));
+            int cols = std::max(1, static_cast<int>((max_w + kGalleryCellSpacing) /
+                                                    (kGalleryCellSize + kGalleryCellSpacing)));
             cols = std::min(cols, std::max(n, 1));
             int rows = (n + cols - 1) / cols;
             if (rows < 1)
+            {
                 rows = 1;
+            }
             float grid_w = static_cast<float>(cols) * kGalleryCellSize +
-                          static_cast<float>(std::max(0, cols - 1)) *
-                              kGalleryCellSpacing;
+                           static_cast<float>(std::max(0, cols - 1)) * kGalleryCellSpacing;
             float grid_h = static_cast<float>(rows) * kGalleryCellSize +
-                          static_cast<float>(std::max(0, rows - 1)) *
-                              kGalleryCellSpacing;
+                           static_cast<float>(std::max(0, rows - 1)) * kGalleryCellSpacing;
 
             float cursor;
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
                 grid_h = std::max(grid_h, std::min(pill_min.h, kImageMaxH));
-                tk::Rect r{x, y, std::max(grid_w, std::min(pill_min.w, max_w)),
-                          grid_h};
+                tk::Rect r{x, y, std::max(grid_w, std::min(pill_min.w, max_w)), grid_h};
                 paint_hidden_media_placeholder(m, ctx, r);
                 if (!m.event_id.empty())
                 {
                     // Recorded as item 0 so a click on the placeholder reveals.
-                    owner_.gallery_item_geom_[m.event_id + "#0"] =
-                        MessageListView::GalleryItemHit{
-                            m.event_id, 0,
-                            n > 0 ? m.gallery_items[0].kind
-                                  : MessageRowData::GalleryItemRow::Kind::Image,
-                            nullptr, nullptr, 0, r};
+                    owner_.gallery_item_geom_[m.event_id + "#0"] = MessageListView::GalleryItemHit{
+                        m.event_id,
+                        0,
+                        n > 0 ? m.gallery_items[0].kind : MessageRowData::GalleryItemRow::Kind::Image,
+                        nullptr,
+                        nullptr,
+                        0,
+                        r};
                 }
                 cursor = y + r.h;
             }
@@ -5811,10 +5904,10 @@ private:
                 {
                     int row_i = i / cols;
                     int col_i = i % cols;
-                    float cx = x + static_cast<float>(col_i) *
-                                       (kGalleryCellSize + kGalleryCellSpacing);
-                    float cy = y + static_cast<float>(row_i) *
-                                       (kGalleryCellSize + kGalleryCellSpacing);
+                    float cx =
+                        x + static_cast<float>(col_i) * (kGalleryCellSize + kGalleryCellSpacing);
+                    float cy =
+                        y + static_cast<float>(row_i) * (kGalleryCellSize + kGalleryCellSpacing);
                     tk::Rect cell{cx, cy, kGalleryCellSize, kGalleryCellSize};
                     paint_gallery_cell(m, ctx, cell, static_cast<std::size_t>(i));
                 }
@@ -5823,8 +5916,8 @@ private:
             if (!m.body.empty())
             {
                 cursor += 4.0f;
-                float ch = paint_body_text(m, ctx, x, cursor, col_w,
-                                           ctx.theme.palette.text_primary);
+                float ch =
+                    paint_body_text(m, ctx, x, cursor, col_w, ctx.theme.palette.text_primary);
                 cursor += ch;
             }
             return cursor;
@@ -5856,37 +5949,33 @@ private:
 
     // Classic/Bubble line: glyph + one muted Small label, ellipsized to
     // `col_w`. A negative `col_w` asks for the unconstrained label.
-    std::unique_ptr<tk::TextLayout>
-    forward_layout_(const MessageRowData& m, tk::CanvasFactory& f,
-                    float col_w) const
+    std::unique_ptr<tk::TextLayout> forward_layout_(const MessageRowData& m, tk::CanvasFactory& f,
+                                                    float col_w) const
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = col_w < 0.0f ? -1.0f
-                                    : std::max(0.0f, col_w - kForwardIconPx -
-                                                         kForwardIconGap);
+        st.max_width =
+            col_w < 0.0f ? -1.0f : std::max(0.0f, col_w - kForwardIconPx - kForwardIconGap);
         return f.build_text(forward_label_(m), st);
     }
 
     // Height of the line plus the gap that follows it.
-    float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx,
-                               float col_w) const
+    float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
     {
         auto lo = forward_layout_(m, ctx.factory, col_w);
-        return std::max(lo ? lo->measure().h : 0.0f, kForwardIconPx) +
-               kForwardGapAfter;
+        return std::max(lo ? lo->measure().h : 0.0f, kForwardIconPx) + kForwardGapAfter;
     }
 
     // Width the line wants when it has all the room it needs (bubble hugging).
-    float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
-                                 float w) const
+    float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w) const
     {
         if (!m.forwarded)
+        {
             return 0.0f;
+        }
         auto lo = forward_layout_(m, ctx.factory, -1.0f);
-        return std::min(w, kForwardIconPx + kForwardIconGap +
-                               (lo ? lo->measure().w : 0.0f));
+        return std::min(w, kForwardIconPx + kForwardIconGap + (lo ? lo->measure().w : 0.0f));
     }
 
     // Registers the clickable rect of a forwarded row's attribution when the
@@ -5894,31 +5983,34 @@ private:
     void record_forward_geom_(const MessageRowData& m, tk::Rect r) const
     {
         if (m.has_forward_link() && owner_.on_forward_origin_clicked)
+        {
             owner_.forward_line_geom_[m.event_id] = r;
+        }
     }
 
     // Paints the line at (x, y); returns the y directly below it, gap included.
-    float paint_forward_line_(const MessageRowData& m, tk::PaintCtx& ctx,
-                              float x, float y, float col_w) const
+    float paint_forward_line_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                              float col_w) const
     {
         if (!m.forwarded)
+        {
             return y;
+        }
         auto lo = forward_layout_(m, ctx.factory, col_w);
         const float text_h = lo ? lo->measure().h : 0.0f;
         const float text_w = lo ? lo->measure().w : 0.0f;
         const float h = std::max(text_h, kForwardIconPx);
         const tk::Color col = ctx.theme.palette.text_muted;
         ic_forward_.draw(ctx.canvas, ctx.factory, kForwardSvg,
-                         {x, y + (h - kForwardIconPx) * 0.5f, kForwardIconPx,
-                          kForwardIconPx},
+                         {x, y + (h - kForwardIconPx) * 0.5f, kForwardIconPx, kForwardIconPx},
                          kForwardIconPx, col);
         if (lo)
+        {
             ctx.canvas.draw_text(
-                *lo, {x + kForwardIconPx + kForwardIconGap, y + (h - text_h) * 0.5f},
-                col);
-        record_forward_geom_(
-            m, {x, y,
-                std::min(col_w, kForwardIconPx + kForwardIconGap + text_w), h});
+                *lo, {x + kForwardIconPx + kForwardIconGap, y + (h - text_h) * 0.5f}, col);
+        }
+        record_forward_geom_(m,
+                             {x, y, std::min(col_w, kForwardIconPx + kForwardIconGap + text_w), h});
         return y + h + kForwardGapAfter;
     }
 
@@ -5929,29 +6021,29 @@ private:
         return "-> " + forward_label_(m);
     }
 
-    float irc_forward_height_(const MessageRowData& m, tk::LayoutCtx& ctx,
-                              float col_w) const
+    float irc_forward_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
     {
         auto lo = ctx.factory.build_text(irc_forward_text_(m), body_style(col_w));
         return (lo ? lo->measure().h : 0.0f) + msgirc::kIrcPrefixGap;
     }
 
-    float paint_irc_forward_(const MessageRowData& m, tk::PaintCtx& ctx, float x,
-                             float y, float col_w) const
+    float paint_irc_forward_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                             float col_w) const
     {
         auto lo = ctx.factory.build_text(irc_forward_text_(m), body_style(col_w));
         const float h = lo ? lo->measure().h : 0.0f;
         if (lo)
+        {
             ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_muted);
-        record_forward_geom_(
-            m, {x, y, lo ? std::min(col_w, lo->measure().w) : col_w, h});
+        }
+        record_forward_geom_(m, {x, y, lo ? std::min(col_w, lo->measure().w) : col_w, h});
         return y + h + msgirc::kIrcPrefixGap;
     }
 
     // Paint the reply quote block (left accent stripe + sender + snippet/image).
     // Returns the y-coordinate directly below the block.
-    float paint_quote_block(const MessageRowData& m, tk::PaintCtx& ctx, float x,
-                            float y, float col_w) const
+    float paint_quote_block(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                            float col_w) const
     {
         const float block_h = m.has_reply_image() ? kQuoteImageBlockH : kQuoteBlockH;
         tk::Rect card{x, y, col_w, block_h};
@@ -5960,10 +6052,8 @@ private:
         owner_.quote_block_geom_[m.event_id] = card;
 
         // Background + border
-        ctx.canvas.fill_rounded_rect(card, 4.0f,
-                                     ctx.theme.palette.subtle_hover);
-        ctx.canvas.stroke_rounded_rect(card, 4.0f, ctx.theme.palette.border,
-                                       1.0f);
+        ctx.canvas.fill_rounded_rect(card, 4.0f, ctx.theme.palette.subtle_hover);
+        ctx.canvas.stroke_rounded_rect(card, 4.0f, ctx.theme.palette.border, 1.0f);
 
         // Left accent stripe (3 px, full height of the card, rounded left edge)
         tk::Rect stripe{x, y, kQuoteAccentW, block_h};
@@ -5979,22 +6069,21 @@ private:
         {
             // Image reply: sender name at the top, image thumbnail below.
             constexpr float kPadT = 8.0f;
-            constexpr float kGap  = 4.0f;
+            constexpr float kGap = 4.0f;
             constexpr float kPadB = 6.0f;
 
-            const std::string sname =
-                unresolved ? std::string{} : m.in_reply_to_sender_name;
+            const std::string sname = unresolved ? std::string{} : m.in_reply_to_sender_name;
             tk::TextStyle name_st{};
-            name_st.role      = tk::FontRole::UiSemibold;
-            name_st.trim      = tk::TextTrim::Ellipsis;
+            name_st.role = tk::FontRole::UiSemibold;
+            name_st.trim = tk::TextTrim::Ellipsis;
             name_st.max_width = tw;
-            auto name_lo =
-                sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
+            auto name_lo = sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
 
             float name_h = name_lo ? name_lo->measure().h : 0.0f;
             if (name_lo)
-                ctx.canvas.draw_text(*name_lo, {tx, y + kPadT},
-                                     ctx.theme.palette.text_secondary);
+            {
+                ctx.canvas.draw_text(*name_lo, {tx, y + kPadT}, ctx.theme.palette.text_secondary);
+            }
 
             float img_y = y + kPadT + name_h + kGap;
             float img_h = std::max(0.0f, (y + block_h) - img_y - kPadB);
@@ -6004,29 +6093,27 @@ private:
             const std::string fetch_key = look ? look->fetch_token() : std::string{};
             const tk::Image* img = nullptr;
             if (owner_.image_provider_ && !fetch_key.empty())
+            {
                 // Reply-quote thumbnail: no hover surface, always play.
                 img = owner_.image_provider_(fetch_key, /*hovered=*/true);
+            }
 
             if (img)
             {
                 float iw = static_cast<float>(img->width());
                 float ih = static_cast<float>(img->height());
-                float s  = (iw > 0.0f && ih > 0.0f)
-                               ? std::min(img_rect.w / iw, img_rect.h / ih)
-                               : 1.0f;
+                float s =
+                    (iw > 0.0f && ih > 0.0f) ? std::min(img_rect.w / iw, img_rect.h / ih) : 1.0f;
                 float dw = iw * s;
                 float dh = ih * s;
-                tk::Rect fit{img_rect.x,
-                             img_rect.y + (img_rect.h - dh) * 0.5f, dw, dh};
+                tk::Rect fit{img_rect.x, img_rect.y + (img_rect.h - dh) * 0.5f, dw, dh};
                 tk::ClipScope clip(ctx.canvas, img_rect, 4.0f);
                 ctx.canvas.draw_image(*img, fit);
             }
             else
             {
-                ctx.canvas.fill_rounded_rect(img_rect, 4.0f,
-                                             ctx.theme.palette.chrome_bg);
-                ctx.canvas.stroke_rounded_rect(img_rect, 4.0f,
-                                               ctx.theme.palette.border, 1.0f);
+                ctx.canvas.fill_rounded_rect(img_rect, 4.0f, ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(img_rect, 4.0f, ctx.theme.palette.border, 1.0f);
             }
         }
         else
@@ -6035,22 +6122,19 @@ private:
             // When the replied-to event isn't in the local timeline cache the
             // SDK sends empty sender_name + body — fall back to a single muted
             // placeholder line instead of showing the raw event id.
-            const std::string sname =
-                unresolved ? std::string{} : m.in_reply_to_sender_name;
+            const std::string sname = unresolved ? std::string{} : m.in_reply_to_sender_name;
             const std::string sbody =
-                unresolved ? tk::tr("Original message unavailable")
-                           : m.in_reply_to_body;
+                unresolved ? tk::tr("Original message unavailable") : m.in_reply_to_body;
 
             tk::TextStyle name_st{};
-            name_st.role      = tk::FontRole::UiSemibold;
-            name_st.trim      = tk::TextTrim::Ellipsis;
+            name_st.role = tk::FontRole::UiSemibold;
+            name_st.trim = tk::TextTrim::Ellipsis;
             name_st.max_width = tw;
-            auto name_lo =
-                sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
+            auto name_lo = sname.empty() ? nullptr : ctx.factory.build_text(sname, name_st);
 
             tk::TextStyle body_st{};
-            body_st.role      = tk::FontRole::Body;
-            body_st.trim      = tk::TextTrim::Ellipsis;
+            body_st.role = tk::FontRole::Body;
+            body_st.trim = tk::TextTrim::Ellipsis;
             body_st.max_width = tw;
             // Render inline formatting (bold/italic/code/links/…) from the
             // replied-to message's HTML when it had one; the card is a single
@@ -6062,11 +6146,19 @@ private:
             {
                 spans = html_to_spans(m.in_reply_to_formatted_body, dark);
                 if (ctx.theme.high_contrast)
+                {
                     flatten_span_colours(spans);
+                }
                 for (auto& sp : spans)
+                {
                     for (char& ch : sp.text)
+                    {
                         if (ch == '\n' || ch == '\r')
+                        {
                             ch = ' ';
+                        }
+                    }
+                }
                 // Reserve inline object boxes for mention pills the same way
                 // prepare_spans() does for the main body — otherwise the
                 // classified is_image spans keep empty text, no box gets
@@ -6087,24 +6179,26 @@ private:
                 substitute_image_placeholders(spans);
                 body_lo = ctx.factory.build_rich_text(spans, body_st);
                 if (!body_lo)
+                {
                     body_lo = ctx.factory.build_text(sbody, body_st);
+                }
             }
 
             constexpr float kLineGap = 2.0f;
-            float name_h  = name_lo ? name_lo->measure().h : 0.0f;
-            float body_h  = body_lo ? body_lo->measure().h : 0.0f;
+            float name_h = name_lo ? name_lo->measure().h : 0.0f;
+            float body_h = body_lo ? body_lo->measure().h : 0.0f;
             float total_h = name_h + (body_h > 0.0f ? kLineGap + body_h : 0.0f);
-            float text_y  = y + (block_h - total_h) * 0.5f;
+            float text_y = y + (block_h - total_h) * 0.5f;
 
             if (name_lo)
-                ctx.canvas.draw_text(*name_lo, {tx, text_y},
-                                     ctx.theme.palette.text_secondary);
+            {
+                ctx.canvas.draw_text(*name_lo, {tx, text_y}, ctx.theme.palette.text_secondary);
+            }
             if (body_lo)
             {
                 ctx.canvas.draw_text(*body_lo, {tx, text_y + name_h + kLineGap},
                                      ctx.theme.palette.text_muted);
-                paint_span_images(spans, *body_lo, ctx, tx,
-                                  text_y + name_h + kLineGap, tx + tw);
+                paint_span_images(spans, *body_lo, ctx, tx, text_y + name_h + kLineGap, tx + tw);
             }
         }
 
@@ -6122,7 +6216,9 @@ private:
     std::string irc_quote_text_(const MessageRowData& m) const
     {
         if (m.in_reply_to_sender_name.empty())
+        {
             return tk::tr("Original message unavailable");
+        }
         // in_reply_to_body is already newline-flattened by the row builder;
         // it also carries the SDK's "(image)" / "(file)" / … sentinels for
         // non-text originals, so no media special-casing is needed here.
@@ -6130,8 +6226,7 @@ private:
     }
 
     // Wrapped monospace height of the context line + its trailing gap.
-    float irc_quote_height_(const MessageRowData& m, tk::LayoutCtx& ctx,
-                            float col_w) const
+    float irc_quote_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
     {
         auto lo = ctx.factory.build_text(irc_quote_text_(m), body_style(col_w));
         return (lo ? lo->measure().h : 0.0f) + msgirc::kIrcPrefixGap;
@@ -6141,14 +6236,15 @@ private:
     // (including the trailing kIrcPrefixGap). Registers the block's world
     // rect so the existing quote:// hover-cursor and press_quote_ jump hit
     // tests work unchanged.
-    float paint_irc_quote_(const MessageRowData& m, tk::PaintCtx& ctx, float x,
-                           float y, float col_w) const
+    float paint_irc_quote_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                           float col_w) const
     {
         auto lo = ctx.factory.build_text(irc_quote_text_(m), body_style(col_w));
         const float h = lo ? lo->measure().h : 0.0f;
         if (lo)
-            ctx.canvas.draw_text(*lo, {x, y},
-                                 ctx.theme.palette.text_secondary);
+        {
+            ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_secondary);
+        }
         owner_.quote_block_geom_[m.event_id] = tk::Rect{x, y, col_w, h};
         return y + h + msgirc::kIrcPrefixGap;
     }
@@ -6166,8 +6262,8 @@ private:
         return s;
     }
 
-    float measure_text_height(const std::string& text, tk::LayoutCtx& ctx,
-                              float w, bool emoji_only = false) const
+    float measure_text_height(const std::string& text, tk::LayoutCtx& ctx, float w,
+                              bool emoji_only = false) const
     {
         if (text.empty())
         {
@@ -6184,12 +6280,13 @@ private:
 
     // Pre-process spans for rendering: when unrevealed, replace hidden spoiler
     // text with a bold label so the content is hidden but the span is visible.
-    std::vector<tk::TextSpan> prepare_spans(const MessageRowData& m,
-                                            bool revealed, bool dark) const
+    std::vector<tk::TextSpan> prepare_spans(const MessageRowData& m, bool revealed, bool dark) const
     {
         auto spans = html_to_spans(m.formatted_body, dark);
         if (hc_)
+        {
             flatten_span_colours(spans);
+        }
         if (!revealed)
         {
             for (auto& sp : spans)
@@ -6212,8 +6309,12 @@ private:
         std::vector<tk::TextSpan> segmented;
         segmented.reserve(spans.size());
         for (const auto& sp : spans)
+        {
             for (auto& sub : segment_emoji_runs(sp))
+            {
                 segmented.push_back(std::move(sub));
+            }
+        }
         return segmented;
     }
 
@@ -6247,12 +6348,13 @@ private:
         }
     }
 
-    std::vector<BodyBlock> prepare_blocks(const MessageRowData& m,
-                                          bool revealed, bool dark) const
+    std::vector<BodyBlock> prepare_blocks(const MessageRowData& m, bool revealed, bool dark) const
     {
         auto blocks = html_to_blocks(m.formatted_body, dark);
         if (hc_)
+        {
             flatten_block_colours(blocks);
+        }
         auto prep_spans = [&](std::vector<tk::TextSpan>& spans)
         {
             if (!revealed)
@@ -6260,15 +6362,16 @@ private:
                 for (auto& sp : spans)
                 {
                     if (!sp.spoiler)
+                    {
                         continue;
+                    }
                     sp.text = sp.spoiler_reason.empty()
                                   ? tk::tr("[Spoiler]")
-                                  : tk::trf(tk::tr("[Spoiler: {0}]"),
-                                            {sp.spoiler_reason});
-                    sp.bold          = true;
-                    sp.italic        = false;
+                                  : tk::trf(tk::tr("[Spoiler: {0}]"), {sp.spoiler_reason});
+                    sp.bold = true;
+                    sp.italic = false;
                     sp.strikethrough = false;
-                    sp.url           = {};
+                    sp.url = {};
                 }
             }
             substitute_image_placeholders(spans);
@@ -6279,8 +6382,12 @@ private:
             if (block.kind == BodyBlock::Kind::Table)
             {
                 for (auto& row : block.table.rows)
+                {
                     for (auto& c : row)
+                    {
                         prep_spans(c.spans);
+                    }
+                }
             }
             else
             {
@@ -6295,10 +6402,9 @@ private:
     // the message body, applying one italic / colour choice uniformly. The
     // prefix + style decisions belong to the renderer (MessageRowRenderer::
     // emote_spans); this is the layout-agnostic span assembly.
-    std::vector<tk::TextSpan>
-    assemble_emote_spans_(const MessageRowData& m, bool revealed, bool dark,
-                          std::string prefix, bool italic, bool force_color,
-                          tk::Color color) const
+    std::vector<tk::TextSpan> assemble_emote_spans_(const MessageRowData& m, bool revealed,
+                                                    bool dark, std::string prefix, bool italic,
+                                                    bool force_color, tk::Color color) const
     {
         const auto tint = [&](tk::TextSpan& s)
         {
@@ -6306,7 +6412,7 @@ private:
             if (force_color && !s.has_color)
             {
                 s.has_color = true;
-                s.color     = color;
+                s.color = color;
             }
         };
         std::vector<tk::TextSpan> result;
@@ -6340,10 +6446,11 @@ private:
             }
         }
         if (hc_)
+        {
             flatten_span_colours(result);
+        }
         return result;
     }
-
 
     // Hash the inputs that determine a body's shaped text (so an edit or a
     // formatting change invalidates the cached layout).
@@ -6354,13 +6461,16 @@ private:
         std::size_t key = tk::hash_combine(h, b);
         // When the renderer bakes a line prefix ("[HH:MM] <nick> ") into the
         // shaped body, that prefix text is part of what was shaped.
-        const std::string pfx =
-            row_renderer_ ? row_renderer_->body_prefix_key(m) : std::string{};
+        const std::string pfx = row_renderer_ ? row_renderer_->body_prefix_key(m) : std::string{};
         if (!pfx.empty())
+        {
             key = tk::hash_combine(key, std::hash<std::string>{}(pfx));
+        }
         // Expanding / collapsing a long code block re-lays out that message.
         if (const std::size_t cs = owner_.code_blocks_.state_hash(m.event_id))
+        {
             key = tk::hash_combine(key, cs);
+        }
         return key;
     }
 
@@ -6389,8 +6499,8 @@ private:
         }
     }
 
-    LinkLayout& body_layout_for(const MessageRowData& m, tk::CanvasFactory& f,
-                                float w, bool dark, bool revealed) const
+    LinkLayout& body_layout_for(const MessageRowData& m, tk::CanvasFactory& f, float w, bool dark,
+                                bool revealed) const
     {
         LinkLayoutCache::Key key{w, dark, revealed, hash_body(m)};
         return owner_.link_cache_.get_or_build(
@@ -6413,21 +6523,24 @@ private:
                     // (more than a single Paragraph, or a non-Paragraph block).
                     bool has_structure = false;
                     if (blocks.size() > 1)
+                    {
                         has_structure = true;
-                    else if (blocks.size() == 1 &&
-                             blocks[0].kind != BodyBlock::Kind::Paragraph)
+                    }
+                    else if (blocks.size() == 1 && blocks[0].kind != BodyBlock::Kind::Paragraph)
+                    {
                         has_structure = true;
+                    }
                     // A collapsible code block needs its own section (for the
                     // clip and the button), even in a code-only message. Whether
                     // it is long depends on wrapping, so shape it at body width.
                     if (!has_structure && blocks.size() == 1 &&
                         is_code_block_spans(blocks[0].spans))
                     {
-                        auto probe = f.build_rich_text(blocks[0].spans,
-                                                       body_style(w));
-                        if (probe &&
-                            code_collapse_clip_h(blocks[0].spans, *probe) > 0.0f)
+                        auto probe = f.build_rich_text(blocks[0].spans, body_style(w));
+                        if (probe && code_collapse_clip_h(blocks[0].spans, *probe) > 0.0f)
+                        {
                             has_structure = true;
+                        }
                     }
 
                     // m.body's plain-text fallback can't see MSC2545 custom
@@ -6437,7 +6550,9 @@ private:
                     // native emoji needs a second, span-level check here to
                     // also qualify for BigEmoji sizing.
                     if (!eo && !has_structure && blocks.size() == 1)
+                    {
                         eo = tk::is_emoji_only_spans(blocks[0].spans);
+                    }
                     slot.emoji_only = eo;
 
                     if (has_structure)
@@ -6449,36 +6564,37 @@ private:
                         {
                             if (b.kind == BodyBlock::Kind::Table)
                             {
-                                TableGrid tg = compute_table_layout(
-                                    b.table, w, f, body_style(w));
+                                TableGrid tg = compute_table_layout(b.table, w, f, body_style(w));
                                 if (tg.cells.empty())
+                                {
                                     continue;
+                                }
                                 SectionLayout sec;
-                                sec.kind        = b.kind;
-                                sec.x_offset    = 0.0f;
-                                sec.y_offset    = y_off;
+                                sec.kind = b.kind;
+                                sec.x_offset = 0.0f;
+                                sec.y_offset = y_off;
                                 sec.header_rows = tg.header_rows;
-                                sec.cells       = std::move(tg.cells);
-                                sec.col_x       = std::move(tg.col_x);
-                                sec.col_w       = std::move(tg.col_w);
-                                sec.row_y       = std::move(tg.row_y);
-                                sec.row_h       = std::move(tg.row_h);
-                                sec.height      = tg.size.h;
+                                sec.cells = std::move(tg.cells);
+                                sec.col_x = std::move(tg.col_x);
+                                sec.col_w = std::move(tg.col_w);
+                                sec.row_y = std::move(tg.row_y);
+                                sec.row_h = std::move(tg.row_h);
+                                sec.height = tg.size.h;
                                 y_off += sec.height + kSectionGap;
                                 plain_all += table_to_gfm(b.table);
                                 slot.sections.push_back(std::move(sec));
                                 continue;
                             }
 
-                            float xo  = section_x_offset(b);
+                            float xo = section_x_offset(b);
                             float avw = std::max(1.0f, w - xo);
                             SectionLayout sec;
-                            sec.kind     = b.kind;
-                            sec.level    = b.level;
-                            sec.index    = b.index;
+                            sec.kind = b.kind;
+                            sec.level = b.level;
+                            sec.index = b.index;
                             sec.x_offset = xo;
                             sec.y_offset = y_off;
-                            sec.spans    = b.spans;
+                            sec.spans = b.spans;
                             // An empty list item (`<li></li>`, MSC4313) has no
                             // spans; shape a lone space so it still gets one
                             // line of height and its number/bullet is drawn.
@@ -6488,46 +6604,42 @@ private:
                             {
                                 tk::TextSpan blank;
                                 blank.text = " ";
-                                sec.layout = f.build_rich_text({&blank, 1},
-                                                               body_style(avw));
+                                sec.layout = f.build_rich_text({&blank, 1}, body_style(avw));
                             }
                             else
-                                sec.layout =
-                                    f.build_rich_text(b.spans, body_style(avw));
+                            {
+                                sec.layout = f.build_rich_text(b.spans, body_style(avw));
+                            }
                             if (!sec.layout)
+                            {
                                 continue;
+                            }
                             float sh = sec.layout->measure().h;
                             // h1/h2 need extra room for the horizontal rule.
-                            if (b.kind == BodyBlock::Kind::Heading &&
-                                b.level <= 2)
+                            if (b.kind == BodyBlock::Kind::Heading && b.level <= 2)
+                            {
                                 sh += kHeadingRuleGap + 1.0f;
+                            }
                             if (is_code_block_spans(b.spans))
                             {
                                 const int cidx = code_idx++;
-                                const float clip = code_collapse_clip_h(
-                                    b.spans, *sec.layout);
+                                const float clip = code_collapse_clip_h(b.spans, *sec.layout);
                                 if (clip > 0.0f && clip < sh - 1.0f)
                                 {
                                     sec.code_block = cidx;
                                     sec.collapsed =
-                                        !owner_.code_blocks_.is_expanded(
-                                            m.event_id, cidx);
+                                        !owner_.code_blocks_.is_expanded(m.event_id, cidx);
                                     sec.clip_h = clip;
                                     tk::TextStyle ts{};
                                     ts.role = tk::FontRole::UiSemibold;
                                     auto lbl = f.build_text(
-                                        sec.collapsed ? tk::tr("Expand")
-                                                      : tk::tr("Collapse"),
-                                        ts);
-                                    const tk::Size ls =
-                                        lbl ? lbl->measure() : tk::Size{40, 14};
+                                        sec.collapsed ? tk::tr("Expand") : tk::tr("Collapse"), ts);
+                                    const tk::Size ls = lbl ? lbl->measure() : tk::Size{40, 14};
                                     const float vis = sec.collapsed ? clip : sh;
-                                    const float bw =
-                                        ls.w + 2.0f * kCodeTogglePadX;
-                                    sec.toggle_btn = {
-                                        std::max(0.0f, (avw - bw) * 0.5f),
-                                        vis + kCodePanelPad + kCodeToggleGap,
-                                        bw, ls.h + 2.0f * kCodeTogglePadY};
+                                    const float bw = ls.w + 2.0f * kCodeTogglePadX;
+                                    sec.toggle_btn = {std::max(0.0f, (avw - bw) * 0.5f),
+                                                      vis + kCodePanelPad + kCodeToggleGap, bw,
+                                                      ls.h + 2.0f * kCodeTogglePadY};
                                     sh = sec.toggle_btn.y + sec.toggle_btn.h;
                                 }
                             }
@@ -6545,10 +6657,7 @@ private:
                                 break;
                             case BodyBlock::Kind::Blockquote:
                                 plain_all +=
-                                    std::string(
-                                        static_cast<std::size_t>(b.level),
-                                        '>') +
-                                    " ";
+                                    std::string(static_cast<std::size_t>(b.level), '>') + " ";
                                 break;
                             default:
                                 break;
@@ -6572,8 +6681,7 @@ private:
                         auto& b = blocks.front();
                         if (!b.spans.empty())
                         {
-                            slot.layout =
-                                f.build_rich_text(b.spans, body_style(w, eo));
+                            slot.layout = f.build_rich_text(b.spans, body_style(w, eo));
                             if (slot.layout)
                             {
                                 slot.plain = spans_to_plain(b.spans);
@@ -6583,8 +6691,7 @@ private:
                     }
                 }
                 // Plain text: autolink bare URLs so they render as rich text.
-                if (!slot.layout && slot.sections.empty() && !eo &&
-                    !m.body.empty())
+                if (!slot.layout && slot.sections.empty() && !eo && !m.body.empty())
                 {
                     auto link_spans = autolink_plain_to_spans(m.body);
                     if (!link_spans.empty())
@@ -6595,8 +6702,7 @@ private:
                         link_spans = split_room_mentions(std::move(link_spans), dark);
                         substitute_image_placeholders(link_spans);
                         apply_emoji_segmentation(link_spans);
-                        slot.layout =
-                            f.build_rich_text(link_spans, body_style(w, eo));
+                        slot.layout = f.build_rich_text(link_spans, body_style(w, eo));
                         if (slot.layout)
                         {
                             slot.plain = m.body;
@@ -6610,9 +6716,7 @@ private:
                 // handled by BigEmoji, or when segmentation finds no emoji).
                 if (!slot.layout && slot.sections.empty())
                 {
-                    std::string plain_text =
-                        m.body.empty() ? tk::tr("(empty message)")
-                                       : m.body;
+                    std::string plain_text = m.body.empty() ? tk::tr("(empty message)") : m.body;
                     if (!eo && !plain_text.empty())
                     {
                         tk::TextSpan whole;
@@ -6623,19 +6727,24 @@ private:
                         substitute_image_placeholders(mentioned);
                         std::vector<tk::TextSpan> segs;
                         for (auto& sp : mentioned)
+                        {
                             for (auto& sub : segment_emoji_runs(sp))
+                            {
                                 segs.push_back(std::move(sub));
+                            }
+                        }
                         bool has_emoji_or_pill = false;
                         for (const auto& s : segs)
+                        {
                             if (s.is_emoji_run || s.is_mention)
                             {
                                 has_emoji_or_pill = true;
                                 break;
                             }
+                        }
                         if (has_emoji_or_pill)
                         {
-                            slot.layout =
-                                f.build_rich_text(segs, body_style(w, eo));
+                            slot.layout = f.build_rich_text(segs, body_style(w, eo));
                             if (slot.layout)
                             {
                                 slot.plain = plain_text;
@@ -6646,7 +6755,7 @@ private:
                     if (!slot.layout)
                     {
                         slot.layout = f.build_text(plain_text, body_style(w, eo));
-                        slot.plain  = std::move(plain_text);
+                        slot.plain = std::move(plain_text);
                         slot.spans.clear();
                     }
                 }
@@ -6656,38 +6765,36 @@ private:
                 // left edge (mIRC style). Flat bodies only — multi-section
                 // bodies keep a standalone prefix line (see render_irc_row_);
                 // the renderer returns {} for non-prefixed kinds.
-                auto combined =
-                    row_renderer_
-                        ? row_renderer_->body_prefix_spans(m, dark)
-                        : std::vector<tk::TextSpan>{};
+                auto combined = row_renderer_ ? row_renderer_->body_prefix_spans(m, dark)
+                                              : std::vector<tk::TextSpan>{};
                 if (hc_)
+                {
                     flatten_span_colours(combined);
+                }
                 if (!combined.empty() && slot.sections.empty())
                 {
                     std::string pfx_plain;
                     for (const auto& sp : combined)
+                    {
                         pfx_plain += sp.text;
+                    }
 
                     if (!slot.spans.empty())
                     {
-                        combined.insert(combined.end(), slot.spans.begin(),
-                                        slot.spans.end());
+                        combined.insert(combined.end(), slot.spans.begin(), slot.spans.end());
                     }
                     else
                     {
                         tk::TextSpan body_sp;
-                        body_sp.text = slot.plain.empty()
-                                           ? tk::tr("(empty message)")
-                                           : slot.plain;
+                        body_sp.text = slot.plain.empty() ? tk::tr("(empty message)") : slot.plain;
                         combined.push_back(std::move(body_sp));
                     }
-                    if (auto lay =
-                            f.build_rich_text(combined, body_style(w, false)))
+                    if (auto lay = f.build_rich_text(combined, body_style(w, false)))
                     {
-                        slot.layout     = std::move(lay);
-                        slot.plain      = pfx_plain + slot.plain;
-                        slot.spans      = std::move(combined);
-                        slot.natural_w  = -1.0f;
+                        slot.layout = std::move(lay);
+                        slot.plain = pfx_plain + slot.plain;
+                        slot.spans = std::move(combined);
+                        slot.natural_w = -1.0f;
                         slot.emoji_only = false;
                     }
                 }
@@ -6696,8 +6803,7 @@ private:
 
     // Measure height for a text message body — uses the shared body layout
     // cache so the row is shaped at most once per content/width/theme state.
-    float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx,
-                            float w) const
+    float measure_body_text(const MessageRowData& m, tk::LayoutCtx& ctx, float w) const
     {
         const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
@@ -6710,9 +6816,8 @@ private:
         return e.layout ? e.layout->measure().h : 0.0f;
     }
 
-    float paint_wrapped_text(const std::string& text, tk::PaintCtx& ctx,
-                             float x, float y, float w, tk::Color color,
-                             bool emoji_only = false) const
+    float paint_wrapped_text(const std::string& text, tk::PaintCtx& ctx, float x, float y, float w,
+                             tk::Color color, bool emoji_only = false) const
     {
         if (text.empty())
         {
@@ -6733,18 +6838,16 @@ private:
     // BEFORE the layout's own text draw — these are meant to sit behind the
     // glyphs. Image spans are handled separately by paint_span_images()
     // (see its comment for why they can't share this pass).
-    void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans,
-                                tk::TextLayout& layout,
-                                tk::PaintCtx& ctx,
-                                float ox, float oy,
+    void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans, tk::TextLayout& layout,
+                                tk::PaintCtx& ctx, float ox, float oy,
                                 float code_clip_h = -1.0f) const
     {
         // code_clip_h >= 0: a collapsed code block, panel ends at that y.
         int boff = 0;
         for (std::size_t si = 0; si < spans.size();)
         {
-            const auto& sp  = spans[si];
-            int          len = static_cast<int>(sp.text.size());
+            const auto& sp = spans[si];
+            int len = static_cast<int>(sp.text.size());
             if (sp.is_image && len > 0)
             {
                 // Mention pills are is_image leaves now too (see
@@ -6762,10 +6865,9 @@ private:
                     boff += static_cast<int>(spans[si].text.size());
                     ++si;
                 }
-                bool     any = false;
+                bool any = false;
                 tk::Rect u{};
-                for (const tk::Rect& r :
-                     layout.selection_rects(run_start, boff))
+                for (const tk::Rect& r : layout.selection_rects(run_start, boff))
                 {
                     if (!any)
                     {
@@ -6777,27 +6879,24 @@ private:
                     float y0 = std::min(u.y, r.y);
                     float x1 = std::max(u.x + u.w, r.x + r.w);
                     float y1 = std::max(u.y + u.h, r.y + r.h);
-                    u        = {x0, y0, x1 - x0, y1 - y0};
+                    u = {x0, y0, x1 - x0, y1 - y0};
                 }
                 if (any && code_clip_h >= 0.0f && u.y + u.h > code_clip_h)
+                {
                     u.h = std::max(0.0f, code_clip_h - u.y);
+                }
                 if (any)
                 {
-                    tk::Rect panel{u.x + ox - 6.0f, u.y + oy - 4.0f,
-                                   u.w + 12.0f, u.h + 8.0f};
-                    ctx.canvas.fill_rounded_rect(
-                        panel, 6.0f, ctx.theme.palette.code_bg);
+                    tk::Rect panel{u.x + ox - 6.0f, u.y + oy - 4.0f, u.w + 12.0f, u.h + 8.0f};
+                    ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.code_bg);
                 }
             }
             else if (sp.code && len > 0)
             {
-                for (const tk::Rect& r :
-                     layout.selection_rects(boff, boff + len))
+                for (const tk::Rect& r : layout.selection_rects(boff, boff + len))
                 {
-                    ctx.canvas.fill_rect(
-                        {r.x + ox - 2.0f, r.y + oy - 1.0f, r.w + 4.0f,
-                         r.h + 2.0f},
-                        ctx.theme.palette.code_bg);
+                    ctx.canvas.fill_rect({r.x + ox - 2.0f, r.y + oy - 1.0f, r.w + 4.0f, r.h + 2.0f},
+                                         ctx.theme.palette.code_bg);
                 }
                 boff += len;
                 ++si;
@@ -6822,15 +6921,16 @@ private:
     // substitute_image_placeholders' comment: each backend's native inline-
     // object mechanism reserves the box without considering any fallback
     // glyph), so there's nothing to paint over here.
-    void paint_span_images(const std::vector<tk::TextSpan>& spans,
-                           tk::TextLayout& layout, tk::PaintCtx& ctx,
-                           float ox, float oy, float max_right = 0.0f) const
+    void paint_span_images(const std::vector<tk::TextSpan>& spans, tk::TextLayout& layout,
+                           tk::PaintCtx& ctx, float ox, float oy, float max_right = 0.0f) const
     {
         // max_right > 0: skip any inline image whose box would end past this
         // x — backstop for elided single-line layouts (reply quote card) on a
         // backend that still reports rects for text hidden by the ellipsis.
         auto past_right = [&](float x, float w)
-        { return max_right > 0.0f && x + w > max_right + 0.5f; };
+        {
+            return max_right > 0.0f && x + w > max_right + 0.5f;
+        };
         // Deliberately NOT layout.ascent(): for a wrapped (multi-line) body
         // — the common case — TextLayout::ascent() has no single "this
         // line's ascent" to report and instead returns the *whole layout's*
@@ -6848,10 +6948,11 @@ private:
         auto ensure_pill_metrics = [&]()
         {
             if (have_pill_metrics)
+            {
                 return;
+            }
             have_pill_metrics = true;
-            const tk::LineMetrics lm =
-                tk::role_line_metrics(ctx.factory, tk::FontRole::Body);
+            const tk::LineMetrics lm = tk::role_line_metrics(ctx.factory, tk::FontRole::Body);
             if (lm.ascent > 0.0f || lm.descent > 0.0f)
             {
                 ascent = lm.ascent;
@@ -6867,8 +6968,7 @@ private:
                 if (sp.pill_kind != tk::PillKind::Generic)
                 {
                     const tk::Image* avatar = nullptr;
-                    if (sp.pill_kind == tk::PillKind::User &&
-                        owner_.mention_avatar_provider_)
+                    if (sp.pill_kind == tk::PillKind::User && owner_.mention_avatar_provider_)
                     {
                         std::string uid = mention_user_id_from_url(sp.url);
                         if (!uid.empty())
@@ -6876,8 +6976,8 @@ private:
                             avatar = owner_.mention_avatar_provider_(uid);
                         }
                     }
-                    else if (sp.pill_kind == tk::PillKind::Room &&
-                             sp.url.empty() && owner_.room_avatar_provider_)
+                    else if (sp.pill_kind == tk::PillKind::Room && sp.url.empty() &&
+                             owner_.room_avatar_provider_)
                     {
                         // A Room-kind pill with no url is the @room self-
                         // mention (html_spans.cpp clears url for both its
@@ -6929,14 +7029,12 @@ private:
                     // paint pass's own measurement. `r`'s origin still anchors
                     // the pill at the correct place in the line; only its
                     // extent is replaced.
-                    const tk::PillMetrics pm =
-                        tk::measure_pill(ctx.factory, spec, ascent, descent);
-                    for (const tk::Rect& r :
-                         layout.selection_rects(boff, boff + len))
+                    const tk::PillMetrics pm = tk::measure_pill(ctx.factory, spec, ascent, descent);
+                    for (const tk::Rect& r : layout.selection_rects(boff, boff + len))
                     {
                         tk::ImageRef bmp = tk::render_pill_bitmap_cached(
-                            ctx.factory, owner_.pill_bitmap_cache_, spec,
-                            ascent, descent, ctx.canvas.scale_factor());
+                            ctx.factory, owner_.pill_bitmap_cache_, spec, ascent, descent,
+                            ctx.canvas.scale_factor());
                         if (bmp)
                         {
                             // Draw at the *baked bitmap's own* pixel size
@@ -6956,12 +7054,11 @@ private:
                             // pinned->width()/height() rather than
                             // measure_pill's estimate).
                             const float scale = ctx.canvas.scale_factor();
-                            const float dst_w = scale > 0.0f
-                                ? static_cast<float>(bmp->width()) / scale
-                                : pm.width;
+                            const float dst_w =
+                                scale > 0.0f ? static_cast<float>(bmp->width()) / scale : pm.width;
                             const float dst_h = scale > 0.0f
-                                ? static_cast<float>(bmp->height()) / scale
-                                : pm.height;
+                                                    ? static_cast<float>(bmp->height()) / scale
+                                                    : pm.height;
                             // Bottom-align the pill's box with `r` (the run's
                             // own reserved box, as this specific layout
                             // engine actually placed it — including any
@@ -6984,36 +7081,35 @@ private:
                             // positions are rarely pixel-aligned) would still
                             // force a resample even at the right size.
                             const float dst_x =
-                                scale > 0.0f
-                                    ? std::round((r.x + ox) * scale) / scale
-                                    : r.x + ox;
-                            const float dst_y =
-                                scale > 0.0f
-                                    ? std::round((r.y + oy + dy) * scale) / scale
-                                    : r.y + oy + dy;
+                                scale > 0.0f ? std::round((r.x + ox) * scale) / scale : r.x + ox;
+                            const float dst_y = scale > 0.0f
+                                                    ? std::round((r.y + oy + dy) * scale) / scale
+                                                    : r.y + oy + dy;
                             if (past_right(dst_x, dst_w))
+                            {
                                 continue;
-                            ctx.canvas.draw_image(
-                                *bmp, {dst_x, dst_y, dst_w, dst_h});
+                            }
+                            ctx.canvas.draw_image(*bmp, {dst_x, dst_y, dst_w, dst_h});
                         }
                     }
                 }
                 else
                 {
-                    const tk::Image* img = owner_.image_provider_
-                        // Inline text-span custom emoji: no hover surface,
-                        // always play.
-                        ? owner_.image_provider_(sp.image_mxc, /*hovered=*/true)
-                        : nullptr;
+                    const tk::Image* img =
+                        owner_.image_provider_
+                            // Inline text-span custom emoji: no hover surface,
+                            // always play.
+                            ? owner_.image_provider_(sp.image_mxc, /*hovered=*/true)
+                            : nullptr;
                     if (img)
                     {
-                        for (const tk::Rect& r :
-                             layout.selection_rects(boff, boff + len))
+                        for (const tk::Rect& r : layout.selection_rects(boff, boff + len))
                         {
                             if (past_right(r.x + ox, r.w))
+                            {
                                 continue;
-                            ctx.canvas.draw_image(
-                                *img, {r.x + ox, r.y + oy, r.w, r.h});
+                            }
+                            ctx.canvas.draw_image(*img, {r.x + ox, r.y + oy, r.w, r.h});
                         }
                     }
                 }
@@ -7026,108 +7122,102 @@ private:
     // border), an optional header-row tint + stronger under-rule, then each
     // cell's shaped text. Everything is clipped to the table's box so an
     // over-tight column can't spill into the row below.
-    void paint_table_section(const SectionLayout& sec, tk::PaintCtx& ctx,
-                             float ox, float oy, tk::Color color,
-                             const std::string& event_id, int section_idx) const
+    void paint_table_section(const SectionLayout& sec, tk::PaintCtx& ctx, float ox, float oy,
+                             tk::Color color, const std::string& event_id, int section_idx) const
     {
-        const auto& pal      = ctx.theme.palette;
+        const auto& pal = ctx.theme.palette;
         const std::size_t nc = sec.col_w.size();
         const std::size_t nr = sec.row_h.size();
         if (nc == 0 || nr == 0)
+        {
             return;
+        }
 
         // Text-selection highlight for this section, if any.
         const auto& s = owner_.sel_;
         const bool sel_here = s && s->in_table && s->head_event_id == event_id &&
-                              s->table_section == section_idx &&
-                              owner_.has_selection();
+                              s->table_section == section_idx && owner_.has_selection();
         const bool sel_single =
-            sel_here && s->anchor_row == s->head_row &&
-            s->anchor_col == s->head_col;
-        const int sel_lo =
-            sel_single ? std::min(s->anchor_byte, s->head_byte) : 0;
-        const int sel_hi =
-            sel_single ? std::max(s->anchor_byte, s->head_byte) : 0;
-        const int block_r0 =
-            sel_here ? std::min(s->anchor_row, s->head_row) : 0;
-        const int block_r1 =
-            sel_here ? std::max(s->anchor_row, s->head_row) : -1;
-        const int block_c0 =
-            sel_here ? std::min(s->anchor_col, s->head_col) : 0;
-        const int block_c1 =
-            sel_here ? std::max(s->anchor_col, s->head_col) : -1;
+            sel_here && s->anchor_row == s->head_row && s->anchor_col == s->head_col;
+        const int sel_lo = sel_single ? std::min(s->anchor_byte, s->head_byte) : 0;
+        const int sel_hi = sel_single ? std::max(s->anchor_byte, s->head_byte) : 0;
+        const int block_r0 = sel_here ? std::min(s->anchor_row, s->head_row) : 0;
+        const int block_r1 = sel_here ? std::max(s->anchor_row, s->head_row) : -1;
+        const int block_c0 = sel_here ? std::min(s->anchor_col, s->head_col) : 0;
+        const int block_c1 = sel_here ? std::max(s->anchor_col, s->head_col) : -1;
 
-        const float tw =
-            sec.col_x.back() + sec.col_w.back() + kTableBorder;
+        const float tw = sec.col_x.back() + sec.col_w.back() + kTableBorder;
         const float th = sec.height;
-        auto snap      = [](float v) { return std::round(v); };
+        auto snap = [](float v)
+        {
+            return std::round(v);
+        };
 
         tk::ClipScope clip(ctx.canvas, {ox, oy, tw, th});
 
         // Header-row tint (behind everything).
-        if (sec.header_rows > 0 &&
-            static_cast<std::size_t>(sec.header_rows) <= nr)
+        if (sec.header_rows > 0 && static_cast<std::size_t>(sec.header_rows) <= nr)
         {
             const float top = oy + sec.row_y[0];
-            const std::size_t hlast =
-                static_cast<std::size_t>(sec.header_rows) - 1;
+            const std::size_t hlast = static_cast<std::size_t>(sec.header_rows) - 1;
             const float bot = oy + sec.row_y[hlast] + sec.row_h[hlast];
-            ctx.canvas.fill_rect(
-                {ox + kTableBorder, top, tw - 2.0f * kTableBorder, bot - top},
-                pal.code_bg);
+            ctx.canvas.fill_rect({ox + kTableBorder, top, tw - 2.0f * kTableBorder, bot - top},
+                                 pal.code_bg);
         }
 
         // Grid lines.
         ctx.canvas.fill_rect({snap(ox), oy, kTableBorder, th}, pal.separator);
         for (std::size_t c = 0; c < nc; ++c)
-            ctx.canvas.fill_rect(
-                {snap(ox + sec.col_x[c] + sec.col_w[c]), oy, kTableBorder, th},
-                pal.separator);
+        {
+            ctx.canvas.fill_rect({snap(ox + sec.col_x[c] + sec.col_w[c]), oy, kTableBorder, th},
+                                 pal.separator);
+        }
         ctx.canvas.fill_rect({ox, snap(oy), tw, kTableBorder}, pal.separator);
         for (std::size_t r = 0; r < nr; ++r)
         {
             const bool under_header =
-                sec.header_rows > 0 &&
-                r == static_cast<std::size_t>(sec.header_rows) - 1;
-            ctx.canvas.fill_rect(
-                {ox, snap(oy + sec.row_y[r] + sec.row_h[r]), tw, kTableBorder},
-                under_header ? pal.border : pal.separator);
+                sec.header_rows > 0 && r == static_cast<std::size_t>(sec.header_rows) - 1;
+            ctx.canvas.fill_rect({ox, snap(oy + sec.row_y[r] + sec.row_h[r]), tw, kTableBorder},
+                                 under_header ? pal.border : pal.separator);
         }
 
         // Rectangular block selection — fill whole selected cells (including
         // empty ones), drawn over the grid lines.
         if (sel_here && !sel_single)
-            for (int r = block_r0; r <= block_r1 && r < static_cast<int>(nr);
-                 ++r)
-                for (int c = block_c0;
-                     c <= block_c1 && c < static_cast<int>(nc); ++c)
-                    ctx.canvas.fill_rect(
-                        {ox + sec.col_x[static_cast<std::size_t>(c)],
-                         oy + sec.row_y[static_cast<std::size_t>(r)],
-                         sec.col_w[static_cast<std::size_t>(c)],
-                         sec.row_h[static_cast<std::size_t>(r)]},
-                        pal.selection);
+        {
+            for (int r = block_r0; r <= block_r1 && r < static_cast<int>(nr); ++r)
+            {
+                for (int c = block_c0; c <= block_c1 && c < static_cast<int>(nc); ++c)
+                {
+                    ctx.canvas.fill_rect({ox + sec.col_x[static_cast<std::size_t>(c)],
+                                          oy + sec.row_y[static_cast<std::size_t>(r)],
+                                          sec.col_w[static_cast<std::size_t>(c)],
+                                          sec.row_h[static_cast<std::size_t>(r)]},
+                                         pal.selection);
+                }
+            }
+        }
 
         // Cell content.
         for (const auto& cb : sec.cells)
         {
             if (!cb.layout)
+            {
                 continue;
+            }
             const float cox = ox + cb.rect.x + cb.text_dx;
             const float coy = oy + cb.rect.y;
-            if (sel_single && cb.row == s->anchor_row &&
-                cb.col == s->anchor_col)
+            if (sel_single && cb.row == s->anchor_row && cb.col == s->anchor_col)
             {
-                for (const tk::Rect& r :
-                     cb.layout->selection_rects(sel_lo, sel_hi))
-                    ctx.canvas.fill_rect({r.x + cox, r.y + coy, r.w, r.h},
-                                         pal.selection);
+                for (const tk::Rect& r : cb.layout->selection_rects(sel_lo, sel_hi))
+                {
+                    ctx.canvas.fill_rect({r.x + cox, r.y + coy, r.w, r.h}, pal.selection);
+                }
             }
             paint_span_backgrounds(cb.spans, *cb.layout, ctx, cox, coy);
-            const bool cell_block_selected =
-                ctx.theme.high_contrast && sel_here && !sel_single &&
-                cb.row >= block_r0 && cb.row <= block_r1 &&
-                cb.col >= block_c0 && cb.col <= block_c1;
+            const bool cell_block_selected = ctx.theme.high_contrast && sel_here && !sel_single &&
+                                             cb.row >= block_r0 && cb.row <= block_r1 &&
+                                             cb.col >= block_c0 && cb.col <= block_c1;
             ctx.canvas.draw_text(*cb.layout, {cox, coy},
                                  cell_block_selected ? pal.selection_text : color);
             if (ctx.theme.high_contrast && sel_single && cb.row == s->anchor_row &&
@@ -7141,35 +7231,32 @@ private:
             }
             paint_span_images(cb.spans, *cb.layout, ctx, cox, coy);
         }
-
     }
 
     // Paint a text message body — uses rich text when formatted_body is
     // present, otherwise falls back to plain text.
-    float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx, float x,
-                          float y, float w, tk::Color color) const
+    float paint_body_text(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y, float w,
+                          tk::Color color) const
     {
-        const bool dark     = ctx.theme.mode == tk::ThemeMode::Dark;
+        const bool dark = ctx.theme.mode == tk::ThemeMode::Dark;
         const bool revealed = owner_.spoilers_.is_revealed(m.event_id);
         LinkLayout& e = body_layout_for(m, ctx.factory, w, dark, revealed);
 
-        auto ord     = owner_.selection_ordered();
-        int  msg_idx = owner_.message_index_of(m.event_id);
+        auto ord = owner_.selection_ordered();
+        int msg_idx = owner_.message_index_of(m.event_id);
         // `base` is where `lay`'s text starts within the message's selection
         // byte space (SectionLayout::plain_base; 0 for the flat path) and
         // `plain_len` its length; the selection is clipped to that window.
-        auto draw_with_selection = [&](tk::TextLayout& lay, float ox, float oy,
-                                       int plain_len, int base = 0)
+        auto draw_with_selection =
+            [&](tk::TextLayout& lay, float ox, float oy, int plain_len, int base = 0)
         {
             std::vector<tk::Rect> sel_world;
-            if (ord && msg_idx >= 0 &&
-                msg_idx >= ord->lo_idx && msg_idx <= ord->hi_idx)
+            if (ord && msg_idx >= 0 && msg_idx >= ord->lo_idx && msg_idx <= ord->hi_idx)
             {
                 int lo_b = (msg_idx == ord->lo_idx) ? ord->lo_byte - base : 0;
-                int hi_b = (msg_idx == ord->hi_idx) ? ord->hi_byte - base
-                                                    : plain_len;
-                lo_b     = std::clamp(lo_b, 0, plain_len);
-                hi_b     = std::clamp(hi_b, 0, plain_len);
+                int hi_b = (msg_idx == ord->hi_idx) ? ord->hi_byte - base : plain_len;
+                lo_b = std::clamp(lo_b, 0, plain_len);
+                hi_b = std::clamp(hi_b, 0, plain_len);
                 if (lo_b < hi_b)
                 {
                     for (const tk::Rect& r : lay.selection_rects(lo_b, hi_b))
@@ -7188,8 +7275,7 @@ private:
                 for (const tk::Rect& wr : sel_world)
                 {
                     tk::ClipScope clip(ctx.canvas, wr);
-                    ctx.canvas.draw_text(lay, {ox, oy},
-                                         ctx.theme.palette.selection_text);
+                    ctx.canvas.draw_text(lay, {ox, oy}, ctx.theme.palette.selection_text);
                 }
             }
         };
@@ -7198,7 +7284,7 @@ private:
         if (!e.sections.empty())
         {
             float total_h = 0.0f;
-            int   si      = -1;
+            int si = -1;
             for (SectionLayout& sec : e.sections)
             {
                 ++si;
@@ -7206,21 +7292,22 @@ private:
                 {
                     const float ox = x + sec.x_offset;
                     const float oy = y + sec.y_offset;
-                    sec.origin     = {ox, oy};
+                    sec.origin = {ox, oy};
                     paint_table_section(sec, ctx, ox, oy, color, m.event_id, si);
                     total_h = sec.y_offset + sec.height;
                     continue;
                 }
                 if (!sec.layout)
+                {
                     continue;
+                }
                 const float ox = x + sec.x_offset;
                 const float oy = y + sec.y_offset;
-                sec.origin     = {ox, oy};
+                sec.origin = {ox, oy};
                 const float sh = sec.layout->measure().h;
 
                 // Span backgrounds.
-                const bool collapsed_code =
-                    sec.code_block >= 0 && sec.collapsed;
+                const bool collapsed_code = sec.code_block >= 0 && sec.collapsed;
                 paint_span_backgrounds(sec.spans, *sec.layout, ctx, ox, oy,
                                        collapsed_code ? sec.clip_h : -1.0f);
 
@@ -7229,11 +7316,9 @@ private:
                 {
                 case BodyBlock::Kind::Blockquote:
                 {
-                    tk::Rect bar{ox - kBlockquoteBarGap - kBlockquoteBarW,
-                                 oy, kBlockquoteBarW, sh};
-                    ctx.canvas.fill_rounded_rect(
-                        bar, kBlockquoteBarW * 0.5f,
-                        ctx.theme.palette.separator);
+                    tk::Rect bar{ox - kBlockquoteBarGap - kBlockquoteBarW, oy, kBlockquoteBarW, sh};
+                    ctx.canvas.fill_rounded_rect(bar, kBlockquoteBarW * 0.5f,
+                                                 ctx.theme.palette.separator);
                     break;
                 }
                 case BodyBlock::Kind::UnorderedItem:
@@ -7242,15 +7327,15 @@ private:
                     bullet.text = "\xe2\x80\xa2"; // U+2022 BULLET
                     std::vector<tk::TextSpan> bspans{bullet};
                     tk::TextStyle st;
-                    st.role      = tk::FontRole::Body;
-                    st.wrap      = false;
+                    st.role = tk::FontRole::Body;
+                    st.wrap = false;
                     st.max_width = kListIndent;
-                    auto blay    = ctx.factory.build_rich_text(bspans, st);
+                    auto blay = ctx.factory.build_rich_text(bspans, st);
                     if (blay)
-                        ctx.canvas.draw_text(
-                            *blay,
-                            {ox - kBulletGap - blay->measure().w, oy},
-                            color);
+                    {
+                        ctx.canvas.draw_text(*blay, {ox - kBulletGap - blay->measure().w, oy},
+                                             color);
+                    }
                     break;
                 }
                 case BodyBlock::Kind::OrderedItem:
@@ -7259,15 +7344,15 @@ private:
                     num_span.text = std::to_string(sec.index) + ".";
                     std::vector<tk::TextSpan> nspans{num_span};
                     tk::TextStyle st;
-                    st.role      = tk::FontRole::Body;
-                    st.wrap      = false;
+                    st.role = tk::FontRole::Body;
+                    st.wrap = false;
                     st.max_width = kListIndent;
-                    auto nlay    = ctx.factory.build_rich_text(nspans, st);
+                    auto nlay = ctx.factory.build_rich_text(nspans, st);
                     if (nlay)
-                        ctx.canvas.draw_text(
-                            *nlay,
-                            {ox - kBulletGap - nlay->measure().w, oy},
-                            color);
+                    {
+                        ctx.canvas.draw_text(*nlay, {ox - kBulletGap - nlay->measure().w, oy},
+                                             color);
+                    }
                     break;
                 }
                 default:
@@ -7278,15 +7363,14 @@ private:
                     // A collapsed code block paints only its first lines.
                     std::optional<tk::ClipScope> head_clip;
                     if (collapsed_code)
-                        head_clip.emplace(
-                            ctx.canvas,
-                            tk::Rect{ox - 8.0f, oy - kCodePanelPad,
-                                     w - sec.x_offset + 16.0f,
-                                     sec.clip_h + kCodePanelPad});
-                    draw_with_selection(
-                        *sec.layout, ox, oy,
-                        static_cast<int>(spans_to_plain(sec.spans).size()),
-                        sec.plain_base);
+                    {
+                        head_clip.emplace(ctx.canvas, tk::Rect{ox - 8.0f, oy - kCodePanelPad,
+                                                               w - sec.x_offset + 16.0f,
+                                                               sec.clip_h + kCodePanelPad});
+                    }
+                    draw_with_selection(*sec.layout, ox, oy,
+                                        static_cast<int>(spans_to_plain(sec.spans).size()),
+                                        sec.plain_base);
                     paint_span_images(sec.spans, *sec.layout, ctx, ox, oy);
                 }
                 if (sec.code_block >= 0)
@@ -7294,30 +7378,22 @@ private:
                     tk::TextStyle ts{};
                     ts.role = tk::FontRole::UiSemibold;
                     auto lbl = ctx.factory.build_text(
-                        sec.collapsed ? tk::tr("Expand") : tk::tr("Collapse"),
-                        ts);
-                    const tk::Rect br{ox + sec.toggle_btn.x,
-                                      oy + sec.toggle_btn.y, sec.toggle_btn.w,
-                                      sec.toggle_btn.h};
-                    const bool hov =
-                        owner_.hover_code_toggle_block_ == sec.code_block &&
-                        owner_.hover_code_toggle_eid_ == m.event_id;
-                    ctx.canvas.fill_rounded_rect(
-                        br, br.h * 0.5f,
-                        hov ? ctx.theme.palette.subtle_pressed
-                            : ctx.theme.palette.subtle_hover);
+                        sec.collapsed ? tk::tr("Expand") : tk::tr("Collapse"), ts);
+                    const tk::Rect br{ox + sec.toggle_btn.x, oy + sec.toggle_btn.y,
+                                      sec.toggle_btn.w, sec.toggle_btn.h};
+                    const bool hov = owner_.hover_code_toggle_block_ == sec.code_block &&
+                                     owner_.hover_code_toggle_eid_ == m.event_id;
+                    ctx.canvas.fill_rounded_rect(br, br.h * 0.5f,
+                                                 hov ? ctx.theme.palette.subtle_pressed
+                                                     : ctx.theme.palette.subtle_hover);
                     ctx.canvas.stroke_rounded_rect(
-                        br, br.h * 0.5f,
-                        hov ? ctx.theme.palette.accent
-                            : ctx.theme.palette.border,
+                        br, br.h * 0.5f, hov ? ctx.theme.palette.accent : ctx.theme.palette.border,
                         hov ? 1.5f : 1.0f);
                     if (lbl)
                     {
                         const tk::Size ls = lbl->measure();
                         ctx.canvas.draw_text(
-                            *lbl,
-                            {br.x + (br.w - ls.w) * 0.5f,
-                             br.y + (br.h - ls.h) * 0.5f},
+                            *lbl, {br.x + (br.w - ls.w) * 0.5f, br.y + (br.h - ls.h) * 0.5f},
                             ctx.theme.palette.text_secondary);
                     }
                 }
@@ -7326,9 +7402,7 @@ private:
                 if (sec.kind == BodyBlock::Kind::Heading && sec.level <= 2)
                 {
                     float rule_y = oy + sh + kHeadingRuleGap * 0.5f;
-                    ctx.canvas.fill_rect(
-                        {x, rule_y, w, 1.0f},
-                        ctx.theme.palette.separator);
+                    ctx.canvas.fill_rect({x, rule_y, w, 1.0f}, ctx.theme.palette.separator);
                 }
 
                 total_h = sec.y_offset + sec.height;
@@ -7338,17 +7412,23 @@ private:
 
         // ── Flat path (plain/autolink/single-paragraph) ───────────────────────
         if (!e.layout)
+        {
             return 0.0f;
+        }
         tk::TextLayout& layout = *e.layout;
-        e.origin               = {x, y};
+        e.origin = {x, y};
 
         if (!e.spans.empty())
+        {
             paint_span_backgrounds(e.spans, layout, ctx, x, y);
+        }
 
         draw_with_selection(layout, x, y, static_cast<int>(e.plain.size()));
 
         if (!e.spans.empty())
+        {
             paint_span_images(e.spans, layout, ctx, x, y);
+        }
         return layout.measure().h;
     }
 
@@ -7356,8 +7436,8 @@ private:
     // neutral box) with a centred "Load …" pill. The whole tile is the
     // click target (handled via the existing image/video hit geometry, which
     // fires on_reveal_media when the row is hidden).
-    void paint_hidden_media_placeholder(const MessageRowData& m,
-                                        tk::PaintCtx& ctx, tk::Rect dst) const
+    void paint_hidden_media_placeholder(const MessageRowData& m, tk::PaintCtx& ctx,
+                                        tk::Rect dst) const
     {
         const tk::Image* bh_img = nullptr;
         if (!m.blurhash.empty() && owner_.image_provider_)
@@ -7373,8 +7453,7 @@ private:
         else
         {
             ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
-            ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border,
-                                           1.0f);
+            ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
         }
         // Dim scrim so the pill reads over any blurhash.
         ctx.canvas.fill_rounded_rect(dst, 8.0f, tk::Color{0, 0, 0, 90});
@@ -7396,18 +7475,14 @@ private:
         // but clamp+clip here too as a safety net against any undersized dst.
         pw = std::min(pw, dst.w);
         ph = std::min(ph, dst.h);
-        tk::Rect pill{dst.x + (dst.w - pw) * 0.5f, dst.y + (dst.h - ph) * 0.5f,
-                      pw, ph};
+        tk::Rect pill{dst.x + (dst.w - pw) * 0.5f, dst.y + (dst.h - ph) * 0.5f, pw, ph};
         tk::ClipScope clip(ctx.canvas, dst, 8.0f);
         ctx.canvas.fill_rounded_rect(pill, ph * 0.5f, ctx.theme.palette.accent);
-        ctx.canvas.draw_text(*lo,
-                             {pill.x + (pw - lsz.w) * 0.5f,
-                              pill.y + (ph - lsz.h) * 0.5f},
+        ctx.canvas.draw_text(*lo, {pill.x + (pw - lsz.w) * 0.5f, pill.y + (ph - lsz.h) * 0.5f},
                              ctx.theme.palette.text_on_accent);
     }
 
-    void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx,
-                            tk::Rect dst) const
+    void paint_inline_media(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst) const
     {
         if (owner_.media_is_hidden_(m))
         {
@@ -7418,15 +7493,14 @@ private:
         const std::string display_key = look ? look->fetch_token() : std::string{};
         const bool is_sticker = m.kind == MessageRowData::Kind::Sticker;
         const auto& provider = (is_sticker && owner_.sticker_image_provider_)
-                                    ? owner_.sticker_image_provider_
-                                    : owner_.image_provider_;
+                                   ? owner_.sticker_image_provider_
+                                   : owner_.image_provider_;
         // The one call in the whole paint pass that actually determines
         // whether this item's animation plays in low-power mode — see
         // hovered_media_event_id_'s doc comment. Every other lookup of this
         // same key (measurement, GIF-badge sizing, etc.) passes hovered=true
         // and is harmless since this call runs last and wins.
-        const bool hovered = !m.event_id.empty() &&
-                             m.event_id == owner_.hovered_media_event_id_;
+        const bool hovered = !m.event_id.empty() && m.event_id == owner_.hovered_media_event_id_;
         const tk::Image* img = nullptr;
         if (provider && !display_key.empty())
         {
@@ -7449,7 +7523,7 @@ private:
             if (!m.blurhash.empty() && owner_.image_provider_)
             {
                 bh_img = owner_.image_provider_("blurhash::" + m.event_id,
-                                            /*hovered=*/true);
+                                                /*hovered=*/true);
             }
             if (bh_img)
             {
@@ -7458,10 +7532,8 @@ private:
             }
             else
             {
-                ctx.canvas.fill_rounded_rect(dst, 8.0f,
-                                             ctx.theme.palette.chrome_bg);
-                ctx.canvas.stroke_rounded_rect(dst, 8.0f,
-                                               ctx.theme.palette.border, 1.0f);
+                ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
             }
         }
     }
@@ -7470,8 +7542,8 @@ private:
     // RoomMediaView::paint_cell_ (same thumbnail-resolution + video-badge
     // pattern) but keyed off GalleryItemRow rather than a flat MessageRowData
     // per-item row, since a gallery item isn't a standalone timeline row.
-    void paint_gallery_cell(const MessageRowData& m, tk::PaintCtx& ctx,
-                            tk::Rect cell, std::size_t index) const
+    void paint_gallery_cell(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect cell,
+                            std::size_t index) const
     {
         const auto& item = m.gallery_items[index];
         auto& cv = ctx.canvas;
@@ -7484,17 +7556,16 @@ private:
 
             const auto* look = item.thumbnail ? item.thumbnail.get() : item.source.get();
             const std::string key = look ? look->fetch_token() : std::string{};
-            const tk::Image* img = (owner_.image_provider_ && !key.empty())
-                                        ? owner_.image_provider_(key, m.event_id == owner_.hovered_media_event_id_)
-                                        : nullptr;
+            const tk::Image* img =
+                (owner_.image_provider_ && !key.empty())
+                    ? owner_.image_provider_(key, m.event_id == owner_.hovered_media_event_id_)
+                    : nullptr;
             if (img && img->width() > 0 && img->height() > 0)
             {
-                tk::Size fitted =
-                    fit_media(static_cast<float>(img->width()),
-                             static_cast<float>(img->height()), cell.w, cell.h);
+                tk::Size fitted = fit_media(static_cast<float>(img->width()),
+                                            static_cast<float>(img->height()), cell.w, cell.h);
                 tk::Rect dst{cell.x + (cell.w - fitted.w) * 0.5f,
-                            cell.y + (cell.h - fitted.h) * 0.5f, fitted.w,
-                            fitted.h};
+                             cell.y + (cell.h - fitted.h) * 0.5f, fitted.w, fitted.h};
                 cv.draw_image(*img, dst);
             }
             else
@@ -7511,13 +7582,12 @@ private:
                 {
                     tk::Size sz = glyph->measure();
                     tk::Rect badge{cell.x + (cell.w - sz.w) * 0.5f - 8.0f,
-                                  cell.y + (cell.h - sz.h) * 0.5f - 4.0f,
-                                  sz.w + 16.0f, sz.h + 8.0f};
+                                   cell.y + (cell.h - sz.h) * 0.5f - 4.0f, sz.w + 16.0f,
+                                   sz.h + 8.0f};
                     cv.fill_rounded_rect(badge, 6.0f, tk::Color{0, 0, 0, 140});
                     cv.draw_text(*glyph,
-                                {cell.x + (cell.w - sz.w) * 0.5f,
-                                 cell.y + (cell.h - sz.h) * 0.5f},
-                                tk::Color{255, 255, 255, 255});
+                                 {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
+                                 tk::Color{255, 255, 255, 255});
                 }
             }
             else if (!img)
@@ -7527,16 +7597,15 @@ private:
                 // beats an empty tile.
                 tk::TextStyle st{};
                 st.role = tk::FontRole::Small;
-                std::string label = (item.kind == ItemKind::Audio) ? tk::tr("Audio")
-                                                                    : tk::tr("File");
+                std::string label =
+                    (item.kind == ItemKind::Audio) ? tk::tr("Audio") : tk::tr("File");
                 auto lo = ctx.factory.build_text(label, st);
                 if (lo)
                 {
                     tk::Size sz = lo->measure();
                     cv.draw_text(*lo,
-                                {cell.x + (cell.w - sz.w) * 0.5f,
-                                 cell.y + (cell.h - sz.h) * 0.5f},
-                                pal.text_muted);
+                                 {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
+                                 pal.text_muted);
                 }
             }
             if (index + 1 == m.gallery_painted_count() &&
@@ -7555,9 +7624,8 @@ private:
                 {
                     tk::Size sz = lo->measure();
                     cv.draw_text(*lo,
-                                {cell.x + (cell.w - sz.w) * 0.5f,
-                                 cell.y + (cell.h - sz.h) * 0.5f},
-                                tk::Color{255, 255, 255, 255});
+                                 {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
+                                 tk::Color{255, 255, 255, 255});
                 }
             }
         }
@@ -7565,9 +7633,9 @@ private:
         if (!m.event_id.empty())
         {
             owner_.gallery_item_geom_[m.event_id + "#" + std::to_string(index)] =
-                MessageListView::GalleryItemHit{m.event_id, index, item.kind,
-                                                item.source, item.thumbnail,
-                                                item.file_size, cell};
+                MessageListView::GalleryItemHit{m.event_id,  index,          item.kind,
+                                                item.source, item.thumbnail, item.file_size,
+                                                cell};
         }
     }
 
@@ -7575,29 +7643,24 @@ private:
     // `map_rect` is the bounding box for the map canvas area (pre-clipped).
     // The pan/zoom/tooltip + tile-fetch logic lives in LocationMapPanner;
     // this just delegates (the panner records the hit-test rect).
-    void paint_location_map(const MessageRowData& m, tk::PaintCtx& ctx,
-                            tk::Rect map_rect) const
+    void paint_location_map(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect map_rect) const
     {
         owner_.map_panner_.paint(m, ctx, map_rect);
     }
 
-    void paint_file_card(const MessageRowData& m, tk::PaintCtx& ctx,
-                         tk::Rect dst) const
+    void paint_file_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst) const
     {
         ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
-        ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border,
-                                       1.0f);
+        ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
 
         const std::string name = m.file_name.empty() ? m.body : m.file_name;
         const auto icon = file_icon_info(name);
 
         // Coloured icon box, vertically centred in the card.
         const float icon_y = dst.y + (dst.h - kFileIconSize) * 0.5f;
-        const tk::Rect icon_rect{dst.x + kFileIconPadL, icon_y, kFileIconSize,
-                                 kFileIconSize};
-        ctx.canvas.fill_rounded_rect(icon_rect, 6.0f,
-                                     ctx.theme.high_contrast ? ctx.theme.palette.accent
-                                                             : icon.color);
+        const tk::Rect icon_rect{dst.x + kFileIconPadL, icon_y, kFileIconSize, kFileIconSize};
+        ctx.canvas.fill_rounded_rect(
+            icon_rect, 6.0f, ctx.theme.high_contrast ? ctx.theme.palette.accent : icon.color);
 
         // Extension label centred inside the icon box.
         tk::TextStyle ls{};
@@ -7629,8 +7692,7 @@ private:
 
         if (name_lo)
         {
-            ctx.canvas.draw_text(*name_lo, {text_x, dst.y + 10.0f},
-                                 ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(*name_lo, {text_x, dst.y + 10.0f}, ctx.theme.palette.text_primary);
         }
         if (size_lo)
         {
@@ -7639,22 +7701,19 @@ private:
         }
     }
 
-    void paint_voice_card(const MessageRowData& m, tk::PaintCtx& ctx,
-                          tk::Rect dst) const
+    void paint_voice_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst) const
     {
         // Card draw + geometry capture live in the playback controller; the
         // icon cache stays Adapter-local (one rasterised glyph per backend).
         owner_.media_.paint_voice_card(m, ctx, dst, ic_play_voice_);
     }
 
-    void paint_audio_card(const MessageRowData& m, tk::PaintCtx& ctx,
-                          tk::Rect dst) const
+    void paint_audio_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst) const
     {
         owner_.media_.paint_audio_card(m, ctx, dst, ic_play_audio_);
     }
 
-    void paint_video_card(const MessageRowData& m, tk::PaintCtx& ctx,
-                          tk::Rect dst) const
+    void paint_video_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst) const
     {
         if (owner_.media_is_hidden_(m))
         {
@@ -7665,8 +7724,7 @@ private:
         // sleep while the row was off-screen).
         owner_.video_playlist_.touch(m.event_id);
         // Live inline player frame takes priority over the static thumbnail.
-        const tk::Image* live_frame =
-            owner_.video_playlist_.live_frame(m.event_id);
+        const tk::Image* live_frame = owner_.video_playlist_.live_frame(m.event_id);
 
         // Thumbnail fallback (or placeholder when neither is available).
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
@@ -7709,7 +7767,7 @@ private:
             if (!m.blurhash.empty() && owner_.image_provider_)
             {
                 bh_img = owner_.image_provider_("blurhash::" + m.event_id,
-                                            /*hovered=*/true);
+                                                /*hovered=*/true);
             }
             if (bh_img)
             {
@@ -7719,10 +7777,8 @@ private:
             else
             {
                 has_visual = false;
-                ctx.canvas.fill_rounded_rect(dst, 8.0f,
-                                             ctx.theme.palette.chrome_bg);
-                ctx.canvas.stroke_rounded_rect(dst, 8.0f,
-                                               ctx.theme.palette.border, 1.0f);
+                ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
+                ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
             }
         }
 
@@ -7734,14 +7790,11 @@ private:
             // Blank placeholder: a generously-sized Lucide video icon reading
             // as the card's dominant content, rather than a play button
             // implying a preview that isn't there yet.
-            const float icon_d =
-                std::min(dst.w, dst.h) * 0.4f;
+            const float icon_d = std::min(dst.w, dst.h) * 0.4f;
             const float icon_cx = dst.x + dst.w * 0.5f;
             const float icon_cy = dst.y + dst.h * 0.5f;
-            tk::Rect icon_rect{icon_cx - icon_d * 0.5f, icon_cy - icon_d * 0.5f,
-                               icon_d, icon_d};
-            ic_video_placeholder_.draw(ctx.canvas, ctx.factory, kVideoSvg,
-                                       icon_rect, icon_d,
+            tk::Rect icon_rect{icon_cx - icon_d * 0.5f, icon_cy - icon_d * 0.5f, icon_d, icon_d};
+            ic_video_placeholder_.draw(ctx.canvas, ctx.factory, kVideoSvg, icon_rect, icon_d,
                                        ctx.theme.palette.text_secondary);
         }
         else if (!animated)
@@ -7750,14 +7803,12 @@ private:
             constexpr float kDiscD = 48.0f;
             const float disc_cx = dst.x + dst.w * 0.5f;
             const float disc_cy = dst.y + dst.h * 0.5f;
-            tk::Rect disc{disc_cx - kDiscD * 0.5f, disc_cy - kDiscD * 0.5f,
-                          kDiscD, kDiscD};
-            ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f,
-                                         tk::Color{0, 0, 0, 120});
+            tk::Rect disc{disc_cx - kDiscD * 0.5f, disc_cy - kDiscD * 0.5f, kDiscD, kDiscD};
+            ctx.canvas.fill_rounded_rect(disc, kDiscD * 0.5f, tk::Color{0, 0, 0, 120});
 
             // Play glyph (▶): Lucide play icon, near-white over the dark disc.
-            ic_play_video_.draw(ctx.canvas, ctx.factory, kPlaySvg, disc,
-                                kDiscD * 0.5f, tk::Color{255, 255, 255, 230});
+            ic_play_video_.draw(ctx.canvas, ctx.factory, kPlaySvg, disc, kDiscD * 0.5f,
+                                tk::Color{255, 255, 255, 230});
         }
 
         // Duration badge at bottom-right — omitted for animated or hide_controls clips.
@@ -7773,10 +7824,8 @@ private:
                 constexpr float kBadgePadX = 6.0f, kBadgePadY = 3.0f;
                 float bx = dst.x + dst.w - lsz.w - kBadgePadX * 2 - 4.0f;
                 float by = dst.y + dst.h - lsz.h - kBadgePadY * 2 - 4.0f;
-                tk::Rect badge{bx, by, lsz.w + kBadgePadX * 2,
-                               lsz.h + kBadgePadY * 2};
-                ctx.canvas.fill_rounded_rect(badge, 4.0f,
-                                             tk::Color{0, 0, 0, 140});
+                tk::Rect badge{bx, by, lsz.w + kBadgePadX * 2, lsz.h + kBadgePadY * 2};
+                ctx.canvas.fill_rounded_rect(badge, 4.0f, tk::Color{0, 0, 0, 140});
                 ctx.canvas.draw_text(*lo, {bx + kBadgePadX, by + kBadgePadY},
                                      tk::Color{255, 255, 255, 230});
             }
@@ -7936,34 +7985,32 @@ private:
 // MessageRowRenderer defaults that need a complete Adapter (Classic/Bubble
 // behaviour; IrcRowRenderer overrides both).
 
-inline std::vector<tk::TextSpan>
-MessageRowRenderer::emote_spans(const MessageRowData& m, bool revealed,
-                                bool dark, const Adapter& ad) const
+inline std::vector<tk::TextSpan> MessageRowRenderer::emote_spans(const MessageRowData& m,
+                                                                 bool revealed, bool dark,
+                                                                 const Adapter& ad) const
 {
     std::string prefix = "* " + emote_author_name(m) + " ";
     return ad.assemble_emote_spans_(m, revealed, dark, std::move(prefix),
-                                    /*italic=*/true, /*force_color=*/false,
-                                    tk::Color{});
+                                    /*italic=*/true, /*force_color=*/false, tk::Color{});
 }
 
-inline float MessageRowRenderer::measure_forward_context(
-    const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
-    const Adapter& ad) const
+inline float MessageRowRenderer::measure_forward_context(const MessageRowData& m,
+                                                         tk::LayoutCtx& ctx, float col_w,
+                                                         const Adapter& ad) const
 {
     return m.forwarded ? ad.forward_line_height_(m, ctx, col_w) : 0.0f;
 }
 
-inline float MessageRowRenderer::paint_forward_context(
-    const MessageRowData& m, tk::PaintCtx& ctx, float x, float y, float col_w,
-    const Adapter& ad) const
+inline float MessageRowRenderer::paint_forward_context(const MessageRowData& m, tk::PaintCtx& ctx,
+                                                       float x, float y, float col_w,
+                                                       const Adapter& ad) const
 {
     return ad.paint_forward_line_(m, ctx, x, y, col_w);
 }
 
-inline float
-MessageRowRenderer::paint_reply_context(const MessageRowData& m,
-                                        tk::PaintCtx& ctx, float x, float y,
-                                        float col_w, const Adapter& ad) const
+inline float MessageRowRenderer::paint_reply_context(const MessageRowData& m, tk::PaintCtx& ctx,
+                                                     float x, float y, float col_w,
+                                                     const Adapter& ad) const
 {
     return ad.paint_quote_block(m, ctx, x, y, col_w) + kQuoteGapAfter;
 }
@@ -7982,7 +8029,10 @@ public:
     {
         rp.ad.render_classic_row_(rp);
     }
-    const char* name() const override { return "classic"; }
+    const char* name() const override
+    {
+        return "classic";
+    }
 };
 
 // Subtle-bubble layout: the local user's messages align right inside a
@@ -7999,7 +8049,10 @@ public:
     {
         rp.ad.render_bubble_row_(rp);
     }
-    const char* name() const override { return "bubble"; }
+    const char* name() const override
+    {
+        return "bubble";
+    }
 };
 
 // mIRC look-alike: one flat monospaced left-aligned column, every line
@@ -8015,75 +8068,75 @@ public:
     {
         rp.ad.render_irc_row_(rp);
     }
-    const char* name() const override { return "irc"; }
+    const char* name() const override
+    {
+        return "irc";
+    }
 
     // ── Layout traits ───────────────────────────────────────────────────
-    bool monospace_body() const override { return true; }
-    bool membership_avatars() const override { return false; }
+    bool monospace_body() const override
+    {
+        return true;
+    }
+    bool membership_avatars() const override
+    {
+        return false;
+    }
 
-    std::vector<tk::TextSpan>
-    body_prefix_spans(const MessageRowData& m, bool dark) const override
+    std::vector<tk::TextSpan> body_prefix_spans(const MessageRowData& m, bool dark) const override
     {
         if (!bakes_prefix_(m))
+        {
             return {};
-        return Adapter::irc_prefix_spans_(
-            m, dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light,
-            prefix_kind_(m));
+        }
+        return Adapter::irc_prefix_spans_(m, dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light,
+                                          prefix_kind_(m));
     }
     std::string body_prefix_key(const MessageRowData& m) const override
     {
-        return bakes_prefix_(m) ? Adapter::irc_prefix_plain_(m, prefix_kind_(m))
-                                : std::string{};
+        return bakes_prefix_(m) ? Adapter::irc_prefix_plain_(m, prefix_kind_(m)) : std::string{};
     }
 
-    std::vector<tk::TextSpan>
-    emote_spans(const MessageRowData& m, bool revealed, bool dark,
-                const Adapter& ad) const override
+    std::vector<tk::TextSpan> emote_spans(const MessageRowData& m, bool revealed, bool dark,
+                                          const Adapter& ad) const override
     {
-        const tk::Color col = msgirc::nick_color(
-            emote_author_id(m),
-            dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light);
-        return ad.assemble_emote_spans_(
-            m, revealed, dark,
-            msgirc::line_prefix(format_hhmm(m.timestamp_ms),
-                                emote_author_name(m),
-                                msgirc::PrefixKind::Action),
-            /*italic=*/false, /*force_color=*/true, col);
+        const tk::Color col = msgirc::nick_color(emote_author_id(m),
+                                                 dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light);
+        return ad.assemble_emote_spans_(m, revealed, dark,
+                                        msgirc::line_prefix(format_hhmm(m.timestamp_ms),
+                                                            emote_author_name(m),
+                                                            msgirc::PrefixKind::Action),
+                                        /*italic=*/false, /*force_color=*/true, col);
     }
 
-    bool paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx,
-                             tk::Rect bounds, const Adapter& ad) const override
+    bool paint_day_separator(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
+                             const Adapter& ad) const override
     {
-        ad.paint_irc_system_line_(
-            ctx, bounds, kDaySepH,
-            "--- " + format_day_label(m.timestamp_ms) + " ---",
-            ctx.theme.palette.text_muted, /*rule=*/true);
+        ad.paint_irc_system_line_(ctx, bounds, kDaySepH,
+                                  "--- " + format_day_label(m.timestamp_ms) + " ---",
+                                  ctx.theme.palette.text_muted, /*rule=*/true);
         return true;
     }
-    bool paint_read_marker(tk::PaintCtx& ctx, tk::Rect bounds,
-                           const Adapter& ad) const override
+    bool paint_read_marker(tk::PaintCtx& ctx, tk::Rect bounds, const Adapter& ad) const override
     {
         ad.paint_irc_system_line_(ctx, bounds, kReadMarkerH,
                                   "--- " + tk::tr("New messages") + " ---",
                                   ctx.theme.palette.accent, /*rule=*/true);
         return true;
     }
-    bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx,
-                               tk::Rect bounds,
+    bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
                                const Adapter& ad) const override
     {
         // membership_expanded_phrase already leads with the target name, so
         // just prefix the mIRC "* " action marker + timestamp.
-        ad.paint_irc_system_line_(
-            ctx, bounds, kPinnedEventH,
-            msgirc::timestamp_part(format_hhmm(m.timestamp_ms)) + "* " +
-                membership_expanded_phrase(m),
-            ctx.theme.palette.text_muted, /*rule=*/false);
+        ad.paint_irc_system_line_(ctx, bounds, kPinnedEventH,
+                                  msgirc::timestamp_part(format_hhmm(m.timestamp_ms)) + "* " +
+                                      membership_expanded_phrase(m),
+                                  ctx.theme.palette.text_muted, /*rule=*/false);
         return true;
     }
-    bool paint_membership_summary(std::size_t start, std::size_t end,
-                                  tk::PaintCtx& ctx, tk::Rect bounds,
-                                  const Adapter& ad) const override
+    bool paint_membership_summary(std::size_t start, std::size_t end, tk::PaintCtx& ctx,
+                                  tk::Rect bounds, const Adapter& ad) const override
     {
         // One "* …" line per distinct action, stamped with the time of
         // that action's first event.
@@ -8093,36 +8146,32 @@ public:
         {
             ad.paint_irc_system_line_(
                 ctx, {bounds.x, y, bounds.w, kPinnedEventH}, kPinnedEventH,
-                msgirc::timestamp_part(
-                    format_hhmm(msgs[run.rows.front()].timestamp_ms)) +
-                    "* " + membership_run_phrase(msgs, run),
+                msgirc::timestamp_part(format_hhmm(msgs[run.rows.front()].timestamp_ms)) + "* " +
+                    membership_run_phrase(msgs, run),
                 ctx.theme.palette.text_muted, /*rule=*/false);
             y += kPinnedEventH;
         }
         return true;
     }
 
-    float measure_forward_context(const MessageRowData& m, tk::LayoutCtx& ctx,
-                                  float col_w,
+    float measure_forward_context(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
                                   const Adapter& ad) const override
     {
         return m.forwarded ? ad.irc_forward_height_(m, ctx, col_w) : 0.0f;
     }
-    float paint_forward_context(const MessageRowData& m, tk::PaintCtx& ctx,
-                                float x, float y, float col_w,
-                                const Adapter& ad) const override
+    float paint_forward_context(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                float col_w, const Adapter& ad) const override
     {
         return m.forwarded ? ad.paint_irc_forward_(m, ctx, x, y, col_w) : y;
     }
 
-    float measure_reply_context(const MessageRowData& m, tk::LayoutCtx& ctx,
-                                float col_w, const Adapter& ad) const override
+    float measure_reply_context(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
+                                const Adapter& ad) const override
     {
         return m.has_reply() ? ad.irc_quote_height_(m, ctx, col_w) : 0.0f;
     }
-    float paint_reply_context(const MessageRowData& m, tk::PaintCtx& ctx,
-                              float x, float y, float col_w,
-                              const Adapter& ad) const override
+    float paint_reply_context(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                              float col_w, const Adapter& ad) const override
     {
         return ad.paint_irc_quote_(m, ctx, x, y, col_w);
     }
@@ -8134,26 +8183,26 @@ private:
     static bool bakes_prefix_(const MessageRowData& m)
     {
         using K = MessageRowData::Kind;
-        return m.kind == K::Text || m.kind == K::Notice ||
-               m.kind == K::Unhandled;
+        return m.kind == K::Text || m.kind == K::Notice || m.kind == K::Unhandled;
     }
     static msgirc::PrefixKind prefix_kind_(const MessageRowData& m)
     {
-        return m.kind == MessageRowData::Kind::Notice
-                   ? msgirc::PrefixKind::Notice
-                   : msgirc::PrefixKind::Message;
+        return m.kind == MessageRowData::Kind::Notice ? msgirc::PrefixKind::Notice
+                                                      : msgirc::PrefixKind::Message;
     }
 };
 
-std::unique_ptr<MessageRowRenderer>
-make_row_renderer(tesseract::Settings::MessageLayout layout)
+std::unique_ptr<MessageRowRenderer> make_row_renderer(tesseract::Settings::MessageLayout layout)
 {
     using ML = tesseract::Settings::MessageLayout;
     switch (layout)
     {
-    case ML::Bubbles: return std::make_unique<BubbleRowRenderer>();
-    case ML::Irc:     return std::make_unique<IrcRowRenderer>();
-    case ML::Classic: break;
+    case ML::Bubbles:
+        return std::make_unique<BubbleRowRenderer>();
+    case ML::Irc:
+        return std::make_unique<IrcRowRenderer>();
+    case ML::Classic:
+        break;
     }
     return std::make_unique<ClassicRowRenderer>();
 }
@@ -8170,9 +8219,15 @@ struct ScrollPillWidget : tk::Widget
     bool pressed_ = false;
     std::function<void()> on_clicked;
 
-    void set_bounds(tk::Rect b) { bounds_ = b; }
+    void set_bounds(tk::Rect b)
+    {
+        bounds_ = b;
+    }
 
-    bool on_pointer_move(tk::Point) override { return true; }
+    bool on_pointer_move(tk::Point) override
+    {
+        return true;
+    }
     bool on_pointer_down(tk::Point) override
     {
         pressed_ = true;
@@ -8182,20 +8237,29 @@ struct ScrollPillWidget : tk::Widget
     {
         bool was = std::exchange(pressed_, false);
         if (was && inside && on_clicked)
+        {
             on_clicked();
+        }
     }
-    void on_pointer_leave() override { pressed_ = false; }
-    tk::Size measure(tk::LayoutCtx&, tk::Size s) override { return s; }
-    void arrange(tk::LayoutCtx&, tk::Rect b) override { bounds_ = b; }
+    void on_pointer_leave() override
+    {
+        pressed_ = false;
+    }
+    tk::Size measure(tk::LayoutCtx&, tk::Size s) override
+    {
+        return s;
+    }
+    void arrange(tk::LayoutCtx&, tk::Rect b) override
+    {
+        bounds_ = b;
+    }
 
     void paint(tk::PaintCtx& ctx) override
     {
         constexpr float kSz = 36.0f;
-        auto bg = pressed_ ? ctx.theme.palette.subtle_pressed
-                           : ctx.theme.palette.chrome_bg;
+        auto bg = pressed_ ? ctx.theme.palette.subtle_pressed : ctx.theme.palette.chrome_bg;
         ctx.canvas.fill_rounded_rect(bounds_, kSz * 0.5f, bg);
-        ctx.canvas.stroke_rounded_rect(bounds_, kSz * 0.5f,
-                                       ctx.theme.palette.border, 1.0f);
+        ctx.canvas.stroke_rounded_rect(bounds_, kSz * 0.5f, ctx.theme.palette.border, 1.0f);
         ic_arrow_.draw(ctx.canvas, ctx.factory, kArrowDownSvg, bounds_, 18.0f,
                        ctx.theme.palette.text_primary);
     }
@@ -8210,15 +8274,20 @@ struct ScrollPillWidget : tk::Widget
 // ScrollPillWidget: hover over it must not leak to the rows beneath.
 // ─────────────────────────────────────────────────────────────────────────
 
-constexpr float kUnreadPillH       = 28.0f;
-constexpr float kUnreadPillPadX    = 10.0f;
-constexpr float kUnreadPillIconPx  = 14.0f;
-constexpr float kUnreadPillGap     = 6.0f;
-constexpr float kUnreadPillCloseW  = 26.0f;
+constexpr float kUnreadPillH = 28.0f;
+constexpr float kUnreadPillPadX = 10.0f;
+constexpr float kUnreadPillIconPx = 14.0f;
+constexpr float kUnreadPillGap = 6.0f;
+constexpr float kUnreadPillCloseW = 26.0f;
 
 struct UnreadPillWidget : tk::Widget
 {
-    enum class Part { None, Jump, Dismiss };
+    enum class Part
+    {
+        None,
+        Jump,
+        Dismiss
+    };
     Part pressed_ = Part::None;
     Part hovered_ = Part::None;
     std::function<void()> on_jump;
@@ -8228,20 +8297,26 @@ struct UnreadPillWidget : tk::Widget
     // draws (built once, dropped on a theme change).
     float width_for(tk::CanvasFactory& factory)
     {
-        float w = kUnreadPillPadX + kUnreadPillIconPx + kUnreadPillGap +
-                  kUnreadPillCloseW;
+        float w = kUnreadPillPadX + kUnreadPillIconPx + kUnreadPillGap + kUnreadPillCloseW;
         if (const tk::TextLayout* lo = label(factory))
+        {
             w += lo->measure().w;
+        }
         return w;
     }
 
-    void set_bounds(tk::Rect b) { bounds_ = b; }
+    void set_bounds(tk::Rect b)
+    {
+        bounds_ = b;
+    }
 
     // `local` is relative to the pill's top-left, as pointer callbacks get it.
     Part part_at(tk::Point local) const
     {
         if (local.x < 0 || local.x >= bounds_.w || local.y < 0 || local.y >= bounds_.h)
+        {
             return Part::None;
+        }
         return local.x >= bounds_.w - kUnreadPillCloseW ? Part::Dismiss : Part::Jump;
     }
 
@@ -8251,7 +8326,9 @@ struct UnreadPillWidget : tk::Widget
         {
             hovered_ = part;
             if (auto* h = host())
+            {
                 h->request_repaint();
+            }
         }
         return true; // also swallows hover so it can't leak to rows below
     }
@@ -8259,30 +8336,48 @@ struct UnreadPillWidget : tk::Widget
     {
         pressed_ = part_at(p);
         if (auto* h = host())
+        {
             h->request_repaint();
+        }
         return true;
     }
     void on_pointer_up(tk::Point p, bool inside) override
     {
         const Part was = std::exchange(pressed_, Part::None);
         if (auto* h = host())
+        {
             h->request_repaint();
+        }
         if (!inside || was == Part::None || part_at(p) != was)
+        {
             return;
+        }
         if (was == Part::Jump && on_jump)
+        {
             on_jump();
+        }
         else if (was == Part::Dismiss && on_dismiss)
+        {
             on_dismiss();
+        }
     }
     void on_pointer_leave() override
     {
         pressed_ = Part::None;
         hovered_ = Part::None;
         if (auto* h = host())
+        {
             h->request_repaint();
+        }
     }
-    tk::Size measure(tk::LayoutCtx&, tk::Size s) override { return s; }
-    void arrange(tk::LayoutCtx&, tk::Rect b) override { bounds_ = b; }
+    tk::Size measure(tk::LayoutCtx&, tk::Size s) override
+    {
+        return s;
+    }
+    void arrange(tk::LayoutCtx&, tk::Rect b) override
+    {
+        bounds_ = b;
+    }
 
     void paint(tk::PaintCtx& ctx) override
     {
@@ -8301,21 +8396,24 @@ struct UnreadPillWidget : tk::Widget
             ctx.canvas.fill_rounded_rect(bounds_, r, c);
         };
         if (pressed_ != Part::None)
+        {
             tint_part(pressed_, pal.subtle_pressed);
+        }
         else if (hovered_ != Part::None)
+        {
             tint_part(hovered_, pal.subtle_hover);
+        }
         ctx.canvas.stroke_rounded_rect(bounds_, r, pal.border, 1.0f);
 
         float x = bounds_.x + kUnreadPillPadX;
         ic_arrow_.draw(ctx.canvas, ctx.factory, kArrowUpSvg,
-                       {x, bounds_.y, kUnreadPillIconPx, bounds_.h},
-                       kUnreadPillIconPx, pal.text_primary);
+                       {x, bounds_.y, kUnreadPillIconPx, bounds_.h}, kUnreadPillIconPx,
+                       pal.text_primary);
         x += kUnreadPillIconPx + kUnreadPillGap;
         if (const tk::TextLayout* lo = label(ctx.factory))
         {
             const tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(*lo, {x, bounds_.y + (bounds_.h - sz.h) * 0.5f},
-                                 pal.text_primary);
+            ctx.canvas.draw_text(*lo, {x, bounds_.y + (bounds_.h - sz.h) * 0.5f}, pal.text_primary);
         }
         ic_close_.draw(ctx.canvas, ctx.factory, kCloseSvg,
                        {bounds_.x + bounds_.w - kUnreadPillCloseW, bounds_.y,
@@ -8396,16 +8494,24 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
         [this](int z, int x, int y)
         {
             if (on_tile_needed)
+            {
                 on_tile_needed(z, x, y);
+            }
         });
     map_panner_.set_tooltip_callbacks(
         [this](std::string text, tk::Rect anchor)
         {
-            if (host_) host_->show_tooltip(&map_panner_, std::move(text), anchor);
+            if (host_)
+            {
+                host_->show_tooltip(&map_panner_, std::move(text), anchor);
+            }
         },
         [this]
         {
-            if (host_) host_->hide_tooltip(&map_panner_);
+            if (host_)
+            {
+                host_->hide_tooltip(&map_panner_);
+            }
         });
 
     // The preview card draws its thumbnail via the same image provider as the
@@ -8430,24 +8536,38 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
             return image_provider_ ? image_provider_(k, true) : nullptr;
         },
         [this](const std::string& url) -> const UrlPreviewData*
-        { return previews_.lookup(url); });
+        {
+            return previews_.lookup(url);
+        });
     room_switch_gate_.set_avatar_provider(
         [this](const std::string& mxc) -> const tk::Image*
-        { return avatar_provider_ ? avatar_provider_(mxc) : nullptr; });
+        {
+            return avatar_provider_ ? avatar_provider_(mxc) : nullptr;
+        });
     room_switch_gate_.set_scroll_callbacks(
-        [this](const std::string& event_id) { scroll_to_event_id(event_id); },
-        [this] { scroll_to_bottom(); });
+        [this](const std::string& event_id)
+        {
+            scroll_to_event_id(event_id);
+        },
+        [this]
+        {
+            scroll_to_bottom();
+        });
     room_switch_gate_.set_post_delayed(
         [this](int ms, std::function<void()> cb)
         {
             if (post_delayed_)
+            {
                 post_delayed_(ms, std::move(cb));
+            }
         });
     room_switch_gate_.set_repaint(
         [this]
         {
             if (request_repaint_)
+            {
                 request_repaint_();
+            }
         });
     room_switch_gate_.set_alive(weak_flag());
 
@@ -8457,34 +8577,44 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
     scroll_pill_->on_clicked = [this]
     {
         if (historical_mode_ && on_return_to_live)
+        {
             on_return_to_live();
+        }
         else
+        {
             scroll_to_bottom();
+        }
     };
     add_child(std::move(pw));
 
     auto uw = std::make_unique<UnreadPillWidget>();
     unread_pill_ = uw.get();
     unread_pill_->set_visible(false);
-    unread_pill_->on_jump = [this] { jump_to_first_unread(); };
+    unread_pill_->on_jump = [this]
+    {
+        jump_to_first_unread();
+    };
     unread_pill_->on_dismiss = [this]
     {
         unread_pill_dismissed_ = true;
         if (request_repaint_)
+        {
             request_repaint_();
+        }
     };
     add_child(std::move(uw));
 
     // "View older messages" — a real button, positioned over the
     // start-of-timeline row at paint time (see paint()).
     auto pl = tk::create_widget<tk::Button>(this, tk::tr("View older messages"),
-                                            std::function<void()>{},
-                                            tk::Button::Variant::Link);
+                                            std::function<void()>{}, tk::Button::Variant::Link);
     pl->set_on_click(
         [this]
         {
             if (on_open_predecessor)
+            {
                 on_open_predecessor();
+            }
         });
     pl->set_visible(false);
     predecessor_link_ = add_child(std::move(pl));
@@ -8493,16 +8623,19 @@ MessageListView::MessageListView() : adapter_(std::make_unique<Adapter>(*this))
 void MessageListView::set_predecessor_available(bool available)
 {
     if (predecessor_available_ == available)
+    {
         return;
+    }
     predecessor_available_ = available;
     if (!available && predecessor_link_)
+    {
         predecessor_link_->set_visible(false);
+    }
     // The start-of-timeline row changes height.
     invalidate_data();
 }
 
-std::optional<MessageListView::StickerHit>
-MessageListView::sticker_hit_at(tk::Point world) const
+std::optional<MessageListView::StickerHit> MessageListView::sticker_hit_at(tk::Point world) const
 {
     // Sticker geometry is recorded by paint_row in world coordinates each
     // paint pass. We linearly search — a sticker viewport rarely exceeds
@@ -8519,8 +8652,7 @@ MessageListView::sticker_hit_at(tk::Point world) const
     return std::nullopt;
 }
 
-std::optional<MessageListView::ImageHit>
-MessageListView::image_hit_at(tk::Point world) const
+std::optional<MessageListView::ImageHit> MessageListView::image_hit_at(tk::Point world) const
 {
     for (const auto& [eid, hit] : image_geom_)
     {
@@ -8534,8 +8666,7 @@ MessageListView::image_hit_at(tk::Point world) const
     return std::nullopt;
 }
 
-std::optional<MessageListView::VideoHit>
-MessageListView::video_hit_at(tk::Point world) const
+std::optional<MessageListView::VideoHit> MessageListView::video_hit_at(tk::Point world) const
 {
     for (const auto& [eid, hit] : video_geom_)
     {
@@ -8562,8 +8693,7 @@ MessageListView::gallery_item_hit_at(tk::Point world) const
     return std::nullopt;
 }
 
-std::optional<MessageListView::FileHit>
-MessageListView::file_hit_at(tk::Point world) const
+std::optional<MessageListView::FileHit> MessageListView::file_hit_at(tk::Point world) const
 {
     for (const auto& [eid, hit] : file_geom_)
     {
@@ -8577,8 +8707,7 @@ MessageListView::file_hit_at(tk::Point world) const
     return std::nullopt;
 }
 
-void MessageListView::set_messages(std::vector<MessageRowData> msgs,
-                                   bool room_switch)
+void MessageListView::set_messages(std::vector<MessageRowData> msgs, bool room_switch)
 {
     // The new room's content has arrived — leave the room-switch loading state
     // (clean background + delayed spinner) and bump the epoch so any pending
@@ -8586,14 +8715,14 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     // takes over from here for height-stability holding.
     if (switch_loading_)
     {
-        switch_loading_     = false;
+        switch_loading_ = false;
         switch_spinner_due_ = false;
         ++switch_epoch_;
     }
     // Defence-in-depth: any timeline reset cancels a pending nav-load overlay.
     if (nav_loading_)
     {
-        nav_loading_     = false;
+        nav_loading_ = false;
         nav_spinner_due_ = false;
         ++nav_epoch_;
     }
@@ -8601,7 +8730,9 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     // spinner state from the previous room (the new room's shell path manages
     // its own paginating flag via set_paginating()).
     if (room_switch && paginating_)
+    {
         paginating_ = false;
+    }
 
     // Defence-in-depth: drop any in-thread replies. The main timeline
     // shows only top-level events + thread roots; in-thread replies are
@@ -8610,7 +8741,9 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     // that path (tests, future code).
     msgs.erase(std::remove_if(msgs.begin(), msgs.end(),
                               [](const MessageRowData& m)
-                              { return !m.thread_root_id.empty(); }),
+                              {
+                                  return !m.thread_root_id.empty();
+                              }),
                msgs.end());
 
     video_playlist_.clear();
@@ -8655,7 +8788,9 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         // pin/redact permission, nothing pinned" until the next unrelated
         // room-list refresh happens to run.
         for (const auto& r : msgs)
+        {
             arm_live_location_expiry_(r);
+        }
         messages_ = std::move(msgs);
         invalidate_data();
         scroll_to_bottom();
@@ -8671,7 +8806,9 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
             [&]
             {
                 for (const auto& r : msgs)
+                {
                     arm_live_location_expiry_(r);
+                }
                 messages_ = std::move(msgs);
                 invalidate_data();
             });
@@ -8680,13 +8817,11 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
     // recently received), up to the cap.
     for (auto it = messages_.rbegin(); it != messages_.rend(); ++it)
     {
-        if (video_playlist_.size() >=
-            TimelineVideoPlaylist::kMaxInlinePlayers)
+        if (video_playlist_.size() >= TimelineVideoPlaylist::kMaxInlinePlayers)
         {
             break;
         }
-        if (it->kind == MessageRowData::Kind::Video &&
-            (it->video_autoplay || it->video_gif))
+        if (it->kind == MessageRowData::Kind::Video && (it->video_autoplay || it->video_gif))
         {
             start_inline_video(*it);
         }
@@ -8732,19 +8867,16 @@ bool MessageListView::edit_last_own()
         const MessageRowData& m = *it;
         // A forward can't be edited (MSC4553): receivers ignore the edit.
         if (m.is_own && is_editable_kind(m.kind) && !m.forwarded &&
-            m.pending_state == MessageRowData::PendingState::None &&
-            !m.event_id.empty())
+            m.pending_state == MessageRowData::PendingState::None && !m.event_id.empty())
         {
-            on_edit_requested(m.event_id, m.body,
-                              m.kind != MessageRowData::Kind::Text);
+            on_edit_requested(m.event_id, m.body, m.kind != MessageRowData::Kind::Text);
             return true;
         }
     }
     return false;
 }
 
-void MessageListView::set_post_delayed(
-    std::function<void(int, std::function<void()>)> f)
+void MessageListView::set_post_delayed(std::function<void(int, std::function<void()>)> f)
 {
     post_delayed_ = std::move(f);
 }
@@ -8761,8 +8893,8 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
         index = messages_.size();
     }
 
-    const bool animated = msg.kind == MessageRowData::Kind::Video &&
-                          (msg.video_autoplay || msg.video_gif);
+    const bool animated =
+        msg.kind == MessageRowData::Kind::Video && (msg.video_autoplay || msg.video_gif);
 
     arm_live_location_expiry_(msg);
     unread_scan_dirty_();
@@ -8770,11 +8902,10 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     bool suppress_flipped = false;
     if (!is_virtual_event(msg.kind))
     {
-        suppress_flipped =
-            suppress_read_marker_for_insert_(index, at_bottom, msg.event_id);
+        suppress_flipped = suppress_read_marker_for_insert_(index, at_bottom, msg.event_id);
     }
-    else if (msg.kind == MessageRowData::Kind::ReadMarker &&
-             !suppress_read_marker_ && marker_above_watched_arrival_(index))
+    else if (msg.kind == MessageRowData::Kind::ReadMarker && !suppress_read_marker_ &&
+             marker_above_watched_arrival_(index))
     {
         // The SDK places the marker (m.fully_read is deferred) right above
         // a message the user watched arrive: don't show "New messages"
@@ -8872,14 +9003,12 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     // A read marker moving (in or out of this row) flips suppress_read_marker_
     // and the is_cont skip-over logic for *other* rows, so it needs a full
     // rebuild rather than a targeted one.
-    const bool touches_read_marker =
-        msg.kind == MessageRowData::Kind::ReadMarker ||
-        messages_[index].kind == MessageRowData::Kind::ReadMarker;
-    const bool was_animated =
-        messages_[index].kind == MessageRowData::Kind::Video &&
-        (messages_[index].video_autoplay || messages_[index].video_gif);
-    const bool now_animated = msg.kind == MessageRowData::Kind::Video &&
-                              (msg.video_autoplay || msg.video_gif);
+    const bool touches_read_marker = msg.kind == MessageRowData::Kind::ReadMarker ||
+                                     messages_[index].kind == MessageRowData::Kind::ReadMarker;
+    const bool was_animated = messages_[index].kind == MessageRowData::Kind::Video &&
+                              (messages_[index].video_autoplay || messages_[index].video_gif);
+    const bool now_animated =
+        msg.kind == MessageRowData::Kind::Video && (msg.video_autoplay || msg.video_gif);
     // Erase the old player when it no longer applies — also when the
     // event_id changed, otherwise the old keyed player would leak (and
     // could exceed the inline-player cap for the view's lifetime).
@@ -8915,11 +9044,11 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         if (post_delayed_)
         {
             const std::string eid = msg.event_id;
-            post_delayed_(kJustSentHighlightMs,
-                          guarded([this, eid]
-                          {
-                              clear_just_sent(eid);
-                          }));
+            post_delayed_(kJustSentHighlightMs, guarded(
+                                                    [this, eid]
+                                                    {
+                                                        clear_just_sent(eid);
+                                                    }));
         }
     }
 
@@ -8941,8 +9070,7 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
 
 std::string MessageListView::failed_send_reason_(const MessageRowData& m) const
 {
-    std::string why =
-        send_block::reason(m.pending_error, m.pending_error_users, user_name_for);
+    std::string why = send_block::reason(m.pending_error, m.pending_error_users, user_name_for);
     return why.empty() ? m.pending_error : why;
 }
 
@@ -8971,9 +9099,8 @@ void MessageListView::remove_message(std::size_t index)
     // The SDK moves the read marker by removing and re-inserting it, which
     // only happens once m.fully_read has moved: whatever suppression was
     // waiting on the catch-up is over.
-    const bool marker_removed =
-        messages_[index].kind == MessageRowData::Kind::ReadMarker &&
-        std::exchange(suppress_read_marker_, false);
+    const bool marker_removed = messages_[index].kind == MessageRowData::Kind::ReadMarker &&
+                                std::exchange(suppress_read_marker_, false);
     preserve_top_through(
         [&]
         {
@@ -8986,15 +9113,13 @@ void MessageListView::remove_message(std::size_t index)
         });
 }
 
-bool MessageListView::suppress_read_marker_for_insert_(std::size_t index,
-                                                       bool at_bottom,
+bool MessageListView::suppress_read_marker_for_insert_(std::size_t index, bool at_bottom,
                                                        const std::string& event_id)
 {
     // Arriving at the live tail while the user is pinned there: the SDK
     // inserts the read marker right above this row next (m.fully_read is
     // deferred), and insert_message() suppresses it.
-    const bool watched =
-        at_bottom && !historical_mode_ && index >= messages_.size();
+    const bool watched = at_bottom && !historical_mode_ && index >= messages_.size();
     if (watched)
     {
         note_watched_arrival_(event_id);
@@ -9015,8 +9140,7 @@ bool MessageListView::suppress_read_marker_for_insert_(std::size_t index,
             return false; // no marker, or one already showing: keep it
         }
     }
-    if (marker < 0 || index <= static_cast<std::size_t>(marker) ||
-        suppress_read_marker_)
+    if (marker < 0 || index <= static_cast<std::size_t>(marker) || suppress_read_marker_)
     {
         return false;
     }
@@ -9051,9 +9175,8 @@ bool MessageListView::marker_above_watched_arrival_(std::size_t index) const
             continue;
         }
         const std::string& eid = messages_[j].event_id;
-        return !eid.empty() &&
-               std::find(watched_arrivals_.begin(), watched_arrivals_.end(), eid) !=
-                   watched_arrivals_.end();
+        return !eid.empty() && std::find(watched_arrivals_.begin(), watched_arrivals_.end(), eid) !=
+                                   watched_arrivals_.end();
     }
     return false;
 }
@@ -9061,50 +9184,59 @@ bool MessageListView::marker_above_watched_arrival_(std::size_t index) const
 void MessageListView::arm_live_location_expiry_(const MessageRowData& m)
 {
     if (!post_delayed_ || m.kind != MessageRowData::Kind::Location)
+    {
         return;
+    }
     const std::uint64_t now = live_now_ms();
     const auto phase = live_location_phase(m, now);
     if (phase != LiveLocationPhase::Live && phase != LiveLocationPhase::Waiting)
+    {
         return;
+    }
     const std::string key = m.event_id + ":" + std::to_string(m.location_live_expires_ms);
     if (live_expiry_armed_.count(key) != 0 ||
         live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
+    {
         return; // already armed, or the view's timers are full
+    }
     live_expiry_armed_.insert(key);
     // phase is Live/Waiting so now < expires. Each timer waits at most an hour:
     // the expiry callback re-arms for the rest, so a long share never parks one
     // timer for days (a Windows post_delayed is a thread that sleeps the whole time).
     const std::uint64_t remaining = m.location_live_expires_ms - now;
-    const int delay = static_cast<int>(std::clamp<std::uint64_t>(
-        remaining, 1, kMaxLiveExpiryTimerMs));
+    const int delay =
+        static_cast<int>(std::clamp<std::uint64_t>(remaining, 1, kMaxLiveExpiryTimerMs));
     const std::string eid = m.event_id;
-    post_delayed_(delay,
-                  guarded(
-                      [this, eid, key]
-                      {
-                          live_expiry_armed_.erase(key);
-                          for (std::size_t i = 0; i < messages_.size(); ++i)
-                          {
-                              if (messages_[i].event_id == eid)
-                              {
-                                  // A share longer than INT_MAX ms re-arms here.
-                                  const auto& row = messages_[i];
-                                  adapter_->invalidate_layout_cache_at(i);
-                                  invalidate_row(i);
-                                  arm_live_location_expiry_(row);
-                                  break;
-                              }
-                          }
-                          // A slot is free again: arm the live shares the cap left out.
-                          for (const auto& other : messages_)
-                          {
-                              if (live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
-                                  break;
-                              if (other.kind == MessageRowData::Kind::Location &&
-                                  other.event_id != eid)
-                                  arm_live_location_expiry_(other);
-                          }
-                      }));
+    post_delayed_(delay, guarded(
+                             [this, eid, key]
+                             {
+                                 live_expiry_armed_.erase(key);
+                                 for (std::size_t i = 0; i < messages_.size(); ++i)
+                                 {
+                                     if (messages_[i].event_id == eid)
+                                     {
+                                         // A share longer than INT_MAX ms re-arms here.
+                                         const auto& row = messages_[i];
+                                         adapter_->invalidate_layout_cache_at(i);
+                                         invalidate_row(i);
+                                         arm_live_location_expiry_(row);
+                                         break;
+                                     }
+                                 }
+                                 // A slot is free again: arm the live shares the cap left out.
+                                 for (const auto& other : messages_)
+                                 {
+                                     if (live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
+                                     {
+                                         break;
+                                     }
+                                     if (other.kind == MessageRowData::Kind::Location &&
+                                         other.event_id != eid)
+                                     {
+                                         arm_live_location_expiry_(other);
+                                     }
+                                 }
+                             }));
 }
 
 void MessageListView::append_message(MessageRowData msg)
@@ -9128,12 +9260,16 @@ void MessageListView::set_dimmed(bool dimmed)
 void MessageListView::set_side_panel_open(bool open)
 {
     if (side_panel_open_ == open)
+    {
         return;
+    }
     side_panel_open_ = open;
     // Only the Bubbles layout lays rows out differently while a panel is open.
     if (tesseract::Settings::instance().message_layout ==
         tesseract::Settings::MessageLayout::Bubbles)
+    {
         on_display_prefs_changed();
+    }
 }
 
 void MessageListView::set_highlighted_event(const std::string& event_id)
@@ -9154,10 +9290,14 @@ bool MessageListView::jump_to_reply_original_(const std::string& reply_event_id)
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         if (messages_[i].event_id != reply_event_id)
+        {
             continue;
+        }
         const std::string orig_id = messages_[i].in_reply_to_id;
         if (orig_id.empty())
+        {
             return false;
+        }
         for (std::size_t j = 0; j < messages_.size(); ++j)
         {
             if (messages_[j].event_id == orig_id)
@@ -9211,39 +9351,48 @@ void MessageListView::start_jump_highlight(const std::string& event_id)
     if (post_delayed_)
     {
         post_delayed_(static_cast<int>(kJumpHighlightFadeInMs) + kJumpHighlightHoldMs,
-                      guarded([this, event_id]
-                      {
-                          // A newer jump superseded this one — don't fade
-                          // out the wrong row's tween.
-                          if (jump_highlight_event_id_ != event_id)
+                      guarded(
+                          [this, event_id]
                           {
-                              return;
-                          }
-                          jump_highlight_fade_.set_target(0.0f);
-                          if (request_repaint_)
-                          {
-                              request_repaint_();
-                          }
-                      }));
+                              // A newer jump superseded this one — don't fade
+                              // out the wrong row's tween.
+                              if (jump_highlight_event_id_ != event_id)
+                              {
+                                  return;
+                              }
+                              jump_highlight_fade_.set_target(0.0f);
+                              if (request_repaint_)
+                              {
+                                  request_repaint_();
+                              }
+                          }));
     }
 }
 
 void MessageListView::set_search_matches(std::unordered_set<std::string> ids)
 {
     if (ids == search_match_ids_)
+    {
         return;
+    }
     search_match_ids_ = std::move(ids);
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::clear_search_matches()
 {
     if (search_match_ids_.empty())
+    {
         return;
+    }
     search_match_ids_.clear();
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::set_pinned_event_ids(std::unordered_set<std::string> ids)
@@ -9288,21 +9437,33 @@ void MessageListView::fire_poll_hit_(const PollCardDisplay::Hit& hit)
     if (hit.type == PollCardDisplay::Hit::Type::EndButton)
     {
         if (on_poll_end_requested)
+        {
             on_poll_end_requested(hit.event_id);
+        }
         return;
     }
     if (!on_poll_vote)
+    {
         return;
+    }
     for (const auto& m : messages_)
     {
         if (m.event_id != hit.event_id || m.kind != MessageRowData::Kind::Poll)
+        {
             continue;
+        }
         std::vector<std::string> mine;
         for (const auto& a : m.poll_answers)
+        {
             if (a.mine)
+            {
                 mine.push_back(a.id);
+            }
+        }
         if (auto next = next_poll_selection(mine, hit.answer_id, m.poll_max_selections))
+        {
             on_poll_vote(hit.event_id, std::move(*next));
+        }
         return;
     }
 }
@@ -9359,8 +9520,7 @@ void MessageListView::set_image_provider(MediaImageProvider p)
     image_provider_ = std::move(p);
 }
 
-void MessageListView::set_media_failed_provider(
-    std::function<bool(const std::string&)> p)
+void MessageListView::set_media_failed_provider(std::function<bool(const std::string&)> p)
 {
     room_switch_gate_.set_failed_provider(std::move(p));
 }
@@ -9388,16 +9548,14 @@ bool MessageListView::media_is_hidden_(const MessageRowData& m) const
     }
 }
 
-bool MessageListView::fire_gallery_clicked_(const std::string& event_id,
-                                            std::size_t index) const
+bool MessageListView::fire_gallery_clicked_(const std::string& event_id, std::size_t index) const
 {
     if (!on_gallery_item_clicked)
     {
         return false;
     }
     const MessageRowData* row = row_for_event_id(event_id);
-    if (!row || row->kind != MessageRowData::Kind::Gallery ||
-        row->gallery_items.empty())
+    if (!row || row->kind != MessageRowData::Kind::Gallery || row->gallery_items.empty())
     {
         return false;
     }
@@ -9476,7 +9634,7 @@ void MessageListView::clear_scroll_hit_geometry_()
 {
     clear_hit_geometry_();
     reset_hovered_row_geom_();
-    hover_target_   = HoverTarget::None;
+    hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
 }
 
@@ -9500,7 +9658,7 @@ void MessageListView::on_anchored_relayout_()
     // re-evaluation then restores the chip target once geometry is repainted.
     refresh_hover_at(last_pointer_local_);
     reset_hovered_row_geom_();
-    hover_target_   = HoverTarget::None;
+    hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
 }
 
@@ -9515,7 +9673,11 @@ void MessageListView::notify_url_preview_ready(const std::string& url)
             // card loading anywhere above the anchored row would otherwise
             // push the viewport. preserve_top_through still no-ops on
             // stick-to-bottom / at-top, preserving live-tail and top-reveal.
-            preserve_top_through([&] { invalidate_data(); });
+            preserve_top_through(
+                [&]
+                {
+                    invalidate_data();
+                });
             return;
         }
     }
@@ -9550,12 +9712,12 @@ void MessageListView::notify_image_ready(const std::string& url)
         // never remeasure when the 2nd/later card's image arrives).
         const auto cards = previews_.cards_for(m);
         const bool preview_match =
-            !src_match && !thumb_match && !fsrc_match && !m.first_url.empty() &&
-            !url.empty() &&
+            !src_match && !thumb_match && !fsrc_match && !m.first_url.empty() && !url.empty() &&
             std::any_of(cards.begin(), cards.end(),
                         [&](const UrlPreviewData* p)
-                        { return p->image_source &&
-                                 p->image_source->fetch_token() == url; });
+                        {
+                            return p->image_source && p->image_source->fetch_token() == url;
+                        });
         // MSC2545 inline custom emoticons (<img data-mx-emoticon src=mxc>)
         // live inside the message's own HTML body, not as a tracked
         // attachment/preview field — none of the matches above can see them.
@@ -9563,11 +9725,9 @@ void MessageListView::notify_image_ready(const std::string& url)
         // only ever treats a src as a renderable emoticon when it's an exact
         // mxc:// URL, so a match here can't be a false positive from
         // surrounding markup.
-        const bool emoticon_match =
-            !src_match && !thumb_match && !fsrc_match && !preview_match &&
-            !url.empty() && m.formatted_body.find(url) != std::string::npos;
-        if (src_match || thumb_match || fsrc_match || preview_match ||
-            emoticon_match)
+        const bool emoticon_match = !src_match && !thumb_match && !fsrc_match && !preview_match &&
+                                    !url.empty() && m.formatted_body.find(url) != std::string::npos;
+        if (src_match || thumb_match || fsrc_match || preview_match || emoticon_match)
         {
             matched_indices.push_back(i);
         }
@@ -9591,11 +9751,14 @@ void MessageListView::notify_image_ready(const std::string& url)
     // Anchor unconditionally: a decoded image grows its row downward, so an
     // image loading anywhere above the anchored row would otherwise push the
     // viewport. preserve_top_through no-ops on stick-to-bottom / at-top.
-    preserve_top_through([&]
-    {
-        for (std::size_t i : matched_indices)
-            invalidate_row(i);
-    });
+    preserve_top_through(
+        [&]
+        {
+            for (std::size_t i : matched_indices)
+            {
+                invalidate_row(i);
+            }
+        });
 }
 
 void MessageListView::notify_reply_ready(const std::string& event_id)
@@ -9603,63 +9766,75 @@ void MessageListView::notify_reply_ready(const std::string& event_id)
     room_switch_gate_.notify_loaded(event_id);
 }
 
-void MessageListView::update_voice_waveform(const std::string&         event_id,
+void MessageListView::update_voice_waveform(const std::string& event_id,
                                             std::vector<std::uint16_t> waveform)
 {
     for (auto& msg : messages_)
     {
-        if (msg.kind == MessageRowData::Kind::Voice &&
-            msg.event_id == event_id && msg.waveform.empty())
+        if (msg.kind == MessageRowData::Kind::Voice && msg.event_id == event_id &&
+            msg.waveform.empty())
         {
             msg.waveform = std::move(waveform);
             // Anchor unconditionally: the waveform fills in the voice card and
             // can change row height; keep the anchored row pixel-stable.
-            preserve_top_through([this] { invalidate_data(); });
+            preserve_top_through(
+                [this]
+                {
+                    invalidate_data();
+                });
             return;
         }
     }
 }
 
-void MessageListView::update_member_pronoun(const std::string& user_id,
-                                            std::string pronoun)
+void MessageListView::update_member_pronoun(const std::string& user_id, std::string pronoun)
 {
     std::vector<std::size_t> matched_indices;
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         auto& m = messages_[i];
-        if (m.kind == MessageRowData::Kind::Membership &&
-            m.membership_target_user_id == user_id && !m.pronoun_resolved)
+        if (m.kind == MessageRowData::Kind::Membership && m.membership_target_user_id == user_id &&
+            !m.pronoun_resolved)
         {
-            m.target_pronoun   = pronoun;
+            m.target_pronoun = pronoun;
             m.pronoun_resolved = true;
             matched_indices.push_back(i);
         }
     }
     if (matched_indices.empty())
+    {
         return;
+    }
     // Re-measure only the rows whose pronoun just resolved — mirrors the
     // sender-avatar re-pin scan above (targeted invalidate_row, no blanket
     // invalidate_data()). A collapsed group draws every member's phrase on
     // its start row, so that row is re-measured too.
-    preserve_top_through([&]
-    {
-        for (std::size_t i : matched_indices)
+    preserve_top_through(
+        [&]
         {
-            invalidate_row(i);
-            const std::size_t start = adapter_->membership_group_start_of(i);
-            if (start != i)
-                invalidate_row(start);
-        }
-    });
+            for (std::size_t i : matched_indices)
+            {
+                invalidate_row(i);
+                const std::size_t start = adapter_->membership_group_start_of(i);
+                if (start != i)
+                {
+                    invalidate_row(start);
+                }
+            }
+        });
 }
 
 const std::string& MessageListView::sender_tz_diff_(const std::string& user_id) const
 {
     static const std::string kNone;
     if (const auto it = sender_tz_diffs_.find(user_id); it != sender_tz_diffs_.end())
+    {
         return it->second;
+    }
     if (on_sender_timezone_needed && sender_tz_asked_.insert(user_id).second)
+    {
         on_sender_timezone_needed(user_id);
+    }
     return kNone;
 }
 
@@ -9672,27 +9847,35 @@ void MessageListView::update_sender_timezone(const std::string& user_id, const s
         const auto theirs = tk::timezone_utc_offset_minutes(tz, now);
         const auto mine = tk::timezone_utc_offset_minutes(tk::system_timezone(), now);
         if (theirs && mine)
+        {
             diff = tk::format_offset_diff(*theirs - *mine);
+        }
     }
     sender_tz_asked_.insert(user_id);
     auto& slot = sender_tz_diffs_[user_id];
     if (slot == diff)
+    {
         return;
+    }
     slot = std::move(diff);
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
-void MessageListView::update_member_profile(
-    const std::string& user_id, const std::optional<std::string>& display_name,
-    const std::optional<std::string>& avatar_url)
+void MessageListView::update_member_profile(const std::string& user_id,
+                                            const std::optional<std::string>& display_name,
+                                            const std::optional<std::string>& avatar_url)
 {
     std::vector<std::size_t> matched;
     for (std::size_t i = 0; i < messages_.size(); ++i)
     {
         auto& m = messages_[i];
         if (m.sender != user_id)
+        {
             continue;
+        }
         bool changed = false;
         if (display_name && m.sender_name != *display_name)
         {
@@ -9705,23 +9888,32 @@ void MessageListView::update_member_profile(
             changed = true;
         }
         if (changed)
+        {
             matched.push_back(i);
+        }
     }
     if (matched.empty())
+    {
         return;
+    }
     // The visible-range diff would otherwise see an unchanged row set and
     // never request the new avatar.
     reset_visible_avatar_tracking();
     if (display_name)
     {
-        preserve_top_through([&]
-        {
-            for (std::size_t i : matched)
-                invalidate_row(i);
-        });
+        preserve_top_through(
+            [&]
+            {
+                for (std::size_t i : matched)
+                {
+                    invalidate_row(i);
+                }
+            });
     }
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
@@ -9730,15 +9922,19 @@ void MessageListView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
     media_.set_player(std::move(player));
     media_.set_next_voice_lookup(
         [this](const std::string& eid)
-        { return find_next_voice_from_same_sender_(eid); });
+        {
+            return find_next_voice_from_same_sender_(eid);
+        });
 }
 
-const MessageRowData* MessageListView::find_next_voice_from_same_sender_(
-    const std::string& finished_event_id) const
+const MessageRowData*
+MessageListView::find_next_voice_from_same_sender_(const std::string& finished_event_id) const
 {
     auto it = std::find_if(messages_.begin(), messages_.end(),
                            [&](const MessageRowData& r)
-                           { return r.event_id == finished_event_id; });
+                           {
+                               return r.event_id == finished_event_id;
+                           });
     if (it == messages_.end() || it->kind != MessageRowData::Kind::Voice)
     {
         return nullptr;
@@ -9759,8 +9955,7 @@ void MessageListView::set_voice_bytes_provider(VoiceBytesProvider provider)
     media_.set_bytes_provider(std::move(provider));
 }
 
-void MessageListView::set_repaint_requester(
-    std::function<void()> request_repaint)
+void MessageListView::set_repaint_requester(std::function<void()> request_repaint)
 {
     request_repaint_ = request_repaint;
     // The inline video players drive their own repaints on each new frame.
@@ -9788,8 +9983,7 @@ void MessageListView::set_video_playback_suspended(bool suspended)
         return;
     }
     auto [first, last] = visible_range();
-    const int actual_last =
-        std::min(last, static_cast<int>(messages_.size()) - 1);
+    const int actual_last = std::min(last, static_cast<int>(messages_.size()) - 1);
     video_playlist_.resume_all(
         [this, first, actual_last](const std::string& event_id)
         {
@@ -9799,8 +9993,7 @@ void MessageListView::set_video_playback_suspended(bool suspended)
             }
             for (int i = first; i <= actual_last; ++i)
             {
-                if (messages_[static_cast<std::size_t>(i)].event_id ==
-                    event_id)
+                if (messages_[static_cast<std::size_t>(i)].event_id == event_id)
                 {
                     return true;
                 }
@@ -9907,17 +10100,17 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy, bool is_touc
         return false; // list not painted yet
     }
     if (nav_loading_)
+    {
         return false;
+    }
 
     // Map zoom: intercept wheel over a Kind::Location map tile area.
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         std::size_t ri = hovered_row_geom_.row_index;
-        if (ri < messages_.size() &&
-            messages_[ri].kind == MessageRowData::Kind::Location)
+        if (ri < messages_.size() && messages_[ri].kind == MessageRowData::Kind::Location)
         {
-            const tk::Rect* g =
-                map_panner_.geom_at(messages_[ri].event_id);
+            const tk::Rect* g = map_panner_.geom_at(messages_[ri].event_id);
             if (g && rect_contains(*g, world))
             {
                 // Fire at most one zoom step per wheel event so a physical
@@ -9938,7 +10131,9 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy, bool is_touc
     {
         clear_scroll_hit_geometry_();
         if (request_repaint_)
+        {
             request_repaint_();
+        }
     }
     return scrolled;
 }
@@ -9950,15 +10145,15 @@ void MessageListView::on_pointer_drag(tk::Point local)
         return;
     }
     if (nav_loading_)
+    {
         return;
-    if (press_audio_kind_ == AudioPressKind::ProgressTrack &&
-        !press_audio_event_id_.empty())
+    }
+    if (press_audio_kind_ == AudioPressKind::ProgressTrack && !press_audio_event_id_.empty())
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         for (const auto& row : messages_)
         {
-            if (row.event_id == press_audio_event_id_ &&
-                row.kind == MessageRowData::Kind::Audio)
+            if (row.event_id == press_audio_event_id_ && row.kind == MessageRowData::Kind::Audio)
             {
                 media_.handle_audio_scrub_at(row, world.x);
                 break;
@@ -9982,35 +10177,32 @@ void MessageListView::on_pointer_drag(tk::Point local)
             int hb = sel_->head_byte;
             if (hr == sel_->anchor_row && hc == sel_->anchor_col)
             {
-                if (const TableCellBox* cb = cell_of(sec, hr, hc);
-                    cb && cb->layout)
+                if (const TableCellBox* cb = cell_of(sec, hr, hc); cb && cb->layout)
                 {
                     const float cx = sec.origin.x + cb->rect.x + cb->text_dx;
                     const float cy = sec.origin.y + cb->rect.y;
-                    int idx = cb->layout->char_index_at(
-                        {world.x - cx, world.y - cy});
-                    hb = idx >= 0 ? idx
-                                  : (world.x < cx
-                                         ? 0
-                                         : static_cast<int>(
-                                               spans_to_plain(cb->spans)
-                                                   .size()));
+                    int idx = cb->layout->char_index_at({world.x - cx, world.y - cy});
+                    hb = idx >= 0
+                             ? idx
+                             : (world.x < cx ? 0
+                                             : static_cast<int>(spans_to_plain(cb->spans).size()));
                 }
             }
             else
             {
                 hb = 0; // multi-cell block: byte offset unused
             }
-            if (hr != sel_->head_row || hc != sel_->head_col ||
-                hb != sel_->head_byte)
+            if (hr != sel_->head_row || hc != sel_->head_col || hb != sel_->head_byte)
             {
-                sel_->head_row   = hr;
-                sel_->head_col   = hc;
-                sel_->head_byte  = hb;
+                sel_->head_row = hr;
+                sel_->head_col = hc;
+                sel_->head_byte = hb;
                 sel_is_dragging_ = has_selection();
                 notify_selection_started_if_active_();
                 if (request_repaint_)
+                {
                     request_repaint_();
+                }
             }
         }
         return;
@@ -10023,8 +10215,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
         if (row_idx >= 0 && row_idx < static_cast<int>(messages_.size()))
         {
             const auto& m = messages_[static_cast<std::size_t>(row_idx)];
-            if (m.kind == MessageRowData::Kind::Text ||
-                m.kind == MessageRowData::Kind::Notice ||
+            if (m.kind == MessageRowData::Kind::Text || m.kind == MessageRowData::Kind::Notice ||
                 m.kind == MessageRowData::Kind::Emote)
             {
                 const LinkLayout* le = link_cache_.peek(m.event_id);
@@ -10033,16 +10224,17 @@ void MessageListView::on_pointer_drag(tk::Point local)
                     int idx = char_at_world(*le, world);
                     if (idx >= 0)
                     {
-                        bool changed = (sel_->head_event_id != m.event_id ||
-                                        sel_->head_byte != idx);
+                        bool changed =
+                            (sel_->head_event_id != m.event_id || sel_->head_byte != idx);
                         sel_->head_event_id = m.event_id;
-                        sel_->head_byte     = idx;
-                        sel_is_dragging_ =
-                            (sel_->head_event_id != sel_->anchor_event_id ||
-                             sel_->head_byte     != sel_->anchor_byte);
+                        sel_->head_byte = idx;
+                        sel_is_dragging_ = (sel_->head_event_id != sel_->anchor_event_id ||
+                                            sel_->head_byte != sel_->anchor_byte);
                         notify_selection_started_if_active_();
                         if (changed && request_repaint_)
+                        {
                             request_repaint_();
+                        }
                     }
                 }
             }
@@ -10058,7 +10250,9 @@ void MessageListView::on_pointer_drag(tk::Point local)
         {
             clear_scroll_hit_geometry_();
             if (request_repaint_)
+            {
                 request_repaint_();
+            }
         }
         return;
     }
@@ -10069,8 +10263,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
     tk::Point world{local.x + bounds().x, local.y + bounds().y};
     for (const auto& row : messages_)
     {
-        if (row.event_id == press_voice_event_id_ &&
-            row.kind == MessageRowData::Kind::Voice)
+        if (row.event_id == press_voice_event_id_ && row.kind == MessageRowData::Kind::Voice)
         {
             media_.handle_voice_scrub_at(row, world.x);
             break;
@@ -10082,9 +10275,9 @@ void MessageListView::on_pointer_drag(tk::Point local)
 // is in widget-local coordinates (relative to MessageListView::bounds_);
 // the cached geometry is in world coordinates, so we add the widget
 // origin back before comparing.
-static MessageListView::HoverTarget
-chip_hit_at(const MessageListView::RowChipGeom& g, tk::Rect widget_bounds,
-            tk::Point local, int& out_chip_idx)
+static MessageListView::HoverTarget chip_hit_at(const MessageListView::RowChipGeom& g,
+                                                tk::Rect widget_bounds, tk::Point local,
+                                                int& out_chip_idx)
 {
     out_chip_idx = -1;
     if (g.row_index == static_cast<std::size_t>(-1))
@@ -10140,13 +10333,14 @@ chip_hit_at(const MessageListView::RowChipGeom& g, tk::Rect widget_bounds,
 // onto/off the pill) is a visual change even when no other hover state moves.
 static int pill_cell_at(const MessageListView::RowChipGeom& g, tk::Point world)
 {
-    const tk::Rect* cells[] = {&g.react_button, &g.reply_button,
-                               &g.thread_button, &g.edit_button,
+    const tk::Rect* cells[] = {&g.react_button, &g.reply_button, &g.thread_button, &g.edit_button,
                                &g.more_button};
     for (int i = 0; i < 5; ++i)
     {
         if (cells[i]->w > 0.0f && rect_contains(*cells[i], world))
+        {
             return i;
+        }
     }
     return -1;
 }
@@ -10158,7 +10352,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
         return false;
     }
     if (nav_loading_)
+    {
         return false;
+    }
 
     // Snapshot everything paint derives from the pointer. A move that changes
     // none of it needs no repaint; returning true on every move would starve
@@ -10168,9 +10364,8 @@ bool MessageListView::on_pointer_move(tk::Point local)
     const int before_chip = hover_chip_idx_;
     const std::string before_media = hovered_media_event_id_;
     const std::string before_link = hover_link_url_;
-    const int before_cell = pill_cell_at(
-        hovered_row_geom_, {last_pointer_local_.x + bounds().x,
-                            last_pointer_local_.y + bounds().y});
+    const int before_cell = pill_cell_at(hovered_row_geom_, {last_pointer_local_.x + bounds().x,
+                                                             last_pointer_local_.y + bounds().y});
     last_pointer_local_ = local;
 
     // While the pointer is over the currently-hovered row's action pill —
@@ -10179,12 +10374,13 @@ bool MessageListView::on_pointer_move(tk::Point local)
     // underneath the pill would make the pill vanish out from under the
     // pointer.
     const tk::Point pill_probe{local.x + bounds().x, local.y + bounds().y};
-    const bool over_active_pill =
-        hovered_row_index() >= 0 &&
-        hovered_row_geom_.action_pill_bounds.w > 0.0f &&
-        rect_contains(hovered_row_geom_.action_pill_bounds, pill_probe);
+    const bool over_active_pill = hovered_row_index() >= 0 &&
+                                  hovered_row_geom_.action_pill_bounds.w > 0.0f &&
+                                  rect_contains(hovered_row_geom_.action_pill_bounds, pill_probe);
     if (!over_active_pill)
+    {
         tk::ListView::on_pointer_move(local);
+    }
 
     if (!pill_menu_event_id_.empty())
     {
@@ -10194,15 +10390,16 @@ bool MessageListView::on_pointer_move(tk::Point local)
         {
             pill_menu_event_id_.clear();
             if (on_pill_menu_row_left)
+            {
                 on_pill_menu_row_left();
+            }
         }
     }
 
     // Map pan: apply drag delta while a pan is active.
     if (map_panner_.panning() && map_panner_.active_row() < messages_.size())
     {
-        map_panner_.drag_pan(local,
-                             messages_[map_panner_.active_row()].map_viewport);
+        map_panner_.drag_pan(local, messages_[map_panner_.active_row()].map_viewport);
         messages_[map_panner_.active_row()].map_viewport_touched = true;
         if (!hover_link_url_.empty())
         {
@@ -10258,8 +10455,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
             const auto& m = messages_[hrow];
             // Map hover: report as a non-empty token so the shell shows a
             // grab cursor. Use a sentinel that is never a real URL.
-            if (m.kind == MessageRowData::Kind::Location &&
-                live_location_has_map(m))
+            if (m.kind == MessageRowData::Kind::Location && live_location_has_map(m))
             {
                 constexpr float kMapRowH = 240.0f;
                 const tk::Rect& rb = hovered_row_geom_.row_bounds;
@@ -10316,7 +10512,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
         }
         // Poll answer / End poll hover: same pointing-hand treatment.
         if (new_link_url.empty() && polls_.hit_test(world))
+        {
             new_link_url = "poll://";
+        }
         // Quote block hover: clicking jumps to the original message, so show
         // the pointing-hand cursor the same way file and preview cards do.
         if (new_link_url.empty())
@@ -10356,16 +10554,19 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 over_text = le && text_at_world(*le, world);
             }
             if (over_text)
+            {
                 new_link_url = std::string{kTextHoverToken};
+            }
         }
     }
-    if (new_code_eid != hover_code_toggle_eid_ ||
-        new_code_block != hover_code_toggle_block_)
+    if (new_code_eid != hover_code_toggle_eid_ || new_code_block != hover_code_toggle_block_)
     {
         hover_code_toggle_eid_ = new_code_eid;
         hover_code_toggle_block_ = new_code_block;
         if (request_repaint_)
+        {
             request_repaint_();
+        }
     }
     if (new_link_url != hover_link_url_)
     {
@@ -10385,8 +10586,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
         if (row >= 0 && static_cast<std::size_t>(row) < messages_.size())
         {
             const auto& m = messages_[static_cast<std::size_t>(row)];
-            if (m.kind == MessageRowData::Kind::Location &&
-                !m.location_description.empty())
+            if (m.kind == MessageRowData::Kind::Location && !m.location_description.empty())
             {
                 if (const tk::Rect* g = map_panner_.geom_at(m.event_id))
                 {
@@ -10413,24 +10613,28 @@ bool MessageListView::on_pointer_move(tk::Point local)
     // Action pill button tooltips — same change-on-transition pattern as ComposeBar.
     {
         const tk::Point world{local.x + bounds().x, local.y + bounds().y};
-        ActionTooltip next      = ActionTooltip::None;
-        tk::Rect      tip_anchor{};
+        ActionTooltip next = ActionTooltip::None;
+        tk::Rect tip_anchor{};
 
         if (hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
         {
-            struct { const tk::Rect& rect; ActionTooltip btn; } checks[] = {
-                {hovered_row_geom_.react_button,  ActionTooltip::React},
-                {hovered_row_geom_.reply_button,  ActionTooltip::Reply},
+            struct
+            {
+                const tk::Rect& rect;
+                ActionTooltip btn;
+            } checks[] = {
+                {hovered_row_geom_.react_button, ActionTooltip::React},
+                {hovered_row_geom_.reply_button, ActionTooltip::Reply},
                 {hovered_row_geom_.thread_button, ActionTooltip::Thread},
-                {hovered_row_geom_.edit_button,   ActionTooltip::Edit},
-                {hovered_row_geom_.more_button,   ActionTooltip::More},
+                {hovered_row_geom_.edit_button, ActionTooltip::Edit},
+                {hovered_row_geom_.more_button, ActionTooltip::More},
                 {hovered_row_geom_.failed_marker, ActionTooltip::SendFailed},
             };
             for (const auto& c : checks)
             {
                 if (c.rect.w > 0.0f && rect_contains(c.rect, world))
                 {
-                    next       = c.btn;
+                    next = c.btn;
                     tip_anchor = c.rect;
                     break;
                 }
@@ -10440,7 +10644,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
         if (next != action_tooltip_)
         {
             if (action_tooltip_ != ActionTooltip::None && host_)
+            {
                 host_->hide_tooltip(this);
+            }
             action_tooltip_ = next;
             if (next != ActionTooltip::None && host_)
             {
@@ -10448,29 +10654,29 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 {
                     const std::size_t ri = hovered_row_geom_.row_index;
                     const std::string tip =
-                        ri < messages_.size() ? failed_send_reason_(messages_[ri])
-                                              : std::string();
+                        ri < messages_.size() ? failed_send_reason_(messages_[ri]) : std::string();
                     if (!tip.empty())
+                    {
                         host_->show_tooltip(this, tip, tip_anchor);
+                    }
                 }
                 else
                 {
-                const char* src =
-                    next == ActionTooltip::React  ? tk::N_("Add reaction")
-                    : next == ActionTooltip::Reply  ? tk::N_("Reply")
-                    : next == ActionTooltip::Thread ? tk::N_("Reply in thread")
-                    : next == ActionTooltip::Edit   ? tk::N_("Edit")
-                    :                                 tk::N_("More");
-                host_->show_tooltip(this, tk::tr(src), tip_anchor);
+                    const char* src = next == ActionTooltip::React    ? tk::N_("Add reaction")
+                                      : next == ActionTooltip::Reply  ? tk::N_("Reply")
+                                      : next == ActionTooltip::Thread ? tk::N_("Reply in thread")
+                                      : next == ActionTooltip::Edit   ? tk::N_("Edit")
+                                                                      : tk::N_("More");
+                    host_->show_tooltip(this, tk::tr(src), tip_anchor);
                 }
             }
         }
 
         // Inline custom-emoji shortcode tooltip — only when no action pill
         // button is hovered (they take priority; see `next` above).
-        std::string     emoji_sc;
-        tk::Rect        emoji_rect{};
-        int             erow = -1;
+        std::string emoji_sc;
+        tk::Rect emoji_rect{};
+        int erow = -1;
         const LinkLayout* le = nullptr;
         if (next == ActionTooltip::None)
         {
@@ -10482,21 +10688,25 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 if (le)
                 {
                     EmojiHit hit = emoji_at_world(*le, world);
-                    emoji_sc     = std::move(hit.shortcode);
-                    emoji_rect   = hit.rect;
+                    emoji_sc = std::move(hit.shortcode);
+                    emoji_rect = hit.rect;
                 }
             }
         }
         if (!emoji_sc.empty())
         {
             if (host_)
+            {
                 host_->show_tooltip(this, emoji_sc, emoji_rect);
+            }
             hover_emoji_tooltip_ = true;
         }
         else if (hover_emoji_tooltip_)
         {
             if (host_ && next == ActionTooltip::None)
+            {
                 host_->hide_tooltip(this);
+            }
             hover_emoji_tooltip_ = false;
         }
 
@@ -10505,57 +10715,65 @@ bool MessageListView::on_pointer_move(tk::Point local)
         // Skipped for spans whose display text already is the URL
         // (autolinked plain URLs) and for matrix.to mention pills.
         std::string link_tip_url;
-        tk::Rect    link_tip_rect{};
+        tk::Rect link_tip_rect{};
         if (next == ActionTooltip::None && emoji_sc.empty() && le)
         {
             LinkHit hit = link_span_at_world(*le, world);
             if (!hit.url.empty() && !hit.is_mention && hit.text != hit.url)
             {
-                link_tip_url  = hit.url;
+                link_tip_url = hit.url;
                 link_tip_rect = hit.rect;
             }
         }
         if (!link_tip_url.empty())
         {
             if (host_)
+            {
                 host_->show_tooltip(this, link_tip_url, link_tip_rect);
+            }
             hover_link_tooltip_ = true;
         }
         else if (hover_link_tooltip_)
         {
             if (host_ && next == ActionTooltip::None)
+            {
                 host_->hide_tooltip(this);
+            }
             hover_link_tooltip_ = false;
         }
 
         // Sender status emoji tooltip (the status text).
         std::string status_tip;
-        if (next == ActionTooltip::None &&
-            hovered_row_geom_.status_emoji.w > 0.0f &&
+        if (next == ActionTooltip::None && hovered_row_geom_.status_emoji.w > 0.0f &&
             rect_contains(hovered_row_geom_.status_emoji, world))
         {
             const int srow = hovered_row_index();
             if (srow >= 0 && static_cast<std::size_t>(srow) < messages_.size())
+            {
                 status_tip = messages_[static_cast<std::size_t>(srow)].sender_status_text;
+            }
         }
         if (!status_tip.empty())
         {
             if (host_)
+            {
                 host_->show_tooltip(this, status_tip, hovered_row_geom_.status_emoji);
+            }
             hover_status_tooltip_ = true;
         }
         else if (hover_status_tooltip_)
         {
             // An action-pill tooltip shown above replaced this one already.
             if (host_ && next == ActionTooltip::None)
+            {
                 host_->hide_tooltip(this);
+            }
             hover_status_tooltip_ = false;
         }
     }
     const int after_cell = pill_cell_at(hovered_row_geom_, pill_probe);
     return hovered_row_index() != before_row || hover_target_ != before_target ||
-           hover_chip_idx_ != before_chip ||
-           hovered_media_event_id_ != before_media ||
+           hover_chip_idx_ != before_chip || hovered_media_event_id_ != before_media ||
            hover_link_url_ != before_link || after_cell != before_cell;
 }
 
@@ -10570,7 +10788,9 @@ tk::Widget* MessageListView::dispatch_pointer_move(tk::Point world, bool* dirty)
         clear_hover_();
         reset_hovered_row_geom_();
         if (dirty)
+        {
             *dirty = true;
+        }
     }
     return result;
 }
@@ -10578,11 +10798,17 @@ tk::Widget* MessageListView::dispatch_pointer_move(tk::Point world, bool* dirty)
 void MessageListView::on_pointer_leave()
 {
     if (gate_blocks_input_())
+    {
         return;
+    }
     if (nav_loading_)
+    {
         return;
+    }
     if (hover_locked_)
+    {
         return;
+    }
     tk::ListView::on_pointer_leave();
     hovered_row_geom_.row_index = static_cast<std::size_t>(-1);
     hovered_row_geom_.chips.clear();
@@ -10600,31 +10826,41 @@ void MessageListView::on_pointer_leave()
         hover_code_toggle_eid_.clear();
         hover_code_toggle_block_ = -1;
         if (request_repaint_)
+        {
             request_repaint_();
+        }
     }
     map_panner_.hide_tooltip();
     if (action_tooltip_ != ActionTooltip::None)
     {
         if (host_)
+        {
             host_->hide_tooltip(this);
+        }
         action_tooltip_ = ActionTooltip::None;
     }
     if (hover_emoji_tooltip_)
     {
         if (host_)
+        {
             host_->hide_tooltip(this);
+        }
         hover_emoji_tooltip_ = false;
     }
     if (hover_link_tooltip_)
     {
         if (host_)
+        {
             host_->hide_tooltip(this);
+        }
         hover_link_tooltip_ = false;
     }
     if (hover_status_tooltip_)
     {
         if (host_)
+        {
             host_->hide_tooltip(this);
+        }
         hover_status_tooltip_ = false;
     }
 }
@@ -10666,17 +10902,21 @@ const MessageListView::UnreadScan& MessageListView::unread_scan_() const
         {
             scan.content_after = true;
             if (oldest_ts == 0)
+            {
                 oldest_ts = m.timestamp_ms;
+            }
         }
         if (!fully_read_loaded && m.event_id == unread_marker_event_id_)
+        {
             fully_read_loaded = true;
+        }
     }
     // An m.fully_read event no older than the oldest loaded row is inside
     // the window, only not rendered (a reaction, an edit): caught up.
-    const bool inside_window = unread_marker_ts_ms_ != 0 && oldest_ts != 0 &&
-                               unread_marker_ts_ms_ >= oldest_ts;
-    scan.fully_read_unloaded = !messages_.empty() && scan.marker_row < 0 &&
-                               !fully_read_loaded && !inside_window;
+    const bool inside_window =
+        unread_marker_ts_ms_ != 0 && oldest_ts != 0 && unread_marker_ts_ms_ >= oldest_ts;
+    scan.fully_read_unloaded =
+        !messages_.empty() && scan.marker_row < 0 && !fully_read_loaded && !inside_window;
     unread_scan_cache_ = scan;
     unread_scan_valid_ = true;
     return unread_scan_cache_;
@@ -10723,8 +10963,7 @@ bool MessageListView::should_show_unread_pill() const
     return unread_marker_unloaded_() && on_jump_to_unread != nullptr;
 }
 
-void MessageListView::set_unread_marker_event_id(std::string event_id,
-                                                 std::uint64_t ts_ms)
+void MessageListView::set_unread_marker_event_id(std::string event_id, std::uint64_t ts_ms)
 {
     if (unread_marker_event_id_ == event_id && unread_marker_ts_ms_ == ts_ms)
     {
@@ -10734,7 +10973,9 @@ void MessageListView::set_unread_marker_event_id(std::string event_id,
     unread_marker_ts_ms_ = ts_ms;
     unread_scan_dirty_();
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::reset_unread_pill()
@@ -10755,14 +10996,18 @@ bool MessageListView::jump_to_first_unread()
         scroll_to_index_deferred(marker, /*align_top=*/true);
         clear_scroll_hit_geometry_();
         if (request_repaint_)
+        {
             request_repaint_();
+        }
         return true;
     }
     if (unread_marker_unloaded_() && on_jump_to_unread)
     {
         unread_pill_dismissed_ = true;
         if (request_repaint_)
+        {
             request_repaint_();
+        }
         on_jump_to_unread(unread_marker_event_id_);
         return true;
     }
@@ -10774,16 +11019,22 @@ MessageListView::DateBadge MessageListView::date_badge_() const
     using Kind = MessageRowData::Kind;
     DateBadge b;
     if (!should_show_pill() || messages_.empty())
+    {
         return b;
+    }
 
     auto [first, last] = visible_range();
     (void)last;
     if (first < 0 || static_cast<std::size_t>(first) >= messages_.size())
+    {
         return b;
+    }
 
     b.label = format_day_label(messages_[static_cast<std::size_t>(first)].timestamp_ms);
     if (b.label.empty())
+    {
         return b;
+    }
 
     const float list_top = bounds_.y + kDateBadgeTopInset;
     float world_y = list_top;
@@ -10797,12 +11048,14 @@ MessageListView::DateBadge MessageListView::date_badge_() const
         {
             const float next_y = row_world_rect(i).y;
             if (next_y < list_top + kDateBadgeH)
+            {
                 world_y = next_y - kDateBadgeH;
+            }
             break;
         }
     }
 
-    b.show    = true;
+    b.show = true;
     b.world_y = world_y;
     return b;
 }
@@ -10821,7 +11074,9 @@ bool MessageListView::scroll_to_event_id(const std::string& event_id)
             start_jump_highlight(event_id);
             clear_scroll_hit_geometry_();
             if (request_repaint_)
+            {
                 request_repaint_();
+            }
             return true;
         }
     }
@@ -10840,20 +11095,25 @@ void MessageListView::on_display_prefs_changed()
     // bubble/classic switch changes; drop them so every row re-shapes.
     // Anchor on the currently visible row so the height changes between
     // layout styles don't shift what's on screen.
-    preserve_top_through([&]
-    {
-        link_cache_.clear();
-        adapter_->clear_layout_cache();
-        invalidate_data();
-    });
+    preserve_top_through(
+        [&]
+        {
+            link_cache_.clear();
+            adapter_->clear_layout_cache();
+            invalidate_data();
+        });
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::set_content_column_enabled(bool enabled)
 {
     if (content_column_enabled_ == enabled)
+    {
         return;
+    }
     content_column_enabled_ = enabled;
     on_display_prefs_changed();
 }
@@ -10862,7 +11122,9 @@ TimelineColumn MessageListView::column_for_(float row_w) const
 {
     const auto& s = tesseract::Settings::instance();
     if (!content_column_enabled_ || s.message_layout == tesseract::Settings::MessageLayout::Irc)
+    {
         return {0.0f, row_w};
+    }
     return timeline_column(row_w, s.timeline_column_pct, s.timeline_column_anchor);
 }
 
@@ -10877,7 +11139,9 @@ tk::Rect MessageListView::content_row_rect_(int idx) const
     const tk::Rect full = row_world_rect(idx);
     if (idx >= 0 && static_cast<std::size_t>(idx) < messages_.size() &&
         messages_[static_cast<std::size_t>(idx)].kind == MessageRowData::Kind::DaySeparator)
+    {
         return full;
+    }
     return column_rect_(full);
 }
 
@@ -10889,12 +11153,18 @@ float MessageListView::sender_name_max_w_for_test(std::size_t index) const
 void MessageListView::prepend_messages(std::vector<MessageRowData> rows)
 {
     if (rows.empty())
+    {
         return;
+    }
     const std::size_t n = rows.size();
     for (const auto& r : rows)
+    {
         arm_live_location_expiry_(r);
+    }
     for (std::size_t i = 0; i < n; ++i)
+    {
         adapter_->insert_layout_cache_at(0);
+    }
     unread_scan_dirty_();
     preserve_top_through(
         [&]
@@ -10907,62 +11177,78 @@ void MessageListView::prepend_messages(std::vector<MessageRowData> rows)
 void MessageListView::append_messages(std::vector<MessageRowData> rows)
 {
     if (rows.empty())
+    {
         return;
+    }
     // Drop in-thread replies (defence-in-depth; callers should not send them).
-    rows.erase(
-        std::remove_if(rows.begin(), rows.end(),
-                       [](const MessageRowData& r)
-                       { return !r.thread_root_id.empty(); }),
-        rows.end());
+    rows.erase(std::remove_if(rows.begin(), rows.end(),
+                              [](const MessageRowData& r)
+                              {
+                                  return !r.thread_root_id.empty();
+                              }),
+               rows.end());
     if (rows.empty())
+    {
         return;
+    }
 
     // While browsing history (forward-pagination results, not a live tail),
     // don't follow the appended rows down — the "near bottom" trigger that
     // requested this page fires exactly when the user is at/near the bottom
     // of the loaded window, so at_bottom would almost always be true here
     // and yank the view to the new bottom instead of leaving it in place.
-    const bool at_bottom = !historical_mode_ &&
-                          scroll_y() + bounds().h + 1.0f >= content_height();
+    const bool at_bottom = !historical_mode_ && scroll_y() + bounds().h + 1.0f >= content_height();
     unread_scan_dirty_();
     bool marker_changed = false;
     for (auto& row : rows)
     {
         if (!is_virtual_event(row.kind))
         {
-            marker_changed |= suppress_read_marker_for_insert_(
-                messages_.size(), at_bottom, row.event_id);
+            marker_changed |=
+                suppress_read_marker_for_insert_(messages_.size(), at_bottom, row.event_id);
         }
-        const bool animated = row.kind == MessageRowData::Kind::Video &&
-                              (row.video_autoplay || row.video_gif);
+        const bool animated =
+            row.kind == MessageRowData::Kind::Video && (row.video_autoplay || row.video_gif);
         if (animated)
+        {
             start_inline_video(row);
+        }
         arm_live_location_expiry_(row);
         messages_.push_back(std::move(row));
         insert_row(messages_.size() - 1);
     }
     if (marker_changed)
+    {
         invalidate_data(); // global read-marker effect
+    }
     if (at_bottom)
+    {
         scroll_to_bottom();
+    }
 }
 
 void MessageListView::set_paginating(bool paginating)
 {
     if (paginating_ == paginating)
+    {
         return;
+    }
     paginating_ = paginating;
     if (paginating)
+    {
         paginate_start_ = std::chrono::steady_clock::now();
+    }
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::draw_pagination_spinner_(tk::PaintCtx& ctx, float center_y)
 {
     // Top-of-viewport indicator while a back-paginate is in flight.
-    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, center_y,
-                       paginate_start_, /*radius=*/10.0f, /*dot_r=*/2.5f);
+    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, center_y, paginate_start_,
+                       /*radius=*/10.0f, /*dot_r=*/2.5f);
 }
 
 void MessageListView::clear_hit_geometry_()
@@ -10986,8 +11272,8 @@ void MessageListView::begin_switch_loading()
     // Supersede any prior loading state / display gate, and bump the epoch so an
     // outstanding delayed-spinner timer from a previous switch is neutralised.
     ++switch_epoch_;
-    switch_loading_       = true;
-    switch_spinner_due_   = false;
+    switch_loading_ = true;
+    switch_spinner_due_ = false;
     switch_spinner_start_ = std::chrono::steady_clock::now();
     room_switch_gate_.clear();
 
@@ -11009,147 +11295,191 @@ void MessageListView::begin_switch_loading()
     // (the view may be destroyed before the timer fires) and the epoch.
     if (post_delayed_)
     {
-        const std::uint64_t ep     = switch_epoch_;
-        post_delayed_(kSwitchSpinnerDelayMs,
-                      guarded([this, ep]()
-                      {
-                          if (ep != switch_epoch_ || !switch_loading_)
-                              return;
-                          switch_spinner_due_   = true;
-                          switch_spinner_start_ = std::chrono::steady_clock::now();
-                          if (request_repaint_)
-                              request_repaint_();
-                      }));
+        const std::uint64_t ep = switch_epoch_;
+        post_delayed_(kSwitchSpinnerDelayMs, guarded(
+                                                 [this, ep]()
+                                                 {
+                                                     if (ep != switch_epoch_ || !switch_loading_)
+                                                     {
+                                                         return;
+                                                     }
+                                                     switch_spinner_due_ = true;
+                                                     switch_spinner_start_ =
+                                                         std::chrono::steady_clock::now();
+                                                     if (request_repaint_)
+                                                     {
+                                                         request_repaint_();
+                                                     }
+                                                 }));
     }
 }
 
 void MessageListView::end_switch_loading()
 {
     if (!switch_loading_)
+    {
         return;
+    }
     // Bump the epoch so any pending delayed-spinner timer is neutralised, then
     // settle on the (already-empty) row set. No populated snapshot is coming.
     ++switch_epoch_;
-    switch_loading_     = false;
+    switch_loading_ = false;
     switch_spinner_due_ = false;
     invalidate_data();
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::begin_nav_loading()
 {
     ++nav_epoch_;
-    nav_loading_     = true;
+    nav_loading_ = true;
     nav_spinner_due_ = false;
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 
     if (post_delayed_)
     {
-        const std::uint64_t ep    = nav_epoch_;
-        post_delayed_(kNavSpinnerDelayMs,
-                      guarded([this, ep]()
-                      {
-                          if (ep != nav_epoch_ || !nav_loading_)
-                              return;
-                          nav_spinner_due_   = true;
-                          nav_spinner_start_ = std::chrono::steady_clock::now();
-                          if (request_repaint_)
-                              request_repaint_();
-                      }));
+        const std::uint64_t ep = nav_epoch_;
+        post_delayed_(kNavSpinnerDelayMs, guarded(
+                                              [this, ep]()
+                                              {
+                                                  if (ep != nav_epoch_ || !nav_loading_)
+                                                  {
+                                                      return;
+                                                  }
+                                                  nav_spinner_due_ = true;
+                                                  nav_spinner_start_ =
+                                                      std::chrono::steady_clock::now();
+                                                  if (request_repaint_)
+                                                  {
+                                                      request_repaint_();
+                                                  }
+                                              }));
     }
 }
 
 void MessageListView::end_nav_loading()
 {
     if (!nav_loading_)
+    {
         return;
+    }
     ++nav_epoch_;
-    nav_loading_     = false;
+    nav_loading_ = false;
     nav_spinner_due_ = false;
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 void MessageListView::draw_nav_spinner_(tk::PaintCtx& ctx)
 {
-    draw_spinner_dots_(ctx,
-                       bounds_.x + bounds_.w * 0.5f,
-                       bounds_.y + bounds_.h * 0.5f,
+    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f,
                        nav_spinner_start_,
                        /*radius=*/12.0f, /*dot_r=*/3.0f);
 }
 
 void MessageListView::draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
-                                         std::chrono::steady_clock::time_point
-                                             start,
-                                         float radius, float dot_r)
+                                         std::chrono::steady_clock::time_point start, float radius,
+                                         float dot_r)
 {
-    const auto elapsed_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start)
-            .count();
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - start)
+                                .count();
     const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-    tk::draw_spinner_dots(ctx.canvas, {cx, cy}, phase, radius, dot_r,
-                          ctx.theme.palette.text_muted);
+    tk::draw_spinner_dots(ctx.canvas, {cx, cy}, phase, radius, dot_r, ctx.theme.palette.text_muted);
     if (request_repaint_)
+    {
         request_repaint_(); // self-animate the next frame while visible
+    }
 }
 
 void MessageListView::draw_switch_spinner_(tk::PaintCtx& ctx)
 {
-    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f,
-                       bounds_.y + bounds_.h * 0.5f, switch_spinner_start_,
+    draw_spinner_dots_(ctx, bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f,
+                       switch_spinner_start_,
                        /*radius=*/12.0f, /*dot_r=*/3.0f);
 }
 
 int MessageListView::message_index_of(const std::string& event_id) const
 {
     for (int i = 0; i < static_cast<int>(messages_.size()); ++i)
+    {
         if (messages_[i].event_id == event_id)
+        {
             return i;
+        }
+    }
     return -1;
 }
 
-std::optional<MessageListView::OrderedSel>
-MessageListView::selection_ordered() const
+std::optional<MessageListView::OrderedSel> MessageListView::selection_ordered() const
 {
-    if (!sel_) return std::nullopt;
+    if (!sel_)
+    {
+        return std::nullopt;
+    }
     int ai = message_index_of(sel_->anchor_event_id);
     int hi = message_index_of(sel_->head_event_id);
-    if (ai < 0 || hi < 0) return std::nullopt;
+    if (ai < 0 || hi < 0)
+    {
+        return std::nullopt;
+    }
     if (ai < hi || (ai == hi && sel_->anchor_byte <= sel_->head_byte))
+    {
         return OrderedSel{ai, sel_->anchor_byte, hi, sel_->head_byte};
+    }
     return OrderedSel{hi, sel_->head_byte, ai, sel_->anchor_byte};
 }
 
 bool MessageListView::has_selection() const
 {
-    if (!sel_) return false;
+    if (!sel_)
+    {
+        return false;
+    }
     if (sel_->in_table)
-        return sel_->anchor_row != sel_->head_row ||
-               sel_->anchor_col != sel_->head_col ||
+    {
+        return sel_->anchor_row != sel_->head_row || sel_->anchor_col != sel_->head_col ||
                sel_->anchor_byte != sel_->head_byte;
-    if (sel_->anchor_event_id != sel_->head_event_id) return true;
+    }
+    if (sel_->anchor_event_id != sel_->head_event_id)
+    {
+        return true;
+    }
     return sel_->anchor_byte != sel_->head_byte;
 }
 
 void MessageListView::notify_selection_started_if_active_()
 {
     if (selection_started_notified_ || !has_selection())
+    {
         return;
+    }
     selection_started_notified_ = true;
     if (on_selection_started)
+    {
         on_selection_started();
+    }
 }
 
 void MessageListView::copy_selection()
 {
     if (!has_selection() || !on_set_clipboard)
+    {
         return;
+    }
     auto ord = selection_ordered();
-    if (!ord) return;
+    if (!ord)
+    {
+        return;
+    }
 
     // Table selection: a byte range within one cell, or a rectangular block
     // of whole cells serialized as tab/newline TSV.
@@ -11161,15 +11491,14 @@ void MessageListView::copy_selection()
         {
             const SectionLayout& sec = le->sections[sel_->table_section];
             std::string out;
-            if (sel_->anchor_row == sel_->head_row &&
-                sel_->anchor_col == sel_->head_col)
+            if (sel_->anchor_row == sel_->head_row && sel_->anchor_col == sel_->head_col)
             {
-                if (const TableCellBox* cb =
-                        cell_of(sec, sel_->anchor_row, sel_->anchor_col);
+                if (const TableCellBox* cb = cell_of(sec, sel_->anchor_row, sel_->anchor_col);
                     cb && cb->layout)
-                    out = cb->layout->text_range(
-                        std::min(sel_->anchor_byte, sel_->head_byte),
-                        std::max(sel_->anchor_byte, sel_->head_byte));
+                {
+                    out = cb->layout->text_range(std::min(sel_->anchor_byte, sel_->head_byte),
+                                                 std::max(sel_->anchor_byte, sel_->head_byte));
+                }
             }
             else
             {
@@ -11180,18 +11509,26 @@ void MessageListView::copy_selection()
                 for (int r = r0; r <= r1; ++r)
                 {
                     if (r > r0)
+                    {
                         out += '\n';
+                    }
                     for (int c = c0; c <= c1; ++c)
                     {
                         if (c > c0)
+                        {
                             out += '\t';
+                        }
                         if (const TableCellBox* cb = cell_of(sec, r, c))
+                        {
                             out += spans_to_plain(cb->spans);
+                        }
                     }
                 }
             }
             if (!out.empty())
+            {
                 on_set_clipboard(out);
+            }
         }
         return;
     }
@@ -11202,50 +11539,62 @@ void MessageListView::copy_selection()
         const auto& m = messages_[static_cast<std::size_t>(i)];
         const LinkLayout* le = link_cache_.peek(m.event_id);
         if (!le)
+        {
             continue;
+        }
         int lo_b = (i == ord->lo_idx) ? ord->lo_byte : 0;
-        int hi_b = (i == ord->hi_idx)
-                       ? ord->hi_byte
-                       : static_cast<int>(le->plain.size());
+        int hi_b = (i == ord->hi_idx) ? ord->hi_byte : static_cast<int>(le->plain.size());
         // Block-structure bodies (headings, lists, blockquotes, tables) keep
         // their text in `plain` and leave `layout` null; their selection
         // offsets index `plain` directly (see SectionLayout::plain_base).
         std::string seg;
         if (le->layout)
+        {
             seg = le->layout->text_range(lo_b, hi_b);
+        }
         else
         {
             const int n = static_cast<int>(le->plain.size());
-            lo_b        = std::clamp(lo_b, 0, n);
-            hi_b        = std::clamp(hi_b, lo_b, n);
+            lo_b = std::clamp(lo_b, 0, n);
+            hi_b = std::clamp(hi_b, lo_b, n);
             seg = le->plain.substr(static_cast<std::size_t>(lo_b),
                                    static_cast<std::size_t>(hi_b - lo_b));
         }
         if (!result.empty() && result.back() != '\n')
+        {
             result += '\n';
+        }
         result += std::move(seg);
     }
     if (!result.empty())
+    {
         on_set_clipboard(result);
+    }
 }
 
 void MessageListView::clear_selection()
 {
     if (!sel_)
+    {
         return;
+    }
     sel_.reset();
     sel_is_dragging_ = false;
     press_sel_ = false;
     selection_started_notified_ = false;
     if (request_repaint_)
+    {
         request_repaint_();
+    }
 }
 
 bool MessageListView::on_right_click(tk::Point local)
 {
     context_link_url_.clear();
     if (gate_blocks_input_() || nav_loading_)
+    {
         return false;
+    }
     const tk::Point world{local.x + bounds().x, local.y + bounds().y};
     // The row under the pointer, not the hover state: hover can be stale or
     // locked (a popup is open) when the click lands.
@@ -11262,24 +11611,30 @@ bool MessageListView::on_right_click(tk::Point local)
     const bool selection = has_selection();
     if (!selection && idx >= 0)
     {
-        if (const LinkLayout* le = link_cache_.peek(messages_[static_cast<std::size_t>(idx)].event_id))
+        if (const LinkLayout* le =
+                link_cache_.peek(messages_[static_cast<std::size_t>(idx)].event_id))
+        {
             context_link_url_ = link_at_world(*le, world);
+        }
     }
     if (idx < 0)
     {
         // Between rows: a selection can still be copied.
         if (!selection)
+        {
             return false;
+        }
         copy_selection();
         return true;
     }
     if (is_virtual_event(messages_[static_cast<std::size_t>(idx)].kind) && !selection &&
         context_link_url_.empty())
+    {
         return false;
+    }
     // Opens like the member-list menu: right of the pointer.
     return open_actions_menu_(idx, {world.x, world.y, PopupMenu::kWidth, 0.0f},
-                              /*full=*/true, selection,
-                              !context_link_url_.empty());
+                              /*full=*/true, selection, !context_link_url_.empty());
 }
 
 std::vector<tesseract::views::MessageAction>
@@ -11302,17 +11657,17 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.developer_mode = tesseract::Settings::instance().developer_mode;
     in.saveable_sticker =
         m.kind == Kind::Sticker && m.source && on_save_sticker_requested &&
-        !(is_sticker_saved &&
-          is_sticker_saved(m.source->mxc_url(), m.sticker_info_json));
+        !(is_sticker_saved && is_sticker_saved(m.source->mxc_url(), m.sticker_info_json));
     return tesseract::views::build_message_actions(in);
 }
 
-bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full,
-                                         bool copy_sel, bool copy_link)
+bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full, bool copy_sel,
+                                         bool copy_link)
 {
-    if (idx < 0 || idx >= static_cast<int>(messages_.size()) ||
-        !on_actions_menu_requested)
+    if (idx < 0 || idx >= static_cast<int>(messages_.size()) || !on_actions_menu_requested)
+    {
         return false;
+    }
     const MessageRowData& m = messages_[static_cast<std::size_t>(idx)];
     // Rows still sending/failed have no actions of their own to offer.
     MessageMenuRequest req;
@@ -11321,65 +11676,85 @@ bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full,
     if (m.pending_state == MessageRowData::PendingState::None)
     {
         for (auto& act : actions_for_row_(m))
+        {
             if (full || !act.in_pill)
+            {
                 req.actions.push_back(std::move(act));
+            }
+        }
     }
     req.copy_selection = copy_sel;
     req.copy_link = copy_link;
     if (req.actions.empty() && !copy_sel && !copy_link)
+    {
         return false;
+    }
     on_actions_menu_requested(req);
     // The pill's "more" menu belongs to its row; a right-click menu stays.
     if (!full && hover_locked_)
+    {
         pill_menu_event_id_ = m.event_id;
+    }
     return true;
 }
 
-bool MessageListView::invoke_message_action(
-    tesseract::views::MessageActionId id, const std::string& event_id,
-    tk::Rect anchor)
+bool MessageListView::invoke_message_action(tesseract::views::MessageActionId id,
+                                            const std::string& event_id, tk::Rect anchor)
 {
     using Id = tesseract::views::MessageActionId;
     const int idx = message_index_of(event_id);
     // Reply and edit read the row's text; the rest only need the event id.
-    const MessageRowData* rowp =
-        idx >= 0 ? &messages_[static_cast<std::size_t>(idx)] : nullptr;
+    const MessageRowData* rowp = idx >= 0 ? &messages_[static_cast<std::size_t>(idx)] : nullptr;
     if ((id == Id::Reply || id == Id::Edit) && !rowp)
+    {
         return false;
+    }
     if (id == Id::Edit && rowp->forwarded)
+    {
         return false;
+    }
     switch (id)
     {
     case Id::React:
         if (!on_add_reaction_requested)
+        {
             return false;
+        }
         on_add_reaction_requested(event_id, anchor);
         return true;
     case Id::Reply:
         if (!on_reply_requested)
+        {
             return false;
+        }
         on_reply_requested(event_id, rowp->sender_name, rowp->body);
         return true;
     case Id::ReplyInThread:
         if (!on_thread_preview_clicked)
+        {
             return false;
+        }
         on_thread_preview_clicked(event_id);
         return true;
     case Id::Edit:
         if (!on_edit_requested)
+        {
             return false;
-        on_edit_requested(event_id, rowp->body,
-                          rowp->kind != MessageRowData::Kind::Text);
+        }
+        on_edit_requested(event_id, rowp->body, rowp->kind != MessageRowData::Kind::Text);
         return true;
     case Id::SaveSticker:
         if (!on_save_sticker_requested || !rowp || !rowp->source)
+        {
             return false;
-        on_save_sticker_requested(rowp->source->mxc_url(), rowp->body,
-                                  rowp->sticker_info_json);
+        }
+        on_save_sticker_requested(rowp->source->mxc_url(), rowp->body, rowp->sticker_info_json);
         return true;
     default:
         if (!on_overflow_action_requested)
+        {
             return false;
+        }
         on_overflow_action_requested(id, event_id);
         return true;
     }
@@ -11388,7 +11763,9 @@ bool MessageListView::invoke_message_action(
 bool MessageListView::copy_context_link()
 {
     if (context_link_url_.empty() || !on_set_clipboard)
+    {
         return false;
+    }
     on_set_clipboard(context_link_url_);
     context_link_url_.clear();
     return true;
@@ -11407,11 +11784,15 @@ bool MessageListView::on_pointer_down(tk::Point local)
         return false; // list not painted yet
     }
     if (nav_loading_)
+    {
         return false;
+    }
 
     // Scrollbar thumb wins any hit test — it overlaps row content visually.
     if (thumb_hit(local))
+    {
         return tk::ListView::on_pointer_down(local);
+    }
 
     // Any new press outside a text-body selection clears the old selection.
     if (sel_ && !press_sel_)
@@ -11421,9 +11802,13 @@ bool MessageListView::on_pointer_down(tk::Point local)
         sel_is_dragging_ = false;
         selection_started_notified_ = false;
         if (was_active && on_selection_cleared)
+        {
             on_selection_cleared();
+        }
         if (request_repaint_)
+        {
             request_repaint_();
+        }
     }
 
     // Thread-preview chip hit: fires on_thread_preview_clicked(root_event_id)
@@ -11449,8 +11834,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         std::size_t ri = hovered_row_geom_.row_index;
-        if (ri < messages_.size() &&
-            messages_[ri].kind == MessageRowData::Kind::Location &&
+        if (ri < messages_.size() && messages_[ri].kind == MessageRowData::Kind::Location &&
             live_location_has_map(messages_[ri])) // no-fix rows draw no map
         {
             constexpr float kMapRowH = 240.0f;
@@ -11462,15 +11846,16 @@ bool MessageListView::on_pointer_down(tk::Point local)
             // starting a pan underneath them (which on release would be
             // read as a map click and open the browser instead).
             const auto over_button = [&](const tk::Rect& btn)
-            { return btn.w > 0 && rect_contains(btn, world); };
-            bool over_action_pill =
-                over_button(hovered_row_geom_.react_button) ||
-                over_button(hovered_row_geom_.reply_button) ||
-                over_button(hovered_row_geom_.thread_button) ||
-                over_button(hovered_row_geom_.edit_button) ||
-                over_button(hovered_row_geom_.more_button) ||
-                over_button(hovered_row_geom_.retry_button) ||
-                over_button(hovered_row_geom_.abort_button);
+            {
+                return btn.w > 0 && rect_contains(btn, world);
+            };
+            bool over_action_pill = over_button(hovered_row_geom_.react_button) ||
+                                    over_button(hovered_row_geom_.reply_button) ||
+                                    over_button(hovered_row_geom_.thread_button) ||
+                                    over_button(hovered_row_geom_.edit_button) ||
+                                    over_button(hovered_row_geom_.more_button) ||
+                                    over_button(hovered_row_geom_.retry_button) ||
+                                    over_button(hovered_row_geom_.abort_button);
             if (!over_action_pill && rect_contains(map_rect, world))
             {
                 map_panner_.begin_pan(ri, local, messages_[ri].map_viewport);
@@ -11506,8 +11891,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 // subsequent on_pointer_drag callbacks follow the finger.
                 for (const auto& row : messages_)
                 {
-                    if (row.event_id == event_id &&
-                        row.kind == MessageRowData::Kind::Voice)
+                    if (row.event_id == event_id && row.kind == MessageRowData::Kind::Voice)
                     {
                         media_.handle_voice_scrub_at(row, world.x);
                         break;
@@ -11529,15 +11913,13 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 press_audio_kind_ = AudioPressKind::PlayButton;
                 return true;
             }
-            if (geom.progress_track.w > 0 &&
-                rect_contains(geom.progress_track, world))
+            if (geom.progress_track.w > 0 && rect_contains(geom.progress_track, world))
             {
                 press_audio_event_id_ = event_id;
                 press_audio_kind_ = AudioPressKind::ProgressTrack;
                 for (const auto& row : messages_)
                 {
-                    if (row.event_id == event_id &&
-                        row.kind == MessageRowData::Kind::Audio)
+                    if (row.event_id == event_id && row.kind == MessageRowData::Kind::Audio)
                     {
                         media_.handle_audio_scrub_at(row, world.x);
                         break;
@@ -11622,7 +12004,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
             std::size_t row = hovered_row_geom_.row_index;
             if (row < messages_.size())
             {
-                press_more_btn_      = true;
+                press_more_btn_ = true;
                 press_more_event_id_ = messages_[row].event_id;
                 return true;
             }
@@ -11812,19 +12194,17 @@ bool MessageListView::on_pointer_down(tk::Point local)
                     {
                         const tk::Rect avatar_rect{rb.x + kMsgListPadX, rb.y + kMsgListPadY,
                                                    kMsgListAvatarSize, kMsgListAvatarSize};
-                        const float col_x = rb.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
+                        const float col_x =
+                            rb.x + kMsgListPadX + kMsgListAvatarSize + kMsgListAvatarGap;
                         const float sender_y =
                             rb.y + kMsgListPadY + (kMsgListAvatarSize - sender_h()) * 0.5f;
                         // Cap at 200px so clicking message body doesn't trigger.
-                        const float name_max_w =
-                            std::min(200.0f, std::max(0.0f, rb.w - kMsgListPadX -
-                                                                 kMsgListAvatarSize -
-                                                                 kMsgListAvatarGap - kMsgListPadX));
-                        const tk::Rect sender_name_rect{col_x, sender_y,
-                                                        name_max_w, sender_h()};
+                        const float name_max_w = std::min(
+                            200.0f, std::max(0.0f, rb.w - kMsgListPadX - kMsgListAvatarSize -
+                                                       kMsgListAvatarGap - kMsgListPadX));
+                        const tk::Rect sender_name_rect{col_x, sender_y, name_max_w, sender_h()};
                         if (rect_contains(avatar_rect, world) ||
-                            (sender_name_rect.w > 0 &&
-                             rect_contains(sender_name_rect, world)))
+                            (sender_name_rect.w > 0 && rect_contains(sender_name_rect, world)))
                         {
                             press_sender_ = true;
                             press_sender_user_id_ = m.sender;
@@ -11849,8 +12229,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
         // next paint repopulates it — so a click landing before that next
         // paint would read SIZE_MAX and silently skip both blocks.
         int row_at = index_at(local);
-        std::size_t row =
-            row_at >= 0 ? static_cast<std::size_t>(row_at) : messages_.size();
+        std::size_t row = row_at >= 0 ? static_cast<std::size_t>(row_at) : messages_.size();
         if (row < messages_.size())
         {
             const auto& m = messages_[row];
@@ -11864,8 +12243,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 for (std::size_t r : adapter_->membership_avatar_rows(row))
                 {
                     const auto& t = messages_[r];
-                    if (!t.membership_target_user_id.empty() &&
-                        membership_avatar_hit(line, world))
+                    if (!t.membership_target_user_id.empty() && membership_avatar_hit(line, world))
                     {
                         press_sender_ = true;
                         press_sender_user_id_ = t.membership_target_user_id;
@@ -11895,14 +12273,12 @@ bool MessageListView::on_pointer_down(tk::Point local)
             }
 
             // Expand / Collapse button under a long code block.
-            if (m.kind == MessageRowData::Kind::Text ||
-                m.kind == MessageRowData::Kind::Notice ||
+            if (m.kind == MessageRowData::Kind::Text || m.kind == MessageRowData::Kind::Notice ||
                 m.kind == MessageRowData::Kind::Emote)
             {
                 const tk::Point cw{local.x + bounds().x, local.y + bounds().y};
                 const LinkLayout* cle = link_cache_.peek(m.event_id);
-                if (const SectionLayout* cs =
-                        cle ? code_toggle_at(*cle, cw) : nullptr)
+                if (const SectionLayout* cs = cle ? code_toggle_at(*cle, cw) : nullptr)
                 {
                     press_code_toggle_ = true;
                     press_code_toggle_eid_ = m.event_id;
@@ -11912,8 +12288,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
             }
 
             // Text selection anchor: single/double/triple click on text bodies.
-            if (m.kind == MessageRowData::Kind::Text ||
-                m.kind == MessageRowData::Kind::Notice ||
+            if (m.kind == MessageRowData::Kind::Text || m.kind == MessageRowData::Kind::Notice ||
                 m.kind == MessageRowData::Kind::Emote)
             {
                 tk::Point world{local.x + bounds().x, local.y + bounds().y};
@@ -11926,79 +12301,75 @@ bool MessageListView::on_pointer_down(tk::Point local)
                         float dx = world.x - last_down_pt_.x;
                         float dy = world.y - last_down_pt_.y;
                         bool same_spot = (dx * dx + dy * dy) < 64.0f;
-                        click_count_ = (now_ms - last_down_time_ms_ < 500 &&
-                                        same_spot)
-                                           ? click_count_ + 1
-                                           : 1;
+                        click_count_ =
+                            (now_ms - last_down_time_ms_ < 500 && same_spot) ? click_count_ + 1 : 1;
                         last_down_time_ms_ = now_ms;
-                        last_down_pt_      = world;
+                        last_down_pt_ = world;
                     };
 
                     // A Markdown table: anchor a selection at the cell under
                     // the pointer (or the nearest cell if the click landed in
                     // padding / a border). Dragging extends it into a
                     // rectangular block of cells.
-                    for (int si = 0;
-                         si < static_cast<int>(le->sections.size()); ++si)
+                    for (int si = 0; si < static_cast<int>(le->sections.size()); ++si)
                     {
                         const SectionLayout& sec = le->sections[si];
                         if (sec.kind != BodyBlock::Kind::Table ||
                             !rect_contains(table_bounds(sec), world))
+                        {
                             continue;
+                        }
 
                         auto [ar, ac] = table_row_col_at(sec, world);
                         const TableCellBox* cb = cell_of(sec, ar, ac);
                         int cidx = 0;
                         if (cb && cb->layout)
                         {
-                            const float clx = world.x - sec.origin.x -
-                                              cb->rect.x - cb->text_dx;
-                            const float cly =
-                                world.y - sec.origin.y - cb->rect.y;
+                            const float clx = world.x - sec.origin.x - cb->rect.x - cb->text_dx;
+                            const float cly = world.y - sec.origin.y - cb->rect.y;
                             int idx = cb->layout->char_index_at({clx, cly});
                             cidx = idx >= 0
                                        ? idx
                                        : (clx <= 0.0f
                                               ? 0
-                                              : static_cast<int>(
-                                                    spans_to_plain(cb->spans)
-                                                        .size()));
+                                              : static_cast<int>(spans_to_plain(cb->spans).size()));
                         }
                         bump_click();
-                        const std::string cplain =
-                            cb ? spans_to_plain(cb->spans) : std::string{};
+                        const std::string cplain = cb ? spans_to_plain(cb->spans) : std::string{};
                         Selection s;
                         s.anchor_event_id = m.event_id;
-                        s.head_event_id   = m.event_id;
-                        s.in_table        = true;
-                        s.table_section   = si;
+                        s.head_event_id = m.event_id;
+                        s.in_table = true;
+                        s.table_section = si;
                         s.anchor_row = s.head_row = ar;
                         s.anchor_col = s.head_col = ac;
                         if (click_count_ >= 3)
                         {
                             auto [lo, hi] = line_range_in_text(cplain, cidx);
-                            s.anchor_byte    = lo;
-                            s.head_byte      = hi;
+                            s.anchor_byte = lo;
+                            s.head_byte = hi;
                             sel_is_dragging_ = true;
                         }
                         else if (click_count_ == 2)
                         {
                             auto [lo, hi] = word_range_in_text(cplain, cidx);
-                            s.anchor_byte    = lo;
-                            s.head_byte      = hi;
+                            s.anchor_byte = lo;
+                            s.head_byte = hi;
                             sel_is_dragging_ = true;
                         }
                         else
                         {
-                            s.anchor_byte    = cidx;
-                            s.head_byte      = cidx;
+                            s.anchor_byte = cidx;
+                            s.head_byte = cidx;
                             sel_is_dragging_ = false;
                         }
-                        sel_       = s;
+                        sel_ = s;
                         press_sel_ = true;
                         notify_selection_started_if_active_();
                         if (request_repaint_)
+                        {
                             request_repaint_();
+                        }
                         return true;
                     }
 
@@ -12028,7 +12399,9 @@ bool MessageListView::on_pointer_down(tk::Point local)
                         press_sel_ = true;
                         notify_selection_started_if_active_();
                         if (request_repaint_)
+                        {
                             request_repaint_();
+                        }
                         return true;
                     }
                 }
@@ -12054,7 +12427,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
     if (nav_loading_)
+    {
         return;
+    }
 
     // Selection drag ended.
     if (press_sel_)
@@ -12064,18 +12439,19 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             // Single click on text body: clear any selection and propagate as
             // a normal message click so on_message_clicked still fires.
-            std::string fire_eid =
-                (inside_self && sel_)
-                    ? sel_->anchor_event_id
-                    : std::string{};
+            std::string fire_eid = (inside_self && sel_) ? sel_->anchor_event_id : std::string{};
             sel_.reset();
             selection_started_notified_ = false;
             if (request_repaint_)
+            {
                 request_repaint_();
+            }
             sel_is_dragging_ = false;
             tk::ListView::on_pointer_up(local, inside_self);
             if (!fire_eid.empty() && on_message_clicked)
+            {
                 on_message_clicked(fire_eid);
+            }
             return;
         }
         sel_is_dragging_ = false;
@@ -12093,13 +12469,11 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         std::size_t ri = map_panner_.active_row();
         bool was_click = map_panner_.end_pan(local);
         tk::ListView::on_pointer_up(local, inside_self);
-        if (was_click && inside_self && ri < messages_.size() &&
-            on_link_clicked)
+        if (was_click && inside_self && ri < messages_.size() && on_link_clicked)
         {
             const MessageRowData& m = messages_[ri];
-            on_link_clicked(location_click_url(m.location_description,
-                                               m.location_lat, m.location_lon,
-                                               m.map_viewport.zoom));
+            on_link_clicked(location_click_url(m.location_description, m.location_lat,
+                                               m.location_lon, m.map_viewport.zoom));
         }
         return;
     }
@@ -12157,7 +12531,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     }
     if (press_sender_)
     {
-        std::string uid  = std::move(press_sender_user_id_);
+        std::string uid = std::move(press_sender_user_id_);
         std::string name = std::move(press_sender_display_name_);
         std::string aurl = std::move(press_sender_avatar_url_);
         press_sender_ = false;
@@ -12229,9 +12603,8 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             return;
         }
-        const tk::Rect& target = (kind == VoicePressKind::PlayButton)
-                                     ? geom->play_button
-                                     : geom->speed_pill;
+        const tk::Rect& target =
+            (kind == VoicePressKind::PlayButton) ? geom->play_button : geom->speed_pill;
         if (target.w <= 0 || !rect_contains(target, world))
         {
             return;
@@ -12339,8 +12712,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                     {
                         if (on_edit_requested)
                         {
-                            on_edit_requested(ev, row.body,
-                                              row.kind != MessageRowData::Kind::Text);
+                            on_edit_requested(ev, row.body, row.kind != MessageRowData::Kind::Text);
                         }
                         break;
                     }
@@ -12361,8 +12733,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             const tk::Rect& mb = hovered_row_geom_.more_button;
             if (mb.w > 0 && rect_contains(mb, world))
             {
-                open_actions_menu_(message_index_of(ev), mb, /*full=*/false,
-                                   false, false);
+                open_actions_menu_(message_index_of(ev), mb, /*full=*/false, false, false);
             }
         }
         return;
@@ -12381,12 +12752,13 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             {
                 const MessageRowData* blocked = nullptr;
                 for (const auto& row : messages_)
-                    if (row.pending_txn_id == txn &&
-                        send_block::is_block_code(row.pending_error))
+                {
+                    if (row.pending_txn_id == txn && send_block::is_block_code(row.pending_error))
                     {
                         blocked = &row;
                         break;
                     }
+                }
                 if (blocked && on_retry_blocked_send)
                 {
                     on_retry_blocked_send(txn, blocked->pending_error,
@@ -12427,7 +12799,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         press_quote_ = false;
         press_quote_event_id_.clear();
         if (fire)
+        {
             jump_to_reply_original_(ev);
+        }
         return;
     }
 
@@ -12440,8 +12814,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         if (fire && on_forward_origin_clicked)
         {
             const int idx = message_index_of(ev);
-            if (idx >= 0 &&
-                messages_[static_cast<std::size_t>(idx)].has_forward_link())
+            if (idx >= 0 && messages_[static_cast<std::size_t>(idx)].has_forward_link())
             {
                 const MessageRowData& row = messages_[static_cast<std::size_t>(idx)];
                 // Copies: the callback may rebuild the list under us.
@@ -12458,7 +12831,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         std::string url = std::move(press_link_url_);
         press_link_url_.clear();
         if (inside_self)
+        {
             open_link_(url);
+        }
         return;
     }
 
@@ -12473,7 +12848,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             const auto* now = polls_.hit_test(world);
             if (now && now->type == pressed.type && now->event_id == pressed.event_id &&
                 now->answer_id == pressed.answer_id)
+            {
                 fire_poll_hit_(*now);
+            }
         }
         return;
     }
@@ -12513,8 +12890,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
             auto it = gallery_item_geom_.find(key);
-            if (it != gallery_item_geom_.end() &&
-                rect_contains(it->second.world_rect, world))
+            if (it != gallery_item_geom_.end() && rect_contains(it->second.world_rect, world))
             {
                 const std::string eid = it->second.event_id;
                 const std::size_t index = it->second.item_index;
@@ -12545,14 +12921,15 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
             auto it = video_geom_.find(eid);
-            if (it != video_geom_.end() &&
-                rect_contains(it->second.world_rect, world))
+            if (it != video_geom_.end() && rect_contains(it->second.world_rect, world))
             {
                 // MSC4278: reveal a suppressed video instead of opening it.
                 if (media_is_hidden_by_eid_(eid))
                 {
                     if (on_reveal_media)
+                    {
                         on_reveal_media(eid);
+                    }
                 }
                 else if (on_video_clicked)
                 {
@@ -12573,15 +12950,16 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
             auto it = image_geom_.find(eid);
-            if (it != image_geom_.end() &&
-                rect_contains(it->second.world_rect, world))
+            if (it != image_geom_.end() && rect_contains(it->second.world_rect, world))
             {
                 // MSC4278: a click on a suppressed-media tile reveals it
                 // instead of opening the viewer.
                 if (media_is_hidden_by_eid_(eid))
                 {
                     if (on_reveal_media)
+                    {
                         on_reveal_media(eid);
+                    }
                 }
                 else if (on_image_clicked)
                 {
@@ -12602,8 +12980,8 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         {
             tk::Point world{local.x + bounds().x, local.y + bounds().y};
             auto it = file_geom_.find(eid);
-            if (it != file_geom_.end() &&
-                rect_contains(it->second.world_rect, world) && on_file_clicked)
+            if (it != file_geom_.end() && rect_contains(it->second.world_rect, world) &&
+                on_file_clicked)
             {
                 on_file_clicked(it->second);
             }
@@ -12631,8 +13009,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     {
         // Confirm the release still lands on the same chip.
         int now_idx = -1;
-        HoverTarget now_t =
-            chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
+        HoverTarget now_t = chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
         if (now_t != HoverTarget::Chip || now_idx != idx)
         {
             return;
@@ -12667,8 +13044,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         if (on_reaction_toggled)
         {
             const auto& r = reactions[idx];
-            const std::string src =
-                r.source ? r.source->mxc_url() : std::string();
+            const std::string src = r.source ? r.source->mxc_url() : std::string();
             auto& pop = chip_press_scale_[ev + "|" + r.key];
             pop.reset(1.15f);
             pop.set_target(1.0f);
@@ -12683,8 +13059,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     {
         // Re-confirm the release lands on the in-strip + chip before firing.
         int now_idx = -1;
-        HoverTarget now_t =
-            chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
+        HoverTarget now_t = chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
         if (now_t != HoverTarget::AddButton)
         {
             return;
@@ -12698,8 +13073,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
     {
         // Re-confirm the release still lands on the pill.
         int now_idx = -1;
-        HoverTarget now_t =
-            chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
+        HoverTarget now_t = chip_hit_at(hovered_row_geom_, bounds(), local, now_idx);
         if (now_t != HoverTarget::ReceiptOverflow)
         {
             return;
@@ -12714,13 +13088,11 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             {
                 continue;
             }
-            const std::size_t visible =
-                std::min(m.read_receipts.size(), kReceiptCap);
-            std::vector<tesseract::ReadReceipt> hidden(
-                m.read_receipts.begin() + static_cast<std::ptrdiff_t>(visible),
-                m.read_receipts.end());
-            on_receipt_overflow_clicked(ev, hovered_row_geom_.receipt_overflow,
-                                        std::move(hidden));
+            const std::size_t visible = std::min(m.read_receipts.size(), kReceiptCap);
+            std::vector<tesseract::ReadReceipt> hidden(m.read_receipts.begin() +
+                                                           static_cast<std::ptrdiff_t>(visible),
+                                                       m.read_receipts.end());
+            on_receipt_overflow_clicked(ev, hovered_row_geom_.receipt_overflow, std::move(hidden));
             break;
         }
     }
@@ -12854,9 +13226,8 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
     {
         if (!mxc.empty() && seen_avatars.insert(mxc).second)
         {
-            keys.push_back({tk::CacheKey::thumbnail(
-                                mxc, tesseract::visual::kAvatarCacheSize,
-                                tesseract::visual::kAvatarCacheSize),
+            keys.push_back({tk::CacheKey::thumbnail(mxc, tesseract::visual::kAvatarCacheSize,
+                                                    tesseract::visual::kAvatarCacheSize),
                             tk::MediaKind::UserAvatar});
         }
     };
@@ -12880,18 +13251,18 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             {
                 if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({tk::CacheKey::thumbnail(
-                                        tok, tesseract::visual::kMaxInlineImageWidth,
-                                        tesseract::visual::kMaxInlineImageHeight),
-                                    tk::MediaKind::MediaThumbnail});
+                    keys.push_back(
+                        {tk::CacheKey::thumbnail(tok, tesseract::visual::kMaxInlineImageWidth,
+                                                 tesseract::visual::kMaxInlineImageHeight),
+                         tk::MediaKind::MediaThumbnail});
                 }
             }
             if (m.source)
             {
                 if (std::string tok = m.source->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({tk::CacheKey::media(std::move(tok)),
-                                    tk::MediaKind::MediaImage});
+                    keys.push_back(
+                        {tk::CacheKey::media(std::move(tok)), tk::MediaKind::MediaImage});
                 }
             }
         }
@@ -12903,16 +13274,14 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             {
                 if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({tk::CacheKey::media(std::move(tok)),
-                                    tk::MediaKind::Sticker});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)), tk::MediaKind::Sticker});
                 }
             }
             if (m.source)
             {
                 if (std::string tok = m.source->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({tk::CacheKey::media(std::move(tok)),
-                                    tk::MediaKind::Sticker});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)), tk::MediaKind::Sticker});
                 }
             }
         }
@@ -12924,10 +13293,10 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             // run_media_prefetch_impl_'s sentinel skip, not handled here.
             if (std::string tok = m.thumbnail->fetch_token(); !tok.empty())
             {
-                keys.push_back({tk::CacheKey::thumbnail(
-                                    tok, tesseract::visual::kMaxInlineImageWidth,
-                                    tesseract::visual::kMaxInlineImageHeight),
-                                tk::MediaKind::MediaThumbnail});
+                keys.push_back(
+                    {tk::CacheKey::thumbnail(tok, tesseract::visual::kMaxInlineImageWidth,
+                                             tesseract::visual::kMaxInlineImageHeight),
+                     tk::MediaKind::MediaThumbnail});
             }
         }
         for (const auto& r : m.reactions)
@@ -12936,8 +13305,7 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
             {
                 if (std::string tok = r.source->fetch_token(); !tok.empty())
                 {
-                    keys.push_back({tk::CacheKey::media(std::move(tok)),
-                                    tk::MediaKind::Reaction});
+                    keys.push_back({tk::CacheKey::media(std::move(tok)), tk::MediaKind::Reaction});
                 }
             }
         }
@@ -12985,12 +13353,13 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // this signal — every Host passes a non-null AnimDamageSink on every
     // paint, full or partial — so the clip rect is the only reliable test.)
     const tk::Rect paint_clip = ctx.canvas.clip_rect();
-    const bool full_repaint =
-        paint_clip.x <= bounds().x && paint_clip.y <= bounds().y &&
-        paint_clip.right() >= bounds().right() &&
-        paint_clip.bottom() >= bounds().bottom();
+    const bool full_repaint = paint_clip.x <= bounds().x && paint_clip.y <= bounds().y &&
+                              paint_clip.right() >= bounds().right() &&
+                              paint_clip.bottom() >= bounds().bottom();
     if (full_repaint)
+    {
         clear_hit_geometry_();
+    }
 
     // Room-switch loading: the old room's rows were cleared on the click; show a
     // clean background until the new room's snapshot lands (set_messages cancels
@@ -13001,7 +13370,9 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     {
         ctx.canvas.fill_rect(bounds(), background_color(ctx.theme));
         if (switch_spinner_due_)
+        {
             draw_switch_spinner_(ctx);
+        }
         return;
     }
 
@@ -13025,8 +13396,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                 {
                     return; // nothing visible → reveal
                 }
-                for (int i = first;
-                     i <= last && i < static_cast<int>(messages_.size()); ++i)
+                for (int i = first; i <= last && i < static_cast<int>(messages_.size()); ++i)
                 {
                     visit(messages_[static_cast<std::size_t>(i)]);
                 }
@@ -13057,16 +13427,16 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // (see below) so it lands on top of the scrims painted in between.
     const DateBadge date_badge = date_badge_();
     date_badge_visible_ = date_badge.show;
-    date_badge_label_   = date_badge.label;
+    date_badge_label_ = date_badge.label;
 
     // Back-pagination spinner: 8-dot rotating indicator at the top of the
     // viewport while a back-paginate request is in flight. Shifted down
     // when the date badge is showing so the two don't overlap.
     if (paginating_)
     {
-        const float spinner_cy = date_badge.show
-            ? bounds_.y + kDateBadgeTopInset + kDateBadgeH + kDateBadgeSpinnerGap
-            : bounds_.y + 20.0f;
+        const float spinner_cy =
+            date_badge.show ? bounds_.y + kDateBadgeTopInset + kDateBadgeH + kDateBadgeSpinnerGap
+                            : bounds_.y + 20.0f;
         tk::ClipScope clip(ctx.canvas, bounds_);
         draw_pagination_spinner_(ctx, spinner_cy);
     }
@@ -13086,7 +13456,9 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             for (std::size_t i = 0; i < messages_.size(); ++i)
             {
                 if (messages_[i].event_id != highlighted_event_id_)
+                {
                     continue;
+                }
                 const tk::Rect r = content_row_rect_(static_cast<int>(i));
                 // Clip the row rect into the list bounds so a partially
                 // scrolled row punches only its visible slice.
@@ -13095,7 +13467,9 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                 const float x1 = std::min(B.right(), r.right());
                 const float y1 = std::min(B.bottom(), r.bottom());
                 if (x1 > x0 && y1 > y0)
+                {
                     cutout = {x0, y0, x1 - x0, y1 - y0};
+                }
                 break;
             }
         }
@@ -13106,22 +13480,28 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         }
         else
         {
-            const float top_h   = cutout.y - B.y;
-            const float bot_y   = cutout.bottom();
-            const float bot_h   = B.bottom() - bot_y;
-            const float left_w  = cutout.x - B.x;
+            const float top_h = cutout.y - B.y;
+            const float bot_y = cutout.bottom();
+            const float bot_h = B.bottom() - bot_y;
+            const float left_w = cutout.x - B.x;
             const float right_x = cutout.right();
             const float right_w = B.right() - right_x;
             if (top_h > 0)
+            {
                 ctx.canvas.fill_rect({B.x, B.y, B.w, top_h}, scrim);
+            }
             if (bot_h > 0)
+            {
                 ctx.canvas.fill_rect({B.x, bot_y, B.w, bot_h}, scrim);
+            }
             if (left_w > 0)
-                ctx.canvas.fill_rect({B.x, cutout.y, left_w, cutout.h},
-                                     scrim);
+            {
+                ctx.canvas.fill_rect({B.x, cutout.y, left_w, cutout.h}, scrim);
+            }
             if (right_w > 0)
-                ctx.canvas.fill_rect({right_x, cutout.y, right_w, cutout.h},
-                                     scrim);
+            {
+                ctx.canvas.fill_rect({right_x, cutout.y, right_w, cutout.h}, scrim);
+            }
         }
     }
 
@@ -13154,7 +13534,9 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         for (std::size_t i = 0; i < messages_.size(); ++i)
         {
             if (messages_[i].event_id != highlighted_event_id_)
+            {
                 continue;
+            }
             const tk::Rect B = bounds();
             const tk::Rect r = content_row_rect_(static_cast<int>(i));
             const float x0 = std::max(B.x, r.x);
@@ -13162,8 +13544,9 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             const float x1 = std::min(B.right(), r.right());
             const float y1 = std::min(B.bottom(), r.bottom());
             if (x1 > x0 && y1 > y0)
-                ctx.canvas.stroke_rect({x0, y0, x1 - x0, y1 - y0},
-                                       ctx.theme.palette.accent, 2.0f);
+            {
+                ctx.canvas.stroke_rect({x0, y0, x1 - x0, y1 - y0}, ctx.theme.palette.accent, 2.0f);
+            }
             break;
         }
     }
@@ -13182,12 +13565,11 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
     {
         int re_idx = -1;
-        HoverTarget re_t =
-            chip_hit_at(hovered_row_geom_, bounds(), last_pointer_local_, re_idx);
+        HoverTarget re_t = chip_hit_at(hovered_row_geom_, bounds(), last_pointer_local_, re_idx);
         if (re_t != HoverTarget::None)
         {
-            hover_target_    = re_t;
-            hover_chip_idx_  = re_idx;
+            hover_target_ = re_t;
+            hover_chip_idx_ = re_idx;
         }
     }
 
@@ -13206,16 +13588,14 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         {
             tk::Size sz = lo->measure();
             const float pill_w = sz.w + kDateBadgePadX * 2;
-            tk::Rect pill{bounds_.x + (bounds_.w - pill_w) * 0.5f,
-                         date_badge.world_y, pill_w, kDateBadgeH};
+            tk::Rect pill{bounds_.x + (bounds_.w - pill_w) * 0.5f, date_badge.world_y, pill_w,
+                          kDateBadgeH};
             date_badge_rect_ = pill;
-            ctx.canvas.fill_rounded_rect(pill, kDateBadgeH * 0.5f,
-                                         ctx.theme.palette.chrome_bg);
-            ctx.canvas.stroke_rounded_rect(pill, kDateBadgeH * 0.5f,
-                                          ctx.theme.palette.border, 1.0f);
+            ctx.canvas.fill_rounded_rect(pill, kDateBadgeH * 0.5f, ctx.theme.palette.chrome_bg);
+            ctx.canvas.stroke_rounded_rect(pill, kDateBadgeH * 0.5f, ctx.theme.palette.border,
+                                           1.0f);
             ctx.canvas.draw_text(*lo,
-                                 {pill.x + (pill.w - sz.w) * 0.5f,
-                                  pill.y + (pill.h - sz.h) * 0.5f},
+                                 {pill.x + (pill.w - sz.w) * 0.5f, pill.y + (pill.h - sz.h) * 0.5f},
                                  ctx.theme.palette.text_primary);
         }
     }
@@ -13252,9 +13632,8 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         constexpr float kGap = 6.0f;
         tk::Rect v = bounds();
         const float w = std::min(unread_pill_->width_for(ctx.factory), v.w - 16.0f);
-        const float top = date_badge.show
-                              ? v.y + kDateBadgeTopInset + kDateBadgeH + kGap
-                              : v.y + kDateBadgeTopInset;
+        const float top = date_badge.show ? v.y + kDateBadgeTopInset + kDateBadgeH + kGap
+                                          : v.y + kDateBadgeTopInset;
         unread_pill_rect_ = {v.x + (v.w - w) * 0.5f, top, w, kUnreadPillH};
         unread_pill_->set_bounds(unread_pill_rect_);
         unread_pill_->paint(ctx);
@@ -13276,26 +13655,29 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             for (std::size_t i = 0; i < scan && !show; ++i)
             {
                 if (messages_[i].kind != MessageRowData::Kind::TimelineStart)
+                {
                     continue;
+                }
                 const tk::Rect row = content_row_rect_(static_cast<int>(i));
                 const tk::Rect v = bounds();
-                const tk::Rect slot{row.x, row.y + kTimelineStartH, row.w,
-                                    kPredecessorLinkH};
+                const tk::Rect slot{row.x, row.y + kTimelineStartH, row.w, kPredecessorLinkH};
                 if (slot.y >= v.y && slot.y + slot.h <= v.y + v.h)
                 {
                     tk::LayoutCtx lctx{ctx.factory, ctx.theme};
-                    const float w = std::min(
-                        predecessor_link_->measure(lctx, {slot.w, slot.h}).w, slot.w);
+                    const float w =
+                        std::min(predecessor_link_->measure(lctx, {slot.w, slot.h}).w, slot.w);
                     predecessor_link_->set_visible(true);
-                    predecessor_link_->arrange(
-                        lctx, {slot.x + (slot.w - w) * 0.5f, slot.y, w, slot.h});
+                    predecessor_link_->arrange(lctx,
+                                               {slot.x + (slot.w - w) * 0.5f, slot.y, w, slot.h});
                     predecessor_link_->paint(ctx);
                     show = true;
                 }
             }
         }
         if (!show)
+        {
             predecessor_link_->set_visible(false);
+        }
     }
 
     // Tooltip overlay: paint a small panel listing senders of the
@@ -13321,8 +13703,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         }
         // rrs is newest-first, so receipt_discs[i] corresponds to rrs[i].
         const auto& rr = rrs[static_cast<std::size_t>(hover_chip_idx_)];
-        std::string label =
-            rr.display_name.empty() ? rr.user_id : rr.display_name;
+        std::string label = rr.display_name.empty() ? rr.user_id : rr.display_name;
         const std::string ts = format_hhmm(rr.timestamp_ms);
         if (!ts.empty())
         {
@@ -13364,8 +13745,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
 
         tk::Rect panel{panel_x, panel_y, panel_w, panel_h};
         ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);
-        ctx.canvas.stroke_rounded_rect(panel, 6.0f, ctx.theme.palette.border,
-                                       1.0f);
+        ctx.canvas.stroke_rounded_rect(panel, 6.0f, ctx.theme.palette.border, 1.0f);
         ctx.canvas.draw_text(*layout, {panel.x + kTipPadX, panel.y + kTipPadY},
                              ctx.theme.palette.text_primary);
         return;
@@ -13504,8 +13884,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     float y = panel.y + kTipPadY;
     for (const auto& line : ls)
     {
-        ctx.canvas.draw_text(*line.layout, {panel.x + kTipPadX, y},
-                             ctx.theme.palette.text_primary);
+        ctx.canvas.draw_text(*line.layout, {panel.x + kTipPadX, y}, ctx.theme.palette.text_primary);
         y += line.size.h;
     }
 }
@@ -13514,7 +13893,9 @@ std::string with_membership_reason(std::string phrase, const MessageRowData& m)
 {
     using A = tesseract::MembershipAction;
     if (m.membership_reason.empty())
+    {
         return phrase;
+    }
     switch (m.membership_action)
     {
     case A::Kicked:
@@ -13534,13 +13915,14 @@ namespace
 // Depth-first flatten of the activatable nodes in a row's access subtree
 // (reactions sit inside a "Reactions" group, actions inside "Message
 // actions").
-void collect_activatable(const std::vector<tk::AccessNode>& nodes,
-                         std::vector<tk::AccessNode>& out)
+void collect_activatable(const std::vector<tk::AccessNode>& nodes, std::vector<tk::AccessNode>& out)
 {
     for (const auto& n : nodes)
     {
         if (n.activate)
+        {
             out.push_back(n);
+        }
         collect_activatable(n.children, out);
     }
 }
@@ -13554,36 +13936,49 @@ bool MessageListView::focusable() const
 bool MessageListView::kbd_row_navigable_(int idx) const
 {
     if (idx < 0 || idx >= static_cast<int>(messages_.size()))
+    {
         return false;
+    }
     const auto i = static_cast<std::size_t>(idx);
     // Rows folded into a collapsed group (or otherwise not laid out) have no
     // height — nothing to land on.
     if (row_world_rect(idx).h < 1.0f)
+    {
         return false;
+    }
     if (!is_virtual_event(messages_[i].kind))
+    {
         return true;
-    return adapter_->is_membership_group_start(i) &&
-           adapter_->membership_group_expandable(i);
+    }
+    return adapter_->is_membership_group_start(i) && adapter_->membership_group_expandable(i);
 }
 
 int MessageListView::kbd_step_row_(int from, int dir) const
 {
     for (int i = from + dir; i >= 0 && i < static_cast<int>(messages_.size()); i += dir)
+    {
         if (kbd_row_navigable_(i))
+        {
             return i;
+        }
+    }
     return -1;
 }
 
 void MessageListView::kbd_select_row_(int idx)
 {
     if (idx < 0)
+    {
         return;
+    }
     kbd_part_key_.clear();
     kbd_event_id_ = messages_[static_cast<std::size_t>(idx)].event_id;
     set_selected_index(idx);
     reveal_index(idx); // fires the near-top pagination hook like a wheel scroll
     if (auto* h = host())
+    {
         h->request_repaint();
+    }
 }
 
 void MessageListView::kbd_ensure_cursor_()
@@ -13599,7 +13994,9 @@ void MessageListView::kbd_ensure_cursor_()
             kbd_part_key_.clear();
         }
         else if (idx != selected_index())
+        {
             set_selected_index(idx);
+        }
     }
     const auto [first, last] = visible_range();
     const int sel = selected_index();
@@ -13609,8 +14006,8 @@ void MessageListView::kbd_ensure_cursor_()
         return;
     }
     int pick = -1;
-    for (int i = std::min(last, static_cast<int>(messages_.size()) - 1);
-         i >= std::max(first, 0); --i)
+    for (int i = std::min(last, static_cast<int>(messages_.size()) - 1); i >= std::max(first, 0);
+         --i)
     {
         if (kbd_row_navigable_(i))
         {
@@ -13619,7 +14016,9 @@ void MessageListView::kbd_ensure_cursor_()
         }
     }
     if (pick < 0)
+    {
         pick = kbd_step_row_(static_cast<int>(messages_.size()), -1);
+    }
     if (pick >= 0)
     {
         kbd_part_key_.clear();
@@ -13644,8 +14043,12 @@ std::vector<std::string> MessageListView::kbd_part_keys_(const std::vector<tk::A
         }
         int nth = 0;
         for (std::size_t j = 0; j < i; ++j)
+        {
             if (parts[j].subtree_id.empty() && parts[j].name == parts[i].name)
+            {
                 ++nth;
+            }
+        }
         keys.push_back(parts[i].name + "#" + std::to_string(nth));
     }
     return keys;
@@ -13654,11 +14057,17 @@ std::vector<std::string> MessageListView::kbd_part_keys_(const std::vector<tk::A
 int MessageListView::kbd_part_index_(const std::vector<tk::AccessNode>& parts) const
 {
     if (kbd_part_key_.empty())
+    {
         return -1;
+    }
     const auto keys = kbd_part_keys_(parts);
     for (std::size_t i = 0; i < keys.size(); ++i)
+    {
         if (keys[i] == kbd_part_key_)
+        {
             return static_cast<int>(i);
+        }
+    }
     return -1; // the chosen part is gone — nothing is chosen any more
 }
 
@@ -13672,9 +14081,10 @@ std::vector<tk::AccessNode> MessageListView::kbd_parts_() const
     std::vector<tk::AccessNode> out;
     const int sel = selected_index();
     if (sel < 0 || sel >= static_cast<int>(messages_.size()))
+    {
         return out;
-    collect_activatable(adapter_->access_subtree_for_row(static_cast<std::size_t>(sel)),
-                        out);
+    }
+    collect_activatable(adapter_->access_subtree_for_row(static_cast<std::size_t>(sel)), out);
     return out;
 }
 
@@ -13682,7 +14092,9 @@ std::vector<std::string> MessageListView::keyboard_part_names() const
 {
     std::vector<std::string> names;
     for (const auto& n : kbd_parts_())
+    {
         names.push_back(n.name);
+    }
     return names;
 }
 
@@ -13693,7 +14105,9 @@ tk::Rect MessageListView::anchor_for_event_(const std::string& event_id) const
     const float top = std::max(r.y, bounds_.y);
     const float bottom = std::min(r.y + r.h, bounds_.y + bounds_.h);
     if (r.w <= 0.0f || bottom <= top)
+    {
         return {bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f, 0.0f, 0.0f};
+    }
     // A thin strip at the row's right edge: popups open beside the message
     // the way they do from the hover pill.
     return {r.x + r.w - 48.0f, top, 40.0f, std::min(bottom - top, 32.0f)};
@@ -13703,7 +14117,9 @@ bool MessageListView::kbd_open_more_()
 {
     const int sel = selected_index();
     if (sel < 0 || sel >= static_cast<int>(messages_.size()))
+    {
         return false;
+    }
     return open_actions_menu_(sel,
                               anchor_for_event_(messages_[static_cast<std::size_t>(sel)].event_id),
                               /*full=*/true, has_selection(), false);
@@ -13720,18 +14136,24 @@ void MessageListView::kbd_toggle_membership_group_(int idx)
 bool MessageListView::on_key_down(const tk::KeyEvent& e)
 {
     if (!has_focus() || messages_.empty())
+    {
         return false;
+    }
     kbd_ensure_cursor_();
     const int sel = selected_index();
     if (sel < 0)
+    {
         return false;
+    }
     const bool plain = !e.ctrl && !e.alt && !e.meta;
 
     // Ctrl/Cmd+C is RoomView's: it copies any text selection (this list's
     // or the thread panel's) first, and only then this cursor's message
     // via copy_keyboard_cursor_message().
     if (!plain)
+    {
         return false;
+    }
 
     if (matches(ShortcutId::TimelineFirstUnread, e))
     {
@@ -13739,10 +14161,16 @@ bool MessageListView::on_key_down(const tk::KeyEvent& e)
         // to the top (the cursor move alone only scrolls it into view).
         const int marker = shown_read_marker_index_();
         if (marker >= 0)
+        {
             if (const int first = kbd_step_row_(marker, 1); first >= 0)
+            {
                 kbd_select_row_(first);
+            }
+        }
         if (jump_to_first_unread())
+        {
             return true;
+        }
         // Nothing unread: fall through so Shift+PageUp still pages up.
     }
 
@@ -13753,7 +14181,9 @@ bool MessageListView::on_key_down(const tk::KeyEvent& e)
     {
         const int next = kbd_step_row_(sel, e.key == tk::Key::Down ? 1 : -1);
         if (next >= 0)
+        {
             kbd_select_row_(next);
+        }
         return true; // at an edge: stay put rather than escape the list
     }
     case tk::Key::PageUp:
@@ -13767,7 +14197,9 @@ bool MessageListView::on_key_down(const tk::KeyEvent& e)
         {
             const int step = kbd_step_row_(target, dir);
             if (step < 0)
+            {
                 break;
+            }
             target = step;
         }
         kbd_select_row_(target);
@@ -13779,28 +14211,36 @@ bool MessageListView::on_key_down(const tk::KeyEvent& e)
     case tk::Key::End:
         kbd_select_row_(kbd_step_row_(static_cast<int>(messages_.size()), -1));
         if (on_return_to_live && historical_mode_)
+        {
             on_return_to_live();
+        }
         return true;
     case tk::Key::Left:
     case tk::Key::Right:
     {
         const auto parts = kbd_parts_();
         if (parts.empty())
+        {
             return true;
+        }
         const int n = static_cast<int>(parts.size());
         int part = kbd_part_index_(parts);
         if (part < 0)
+        {
             part = e.key == tk::Key::Right ? 0 : n - 1;
+        }
         else
+        {
             part = (part + (e.key == tk::Key::Right ? 1 : -1) + n) % n;
+        }
         kbd_part_key_ = kbd_part_keys_(parts)[static_cast<std::size_t>(part)];
         if (auto* h = host())
         {
-            h->show_tooltip(this,
-                            tk::trf(tk::tr("{0} ({1} of {2})"),
-                                    {parts[static_cast<std::size_t>(part)].name,
-                                     std::to_string(part + 1), std::to_string(n)}),
-                            anchor_for_event_(messages_[static_cast<std::size_t>(sel)].event_id));
+            h->show_tooltip(
+                this,
+                tk::trf(tk::tr("{0} ({1} of {2})"), {parts[static_cast<std::size_t>(part)].name,
+                                                     std::to_string(part + 1), std::to_string(n)}),
+                anchor_for_event_(messages_[static_cast<std::size_t>(sel)].event_id));
             h->request_repaint();
         }
         return true;
@@ -13844,11 +14284,15 @@ bool MessageListView::on_key_down(const tk::KeyEvent& e)
 bool MessageListView::copy_keyboard_cursor_message()
 {
     if (!has_focus() || !on_set_clipboard || messages_.empty())
+    {
         return false;
+    }
     kbd_ensure_cursor_();
     const int sel = selected_index();
     if (sel < 0 || sel >= static_cast<int>(messages_.size()))
+    {
         return false;
+    }
     on_set_clipboard(message_access_body(messages_[static_cast<std::size_t>(sel)]));
     return true;
 }
@@ -13856,7 +14300,9 @@ bool MessageListView::copy_keyboard_cursor_message()
 bool MessageListView::on_context_menu_key()
 {
     if (!has_focus())
+    {
         return false;
+    }
     kbd_ensure_cursor_();
     return kbd_open_more_();
 }
@@ -13883,9 +14329,10 @@ void MessageListView::paint_own_focus_ring(tk::PaintCtx& ctx)
     const float top = std::max(r.y, bounds_.y) + 1.0f;
     const float bottom = std::min(r.y + r.h, bounds_.y + bounds_.h) - 1.0f;
     if (bottom <= top)
+    {
         return; // cursor row scrolled out of view
+    }
     tk::paint_focus_ring(ctx, {r.x + 4.0f, top, r.w - 8.0f, bottom - top}, 6.0f);
 }
 
 } // namespace tesseract::views
-

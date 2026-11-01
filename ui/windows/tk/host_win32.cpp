@@ -13,14 +13,14 @@
 #include <tesseract/settings.h>
 
 #include <commctrl.h>
-#include <d2d1.h>           // ID2D1HwndRenderTarget, D2D1_RENDER_TARGET_PROPERTIES
-#include <d2d1_1.h>         // ID2D1Factory1, ID2D1DeviceContext, ID2D1Bitmap1
-#include <d2d1_1helper.h>   // D2D1::BitmapProperties1
-#include <d3d11.h>          // ID3D11Device (for swap chain creation)
-#include <dxgi1_2.h>        // IDXGISwapChain1, IDXGIFactory2
-#include <dwrite.h>         // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
-#include <dwrite_2.h>       // IDWriteFactory2::CreateTextFormat
-#include <windowsx.h> // GET_X_LPARAM / GET_Y_LPARAM
+#include <d2d1.h>         // ID2D1HwndRenderTarget, D2D1_RENDER_TARGET_PROPERTIES
+#include <d2d1_1.h>       // ID2D1Factory1, ID2D1DeviceContext, ID2D1Bitmap1
+#include <d2d1_1helper.h> // D2D1::BitmapProperties1
+#include <d3d11.h>        // ID3D11Device (for swap chain creation)
+#include <dxgi1_2.h>      // IDXGISwapChain1, IDXGIFactory2
+#include <dwrite.h>       // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
+#include <dwrite_2.h>     // IDWriteFactory2::CreateTextFormat
+#include <windowsx.h>     // GET_X_LPARAM / GET_Y_LPARAM
 
 // Typography flags added in later Windows 10 SDKs; define if absent.
 #ifndef TO_DEFAULTCOLOREMOJI
@@ -86,11 +86,9 @@ std::wstring utf8_to_wide(const std::string& s)
     {
         return {};
     }
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                static_cast<int>(s.size()), nullptr, 0);
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
     std::wstring out(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n);
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n);
     return out;
 }
 
@@ -100,12 +98,11 @@ std::string wide_to_utf8(const std::wstring& s)
     {
         return {};
     }
-    int n =
-        WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                            nullptr, 0, nullptr, nullptr);
+    int n = WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0,
+                                nullptr, nullptr);
     std::string out(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n, nullptr,
+                        nullptr);
     return out;
 }
 
@@ -129,8 +126,7 @@ HFONT body_font()
 {
     static HFONT cached = []() -> HFONT
     {
-        const int pt =
-            tk::font_role_pt(tk::FontRole::Body, tk::d2d::win32_system_base_pt());
+        const int pt = tk::font_role_pt(tk::FontRole::Body, tk::d2d::win32_system_base_pt());
         HDC hdc = GetDC(nullptr);
         int h = -MulDiv(pt, GetDeviceCaps(hdc, LOGPIXELSY), 72);
         ReleaseDC(nullptr, hdc);
@@ -142,8 +138,7 @@ HFONT body_font()
         lf.lfPitchAndFamily = DEFAULT_PITCH | FF_SWISS;
         wcscpy_s(lf.lfFaceName, L"Segoe UI Variable Text");
         HFONT font = CreateFontIndirectW(&lf);
-        return font ? font
-                    : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        return font ? font : reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     }();
     return cached;
 }
@@ -211,15 +206,13 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     bfh->bfReserved1 = 0;
     bfh->bfReserved2 = 0;
 
-    const BITMAPINFOHEADER* bih =
-        reinterpret_cast<const BITMAPINFOHEADER*>(data);
+    const BITMAPINFOHEADER* bih = reinterpret_cast<const BITMAPINFOHEADER*>(data);
     DWORD header_size = bih->biSize;
     // Colour table for paletted / bitfields formats.
     DWORD palette_bytes = 0;
     if (bih->biBitCount <= 8)
     {
-        DWORD entries =
-            bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
+        DWORD entries = bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
         palette_bytes = entries * sizeof(RGBQUAD);
     }
     else if (bih->biCompression == BI_BITFIELDS)
@@ -236,15 +229,13 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     {
         return false;
     }
-    if (FAILED(stream->InitializeFromMemory(bmp.data(),
-                                            static_cast<DWORD>(bmp.size()))))
+    if (FAILED(stream->InitializeFromMemory(bmp.data(), static_cast<DWORD>(bmp.size()))))
     {
         return false;
     }
 
     ComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
-                                            WICDecodeMetadataCacheOnLoad,
+    if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
                                             decoder.GetAddressOf())))
     {
         return false;
@@ -262,8 +253,7 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
         return false;
     }
     ComPtr<IWICBitmapEncoder> encoder;
-    if (FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr,
-                                  encoder.GetAddressOf())))
+    if (FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())))
     {
         return false;
     }
@@ -273,8 +263,7 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     }
     ComPtr<IWICBitmapFrameEncode> out_frame;
     ComPtr<IPropertyBag2> props;
-    if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(),
-                                       props.GetAddressOf())))
+    if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(), props.GetAddressOf())))
     {
         return false;
     }
@@ -311,8 +300,7 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
         }
         return false;
     }
-    out.assign(static_cast<const std::uint8_t*>(p),
-               static_cast<const std::uint8_t*>(p) + n);
+    out.assign(static_cast<const std::uint8_t*>(p), static_cast<const std::uint8_t*>(p) + n);
     GlobalUnlock(h_out);
     return true;
 }
@@ -367,8 +355,7 @@ inline std::wstring path_extension_lower(const std::wstring& p)
 {
     size_t slash = p.find_last_of(L"\\/");
     size_t dot = p.find_last_of(L'.');
-    if (dot == std::wstring::npos ||
-        (slash != std::wstring::npos && dot < slash))
+    if (dot == std::wstring::npos || (slash != std::wstring::npos && dot < slash))
     {
         return {};
     }
@@ -396,8 +383,7 @@ inline std::wstring basename(const std::wstring& p)
 // fire_file_drop_error reporting (this call site has no Host handy at the
 // point it runs — an unreadable file is just skipped, same as an unreadable
 // dropped file that never reaches a widget).
-inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
-    const std::wstring& path)
+inline std::optional<tk::FileDropPayload> read_local_file_for_paste(const std::wstring& path)
 {
     WIN32_FILE_ATTRIBUTE_DATA fa{};
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
@@ -412,9 +398,8 @@ inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
         return std::nullopt;
     }
 
-    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
-                           nullptr);
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE)
     {
         return std::nullopt;
@@ -425,8 +410,7 @@ inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
     {
         DWORD got = 0;
         BOOL ok = ReadFile(h, bytes.data() + read_total,
-                           static_cast<DWORD>(bytes.size() - read_total), &got,
-                           nullptr);
+                           static_cast<DWORD>(bytes.size() - read_total), &got, nullptr);
         if (!ok || got == 0)
         {
             break;
@@ -445,8 +429,7 @@ inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
         mime = m;
     }
 
-    return tk::FileDropPayload{std::move(bytes), std::move(mime),
-                               wide_to_utf8(basename(path))};
+    return tk::FileDropPayload{std::move(bytes), std::move(mime), wide_to_utf8(basename(path))};
 }
 
 // ── UTF-8 byte offset to UTF-16 code unit count ──────────────────────────
@@ -456,8 +439,7 @@ inline std::optional<tk::FileDropPayload> read_local_file_for_paste(
 static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
 {
     byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
-    int wlen =
-        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
     return wlen < 0 ? 0 : wlen;
 }
 
@@ -471,13 +453,14 @@ std::vector<tk::DeviceListing> enumerate_wasapi_endpoints(EDataFlow flow)
 {
     std::vector<tk::DeviceListing> result;
     IMMDeviceEnumerator* enumerator = nullptr;
-    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
-                                CLSCTX_ALL, IID_PPV_ARGS(&enumerator))))
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&enumerator))))
+    {
         return result;
+    }
 
     IMMDeviceCollection* collection = nullptr;
-    if (FAILED(enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE,
-                                              &collection)))
+    if (FAILED(enumerator->EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE, &collection)))
     {
         enumerator->Release();
         return result;
@@ -489,7 +472,9 @@ std::vector<tk::DeviceListing> enumerate_wasapi_endpoints(EDataFlow flow)
     {
         IMMDevice* device = nullptr;
         if (FAILED(collection->Item(i, &device)))
+        {
             continue;
+        }
 
         LPWSTR id_raw = nullptr;
         device->GetId(&id_raw);
@@ -499,22 +484,23 @@ std::vector<tk::DeviceListing> enumerate_wasapi_endpoints(EDataFlow flow)
         PROPVARIANT pv;
         PropVariantInit(&pv);
         std::wstring friendly;
-        if (props &&
-            SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &pv)) &&
+        if (props && SUCCEEDED(props->GetValue(PKEY_Device_FriendlyName, &pv)) &&
             pv.vt == VT_LPWSTR)
         {
             friendly = pv.pwszVal;
         }
         PropVariantClear(&pv);
-        if (props) props->Release();
+        if (props)
+        {
+            props->Release();
+        }
 
         if (id_raw)
         {
             tk::DeviceListing entry;
             entry.id = wide_to_utf8(id_raw);
             CoTaskMemFree(id_raw);
-            entry.display_name = friendly.empty() ? entry.id
-                                                   : wide_to_utf8(friendly);
+            entry.display_name = friendly.empty() ? entry.id : wide_to_utf8(friendly);
             result.push_back(std::move(entry));
         }
         device->Release();
@@ -546,12 +532,16 @@ public:
         // destructor after the most-derived part has already unwound is
         // undefined behavior.
         if (on_destroyed_)
+        {
             on_destroyed_();
+        }
     }
     virtual void notify_changed() = 0;
-    virtual int  ctrl_id() const = 0;
-    virtual HWND hwnd()    const = 0;
-    virtual void on_theme_changed(const Theme& /*t*/) {}
+    virtual int ctrl_id() const = 0;
+    virtual HWND hwnd() const = 0;
+    virtual void on_theme_changed(const Theme& /*t*/)
+    {
+    }
 
     void set_on_destroyed(std::function<void()> cb)
     {
@@ -592,19 +582,17 @@ namespace
 
 std::uint32_t bt_rgba(tk::Color c)
 {
-    return (static_cast<std::uint32_t>(c.r) << 24) |
-           (static_cast<std::uint32_t>(c.g) << 16) |
-           (static_cast<std::uint32_t>(c.b) << 8) |
-           static_cast<std::uint32_t>(c.a);
+    return (static_cast<std::uint32_t>(c.r) << 24) | (static_cast<std::uint32_t>(c.g) << 16) |
+           (static_cast<std::uint32_t>(c.b) << 8) | static_cast<std::uint32_t>(c.a);
 }
 
 BetterTextTheme bt_theme_from_palette(const tk::Palette& p, tk::Color background)
 {
     BetterTextTheme theme{};
-    theme.background_rgba  = bt_rgba(background);
-    theme.foreground_rgba  = bt_rgba(p.text_primary);
-    theme.selection_rgba   = bt_rgba(p.selection);
-    theme.caret_rgba       = bt_rgba(p.text_primary);
+    theme.background_rgba = bt_rgba(background);
+    theme.foreground_rgba = bt_rgba(p.text_primary);
+    theme.selection_rgba = bt_rgba(p.selection);
+    theme.caret_rgba = bt_rgba(p.text_primary);
     theme.placeholder_rgba = bt_rgba(p.text_muted);
     return theme;
 }
@@ -615,13 +603,11 @@ void bt_apply_default_font(HWND hwnd, tk::FontRole role = tk::FontRole::Body)
     // struct only borrows the pointer for the call.
     const std::string_view user = tk::font_role_family(role);
     const std::wstring family =
-        user.empty() ? std::wstring(L"Segoe UI Variable Text")
-                     : utf8_to_wide(std::string(user));
+        user.empty() ? std::wstring(L"Segoe UI Variable Text") : utf8_to_wide(std::string(user));
     BetterTextTextStyle style{};
     style.font_family = family.c_str();
-    style.font_size = static_cast<float>(
-        tk::font_role_pt(role, tk::d2d::win32_system_base_pt())) *
-        (96.f / 72.f);
+    style.font_size =
+        static_cast<float>(tk::font_role_pt(role, tk::d2d::win32_system_base_pt())) * (96.f / 72.f);
     style.font_weight = tk::font_role_is_semibold(role) ? FW_SEMIBOLD : FW_REGULAR;
     style.italic = FALSE;
     style.underline = FALSE;
@@ -630,8 +616,8 @@ void bt_apply_default_font(HWND hwnd, tk::FontRole role = tk::FontRole::Body)
 
 void bt_register_control_once()
 {
-    static bool registered = BetterTextRegisterControl(
-        reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr))) != FALSE;
+    static bool registered =
+        BetterTextRegisterControl(reinterpret_cast<HINSTANCE>(GetModuleHandleW(nullptr))) != FALSE;
     (void)registered;
 }
 
@@ -678,8 +664,7 @@ tk::PixmapCache& mention_pill_cache()
 // pixels = DIPs * dpi_scale); BetterTextInsertImageUri still wants the
 // logical DIP size.
 MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind,
-                                      const tk::Image* avatar,
-                                      const tk::MentionColors& colors,
+                                      const tk::Image* avatar, const tk::MentionColors& colors,
                                       float dpi_scale)
 {
     using Microsoft::WRL::ComPtr;
@@ -730,8 +715,8 @@ MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind
     spec.fg = colors.fg;
     spec.initials_bg = colors.initials_bg;
     spec.initials_fg = colors.initials_fg;
-    tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-        *factory, mention_pill_cache(), spec, ascent, descent, dpi_scale);
+    tk::ImageRef pinned = tk::render_pill_bitmap_cached(*factory, mention_pill_cache(), spec,
+                                                        ascent, descent, dpi_scale);
     if (!pinned)
     {
         return out;
@@ -816,11 +801,9 @@ public:
             // this: it only ever applies WS_EX_LAYERED to top-level windows,
             // never to a child HWND owning its own flip-model swap chain like
             // this one.
-            0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE,
-            0, 0, 100, 24, parent_,
+            0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE, 0, 0, 100, 24, parent_,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
-            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
-            nullptr);
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent_, GWLP_HINSTANCE)), nullptr);
         if (!hwnd_)
         {
             return;
@@ -864,8 +847,8 @@ public:
             // nothing and let that card show through directly, matching
             // how Qt/GTK's native controls already behave
             // (background: transparent stylesheet/CSS).
-            BetterTextTheme bt = bt_theme_from_palette(
-                theme->palette, theme->palette.compose_card_bg.with_alpha(0));
+            BetterTextTheme bt =
+                bt_theme_from_palette(theme->palette, theme->palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
         SetWindowSubclass(hwnd_, &BetterTextField::subclass_proc, 1,
@@ -890,28 +873,40 @@ public:
         line_h_dip_ = BetterTextGetContentHeight(hwnd_);
     }
 
-
     // ── Accessibility (see NativeEditAccessible) ─────────────────────────
     void set_accessible_name(std::string name) override
     {
         if (name == access_name_)
+        {
             return;
+        }
         std::string old = std::exchange(access_name_, std::move(name));
         if (access_)
+        {
             access_->name_changed(old, access_name_);
+        }
     }
 
     NativeEditAccessible::Callbacks make_access_callbacks_()
     {
         NativeEditAccessible::Callbacks cb;
-        cb.name     = [this] { return access_name_; };
-        cb.text     = [this] { return text(); };
+        cb.name = [this]
+        {
+            return access_name_;
+        };
+        cb.text = [this]
+        {
+            return text();
+        };
         cb.set_text = [this](const std::string& t)
         {
             set_text(t);
             notify_changed(); // an AT edit is a user edit
         };
-        cb.password = [this] { return password_; };
+        cb.password = [this]
+        {
+            return password_;
+        };
         return cb;
     }
 
@@ -946,8 +941,8 @@ public:
         const bool size_changed = (r.w != last_rect_.w || r.h != last_rect_.h);
         last_rect_ = r;
         const float s = dip_scale();
-        int x  = static_cast<int>(std::floor(r.x * s));
-        int w  = static_cast<int>(std::round(r.w * s));
+        int x = static_cast<int>(std::floor(r.x * s));
+        int w = static_cast<int>(std::round(r.w * s));
         int rh = static_cast<int>(std::round(r.h * s));
         int h = line_h_dip_ > 0.f ? static_cast<int>(std::round(line_h_dip_ * s)) : rh;
         // Never exceed the row the caller actually gave us — mirrors
@@ -956,12 +951,12 @@ public:
         h = std::min(h, rh);
         // std::lround, not truncating integer division — see
         // BetterTextArea::set_rect's identical fix.
-        int y = static_cast<int>(std::floor(r.y * s)) +
-                static_cast<int>(std::lround((rh - h) / 2.0f));
+        int y =
+            static_cast<int>(std::floor(r.y * s)) + static_cast<int>(std::lround((rh - h) / 2.0f));
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
         // Applied rect back in DIPs — see rendered_image_rect().
         applied_rect_ = {static_cast<float>(x) / s, static_cast<float>(y) / s,
-                        static_cast<float>(w) / s, static_cast<float>(h) / s};
+                         static_cast<float>(w) / s, static_cast<float>(h) / s};
         if (size_changed)
         {
             refresh_image();
@@ -1061,14 +1056,15 @@ public:
     void set_font_role(tk::FontRole role) override
     {
         if (!hwnd_)
+        {
             return;
+        }
         bt_apply_default_font(hwnd_, role);
         BetterTextTextStyle base{};
         if (BetterTextGetDefaultTextStyle(hwnd_, &base))
         {
             // Restyle the existing text too, not just text typed from now on.
-            const int64_t len =
-                static_cast<int64_t>(utf8_to_wide(text()).size());
+            const int64_t len = static_cast<int64_t>(utf8_to_wide(text()).size());
             suppress_changed_ = true;
             BetterTextSetTextStyle(hwnd_, 0, len, &base);
             suppress_changed_ = false;
@@ -1154,8 +1150,7 @@ public:
         // time here used to shrink the caret rect by the DPI factor on any
         // non-100%-scaled display, so just offset by it directly.
         return {applied_rect_.x + static_cast<float>(r.left),
-                applied_rect_.y + static_cast<float>(r.top),
-                static_cast<float>(r.right - r.left),
+                applied_rect_.y + static_cast<float>(r.top), static_cast<float>(r.right - r.left),
                 static_cast<float>(r.bottom - r.top)};
     }
     // See Cursor::IBeam's doc comment (host_win32.h) — hwnd_'s
@@ -1181,8 +1176,14 @@ public:
             on_changed_(text());
         }
     }
-    int ctrl_id() const override { return id_; }
-    HWND hwnd() const override { return hwnd_; }
+    int ctrl_id() const override
+    {
+        return id_;
+    }
+    HWND hwnd() const override
+    {
+        return hwnd_;
+    }
     void on_theme_changed(const Theme& t) override
     {
         theme_ = &t;
@@ -1190,8 +1191,8 @@ public:
         {
             // See the ctor's BetterTextSetTheme call — same transparent
             // background rationale, kept in sync on every theme change.
-            BetterTextTheme bt = bt_theme_from_palette(
-                t.palette, t.palette.compose_card_bg.with_alpha(0));
+            BetterTextTheme bt =
+                bt_theme_from_palette(t.palette, t.palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
     }
@@ -1259,9 +1260,8 @@ private:
         // if the driver rejected PREMULTIPLIED — safe either way, since
         // alpha=255 straight and alpha=255 premultiplied are numerically
         // identical (RGB unchanged at full opacity).
-        cached_image_ = d2d::make_image_from_bgra(backend_singleton(),
-                                                   pending_pixels_.data(), w, h,
-                                                   /*opaque=*/false);
+        cached_image_ = d2d::make_image_from_bgra(backend_singleton(), pending_pixels_.data(), w, h,
+                                                  /*opaque=*/false);
         if (on_repaint_needed_)
         {
             on_repaint_needed_(applied_rect_);
@@ -1361,16 +1361,17 @@ private:
         refresh_image();
     }
 
-    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                          LPARAM lParam, UINT_PTR /*id*/,
-                                          DWORD_PTR ref)
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                          UINT_PTR /*id*/, DWORD_PTR ref)
     {
         auto* self = reinterpret_cast<BetterTextField*>(ref);
         if (msg == WM_GETOBJECT && self->access_)
         {
             LRESULT r = 0;
             if (self->access_->handle_get_object(wParam, lParam, &r))
+            {
                 return r;
+            }
         }
         // Up / Down / Escape navigation forwarded to a popup the field drives
         // (the Ctrl+K quick switcher), mirroring the multi-line variant.
@@ -1392,8 +1393,7 @@ private:
             }
             else if (wParam == VK_TAB)
             {
-                nk = (GetKeyState(VK_SHIFT) & 0x8000) ? NavKey::ShiftTab
-                                                       : NavKey::Tab;
+                nk = (GetKeyState(VK_SHIFT) & 0x8000) ? NavKey::ShiftTab : NavKey::Tab;
             }
             else
             {
@@ -1440,10 +1440,9 @@ private:
         // tick — which only repaints the caret's *current* rect, never the
         // stale one it just moved away from (the visible symptom: multiple
         // caret afterimages left behind while arrowing across a long line).
-        if (msg == WM_KEYDOWN &&
-            (wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_UP ||
-             wParam == VK_DOWN || wParam == VK_HOME || wParam == VK_END ||
-             (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000))))
+        if (msg == WM_KEYDOWN && (wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_UP ||
+                                  wParam == VK_DOWN || wParam == VK_HOME || wParam == VK_END ||
+                                  (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000))))
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             // Force the caret solid and restart the blink phase — without
@@ -1479,7 +1478,10 @@ private:
             // only while focused, restarted fresh (phase reset to visible)
             // on every WM_SETFOCUS.
             SetTimer(hwnd, kBlinkTimerId, 530, nullptr);
-            if (self->on_focus_changed_) self->on_focus_changed_(true);
+            if (self->on_focus_changed_)
+            {
+                self->on_focus_changed_(true);
+            }
             return r;
         }
         if (msg == WM_KILLFOCUS)
@@ -1492,7 +1494,10 @@ private:
             // comment) — no capture needed, the control's own content
             // didn't change.
             self->notify_caret_repaint();
-            if (self->on_focus_changed_) self->on_focus_changed_(false);
+            if (self->on_focus_changed_)
+            {
+                self->on_focus_changed_(false);
+            }
             return r;
         }
         if (msg == WM_TIMER && wParam == kBlinkTimerId)
@@ -1511,7 +1516,10 @@ private:
         if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
-            if (self->on_pointer_down_) self->on_pointer_down_();
+            if (self->on_pointer_down_)
+            {
+                self->on_pointer_down_();
+            }
             return r;
         }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
@@ -1587,11 +1595,9 @@ public:
             // for why WS_EX_LAYERED is unusable here (BetterText's flip-model
             // DXGI swap chain doesn't tolerate a layered HWND) and for
             // SetWindowRgn(empty)'s use below instead.
-            0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE,
-            0, 0, 200, 40, parent_,
+            0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE, 0, 0, 200, 40, parent_,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(id_)),
-            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent_, GWLP_HINSTANCE)),
-            nullptr);
+            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent_, GWLP_HINSTANCE)), nullptr);
         if (!hwnd_)
         {
             return;
@@ -1621,28 +1627,40 @@ public:
         BetterTextSetCaretVisible(hwnd_, FALSE);
     }
 
-
     // ── Accessibility (see NativeEditAccessible) ─────────────────────────
     void set_accessible_name(std::string name) override
     {
         if (name == access_name_)
+        {
             return;
+        }
         std::string old = std::exchange(access_name_, std::move(name));
         if (access_)
+        {
             access_->name_changed(old, access_name_);
+        }
     }
 
     NativeEditAccessible::Callbacks make_access_callbacks_()
     {
         NativeEditAccessible::Callbacks cb;
-        cb.name     = [this] { return access_name_; };
-        cb.text     = [this] { return text(); };
+        cb.name = [this]
+        {
+            return access_name_;
+        };
+        cb.text = [this]
+        {
+            return text();
+        };
         cb.set_text = [this](const std::string& t)
         {
             set_text(t);
             notify_changed(); // an AT edit is a user edit
         };
-        cb.password = [this] { return false; };
+        cb.password = [this]
+        {
+            return false;
+        };
         return cb;
     }
 
@@ -1666,8 +1684,8 @@ public:
         {
             return;
         }
-        if (r.x == last_rect_.x && r.y == last_rect_.y &&
-            r.w == last_rect_.w && r.h == last_rect_.h)
+        if (r.x == last_rect_.x && r.y == last_rect_.y && r.w == last_rect_.w &&
+            r.h == last_rect_.h)
         {
             return;
         }
@@ -1685,9 +1703,9 @@ public:
         // next text edit to correct it.
         const bool width_changed = (r.w != last_rect_.w);
         last_rect_ = r;
-        const float s  = dip_scale();
-        const int rh   = static_cast<int>(std::round(r.h * s));
-        const int nh   = static_cast<int>(std::round(natural_height() * s));
+        const float s = dip_scale();
+        const int rh = static_cast<int>(std::round(r.h * s));
+        const int nh = static_cast<int>(std::round(natural_height() * s));
         // Never exceed the row the caller actually gave us — mirrors
         // BetterTextField::set_rect's identical fallback. No extra border
         // inset here (there used to be one): ComposeBar already sizes r.h to
@@ -1698,18 +1716,18 @@ public:
         // single line of text overflows, and to flicker as sub-pixel
         // rounding tipped that razor-thin margin frame to frame.
         const int max_h = std::max(1, rh);
-        const int h    = (nh > 0 && nh <= max_h) ? nh : max_h;
+        const int h = (nh > 0 && nh <= max_h) ? nh : max_h;
         // std::lround, not truncating integer division: (rh - h) / 2 would
         // flip by 1px whenever (rh - h)'s parity changes between calls,
         // even when rh and h have barely moved.
-        const int y    = static_cast<int>(std::floor(r.y * s)) +
-                          static_cast<int>(std::lround((rh - h) / 2.0f));
-        const int x    = static_cast<int>(std::floor(r.x * s));
-        const int w    = static_cast<int>(std::round(r.w * s));
+        const int y =
+            static_cast<int>(std::floor(r.y * s)) + static_cast<int>(std::lround((rh - h) / 2.0f));
+        const int x = static_cast<int>(std::floor(r.x * s));
+        const int w = static_cast<int>(std::round(r.w * s));
         SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
         // Applied rect back in DIPs — see rendered_image_rect().
         applied_rect_ = {static_cast<float>(x) / s, static_cast<float>(y) / s,
-                        static_cast<float>(w) / s, static_cast<float>(h) / s};
+                         static_cast<float>(w) / s, static_cast<float>(h) / s};
         if (width_changed)
         {
             refresh_height();
@@ -1811,12 +1829,17 @@ public:
             ShowWindow(hwnd_, visible ? SW_SHOW : SW_HIDE);
         }
     }
-    bool visible() const override { return visible_; }
+    bool visible() const override
+    {
+        return visible_;
+    }
 
     void set_font_role(tk::FontRole role) override
     {
         if (!hwnd_)
+        {
             return;
+        }
         bt_apply_default_font(hwnd_, role);
         // reformat_emoji_runs() restyles the whole text with the default style
         // and re-sizes the emoji runs — the same pass every edit already runs,
@@ -1894,8 +1917,7 @@ public:
         // Qt/macOS backends) — see applied_rect_ below for the same pattern.
         const float s = dip_scale();
         return {static_cast<float>(tl.x) / s, static_cast<float>(tl.y) / s,
-                static_cast<float>(br.x - tl.x) / s,
-                static_cast<float>(br.y - tl.y) / s};
+                static_cast<float>(br.x - tl.x) / s, static_cast<float>(br.y - tl.y) / s};
     }
 
     void replace_range(int start, int end, std::string utf8_text) override
@@ -1986,8 +2008,7 @@ public:
         // coordinates, not hwnd_'s raw client pixels, so no /dip_scale()
         // here either.
         return {applied_rect_.x + static_cast<float>(r.left),
-                applied_rect_.y + static_cast<float>(r.top),
-                static_cast<float>(r.right - r.left),
+                applied_rect_.y + static_cast<float>(r.top), static_cast<float>(r.right - r.left),
                 static_cast<float>(r.bottom - r.top)};
     }
     // Scoped repaint over just the caret's own rect — see
@@ -2018,10 +2039,8 @@ public:
         BetterTextGetSelection(hwnd_, &sel);
         std::string t = text();
         std::wstring w = utf8_to_wide(t);
-        int caret = static_cast<int>(
-            std::min<int64_t>(static_cast<int64_t>(w.size()), sel.caret));
-        return WideCharToMultiByte(CP_UTF8, 0, w.c_str(), caret,
-                                   nullptr, 0, nullptr, nullptr);
+        int caret = static_cast<int>(std::min<int64_t>(static_cast<int64_t>(w.size()), sel.caret));
+        return WideCharToMultiByte(CP_UTF8, 0, w.c_str(), caret, nullptr, 0, nullptr, nullptr);
     }
 
     void set_cursor_byte_pos(int byte_pos) override
@@ -2055,8 +2074,8 @@ public:
         const std::string visual = is_room ? "room" : display_name;
         const tk::PillKind kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
 
-        MentionPillBitmap pill = render_mention_pill(
-            visual, kind, avatar, mention_colors_, dip_scale());
+        MentionPillBitmap pill =
+            render_mention_pill(visual, kind, avatar, mention_colors_, dip_scale());
         if (!pill.bitmap)
         {
             // D2D/WIC failure — fall back to plain text so the mention is
@@ -2065,14 +2084,12 @@ public:
             // that this is a mention — unlike `visual` (the pill's own
             // label), which drops it since the pill shape already conveys
             // that.
-            replace_range(start, end,
-                         (is_room ? "@room" : "@" + display_name) + " ");
+            replace_range(start, end, (is_room ? "@room" : "@" + display_name) + " ");
             return;
         }
 
         std::wstring uri = kMentionUriPrefix + std::to_wstring(mention_counter_++);
-        mention_runs_[uri] =
-            MentionRun{pill.bitmap, pill.pill_ref, user_id, display_name, is_room};
+        mention_runs_[uri] = MentionRun{pill.bitmap, pill.pill_ref, user_id, display_name, is_room};
 
         std::string cur = text();
         int ws = utf8_byte_to_utf16_len(cur, start);
@@ -2101,8 +2118,7 @@ public:
     // avatar having resolved before the pill was first inserted. No text
     // touched, so this is safe to call regardless of any editing that's
     // happened since insert_mention.
-    void refresh_mention_avatar(const std::string& user_id,
-                                const tk::Image* avatar) override
+    void refresh_mention_avatar(const std::string& user_id, const tk::Image* avatar) override
     {
         if (!hwnd_ || !avatar)
         {
@@ -2115,17 +2131,15 @@ public:
             {
                 continue;
             }
-            MentionPillBitmap pill = render_mention_pill(
-                run.display_name, tk::PillKind::User, avatar, mention_colors_,
-                dip_scale());
+            MentionPillBitmap pill = render_mention_pill(run.display_name, tk::PillKind::User,
+                                                         avatar, mention_colors_, dip_scale());
             if (!pill.bitmap)
             {
                 continue;
             }
             run.bitmap = pill.bitmap;
             run.pill_ref = pill.pill_ref;
-            BetterTextNotifyImageResolved(hwnd_, 0, uri.c_str(),
-                                          pill.bitmap.Get(), S_OK);
+            BetterTextNotifyImageResolved(hwnd_, 0, uri.c_str(), pill.bitmap.Get(), S_OK);
             changed = true;
         }
         if (changed)
@@ -2149,17 +2163,15 @@ public:
             {
                 continue;
             }
-            MentionPillBitmap pill = render_mention_pill(
-                "room", tk::PillKind::Room, avatar, mention_colors_,
-                dip_scale());
+            MentionPillBitmap pill = render_mention_pill("room", tk::PillKind::Room, avatar,
+                                                         mention_colors_, dip_scale());
             if (!pill.bitmap)
             {
                 continue;
             }
             run.bitmap = pill.bitmap;
             run.pill_ref = pill.pill_ref;
-            BetterTextNotifyImageResolved(hwnd_, 0, uri.c_str(),
-                                          pill.bitmap.Get(), S_OK);
+            BetterTextNotifyImageResolved(hwnd_, 0, uri.c_str(), pill.bitmap.Get(), S_OK);
             changed = true;
         }
         if (changed)
@@ -2176,8 +2188,7 @@ public:
     // bitmap (kept in the signature to match the shared NativeTextArea
     // interface every platform's insertion implements).
     void insert_emoticon(int start, int end, const std::string& shortcode,
-                         const std::string& mxc_url,
-                         const tk::Image*) override
+                         const std::string& mxc_url, const tk::Image*) override
     {
         if (!hwnd_)
         {
@@ -2188,8 +2199,9 @@ public:
         int we = utf8_byte_to_utf16_len(cur, end);
         suppress_changed_ = true;
         BetterTextSetSelection(hwnd_, ws, we);
-        BetterTextInsertImageUri(hwnd_, utf8_to_wide(mxc_url).c_str(), utf8_to_wide(shortcode).c_str(),
-                                 kInlineEmoticonSizeDip, kInlineEmoticonSizeDip);
+        BetterTextInsertImageUri(hwnd_, utf8_to_wide(mxc_url).c_str(),
+                                 utf8_to_wide(shortcode).c_str(), kInlineEmoticonSizeDip,
+                                 kInlineEmoticonSizeDip);
         suppress_changed_ = false;
         if (on_changed_)
         {
@@ -2239,19 +2251,19 @@ public:
             tesseract::MentionSeg seg;
             if (auto mit = mention_runs_.find(wuri); mit != mention_runs_.end())
             {
-                seg.kind         = tesseract::MentionSeg::Kind::Mention;
-                seg.user_id      = mit->second.user_id;
+                seg.kind = tesseract::MentionSeg::Kind::Mention;
+                seg.user_id = mit->second.user_id;
                 seg.display_name = mit->second.display_name;
-                seg.is_room      = mit->second.is_room;
+                seg.is_room = mit->second.is_room;
             }
             else
             {
                 const int alt_len = BetterTextGetImageRunAltTextLength(hwnd_, i);
                 std::wstring walt(static_cast<std::size_t>(alt_len), L'\0');
                 BetterTextGetImageRunAltText(hwnd_, i, walt.data(), alt_len + 1);
-                seg.kind      = tesseract::MentionSeg::Kind::Emoticon;
+                seg.kind = tesseract::MentionSeg::Kind::Emoticon;
                 seg.shortcode = wide_to_utf8(walt);
-                seg.mxc_url   = wide_to_utf8(wuri);
+                seg.mxc_url = wide_to_utf8(wuri);
             }
             specials.push_back({at, sizeof(kObjectReplacementUtf8) - 1, std::move(seg)});
             image_pos = at + (sizeof(kObjectReplacementUtf8) - 1);
@@ -2259,7 +2271,9 @@ public:
 
         std::sort(specials.begin(), specials.end(),
                   [](const Special& a, const Special& b)
-                  { return a.byte_start < b.byte_start; });
+                  {
+                      return a.byte_start < b.byte_start;
+                  });
 
         std::vector<tesseract::MentionSeg> segs;
         auto push_text = [&](const std::string& s)
@@ -2301,8 +2315,14 @@ public:
             on_changed_(text());
         }
     }
-    int ctrl_id() const override { return id_; }
-    HWND hwnd() const override { return hwnd_; }
+    int ctrl_id() const override
+    {
+        return id_;
+    }
+    HWND hwnd() const override
+    {
+        return hwnd_;
+    }
     void on_theme_changed(const Theme& t) override
     {
         theme_ = &t;
@@ -2310,8 +2330,8 @@ public:
         {
             // See BetterTextField's ctor comment — same transparent-
             // background rationale, kept in sync on every theme change.
-            BetterTextTheme bt = bt_theme_from_palette(
-                t.palette, t.palette.compose_card_bg.with_alpha(0));
+            BetterTextTheme bt =
+                bt_theme_from_palette(t.palette, t.palette.compose_card_bg.with_alpha(0));
             BetterTextSetTheme(hwnd_, &bt);
         }
     }
@@ -2330,7 +2350,10 @@ private:
         }
         struct CloseGuard
         {
-            ~CloseGuard() { CloseClipboard(); }
+            ~CloseGuard()
+            {
+                CloseClipboard();
+            }
         } guard;
 
         HANDLE hg = GetClipboardData(CF_HDROP);
@@ -2440,8 +2463,7 @@ private:
         {
             BetterTextTextStyle emoji = base;
             emoji.font_size = static_cast<float>(tk::font_role_pt(
-                                   tk::FontRole::InlineEmoji,
-                                   tk::d2d::win32_system_base_pt())) *
+                                  tk::FontRole::InlineEmoji, tk::d2d::win32_system_base_pt())) *
                               (96.f / 72.f);
             for (const auto& r : ranges)
             {
@@ -2482,16 +2504,17 @@ private:
         }
     }
 
-    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                          LPARAM lParam, UINT_PTR /*id*/,
-                                          DWORD_PTR ref)
+    static LRESULT CALLBACK subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                          UINT_PTR /*id*/, DWORD_PTR ref)
     {
         auto* self = reinterpret_cast<BetterTextArea*>(ref);
         if (msg == WM_GETOBJECT && self->access_)
         {
             LRESULT r = 0;
             if (self->access_->handle_get_object(wParam, lParam, &r))
+            {
                 return r;
+            }
         }
         if (msg == WM_KEYDOWN && self->popup_nav_)
         {
@@ -2511,9 +2534,8 @@ private:
             }
             else if (wParam == VK_TAB)
             {
-                nk = (GetKeyState(VK_SHIFT) & 0x8000)
-                         ? NativeTextArea::NavKey::ShiftTab
-                         : NativeTextArea::NavKey::Tab;
+                nk = (GetKeyState(VK_SHIFT) & 0x8000) ? NativeTextArea::NavKey::ShiftTab
+                                                      : NativeTextArea::NavKey::Tab;
             }
             else
             {
@@ -2570,14 +2592,10 @@ private:
         // subclass proc, so the WM_PASTE handler below can't catch it.
         if (msg == WM_KEYDOWN)
         {
-            const bool is_ctrl_v =
-                wParam == 'V' && (GetKeyState(VK_CONTROL) & 0x8000);
-            const bool is_shift_ins =
-                wParam == VK_INSERT && (GetKeyState(VK_SHIFT) & 0x8000);
-            if ((is_ctrl_v || is_shift_ins) &&
-                self->on_image_paste_ && self->wic_ &&
-                (IsClipboardFormatAvailable(CF_DIBV5) ||
-                 IsClipboardFormatAvailable(CF_DIB)))
+            const bool is_ctrl_v = wParam == 'V' && (GetKeyState(VK_CONTROL) & 0x8000);
+            const bool is_shift_ins = wParam == VK_INSERT && (GetKeyState(VK_SHIFT) & 0x8000);
+            if ((is_ctrl_v || is_shift_ins) && self->on_image_paste_ && self->wic_ &&
+                (IsClipboardFormatAvailable(CF_DIBV5) || IsClipboardFormatAvailable(CF_DIB)))
             {
                 std::vector<std::uint8_t> bytes;
                 if (clipboard_image_to_png(self->wic_, hwnd, bytes))
@@ -2591,8 +2609,7 @@ private:
             // carries. Checked after the image case above (an image format
             // takes priority when a payload somehow offers both).
             if ((is_ctrl_v || is_shift_ins) && self->on_file_paste_ &&
-                !IsClipboardFormatAvailable(CF_DIBV5) &&
-                !IsClipboardFormatAvailable(CF_DIB) &&
+                !IsClipboardFormatAvailable(CF_DIBV5) && !IsClipboardFormatAvailable(CF_DIB) &&
                 IsClipboardFormatAvailable(CF_HDROP))
             {
                 if (self->paste_files_from_clipboard_())
@@ -2606,8 +2623,7 @@ private:
         // image-paste handler, route to it and skip the default.
         if (msg == WM_PASTE && self->on_image_paste_ && self->wic_)
         {
-            if (IsClipboardFormatAvailable(CF_DIBV5) ||
-                IsClipboardFormatAvailable(CF_DIB))
+            if (IsClipboardFormatAvailable(CF_DIBV5) || IsClipboardFormatAvailable(CF_DIB))
             {
                 std::vector<std::uint8_t> bytes;
                 if (clipboard_image_to_png(self->wic_, hwnd, bytes))
@@ -2617,10 +2633,8 @@ private:
                 }
             }
         }
-        if (msg == WM_PASTE && self->on_file_paste_ &&
-            !IsClipboardFormatAvailable(CF_DIBV5) &&
-            !IsClipboardFormatAvailable(CF_DIB) &&
-            IsClipboardFormatAvailable(CF_HDROP))
+        if (msg == WM_PASTE && self->on_file_paste_ && !IsClipboardFormatAvailable(CF_DIBV5) &&
+            !IsClipboardFormatAvailable(CF_DIB) && IsClipboardFormatAvailable(CF_HDROP))
         {
             if (self->paste_files_from_clipboard_())
             {
@@ -2648,10 +2662,9 @@ private:
         // inside BetterText's own WndProc but is invisible to everything
         // outside it (canvas-owned caret, bitmap-baked selection highlight),
         // so recapture right away instead of waiting for the next blink tick.
-        if (msg == WM_KEYDOWN &&
-            (wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_UP ||
-             wParam == VK_DOWN || wParam == VK_HOME || wParam == VK_END ||
-             (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000))))
+        if (msg == WM_KEYDOWN && (wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_UP ||
+                                  wParam == VK_DOWN || wParam == VK_HOME || wParam == VK_END ||
+                                  (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000))))
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
             // Force the caret solid and restart the blink phase — without
@@ -2693,7 +2706,10 @@ private:
             // needed, no BetterTextSetCaretVisible/refresh_image() capture.
             self->notify_caret_repaint();
             SetTimer(hwnd, kBlinkTimerId, 530, nullptr);
-            if (self->on_focus_changed_) self->on_focus_changed_(true);
+            if (self->on_focus_changed_)
+            {
+                self->on_focus_changed_(true);
+            }
             return r;
         }
         if (msg == WM_KILLFOCUS)
@@ -2702,7 +2718,10 @@ private:
             self->has_focus_ = false;
             KillTimer(hwnd, kBlinkTimerId);
             self->notify_caret_repaint();
-            if (self->on_focus_changed_) self->on_focus_changed_(false);
+            if (self->on_focus_changed_)
+            {
+                self->on_focus_changed_(false);
+            }
             return r;
         }
         if (msg == WM_TIMER && wParam == kBlinkTimerId)
@@ -2721,7 +2740,10 @@ private:
         if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN)
         {
             LRESULT r = DefSubclassProc(hwnd, msg, wParam, lParam);
-            if (self->on_pointer_down_) self->on_pointer_down_();
+            if (self->on_pointer_down_)
+            {
+                self->on_pointer_down_();
+            }
             return r;
         }
         return DefSubclassProc(hwnd, msg, wParam, lParam);
@@ -2778,9 +2800,8 @@ private:
         // if the driver rejected PREMULTIPLIED — safe either way, since
         // alpha=255 straight and alpha=255 premultiplied are numerically
         // identical (RGB unchanged at full opacity).
-        cached_image_ = d2d::make_image_from_bgra(backend_singleton(),
-                                                   pending_pixels_.data(), w, h,
-                                                   /*opaque=*/false);
+        cached_image_ = d2d::make_image_from_bgra(backend_singleton(), pending_pixels_.data(), w, h,
+                                                  /*opaque=*/false);
         if (on_repaint_needed_)
         {
             on_repaint_needed_(applied_rect_);
@@ -2876,7 +2897,9 @@ private:
     class ImageProviderAdapter final : public IBetterTextImageProvider
     {
     public:
-        explicit ImageProviderAdapter(BetterTextArea* owner) : owner_(owner) {}
+        explicit ImageProviderAdapter(BetterTextArea* owner) : owner_(owner)
+        {
+        }
         void ResolveImageUri(HWND control, uint64_t /*request_id*/, const wchar_t* uri,
                              float /*display_width*/, float /*display_height*/) override
         {
@@ -2932,21 +2955,20 @@ private:
     // Reused scratch buffer for refresh_image()'s synchronous capture.
     std::vector<std::uint8_t> pending_pixels_;
     std::function<void(Rect)> on_repaint_needed_;
-    std::function<void(const std::string&)>     on_changed_;
-    std::function<void()>                       on_submit_;
-    std::function<void(float)>                  on_height_changed_;
-    ImagePasteHandler                           on_image_paste_;
-    FilePasteHandler                            on_file_paste_;
+    std::function<void(const std::string&)> on_changed_;
+    std::function<void()> on_submit_;
+    std::function<void(float)> on_height_changed_;
+    ImagePasteHandler on_image_paste_;
+    FilePasteHandler on_file_paste_;
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
-    std::function<void(bool)>                   on_focus_changed_;
-    std::function<void()>                       on_pointer_down_;
-    std::function<bool()>                       on_edit_last_;
+    std::function<void(bool)> on_focus_changed_;
+    std::function<void()> on_pointer_down_;
+    std::function<bool()> on_edit_last_;
     std::function<const tk::Image*(const std::string&)> image_resolver_;
-    ImageProviderAdapter                        image_provider_{ this };
-    std::unordered_set<std::wstring>            pending_image_uris_;
-    tk::MentionColors mention_colors_{
-        Color::rgb(0x0078D4), Color::rgba(255, 255, 255, 255),
-        Color::rgb(0xCFE3FF), Color::rgb(0x004A9E)};
+    ImageProviderAdapter image_provider_{this};
+    std::unordered_set<std::wstring> pending_image_uris_;
+    tk::MentionColors mention_colors_{Color::rgb(0x0078D4), Color::rgba(255, 255, 255, 255),
+                                      Color::rgb(0xCFE3FF), Color::rgb(0x004A9E)};
     int mention_counter_ = 0;
     // Whether the last reformat_emoji_runs() pass found any emoji — lets a
     // change with no emoji (the common case) skip BetterTextSetTextStyle
@@ -2986,13 +3008,11 @@ std::unique_ptr<tk::AudioPlayer>
 make_audio_player_win32(std::function<void(std::function<void()>)> post);
 
 // Defined in audio_capture_win32.cpp.
-std::unique_ptr<tk::AudioCapture>
-make_audio_capture_win32(tk::AudioCapturePostFn post);
+std::unique_ptr<tk::AudioCapture> make_audio_capture_win32(tk::AudioCapturePostFn post);
 
 // Defined in video_win32.cpp.
 std::unique_ptr<tk::VideoPlayer>
-make_video_player_win32(std::function<void(std::function<void()>)> post,
-                        tk::d2d::Backend* backend);
+make_video_player_win32(std::function<void(std::function<void()>)> post, tk::d2d::Backend* backend);
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Win32PopupSurfaceHandle — topmost WS_POPUP-backed tk::PopupSurfaceHandle
@@ -3029,11 +3049,12 @@ public:
     Win32PopupSurfaceHandle(HWND anchor_hwnd, HINSTANCE inst, const Theme& theme)
         : anchor_hwnd_(anchor_hwnd)
     {
-        popup_hwnd_ = CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0, 0,
-            10, 10, nullptr, nullptr, inst, nullptr);
+        popup_hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"STATIC", L"", WS_POPUP, 0,
+                                      0, 10, 10, nullptr, nullptr, inst, nullptr);
         if (popup_hwnd_)
+        {
             live_popup_hwnds().insert(popup_hwnd_);
+        }
         surface_ = std::make_unique<Surface>(inst, popup_hwnd_, theme);
     }
 
@@ -3053,8 +3074,7 @@ public:
         surface_->set_root(std::move(root));
     }
 
-    void set_rect(Rect anchor_world_rect, Size size,
-                  tk::PopupPlacement placement) override
+    void set_rect(Rect anchor_world_rect, Size size, tk::PopupPlacement placement) override
     {
         if (!popup_hwnd_ || !anchor_hwnd_)
         {
@@ -3070,8 +3090,7 @@ public:
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
         const int w = std::max(1, int(std::round(size.w * scale)));
         const int h = std::max(1, int(std::round(size.h * scale)));
-        const int anchor_h_px =
-            int(std::round(anchor_world_rect.h * scale));
+        const int anchor_h_px = int(std::round(anchor_world_rect.h * scale));
         const int gap_px = int(std::round(4.0f * scale));
         POINT pt{LONG(std::round(anchor_world_rect.x * scale)),
                  LONG(std::round(anchor_world_rect.y * scale))};
@@ -3085,9 +3104,13 @@ public:
         const int y_below = pt.y + anchor_h_px + gap_px;
         int y;
         if (placement == tk::PopupPlacement::PreferAbove)
+        {
             y = (y_above >= mi.rcWork.top) ? y_above : y_below;
+        }
         else
+        {
             y = (y_below + h <= mi.rcWork.bottom) ? y_below : y_above;
+        }
         x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
         y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
         // No show/hide flags — visibility is set_visible()'s job alone, so
@@ -3131,7 +3154,10 @@ public:
         return visible_;
     }
 
-    tk::Host* popup_host() override { return &surface_->host(); }
+    tk::Host* popup_host() override
+    {
+        return &surface_->host();
+    }
 
     void set_theme(const Theme& theme) override
     {
@@ -3173,9 +3199,8 @@ private:
         instances_().push_back(this);
         if (!hook_())
         {
-            hook_() = SetWindowsHookExW(
-                WH_MOUSE, &Win32PopupSurfaceHandle::mouse_hook_proc, nullptr,
-                GetCurrentThreadId());
+            hook_() = SetWindowsHookExW(WH_MOUSE, &Win32PopupSurfaceHandle::mouse_hook_proc,
+                                        nullptr, GetCurrentThreadId());
         }
     }
 
@@ -3201,11 +3226,9 @@ private:
     // Never claims/blocks the message: always falls through to
     // CallNextHookEx so normal click handling (caret placement, etc.) on
     // whatever native control the click actually landed in is unaffected.
-    static LRESULT CALLBACK mouse_hook_proc(int code, WPARAM wParam,
-                                            LPARAM lParam)
+    static LRESULT CALLBACK mouse_hook_proc(int code, WPARAM wParam, LPARAM lParam)
     {
-        if (code == HC_ACTION &&
-            (wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN))
+        if (code == HC_ACTION && (wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN))
         {
             auto* info = reinterpret_cast<MOUSEHOOKSTRUCT*>(lParam);
             const POINT pt = info->pt;
@@ -3307,10 +3330,16 @@ namespace
 // released with DestroyCursor (unlike LoadCursorW's shared handles).
 HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
 {
-    if (!source) return nullptr;
+    if (!source)
+    {
+        return nullptr;
+    }
 
     ICONINFO ii{};
-    if (!GetIconInfo(source, &ii)) return nullptr;
+    if (!GetIconInfo(source, &ii))
+    {
+        return nullptr;
+    }
 
     if (ii.hbmColor)
     {
@@ -3320,13 +3349,12 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
     }
 
     BITMAP bm{};
-    if (!GetObject(ii.hbmMask, sizeof(bm), &bm) || bm.bmWidth <= 0 ||
-        bm.bmHeight <= 0)
+    if (!GetObject(ii.hbmMask, sizeof(bm), &bm) || bm.bmWidth <= 0 || bm.bmHeight <= 0)
     {
         DeleteObject(ii.hbmMask);
         return nullptr;
     }
-    const int width  = bm.bmWidth;
+    const int width = bm.bmWidth;
     const int height = bm.bmHeight / 2; // AND mask stacked above XOR mask
     if (height <= 0)
     {
@@ -3351,51 +3379,55 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
         BITMAPINFOHEADER header;
         RGBQUAD colors[2];
     } mono_info{};
-    mono_info.header.biSize        = sizeof(BITMAPINFOHEADER);
-    mono_info.header.biWidth       = width;
-    mono_info.header.biHeight      = -(bm.bmHeight); // top-down
-    mono_info.header.biPlanes      = 1;
-    mono_info.header.biBitCount    = 1;
+    mono_info.header.biSize = sizeof(BITMAPINFOHEADER);
+    mono_info.header.biWidth = width;
+    mono_info.header.biHeight = -(bm.bmHeight); // top-down
+    mono_info.header.biPlanes = 1;
+    mono_info.header.biBitCount = 1;
     mono_info.header.biCompression = BI_RGB;
 
     const int stride = ((width + 31) / 32) * 4; // DIB rows: DWORD-aligned
     std::vector<BYTE> mask_bits(static_cast<size_t>(stride) * bm.bmHeight, 0);
 
     HDC dc = GetDC(nullptr);
-    const int got = GetDIBits(dc, ii.hbmMask, 0, static_cast<UINT>(bm.bmHeight),
-                              mask_bits.data(),
-                              reinterpret_cast<BITMAPINFO*>(&mono_info),
-                              DIB_RGB_COLORS);
+    const int got = GetDIBits(dc, ii.hbmMask, 0, static_cast<UINT>(bm.bmHeight), mask_bits.data(),
+                              reinterpret_cast<BITMAPINFO*>(&mono_info), DIB_RGB_COLORS);
     ReleaseDC(nullptr, dc);
     DeleteObject(ii.hbmMask);
-    if (got == 0) return nullptr;
+    if (got == 0)
+    {
+        return nullptr;
+    }
 
-    auto bit_at = [&](int row, int x) -> int {
+    auto bit_at = [&](int row, int x) -> int
+    {
         const BYTE b = mask_bits[static_cast<size_t>(row) * stride + (x >> 3)];
         return (b >> (7 - (x & 7))) & 1;
     };
 
     BITMAPV5HEADER color_bi{};
-    color_bi.bV5Size        = sizeof(color_bi);
-    color_bi.bV5Width       = width;
-    color_bi.bV5Height      = -height; // top-down
-    color_bi.bV5Planes      = 1;
-    color_bi.bV5BitCount    = 32;
+    color_bi.bV5Size = sizeof(color_bi);
+    color_bi.bV5Width = width;
+    color_bi.bV5Height = -height; // top-down
+    color_bi.bV5Planes = 1;
+    color_bi.bV5BitCount = 32;
     color_bi.bV5Compression = BI_BITFIELDS;
-    color_bi.bV5RedMask     = 0x00FF0000;
-    color_bi.bV5GreenMask   = 0x0000FF00;
-    color_bi.bV5BlueMask    = 0x000000FF;
-    color_bi.bV5AlphaMask   = 0xFF000000;
+    color_bi.bV5RedMask = 0x00FF0000;
+    color_bi.bV5GreenMask = 0x0000FF00;
+    color_bi.bV5BlueMask = 0x000000FF;
+    color_bi.bV5AlphaMask = 0xFF000000;
 
     HDC screen_dc = GetDC(nullptr);
     void* bits = nullptr;
-    HBITMAP color = CreateDIBSection(screen_dc,
-                                     reinterpret_cast<BITMAPINFO*>(&color_bi),
+    HBITMAP color = CreateDIBSection(screen_dc, reinterpret_cast<BITMAPINFO*>(&color_bi),
                                      DIB_RGB_COLORS, &bits, nullptr, 0);
     ReleaseDC(nullptr, screen_dc);
     if (!color || !bits)
     {
-        if (color) DeleteObject(color);
+        if (color)
+        {
+            DeleteObject(color);
+        }
         return nullptr;
     }
 
@@ -3424,7 +3456,8 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
         return nullptr;
     }
 
-    const SIZE_T mask_stride = ((static_cast<SIZE_T>(width) + 15) / 16) * 2; // 1bpp DDB: WORD-aligned
+    const SIZE_T mask_stride =
+        ((static_cast<SIZE_T>(width) + 15) / 16) * 2; // 1bpp DDB: WORD-aligned
     std::vector<BYTE> zero_mask(mask_stride * static_cast<size_t>(height), 0);
     HBITMAP dummy_mask = CreateBitmap(width, height, 1, 1, zero_mask.data());
     if (!dummy_mask)
@@ -3434,10 +3467,10 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
     }
 
     ICONINFO out{};
-    out.fIcon    = FALSE; // building a cursor, not an icon
+    out.fIcon = FALSE; // building a cursor, not an icon
     out.xHotspot = ii.xHotspot;
     out.yHotspot = ii.yHotspot;
-    out.hbmMask  = dummy_mask;
+    out.hbmMask = dummy_mask;
     out.hbmColor = color;
     HCURSOR result = CreateIconIndirect(&out); // HCURSOR is typedef'd to HICON
 
@@ -3457,8 +3490,7 @@ class Host : public tk::Host, public tk::AnimDamageSink
 public:
     Host(HWND hwnd, const Theme& theme, bool transparent = false)
         : hwnd_(hwnd), theme_(&theme), transparent_(transparent),
-          d2d_surface_(std::make_unique<d2d::Surface>(backend_singleton(), hwnd,
-                                                      transparent)),
+          d2d_surface_(std::make_unique<d2d::Surface>(backend_singleton(), hwnd, transparent)),
           factory_(d2d::make_factory(backend_singleton()))
     {
         watch_ctrl_release_();
@@ -3480,20 +3512,23 @@ public:
                 [](const LOGFONTW* f, const TEXTMETRICW*, DWORD, LPARAM lp) -> int
                 {
                     if (f->lfFaceName[0] == L'@') // vertical-writing duplicates
+                    {
                         return 1;
+                    }
                     auto& fams = reinterpret_cast<Collect*>(lp)->fams;
-                    const int n = WideCharToMultiByte(
-                        CP_UTF8, 0, f->lfFaceName, -1, nullptr, 0, nullptr, nullptr);
+                    const int n = WideCharToMultiByte(CP_UTF8, 0, f->lfFaceName, -1, nullptr, 0,
+                                                      nullptr, nullptr);
                     if (n <= 1)
+                    {
                         return 1;
+                    }
                     std::string name(static_cast<size_t>(n - 1), '\0');
-                    WideCharToMultiByte(CP_UTF8, 0, f->lfFaceName, -1, name.data(),
-                                        n, nullptr, nullptr);
+                    WideCharToMultiByte(CP_UTF8, 0, f->lfFaceName, -1, name.data(), n, nullptr,
+                                        nullptr);
                     // The classic GDI quirk: FIXED_PITCH in the pitch bits means
                     // fixed width; the enum's TMPF_FIXED_PITCH flag means the
                     // opposite, so test the LOGFONT's pitch field instead.
-                    const bool mono =
-                        (f->lfPitchAndFamily & 0x3) == FIXED_PITCH;
+                    const bool mono = (f->lfPitchAndFamily & 0x3) == FIXED_PITCH;
                     bool& slot = fams[name];
                     slot = slot || mono;
                     return 1;
@@ -3502,7 +3537,9 @@ public:
             ReleaseDC(nullptr, hdc);
             std::vector<FontFamilyInfo> out;
             for (auto& [name, mono] : c.fams)
+            {
                 out.push_back({name, mono});
+            }
             return out; // std::map keeps them sorted
         }();
         return cached;
@@ -3515,7 +3552,12 @@ public:
     {
         unwatch_ctrl_release_();
         for (HCURSOR c : ibeam_cache_built_)
-            if (c) DestroyCursor(c);
+        {
+            if (c)
+            {
+                DestroyCursor(c);
+            }
+        }
     }
 
     // Cursor requested by the hovered tk widget (Widget::cursor()); goes
@@ -3526,12 +3568,20 @@ public:
     {
         switch (shape)
         {
-        case tk::CursorShape::Default:  set_cursor(Cursor::Default); break;
+        case tk::CursorShape::Default:
+            set_cursor(Cursor::Default);
+            break;
         case tk::CursorShape::Pointer:
         case tk::CursorShape::Grab:
-        case tk::CursorShape::Grabbing: set_cursor(Cursor::Pointer); break;
-        case tk::CursorShape::Text:     set_cursor(Cursor::IBeam); break;
-        case tk::CursorShape::ResizeH:  set_cursor(Cursor::SizeWE); break;
+        case tk::CursorShape::Grabbing:
+            set_cursor(Cursor::Pointer);
+            break;
+        case tk::CursorShape::Text:
+            set_cursor(Cursor::IBeam);
+            break;
+        case tk::CursorShape::ResizeH:
+            set_cursor(Cursor::SizeWE);
+            break;
         }
     }
 
@@ -3565,9 +3615,9 @@ public:
         // full repaint (e.g. request_repaint()'s hover-fade-driven
         // unscoped InvalidateRect on mouse move) caught it up.
         RECT rc;
-        rc.left   = dip_to_phys(world.x) - 1;
-        rc.top    = dip_to_phys(world.y) - 1;
-        rc.right  = dip_to_phys(world.x + world.w) + 1;
+        rc.left = dip_to_phys(world.x) - 1;
+        rc.top = dip_to_phys(world.y) - 1;
+        rc.right = dip_to_phys(world.x + world.w) + 1;
         rc.bottom = dip_to_phys(world.y + world.h) + 1;
         InvalidateRect(hwnd_, &rc, FALSE);
     }
@@ -3588,14 +3638,18 @@ public:
     void note_image(const tk::CacheKey& key, tk::Rect world) override
     {
         if (anim_cache_ && anim_cache_->has(key))
+        {
             anim_damage_.push_back(world);
+        }
     }
 
     // Invalidate just the rects that contain animated images from the last paint.
     void invalidate_anim_damage()
     {
         if (!hwnd_)
+        {
             return;
+        }
         if (anim_damage_.empty())
         {
             // No animated image was reported on the last paint (a pagination
@@ -3610,9 +3664,9 @@ public:
             // See request_repaint_rect()'s comment — same DIP->physical-pixel
             // conversion needed here, for the same reason.
             RECT rc;
-            rc.left   = dip_to_phys(r.x) - 1;
-            rc.top    = dip_to_phys(r.y) - 1;
-            rc.right  = dip_to_phys(r.x + r.w) + 1;
+            rc.left = dip_to_phys(r.x) - 1;
+            rc.top = dip_to_phys(r.y) - 1;
+            rc.right = dip_to_phys(r.x + r.w) + 1;
             rc.bottom = dip_to_phys(r.y + r.h) + 1;
             InvalidateRect(hwnd_, &rc, FALSE);
         }
@@ -3625,8 +3679,7 @@ public:
             return;
         }
         auto* heap = new std::function<void()>(std::move(task));
-        if (!PostMessageW(hwnd_, post_to_ui_message(), 0,
-                          reinterpret_cast<LPARAM>(heap)))
+        if (!PostMessageW(hwnd_, post_to_ui_message(), 0, reinterpret_cast<LPARAM>(heap)))
         {
             // PostMessage failed; reclaim the heap copy so we don't leak.
             delete heap;
@@ -3664,13 +3717,19 @@ public:
     {
         Microsoft::WRL::ComPtr<INetworkListManager> mgr;
         if (FAILED(CoCreateInstance(CLSID_NetworkListManager, nullptr, CLSCTX_ALL,
-                                     IID_PPV_ARGS(&mgr))) || !mgr)
+                                    IID_PPV_ARGS(&mgr))) ||
+            !mgr)
+        {
             return true; // can't probe — don't block login on it
+        }
         // IsConnected, not IsConnectedToInternet: the latter depends on NCSI's
         // probe of Microsoft's endpoint, which fails behind firewalls that
         // block it while the LAN or VPN still reaches the homeserver.
         VARIANT_BOOL connected = VARIANT_FALSE;
-        if (FAILED(mgr->get_IsConnected(&connected))) return true;
+        if (FAILED(mgr->get_IsConnected(&connected)))
+        {
+            return true;
+        }
         return connected != VARIANT_FALSE;
     }
 
@@ -3683,9 +3742,16 @@ public:
         // otherwise a repeatedly opened/closed transient field (search bar,
         // quick switcher, ...) leaves a dangling pointer that set_theme()'s
         // areas_by_id_ iteration would dereference on the next theme change.
-        field->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
+        field->set_on_destroyed(
+            [this, id]
+            {
+                areas_by_id_.erase(id);
+            });
         field->set_on_hover_changed(
-            [this](bool hovering) { set_cursor(hovering ? Cursor::IBeam : Cursor::Default); });
+            [this](bool hovering)
+            {
+                set_cursor(hovering ? Cursor::IBeam : Cursor::Default);
+            });
         return field;
     }
 
@@ -3695,9 +3761,16 @@ public:
         auto fac = d2d::factories(backend_singleton());
         auto area = std::make_unique<BetterTextArea>(hwnd_, id, fac.wic, theme_);
         areas_by_id_.emplace(id, area.get());
-        area->set_on_destroyed([this, id] { areas_by_id_.erase(id); });
+        area->set_on_destroyed(
+            [this, id]
+            {
+                areas_by_id_.erase(id);
+            });
         area->set_on_hover_changed(
-            [this](bool hovering) { set_cursor(hovering ? Cursor::IBeam : Cursor::Default); });
+            [this](bool hovering)
+            {
+                set_cursor(hovering ? Cursor::IBeam : Cursor::Default);
+            });
         return area;
     }
 
@@ -3707,8 +3780,7 @@ public:
         {
             return nullptr;
         }
-        HINSTANCE inst =
-            reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE));
+        HINSTANCE inst = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(hwnd_, GWLP_HINSTANCE));
         return std::make_unique<Win32PopupSurfaceHandle>(hwnd_, inst, *theme_);
     }
 
@@ -3758,7 +3830,9 @@ public:
 
         IMFAttributes* attrs = nullptr;
         if (FAILED(MFCreateAttributes(&attrs, 1)))
+        {
             return result;
+        }
         attrs->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
                        MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
 
@@ -3771,23 +3845,25 @@ public:
                 WCHAR* sym = nullptr;
                 UINT32 sym_len = 0;
                 devices[i]->GetAllocatedString(
-                    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
-                    &sym, &sym_len);
+                    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, &sym, &sym_len);
 
                 WCHAR* name = nullptr;
                 UINT32 name_len = 0;
-                devices[i]->GetAllocatedString(
-                    MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name, &name_len);
+                devices[i]->GetAllocatedString(MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, &name,
+                                               &name_len);
 
                 if (sym)
                 {
                     tk::DeviceListing entry;
-                    entry.id           = wide_to_utf8(sym);
+                    entry.id = wide_to_utf8(sym);
                     entry.display_name = name ? wide_to_utf8(name) : entry.id;
                     result.push_back(std::move(entry));
                     CoTaskMemFree(sym);
                 }
-                if (name) CoTaskMemFree(name);
+                if (name)
+                {
+                    CoTaskMemFree(name);
+                }
                 devices[i]->Release();
             }
             CoTaskMemFree(devices);
@@ -3796,8 +3872,7 @@ public:
         return result;
     }
 
-    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
-                                 bool compress) override
+    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len, bool compress) override
     {
         EncodedImage out{};
         if (!data || len == 0)
@@ -3818,14 +3893,12 @@ public:
         {
             return out;
         }
-        if (FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(data),
-                                                static_cast<DWORD>(len))))
+        if (FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(data), static_cast<DWORD>(len))))
         {
             return out;
         }
         ComPtr<IWICBitmapDecoder> decoder;
-        if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
-                                                WICDecodeMetadataCacheOnLoad,
+        if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
                                                 decoder.GetAddressOf())))
         {
             return out;
@@ -3844,13 +3917,11 @@ public:
             ComPtr<IWICMetadataQueryReader> reader;
             if (SUCCEEDED(frame->GetMetadataQueryReader(reader.GetAddressOf())))
             {
-                for (const wchar_t* path :
-                     {L"/app1/ifd/{ushort=274}", L"System.Photo.Orientation"})
+                for (const wchar_t* path : {L"/app1/ifd/{ushort=274}", L"System.Photo.Orientation"})
                 {
                     PROPVARIANT pv;
                     PropVariantInit(&pv);
-                    if (SUCCEEDED(reader->GetMetadataByName(path, &pv)) &&
-                        pv.vt == VT_UI2)
+                    if (SUCCEEDED(reader->GetMetadataByName(path, &pv)) && pv.vt == VT_UI2)
                     {
                         orientation = pv.uiVal;
                         PropVariantClear(&pv);
@@ -3861,22 +3932,31 @@ public:
             }
             switch (orientation)
             {
-            case 2: xform = WICBitmapTransformFlipHorizontal; break;
-            case 3: xform = WICBitmapTransformRotate180; break;
-            case 4: xform = WICBitmapTransformFlipVertical; break;
+            case 2:
+                xform = WICBitmapTransformFlipHorizontal;
+                break;
+            case 3:
+                xform = WICBitmapTransformRotate180;
+                break;
+            case 4:
+                xform = WICBitmapTransformFlipVertical;
+                break;
             case 5:
-                xform = static_cast<WICBitmapTransformOptions>(
-                    WICBitmapTransformRotate90 |
-                    WICBitmapTransformFlipHorizontal);
+                xform = static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate90 |
+                                                               WICBitmapTransformFlipHorizontal);
                 break;
-            case 6: xform = WICBitmapTransformRotate90; break;
+            case 6:
+                xform = WICBitmapTransformRotate90;
+                break;
             case 7:
-                xform = static_cast<WICBitmapTransformOptions>(
-                    WICBitmapTransformRotate270 |
-                    WICBitmapTransformFlipHorizontal);
+                xform = static_cast<WICBitmapTransformOptions>(WICBitmapTransformRotate270 |
+                                                               WICBitmapTransformFlipHorizontal);
                 break;
-            case 8: xform = WICBitmapTransformRotate270; break;
-            default: break;
+            case 8:
+                xform = WICBitmapTransformRotate270;
+                break;
+            default:
+                break;
             }
         }
 
@@ -3922,8 +4002,8 @@ public:
         UINT dst_w = src_w, dst_h = src_h;
         if (src_w > kMaxW || src_h > kMaxH)
         {
-            double s = std::min({1.0, static_cast<double>(kMaxW) / src_w,
-                                 static_cast<double>(kMaxH) / src_h});
+            double s = std::min(
+                {1.0, static_cast<double>(kMaxW) / src_w, static_cast<double>(kMaxH) / src_h});
             dst_w = std::max<UINT>(1, static_cast<UINT>(std::round(src_w * s)));
             dst_h = std::max<UINT>(1, static_cast<UINT>(std::round(src_h * s)));
         }
@@ -3938,13 +4018,11 @@ public:
             ComPtr<IWICBitmap> decoded;
             ComPtr<IWICBitmapFlipRotator> rotator;
             ComPtr<IWICBitmap> rotated;
-            if (FAILED(wic->CreateBitmapFromSource(frame.Get(),
-                                                   WICBitmapCacheOnLoad,
+            if (FAILED(wic->CreateBitmapFromSource(frame.Get(), WICBitmapCacheOnLoad,
                                                    decoded.GetAddressOf())) ||
                 FAILED(wic->CreateBitmapFlipRotator(rotator.GetAddressOf())) ||
                 FAILED(rotator->Initialize(decoded.Get(), xform)) ||
-                FAILED(wic->CreateBitmapFromSource(rotator.Get(),
-                                                   WICBitmapCacheOnLoad,
+                FAILED(wic->CreateBitmapFromSource(rotator.Get(), WICBitmapCacheOnLoad,
                                                    rotated.GetAddressOf())))
             {
                 return EncodedImage{};
@@ -3979,8 +4057,7 @@ public:
             return EncodedImage{};
         }
         ComPtr<IWICBitmapEncoder> encoder;
-        if (FAILED(wic->CreateEncoder(GUID_ContainerFormatJpeg, nullptr,
-                                      encoder.GetAddressOf())))
+        if (FAILED(wic->CreateEncoder(GUID_ContainerFormatJpeg, nullptr, encoder.GetAddressOf())))
         {
             return EncodedImage{};
         }
@@ -3990,8 +4067,7 @@ public:
         }
         ComPtr<IWICBitmapFrameEncode> out_frame;
         ComPtr<IPropertyBag2> props;
-        if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(),
-                                           props.GetAddressOf())))
+        if (FAILED(encoder->CreateNewFrame(out_frame.GetAddressOf(), props.GetAddressOf())))
         {
             return EncodedImage{};
         }
@@ -4053,10 +4129,11 @@ public:
     {
         std::wstring wide = utf8_to_wide(std::string(text));
         if (!OpenClipboard(hwnd_))
+        {
             return;
+        }
         EmptyClipboard();
-        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE,
-                                    (wide.size() + 1) * sizeof(wchar_t));
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (wide.size() + 1) * sizeof(wchar_t));
         if (hMem)
         {
             auto* dst = static_cast<wchar_t*>(GlobalLock(hMem));
@@ -4071,49 +4148,63 @@ public:
         CloseClipboard();
     }
 
-    bool
-    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
+    bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
     {
         if (encoded_bytes.empty())
+        {
             return false;
+        }
 
         using Microsoft::WRL::ComPtr;
         IWICImagingFactory* wic = d2d::factories(backend_singleton()).wic;
         if (!wic)
+        {
             return false;
+        }
 
         // Decode the encoded blob and normalise to 32bpp BGRA.
         ComPtr<IWICStream> stream;
         if (FAILED(wic->CreateStream(stream.GetAddressOf())))
+        {
             return false;
-        if (FAILED(stream->InitializeFromMemory(
-                const_cast<BYTE*>(encoded_bytes.data()),
-                static_cast<DWORD>(encoded_bytes.size()))))
+        }
+        if (FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(encoded_bytes.data()),
+                                                static_cast<DWORD>(encoded_bytes.size()))))
+        {
             return false;
+        }
         ComPtr<IWICBitmapDecoder> decoder;
-        if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
-                                                WICDecodeMetadataCacheOnLoad,
+        if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
                                                 decoder.GetAddressOf())))
+        {
             return false;
+        }
         ComPtr<IWICBitmapFrameDecode> frame;
         if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
+        {
             return false;
+        }
         ComPtr<IWICBitmapSource> bgra;
-        if (FAILED(WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA,
-                                          frame.Get(), bgra.GetAddressOf())))
+        if (FAILED(WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA, frame.Get(),
+                                          bgra.GetAddressOf())))
+        {
             return false;
+        }
 
         UINT w = 0, h = 0;
         bgra->GetSize(&w, &h);
         if (w == 0 || h == 0)
+        {
             return false;
+        }
 
         const SIZE_T stride = static_cast<SIZE_T>(w) * 4;
         const SIZE_T pixel_bytes = stride * h;
-        HGLOBAL hg =
-            GlobalAlloc(GMEM_MOVEABLE, sizeof(BITMAPV5HEADER) + pixel_bytes);
+        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, sizeof(BITMAPV5HEADER) + pixel_bytes);
         if (!hg)
+        {
             return false;
+        }
         auto* base = static_cast<std::uint8_t*>(GlobalLock(hg));
         if (!base)
         {
@@ -4188,17 +4279,22 @@ public:
     {
         theme_ = &t;
         for (auto& [id, area] : areas_by_id_)
+        {
             area->on_theme_changed(t);
+        }
         // Invalidate the host HWND and all native-control child HWNDs so
         // WM_PAINT fires with the new palette.
         if (hwnd_)
-            RedrawWindow(hwnd_, nullptr, nullptr,
-                         RDW_INVALIDATE | RDW_ALLCHILDREN);
+        {
+            RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+        }
         // Reapply immediately so an already-hovered text field's I-beam
         // picks up the new theme's color without waiting for the next
         // hover-enter (see ibeam_cursor_for_current_theme_()).
         if (current_cursor_kind_ == Cursor::IBeam)
+        {
             set_cursor(Cursor::IBeam);
+        }
     }
     CanvasFactory& factory()
     {
@@ -4218,8 +4314,7 @@ public:
         RECT rc;
         GetClientRect(hwnd_, &rc);
         LayoutCtx ctx{*factory_, *theme_};
-        Rect bounds{0, 0,
-                    phys_to_dip(static_cast<float>(rc.right - rc.left)),
+        Rect bounds{0, 0, phys_to_dip(static_cast<float>(rc.right - rc.left)),
                     phys_to_dip(static_cast<float>(rc.bottom - rc.top))};
         begin_relayout_pass_();
         root_->measure(ctx, {bounds.w, bounds.h});
@@ -4278,10 +4373,8 @@ public:
         {
             req_dirty = {phys_to_dip(static_cast<float>(ps.rcPaint.left)),
                          phys_to_dip(static_cast<float>(ps.rcPaint.top)),
-                         phys_to_dip(static_cast<float>(ps.rcPaint.right -
-                                                        ps.rcPaint.left)),
-                         phys_to_dip(static_cast<float>(ps.rcPaint.bottom -
-                                                        ps.rcPaint.top))};
+                         phys_to_dip(static_cast<float>(ps.rcPaint.right - ps.rcPaint.left)),
+                         phys_to_dip(static_cast<float>(ps.rcPaint.bottom - ps.rcPaint.top))};
         }
         // begin_paint() may return a larger region than requested — a
         // flip-model surface's per-buffer backlog (see canvas_d2d.h's
@@ -4368,9 +4461,8 @@ public:
                 root_->paint_overlay(ctx);
                 RECT client_rc;
                 GetClientRect(hwnd_, &client_rc);
-                Rect surface_bounds{
-                    0, 0, phys_to_dip(static_cast<float>(client_rc.right)),
-                    phys_to_dip(static_cast<float>(client_rc.bottom))};
+                Rect surface_bounds{0, 0, phys_to_dip(static_cast<float>(client_rc.right)),
+                                    phys_to_dip(static_cast<float>(client_rc.bottom))};
                 paint_tooltip_overlay(ctx, surface_bounds);
                 paint_focus_overlay(ctx);
                 paint_toast_overlay(ctx, surface_bounds);
@@ -4403,8 +4495,8 @@ public:
         {
             SetCapture(hwnd_);
         }
-        dispatch_pointer_down({phys_to_dip(static_cast<float>(x)),
-                               phys_to_dip(static_cast<float>(y))});
+        dispatch_pointer_down(
+            {phys_to_dip(static_cast<float>(x)), phys_to_dip(static_cast<float>(y))});
     }
 
     void on_pointer_up(int x, int y)
@@ -4415,17 +4507,20 @@ public:
         {
             ReleaseCapture();
         }
-        dispatch_pointer_up({phys_to_dip(static_cast<float>(x)),
-                             phys_to_dip(static_cast<float>(y))});
+        dispatch_pointer_up(
+            {phys_to_dip(static_cast<float>(x)), phys_to_dip(static_cast<float>(y))});
     }
 
     void on_pointer_move(int x, int y)
     {
-        dispatch_pointer_move({phys_to_dip(static_cast<float>(x)),
-                               phys_to_dip(static_cast<float>(y))});
+        dispatch_pointer_move(
+            {phys_to_dip(static_cast<float>(x)), phys_to_dip(static_cast<float>(y))});
     }
 
-    void on_pointer_leave() { dispatch_pointer_leave(); }
+    void on_pointer_leave()
+    {
+        dispatch_pointer_leave();
+    }
 
     void on_wheel(int screen_x, int screen_y, int delta_steps, bool is_touchpad = false)
     {
@@ -4441,9 +4536,8 @@ public:
         // so invert. One notch (120) maps to ~3 toolkit pixels per step.
         float dy = static_cast<float>(-delta_steps) * (3.0f / 120.0f) * 30.0f;
         if (dispatch_wheel(
-                {phys_to_dip(static_cast<float>(pt.x)),
-                 phys_to_dip(static_cast<float>(pt.y))},
-                0, dy, is_touchpad))
+                {phys_to_dip(static_cast<float>(pt.x)), phys_to_dip(static_cast<float>(pt.y))}, 0,
+                dy, is_touchpad))
         {
             request_repaint();
             on_pointer_move(pt.x, pt.y);
@@ -4481,7 +4575,10 @@ public:
                                                    : IDC_ARROW;
             newc = LoadCursorW(nullptr, name);
         }
-        if (newc == current_cursor_) return;
+        if (newc == current_cursor_)
+        {
+            return;
+        }
         current_cursor_ = newc;
         // Apply immediately so the change is visible before the next
         // WM_SETCURSOR. SetCursor only affects the visible cursor when the
@@ -4491,7 +4588,10 @@ public:
     }
 
 protected:
-    Widget* input_root_() const override { return root_.get(); }
+    Widget* input_root_() const override
+    {
+        return root_.get();
+    }
 
     // Raises UIA_AutomationFocusChangedEventId for ordinary tk-level
     // Tab-focus moves — see win32_accessible.h's notify_focus_changed doc
@@ -4533,7 +4633,7 @@ private:
     // serving a stale recolor. A cached nullptr with a non-null source
     // means "use the system cursor unmodified" (see
     // ibeam_cursor_for_current_theme_() / recolor_legacy_cursor()).
-    HCURSOR ibeam_cache_built_[2]  = {nullptr, nullptr};
+    HCURSOR ibeam_cache_built_[2] = {nullptr, nullptr};
     HCURSOR ibeam_cache_source_[2] = {nullptr, nullptr};
     const tk::AnimImageCache* anim_cache_ = nullptr;
 
@@ -4558,8 +4658,8 @@ private:
         instances_().push_back(this);
         if (!hook_())
         {
-            hook_() = SetWindowsHookExW(WH_KEYBOARD, &Host::ctrl_release_hook_proc,
-                                        nullptr, GetCurrentThreadId());
+            hook_() = SetWindowsHookExW(WH_KEYBOARD, &Host::ctrl_release_hook_proc, nullptr,
+                                        GetCurrentThreadId());
         }
     }
 
@@ -4588,8 +4688,7 @@ private:
 
     // Never claims/blocks the message — always falls through to
     // CallNextHookEx so normal Ctrl handling elsewhere is unaffected.
-    static LRESULT CALLBACK ctrl_release_hook_proc(int code, WPARAM wParam,
-                                                    LPARAM lParam)
+    static LRESULT CALLBACK ctrl_release_hook_proc(int code, WPARAM wParam, LPARAM lParam)
     {
         if (code == HC_ACTION && wParam == VK_CONTROL)
         {
@@ -4618,12 +4717,18 @@ private:
     HCURSOR ibeam_cursor_for_current_theme_()
     {
         HCURSOR sys = LoadCursorW(nullptr, IDC_IBEAM);
-        if (!sys) return LoadCursorW(nullptr, IDC_ARROW); // should be unreachable
+        if (!sys)
+        {
+            return LoadCursorW(nullptr, IDC_ARROW); // should be unreachable
+        }
         const int idx = (theme_->mode == ThemeMode::Dark) ? 1 : 0;
         if (ibeam_cache_source_[idx] != sys)
         {
-            if (ibeam_cache_built_[idx]) DestroyCursor(ibeam_cache_built_[idx]);
-            ibeam_cache_built_[idx]  = recolor_legacy_cursor(sys, /*want_white=*/idx == 1);
+            if (ibeam_cache_built_[idx])
+            {
+                DestroyCursor(ibeam_cache_built_[idx]);
+            }
+            ibeam_cache_built_[idx] = recolor_legacy_cursor(sys, /*want_white=*/idx == 1);
             ibeam_cache_source_[idx] = sys;
         }
         return ibeam_cache_built_[idx] ? ibeam_cache_built_[idx] : sys;
@@ -4634,7 +4739,10 @@ private:
         const float dpi = static_cast<float>(GetDpiForWindow(hwnd_));
         return dpi > 0.f ? dpi / 96.f : 1.f;
     }
-    float phys_to_dip(float px) const { return px / dpi_scale(); }
+    float phys_to_dip(float px) const
+    {
+        return px / dpi_scale();
+    }
     int dip_to_phys(float dip) const
     {
         return static_cast<int>(std::round(dip * dpi_scale()));
@@ -4650,13 +4758,14 @@ public:
     // window that isn't currently shown (e.g. the Settings window while a
     // different top-level has focus) shouldn't process a drop even if its
     // HWND is still a registered drop target.
-    bool fire_file_drop(std::vector<std::uint8_t> bytes, std::string mime,
-                        std::string filename, tk::Point pos)
+    bool fire_file_drop(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                        tk::Point pos)
     {
         if (!hwnd_ || !IsWindowVisible(hwnd_))
+        {
             return false;
-        tk::FileDropPayload payload{std::move(bytes), std::move(mime),
-                                    std::move(filename)};
+        }
+        tk::FileDropPayload payload{std::move(bytes), std::move(mime), std::move(filename)};
         return dispatch_file_drop(pos, payload) != nullptr;
     }
     // Converts a drop's screen-space POINTL to the same client-area,
@@ -4668,13 +4777,14 @@ public:
     {
         POINT pt = screen_pt;
         ScreenToClient(hwnd_, &pt);
-        return {phys_to_dip(static_cast<float>(pt.x)),
-               phys_to_dip(static_cast<float>(pt.y))};
+        return {phys_to_dip(static_cast<float>(pt.x)), phys_to_dip(static_cast<float>(pt.y))};
     }
     void fire_file_drop_error(std::string reason)
     {
         if (on_file_drop_error_)
+        {
             on_file_drop_error_(std::move(reason));
+        }
     }
     void set_on_right_click(std::function<void(tk::Point)> cb)
     {
@@ -4682,12 +4792,13 @@ public:
     }
     void fire_right_click(int x, int y)
     {
-        tk::Point pt{phys_to_dip(static_cast<float>(x)),
-                     phys_to_dip(static_cast<float>(y))};
+        tk::Point pt{phys_to_dip(static_cast<float>(x)), phys_to_dip(static_cast<float>(y))};
         const bool in_popup = popup_contains(pt);
         dispatch_right_click(pt);
         if (!in_popup && on_right_click_)
+        {
             on_right_click_(pt);
+        }
     }
     // Drag-hover entry points for DropTarget::DragOver/DragLeave (a plain
     // COM object holding a Host*, not a Host member — need a public wrapper
@@ -4697,7 +4808,9 @@ public:
     Widget* hover_file_drop(tk::Point pos)
     {
         if (!hwnd_ || !IsWindowVisible(hwnd_))
+        {
             return nullptr;
+        }
         return dispatch_native_drag_hover(pos);
     }
     void leave_file_drop()
@@ -4738,24 +4851,42 @@ Key key_from_win32(WPARAM vk, bool shift)
 {
     switch (vk)
     {
-    case VK_ESCAPE: return Key::Escape;
-    case VK_RETURN: return Key::Enter;
-    case VK_SPACE: return Key::Space;
-    case VK_TAB: return shift ? Key::Backtab : Key::Tab;
-    case VK_UP: return Key::Up;
-    case VK_DOWN: return Key::Down;
-    case VK_LEFT: return Key::Left;
-    case VK_RIGHT: return Key::Right;
-    case VK_HOME: return Key::Home;
-    case VK_END: return Key::End;
-    case VK_PRIOR: return Key::PageUp;
-    case VK_NEXT: return Key::PageDown;
-    case VK_BACK: return Key::Backspace;
-    case VK_DELETE: return Key::Delete;
-    case VK_APPS: return Key::Menu;
-    case VK_F10: return Key::F10;
-    case VK_F1: return Key::F1;
-    default: return Key::Unknown;
+    case VK_ESCAPE:
+        return Key::Escape;
+    case VK_RETURN:
+        return Key::Enter;
+    case VK_SPACE:
+        return Key::Space;
+    case VK_TAB:
+        return shift ? Key::Backtab : Key::Tab;
+    case VK_UP:
+        return Key::Up;
+    case VK_DOWN:
+        return Key::Down;
+    case VK_LEFT:
+        return Key::Left;
+    case VK_RIGHT:
+        return Key::Right;
+    case VK_HOME:
+        return Key::Home;
+    case VK_END:
+        return Key::End;
+    case VK_PRIOR:
+        return Key::PageUp;
+    case VK_NEXT:
+        return Key::PageDown;
+    case VK_BACK:
+        return Key::Backspace;
+    case VK_DELETE:
+        return Key::Delete;
+    case VK_APPS:
+        return Key::Menu;
+    case VK_F10:
+        return Key::F10;
+    case VK_F1:
+        return Key::F1;
+    default:
+        return Key::Unknown;
     }
 }
 
@@ -4781,8 +4912,7 @@ KeyEvent translate_key_event(WPARAM vk, LPARAM lParam)
     out.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     out.shift = shift;
     out.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-    out.meta = (GetKeyState(VK_LWIN) & 0x8000) != 0 ||
-               (GetKeyState(VK_RWIN) & 0x8000) != 0;
+    out.meta = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
     out.repeat = (lParam & (1L << 30)) != 0;
     if (out.key == Key::Unknown)
     {
@@ -4795,11 +4925,9 @@ KeyEvent translate_key_event(WPARAM vk, LPARAM lParam)
     return out;
 }
 
-LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                  LPARAM lParam)
+LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    Host* host =
-        reinterpret_cast<Host*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    Host* host = reinterpret_cast<Host*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
     // The runtime-registered post_to_ui message — handled before any
     // standard switch so it isn't confused with normal Win32 messages.
@@ -4822,8 +4950,7 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_NCCREATE:
     {
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
         return TRUE;
     }
     case WM_MOUSEACTIVATE:
@@ -4834,7 +4961,9 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // suppresses the normal parent-activation that DefWindowProc would
         // perform, so the window never comes to front.
         if (HWND root = GetAncestor(hwnd, GA_ROOT))
+        {
             SetForegroundWindow(root);
+        }
         return MA_NOACTIVATE;
     case WM_GETDLGCODE:
         return DLGC_WANTARROWS | DLGC_WANTCHARS | DLGC_WANTTAB;
@@ -4883,8 +5012,7 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // there or the child's default WndProc never runs and the I-beam is
         // suppressed. Falling through to DefWindowProc lets the message
         // bubble back to the child.
-        if (host && reinterpret_cast<HWND>(wParam) == hwnd &&
-            LOWORD(lParam) == HTCLIENT)
+        if (host && reinterpret_cast<HWND>(wParam) == hwnd && LOWORD(lParam) == HTCLIENT)
         {
             SetCursor(host->current_cursor());
             return TRUE;
@@ -4917,10 +5045,14 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             RECT rc{};
             GetClientRect(hwnd, &rc);
             if (PtInRect(&rc, cursor))
+            {
                 return 0;
+            }
         }
         if (host)
+        {
             host->on_pointer_leave();
+        }
         return 0;
     }
     case WM_MOUSEWHEEL:
@@ -5004,8 +5136,7 @@ public:
         return n;
     }
 
-    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data,
-                                        DWORD /*grfKeyState*/, POINTL pt,
+    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD /*grfKeyState*/, POINTL pt,
                                         DWORD* pdwEffect) override
     {
         if (!pdwEffect)
@@ -5020,8 +5151,7 @@ public:
         }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/, POINTL pt,
-                                       DWORD* pdwEffect) override
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD /*grfKeyState*/, POINTL pt, DWORD* pdwEffect) override
     {
         if (!pdwEffect)
         {
@@ -5043,8 +5173,8 @@ public:
         }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD /*grfKeyState*/,
-                                   POINTL pt, DWORD* pdwEffect) override
+    HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD /*grfKeyState*/, POINTL pt,
+                                   DWORD* pdwEffect) override
     {
         if (pdwEffect)
         {
@@ -5062,8 +5192,7 @@ public:
         // IDropTarget::Drop's POINTL is screen-space per the OLE contract
         // (unlike WM_LBUTTONDOWN/WM_MOUSEMOVE, which are already client-
         // relative) — convert once, same pipeline WM_MOUSEWHEEL uses.
-        const tk::Point drop_pos =
-            host_->screen_to_tk_point(POINT{pt.x, pt.y});
+        const tk::Point drop_pos = host_->screen_to_tk_point(POINT{pt.x, pt.y});
 
         FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         STGMEDIUM stg{};
@@ -5133,7 +5262,9 @@ private:
         if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
         {
             if (host_)
+            {
                 host_->fire_file_drop_error(tk::tr("Could not read file"));
+            }
             return false;
         }
         ULARGE_INTEGER sz{};
@@ -5144,13 +5275,14 @@ private:
             return false;
         }
 
-        HANDLE h =
-            CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
-                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                               FILE_ATTRIBUTE_NORMAL, nullptr);
         if (h == INVALID_HANDLE_VALUE)
         {
             if (host_)
+            {
                 host_->fire_file_drop_error(tk::tr("Could not read file"));
+            }
             return false;
         }
 
@@ -5160,8 +5292,7 @@ private:
         {
             DWORD got = 0;
             BOOL ok = ReadFile(h, bytes.data() + read_total,
-                               static_cast<DWORD>(bytes.size() - read_total),
-                               &got, nullptr);
+                               static_cast<DWORD>(bytes.size() - read_total), &got, nullptr);
             if (!ok || got == 0)
             {
                 break;
@@ -5229,8 +5360,7 @@ std::unordered_map<HWND, DropTarget*>& drop_targets_by_hwnd()
 }
 } // namespace
 
-Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
-                 bool transparent)
+Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme, bool transparent)
 {
     if (!ensure_class_registered(inst))
     {
@@ -5245,9 +5375,8 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
     // maintain (or, for a transparent surface, for the swap chain's
     // premultiplied alpha to have to fight with).
     HWND hwnd = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, kSurfaceClass, L"",
-                                WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN |
-                                    WS_CLIPSIBLINGS,
-                                0, 0, 100, 100, parent, nullptr, inst,
+                                WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, 0,
+                                100, 100, parent, nullptr, inst,
                                 /*lpCreateParams=*/nullptr);
     if (!hwnd)
     {
@@ -5255,8 +5384,7 @@ Surface::Surface(HINSTANCE inst, HWND parent, const Theme& theme,
     }
 
     host_ = std::make_unique<Host>(hwnd, theme, transparent);
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                      reinterpret_cast<LONG_PTR>(host_.get()));
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(host_.get()));
 
     // Register an OLE drop target. Routing is tree-dispatched automatically
     // (DropTarget::Drop -> Host::fire_file_drop -> Host::dispatch_file_drop);
@@ -5309,7 +5437,9 @@ float Surface::dpi_scale() const
 {
     HWND h = hwnd();
     if (!h)
+    {
         return 1.f;
+    }
     const float dpi = static_cast<float>(GetDpiForWindow(h));
     return dpi > 0.f ? dpi / 96.f : 1.f;
 }
@@ -5346,8 +5476,14 @@ void Surface::set_theme(const Theme& t)
 
 void Surface::apply_scale_change(float scale)
 {
-    if (Widget* r = root()) r->apply_scale_change(scale);
-    if (on_scale_changed_) on_scale_changed_(scale);
+    if (Widget* r = root())
+    {
+        r->apply_scale_change(scale);
+    }
+    if (on_scale_changed_)
+    {
+        on_scale_changed_(scale);
+    }
 }
 
 void Surface::set_on_scale_changed(std::function<void(float)> cb)
@@ -5389,6 +5525,5 @@ void Surface::set_cursor(Cursor c)
 {
     host_->set_cursor(c);
 }
-
 
 } // namespace tk::win32

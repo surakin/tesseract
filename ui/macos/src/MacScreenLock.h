@@ -28,8 +28,7 @@ public:
 private:
     // Shared with the ObjC observer block; outlives `this`-teardown ordering
     // concerns because the observer is removed in the destructor first.
-    std::shared_ptr<std::atomic<bool>> locked_ =
-        std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<bool>> locked_ = std::make_shared<std::atomic<bool>>(false);
     void* observer_locked_ = nullptr;   // id (retained)
     void* observer_unlocked_ = nullptr; // id (retained)
 };

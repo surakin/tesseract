@@ -73,7 +73,10 @@ TEST_CASE("SlashCommandPopup:set_selected_index reaches rows past the 8-row view
     popup.set_suggestions(suggestions);
 
     std::optional<SlashCommandSuggestion> accepted;
-    popup.on_accepted = [&](SlashCommandSuggestion s) { accepted = std::move(s); };
+    popup.on_accepted = [&](SlashCommandSuggestion s)
+    {
+        accepted = std::move(s);
+    };
 
     Rect bounds{0, 0, SlashCommandPopup::kWidth, 8.0f * SlashCommandPopup::kRowHeight};
     st.run(popup, bounds);
@@ -104,7 +107,10 @@ TEST_CASE("SlashCommandPopup:wheel scrolls the viewport once content overflows")
     popup.set_suggestions(suggestions);
 
     std::optional<SlashCommandSuggestion> accepted;
-    popup.on_accepted = [&](SlashCommandSuggestion s) { accepted = std::move(s); };
+    popup.on_accepted = [&](SlashCommandSuggestion s)
+    {
+        accepted = std::move(s);
+    };
 
     Rect bounds{0, 0, SlashCommandPopup::kWidth, 8.0f * SlashCommandPopup::kRowHeight};
     st.run(popup, bounds);

@@ -13,8 +13,7 @@ struct Notification
     std::string sender;
     std::string body;
     bool is_mention = false;
-    std::vector<uint8_t>
-        avatar_bytes; // raw PNG/JPEG of the room avatar; empty = use app icon
+    std::vector<uint8_t> avatar_bytes; // raw PNG/JPEG of the room avatar; empty = use app icon
     // Raw encoded bytes (PNG/JPEG/GIF/WebP) of the message's image or
     // sticker, shown as the notification's picture. Empty for non-image
     // messages, or when the privacy gate suppressed it (locked screen /

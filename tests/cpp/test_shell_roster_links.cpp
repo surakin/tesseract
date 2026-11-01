@@ -33,7 +33,9 @@ namespace
 struct RlShell : tesseract::test::TestShellBase
 {
     RlShell() = default;
-    explicit RlShell(tesseract::AccountManager& am) : TestShellBase(am) {}
+    explicit RlShell(tesseract::AccountManager& am) : TestShellBase(am)
+    {
+    }
     ~RlShell() override
     {
         pool_.wait_idle(std::chrono::seconds(5));
@@ -42,14 +44,17 @@ struct RlShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     // Worker threads post here: queue under a lock, run on demand.
     void post_to_ui_(std::function<void()> fn) override
     {
@@ -74,25 +79,53 @@ struct RlShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
-    void navigate_to_room_(const std::string& id) override { navigated.push_back(id); }
-    void raise_main_window_ui_() override { ++raises; }
-    void open_quick_switch_ui_() override { ++quick_switches; }
-    void open_message_search_ui_() override { ++message_searches; }
-    void open_app_settings_ui_() override { ++settings_opens; }
-    void switch_active_account_(const std::string& u) override { switched.push_back(u); }
-    void raise_and_activate_() override { ++activated; }
-    void request_repaint_() override { ++repaints; }
+    void navigate_to_room_(const std::string& id) override
+    {
+        navigated.push_back(id);
+    }
+    void raise_main_window_ui_() override
+    {
+        ++raises;
+    }
+    void open_quick_switch_ui_() override
+    {
+        ++quick_switches;
+    }
+    void open_message_search_ui_() override
+    {
+        ++message_searches;
+    }
+    void open_app_settings_ui_() override
+    {
+        ++settings_opens;
+    }
+    void switch_active_account_(const std::string& u) override
+    {
+        switched.push_back(u);
+    }
+    void raise_and_activate_() override
+    {
+        ++activated;
+    }
+    void request_repaint_() override
+    {
+        ++repaints;
+    }
 
     std::mutex mu;
     std::vector<std::function<void()>> queue;
     std::vector<std::string> navigated, switched;
-    int raises = 0, quick_switches = 0, message_searches = 0,
-        settings_opens = 0, activated = 0, repaints = 0;
+    int raises = 0, quick_switches = 0, message_searches = 0, settings_opens = 0, activated = 0,
+        repaints = 0;
 
     using ShellBase::account_manager_;
     using ShellBase::active_account_;
@@ -221,8 +254,7 @@ TEST_CASE("roster build seeds DM partners at once and completes in the backgroun
     CHECK_FALSE(f.s.known_users_building_);
 }
 
-TEST_CASE("roster build needs a client and is dropped on invalidate",
-          "[shell][roster]")
+TEST_CASE("roster build needs a client and is dropped on invalidate", "[shell][roster]")
 {
     RlFx f;
     f.s.client_ = nullptr;
@@ -263,8 +295,7 @@ TEST_CASE("merge_roster_entry_ never overwrites richer data", "[shell][roster]")
 
 // ── user query / invite resolve ─────────────────────────────────────────────
 
-TEST_CASE("typing a user query strips the @ and builds the roster",
-          "[shell][roster][query]")
+TEST_CASE("typing a user query strips the @ and builds the roster", "[shell][roster][query]")
 {
     RlFx f;
     f.s.handle_user_query_("@ali");
@@ -275,8 +306,7 @@ TEST_CASE("typing a user query strips the @ and builds the roster",
     f.s.pump();
 }
 
-TEST_CASE("a complete unknown mxid is resolved live, a known one is not",
-          "[shell][roster][query]")
+TEST_CASE("a complete unknown mxid is resolved live, a known one is not", "[shell][roster][query]")
 {
     RlFx f;
     f.s.known_users_built_ = true;
@@ -344,9 +374,8 @@ TEST_CASE("invite-dialog resolves: debounced, immediate, known and superseded",
     f.s.resolve_invite_user_("@u:x", false, nullptr); // already in flight
     REQUIRE(f.s.pending_invite_resolves_.size() == 1);
     CHECK(f.s.invite_resolves_inflight_.count("@u:x") == 1);
-    f.s.handle_extended_profile_ready_ui_(
-        f.s.pending_invite_resolves_.begin()->first,
-        R"({"exists":true,"display_name":"U"})");
+    f.s.handle_extended_profile_ready_ui_(f.s.pending_invite_resolves_.begin()->first,
+                                          R"({"exists":true,"display_name":"U"})");
     CHECK(f.s.pending_invite_resolves_.empty());
     CHECK(f.s.invite_resolves_inflight_.empty());
     REQUIRE(f.s.known_users_.count("@u:x") == 1); // user_id filled from the request
@@ -370,8 +399,7 @@ TEST_CASE("invite-dialog resolves: debounced, immediate, known and superseded",
     CHECK(f.s.invite_resolves_inflight_.empty());
 }
 
-TEST_CASE("extended profile results: panel, own profile and pronouns",
-          "[shell][roster][profile]")
+TEST_CASE("extended profile results: panel, own profile and pronouns", "[shell][roster][profile]")
 {
     RlFx f;
     auto rv = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
@@ -386,9 +414,8 @@ TEST_CASE("extended profile results: panel, own profile and pronouns",
     CHECK(f.s.pending_user_profiles_.empty());
     f.s.fetch_user_extended_profile_async_("@u:x", panel);
     REQUIRE(f.s.pending_user_profiles_.size() == 1);
-    f.s.handle_extended_profile_ready_ui_(
-        f.s.pending_user_profiles_.begin()->first,
-        R"({"exists":true,"tz":"Europe/Oslo"})");
+    f.s.handle_extended_profile_ready_ui_(f.s.pending_user_profiles_.begin()->first,
+                                          R"({"exists":true,"tz":"Europe/Oslo"})");
     CHECK(f.s.pending_user_profiles_.empty());
 
     // Own profile is fetched for ourselves and applied when nothing is pending.
@@ -433,8 +460,7 @@ TEST_CASE("opening a DM navigates to an existing one", "[shell][dm]")
     CHECK(f.s.navigated == std::vector<std::string>{"!dm"});
 }
 
-TEST_CASE("opening a DM with nobody creates one asynchronously and de-duplicates",
-          "[shell][dm]")
+TEST_CASE("opening a DM with nobody creates one asynchronously and de-duplicates", "[shell][dm]")
 {
     RlFx f;
     auto rv = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
@@ -470,8 +496,7 @@ TEST_CASE("launch actions wait for the main content, then run", "[shell][launch]
     CHECK(f.s.settings_opens == 1);
 }
 
-TEST_CASE("launching into a room waits for the room to be known",
-          "[shell][launch]")
+TEST_CASE("launching into a room waits for the room to be known", "[shell][launch]")
 {
     RlFx f;
     f.s.dispatch_launch_action_(tesseract::LaunchAction::Room, ""); // nothing pending
@@ -490,8 +515,7 @@ TEST_CASE("launching into a room waits for the room to be known",
     f.s.open_launch_room_("");
 }
 
-TEST_CASE("a launch room on another account switches to it first",
-          "[shell][launch]")
+TEST_CASE("a launch room on another account switches to it first", "[shell][launch]")
 {
     RlFx f;
     f.s.per_account_rooms_["@other:x"] = {rl_room("!theirs")};
@@ -500,8 +524,7 @@ TEST_CASE("a launch room on another account switches to it first",
     CHECK(f.s.navigated == std::vector<std::string>{"!theirs"});
 }
 
-TEST_CASE("a launch room on an account another window shows opens there",
-          "[shell][launch]")
+TEST_CASE("a launch room on an account another window shows opens there", "[shell][launch]")
 {
     tesseract::AccountManager am;
     RlShell me(am), owner(am);
@@ -533,8 +556,7 @@ TEST_CASE("a matrix link is held until the room list has arrived", "[shell][link
     CHECK(f.s.tabs_.empty());
 }
 
-TEST_CASE("a matrix link opens once an account's empty room list has arrived",
-          "[shell][links]")
+TEST_CASE("a matrix link opens once an account's empty room list has arrived", "[shell][links]")
 {
     // A brand-new account: the list arrives with no rooms. The link must not be
     // held again, or the replay on that update would requeue it forever.
@@ -577,8 +599,7 @@ TEST_CASE("matrix links navigate to rooms, aliases and events", "[shell][links]"
     f.s.open_matrix_link("https://matrix.to/#/@user:x");    // no room view: fine
 }
 
-TEST_CASE("links to unknown rooms fall back to room-version resolution",
-          "[shell][links]")
+TEST_CASE("links to unknown rooms fall back to room-version resolution", "[shell][links]")
 {
     RlFx f;
     f.s.rooms_ = {rl_room("!other:x")};
@@ -607,8 +628,7 @@ TEST_CASE("a user link opens that profile", "[shell][links]")
 
 // ── tray ─────────────────────────────────────────────────────────────────────
 
-TEST_CASE("tray items list each account and act through the dedicated window",
-          "[shell][tray]")
+TEST_CASE("tray items list each account and act through the dedicated window", "[shell][tray]")
 {
     RlFx f;
     auto a = std::make_shared<tesseract::AccountSession>();
@@ -684,8 +704,7 @@ TEST_CASE("presence tracking starts lazily once sync runs and honours the privac
     f.s.notify_presence_logout_(); // already gone
 }
 
-TEST_CASE("window activity without a tracker only updates polling state",
-          "[shell][presence]")
+TEST_CASE("window activity without a tracker only updates polling state", "[shell][presence]")
 {
     RlFx f;
     f.s.notify_window_active_(false);
@@ -702,13 +721,15 @@ TEST_CASE("pending ?via= hints stay within their cap across many permalinks",
     f.s.rooms_ = {rl_room("!known:x")};
     f.s.mark_room_index_dirty_();
     for (int i = 0; i < 300; ++i)
-        f.s.open_matrix_link("https://matrix.to/#/!r" + std::to_string(i) +
-                             ":x?via=hs.example");
+    {
+        f.s.open_matrix_link("https://matrix.to/#/!r" + std::to_string(i) + ":x?via=hs.example");
+    }
     CHECK(f.s.pending_join_via_.size() == f.s.kMaxPendingJoinVia);
     // The oldest hints go first: the table keeps routing hints for the links
     // the user is following now.
     CHECK(f.s.pending_join_via_.count("!r299:x") == 1);
-    CHECK(f.s.pending_join_via_.count("!r" + std::to_string(300 - f.s.kMaxPendingJoinVia) + ":x") == 1);
+    CHECK(f.s.pending_join_via_.count("!r" + std::to_string(300 - f.s.kMaxPendingJoinVia) + ":x") ==
+          1);
     CHECK(f.s.pending_join_via_.count("!r0:x") == 0);
 }
 
@@ -755,8 +776,8 @@ TEST_CASE("mutual rooms: resolve against rooms_, skip unknown, page and gate",
         id, R"({"joined":["!a"],"count":3,"next_batch":"n1","error":""})");
     REQUIRE(f.s.pending_mutual_rooms_.size() == 1);
     id = f.s.pending_mutual_rooms_.begin()->first;
-    f.s.handle_mutual_rooms_ready_ui_(
-        id, R"({"joined":["!c"],"count":3,"next_batch":"","error":""})");
+    f.s.handle_mutual_rooms_ready_ui_(id,
+                                      R"({"joined":["!c"],"count":3,"next_batch":"","error":""})");
     CHECK(f.s.pending_mutual_rooms_.empty());
     REQUIRE(panel->common_rooms().size() == 3);
     CHECK(panel->common_rooms()[2].room_id == "!c");

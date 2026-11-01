@@ -16,23 +16,35 @@ namespace
 
 struct CrStage : vt::Stage
 {
-    std::unique_ptr<CreateRoomView> view =
-        tk::create_root_widget<CreateRoomView>(&host);
+    std::unique_ptr<CreateRoomView> view = tk::create_root_widget<CreateRoomView>(&host);
     CrStage()
     {
-        mount(*view, {0, 0, CreateRoomView::kPreferredW,
-                      CreateRoomView::kPreferredH});
+        mount(*view, {0, 0, CreateRoomView::kPreferredW, CreateRoomView::kPreferredH});
     }
     // fields_created order: name, alias, reason; areas: topic, invite.
-    StubTextField& name() { return *host.fields_created.at(0); }
-    StubTextField& alias() { return *host.fields_created.at(1); }
-    StubTextField& reason() { return *host.fields_created.at(2); }
-    StubTextArea& topic() { return *host.areas_created.at(0); }
-    StubTextArea& invite() { return *host.areas_created.at(1); }
+    StubTextField& name()
+    {
+        return *host.fields_created.at(0);
+    }
+    StubTextField& alias()
+    {
+        return *host.fields_created.at(1);
+    }
+    StubTextField& reason()
+    {
+        return *host.fields_created.at(2);
+    }
+    StubTextArea& topic()
+    {
+        return *host.areas_created.at(0);
+    }
+    StubTextArea& invite()
+    {
+        return *host.areas_created.at(1);
+    }
     void relayout()
     {
-        relayout_paint(*view, {0, 0, CreateRoomView::kPreferredW,
-                               CreateRoomView::kPreferredH});
+        relayout_paint(*view, {0, 0, CreateRoomView::kPreferredW, CreateRoomView::kPreferredH});
     }
 };
 
@@ -50,8 +62,7 @@ TEST_CASE("CreateRoomView measures to a positive size", "[tk][view][create_room]
     CHECK(sz2.h <= sz.h);
 }
 
-TEST_CASE("CreateRoomView create button builds options from the form",
-          "[tk][view][create_room]")
+TEST_CASE("CreateRoomView create button builds options from the form", "[tk][view][create_room]")
 {
     CrStage s;
     s.name().set_text("My Room");
@@ -87,7 +98,9 @@ TEST_CASE("CreateRoomView encryption checkbox and visibility feed the options",
     CrStage s;
     tesseract::RoomCreateOptions got;
     s.view->on_create_requested = [&](tesseract::RoomCreateOptions o)
-    { got = std::move(o); };
+    {
+        got = std::move(o);
+    };
 
     auto* check = vt::find<tk::CheckButton>(*s.view);
     REQUIRE(check != nullptr);
@@ -120,7 +133,9 @@ TEST_CASE("CreateRoomView switching to Create Space disables encryption and "
 
     tesseract::RoomCreateOptions got;
     s.view->on_create_requested = [&](tesseract::RoomCreateOptions o)
-    { got = std::move(o); };
+    {
+        got = std::move(o);
+    };
     vt::press(*s.view, "Create Space");
     CHECK(got.is_space);
     CHECK_FALSE(got.encrypted);
@@ -143,7 +158,10 @@ TEST_CASE("CreateRoomView cancel button fires on_cancel", "[tk][view][create_roo
 {
     CrStage s;
     int cancelled = 0;
-    s.view->on_cancel = [&] { ++cancelled; };
+    s.view->on_cancel = [&]
+    {
+        ++cancelled;
+    };
     REQUIRE(vt::press(*s.view, "Cancel"));
     CHECK(cancelled == 1);
 }

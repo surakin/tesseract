@@ -18,9 +18,9 @@ struct SlashCommandMatch
 
 struct SlashCommandSuggestion
 {
-    std::string name;         ///< Canonical name without leading slash.
-    std::string args_hint;    ///< e.g. "<action>".
-    std::string description;  ///< One-line user-facing description.
+    std::string name;        ///< Canonical name without leading slash.
+    std::string args_hint;   ///< e.g. "<action>".
+    std::string description; ///< One-line user-facing description.
     /// False for an MSC4391 bot-advertised command. Built-ins always win a
     /// name collision against a bot command (MSC4391 client-precedence
     /// rule) — see `SlashCommandEngine::lookup`.
@@ -43,8 +43,7 @@ public:
     /// of the composer: `^/[A-Za-z_]*$` with the cursor at end-of-text.
     /// Returns nullopt for empty text, mid-message slashes, slashes
     /// followed by a space (args entered), or non-letter chars after '/'.
-    std::optional<SlashCommandMatch>
-    find_prefix(std::string_view text, int cursor_byte_pos) const;
+    std::optional<SlashCommandMatch> find_prefix(std::string_view text, int cursor_byte_pos) const;
 
     /// Filter the canonical command list (from
     /// `tesseract::available_commands()`) plus `bot_commands` (already
@@ -61,8 +60,7 @@ public:
     /// display windowing are decoupled, so this is not a practical cap; the
     /// popup handles scrolling/windowing for the visible rows itself.
     std::vector<SlashCommandSuggestion>
-    lookup(std::string_view prefix,
-           const std::vector<tesseract::CommandDescription>& bot_commands,
+    lookup(std::string_view prefix, const std::vector<tesseract::CommandDescription>& bot_commands,
            int max_results = 64) const;
 };
 

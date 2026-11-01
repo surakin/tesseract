@@ -15,26 +15,31 @@ LanguageSection::LanguageSection(SettingBinder& binder)
 
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
-        {tk::tr("Auto"),    "auto"},
+        {tk::tr("Auto"), "auto"},
         {tk::tr("English"), "en"},
         {tk::tr("Spanish"), "es"},
-        {tk::tr("French"),  "fr"},
-        {tk::tr("German"),  "de"},
+        {tk::tr("French"), "fr"},
+        {tk::tr("German"), "de"},
         {tk::tr("Ukrainian"), "uk"},
         {tk::tr("Norwegian Bokmål"), "nb"},
     });
     combo_ = group->add_widget(std::move(combo));
     binder.bind(combo_, &tesseract::Settings::language, SettingKey::Language);
 
-    auto note = tk::create_widget<tk::Label>(
-        this, tk::tr("Changes take effect after restart."), tk::FontRole::Small);
+    auto note = tk::create_widget<tk::Label>(this, tk::tr("Changes take effect after restart."),
+                                             tk::FontRole::Small);
     group->add_widget(std::move(note));
 
     // HBox so the button keeps its natural width instead of stretching.
     auto row = tk::create_widget<tk::HBox>(this);
-    row->add_child(tk::create_widget<tk::Button>(this,
-        tk::tr("Restart now"),
-        [this] { if (on_restart_requested) on_restart_requested(); }));
+    row->add_child(tk::create_widget<tk::Button>(this, tk::tr("Restart now"),
+                                                 [this]
+                                                 {
+                                                     if (on_restart_requested)
+                                                     {
+                                                         on_restart_requested();
+                                                     }
+                                                 }));
     row->set_visible(false);
     restart_row_ = group->add_widget(std::move(row));
 }
@@ -42,7 +47,9 @@ LanguageSection::LanguageSection(SettingBinder& binder)
 void LanguageSection::set_restart_pending(bool pending)
 {
     if (restart_row_)
+    {
         restart_row_->set_visible(pending);
+    }
 }
 
 } // namespace tesseract::views

@@ -30,8 +30,7 @@ RoomInfo density_room(const std::string& id, const std::string& name)
 
 } // namespace
 
-TEST_CASE("RoomListView compact density shrinks rows and toggles back",
-          "[roomlist][density]")
+TEST_CASE("RoomListView compact density shrinks rows and toggles back", "[roomlist][density]")
 {
     vt::Stage st;
     auto owner = tk::create_root_widget<RoomListView>(&st.host);
@@ -57,8 +56,7 @@ TEST_CASE("RoomListView compact density shrinks rows and toggles back",
     CHECK(view.room_row_rect_for_test("!a:x").h == normal_h);
 }
 
-TEST_CASE("RoomListView compact density works together with icon-only mode",
-          "[roomlist][density]")
+TEST_CASE("RoomListView compact density works together with icon-only mode", "[roomlist][density]")
 {
     vt::Stage st;
     auto owner = tk::create_root_widget<RoomListView>(&st.host);
@@ -73,8 +71,7 @@ TEST_CASE("RoomListView compact density works together with icon-only mode",
     CHECK(view.compact());
 }
 
-TEST_CASE("Compact rows show the last message as a hover tooltip",
-          "[roomlist][density]")
+TEST_CASE("Compact rows show the last message as a hover tooltip", "[roomlist][density]")
 {
     vt::Stage st;
     auto owner = tk::create_root_widget<RoomListView>(&st.host);

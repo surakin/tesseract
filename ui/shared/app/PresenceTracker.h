@@ -71,9 +71,18 @@ public:
 
     // --- Inspection ---
 
-    State current() const { return current_; }
-    std::chrono::minutes idle_threshold() const { return idle_threshold_; }
-    bool window_active() const { return window_active_; }
+    State current() const
+    {
+        return current_;
+    }
+    std::chrono::minutes idle_threshold() const
+    {
+        return idle_threshold_;
+    }
+    bool window_active() const
+    {
+        return window_active_;
+    }
 
 private:
     void transition_to_(State target);

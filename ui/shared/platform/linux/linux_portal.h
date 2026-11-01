@@ -14,9 +14,7 @@ inline std::string sanitize_notification_id(const std::string& room_id)
     out.reserve(room_id.size());
     for (unsigned char c : room_id)
     {
-        out += (std::isalnum(c) || c == '_' || c == '-')
-                   ? static_cast<char>(c)
-                   : '_';
+        out += (std::isalnum(c) || c == '_' || c == '-') ? static_cast<char>(c) : '_';
     }
     return out.empty() ? std::string("_") : out;
 }

@@ -15,8 +15,7 @@ namespace
 struct Rig
 {
     TestHost host{nullptr};
-    std::unique_ptr<tk::TextArea> area =
-        tk::create_root_widget<tk::TextArea>(&host, 40.0f);
+    std::unique_ptr<tk::TextArea> area = tk::create_root_widget<tk::TextArea>(&host, 40.0f);
     SlashCommandPopup popup;
     std::vector<std::string> sent;
     std::vector<std::string> failures;
@@ -30,19 +29,35 @@ struct Rig
         h.show = [](tk::Rect, int) {};
         h.hide = [] {};
         h.repaint = [] {};
-        h.room_id = [] { return std::string{"!r:x"}; };
-        h.clear_composer = [this] { ++cleared; };
-        h.on_selfie = [this] { ++selfie; };
-        h.on_location = [this] { ++location; };
-        h.on_command_failed = [this](std::string e) { failures.push_back(e); };
+        h.room_id = []
+        {
+            return std::string{"!r:x"};
+        };
+        h.clear_composer = [this]
+        {
+            ++cleared;
+        };
+        h.on_selfie = [this]
+        {
+            ++selfie;
+        };
+        h.on_location = [this]
+        {
+            ++location;
+        };
+        h.on_command_failed = [this](std::string e)
+        {
+            failures.push_back(e);
+        };
         if (with_send_command)
+        {
             h.send_command = [this](const std::string& b)
             {
                 sent.push_back(b);
                 return send_result;
             };
-        ctl = std::make_unique<SlashCommandController>(area.get(), &popup,
-                                                       std::move(h));
+        }
+        ctl = std::make_unique<SlashCommandController>(area.get(), &popup, std::move(h));
     }
     bool type_and_submit(const std::string& text)
     {

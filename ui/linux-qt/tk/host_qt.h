@@ -39,8 +39,8 @@ QString build_menu_qss(const Theme& t);
 class Surface : public QWidget, public tk::SurfaceBase
 {
 public:
-    explicit Surface(const Theme& theme = Theme::light(),
-                     QWidget* parent = nullptr, bool transparent = false);
+    explicit Surface(const Theme& theme = Theme::light(), QWidget* parent = nullptr,
+                     bool transparent = false);
     ~Surface() override;
 
     tk::Host& host() override;
@@ -69,7 +69,10 @@ public:
     // A popup surface never takes Qt keyboard focus on click: the widget that
     // opened it (a picker's text field, the composer) keeps focus, so pressing
     // inside the popup — a scrollbar drag, a row — doesn't blur and dismiss it.
-    void set_takes_focus_on_click(bool takes) { takes_focus_on_click_ = takes; }
+    void set_takes_focus_on_click(bool takes)
+    {
+        takes_focus_on_click_ = takes;
+    }
 
     // Fired at the tail of apply_scale_change() above, with the new scale.
     // Lets integration code (the owning shell) track the display's current

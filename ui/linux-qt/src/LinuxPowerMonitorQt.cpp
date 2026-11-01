@@ -15,11 +15,10 @@ namespace
 namespace pw = tesseract::power;
 
 // Read one D-Bus property, returning an invalid QVariant on any failure.
-QVariant read_prop(const QString& service, const QString& path,
-                   const QString& iface, const QString& name)
+QVariant read_prop(const QString& service, const QString& path, const QString& iface,
+                   const QString& name)
 {
-    QDBusInterface props(service, path, pw::kPropsIface,
-                         QDBusConnection::systemBus());
+    QDBusInterface props(service, path, pw::kPropsIface, QDBusConnection::systemBus());
     if (!props.isValid())
     {
         return {};
@@ -42,15 +41,14 @@ LinuxPowerMonitorQt::LinuxPowerMonitorQt()
     }
 
     // --- power-profiles-daemon: try the new bus name, then the legacy one ---
-    if (read_prop(pw::kPpdService, pw::kPpdPath, pw::kPpdIface, "ActiveProfile")
-            .isValid())
+    if (read_prop(pw::kPpdService, pw::kPpdPath, pw::kPpdIface, "ActiveProfile").isValid())
     {
         ppd_service_ = pw::kPpdService;
         ppd_path_ = pw::kPpdPath;
         ppd_iface_ = pw::kPpdIface;
     }
-    else if (read_prop(pw::kPpdServiceLegacy, pw::kPpdPathLegacy,
-                       pw::kPpdIfaceLegacy, "ActiveProfile")
+    else if (read_prop(pw::kPpdServiceLegacy, pw::kPpdPathLegacy, pw::kPpdIfaceLegacy,
+                       "ActiveProfile")
                  .isValid())
     {
         ppd_service_ = pw::kPpdServiceLegacy;
@@ -62,19 +60,16 @@ LinuxPowerMonitorQt::LinuxPowerMonitorQt()
     refresh_on_battery_();
     refresh_power_saver_();
 
-    bus.connect(pw::kUPowerService, pw::kUPowerPath, pw::kPropsIface,
-                "PropertiesChanged", this,
+    bus.connect(pw::kUPowerService, pw::kUPowerPath, pw::kPropsIface, "PropertiesChanged", this,
                 SLOT(onUPowerPropsChanged(QString, QVariantMap, QStringList)));
     if (!ppd_service_.isEmpty())
     {
-        bus.connect(ppd_service_, ppd_path_, pw::kPropsIface, "PropertiesChanged",
-                    this,
+        bus.connect(ppd_service_, ppd_path_, pw::kPropsIface, "PropertiesChanged", this,
                     SLOT(onPpdPropsChanged(QString, QVariantMap, QStringList)));
     }
 }
 
-void LinuxPowerMonitorQt::onUPowerPropsChanged(const QString&,
-                                               const QVariantMap& changed,
+void LinuxPowerMonitorQt::onUPowerPropsChanged(const QString&, const QVariantMap& changed,
                                                const QStringList&)
 {
     if (changed.contains("OnBattery"))
@@ -88,15 +83,13 @@ void LinuxPowerMonitorQt::onUPowerPropsChanged(const QString&,
     }
 }
 
-void LinuxPowerMonitorQt::onPpdPropsChanged(const QString&,
-                                            const QVariantMap& changed,
+void LinuxPowerMonitorQt::onPpdPropsChanged(const QString&, const QVariantMap& changed,
                                             const QStringList&)
 {
     if (changed.contains("ActiveProfile"))
     {
-        const bool saver =
-            changed.value("ActiveProfile").toString() ==
-            QLatin1String(tesseract::power::kPowerSaverProfile);
+        const bool saver = changed.value("ActiveProfile").toString() ==
+                           QLatin1String(tesseract::power::kPowerSaverProfile);
         state_.set_power_saver(saver);
         notify_();
     }
@@ -108,8 +101,7 @@ void LinuxPowerMonitorQt::onPpdPropsChanged(const QString&,
 
 void LinuxPowerMonitorQt::refresh_on_battery_()
 {
-    QVariant v = read_prop(tesseract::power::kUPowerService,
-                           tesseract::power::kUPowerPath,
+    QVariant v = read_prop(tesseract::power::kUPowerService, tesseract::power::kUPowerPath,
                            tesseract::power::kUPowerIface, "OnBattery");
     if (v.isValid())
     {
@@ -119,10 +111,8 @@ void LinuxPowerMonitorQt::refresh_on_battery_()
 
 void LinuxPowerMonitorQt::detect_battery_()
 {
-    QDBusInterface up(tesseract::power::kUPowerService,
-                      tesseract::power::kUPowerPath,
-                      tesseract::power::kUPowerIface,
-                      QDBusConnection::systemBus());
+    QDBusInterface up(tesseract::power::kUPowerService, tesseract::power::kUPowerPath,
+                      tesseract::power::kUPowerIface, QDBusConnection::systemBus());
     if (!up.isValid())
     {
         return; // no UPower → assume no battery (desktop / headless)
@@ -134,12 +124,12 @@ void LinuxPowerMonitorQt::detect_battery_()
     }
     for (const QDBusObjectPath& dev : r.value())
     {
-        QVariant type = read_prop(tesseract::power::kUPowerService, dev.path(),
-                                  kUPowerDeviceIface, "Type");
+        QVariant type =
+            read_prop(tesseract::power::kUPowerService, dev.path(), kUPowerDeviceIface, "Type");
         QVariant supply = read_prop(tesseract::power::kUPowerService, dev.path(),
                                     kUPowerDeviceIface, "PowerSupply");
-        if (type.isValid() && type.toUInt() == kUPowerTypeBattery &&
-            supply.isValid() && supply.toBool())
+        if (type.isValid() && type.toUInt() == kUPowerTypeBattery && supply.isValid() &&
+            supply.toBool())
         {
             has_battery_ = true;
             return;
@@ -156,9 +146,7 @@ void LinuxPowerMonitorQt::refresh_power_saver_()
     QVariant v = read_prop(ppd_service_, ppd_path_, ppd_iface_, "ActiveProfile");
     if (v.isValid())
     {
-        state_.set_power_saver(
-            v.toString() ==
-            QLatin1String(tesseract::power::kPowerSaverProfile));
+        state_.set_power_saver(v.toString() == QLatin1String(tesseract::power::kPowerSaverProfile));
     }
 }
 

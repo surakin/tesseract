@@ -23,8 +23,8 @@ RoomInfo room(const std::string& id, const std::string& name)
     return r;
 }
 
-RoomInfo upgraded(const std::string& id, const std::string& name,
-                  const std::string& successor, bool successor_joined)
+RoomInfo upgraded(const std::string& id, const std::string& name, const std::string& successor,
+                  bool successor_joined)
 {
     RoomInfo r = room(id, name);
     r.successor_room_id = successor;
@@ -40,8 +40,7 @@ TEST_CASE("RoomListView hides an upgraded room only once its successor is joined
     vt::Stage st;
     auto owner = tk::create_root_widget<RoomListView>(&st.host);
     RoomListView& view = *owner;
-    view.set_rooms({room("!new:x", "New"),
-                    upgraded("!oldj:x", "Old joined", "!new:x", true),
+    view.set_rooms({room("!new:x", "New"), upgraded("!oldj:x", "Old joined", "!new:x", true),
                     upgraded("!oldu:x", "Old unjoined", "!elsewhere:x", false)});
     const tk::Rect bounds{0, 0, 300, 400};
     st.mount(view, bounds);

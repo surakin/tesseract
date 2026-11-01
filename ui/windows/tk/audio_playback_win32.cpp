@@ -30,34 +30,38 @@ constexpr REFERENCE_TIME kPlaybackBufferDuration = 2'000'000;
 class AudioPlaybackWin32 : public tk::AudioPlayback
 {
 public:
-    AudioPlaybackWin32(IAudioClient* client, IAudioRenderClient* renderer,
-                       UINT32 buffer_frames)
-        : audio_client_(client), renderer_(renderer),
-          buffer_frames_(buffer_frames)
+    AudioPlaybackWin32(IAudioClient* client, IAudioRenderClient* renderer, UINT32 buffer_frames)
+        : audio_client_(client), renderer_(renderer), buffer_frames_(buffer_frames)
     {
         audio_client_->Start();
-        render_thread_ = std::thread([this]() { render_loop_(); });
+        render_thread_ = std::thread(
+            [this]()
+            {
+                render_loop_();
+            });
     }
 
     ~AudioPlaybackWin32() override
     {
         stop_.store(true, std::memory_order_release);
         if (render_thread_.joinable())
+        {
             render_thread_.join();
+        }
         audio_client_->Stop();
         renderer_->Release();
         audio_client_->Release();
     }
 
-    void push_frame(const std::int16_t* samples,
-                    std::size_t         sample_count,
-                    std::uint32_t       /*sample_rate*/,
-                    std::uint32_t       /*num_channels*/) override
+    void push_frame(const std::int16_t* samples, std::size_t sample_count,
+                    std::uint32_t /*sample_rate*/, std::uint32_t /*num_channels*/) override
     {
         std::lock_guard<std::mutex> lk(mu_);
         // Cap to ~500ms to prevent unbounded growth if the render thread lags.
         if (pending_.size() + sample_count > 48000 / 2)
+        {
             return;
+        }
         pending_.insert(pending_.end(), samples, samples + sample_count);
     }
 
@@ -70,17 +74,20 @@ private:
 
             UINT32 padding = 0;
             if (FAILED(audio_client_->GetCurrentPadding(&padding)))
+            {
                 continue;
+            }
             const UINT32 available = buffer_frames_ - padding;
             if (available == 0)
+            {
                 continue;
+            }
 
             std::vector<std::int16_t> local;
             {
                 std::lock_guard<std::mutex> lk(mu_);
                 const std::size_t n =
-                    std::min(static_cast<std::size_t>(available),
-                             pending_.size());
+                    std::min(static_cast<std::size_t>(available), pending_.size());
                 if (n > 0)
                 {
                     local.assign(pending_.begin(),
@@ -92,11 +99,12 @@ private:
 
             BYTE* buf = nullptr;
             const UINT32 write_frames =
-                local.empty()
-                    ? std::min(available, static_cast<UINT32>(480)) // silence chunk
-                    : static_cast<UINT32>(local.size());
+                local.empty() ? std::min(available, static_cast<UINT32>(480)) // silence chunk
+                              : static_cast<UINT32>(local.size());
             if (FAILED(renderer_->GetBuffer(write_frames, &buf)))
+            {
                 continue;
+            }
 
             if (local.empty())
             {
@@ -104,19 +112,18 @@ private:
             }
             else
             {
-                std::memcpy(buf, local.data(),
-                            local.size() * sizeof(std::int16_t));
+                std::memcpy(buf, local.data(), local.size() * sizeof(std::int16_t));
                 renderer_->ReleaseBuffer(write_frames, 0);
             }
         }
     }
 
-    IAudioClient*       audio_client_;
+    IAudioClient* audio_client_;
     IAudioRenderClient* renderer_;
-    UINT32              buffer_frames_;
-    std::atomic<bool>   stop_{false};
-    std::thread         render_thread_;
-    std::mutex          mu_;
+    UINT32 buffer_frames_;
+    std::atomic<bool> stop_{false};
+    std::thread render_thread_;
+    std::mutex mu_;
     std::vector<std::int16_t> pending_;
 };
 
@@ -128,9 +135,11 @@ namespace tk
 std::unique_ptr<tk::AudioPlayback> make_audio_playback_win32()
 {
     IMMDeviceEnumerator* enumerator = nullptr;
-    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
-                                CLSCTX_ALL, IID_PPV_ARGS(&enumerator))))
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&enumerator))))
+    {
         return nullptr;
+    }
 
     IMMDevice* device = nullptr;
     {
@@ -147,11 +156,15 @@ std::unique_ptr<tk::AudioPlayback> make_audio_playback_win32()
             MultiByteToWideChar(CP_UTF8, 0, pref.c_str(), -1, wid.data(), n);
             hr2 = enumerator->GetDevice(wid.c_str(), &device);
             if (FAILED(hr2))
+            {
                 hr2 = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+            }
         }
         enumerator->Release();
         if (FAILED(hr2))
+        {
             return nullptr;
+        }
     }
 
     IAudioClient* client = nullptr;
@@ -159,14 +172,16 @@ std::unique_ptr<tk::AudioPlayback> make_audio_playback_win32()
                                   reinterpret_cast<void**>(&client));
     device->Release();
     if (FAILED(hr))
+    {
         return nullptr;
+    }
 
     WAVEFORMATEX wfx{};
-    wfx.wFormatTag      = WAVE_FORMAT_PCM;
-    wfx.nChannels       = 1;
-    wfx.nSamplesPerSec  = 48000;
-    wfx.wBitsPerSample  = 16;
-    wfx.nBlockAlign     = 2;
+    wfx.wFormatTag = WAVE_FORMAT_PCM;
+    wfx.nChannels = 1;
+    wfx.nSamplesPerSec = 48000;
+    wfx.wBitsPerSample = 16;
+    wfx.nBlockAlign = 2;
     wfx.nAvgBytesPerSec = 96000;
 
     hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,

@@ -21,13 +21,12 @@ bool icontains(const std::string& haystack, const std::string& needle)
     {
         return true;
     }
-    auto it = std::search(
-        haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-        [](char a, char b)
-        {
-            return std::tolower(static_cast<unsigned char>(a)) ==
-                   std::tolower(static_cast<unsigned char>(b));
-        });
+    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+                          [](char a, char b)
+                          {
+                              return std::tolower(static_cast<unsigned char>(a)) ==
+                                     std::tolower(static_cast<unsigned char>(b));
+                          });
     return it != haystack.end();
 }
 
@@ -69,16 +68,17 @@ void StickerPicker::refresh_packs()
                 // image so the tab shows a glyph rather than a bare letter.
                 if (p.avatar_url.empty())
                 {
-                    auto imgs =
-                        client_->list_pack_images(p.id, PackUsageFilter::Sticker);
+                    auto imgs = client_->list_pack_images(p.id, PackUsageFilter::Sticker);
                     if (!imgs.empty())
+                    {
                         p.avatar_url = imgs.front().url;
+                    }
                 }
                 filtered.push_back(std::move(p));
             }
         }
-        packs_ = order_picker_packs(std::move(filtered), current_room_id_,
-                                    current_room_parent_spaces_);
+        packs_ =
+            order_picker_packs(std::move(filtered), current_room_id_, current_room_parent_spaces_);
         favorites_ = client_->list_favorite_stickers();
     }
     // If we were on Favorites and there are no longer any, fall back to pack 0.
@@ -87,8 +87,7 @@ void StickerPicker::refresh_packs()
         if (!packs_.empty())
         {
             page_ = Page::Pack;
-            active_tab_ =
-                favorites_tab_offset(); // == 0 now that favorites gone
+            active_tab_ = favorites_tab_offset(); // == 0 now that favorites gone
         }
         else
         {
@@ -98,8 +97,7 @@ void StickerPicker::refresh_packs()
     // Reclamp active tab so it points at a valid index.
     // Skip the clamp on the Search page — active_tab_ is intentionally -1
     // there and the search results should survive a pack reload.
-    if (page_ != Page::Search &&
-        (active_tab_ < 0 || active_tab_ > tab_count() - 1))
+    if (page_ != Page::Search && (active_tab_ < 0 || active_tab_ > tab_count() - 1))
     {
         if (!packs_.empty())
         {
@@ -124,8 +122,8 @@ std::size_t StickerPicker::item_count() const
     return current_items_.size();
 }
 
-void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
-                               tk::Rect bounds, bool selected, bool hovered)
+void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                               bool hovered)
 {
     if (index >= current_items_.size())
     {
@@ -136,14 +134,12 @@ void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
     {
         // High Contrast: subtle_pressed/hover equal the window colour.
         ctx.canvas.fill_rounded_rect(bounds, 8.0f,
-                                     ctx.theme.high_contrast
-                                         ? ctx.theme.palette.sidebar_selected
-                                         : ctx.theme.palette.subtle_pressed);
+                                     ctx.theme.high_contrast ? ctx.theme.palette.sidebar_selected
+                                                             : ctx.theme.palette.subtle_pressed);
     }
     else if (hovered)
     {
-        ctx.canvas.fill_rounded_rect(bounds, 8.0f,
-                                     tk::hot_row_fill(ctx.theme));
+        ctx.canvas.fill_rounded_rect(bounds, 8.0f, tk::hot_row_fill(ctx.theme));
     }
 
     const auto& entry = current_items_[index];
@@ -164,14 +160,12 @@ void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
         float s = std::min(bounds.w / iw, bounds.h / ih);
         float dw = iw * s;
         float dh = ih * s;
-        tk::Rect dst{bounds.x + (bounds.w - dw) * 0.5f,
-                     bounds.y + (bounds.h - dh) * 0.5f, dw, dh};
+        tk::Rect dst{bounds.x + (bounds.w - dw) * 0.5f, bounds.y + (bounds.h - dh) * 0.5f, dw, dh};
         ctx.canvas.draw_image(*img, dst);
         if (ctx.anim_damage)
         {
-            ctx.anim_damage->note_image(cache_key_resolver
-                                            ? cache_key_resolver(entry.url)
-                                            : tk::CacheKey::media(entry.url),
+            ctx.anim_damage->note_image(cache_key_resolver ? cache_key_resolver(entry.url)
+                                                           : tk::CacheKey::media(entry.url),
                                         dst);
         }
     }
@@ -179,8 +173,7 @@ void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
     {
         // Placeholder shimmer: small rounded box, slightly darker than the
         // picker bg. Same idea as message-list image placeholders.
-        tk::Rect ph{bounds.x + 8.0f, bounds.y + 8.0f,
-                    std::max(0.0f, bounds.w - 16.0f),
+        tk::Rect ph{bounds.x + 8.0f, bounds.y + 8.0f, std::max(0.0f, bounds.w - 16.0f),
                     std::max(0.0f, bounds.h - 16.0f)};
         ctx.canvas.fill_rounded_rect(ph, 6.0f, ctx.theme.palette.chrome_bg);
     }
@@ -238,16 +231,14 @@ void StickerPicker::paint_tab_content(int i, tk::PaintCtx& ctx, tk::Rect tab)
         if (layout)
         {
             tk::Size sz = layout->measure();
-            ctx.canvas.draw_text(
-                *layout,
-                {tab.x + (tab.w - sz.w) * 0.5f, tab.y + (tab.h - sz.h) * 0.5f},
-                ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(*layout,
+                                 {tab.x + (tab.w - sz.w) * 0.5f, tab.y + (tab.h - sz.h) * 0.5f},
+                                 ctx.theme.palette.text_primary);
         }
         return;
     }
 
-    const auto& pack =
-        packs_[static_cast<std::size_t>(i - favorites_tab_offset())];
+    const auto& pack = packs_[static_cast<std::size_t>(i - favorites_tab_offset())];
     const tk::Image* avatar = nullptr;
     if (image_provider() && !pack.avatar_url.empty())
     {
@@ -257,8 +248,7 @@ void StickerPicker::paint_tab_content(int i, tk::PaintCtx& ctx, tk::Rect tab)
     if (avatar)
     {
         float side = std::min(tab.h - 8.0f, tab.w - 8.0f);
-        tk::Rect dst{tab.x + (tab.w - side) * 0.5f,
-                     tab.y + (tab.h - side) * 0.5f, side, side};
+        tk::Rect dst{tab.x + (tab.w - side) * 0.5f, tab.y + (tab.h - side) * 0.5f, side, side};
         ctx.canvas.draw_image(*avatar, dst);
     }
     else
@@ -267,20 +257,25 @@ void StickerPicker::paint_tab_content(int i, tk::PaintCtx& ctx, tk::Rect tab)
         // multi-byte character, which one byte would cut in half.
         std::string initial = tk::initials_of(pack.display_name);
         if (initial.empty())
+        {
             initial = "?";
+        }
         for (char& ch : initial)
+        {
             if (ch >= 'a' && ch <= 'z')
+            {
                 ch = static_cast<char>(ch - 'a' + 'A');
+            }
+        }
         tk::TextStyle st{};
         st.role = tk::FontRole::Title;
         auto layout = ctx.factory.build_text(initial, st);
         if (layout)
         {
             tk::Size sz = layout->measure();
-            ctx.canvas.draw_text(
-                *layout,
-                {tab.x + (tab.w - sz.w) * 0.5f, tab.y + (tab.h - sz.h) * 0.5f},
-                ctx.theme.palette.text_secondary);
+            ctx.canvas.draw_text(*layout,
+                                 {tab.x + (tab.w - sz.w) * 0.5f, tab.y + (tab.h - sz.h) * 0.5f},
+                                 ctx.theme.palette.text_secondary);
         }
     }
 }
@@ -315,8 +310,7 @@ std::string StickerPicker::tab_label(int i) const
 //  Search + page switching
 // ─────────────────────────────────────────────────────────────────────────
 
-void StickerPicker::on_search_query_changed(const std::string& /*query*/,
-                                            bool cleared)
+void StickerPicker::on_search_query_changed(const std::string& /*query*/, bool cleared)
 {
     if (cleared)
     {
@@ -385,8 +379,7 @@ void StickerPicker::rebuild_current_items()
         // per-image usage override, so filter again here.
         const auto& pack = packs_[pack_idx];
         for (const auto& img :
-             (client_ ? client_->list_pack_images(pack.id,
-                                                  PackUsageFilter::Sticker)
+             (client_ ? client_->list_pack_images(pack.id, PackUsageFilter::Sticker)
                       : std::vector<ImagePackImage>{}))
         {
             current_items_.push_back(img);
@@ -403,11 +396,9 @@ void StickerPicker::rebuild_current_items()
             const std::string& query = search_query();
             for (const auto& pack : packs_)
             {
-                for (const auto& img : client_->list_pack_images(
-                         pack.id, PackUsageFilter::Sticker))
+                for (const auto& img : client_->list_pack_images(pack.id, PackUsageFilter::Sticker))
                 {
-                    if (icontains(img.body, query) ||
-                        icontains(img.shortcode, query))
+                    if (icontains(img.body, query) || icontains(img.shortcode, query))
                     {
                         current_items_.push_back(img);
                     }

@@ -12,7 +12,9 @@ PreparedImage prepare_image_for_send(std::vector<std::uint8_t> bytes, std::strin
 {
     PreparedImage out;
     if (bytes.empty())
+    {
         return out;
+    }
 
     const bool animated = is_animated_flag || is_animated_image(bytes, mime);
 
@@ -67,18 +69,28 @@ PreparedImage prepare_image_for_send(std::vector<std::uint8_t> bytes, std::strin
     // An animation cannot be recompressed without flattening it, so one whose
     // metadata cannot be stripped is not sent at all.
     if (animated)
+    {
         return original_ok() ? original() : refuse();
+    }
 
     if (!encode)
+    {
         return original_ok() ? original() : refuse();
+    }
     if (!recompress && original_ok())
+    {
         return original();
+    }
 
     auto enc = encode(bytes.data(), bytes.size(), /*compress=*/true);
     if (enc.bytes.empty())
+    {
         return original_ok() ? original() : refuse();
+    }
     if (enc.bytes.size() >= bytes.size() && original_ok())
+    {
         return original();
+    }
 
     out.mime = std::move(enc.mime);
     out.width = enc.width;
@@ -88,7 +100,9 @@ PreparedImage prepare_image_for_send(std::vector<std::uint8_t> bytes, std::strin
     {
         const auto dot = out.filename.find_last_of('.');
         if (dot != std::string::npos)
+        {
             out.filename.erase(dot);
+        }
         out.filename += ".jpg";
     }
     out.bytes = std::move(enc.bytes);

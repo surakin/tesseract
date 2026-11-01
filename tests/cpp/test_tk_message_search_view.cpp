@@ -23,15 +23,17 @@ struct MsvIndexingScope
     {
         tesseract::Settings::instance().index_messages_for_search = on;
     }
-    ~MsvIndexingScope() { tesseract::Settings::instance().index_messages_for_search = saved; }
+    ~MsvIndexingScope()
+    {
+        tesseract::Settings::instance().index_messages_for_search = saved;
+    }
 };
 
 std::uint64_t msv_now_ms()
 {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
 }
 
 tesseract::SearchHit msv_hit(const std::string& ev, const std::string& room,
@@ -56,13 +58,20 @@ struct MsvStage : vt::Stage
         view->open();
         run();
     }
-    void run() { mount(*view, {0, 0, 900, 700}); }
+    void run()
+    {
+        mount(*view, {0, 0, 900, 700});
+    }
     std::vector<std::string> rows()
     {
         std::vector<std::string> out;
         for (const auto& n : vt::all_names(*view))
+        {
             if (n.find(", ") != std::string::npos)
+            {
                 out.push_back(n);
+            }
+        }
         return out;
     }
 };
@@ -77,7 +86,10 @@ TEST_CASE("MessageSearchView open/close lifecycle", "[tk][view][msg_search]")
     CHECK(s.view->search_field_visible());
     CHECK(s.view->visible());
     int closed = 0;
-    s.view->on_close = [&] { ++closed; };
+    s.view->on_close = [&]
+    {
+        ++closed;
+    };
     s.view->close();
     CHECK_FALSE(s.view->is_open());
     CHECK_FALSE(s.view->visible());
@@ -95,7 +107,10 @@ TEST_CASE("MessageSearchView typing queries; only results for the current "
     MsvIndexingScope on(true);
     MsvStage s;
     std::vector<std::string> queries;
-    s.view->on_query_changed = [&](const std::string& q) { queries.push_back(q); };
+    s.view->on_query_changed = [&](const std::string& q)
+    {
+        queries.push_back(q);
+    };
     s.host.fields_created.at(0)->on_changed("hello");
     s.host.fields_created.at(0)->on_changed("hello"); // unchanged: ignored
     CHECK(queries == std::vector<std::string>{"hello"});
@@ -111,8 +126,7 @@ TEST_CASE("MessageSearchView typing queries; only results for the current "
     CHECK(s.rows()[0] == "Room, Alice: hello world, 5m");
 }
 
-TEST_CASE("MessageSearchView relative time buckets and one-line snippets",
-          "[tk][view][msg_search]")
+TEST_CASE("MessageSearchView relative time buckets and one-line snippets", "[tk][view][msg_search]")
 {
     MsvIndexingScope on(true);
     MsvStage s;
@@ -120,12 +134,9 @@ TEST_CASE("MessageSearchView relative time buckets and one-line snippets",
     constexpr std::uint64_t kMin = 60ull * 1000, kHour = 60 * kMin, kDay = 24 * kHour;
     auto multi = msv_hit("$6", "R6", "line one\n\n  line\ttwo  ", 400 * kDay, "");
     multi.room_name.clear();
-    s.view->set_results({msv_hit("$0", "R0", "a", 5 * 1000),
-                         msv_hit("$1", "R1", "a", 2 * kHour),
-                         msv_hit("$2", "R2", "a", 3 * kDay),
-                         msv_hit("$3", "R3", "a", 21 * kDay),
-                         msv_hit("$4", "R4", "a", 800 * kDay),
-                         msv_hit("$5", "R5", "a", 0), multi},
+    s.view->set_results({msv_hit("$0", "R0", "a", 5 * 1000), msv_hit("$1", "R1", "a", 2 * kHour),
+                         msv_hit("$2", "R2", "a", 3 * kDay), msv_hit("$3", "R3", "a", 21 * kDay),
+                         msv_hit("$4", "R4", "a", 800 * kDay), msv_hit("$5", "R5", "a", 0), multi},
                         "q");
     s.run();
     auto rows = s.rows();
@@ -139,8 +150,7 @@ TEST_CASE("MessageSearchView relative time buckets and one-line snippets",
     CHECK(rows[6] == "Unknown room, line one line two, 1y");
 }
 
-TEST_CASE("MessageSearchView selection moves, clamps and activates",
-          "[tk][view][msg_search]")
+TEST_CASE("MessageSearchView selection moves, clamps and activates", "[tk][view][msg_search]")
 {
     MsvIndexingScope on(true);
     MsvStage s;
@@ -159,10 +169,13 @@ TEST_CASE("MessageSearchView selection moves, clamps and activates",
         room = r;
         event = e;
     };
-    s.view->on_close = [&] { ++closed; };
+    s.view->on_close = [&]
+    {
+        ++closed;
+    };
 
-    s.view->move_selection(1);   // first selected by set_results -> index 1
-    s.view->move_selection(10);  // clamps to last
+    s.view->move_selection(1);  // first selected by set_results -> index 1
+    s.view->move_selection(10); // clamps to last
     s.view->move_selection(-1);
     s.view->activate_selected();
     CHECK(event == "$b");
@@ -181,7 +194,10 @@ TEST_CASE("MessageSearchView submit key and row activation via accessibility "
     s.view->set_results({msv_hit("$a", "A", "x", 1000), msv_hit("$b", "B", "x", 1000)}, "q");
     s.run();
     std::string event;
-    s.view->on_result_activated = [&](const std::string&, const std::string& e) { event = e; };
+    s.view->on_result_activated = [&](const std::string&, const std::string& e)
+    {
+        event = e;
+    };
 
     s.host.fields_created.at(0)->on_submit();
     CHECK(event == "$a");
@@ -203,7 +219,10 @@ TEST_CASE("MessageSearchView backdrop click closes; card click and wheel "
     MsvIndexingScope on(true);
     MsvStage s;
     int closed = 0;
-    s.view->on_close = [&] { ++closed; };
+    s.view->on_close = [&]
+    {
+        ++closed;
+    };
     s.view->on_pointer_down({450, 300}); // inside the card
     s.view->on_pointer_up({450, 300}, true);
     CHECK(closed == 0);

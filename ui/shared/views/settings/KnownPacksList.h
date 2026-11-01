@@ -59,24 +59,30 @@ public:
         on_subscription_toggled;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    void     paint_after_children(tk::PaintCtx&) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // content_'s CheckButton rows are real children spanning the full
     // viewport width, including the scrollbar thumb's screen column — see
     // SettingsPage::dispatch_pointer_down's identical doc comment for why
     // this override (checking the thumb first) is needed.
     tk::Widget* dispatch_pointer_down(tk::Point world) override;
-    void        on_pointer_drag(tk::Point local) override;
-    void        on_pointer_up(tk::Point local, bool inside_self) override;
+    void on_pointer_drag(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
 
     // Test-only inspection of the scroll math.
-    float scroll_y_for_testing() const { return scroll_y_; }
+    float scroll_y_for_testing() const
+    {
+        return scroll_y_;
+    }
 
 protected:
-    float content_height() const override { return content_height_; }
+    float content_height() const override
+    {
+        return content_height_;
+    }
 
 private:
     void rebuild_();

@@ -32,39 +32,32 @@ public:
     ///     (synchronous clear so the UI doesn't flash the previous room).
     ///   - Once with the cached snapshot once it has been converted.
     ///   - On any `VectorDiff::Reset` / `Clear` from matrix-sdk-ui.
-    virtual void
-    on_timeline_reset(const std::string& room_id,
-                      EventList snapshot) = 0;
+    virtual void on_timeline_reset(const std::string& room_id, EventList snapshot) = 0;
 
     /// Insert `event` at visible-index `index` in `room_id`'s timeline.
     /// `index == current_length` means "append at the end".
-    virtual void on_message_inserted(const std::string& room_id,
-                                     std::size_t index,
+    virtual void on_message_inserted(const std::string& room_id, std::size_t index,
                                      std::unique_ptr<Event> event) = 0;
 
     /// Replace the event currently at visible-index `index` with `event`
     /// (edit, redaction, reaction change, sender-profile resolution).
-    virtual void on_message_updated(const std::string& room_id,
-                                    std::size_t index,
+    virtual void on_message_updated(const std::string& room_id, std::size_t index,
                                     std::unique_ptr<Event> event) = 0;
 
     /// Remove the event at visible-index `index`.
-    virtual void on_message_removed(const std::string& room_id,
-                                    std::size_t index) = 0;
+    virtual void on_message_removed(const std::string& room_id, std::size_t index) = 0;
 
     /// Batch prepend: N older messages added at the front of `room_id`'s
     /// timeline in one shot (back-pagination result). Events are oldest-first.
     /// Replaces N individual on_message_inserted(idx=0) calls.
-    virtual void on_messages_prepended(const std::string& /*room_id*/,
-                                       EventList /*events*/)
+    virtual void on_messages_prepended(const std::string& /*room_id*/, EventList /*events*/)
     {
     }
 
     /// Batch append: N newer messages added at the end of `room_id`'s timeline
     /// (forward-pagination, VectorDiff::Append, or a live-sync burst).
     /// Events are oldest-first.
-    virtual void on_messages_appended(const std::string& /*room_id*/,
-                                      EventList /*events*/)
+    virtual void on_messages_appended(const std::string& /*room_id*/, EventList /*events*/)
     {
     }
 
@@ -80,26 +73,22 @@ public:
 
     /// Thread-timeline twins of the four room-timeline callbacks. `thread_root`
     /// is the thread root event id. Default no-ops so shells opt in later.
-    virtual void on_thread_reset(const std::string& /*room_id*/,
-                                 const std::string& /*thread_root*/,
+    virtual void on_thread_reset(const std::string& /*room_id*/, const std::string& /*thread_root*/,
                                  EventList /*snapshot*/)
     {
     }
     virtual void on_thread_inserted(const std::string& /*room_id*/,
-                                    const std::string& /*thread_root*/,
-                                    std::size_t /*index*/,
+                                    const std::string& /*thread_root*/, std::size_t /*index*/,
                                     std::unique_ptr<Event> /*event*/)
     {
     }
     virtual void on_thread_updated(const std::string& /*room_id*/,
-                                   const std::string& /*thread_root*/,
-                                   std::size_t /*index*/,
+                                   const std::string& /*thread_root*/, std::size_t /*index*/,
                                    std::unique_ptr<Event> /*event*/)
     {
     }
     virtual void on_thread_removed(const std::string& /*room_id*/,
-                                   const std::string& /*thread_root*/,
-                                   std::size_t /*index*/)
+                                   const std::string& /*thread_root*/, std::size_t /*index*/)
     {
     }
     /// Batch prepend for a thread timeline (back-pagination of thread history).
@@ -127,17 +116,20 @@ public:
     /// full snapshot — replace the cached list rather than diffing. The
     /// reference is only valid for the duration of the call; copy before
     /// marshalling to the UI thread.
-    virtual void on_invites_updated(const std::vector<InviteInfo>& /*invites*/) { }
+    virtual void on_invites_updated(const std::vector<InviteInfo>& /*invites*/)
+    {
+    }
 
     /// Fired when the set of rooms the current user has knocked on (MSC2403)
     /// changes (knock sent, retracted, accepted, or denied). `knocks` is a
     /// full snapshot — replace the cached list rather than diffing. The
     /// reference is only valid for the duration of the call; copy before
     /// marshalling to the UI thread.
-    virtual void on_my_knocks_updated(const std::vector<KnockedRoomInfo>& /*knocks*/) { }
+    virtual void on_my_knocks_updated(const std::vector<KnockedRoomInfo>& /*knocks*/)
+    {
+    }
 
-    virtual void on_sync_error(const std::string& context,
-                               const std::string& description,
+    virtual void on_sync_error(const std::string& context, const std::string& description,
                                bool soft_logout) = 0;
 
     /// Fired whenever the SDK rotates OAuth tokens. Persist the JSON so the
@@ -167,10 +159,8 @@ public:
     /// When step==4, `recovery_key` holds the generated key (empty if
     /// passphrase mode was chosen). When step==3, `backed_up`/`total`
     /// carry the running backup count.
-    virtual void on_enable_recovery_progress(uint8_t /*step*/,
-                                             const std::string& /*recovery_key*/,
-                                             uint32_t /*backed_up*/,
-                                             uint32_t /*total*/)
+    virtual void on_enable_recovery_progress(uint8_t /*step*/, const std::string& /*recovery_key*/,
+                                             uint32_t /*backed_up*/, uint32_t /*total*/)
     {
     }
 
@@ -178,8 +168,7 @@ public:
     /// `Client::begin_reset_crypto_identity()`) resolves. `ok` is true when the
     /// browser approval succeeded and the new identity was uploaded; otherwise
     /// `message` carries the failure / cancellation reason.
-    virtual void on_crypto_reset_result(bool /*ok*/,
-                                        const std::string& /*message*/)
+    virtual void on_crypto_reset_result(bool /*ok*/, const std::string& /*message*/)
     {
     }
 
@@ -205,8 +194,7 @@ public:
     /// plus a newline-separated list of active operation labels. In release
     /// builds neither this callback nor its Rust caller are compiled.
     /// Default no-op in all builds.
-    virtual void on_inflight_changed_debug(std::uint32_t /*count*/,
-                                           std::string /*urls*/)
+    virtual void on_inflight_changed_debug(std::uint32_t /*count*/, std::string /*urls*/)
     {
     }
 
@@ -263,8 +251,7 @@ public:
     /// `total_size` is the declared HTTP Content-Length (0 if unknown, or
     /// for a non-STREAM_CHUNK delivery). Default no-op.
     virtual void on_media_chunk(std::uint64_t /*request_id*/,
-                                const std::vector<std::uint8_t>& /*chunk*/,
-                                std::uint8_t /*status*/,
+                                const std::vector<std::uint8_t>& /*chunk*/, std::uint8_t /*status*/,
                                 std::uint64_t /*total_size*/)
     {
     }
@@ -287,18 +274,20 @@ public:
 
     /// Fired when an async GIF search fails (network / provider error).
     /// Default no-op.
-    virtual void on_gif_search_failed(std::uint64_t /*request_id*/,
-                                      const std::string& /*message*/)
+    virtual void on_gif_search_failed(std::uint64_t /*request_id*/, const std::string& /*message*/)
     {
     }
 
     /// Fired when an async forward started via `Client::forward_event`
     /// completes successfully. Default no-op.
-    virtual void on_forward_done(std::uint64_t /*request_id*/) {}
+    virtual void on_forward_done(std::uint64_t /*request_id*/)
+    {
+    }
 
     /// Fired when an async forward fails. Default no-op.
-    virtual void on_forward_failed(std::uint64_t /*request_id*/,
-                                   const std::string& /*message*/) {}
+    virtual void on_forward_failed(std::uint64_t /*request_id*/, const std::string& /*message*/)
+    {
+    }
 
     /// Fired when an async full-text search (`Client::search_messages`)
     /// completes. The UI drops results whose `request_id` is stale (a newer
@@ -310,8 +299,7 @@ public:
 
     /// Fired when an async full-text search fails (e.g. the index is not open).
     /// Default no-op.
-    virtual void on_search_failed(std::uint64_t /*request_id*/,
-                                  const std::string& /*message*/)
+    virtual void on_search_failed(std::uint64_t /*request_id*/, const std::string& /*message*/)
     {
     }
 
@@ -321,16 +309,16 @@ public:
     /// the rows new to this page — the UI appends them to what it already
     /// has. `reached_end` is true once the server has no further pages.
     /// Default no-op.
-    virtual void on_room_directory_search_results(
-        std::uint64_t /*request_id*/,
-        const std::vector<RoomDirectoryEntry>& /*entries*/,
-        bool /*reached_end*/)
+    virtual void
+    on_room_directory_search_results(std::uint64_t /*request_id*/,
+                                     const std::vector<RoomDirectoryEntry>& /*entries*/,
+                                     bool /*reached_end*/)
     {
     }
 
     /// Fired when a room-directory search or page fetch fails. Default no-op.
-    virtual void on_room_directory_search_failed(
-        std::uint64_t /*request_id*/, const std::string& /*message*/)
+    virtual void on_room_directory_search_failed(std::uint64_t /*request_id*/,
+                                                 const std::string& /*message*/)
     {
     }
 
@@ -339,8 +327,7 @@ public:
     /// completes. `reached_start`/`reached_end` mirror the synchronous
     /// variants; both are false on error. Default no-op.
     virtual void on_paginate_result(std::uint64_t /*request_id*/, bool /*ok*/,
-                                    bool /*reached_start*/,
-                                    bool /*reached_end*/,
+                                    bool /*reached_start*/, bool /*reached_end*/,
                                     const std::string& /*message*/)
     {
     }
@@ -349,8 +336,7 @@ public:
     /// completes. `media_count` is an authoritative Image/Video count read
     /// directly from the SDK's timeline, independent of whatever the
     /// diff-streaming task has delivered to the UI so far. Default no-op.
-    virtual void on_media_view_paginate_result(std::uint64_t /*request_id*/,
-                                               bool /*ok*/,
+    virtual void on_media_view_paginate_result(std::uint64_t /*request_id*/, bool /*ok*/,
                                                bool /*reached_start*/,
                                                std::uint64_t /*media_count*/,
                                                const std::string& /*message*/)
@@ -365,8 +351,7 @@ public:
     /// Default no-op.
     virtual void on_room_media_page(std::uint64_t /*request_id*/,
                                     const std::vector<MediaIndexRow>& /*rows*/,
-                                    bool /*reached_db_end*/,
-                                    std::uint64_t /*total*/)
+                                    bool /*reached_db_end*/, std::uint64_t /*total*/)
     {
     }
 
@@ -383,9 +368,8 @@ public:
     /// (`cancelled`). `reached_start` is true only when the walk genuinely
     /// reached the room's first event. `out_path` is the final written
     /// path (folder or `.zip`) on success, empty otherwise.
-    virtual void on_room_export_complete(std::uint64_t /*request_id*/,
-                                         bool /*ok*/, bool /*cancelled*/,
-                                         bool /*reached_start*/,
+    virtual void on_room_export_complete(std::uint64_t /*request_id*/, bool /*ok*/,
+                                         bool /*cancelled*/, bool /*reached_start*/,
                                          const std::string& /*out_path*/,
                                          std::uint64_t /*events_written*/,
                                          std::uint64_t /*bytes_written*/,
@@ -397,8 +381,7 @@ public:
     /// leave_room_async) completes or fails. `joined_room_id` carries the
     /// canonical room ID returned by join; empty for other actions or on
     /// failure. Default no-op.
-    virtual void on_room_action_complete(std::uint64_t /*request_id*/,
-                                         bool /*ok*/,
+    virtual void on_room_action_complete(std::uint64_t /*request_id*/, bool /*ok*/,
                                          const std::string& /*joined_room_id*/,
                                          const std::string& /*message*/)
     {
@@ -416,8 +399,7 @@ public:
     /// Byte progress for an asynchronous, user-initiated message-media upload.
     /// Implementations may receive many updates and should coalesce expensive
     /// presentation work. `total_bytes == 0` means the total is unavailable.
-    virtual void on_upload_progress(std::uint64_t /*request_id*/,
-                                    std::uint64_t /*current_bytes*/,
+    virtual void on_upload_progress(std::uint64_t /*request_id*/, std::uint64_t /*current_bytes*/,
                                     std::uint64_t /*total_bytes*/)
     {
     }
@@ -425,10 +407,8 @@ public:
     /// Fired when an async `Client::set_or_delete_profile_field_async`
     /// completes. `key` is the field key; `message` is a human-readable error
     /// on failure (empty on success). Default no-op.
-    virtual void on_profile_field_result(std::uint64_t /*request_id*/,
-                                         const std::string& /*key*/,
-                                         bool /*ok*/,
-                                         const std::string& /*message*/)
+    virtual void on_profile_field_result(std::uint64_t /*request_id*/, const std::string& /*key*/,
+                                         bool /*ok*/, const std::string& /*message*/)
     {
     }
 
@@ -456,9 +436,8 @@ public:
     /// another device. `display_name` / `avatar_url` are nullopt when the
     /// server hasn't delivered that field (unknown, not unset). UIs re-fetch
     /// the extended profile for the remaining fields.
-    virtual void
-    on_own_profile_changed(const std::optional<std::string>& /*display_name*/,
-                           const std::optional<std::string>& /*avatar_url*/)
+    virtual void on_own_profile_changed(const std::optional<std::string>& /*display_name*/,
+                                        const std::optional<std::string>& /*avatar_url*/)
     {
     }
 
@@ -467,12 +446,9 @@ public:
     /// the UI thread before showing a system notification. `is_mention` is true
     /// when the push rules matched a highlight rule (@ mention). Only fired for
     /// live PushBack events — pagination does not trigger notifications.
-    virtual void on_notification(const std::string& /*room_id*/,
-                                 const std::string& /*room_name*/,
-                                 const std::string& /*sender*/,
-                                 const std::string& /*body*/,
-                                 bool /*is_mention*/,
-                                 const std::vector<uint8_t>& /*avatar_bytes*/,
+    virtual void on_notification(const std::string& /*room_id*/, const std::string& /*room_name*/,
+                                 const std::string& /*sender*/, const std::string& /*body*/,
+                                 bool /*is_mention*/, const std::vector<uint8_t>& /*avatar_bytes*/,
                                  const std::vector<uint8_t>& /*image_bytes*/,
                                  const std::string& /*event_id*/)
     {
@@ -489,16 +465,14 @@ public:
     /// thread — marshal to UI thread before touching widgets.
     virtual void on_verification_request(const std::string& /*flow_id*/,
                                          const std::string& /*user_id*/,
-                                         const std::string& /*device_id*/,
-                                         bool /*incoming*/)
+                                         const std::string& /*device_id*/, bool /*incoming*/)
     {
     }
 
     /// The SAS codes are ready for display. Called after both devices have
     /// exchanged keys; the UI switches to its compare step. The decimals are
     /// always set; `sas.emojis` is empty when only `decimal` was agreed.
-    virtual void on_sas_ready(const std::string& /*flow_id*/,
-                              VerificationSas /*sas*/)
+    virtual void on_sas_ready(const std::string& /*flow_id*/, VerificationSas /*sas*/)
     {
     }
 
@@ -553,17 +527,15 @@ public:
     /// warning. The first call after subscribing only happens when the set
     /// is non-empty, so clear any shown warning on room switch. Called on a
     /// background thread.
-    virtual void on_identity_status_changed(
-        const std::string& /*room_id*/,
-        const std::vector<IdentityWarning>& /*warnings*/)
+    virtual void on_identity_status_changed(const std::string& /*room_id*/,
+                                            const std::vector<IdentityWarning>& /*warnings*/)
     {
     }
 
     /// Called when a presence event is received for `user_id`.
     /// `state` reflects the user's current presence state.
     /// Called on a background thread.
-    virtual void on_presence_changed(const std::string& /*user_id*/,
-                                     PresenceState /*state*/)
+    virtual void on_presence_changed(const std::string& /*user_id*/, PresenceState /*state*/)
     {
     }
 
@@ -579,8 +551,7 @@ public:
     /// Fired when an async server-info fetch (`Client::get_server_info_async`)
     /// completes. `info` is default-constructed on failure or when not logged
     /// in. Default no-op.
-    virtual void on_server_info_ready(std::uint64_t /*request_id*/,
-                                      const ServerInfo& /*info*/)
+    virtual void on_server_info_ready(std::uint64_t /*request_id*/, const ServerInfo& /*info*/)
     {
     }
 
@@ -607,8 +578,8 @@ public:
     /// returned (sliding sync's account-data extension can lag a fresh room
     /// switch — see that function's doc). `override_json` is the same shape
     /// as `on_room_preview_override_ready`.
-    virtual void on_room_media_preview_override_updated(
-        const std::string& /*room_id*/, const std::string& /*override_json*/)
+    virtual void on_room_media_preview_override_updated(const std::string& /*room_id*/,
+                                                        const std::string& /*override_json*/)
     {
     }
 
@@ -630,8 +601,7 @@ public:
     /// Fired when an async `Client::get_mutual_rooms_async` page completes.
     /// `json` is `{"joined":[room ids],"count":N,"next_batch":"","error":""}`;
     /// a non-empty `error` means the request failed.
-    virtual void on_mutual_rooms_ready(std::uint64_t /*request_id*/,
-                                       const std::string& /*json*/)
+    virtual void on_mutual_rooms_ready(std::uint64_t /*request_id*/, const std::string& /*json*/)
     {
     }
 
@@ -641,36 +611,34 @@ public:
     // ------------------------------------------------------------------
 
     /// Fired when a remote participant opens a call slot in a joined room.
-    virtual void on_call_invitation(const std::string& /*room_id*/,
-                                     const std::string& /*slot_id*/,
-                                     const std::string& /*caller_user_id*/,
-                                     const std::string& /*call_intent*/,
-                                     std::uint64_t      /*lifetime_ms*/,
-                                     const std::string& /*notification_event_id*/)
+    virtual void on_call_invitation(const std::string& /*room_id*/, const std::string& /*slot_id*/,
+                                    const std::string& /*caller_user_id*/,
+                                    const std::string& /*call_intent*/,
+                                    std::uint64_t /*lifetime_ms*/,
+                                    const std::string& /*notification_event_id*/)
     {
     }
 
     /// Fired when a remote participant joins the active call.
     virtual void on_call_participant_joined(std::uint64_t /*session_id*/,
-                                             const RtcParticipantInfo& /*info*/)
+                                            const RtcParticipantInfo& /*info*/)
     {
     }
 
     /// Fired when a remote participant leaves the active call.
     virtual void on_call_participant_left(std::uint64_t /*session_id*/,
-                                           const std::string& /*participant_id*/)
+                                          const std::string& /*participant_id*/)
     {
     }
 
     /// Fired when a participant's mute state changes in the active call.
     virtual void on_call_participant_updated(std::uint64_t /*session_id*/,
-                                              const RtcParticipantInfo& /*info*/)
+                                             const RtcParticipantInfo& /*info*/)
     {
     }
 
     /// Fired when the active call session ends for any reason.
-    virtual void on_call_ended(std::uint64_t /*session_id*/,
-                                const std::string& /*reason*/)
+    virtual void on_call_ended(std::uint64_t /*session_id*/, const std::string& /*reason*/)
     {
     }
 
@@ -678,28 +646,22 @@ public:
     /// `rgba` is `width * height * 4` bytes, row-major.  Called on a
     /// background thread — copy if the data must outlive the call.
     virtual void on_call_video_frame(std::uint64_t /*session_id*/,
-                                      const std::string& /*participant_id*/,
-                                      std::uint32_t /*width*/,
-                                      std::uint32_t /*height*/,
-                                      const std::uint8_t* /*rgba*/,
-                                      std::size_t /*rgba_size*/)
+                                     const std::string& /*participant_id*/, std::uint32_t /*width*/,
+                                     std::uint32_t /*height*/, const std::uint8_t* /*rgba*/,
+                                     std::size_t /*rgba_size*/)
     {
     }
     /// Fired per decoded RGBA screen share frame from a remote participant (~15fps).
     virtual void on_call_screen_frame(std::uint64_t /*session_id*/,
-                                       const std::string& /*participant_id*/,
-                                       std::uint32_t /*width*/,
-                                       std::uint32_t /*height*/,
-                                       const std::uint8_t* /*rgba*/,
-                                       std::size_t /*rgba_size*/)
+                                      const std::string& /*participant_id*/,
+                                      std::uint32_t /*width*/, std::uint32_t /*height*/,
+                                      const std::uint8_t* /*rgba*/, std::size_t /*rgba_size*/)
     {
     }
     virtual void on_call_audio_frame(std::uint64_t /*session_id*/,
-                                      const std::string& /*participant_id*/,
-                                      const std::int16_t* /*samples*/,
-                                      std::size_t /*sample_count*/,
-                                      std::uint32_t /*sample_rate*/,
-                                      std::uint32_t /*num_channels*/)
+                                     const std::string& /*participant_id*/,
+                                     const std::int16_t* /*samples*/, std::size_t /*sample_count*/,
+                                     std::uint32_t /*sample_rate*/, std::uint32_t /*num_channels*/)
     {
     }
 };

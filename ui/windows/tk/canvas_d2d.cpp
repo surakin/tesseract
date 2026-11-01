@@ -57,18 +57,27 @@ void set_link_color(std::optional<Color> c)
 
 int win32_system_base_pt()
 {
-    static int base = []() -> int {
+    static int base = []() -> int
+    {
         NONCLIENTMETRICSW ncm{};
         ncm.cbSize = sizeof(ncm);
         if (!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0))
+        {
             return 9;
+        }
         int h = ncm.lfMessageFont.lfHeight;
-        if (h == 0) return 9;
+        if (h == 0)
+        {
+            return 9;
+        }
         // lfHeight is in device pixels at the system DPI. Dividing by 96
         // instead of the real DPI double-counts the scale on HiDPI displays.
         HDC screen = GetDC(nullptr);
         const int dpi = screen ? GetDeviceCaps(screen, LOGPIXELSY) : 96;
-        if (screen) ReleaseDC(nullptr, screen);
+        if (screen)
+        {
+            ReleaseDC(nullptr, screen);
+        }
         int pt = MulDiv(std::abs(h), 72, dpi);
         return pt > 0 ? pt : 9;
     }();
@@ -99,8 +108,14 @@ inline D2D1_POINT_2F to_d2d(Point p)
 // than track exact per-rect regions (see Surface::Impl::Backlog).
 Rect union_rect(const Rect& a, const Rect& b)
 {
-    if (a.empty()) return b;
-    if (b.empty()) return a;
+    if (a.empty())
+    {
+        return b;
+    }
+    if (b.empty())
+    {
+        return a;
+    }
     const float x0 = std::min(a.x, b.x);
     const float y0 = std::min(a.y, b.y);
     const float x1 = std::max(a.right(), b.right());
@@ -144,11 +159,9 @@ std::wstring utf8_to_wide(std::string_view s)
     {
         return {};
     }
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                static_cast<int>(s.size()), nullptr, 0);
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
     std::wstring out(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                        out.data(), n);
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n);
     return out;
 }
 
@@ -161,8 +174,8 @@ std::wstring utf8_to_wide(std::string_view s)
 // locale-aware uppercasing (towupper) to the result before drawing.
 std::wstring initials_upper(std::string_view name, AvatarText text)
 {
-    std::wstring out = utf8_to_wide(
-        text == AvatarText::Literal ? std::string(name) : initials_of(name));
+    std::wstring out =
+        utf8_to_wide(text == AvatarText::Literal ? std::string(name) : initials_of(name));
     for (wchar_t& ch : out)
     {
         ch = static_cast<wchar_t>(towupper(ch));
@@ -199,16 +212,14 @@ struct FontDesc
 static FontDesc desc_for(FontRole r)
 {
     const float pt = static_cast<float>(font_role_pt(r, win32_system_base_pt()));
-    const DWRITE_FONT_WEIGHT weight = font_role_is_semibold(r)
-                                          ? DWRITE_FONT_WEIGHT_SEMI_BOLD
-                                          : DWRITE_FONT_WEIGHT_REGULAR;
+    const DWRITE_FONT_WEIGHT weight =
+        font_role_is_semibold(r) ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_REGULAR;
     // A user family (font_config.h) replaces the Segoe optical-size pair;
     // otherwise Title uses the Display optical face and all other roles Text.
     const std::string_view user = font_role_family(r);
-    std::wstring family =
-        !user.empty()            ? utf8_to_wide(user)
-        : (r == FontRole::Title) ? L"Segoe UI Variable Display"
-                                 : L"Segoe UI Variable Text";
+    std::wstring family = !user.empty()            ? utf8_to_wide(user)
+                          : (r == FontRole::Title) ? L"Segoe UI Variable Display"
+                                                   : L"Segoe UI Variable Text";
     return {std::move(family), pt, weight};
 }
 
@@ -222,8 +233,8 @@ struct Backend::Impl
     ComPtr<IDWriteFactory2> dwrite;
     ComPtr<IWICImagingFactory> wic;
     ComPtr<IDWriteFontFallback> font_fallback;
-    ComPtr<IDWriteFontFileLoader> mem_font_loader; // keeps Twemoji alive
-    ComPtr<IDWriteFontFace> noto_emoji_face;        // Noto Color Emoji IDWriteFontFace
+    ComPtr<IDWriteFontFileLoader> mem_font_loader;       // keeps Twemoji alive
+    ComPtr<IDWriteFontFace> noto_emoji_face;             // Noto Color Emoji IDWriteFontFace
     ComPtr<IDWriteFontCollection> noto_emoji_collection; // same font, as a collection
     bool com_initialised_here = false;
 
@@ -256,25 +267,21 @@ struct Backend::Impl
         d2d_dev.Reset();
         dxgi_dev.Reset();
         d3d.Reset();
-        HRESULT hr = D3D11CreateDevice(
-            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-            D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
-            d3d.GetAddressOf(), nullptr, nullptr);
+        HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                       D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                                       D3D11_SDK_VERSION, d3d.GetAddressOf(), nullptr, nullptr);
         if (FAILED(hr))
         {
             hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
-                                   D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
-                                   D3D11_SDK_VERSION, d3d.GetAddressOf(),
-                                   nullptr, nullptr);
+                                   D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+                                   d3d.GetAddressOf(), nullptr, nullptr);
             check(hr, "D3D11CreateDevice");
         }
-        check(d3d->QueryInterface(IID_PPV_ARGS(dxgi_dev.GetAddressOf())),
-              "QI IDXGIDevice1");
+        check(d3d->QueryInterface(IID_PPV_ARGS(dxgi_dev.GetAddressOf())), "QI IDXGIDevice1");
         check(d2d->CreateDevice(dxgi_dev.Get(), d2d_dev.GetAddressOf()),
               "ID2D1Factory1::CreateDevice");
         dcomp_device.Reset();
-        check(DCompositionCreateDevice2(dxgi_dev.Get(),
-                                        IID_PPV_ARGS(dcomp_device.GetAddressOf())),
+        check(DCompositionCreateDevice2(dxgi_dev.Get(), IID_PPV_ARGS(dcomp_device.GetAddressOf())),
               "DCompositionCreateDevice2");
         ++device_generation;
         device_lost_ = false;
@@ -303,10 +310,8 @@ struct Backend::Impl
         // so multiply by 96/72 = 4/3 to convert.
         float size_dip = fd.size_pt * (96.0f / 72.0f);
         HRESULT hr = dwrite->CreateTextFormat(
-            monospace ? mono_family_name().c_str() : fd.family.c_str(), nullptr,
-            fd.weight,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size_dip, L"",
-            tf.GetAddressOf());
+            monospace ? mono_family_name().c_str() : fd.family.c_str(), nullptr, fd.weight,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size_dip, L"", tf.GetAddressOf());
         check(hr, "CreateTextFormat");
         cache.emplace(static_cast<int>(role), tf);
         return tf.Get();
@@ -319,16 +324,14 @@ struct Backend::Impl
 // Returns nullptr (and leaves mem_loader_out untouched) on any failure — the
 // caller then keeps using the system-only fallback.
 static ComPtr<IDWriteFontFallback>
-build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
-                     ComPtr<IDWriteFontFallback> system_fallback,
+build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite, ComPtr<IDWriteFontFallback> system_fallback,
                      ComPtr<IDWriteFontFileLoader>& mem_loader_out,
                      ComPtr<IDWriteFontFace>& face_out,
                      ComPtr<IDWriteFontCollection>& collection_out)
 {
     // 1. Read font bytes from the embedded RCDATA resource.
     HMODULE hmod = GetModuleHandleW(nullptr);
-    HRSRC hrsrc = FindResourceW(hmod, MAKEINTRESOURCEW(kEmojiFontResourceId),
-                                RT_RCDATA);
+    HRSRC hrsrc = FindResourceW(hmod, MAKEINTRESOURCEW(kEmojiFontResourceId), RT_RCDATA);
     if (!hrsrc)
     {
         return nullptr;
@@ -365,8 +368,8 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     }
 
     ComPtr<IDWriteFontFile> font_file;
-    if (FAILED(mem_loader->CreateInMemoryFontFileReference(
-            dwrite5.Get(), data, size, nullptr, &font_file)))
+    if (FAILED(mem_loader->CreateInMemoryFontFileReference(dwrite5.Get(), data, size, nullptr,
+                                                           &font_file)))
     {
         return nullptr;
     }
@@ -374,8 +377,8 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     // 4. Build a font set containing just Twemoji, then a font collection.
     //    IDWriteFactory5 inherits IDWriteFactory3, so we use it directly.
     ComPtr<IDWriteFontFaceReference> face_ref;
-    if (FAILED(dwrite5->CreateFontFaceReference(
-            font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE, &face_ref)))
+    if (FAILED(dwrite5->CreateFontFaceReference(font_file.Get(), 0, DWRITE_FONT_SIMULATIONS_NONE,
+                                                &face_ref)))
     {
         return nullptr;
     }
@@ -397,8 +400,7 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     }
 
     ComPtr<IDWriteFontCollection1> emoji_coll;
-    if (FAILED(dwrite5->CreateFontCollectionFromFontSet(font_set.Get(),
-                                                        &emoji_coll)))
+    if (FAILED(dwrite5->CreateFontCollectionFromFontSet(font_set.Get(), &emoji_coll)))
     {
         return nullptr;
     }
@@ -430,91 +432,91 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     // DWrite falls through to the next mapping for any codepoint Noto lacks.
     static const DWRITE_UNICODE_RANGE kEmojiRanges[] = {
         // Scattered BMP emoji (©, ®, ™, arrows, clocks, symbols, dingbats …)
-        {0x00A9, 0x00A9},  // ©
-        {0x00AE, 0x00AE},  // ®
-        {0x203C, 0x203C},  // ‼
-        {0x2049, 0x2049},  // ⁉
-        {0x20E3, 0x20E3},  // ⃣ combining enclosing keycap
-        {0x2122, 0x2122},  // ™
-        {0x2139, 0x2139},  // ℹ
-        {0x2194, 0x21AA},  // various arrows
-        {0x231A, 0x231B},  // watch, hourglass
-        {0x23CF, 0x23CF},  // eject
-        {0x23E9, 0x23F3},  // rewind / fast-forward / clocks
-        {0x23F8, 0x23FA},  // pause / stop / record
-        {0x24C2, 0x24C2},  // Ⓜ
-        {0x25AA, 0x25AB},  // small black/white squares
-        {0x25B6, 0x25B6},  // ▶ play
-        {0x25C0, 0x25C0},  // ◀ reverse
-        {0x25FB, 0x25FE},  // medium squares
-        {0x2600, 0x2604},  // sun, cloud, etc.
-        {0x260E, 0x260E},  // ☎
-        {0x2611, 0x2611},  // ☑
-        {0x2614, 0x2615},  // umbrella, hot beverage
-        {0x2618, 0x2618},  // shamrock
-        {0x261D, 0x261D},  // index pointing up
-        {0x2620, 0x2620},  // skull and crossbones
-        {0x2622, 0x2623},  // radioactive, biohazard
-        {0x2626, 0x2626},  // orthodox cross
-        {0x262A, 0x262A},  // star and crescent
-        {0x262E, 0x262F},  // peace, yin yang
-        {0x2638, 0x263A},  // wheel of dharma, smiley
-        {0x2640, 0x2640},  // female sign
-        {0x2642, 0x2642},  // male sign
-        {0x2648, 0x2653},  // zodiac signs
-        {0x265F, 0x2660},  // chess pawn, spade
-        {0x2663, 0x2663},  // club
-        {0x2665, 0x2666},  // heart, diamond
-        {0x2668, 0x2668},  // hot springs
-        {0x267B, 0x267B},  // recycling
-        {0x267E, 0x267F},  // infinity, wheelchair
-        {0x2692, 0x2697},  // tools
-        {0x2699, 0x2699},  // gear
-        {0x269B, 0x269C},  // atom, fleur-de-lis
-        {0x26A0, 0x26A1},  // warning, lightning
-        {0x26A7, 0x26A7},  // male-female sign
-        {0x26AA, 0x26AB},  // circles
-        {0x26B0, 0x26B1},  // coffin, funeral urn
-        {0x26BD, 0x26BE},  // soccer, baseball
-        {0x26C4, 0x26C5},  // snowman, sun behind cloud
-        {0x26CE, 0x26CF},  // ophiuchus, pick
-        {0x26D1, 0x26D1},  // rescue worker helmet
-        {0x26D3, 0x26D4},  // chains, no entry
-        {0x26E9, 0x26EA},  // shinto shrine, church
-        {0x26F0, 0x26F5},  // mountain, camping, etc.
-        {0x26F7, 0x26FA},  // skier, etc.
-        {0x26FD, 0x26FD},  // fuel pump
-        {0x2702, 0x2702},  // scissors
-        {0x2705, 0x2705},  // check mark (green)
-        {0x2708, 0x270D},  // plane, umbrella, pencil, hand
-        {0x270F, 0x270F},  // pencil
-        {0x2712, 0x2712},  // black nib
-        {0x2714, 0x2714},  // heavy check mark
-        {0x2716, 0x2716},  // heavy ✖
-        {0x271D, 0x271D},  // latin cross
-        {0x2721, 0x2721},  // star of david
-        {0x2728, 0x2728},  // sparkles
-        {0x2733, 0x2734},  // asterisks
-        {0x2744, 0x2744},  // snowflake
-        {0x2747, 0x2747},  // sparkle
-        {0x274C, 0x274C},  // cross mark
-        {0x274E, 0x274E},  // cross mark
-        {0x2753, 0x2755},  // question / exclamation ornaments
-        {0x2757, 0x2757},  // exclamation mark
-        {0x2763, 0x2764},  // hearts
-        {0x2795, 0x2797},  // plus, minus, divide
-        {0x27A1, 0x27A1},  // right arrow
-        {0x27B0, 0x27B0},  // curly loop
-        {0x27BF, 0x27BF},  // double curly loop
-        {0x2934, 0x2935},  // curved arrows
-        {0x2B05, 0x2B07},  // directional arrows
-        {0x2B1B, 0x2B1C},  // black/white squares
-        {0x2B50, 0x2B50},  // star
-        {0x2B55, 0x2B55},  // hollow red circle
-        {0x3030, 0x3030},  // wavy dash
-        {0x303D, 0x303D},  // part alternation mark
-        {0x3297, 0x3297},  // circled ideograph congratulation
-        {0x3299, 0x3299},  // circled ideograph secret
+        {0x00A9, 0x00A9}, // ©
+        {0x00AE, 0x00AE}, // ®
+        {0x203C, 0x203C}, // ‼
+        {0x2049, 0x2049}, // ⁉
+        {0x20E3, 0x20E3}, // ⃣ combining enclosing keycap
+        {0x2122, 0x2122}, // ™
+        {0x2139, 0x2139}, // ℹ
+        {0x2194, 0x21AA}, // various arrows
+        {0x231A, 0x231B}, // watch, hourglass
+        {0x23CF, 0x23CF}, // eject
+        {0x23E9, 0x23F3}, // rewind / fast-forward / clocks
+        {0x23F8, 0x23FA}, // pause / stop / record
+        {0x24C2, 0x24C2}, // Ⓜ
+        {0x25AA, 0x25AB}, // small black/white squares
+        {0x25B6, 0x25B6}, // ▶ play
+        {0x25C0, 0x25C0}, // ◀ reverse
+        {0x25FB, 0x25FE}, // medium squares
+        {0x2600, 0x2604}, // sun, cloud, etc.
+        {0x260E, 0x260E}, // ☎
+        {0x2611, 0x2611}, // ☑
+        {0x2614, 0x2615}, // umbrella, hot beverage
+        {0x2618, 0x2618}, // shamrock
+        {0x261D, 0x261D}, // index pointing up
+        {0x2620, 0x2620}, // skull and crossbones
+        {0x2622, 0x2623}, // radioactive, biohazard
+        {0x2626, 0x2626}, // orthodox cross
+        {0x262A, 0x262A}, // star and crescent
+        {0x262E, 0x262F}, // peace, yin yang
+        {0x2638, 0x263A}, // wheel of dharma, smiley
+        {0x2640, 0x2640}, // female sign
+        {0x2642, 0x2642}, // male sign
+        {0x2648, 0x2653}, // zodiac signs
+        {0x265F, 0x2660}, // chess pawn, spade
+        {0x2663, 0x2663}, // club
+        {0x2665, 0x2666}, // heart, diamond
+        {0x2668, 0x2668}, // hot springs
+        {0x267B, 0x267B}, // recycling
+        {0x267E, 0x267F}, // infinity, wheelchair
+        {0x2692, 0x2697}, // tools
+        {0x2699, 0x2699}, // gear
+        {0x269B, 0x269C}, // atom, fleur-de-lis
+        {0x26A0, 0x26A1}, // warning, lightning
+        {0x26A7, 0x26A7}, // male-female sign
+        {0x26AA, 0x26AB}, // circles
+        {0x26B0, 0x26B1}, // coffin, funeral urn
+        {0x26BD, 0x26BE}, // soccer, baseball
+        {0x26C4, 0x26C5}, // snowman, sun behind cloud
+        {0x26CE, 0x26CF}, // ophiuchus, pick
+        {0x26D1, 0x26D1}, // rescue worker helmet
+        {0x26D3, 0x26D4}, // chains, no entry
+        {0x26E9, 0x26EA}, // shinto shrine, church
+        {0x26F0, 0x26F5}, // mountain, camping, etc.
+        {0x26F7, 0x26FA}, // skier, etc.
+        {0x26FD, 0x26FD}, // fuel pump
+        {0x2702, 0x2702}, // scissors
+        {0x2705, 0x2705}, // check mark (green)
+        {0x2708, 0x270D}, // plane, umbrella, pencil, hand
+        {0x270F, 0x270F}, // pencil
+        {0x2712, 0x2712}, // black nib
+        {0x2714, 0x2714}, // heavy check mark
+        {0x2716, 0x2716}, // heavy ✖
+        {0x271D, 0x271D}, // latin cross
+        {0x2721, 0x2721}, // star of david
+        {0x2728, 0x2728}, // sparkles
+        {0x2733, 0x2734}, // asterisks
+        {0x2744, 0x2744}, // snowflake
+        {0x2747, 0x2747}, // sparkle
+        {0x274C, 0x274C}, // cross mark
+        {0x274E, 0x274E}, // cross mark
+        {0x2753, 0x2755}, // question / exclamation ornaments
+        {0x2757, 0x2757}, // exclamation mark
+        {0x2763, 0x2764}, // hearts
+        {0x2795, 0x2797}, // plus, minus, divide
+        {0x27A1, 0x27A1}, // right arrow
+        {0x27B0, 0x27B0}, // curly loop
+        {0x27BF, 0x27BF}, // double curly loop
+        {0x2934, 0x2935}, // curved arrows
+        {0x2B05, 0x2B07}, // directional arrows
+        {0x2B1B, 0x2B1C}, // black/white squares
+        {0x2B50, 0x2B50}, // star
+        {0x2B55, 0x2B55}, // hollow red circle
+        {0x3030, 0x3030}, // wavy dash
+        {0x303D, 0x303D}, // part alternation mark
+        {0x3297, 0x3297}, // circled ideograph congratulation
+        {0x3299, 0x3299}, // circled ideograph secret
         // Supplementary Multilingual Plane — all major emoji blocks
         {0x1F004, 0x1F004}, // mahjong red dragon
         {0x1F0CF, 0x1F0CF}, // playing card black joker
@@ -541,9 +543,8 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
     {
         return nullptr;
     }
-    if (FAILED(fb_builder->AddMapping(kEmojiRanges, ARRAYSIZE(kEmojiRanges),
-                                      family, 1, emoji_coll.Get(), nullptr,
-                                      nullptr, 1.0f)))
+    if (FAILED(fb_builder->AddMapping(kEmojiRanges, ARRAYSIZE(kEmojiRanges), family, 1,
+                                      emoji_coll.Get(), nullptr, nullptr, 1.0f)))
     {
         return nullptr;
     }
@@ -579,26 +580,23 @@ Backend::Backend() : impl_(std::make_unique<Impl>())
 #ifdef _DEBUG
     opts.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
 #endif
-    HRESULT hr = D2D1CreateFactory(
-        D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &opts,
-        reinterpret_cast<void**>(impl_->d2d.GetAddressOf()));
+    HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1),
+                                   &opts, reinterpret_cast<void**>(impl_->d2d.GetAddressOf()));
     check(hr, "D2D1CreateFactory");
 
-    hr = DWriteCreateFactory(
-        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory2),
-        reinterpret_cast<IUnknown**>(impl_->dwrite.GetAddressOf()));
+    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory2),
+                             reinterpret_cast<IUnknown**>(impl_->dwrite.GetAddressOf()));
     check(hr, "DWriteCreateFactory");
     impl_->dwrite->GetSystemFontFallback(impl_->font_fallback.GetAddressOf());
-    if (auto emoji = build_emoji_fallback(
-            impl_->dwrite, impl_->font_fallback, impl_->mem_font_loader,
-            impl_->noto_emoji_face, impl_->noto_emoji_collection))
+    if (auto emoji =
+            build_emoji_fallback(impl_->dwrite, impl_->font_fallback, impl_->mem_font_loader,
+                                 impl_->noto_emoji_face, impl_->noto_emoji_collection))
     {
         impl_->font_fallback = std::move(emoji);
     }
 
-    hr =
-        CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                         IID_PPV_ARGS(impl_->wic.GetAddressOf()));
+    hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                          IID_PPV_ARGS(impl_->wic.GetAddressOf()));
     check(hr, "WICImagingFactory");
 
     impl_->create_d3d_device();
@@ -665,29 +663,25 @@ public:
         {
             WICRect rc{0, 0, width_, height_};
             ComPtr<IWICBitmapLock> lock;
-            if (SUCCEEDED(source_->Lock(&rc, WICBitmapLockRead,
-                                        lock.GetAddressOf())))
+            if (SUCCEEDED(source_->Lock(&rc, WICBitmapLockRead, lock.GetAddressOf())))
             {
                 UINT stride = 0;
                 if (SUCCEEDED(lock->GetStride(&stride)))
                 {
-                    bytes += static_cast<std::size_t>(stride) *
-                             static_cast<std::size_t>(height_);
+                    bytes += static_cast<std::size_t>(stride) * static_cast<std::size_t>(height_);
                     counted = true;
                 }
             }
         }
         if (!counted)
         {
-            bytes += static_cast<std::size_t>(width_) *
-                     static_cast<std::size_t>(height_) * 4u;
+            bytes += static_cast<std::size_t>(width_) * static_cast<std::size_t>(height_) * 4u;
         }
         // Count the per-render-target GPU copy too, when one is materialized.
         if (bitmap_)
         {
             const D2D1_SIZE_U px = bitmap_->GetPixelSize();
-            bytes += static_cast<std::size_t>(px.width) *
-                     static_cast<std::size_t>(px.height) * 4u;
+            bytes += static_cast<std::size_t>(px.width) * static_cast<std::size_t>(px.height) * 4u;
         }
         return bytes;
     }
@@ -709,15 +703,12 @@ public:
         if (opaque_)
         {
             D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                                  D2D1_ALPHA_MODE_IGNORE));
-            hr = rt->CreateBitmapFromWicBitmap(source_.Get(), &props,
-                                               bitmap_.GetAddressOf());
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
+            hr = rt->CreateBitmapFromWicBitmap(source_.Get(), &props, bitmap_.GetAddressOf());
         }
         else
         {
-            hr = rt->CreateBitmapFromWicBitmap(source_.Get(), nullptr,
-                                               bitmap_.GetAddressOf());
+            hr = rt->CreateBitmapFromWicBitmap(source_.Get(), nullptr, bitmap_.GetAddressOf());
         }
         if (FAILED(hr))
         {
@@ -763,17 +754,13 @@ public:
     struct ColorRange
     {
         UINT32 start, end;
-        Color  color;
+        Color color;
     };
 
-    DWriteLayout(ComPtr<IDWriteTextLayout> layout,
-                 std::wstring wtext,
-                 std::string utf8,
-                 std::vector<UrlRange> url_ranges = {},
-                 std::vector<ColorRange> color_ranges = {})
-        : layout_(std::move(layout)), wtext_(std::move(wtext)),
-          utf8_(std::move(utf8)), url_ranges_(std::move(url_ranges)),
-          color_ranges_(std::move(color_ranges))
+    DWriteLayout(ComPtr<IDWriteTextLayout> layout, std::wstring wtext, std::string utf8,
+                 std::vector<UrlRange> url_ranges = {}, std::vector<ColorRange> color_ranges = {})
+        : layout_(std::move(layout)), wtext_(std::move(wtext)), utf8_(std::move(utf8)),
+          url_ranges_(std::move(url_ranges)), color_ranges_(std::move(color_ranges))
     {
         DWRITE_TEXT_METRICS m{};
         layout_->GetMetrics(&m);
@@ -829,7 +816,9 @@ public:
     int char_index_at(Point local) const override
     {
         if (wtext_.empty())
+        {
             return -1;
+        }
         BOOL trailing = FALSE, inside = FALSE;
         DWRITE_HIT_TEST_METRICS m{};
         layout_->HitTestPoint(local.x, local.y, &trailing, &inside, &m);
@@ -841,19 +830,24 @@ public:
     std::vector<Rect> selection_rects(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte || wtext_.empty())
+        {
             return {};
+        }
         UINT32 u16start = utf8_to_utf16_unit(start_byte);
-        UINT32 u16end   = utf8_to_utf16_unit(end_byte);
+        UINT32 u16end = utf8_to_utf16_unit(end_byte);
         if (u16start >= u16end)
+        {
             return {};
+        }
         UINT32 actual = 0;
-        layout_->HitTestTextRange(u16start, u16end - u16start,
-                                   0.f, 0.f, nullptr, 0, &actual);
+        layout_->HitTestTextRange(u16start, u16end - u16start, 0.f, 0.f, nullptr, 0, &actual);
         if (actual == 0)
+        {
             return {};
+        }
         std::vector<DWRITE_HIT_TEST_METRICS> hits(actual);
-        layout_->HitTestTextRange(u16start, u16end - u16start,
-                                   0.f, 0.f, hits.data(), actual, &actual);
+        layout_->HitTestTextRange(u16start, u16end - u16start, 0.f, 0.f, hits.data(), actual,
+                                  &actual);
         std::vector<Rect> out;
         out.reserve(actual);
         for (UINT32 i = 0; i < actual; ++i)
@@ -862,9 +856,10 @@ public:
             // untrimmed position; reporting it would let callers paint inline
             // objects (mention pills) past the ellipsis.
             if (hits[i].isTrimmed)
+            {
                 continue;
-            out.push_back({hits[i].left, hits[i].top,
-                           hits[i].width, hits[i].height});
+            }
+            out.push_back({hits[i].left, hits[i].top, hits[i].width, hits[i].height});
         }
         return out;
     }
@@ -872,11 +867,15 @@ public:
     std::string text_range(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte || utf8_.empty())
+        {
             return {};
+        }
         int lo = std::max(0, start_byte);
         int hi = std::min(end_byte, static_cast<int>(utf8_.size()));
         if (lo >= hi)
+        {
             return {};
+        }
         return utf8_.substr(lo, hi - lo);
     }
 
@@ -896,10 +895,11 @@ private:
     UINT32 utf8_to_utf16_unit(int byte_offset) const
     {
         if (byte_offset <= 0)
+        {
             return 0;
+        }
         int clamped = std::min(byte_offset, static_cast<int>(utf8_.size()));
-        int n = MultiByteToWideChar(CP_UTF8, 0, utf8_.c_str(), clamped,
-                                    nullptr, 0);
+        int n = MultiByteToWideChar(CP_UTF8, 0, utf8_.c_str(), clamped, nullptr, 0);
         return n > 0 ? static_cast<UINT32>(n) : 0;
     }
 
@@ -907,17 +907,18 @@ private:
     int utf16_to_utf8_byte(UINT32 utf16_pos) const
     {
         if (utf16_pos == 0)
+        {
             return 0;
-        UINT32 clamped = std::min(utf16_pos,
-                                   static_cast<UINT32>(wtext_.size()));
-        int n = WideCharToMultiByte(CP_UTF8, 0, wtext_.c_str(), clamped,
-                                    nullptr, 0, nullptr, nullptr);
+        }
+        UINT32 clamped = std::min(utf16_pos, static_cast<UINT32>(wtext_.size()));
+        int n =
+            WideCharToMultiByte(CP_UTF8, 0, wtext_.c_str(), clamped, nullptr, 0, nullptr, nullptr);
         return n > 0 ? n : 0;
     }
 
     ComPtr<IDWriteTextLayout> layout_;
     std::wstring wtext_;
-    std::string  utf8_;
+    std::string utf8_;
     std::vector<UrlRange> url_ranges_;
     std::vector<ColorRange> color_ranges_;
     Size size_{};
@@ -941,18 +942,19 @@ class CubicEmojiTextRenderer final : public IDWriteTextRenderer
 public:
     using BitmapCache = std::unordered_map<std::uint64_t, ComPtr<ID2D1Bitmap>>;
 
-    CubicEmojiTextRenderer(ID2D1RenderTarget* rt, ID2D1DeviceContext* dc,
-                           IDWriteFactory4* dw4, IWICImagingFactory* wic,
-                           BitmapCache* cache, ID2D1Brush* fg)
+    CubicEmojiTextRenderer(ID2D1RenderTarget* rt, ID2D1DeviceContext* dc, IDWriteFactory4* dw4,
+                           IWICImagingFactory* wic, BitmapCache* cache, ID2D1Brush* fg)
         : rt_(rt), dc_(dc), dw4_(dw4), wic_(wic), cache_(cache), fg_(fg)
     {
     }
 
     STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override
     {
-        if (!ppv) return E_POINTER;
-        if (riid == __uuidof(IUnknown) ||
-            riid == __uuidof(IDWritePixelSnapping) ||
+        if (!ppv)
+        {
+            return E_POINTER;
+        }
+        if (riid == __uuidof(IUnknown) || riid == __uuidof(IDWritePixelSnapping) ||
             riid == __uuidof(IDWriteTextRenderer))
         {
             *ppv = static_cast<IDWriteTextRenderer*>(this);
@@ -962,11 +964,17 @@ public:
         *ppv = nullptr;
         return E_NOINTERFACE;
     }
-    STDMETHODIMP_(ULONG) AddRef() override { return ++ref_; }
+    STDMETHODIMP_(ULONG) AddRef() override
+    {
+        return ++ref_;
+    }
     STDMETHODIMP_(ULONG) Release() override
     {
         ULONG r = --ref_;
-        if (r == 0) delete this;
+        if (r == 0)
+        {
+            delete this;
+        }
         return r;
     }
 
@@ -980,9 +988,12 @@ public:
     {
         D2D1_MATRIX_3X2_F t;
         rt_->GetTransform(&t);
-        m->m11 = t._11; m->m12 = t._12;
-        m->m21 = t._21; m->m22 = t._22;
-        m->dx  = t.dx;  m->dy  = t.dy;
+        m->m11 = t._11;
+        m->m12 = t._12;
+        m->m21 = t._21;
+        m->m22 = t._22;
+        m->dx = t.dx;
+        m->dy = t.dy;
         return S_OK;
     }
     STDMETHODIMP GetPixelsPerDip(void*, FLOAT* p) override
@@ -994,18 +1005,15 @@ public:
     }
 
     // IDWriteTextRenderer
-    STDMETHODIMP DrawGlyphRun(void*, FLOAT bx, FLOAT by,
-                               DWRITE_MEASURING_MODE mm,
-                               const DWRITE_GLYPH_RUN* run,
-                               const DWRITE_GLYPH_RUN_DESCRIPTION* desc,
-                               IUnknown* effect) override
+    STDMETHODIMP DrawGlyphRun(void*, FLOAT bx, FLOAT by, DWRITE_MEASURING_MODE mm,
+                              const DWRITE_GLYPH_RUN* run, const DWRITE_GLYPH_RUN_DESCRIPTION* desc,
+                              IUnknown* effect) override
     {
         // A per-range drawing effect (set by draw_text for syntax-highlighted
         // code) overrides the default foreground brush for plain glyph runs.
         ID2D1Brush* fg = fg_;
         ComPtr<ID2D1SolidColorBrush> effect_brush;
-        if (effect &&
-            SUCCEEDED(effect->QueryInterface(IID_PPV_ARGS(&effect_brush))) &&
+        if (effect && SUCCEEDED(effect->QueryInterface(IID_PPV_ARGS(&effect_brush))) &&
             effect_brush)
         {
             fg = effect_brush.Get();
@@ -1020,18 +1028,14 @@ public:
         }
 
         const DWRITE_GLYPH_IMAGE_FORMATS desired =
-            DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE |
-            DWRITE_GLYPH_IMAGE_FORMATS_CFF |
-            DWRITE_GLYPH_IMAGE_FORMATS_COLR |
-            DWRITE_GLYPH_IMAGE_FORMATS_PNG |
-            DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
-            DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
-            DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8 |
-            DWRITE_GLYPH_IMAGE_FORMATS_SVG;
+            DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE | DWRITE_GLYPH_IMAGE_FORMATS_CFF |
+            DWRITE_GLYPH_IMAGE_FORMATS_COLR | DWRITE_GLYPH_IMAGE_FORMATS_PNG |
+            DWRITE_GLYPH_IMAGE_FORMATS_JPEG | DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
+            DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8 | DWRITE_GLYPH_IMAGE_FORMATS_SVG;
 
         ComPtr<IDWriteColorGlyphRunEnumerator1> en;
-        HRESULT hr = dw4_->TranslateColorGlyphRun(
-            {bx, by}, run, desc, desired, mm, nullptr, 0, &en);
+        HRESULT hr =
+            dw4_->TranslateColorGlyphRun({bx, by}, run, desc, desired, mm, nullptr, 0, &en);
         if (hr == DWRITE_E_NOCOLOR || FAILED(hr) || !en)
         {
             rt_->DrawGlyphRun({bx, by}, run, fg, mm);
@@ -1039,17 +1043,21 @@ public:
         }
 
         constexpr DWRITE_GLYPH_IMAGE_FORMATS bitmap_mask =
-            DWRITE_GLYPH_IMAGE_FORMATS_PNG |
-            DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
-            DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
-            DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
+            DWRITE_GLYPH_IMAGE_FORMATS_PNG | DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
+            DWRITE_GLYPH_IMAGE_FORMATS_TIFF | DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
 
         for (;;)
         {
             BOOL have = FALSE;
-            if (FAILED(en->MoveNext(&have)) || !have) break;
+            if (FAILED(en->MoveNext(&have)) || !have)
+            {
+                break;
+            }
             const DWRITE_COLOR_GLYPH_RUN1* cr = nullptr;
-            if (FAILED(en->GetCurrentRun(&cr)) || !cr) break;
+            if (FAILED(en->GetCurrentRun(&cr)) || !cr)
+            {
+                break;
+            }
 
             if (cr->glyphImageFormat & bitmap_mask)
             {
@@ -1062,41 +1070,35 @@ public:
                 ComPtr<ID2D1SolidColorBrush> palette_brush;
                 if (cr->paletteIndex != 0xFFFFu)
                 {
-                    if (SUCCEEDED(rt_->CreateSolidColorBrush(
-                            cr->runColor, &palette_brush)) &&
+                    if (SUCCEEDED(rt_->CreateSolidColorBrush(cr->runColor, &palette_brush)) &&
                         palette_brush)
                     {
                         brush = palette_brush.Get();
                     }
                 }
-                rt_->DrawGlyphRun({cr->baselineOriginX, cr->baselineOriginY},
-                                  &cr->glyphRun, brush, mm);
+                rt_->DrawGlyphRun({cr->baselineOriginX, cr->baselineOriginY}, &cr->glyphRun, brush,
+                                  mm);
             }
         }
         return S_OK;
     }
 
-    STDMETHODIMP DrawUnderline(void*, FLOAT bx, FLOAT by,
-                                const DWRITE_UNDERLINE* u, IUnknown*) override
+    STDMETHODIMP DrawUnderline(void*, FLOAT bx, FLOAT by, const DWRITE_UNDERLINE* u,
+                               IUnknown*) override
     {
-        D2D1_RECT_F r{bx, by + u->offset,
-                      bx + u->width, by + u->offset + u->thickness};
+        D2D1_RECT_F r{bx, by + u->offset, bx + u->width, by + u->offset + u->thickness};
         rt_->FillRectangle(r, fg_);
         return S_OK;
     }
-    STDMETHODIMP DrawStrikethrough(void*, FLOAT bx, FLOAT by,
-                                    const DWRITE_STRIKETHROUGH* s,
-                                    IUnknown*) override
+    STDMETHODIMP DrawStrikethrough(void*, FLOAT bx, FLOAT by, const DWRITE_STRIKETHROUGH* s,
+                                   IUnknown*) override
     {
-        D2D1_RECT_F r{bx, by + s->offset,
-                      bx + s->width, by + s->offset + s->thickness};
+        D2D1_RECT_F r{bx, by + s->offset, bx + s->width, by + s->offset + s->thickness};
         rt_->FillRectangle(r, fg_);
         return S_OK;
     }
-    STDMETHODIMP DrawInlineObject(void* ctx, FLOAT bx, FLOAT by,
-                                   IDWriteInlineObject* o,
-                                   BOOL is_sw, BOOL is_rtl,
-                                   IUnknown* effect) override
+    STDMETHODIMP DrawInlineObject(void* ctx, FLOAT bx, FLOAT by, IDWriteInlineObject* o, BOOL is_sw,
+                                  BOOL is_rtl, IUnknown* effect) override
     {
         return o ? o->Draw(ctx, this, bx, by, is_sw, is_rtl, effect) : S_OK;
     }
@@ -1104,134 +1106,139 @@ public:
 private:
     void draw_bitmap_color_run_(const DWRITE_COLOR_GLYPH_RUN1* cr)
     {
-        if (!cr->glyphRun.fontFace) return;
+        if (!cr->glyphRun.fontFace)
+        {
+            return;
+        }
         ComPtr<IDWriteFontFace4> face4;
-        if (FAILED(cr->glyphRun.fontFace->QueryInterface(
-                IID_PPV_ARGS(&face4))) ||
-            !face4)
+        if (FAILED(cr->glyphRun.fontFace->QueryInterface(IID_PPV_ARGS(&face4))) || !face4)
         {
             return;
         }
 
-        FLOAT x       = cr->baselineOriginX;
+        FLOAT x = cr->baselineOriginX;
         const FLOAT y = cr->baselineOriginY;
         const float emSize = cr->glyphRun.fontEmSize;
-        const bool isRtl   = (cr->glyphRun.bidiLevel & 1) != 0;
+        const bool isRtl = (cr->glyphRun.bidiLevel & 1) != 0;
 
         for (UINT32 i = 0; i < cr->glyphRun.glyphCount; ++i)
         {
             const UINT16 g = cr->glyphRun.glyphIndices[i];
-            const FLOAT adv =
-                cr->glyphRun.glyphAdvances ? cr->glyphRun.glyphAdvances[i] : 0;
-            const FLOAT offX = cr->glyphRun.glyphOffsets
-                                   ? cr->glyphRun.glyphOffsets[i].advanceOffset
-                                   : 0;
-            const FLOAT offY = cr->glyphRun.glyphOffsets
-                                   ? cr->glyphRun.glyphOffsets[i].ascenderOffset
-                                   : 0;
+            const FLOAT adv = cr->glyphRun.glyphAdvances ? cr->glyphRun.glyphAdvances[i] : 0;
+            const FLOAT offX =
+                cr->glyphRun.glyphOffsets ? cr->glyphRun.glyphOffsets[i].advanceOffset : 0;
+            const FLOAT offY =
+                cr->glyphRun.glyphOffsets ? cr->glyphRun.glyphOffsets[i].ascenderOffset : 0;
 
-            const UINT32 requested =
-                static_cast<UINT32>(std::ceil(emSize));
+            const UINT32 requested = static_cast<UINT32>(std::ceil(emSize));
 
             DWRITE_GLYPH_IMAGE_DATA data{};
             void* dataCtx = nullptr;
-            if (FAILED(face4->GetGlyphImageData(g, requested,
-                                                 cr->glyphImageFormat,
-                                                 &data, &dataCtx)) ||
-                !data.imageData || data.imageDataSize == 0 ||
-                data.pixelsPerEm == 0)
+            if (FAILED(face4->GetGlyphImageData(g, requested, cr->glyphImageFormat, &data,
+                                                &dataCtx)) ||
+                !data.imageData || data.imageDataSize == 0 || data.pixelsPerEm == 0)
             {
-                if (dataCtx) face4->ReleaseGlyphImageData(dataCtx);
+                if (dataCtx)
+                {
+                    face4->ReleaseGlyphImageData(dataCtx);
+                }
                 x += isRtl ? -adv : adv;
                 continue;
             }
 
-            ID2D1Bitmap* bmp =
-                get_or_make_bitmap_(data, cr->glyphImageFormat);
+            ID2D1Bitmap* bmp = get_or_make_bitmap_(data, cr->glyphImageFormat);
             if (bmp)
             {
-                const float scale =
-                    emSize / static_cast<float>(data.pixelsPerEm);
+                const float scale = emSize / static_cast<float>(data.pixelsPerEm);
                 // horizontalLeftOrigin follows OpenType bearing convention:
                 // X is positive going right (same as D2D); Y is positive going
                 // up from baseline (opposite of D2D Y-down), so we subtract.
-                const float dstX = x + offX +
-                                   data.horizontalLeftOrigin.x * scale;
-                const float dstY = y - offY -
-                                   data.horizontalLeftOrigin.y * scale;
-                const float dstW = data.pixelSize.width  * scale;
+                const float dstX = x + offX + data.horizontalLeftOrigin.x * scale;
+                const float dstY = y - offY - data.horizontalLeftOrigin.y * scale;
+                const float dstW = data.pixelSize.width * scale;
                 const float dstH = data.pixelSize.height * scale;
                 const D2D1_RECT_F dstR{dstX, dstY, dstX + dstW, dstY + dstH};
 
                 if (dc_)
                 {
-                    dc_->DrawBitmap(
-                        bmp, dstR, 1.0f,
-                        D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+                    dc_->DrawBitmap(bmp, dstR, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
                 }
                 else
                 {
-                    rt_->DrawBitmap(
-                        bmp, dstR, 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                    rt_->DrawBitmap(bmp, dstR, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
                 }
             }
 
-            if (dataCtx) face4->ReleaseGlyphImageData(dataCtx);
+            if (dataCtx)
+            {
+                face4->ReleaseGlyphImageData(dataCtx);
+            }
             x += isRtl ? -adv : adv;
         }
     }
 
-    ID2D1Bitmap*
-    get_or_make_bitmap_(const DWRITE_GLYPH_IMAGE_DATA& data,
-                         DWRITE_GLYPH_IMAGE_FORMATS format)
+    ID2D1Bitmap* get_or_make_bitmap_(const DWRITE_GLYPH_IMAGE_DATA& data,
+                                     DWRITE_GLYPH_IMAGE_FORMATS format)
     {
-        const std::uint64_t key =
-            (static_cast<std::uint64_t>(data.uniqueDataId) << 32) |
-            static_cast<std::uint64_t>(data.pixelsPerEm);
+        const std::uint64_t key = (static_cast<std::uint64_t>(data.uniqueDataId) << 32) |
+                                  static_cast<std::uint64_t>(data.pixelsPerEm);
 
         auto it = cache_->find(key);
-        if (it != cache_->end()) return it->second.Get();
+        if (it != cache_->end())
+        {
+            return it->second.Get();
+        }
 
         ComPtr<ID2D1Bitmap> bitmap;
         if (format == DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8)
         {
             D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                                   D2D1_ALPHA_MODE_PREMULTIPLIED));
-            rt_->CreateBitmap(
-                D2D1_SIZE_U{data.pixelSize.width, data.pixelSize.height},
-                data.imageData, data.pixelSize.width * 4, &props, &bitmap);
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
+            rt_->CreateBitmap(D2D1_SIZE_U{data.pixelSize.width, data.pixelSize.height},
+                              data.imageData, data.pixelSize.width * 4, &props, &bitmap);
         }
         else if (wic_)
         {
             ComPtr<IWICStream> stream;
-            if (FAILED(wic_->CreateStream(&stream)) || !stream) return nullptr;
+            if (FAILED(wic_->CreateStream(&stream)) || !stream)
+            {
+                return nullptr;
+            }
             if (FAILED(stream->InitializeFromMemory(
-                    static_cast<BYTE*>(const_cast<void*>(data.imageData)),
-                    data.imageDataSize)))
+                    static_cast<BYTE*>(const_cast<void*>(data.imageData)), data.imageDataSize)))
+            {
                 return nullptr;
+            }
             ComPtr<IWICBitmapDecoder> decoder;
-            if (FAILED(wic_->CreateDecoderFromStream(
-                    stream.Get(), nullptr,
-                    WICDecodeMetadataCacheOnLoad, &decoder)) ||
+            if (FAILED(wic_->CreateDecoderFromStream(stream.Get(), nullptr,
+                                                     WICDecodeMetadataCacheOnLoad, &decoder)) ||
                 !decoder)
+            {
                 return nullptr;
+            }
             ComPtr<IWICBitmapFrameDecode> frame;
-            if (FAILED(decoder->GetFrame(0, &frame)) || !frame) return nullptr;
+            if (FAILED(decoder->GetFrame(0, &frame)) || !frame)
+            {
+                return nullptr;
+            }
             ComPtr<IWICFormatConverter> converter;
-            if (FAILED(wic_->CreateFormatConverter(&converter)) ||
-                !converter)
+            if (FAILED(wic_->CreateFormatConverter(&converter)) || !converter)
+            {
                 return nullptr;
-            if (FAILED(converter->Initialize(
-                    frame.Get(), GUID_WICPixelFormat32bppPBGRA,
-                    WICBitmapDitherTypeNone, nullptr, 0.0,
-                    WICBitmapPaletteTypeMedianCut)))
+            }
+            if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                                             WICBitmapDitherTypeNone, nullptr, 0.0,
+                                             WICBitmapPaletteTypeMedianCut)))
+            {
                 return nullptr;
+            }
             rt_->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &bitmap);
         }
 
-        if (!bitmap) return nullptr;
+        if (!bitmap)
+        {
+            return nullptr;
+        }
         auto* raw = bitmap.Get();
         // Bound the cache: unlike brush_cache_ (a handful of theme colors),
         // this is keyed by (glyph, pixel size), so a long session with heavy
@@ -1245,23 +1252,24 @@ private:
         // real LRU and sufficient here.
         constexpr std::size_t kMaxEmojiBitmaps = 256;
         if (cache_->size() >= kMaxEmojiBitmaps)
+        {
             cache_->clear();
+        }
         cache_->emplace(key, std::move(bitmap));
         return raw;
     }
 
     ULONG ref_ = 1;
     ID2D1RenderTarget* rt_;
-    ID2D1DeviceContext* dc_;     // may be null
-    IDWriteFactory4* dw4_;       // may be null (Win10 1607+ only)
+    ID2D1DeviceContext* dc_; // may be null
+    IDWriteFactory4* dw4_;   // may be null (Win10 1607+ only)
     IWICImagingFactory* wic_;
     BitmapCache* cache_;
     ID2D1Brush* fg_;
 };
 
-std::unique_ptr<Image>
-image_from_bgra_impl(Backend::Impl& impl, const std::uint8_t* pixels, int w,
-                     int h, bool opaque);
+std::unique_ptr<Image> image_from_bgra_impl(Backend::Impl& impl, const std::uint8_t* pixels, int w,
+                                            int h, bool opaque);
 
 // ─────────────────────────────────────────────────────────────────────────
 //  InitialsGlyphRenderer — avatar initials drawn through BetterText
@@ -1294,18 +1302,15 @@ public:
     // Null when BetterText is unavailable or the capture failed (the caller
     // falls back to plain DirectWrite). The pointer is valid until the next
     // call.
-    const Glyph* get(Backend::Impl& impl, const std::wstring& text,
-                     float font_dip, Color fg)
+    const Glyph* get(Backend::Impl& impl, const std::wstring& text, float font_dip, Color fg)
     {
         std::wstring key = text;
         key += L'\x1';
         key += std::to_wstring(static_cast<int>(std::lround(font_dip * 10.0f)));
         key += L'\x1';
         key += std::to_wstring(
-            (static_cast<std::uint32_t>(fg.r) << 24) |
-            (static_cast<std::uint32_t>(fg.g) << 16) |
-            (static_cast<std::uint32_t>(fg.b) << 8) |
-            static_cast<std::uint32_t>(fg.a));
+            (static_cast<std::uint32_t>(fg.r) << 24) | (static_cast<std::uint32_t>(fg.g) << 16) |
+            (static_cast<std::uint32_t>(fg.b) << 8) | static_cast<std::uint32_t>(fg.a));
         if (auto it = cache_.find(key); it != cache_.end())
         {
             return &it->second;
@@ -1331,10 +1336,8 @@ public:
 private:
     static std::uint32_t rgba(Color c)
     {
-        return (static_cast<std::uint32_t>(c.r) << 24) |
-               (static_cast<std::uint32_t>(c.g) << 16) |
-               (static_cast<std::uint32_t>(c.b) << 8) |
-               static_cast<std::uint32_t>(c.a);
+        return (static_cast<std::uint32_t>(c.r) << 24) | (static_cast<std::uint32_t>(c.g) << 16) |
+               (static_cast<std::uint32_t>(c.b) << 8) | static_cast<std::uint32_t>(c.a);
     }
 
     bool ensure_control()
@@ -1357,17 +1360,15 @@ private:
         RegisterClassW(&wc); // already-registered is fine
         // A never-shown popup: BetterText needs a parent HWND, and this
         // canvas has no window of its own.
-        HWND host = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-                                    kHostClass, L"", WS_POPUP, 0, 0, 1, 1,
-                                    nullptr, nullptr, inst, nullptr);
+        HWND host = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kHostClass, L"", WS_POPUP,
+                                    0, 0, 1, 1, nullptr, nullptr, inst, nullptr);
         if (!host)
         {
             return false;
         }
         BetterTextRegisterControl(inst);
-        hwnd_ = CreateWindowExW(0, BETTERTEXT_CLASS_NAME, L"",
-                                WS_CHILD | WS_VISIBLE, 0, 0, 10, 10, host,
-                                nullptr, inst, nullptr);
+        hwnd_ = CreateWindowExW(0, BETTERTEXT_CLASS_NAME, L"", WS_CHILD | WS_VISIBLE, 0, 0, 10, 10,
+                                host, nullptr, inst, nullptr);
         if (!hwnd_)
         {
             DestroyWindow(host);
@@ -1384,8 +1385,7 @@ private:
         return true;
     }
 
-    bool render(Backend::Impl& impl, const std::wstring& text, float font_dip,
-                Color fg, Glyph& out)
+    bool render(Backend::Impl& impl, const std::wstring& text, float font_dip, Color fg, Glyph& out)
     {
         const UINT dpi = GetDpiForWindow(hwnd_);
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
@@ -1409,9 +1409,8 @@ private:
 
         // Wide enough that a static control never ellipsizes 1-2 glyphs.
         const int w_px = static_cast<int>(std::ceil(font_dip * 6.0f * scale));
-        const int h_px = std::max(
-            1, static_cast<int>(
-                   std::ceil(BetterTextGetContentHeight(hwnd_) * scale)));
+        const int h_px =
+            std::max(1, static_cast<int>(std::ceil(BetterTextGetContentHeight(hwnd_) * scale)));
         // Each WM_SIZE rebuilds BetterText's render target; skip when unchanged.
         if (w_px != last_w_px_ || h_px != last_h_px_)
         {
@@ -1427,8 +1426,7 @@ private:
             return false;
         }
         std::vector<std::uint8_t> px(static_cast<std::size_t>(w) * h * 4);
-        if (!BetterTextReadCaptureBGRA(hwnd_, px.data(),
-                                       static_cast<int>(px.size()), &w, &h))
+        if (!BetterTextReadCaptureBGRA(hwnd_, px.data(), static_cast<int>(px.size()), &w, &h))
         {
             return false;
         }
@@ -1488,8 +1486,7 @@ InitialsGlyphRenderer& initials_glyph_renderer()
 class D2DCanvas : public Canvas
 {
 public:
-    D2DCanvas(Backend::Impl& backend, ID2D1RenderTarget* rt)
-        : backend_(backend), rt_(rt)
+    D2DCanvas(Backend::Impl& backend, ID2D1RenderTarget* rt) : backend_(backend), rt_(rt)
     {
         backend_.dwrite.As(&dw4_); // may be null on pre-1607 Windows 10
         update_dc(rt);
@@ -1535,8 +1532,7 @@ public:
         rt_->DrawLine(to_d2d(from), to_d2d(to), brush(c), width);
     }
 
-    void stroke_rounded_rect(Rect r, float radius, Color c,
-                             float width) override
+    void stroke_rounded_rect(Rect r, float radius, Color c, float width) override
     {
         D2D1_RECT_F dr = to_d2d(r);
         float half = width * 0.5f;
@@ -1551,26 +1547,26 @@ public:
     void draw_image(const Image& image, Rect dst) override
     {
         ID2D1Bitmap* bmp =
-            const_cast<D2DImage&>(static_cast<const D2DImage&>(image))
-                .bitmap_for(rt_);
+            const_cast<D2DImage&>(static_cast<const D2DImage&>(image)).bitmap_for(rt_);
         if (!bmp)
         {
             return;
         }
         D2D1_RECT_F d = to_d2d(dst);
         if (dc_)
-            dc_->DrawBitmap(bmp, &d, 1.0f,
-                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        {
+            dc_->DrawBitmap(bmp, &d, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        }
         else
-            rt_->DrawBitmap(bmp, &d, 1.0f,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        {
+            rt_->DrawBitmap(bmp, &d, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        }
     }
 
     void draw_image_subregion(const Image& image, Rect src, Rect dst) override
     {
         ID2D1Bitmap* bmp =
-            const_cast<D2DImage&>(static_cast<const D2DImage&>(image))
-                .bitmap_for(rt_);
+            const_cast<D2DImage&>(static_cast<const D2DImage&>(image)).bitmap_for(rt_);
         if (!bmp)
         {
             return;
@@ -1578,153 +1574,187 @@ public:
         D2D1_RECT_F srcr = to_d2d(src);
         D2D1_RECT_F dstr = to_d2d(dst);
         if (dc_)
-            dc_->DrawBitmap(bmp, &dstr, 1.0f,
-                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &srcr);
+        {
+            dc_->DrawBitmap(bmp, &dstr, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, &srcr);
+        }
         else
-            rt_->DrawBitmap(bmp, &dstr, 1.0f,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
+        {
+            rt_->DrawBitmap(bmp, &dstr, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, &srcr);
+        }
     }
 
-    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
-                                   std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false,
-                                   bool high_quality = false) override
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels, std::uint32_t w, std::uint32_t h,
+                                  Rect dst, bool flip_h = false, bool high_quality = false) override
     {
-        if (!pixels || w == 0 || h == 0) return false;
+        if (!pixels || w == 0 || h == 0)
+        {
+            return false;
+        }
         // pixels is already premultiplied BGRA. Create the D2D bitmap directly
         // — no per-pixel swizzle/premult loop needed.
         const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                              D2D1_ALPHA_MODE_PREMULTIPLIED));
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
         ComPtr<ID2D1Bitmap> bitmap;
         HRESULT hr;
         if (dc_)
-            hr = dc_->CreateBitmap({w, h}, pixels,
-                                   w * 4, props, bitmap.GetAddressOf());
+        {
+            hr = dc_->CreateBitmap({w, h}, pixels, w * 4, props, bitmap.GetAddressOf());
+        }
         else
-            hr = rt_->CreateBitmap({w, h}, pixels,
-                                   w * 4, props, bitmap.GetAddressOf());
-        if (FAILED(hr) || !bitmap) return false;
+        {
+            hr = rt_->CreateBitmap({w, h}, pixels, w * 4, props, bitmap.GetAddressOf());
+        }
+        if (FAILED(hr) || !bitmap)
+        {
+            return false;
+        }
         const D2D1_RECT_F d = to_d2d(dst);
         // HIGH_QUALITY_CUBIC is only available via the device-context (dc_)
         // DrawBitmap overload; the legacy ID2D1RenderTarget (rt_) interpolation
         // enum only has NEAREST_NEIGHBOR/LINEAR, so rt_ stays LINEAR either way.
         const D2D1_INTERPOLATION_MODE dc_mode = high_quality
-            ? D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC
-            : D2D1_INTERPOLATION_MODE_LINEAR;
+                                                    ? D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC
+                                                    : D2D1_INTERPOLATION_MODE_LINEAR;
         if (flip_h)
         {
             // Save the current RT transform, apply a horizontal-flip matrix
             // (scale X by -1 around the centre of the dest rect), draw, restore.
             D2D1_MATRIX_3X2_F old;
-            if (dc_) dc_->GetTransform(&old); else rt_->GetTransform(&old);
-            const float cx = (d.left + d.right) * 0.5f;
-            const auto flip = D2D1::Matrix3x2F::Scale(
-                -1.0f, 1.0f, D2D1::Point2F(cx, 0.0f)) * old;
-            if (dc_) dc_->SetTransform(flip); else rt_->SetTransform(flip);
             if (dc_)
-                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f, dc_mode);
+            {
+                dc_->GetTransform(&old);
+            }
             else
-                rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
-                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-            if (dc_) dc_->SetTransform(old); else rt_->SetTransform(old);
+            {
+                rt_->GetTransform(&old);
+            }
+            const float cx = (d.left + d.right) * 0.5f;
+            const auto flip = D2D1::Matrix3x2F::Scale(-1.0f, 1.0f, D2D1::Point2F(cx, 0.0f)) * old;
+            if (dc_)
+            {
+                dc_->SetTransform(flip);
+            }
+            else
+            {
+                rt_->SetTransform(flip);
+            }
+            if (dc_)
+            {
+                dc_->DrawBitmap(bitmap.Get(), &d, 1.0f, dc_mode);
+            }
+            else
+            {
+                rt_->DrawBitmap(bitmap.Get(), &d, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            }
+            if (dc_)
+            {
+                dc_->SetTransform(old);
+            }
+            else
+            {
+                rt_->SetTransform(old);
+            }
         }
         else
         {
             if (dc_)
+            {
                 dc_->DrawBitmap(bitmap.Get(), &d, 1.0f, dc_mode);
+            }
             else
-                rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
-                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            {
+                rt_->DrawBitmap(bitmap.Get(), &d, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            }
         }
         return true;
     }
 
-    bool draw_rgba_pixels(const std::uint8_t* pixels,
-                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    bool draw_rgba_pixels(const std::uint8_t* pixels, std::uint32_t w, std::uint32_t h,
+                          Rect dst) override
     {
-        if (!pixels || w == 0 || h == 0) return false;
+        if (!pixels || w == 0 || h == 0)
+        {
+            return false;
+        }
         // D2D expects premultiplied BGRA. Swizzle + premultiply straight RGBA.
         const UINT n = w * h;
         std::vector<std::uint8_t> bgra(static_cast<std::size_t>(n) * 4);
         for (UINT i = 0; i < n; ++i)
         {
             const unsigned a = pixels[i * 4 + 3];
-            bgra[i * 4 + 0] =
-                static_cast<std::uint8_t>((pixels[i * 4 + 2] * a + 127) / 255); // B
-            bgra[i * 4 + 1] =
-                static_cast<std::uint8_t>((pixels[i * 4 + 1] * a + 127) / 255); // G
-            bgra[i * 4 + 2] =
-                static_cast<std::uint8_t>((pixels[i * 4 + 0] * a + 127) / 255); // R
+            bgra[i * 4 + 0] = static_cast<std::uint8_t>((pixels[i * 4 + 2] * a + 127) / 255); // B
+            bgra[i * 4 + 1] = static_cast<std::uint8_t>((pixels[i * 4 + 1] * a + 127) / 255); // G
+            bgra[i * 4 + 2] = static_cast<std::uint8_t>((pixels[i * 4 + 0] * a + 127) / 255); // R
             bgra[i * 4 + 3] = static_cast<std::uint8_t>(a);
         }
         const D2D1_BITMAP_PROPERTIES props = D2D1::BitmapProperties(
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                              D2D1_ALPHA_MODE_PREMULTIPLIED));
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
         ComPtr<ID2D1Bitmap> bitmap;
         HRESULT hr;
         if (dc_)
-            hr = dc_->CreateBitmap({w, h}, bgra.data(),
-                                   w * 4, props, bitmap.GetAddressOf());
+        {
+            hr = dc_->CreateBitmap({w, h}, bgra.data(), w * 4, props, bitmap.GetAddressOf());
+        }
         else
-            hr = rt_->CreateBitmap({w, h}, bgra.data(),
-                                   w * 4, props, bitmap.GetAddressOf());
-        if (FAILED(hr) || !bitmap) return false;
+        {
+            hr = rt_->CreateBitmap({w, h}, bgra.data(), w * 4, props, bitmap.GetAddressOf());
+        }
+        if (FAILED(hr) || !bitmap)
+        {
+            return false;
+        }
         const D2D1_RECT_F d = to_d2d(dst);
         // LINEAR interpolation is sufficient for live video and faster than
         // HIGH_QUALITY_CUBIC used for static images.
         if (dc_)
-            dc_->DrawBitmap(bitmap.Get(), &d, 1.0f,
-                            D2D1_INTERPOLATION_MODE_LINEAR);
+        {
+            dc_->DrawBitmap(bitmap.Get(), &d, 1.0f, D2D1_INTERPOLATION_MODE_LINEAR);
+        }
         else
-            rt_->DrawBitmap(bitmap.Get(), &d, 1.0f,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        {
+            rt_->DrawBitmap(bitmap.Get(), &d, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        }
         return true;
     }
 
-    void draw_circle_image(const Image& image, Point centre,
-                           float diameter) override
+    void draw_circle_image(const Image& image, Point centre, float diameter) override
     {
         ID2D1Bitmap* bmp =
-            const_cast<D2DImage&>(static_cast<const D2DImage&>(image))
-                .bitmap_for(rt_);
+            const_cast<D2DImage&>(static_cast<const D2DImage&>(image)).bitmap_for(rt_);
         if (!bmp)
         {
             return;
         }
 
         ComPtr<ID2D1EllipseGeometry> ellipse;
-        D2D1_ELLIPSE e =
-            D2D1::Ellipse(to_d2d(centre), diameter * 0.5f, diameter * 0.5f);
+        D2D1_ELLIPSE e = D2D1::Ellipse(to_d2d(centre), diameter * 0.5f, diameter * 0.5f);
         backend_.d2d->CreateEllipseGeometry(e, ellipse.GetAddressOf());
         if (!ellipse)
         {
             return;
         }
 
-        D2D1_LAYER_PARAMETERS lp =
-            D2D1::LayerParameters(D2D1::InfiniteRect(), ellipse.Get(),
-                                  D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        D2D1_LAYER_PARAMETERS lp = D2D1::LayerParameters(D2D1::InfiniteRect(), ellipse.Get(),
+                                                         D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
         rt_->PushLayer(lp, nullptr);
-        Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f,
-                 diameter, diameter};
+        Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f, diameter, diameter};
         D2D1_RECT_F d = to_d2d(dst);
         if (dc_)
-            dc_->DrawBitmap(bmp, &d, 1.0f,
-                            D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        {
+            dc_->DrawBitmap(bmp, &d, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+        }
         else
-            rt_->DrawBitmap(bmp, &d, 1.0f,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        {
+            rt_->DrawBitmap(bmp, &d, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        }
         rt_->PopLayer();
     }
 
-    void draw_initials_circle_(std::string_view name, Point centre,
-                               float diameter, Color bg, Color fg,
-                               AvatarText text) override
+    void draw_initials_circle_(std::string_view name, Point centre, float diameter, Color bg,
+                               Color fg, AvatarText text) override
     {
-        D2D1_ELLIPSE e =
-            D2D1::Ellipse(to_d2d(centre), diameter * 0.5f, diameter * 0.5f);
+        D2D1_ELLIPSE e = D2D1::Ellipse(to_d2d(centre), diameter * 0.5f, diameter * 0.5f);
         rt_->FillEllipse(e, brush(bg));
 
         std::wstring initials = initials_upper(name, text);
@@ -1735,20 +1765,17 @@ public:
         {
             return;
         }
-        if (const auto* g =
-                initials_glyph_renderer().get(backend_, initials, font_dip, fg))
+        if (const auto* g = initials_glyph_renderer().get(backend_, initials, font_dip, fg))
         {
-            draw_image(*g->image,
-                       Rect{centre.x - g->w_dip * 0.5f - g->ink_off_x_dip,
-                            centre.y - g->h_dip * 0.5f, g->w_dip, g->h_dip});
+            draw_image(*g->image, Rect{centre.x - g->w_dip * 0.5f - g->ink_off_x_dip,
+                                       centre.y - g->h_dip * 0.5f, g->w_dip, g->h_dip});
             return;
         }
         // BetterText unavailable: plain DirectWrite.
         ComPtr<IDWriteTextFormat> tf;
         HRESULT hr = backend_.dwrite->CreateTextFormat(
             L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_dip, L"",
-            tf.GetAddressOf());
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_dip, L"", tf.GetAddressOf());
         if (FAILED(hr))
         {
             return;
@@ -1756,11 +1783,10 @@ public:
         tf->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
         tf->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-        D2D1_RECT_F r =
-            D2D1::RectF(centre.x - diameter * 0.5f, centre.y - diameter * 0.5f,
-                        centre.x + diameter * 0.5f, centre.y + diameter * 0.5f);
-        rt_->DrawText(initials.c_str(), static_cast<UINT32>(initials.size()),
-                      tf.Get(), r, brush(fg), D2D1_DRAW_TEXT_OPTIONS_NONE);
+        D2D1_RECT_F r = D2D1::RectF(centre.x - diameter * 0.5f, centre.y - diameter * 0.5f,
+                                    centre.x + diameter * 0.5f, centre.y + diameter * 0.5f);
+        rt_->DrawText(initials.c_str(), static_cast<UINT32>(initials.size()), tf.Get(), r,
+                      brush(fg), D2D1_DRAW_TEXT_OPTIONS_NONE);
     }
 
     void draw_text(const TextLayout& layout, Point origin, Color c) override
@@ -1775,14 +1801,13 @@ public:
         // drawing effect on each coloured range so DrawGlyphRun can pick it up.
         for (const auto& cr : dl.color_ranges())
         {
-            dl.raw()->SetDrawingEffect(
-                brush(cr.color), DWRITE_TEXT_RANGE{cr.start, cr.end - cr.start});
+            dl.raw()->SetDrawingEffect(brush(cr.color),
+                                       DWRITE_TEXT_RANGE{cr.start, cr.end - cr.start});
         }
 
         ComPtr<IDWriteTextRenderer> renderer;
-        renderer.Attach(new CubicEmojiTextRenderer(
-            rt_, dc_, dw4_.Get(), backend_.wic.Get(),
-            &emoji_bitmap_cache_, brush(c)));
+        renderer.Attach(new CubicEmojiTextRenderer(rt_, dc_, dw4_.Get(), backend_.wic.Get(),
+                                                   &emoji_bitmap_cache_, brush(c)));
         dl.raw()->Draw(nullptr, renderer.Get(), origin.x, origin.y);
     }
 
@@ -1801,15 +1826,13 @@ public:
         if (!geom)
         {
             // Degrade to axis-aligned clip so the stack stays balanced.
-            rt_->PushAxisAlignedClip(to_d2d(r),
-                                     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            rt_->PushAxisAlignedClip(to_d2d(r), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
             clip_stack_.push_back(ClipKind::AxisAligned);
             push_clip_bounds(r);
             return;
         }
-        D2D1_LAYER_PARAMETERS lp =
-            D2D1::LayerParameters(D2D1::InfiniteRect(), geom.Get(),
-                                  D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        D2D1_LAYER_PARAMETERS lp = D2D1::LayerParameters(D2D1::InfiniteRect(), geom.Get(),
+                                                         D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         rt_->PushLayer(lp, nullptr);
         clip_stack_.push_back(ClipKind::Layer);
         // The rounded rect's bounding box is the same axis-aligned `r` passed
@@ -1850,9 +1873,9 @@ public:
     // already knows how to unwind a Layer entry, so pop_opacity reuses it.
     void push_opacity(float alpha) override
     {
-        D2D1_LAYER_PARAMETERS lp = D2D1::LayerParameters(
-            D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-            D2D1::IdentityMatrix(), std::clamp(alpha, 0.0f, 1.0f));
+        D2D1_LAYER_PARAMETERS lp =
+            D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                  D2D1::IdentityMatrix(), std::clamp(alpha, 0.0f, 1.0f));
         rt_->PushLayer(lp, nullptr);
         clip_stack_.push_back(ClipKind::Layer);
         push_clip_bounds(clip_rect());
@@ -1904,8 +1927,7 @@ private:
 
     ID2D1SolidColorBrush* brush(Color c)
     {
-        std::uint32_t key = (std::uint32_t(c.r) << 24) |
-                            (std::uint32_t(c.g) << 16) |
+        std::uint32_t key = (std::uint32_t(c.r) << 24) | (std::uint32_t(c.g) << 16) |
                             (std::uint32_t(c.b) << 8) | std::uint32_t(c.a);
         auto it = brush_cache_.find(key);
         if (it != brush_cache_.end())
@@ -1923,8 +1945,7 @@ private:
     ID2D1RenderTarget* rt_;
     ID2D1DeviceContext* dc_ = nullptr; // non-owning; valid iff rt_ IS a DeviceContext
     ComPtr<IDWriteFactory4> dw4_;      // null on pre-1607 Windows 10
-    std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>>
-        brush_cache_;
+    std::unordered_map<std::uint32_t, ComPtr<ID2D1SolidColorBrush>> brush_cache_;
     // Glyph-image bitmap cache for CubicEmojiTextRenderer, keyed by
     // (uniqueDataId, pixelsPerEm). Each entry is an ID2D1Bitmap created off
     // rt_'s device context; D2D bitmaps/brushes belong to the device's
@@ -1950,9 +1971,7 @@ private:
     void push_clip_bounds(const Rect& r)
     {
         clip_bounds_stack_.push_back(
-            clip_bounds_stack_.empty()
-                ? r
-                : intersect_rect(clip_bounds_stack_.back(), r));
+            clip_bounds_stack_.empty() ? r : intersect_rect(clip_bounds_stack_.back(), r));
     }
 
     static Rect intersect_rect(const Rect& a, const Rect& b)
@@ -1961,8 +1980,14 @@ private:
         float y0 = std::max(a.y, b.y);
         float x1 = std::min(a.x + a.w, b.x + b.w);
         float y1 = std::min(a.y + a.h, b.y + b.h);
-        if (x1 < x0) x1 = x0;
-        if (y1 < y0) y1 = y0;
+        if (x1 < x0)
+        {
+            x1 = x0;
+        }
+        if (y1 < y0)
+        {
+            y1 = y0;
+        }
         return {x0, y0, x1 - x0, y1 - y0};
     }
 };
@@ -2017,8 +2042,7 @@ struct Surface::Impl
     };
     Backlog backlog[2];
 
-    Impl(Backend::Impl& b, HWND h, bool t = false)
-        : backend(b), hwnd(h), transparent(t)
+    Impl(Backend::Impl& b, HWND h, bool t = false) : backend(b), hwnd(h), transparent(t)
     {
     }
 
@@ -2043,14 +2067,12 @@ struct Surface::Impl
         {
             dpi = 96.0f;
         }
-        const D2D1_ALPHA_MODE bmp_alpha = transparent
-                                              ? D2D1_ALPHA_MODE_PREMULTIPLIED
-                                              : D2D1_ALPHA_MODE_IGNORE;
+        const D2D1_ALPHA_MODE bmp_alpha =
+            transparent ? D2D1_ALPHA_MODE_PREMULTIPLIED : D2D1_ALPHA_MODE_IGNORE;
         D2D1_BITMAP_PROPERTIES1 bp = D2D1::BitmapProperties1(
             D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, bmp_alpha), dpi, dpi);
-        check(dc->CreateBitmapFromDxgiSurface(surf.Get(), &bp,
-                                              target_bmp.GetAddressOf()),
+        check(dc->CreateBitmapFromDxgiSurface(surf.Get(), &bp, target_bmp.GetAddressOf()),
               "CreateBitmapFromDxgiSurface");
         dc->SetTarget(target_bmp.Get());
         dc->SetDpi(dpi, dpi);
@@ -2115,24 +2137,21 @@ struct Surface::Impl
             // diagnostic. The next repaint retries from scratch.
             dc.Reset();
             swap_chain.Reset();
-            OutputDebugStringW(
-                L"Tesseract: D2D device (re)creation failed; deferring "
-                L"paint until the next repaint\n");
+            OutputDebugStringW(L"Tesseract: D2D device (re)creation failed; deferring "
+                               L"paint until the next repaint\n");
         }
     }
 
     void create_swap_chain_and_target()
     {
-        check(backend.d2d_dev->CreateDeviceContext(
-                  D2D1_DEVICE_CONTEXT_OPTIONS_NONE, dc.GetAddressOf()),
+        check(backend.d2d_dev->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                                   dc.GetAddressOf()),
               "ID2D1Device::CreateDeviceContext");
 
         ComPtr<IDXGIAdapter> adapter;
-        check(backend.dxgi_dev->GetAdapter(adapter.GetAddressOf()),
-              "IDXGIDevice1::GetAdapter");
+        check(backend.dxgi_dev->GetAdapter(adapter.GetAddressOf()), "IDXGIDevice1::GetAdapter");
         ComPtr<IDXGIFactory2> factory2;
-        check(adapter->GetParent(IID_PPV_ARGS(factory2.GetAddressOf())),
-              "IDXGIAdapter::GetParent");
+        check(adapter->GetParent(IID_PPV_ARGS(factory2.GetAddressOf())), "IDXGIAdapter::GetParent");
 
         RECT rc{};
         GetClientRect(hwnd, &rc);
@@ -2162,8 +2181,7 @@ struct Surface::Impl
         // compose bar's text area).
         desc.BufferCount = 2;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-        desc.AlphaMode = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED
-                                     : DXGI_ALPHA_MODE_IGNORE;
+        desc.AlphaMode = transparent ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
         // CreateSwapChainForComposition (no target hwnd, no fullscreen-desc
         // param) rather than CreateSwapChainForHwnd: presenting straight
         // into a DWM-redirected HWND means DWM stretches its own cached
@@ -2173,8 +2191,8 @@ struct Surface::Impl
         // DirectComposition visual (below) instead lets it composite the
         // actual current buffer directly, with no redirection bitmap to
         // stretch.
-        check(factory2->CreateSwapChainForComposition(
-                  backend.d3d.Get(), &desc, nullptr, swap_chain.GetAddressOf()),
+        check(factory2->CreateSwapChainForComposition(backend.d3d.Get(), &desc, nullptr,
+                                                      swap_chain.GetAddressOf()),
               "IDXGIFactory2::CreateSwapChainForComposition");
 
         canvas = std::make_unique<D2DCanvas>(backend, dc.Get());
@@ -2207,19 +2225,17 @@ struct Surface::Impl
         // swap-chain recreation).
         if (!dcomp_target)
         {
-            check(backend.dcomp_device->CreateTargetForHwnd(
-                      hwnd, TRUE, dcomp_target.GetAddressOf()),
-                  "IDCompositionDevice::CreateTargetForHwnd");
+            check(
+                backend.dcomp_device->CreateTargetForHwnd(hwnd, TRUE, dcomp_target.GetAddressOf()),
+                "IDCompositionDevice::CreateTargetForHwnd");
         }
         if (!dcomp_visual)
         {
             check(backend.dcomp_device->CreateVisual(dcomp_visual.GetAddressOf()),
                   "IDCompositionDevice::CreateVisual");
-            check(dcomp_target->SetRoot(dcomp_visual.Get()),
-                  "IDCompositionTarget::SetRoot");
+            check(dcomp_target->SetRoot(dcomp_visual.Get()), "IDCompositionTarget::SetRoot");
         }
-        check(dcomp_visual->SetContent(swap_chain.Get()),
-              "IDCompositionVisual::SetContent");
+        check(dcomp_visual->SetContent(swap_chain.Get()), "IDCompositionVisual::SetContent");
         check(backend.dcomp_device->Commit(), "IDCompositionDevice::Commit");
     }
 
@@ -2232,8 +2248,7 @@ struct Surface::Impl
         dc->SetTarget(nullptr);
         target_bmp.Reset();
         check(swap_chain->ResizeBuffers(0, static_cast<UINT>(std::max(w, 1)),
-                                        static_cast<UINT>(std::max(h, 1)),
-                                        DXGI_FORMAT_UNKNOWN, 0),
+                                        static_cast<UINT>(std::max(h, 1)), DXGI_FORMAT_UNKNOWN, 0),
               "IDXGISwapChain1::ResizeBuffers");
         // ResizeBuffers discards existing buffer contents, and any
         // previously recorded backlog rects are in stale pre-resize
@@ -2403,7 +2418,7 @@ bool Surface::end_paint()
         // no exception and no crash — just a window that never updates
         // again while the rest of the app stays responsive.
         OutputDebugStringW(L"Tesseract: D2D device lost during Present(); "
-                            L"recreating\n");
+                           L"recreating\n");
         impl_->drop_target(true);
         return true;
     }
@@ -2422,8 +2437,8 @@ bool Surface::end_paint()
 class D2DOffscreenSurface : public CanvasFactory::OffscreenSurface
 {
 public:
-    D2DOffscreenSurface(Backend& owner, ComPtr<IWICBitmap> bmp,
-                        ComPtr<ID2D1RenderTarget> rt, UINT pw, UINT ph)
+    D2DOffscreenSurface(Backend& owner, ComPtr<IWICBitmap> bmp, ComPtr<ID2D1RenderTarget> rt,
+                        UINT pw, UINT ph)
         : bmp_(std::move(bmp)), rt_(std::move(rt)), pw_(pw), ph_(ph)
     {
         rt_->BeginDraw();
@@ -2441,8 +2456,7 @@ public:
         {
             return nullptr;
         }
-        return std::make_unique<D2DImage>(std::move(bmp_),
-                                          static_cast<int>(pw_),
+        return std::make_unique<D2DImage>(std::move(bmp_), static_cast<int>(pw_),
                                           static_cast<int>(ph_));
     }
 
@@ -2460,16 +2474,16 @@ public:
     {
     }
 
-    std::unique_ptr<Image>
-    decode_image(std::span<const std::uint8_t> bytes) override
+    std::unique_ptr<Image> decode_image(std::span<const std::uint8_t> bytes) override
     {
         if (tesseract::is_jxl_data(bytes))
+        {
             return tesseract::jxl::decode_still(*this, bytes);
+        }
         return tk::d2d::decode_image(owner_, bytes);
     }
 
-    std::unique_ptr<Image> create_image_rgba(const std::uint8_t* pixels, int w,
-                                             int h) override
+    std::unique_ptr<Image> create_image_rgba(const std::uint8_t* pixels, int w, int h) override
     {
         if (!pixels || w <= 0 || h <= 0)
         {
@@ -2491,28 +2505,33 @@ public:
         }
         ComPtr<IWICBitmap> bitmap;
         if (FAILED(backend_.wic->CreateBitmapFromMemory(
-                static_cast<UINT>(w), static_cast<UINT>(h),
-                GUID_WICPixelFormat32bppPBGRA, static_cast<UINT>(w * 4),
-                static_cast<UINT>(n), bgra.data(), bitmap.GetAddressOf())))
+                static_cast<UINT>(w), static_cast<UINT>(h), GUID_WICPixelFormat32bppPBGRA,
+                static_cast<UINT>(w * 4), static_cast<UINT>(n), bgra.data(),
+                bitmap.GetAddressOf())))
         {
             return nullptr;
         }
         return std::make_unique<D2DImage>(std::move(bitmap), w, h);
     }
 
-    std::unique_ptr<AnimatedImage>
-    decode_animated_image(std::span<const std::uint8_t> bytes,
-                          int max_px) override
+    std::unique_ptr<AnimatedImage> decode_animated_image(std::span<const std::uint8_t> bytes,
+                                                         int max_px) override
     {
         if (tesseract::is_jxl_data(bytes))
+        {
             return tesseract::jxl::decode_animated(*this, bytes, max_px);
+        }
         if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+        {
             return nullptr;
+        }
         // Each frame is already downscaled to max_px inside decode_animation
         // (per-frame, as it is produced) — no separate scaling pass needed.
         auto raw = tk::d2d::decode_animation(owner_, bytes, max_px, max_px);
         if (raw.empty())
+        {
             return nullptr;
+        }
 
         std::vector<std::unique_ptr<Image>> frames;
         std::vector<int> delays;
@@ -2522,23 +2541,25 @@ public:
         for (auto& f : raw)
         {
             if (!f.image)
+            {
                 continue;
+            }
             frames.push_back(std::move(f.image));
             delays.push_back(f.delay_ms);
         }
 
         if (frames.size() < 2)
+        {
             return nullptr;
-        return std::make_unique<AnimatedImage>(std::move(frames),
-                                              std::move(delays));
+        }
+        return std::make_unique<AnimatedImage>(std::move(frames), std::move(delays));
     }
 
     // Cheap plain-string path — CreateTextLayout with no per-range setters,
     // for a single is_plain() run. Only reached for !s.wrap (see
     // build_rich_text), so it stays one line; hard breaks folded first
     // (DirectWrite honours them even with NO_WRAP).
-    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8,
-                                             const TextStyle& s)
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8, const TextStyle& s)
     {
         const std::string folded = fold_hard_breaks_utf8(text_u8);
         std::wstring wide = utf8_to_wide(folded);
@@ -2552,9 +2573,9 @@ public:
         float max_h = s.max_height >= 0 ? s.max_height : 8192.0f;
 
         ComPtr<IDWriteTextLayout> layout;
-        HRESULT hr = backend_.dwrite->CreateTextLayout(
-            wide.c_str(), static_cast<UINT32>(wide.size()), tf, max_w, max_h,
-            layout.GetAddressOf());
+        HRESULT hr =
+            backend_.dwrite->CreateTextLayout(wide.c_str(), static_cast<UINT32>(wide.size()), tf,
+                                              max_w, max_h, layout.GetAddressOf());
         if (FAILED(hr) || !layout)
         {
             return nullptr;
@@ -2599,21 +2620,18 @@ public:
         }
         layout->SetParagraphAlignment(pa);
 
-        layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP
-                                       : DWRITE_WORD_WRAPPING_NO_WRAP);
+        layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
         apply_tag_sequences_(layout.Get(), wide);
 
         if (s.trim == TextTrim::Ellipsis)
         {
             DWRITE_TRIMMING tr{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
             ComPtr<IDWriteInlineObject> ellipsis_sign;
-            backend_.dwrite->CreateEllipsisTrimmingSign(
-                tf, ellipsis_sign.GetAddressOf());
+            backend_.dwrite->CreateEllipsisTrimmingSign(tf, ellipsis_sign.GetAddressOf());
             layout->SetTrimming(&tr, ellipsis_sign.Get());
         }
 
-        return std::make_unique<DWriteLayout>(std::move(layout),
-                                              std::move(wide), folded);
+        return std::make_unique<DWriteLayout>(std::move(layout), std::move(wide), folded);
     }
 
     // Reserves a fixed square box for an is_image span's carrier U+FFFC code
@@ -2638,19 +2656,18 @@ public:
         // to match the *surrounding paragraph's real* ascent/descent — not
         // "the whole box is ascent" — so a pill never grows the line's
         // reported height beyond plain text next to it.
-        BlankInlineObject(float width_dip, float height_dip,
-                          float baseline_dip)
+        BlankInlineObject(float width_dip, float height_dip, float baseline_dip)
             : width_(width_dip), height_(height_dip), baseline_(baseline_dip)
         {
         }
 
-        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                                 void** ppv) override
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
         {
             if (!ppv)
+            {
                 return E_POINTER;
-            if (riid == __uuidof(IUnknown) ||
-                riid == __uuidof(IDWriteInlineObject))
+            }
+            if (riid == __uuidof(IUnknown) || riid == __uuidof(IDWriteInlineObject))
             {
                 *ppv = static_cast<IDWriteInlineObject*>(this);
                 AddRef();
@@ -2667,42 +2684,49 @@ public:
         {
             ULONG n = --refs_;
             if (n == 0)
+            {
                 delete this;
+            }
             return n;
         }
 
-        HRESULT STDMETHODCALLTYPE Draw(void*, IDWriteTextRenderer*, FLOAT,
-                                       FLOAT, BOOL, BOOL, IUnknown*) override
+        HRESULT STDMETHODCALLTYPE Draw(void*, IDWriteTextRenderer*, FLOAT, FLOAT, BOOL, BOOL,
+                                       IUnknown*) override
         {
             return S_OK;
         }
-        HRESULT STDMETHODCALLTYPE
-        GetMetrics(DWRITE_INLINE_OBJECT_METRICS* m) override
+        HRESULT STDMETHODCALLTYPE GetMetrics(DWRITE_INLINE_OBJECT_METRICS* m) override
         {
             if (!m)
+            {
                 return E_POINTER;
+            }
             m->width = width_;
             m->height = height_;
             m->baseline = baseline_;
             m->supportsSideways = FALSE;
             return S_OK;
         }
-        HRESULT STDMETHODCALLTYPE
-        GetOverhangMetrics(DWRITE_OVERHANG_METRICS* m) override
+        HRESULT STDMETHODCALLTYPE GetOverhangMetrics(DWRITE_OVERHANG_METRICS* m) override
         {
             if (!m)
+            {
                 return E_POINTER;
+            }
             *m = {};
             return S_OK;
         }
-        HRESULT STDMETHODCALLTYPE
-        GetBreakConditions(DWRITE_BREAK_CONDITION* before,
-                           DWRITE_BREAK_CONDITION* after) override
+        HRESULT STDMETHODCALLTYPE GetBreakConditions(DWRITE_BREAK_CONDITION* before,
+                                                     DWRITE_BREAK_CONDITION* after) override
         {
             if (before)
+            {
                 *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+            }
             if (after)
+            {
                 *after = DWRITE_BREAK_CONDITION_NEUTRAL;
+            }
             return S_OK;
         }
 
@@ -2723,12 +2747,10 @@ public:
     {
     public:
         TagSequenceInlineObject(ComPtr<IDWriteFontFace> face, float em_size,
-                                std::vector<UINT16> glyphs,
-                                std::vector<FLOAT> advances,
+                                std::vector<UINT16> glyphs, std::vector<FLOAT> advances,
                                 std::vector<DWRITE_GLYPH_OFFSET> offsets)
-            : face_(std::move(face)), em_size_(em_size),
-              glyphs_(std::move(glyphs)), advances_(std::move(advances)),
-              offsets_(std::move(offsets))
+            : face_(std::move(face)), em_size_(em_size), glyphs_(std::move(glyphs)),
+              advances_(std::move(advances)), offsets_(std::move(offsets))
         {
             DWRITE_FONT_METRICS fm{};
             face_->GetMetrics(&fm);
@@ -2736,16 +2758,18 @@ public:
             ascent_ = fm.ascent * du;
             descent_ = fm.descent * du;
             for (FLOAT a : advances_)
+            {
                 width_ += a;
+            }
         }
 
-        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                                 void** ppv) override
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
         {
             if (!ppv)
+            {
                 return E_POINTER;
-            if (riid == __uuidof(IUnknown) ||
-                riid == __uuidof(IDWriteInlineObject))
+            }
+            if (riid == __uuidof(IUnknown) || riid == __uuidof(IDWriteInlineObject))
             {
                 *ppv = static_cast<IDWriteInlineObject*>(this);
                 AddRef();
@@ -2762,16 +2786,19 @@ public:
         {
             ULONG n = --refs_;
             if (n == 0)
+            {
                 delete this;
+            }
             return n;
         }
 
-        HRESULT STDMETHODCALLTYPE Draw(void* ctx, IDWriteTextRenderer* r,
-                                       FLOAT x, FLOAT y, BOOL, BOOL,
-                                       IUnknown* effect) override
+        HRESULT STDMETHODCALLTYPE Draw(void* ctx, IDWriteTextRenderer* r, FLOAT x, FLOAT y, BOOL,
+                                       BOOL, IUnknown* effect) override
         {
             if (!r)
+            {
                 return S_OK;
+            }
             DWRITE_GLYPH_RUN run{};
             run.fontFace = face_.Get();
             run.fontEmSize = em_size_;
@@ -2781,37 +2808,41 @@ public:
             run.glyphOffsets = offsets_.data();
             // Inline objects are positioned by their top-left corner; glyph
             // runs by their baseline origin.
-            return r->DrawGlyphRun(ctx, x, y + ascent_,
-                                   DWRITE_MEASURING_MODE_NATURAL, &run,
+            return r->DrawGlyphRun(ctx, x, y + ascent_, DWRITE_MEASURING_MODE_NATURAL, &run,
                                    nullptr, effect);
         }
-        HRESULT STDMETHODCALLTYPE
-        GetMetrics(DWRITE_INLINE_OBJECT_METRICS* m) override
+        HRESULT STDMETHODCALLTYPE GetMetrics(DWRITE_INLINE_OBJECT_METRICS* m) override
         {
             if (!m)
+            {
                 return E_POINTER;
+            }
             m->width = width_;
             m->height = ascent_ + descent_;
             m->baseline = ascent_;
             m->supportsSideways = FALSE;
             return S_OK;
         }
-        HRESULT STDMETHODCALLTYPE
-        GetOverhangMetrics(DWRITE_OVERHANG_METRICS* m) override
+        HRESULT STDMETHODCALLTYPE GetOverhangMetrics(DWRITE_OVERHANG_METRICS* m) override
         {
             if (!m)
+            {
                 return E_POINTER;
+            }
             *m = {};
             return S_OK;
         }
-        HRESULT STDMETHODCALLTYPE
-        GetBreakConditions(DWRITE_BREAK_CONDITION* before,
-                           DWRITE_BREAK_CONDITION* after) override
+        HRESULT STDMETHODCALLTYPE GetBreakConditions(DWRITE_BREAK_CONDITION* before,
+                                                     DWRITE_BREAK_CONDITION* after) override
         {
             if (before)
+            {
                 *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+            }
             if (after)
+            {
                 *after = DWRITE_BREAK_CONDITION_NEUTRAL;
+            }
             return S_OK;
         }
 
@@ -2829,19 +2860,22 @@ public:
     // TagSequenceInlineObject (see above). Call after all per-range font
     // sizes are set: the object takes the layout's size at the sequence.
     // Sequences Noto doesn't ligate to one glyph are left alone.
-    void apply_tag_sequences_(IDWriteTextLayout* layout,
-                              const std::wstring& wide)
+    void apply_tag_sequences_(IDWriteTextLayout* layout, const std::wstring& wide)
     {
         IDWriteFontFace* face = backend_.noto_emoji_face.Get();
         if (!face)
+        {
             return;
+        }
         // Tag characters are all U+E00xx: high surrogate 0xDB40, low
         // surrogate 0xDC00 + xx.
         auto tag_at = [&](size_t i) -> int
         {
-            if (i + 1 < wide.size() && wide[i] == 0xDB40 &&
-                wide[i + 1] >= 0xDC20 && wide[i + 1] <= 0xDC7F)
+            if (i + 1 < wide.size() && wide[i] == 0xDB40 && wide[i + 1] >= 0xDC20 &&
+                wide[i + 1] <= 0xDC7F)
+            {
                 return wide[i + 1] - 0xDC00;
+            }
             return -1;
         };
         ComPtr<IDWriteTextAnalyzer> analyzer;
@@ -2857,14 +2891,22 @@ public:
             // U+FE0F presentation selector ahead of the tags).
             size_t start = i;
             if (wide[start - 1] == 0xFE0F && start >= 2)
+            {
                 --start;
+            }
             if (start >= 2 && IS_SURROGATE_PAIR(wide[start - 2], wide[start - 1]))
+            {
                 start -= 2;
+            }
             else
+            {
                 start -= 1;
+            }
             size_t end = i;
             while (tag_at(end) >= 0 && tag_at(end) != 0x7F)
+            {
                 end += 2;
+            }
             if (tag_at(end) != 0x7F)
             {
                 i = end; // unterminated — not a valid tag sequence
@@ -2874,44 +2916,45 @@ public:
             i = end;
 
             const UINT32 len = static_cast<UINT32>(end - start);
-            if (!analyzer &&
-                FAILED(backend_.dwrite->CreateTextAnalyzer(&analyzer)))
+            if (!analyzer && FAILED(backend_.dwrite->CreateTextAnalyzer(&analyzer)))
+            {
                 return;
+            }
             std::vector<UINT16> cluster_map(len);
             std::vector<DWRITE_SHAPING_TEXT_PROPERTIES> text_props(len);
             std::vector<UINT16> glyphs(len);
             std::vector<DWRITE_SHAPING_GLYPH_PROPERTIES> glyph_props(len);
             UINT32 glyph_count = 0;
             DWRITE_SCRIPT_ANALYSIS sa{};
-            if (FAILED(analyzer->GetGlyphs(
-                    wide.c_str() + start, len, face, FALSE, FALSE, &sa, L"",
-                    nullptr, nullptr, nullptr, 0, len, cluster_map.data(),
-                    text_props.data(), glyphs.data(), glyph_props.data(),
-                    &glyph_count)) ||
+            if (FAILED(analyzer->GetGlyphs(wide.c_str() + start, len, face, FALSE, FALSE, &sa, L"",
+                                           nullptr, nullptr, nullptr, 0, len, cluster_map.data(),
+                                           text_props.data(), glyphs.data(), glyph_props.data(),
+                                           &glyph_count)) ||
                 glyph_count != 1)
+            {
                 continue;
+            }
             glyphs.resize(glyph_count);
 
             FLOAT em_size = 0;
-            if (FAILED(layout->GetFontSize(static_cast<UINT32>(start),
-                                           &em_size)) ||
-                em_size <= 0)
+            if (FAILED(layout->GetFontSize(static_cast<UINT32>(start), &em_size)) || em_size <= 0)
+            {
                 continue;
+            }
             std::vector<FLOAT> advances(glyph_count);
             std::vector<DWRITE_GLYPH_OFFSET> offsets(glyph_count);
             if (FAILED(analyzer->GetGlyphPlacements(
-                    wide.c_str() + start, cluster_map.data(), text_props.data(),
-                    len, glyphs.data(), glyph_props.data(), glyph_count, face,
-                    em_size, FALSE, FALSE, &sa, L"", nullptr, nullptr, 0,
-                    advances.data(), offsets.data())))
+                    wide.c_str() + start, cluster_map.data(), text_props.data(), len, glyphs.data(),
+                    glyph_props.data(), glyph_count, face, em_size, FALSE, FALSE, &sa, L"", nullptr,
+                    nullptr, 0, advances.data(), offsets.data())))
+            {
                 continue;
+            }
 
             ComPtr<IDWriteInlineObject> obj;
-            obj.Attach(new TagSequenceInlineObject(
-                face, em_size, std::move(glyphs), std::move(advances),
-                std::move(offsets)));
-            layout->SetInlineObject(
-                obj.Get(), DWRITE_TEXT_RANGE{static_cast<UINT32>(start), len});
+            obj.Attach(new TagSequenceInlineObject(face, em_size, std::move(glyphs),
+                                                   std::move(advances), std::move(offsets)));
+            layout->SetInlineObject(obj.Get(), DWRITE_TEXT_RANGE{static_cast<UINT32>(start), len});
         }
     }
 
@@ -2923,7 +2966,9 @@ public:
         // did before the merge). Wrapped text keeps the per-range path
         // (parity with Qt6).
         if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+        {
             return build_plain_(spans[0].text, s);
+        }
 
         // Concatenate all span text to UTF-16 and plain UTF-8, tracking ranges.
         std::wstring wide;
@@ -2953,9 +2998,9 @@ public:
         float max_h = s.max_height >= 0 ? s.max_height : 8192.0f;
 
         ComPtr<IDWriteTextLayout> layout;
-        HRESULT hr = backend_.dwrite->CreateTextLayout(
-            wide.c_str(), static_cast<UINT32>(wide.size()), tf, max_w, max_h,
-            layout.GetAddressOf());
+        HRESULT hr =
+            backend_.dwrite->CreateTextLayout(wide.c_str(), static_cast<UINT32>(wide.size()), tf,
+                                              max_w, max_h, layout.GetAddressOf());
         if (FAILED(hr) || !layout)
         {
             return nullptr;
@@ -2970,23 +3015,19 @@ public:
             }
         }
 
-        const FontRole emoji_role = (s.role == FontRole::BigEmoji)
-                                         ? FontRole::BigEmoji
-                                         : FontRole::InlineEmoji;
+        const FontRole emoji_role =
+            (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji : FontRole::InlineEmoji;
         const float emoji_size_dip =
-            static_cast<float>(font_role_pt(emoji_role, win32_system_base_pt())) *
-            (96.0f / 72.0f);
+            static_cast<float>(font_role_pt(emoji_role, win32_system_base_pt())) * (96.0f / 72.0f);
 
         // Custom-emoticon (MSC2545, TextSpan::is_image) box size: BigEmoji
         // for an emoji-only body, else InlineCustomEmoji — independent of
         // emoji_size_dip above, which only sizes native is_emoji_run glyph
         // runs (still InlineEmoji, a deliberate same-as-body no-op).
-        const FontRole custom_emoji_role = (s.role == FontRole::BigEmoji)
-                                                ? FontRole::BigEmoji
-                                                : FontRole::InlineCustomEmoji;
+        const FontRole custom_emoji_role =
+            (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji : FontRole::InlineCustomEmoji;
         const float custom_emoji_size_dip =
-            static_cast<float>(
-                font_role_pt(custom_emoji_role, win32_system_base_pt())) *
+            static_cast<float>(font_role_pt(custom_emoji_role, win32_system_base_pt())) *
             (96.0f / 72.0f);
 
         // Ascent/descent of this layout's own role — needed to size a
@@ -3014,10 +3055,11 @@ public:
         auto ensure_role_metrics = [&]()
         {
             if (have_role_metrics)
+            {
                 return;
+            }
             have_role_metrics = true;
-            const RealLineMetrics lm =
-                real_line_metrics(owner_, s.role, s.monospace);
+            const RealLineMetrics lm = real_line_metrics(owner_, s.role, s.monospace);
             role_ascent = lm.ascent;
             role_descent = lm.descent;
         };
@@ -3041,15 +3083,14 @@ public:
                 // same slot-reservation treatment as a User pill; a Room-
                 // kind pill WITH a url is a permalink to some other room
                 // and has no avatar.
-                pspec.reserve_leading_visual =
-                    (sp.pill_kind == PillKind::User) ||
-                    (sp.pill_kind == PillKind::Room && sp.url.empty());
+                pspec.reserve_leading_visual = (sp.pill_kind == PillKind::User) ||
+                                               (sp.pill_kind == PillKind::Room && sp.url.empty());
                 pspec.text_role = s.role;
                 const tk::PillMetrics pm =
                     tk::measure_pill(*this, pspec, role_ascent, role_descent);
                 ComPtr<IDWriteInlineObject> obj;
-                obj.Attach(new BlankInlineObject(
-                    pm.width, role_ascent + role_descent, role_ascent));
+                obj.Attach(
+                    new BlankInlineObject(pm.width, role_ascent + role_descent, role_ascent));
                 layout->SetInlineObject(obj.Get(), tr);
             }
             else if (sp.is_image)
@@ -3106,37 +3147,31 @@ public:
         }
 
         layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-        layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP
-                                       : DWRITE_WORD_WRAPPING_NO_WRAP);
+        layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
         apply_tag_sequences_(layout.Get(), wide);
 
         if (s.trim == TextTrim::Ellipsis)
         {
             DWRITE_TRIMMING tr{DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0};
             ComPtr<IDWriteInlineObject> sign;
-            backend_.dwrite->CreateEllipsisTrimmingSign(tf,
-                                                        sign.GetAddressOf());
+            backend_.dwrite->CreateEllipsisTrimmingSign(tf, sign.GetAddressOf());
             layout->SetTrimming(&tr, sign.Get());
         }
 
-        return std::make_unique<DWriteLayout>(std::move(layout),
-                                              std::move(wide),
-                                              std::move(plain_utf8),
-                                              std::move(url_ranges),
+        return std::make_unique<DWriteLayout>(std::move(layout), std::move(wide),
+                                              std::move(plain_utf8), std::move(url_ranges),
                                               std::move(color_ranges));
     }
 
-    std::unique_ptr<CanvasFactory::OffscreenSurface>
-    create_offscreen(Size logical_size, float scale_factor) override
+    std::unique_ptr<CanvasFactory::OffscreenSurface> create_offscreen(Size logical_size,
+                                                                      float scale_factor) override
     {
         if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
         {
             return nullptr;
         }
-        const UINT pw = static_cast<UINT>(
-            std::max(1.f, std::round(logical_size.w * scale_factor)));
-        const UINT ph = static_cast<UINT>(
-            std::max(1.f, std::round(logical_size.h * scale_factor)));
+        const UINT pw = static_cast<UINT>(std::max(1.f, std::round(logical_size.w * scale_factor)));
+        const UINT ph = static_cast<UINT>(std::max(1.f, std::round(logical_size.h * scale_factor)));
 
         auto fac = tk::d2d::factories(owner_);
         if (!fac.wic || !fac.d2d)
@@ -3145,24 +3180,20 @@ public:
         }
         ComPtr<IWICBitmap> bmp;
         if (FAILED(fac.wic->CreateBitmap(pw, ph, GUID_WICPixelFormat32bppPBGRA,
-                                         WICBitmapCacheOnDemand,
-                                         bmp.GetAddressOf())))
+                                         WICBitmapCacheOnDemand, bmp.GetAddressOf())))
         {
             return nullptr;
         }
         D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                              D2D1_ALPHA_MODE_PREMULTIPLIED),
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
             96.f * scale_factor, 96.f * scale_factor);
         ComPtr<ID2D1RenderTarget> rt;
-        if (FAILED(fac.d2d->CreateWicBitmapRenderTarget(
-                bmp.Get(), props, rt.GetAddressOf())))
+        if (FAILED(fac.d2d->CreateWicBitmapRenderTarget(bmp.Get(), props, rt.GetAddressOf())))
         {
             return nullptr;
         }
-        return std::make_unique<D2DOffscreenSurface>(
-            owner_, std::move(bmp), std::move(rt), pw, ph);
+        return std::make_unique<D2DOffscreenSurface>(owner_, std::move(bmp), std::move(rt), pw, ph);
     }
 
 private:
@@ -3183,10 +3214,14 @@ std::unique_ptr<Canvas> make_canvas(Backend& b, ID2D1RenderTarget* rt)
 Factories factories(Backend& b)
 {
     Backend::Impl& impl = b.impl();
-    return Factories{impl.d2d.Get(), impl.dwrite.Get(), impl.wic.Get(),
-                     impl.font_fallback.Get(), impl.noto_emoji_face.Get(),
+    return Factories{impl.d2d.Get(),
+                     impl.dwrite.Get(),
+                     impl.wic.Get(),
+                     impl.font_fallback.Get(),
+                     impl.noto_emoji_face.Get(),
                      impl.noto_emoji_collection.Get(),
-                     impl.d2d_dev.Get(), impl.d3d.Get()};
+                     impl.d2d_dev.Get(),
+                     impl.d3d.Get()};
 }
 
 RealLineMetrics real_line_metrics(Backend& b, FontRole role, bool monospace)
@@ -3204,8 +3239,8 @@ RealLineMetrics real_line_metrics(Backend& b, FontRole role, bool monospace)
     // constructor comment), so it can't answer "how much of this line's
     // height is descent" the way this function needs to.
     ComPtr<IDWriteTextLayout> layout;
-    HRESULT hr = impl.dwrite->CreateTextLayout(L" ", 1, tf, 8192.0f, 8192.0f,
-                                               layout.GetAddressOf());
+    HRESULT hr =
+        impl.dwrite->CreateTextLayout(L" ", 1, tf, 8192.0f, 8192.0f, layout.GetAddressOf());
     if (FAILED(hr) || !layout)
     {
         return out;
@@ -3224,16 +3259,14 @@ RealLineMetrics real_line_metrics(Backend& b, FontRole role, bool monospace)
 //  make_image_from_bgra — create tk::Image from raw BGRA pixel buffer
 // ─────────────────────────────────────────────────────────────────────────
 
-std::unique_ptr<Image>
-make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h,
-                     bool opaque)
+std::unique_ptr<Image> make_image_from_bgra(Backend& b, const std::uint8_t* pixels, int w, int h,
+                                            bool opaque)
 {
     return image_from_bgra_impl(b.impl(), pixels, w, h, opaque);
 }
 
-std::unique_ptr<Image>
-image_from_bgra_impl(Backend::Impl& impl, const std::uint8_t* pixels, int w,
-                     int h, bool opaque)
+std::unique_ptr<Image> image_from_bgra_impl(Backend::Impl& impl, const std::uint8_t* pixels, int w,
+                                            int h, bool opaque)
 {
     if (!pixels || w <= 0 || h <= 0)
     {
@@ -3260,10 +3293,8 @@ image_from_bgra_impl(Backend::Impl& impl, const std::uint8_t* pixels, int w,
     ComPtr<IWICBitmap> bmp;
     HRESULT hr = impl.wic->CreateBitmapFromMemory(
         static_cast<UINT>(w), static_cast<UINT>(h),
-        opaque ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat32bppPBGRA,
-        stride, size,
-        const_cast<BYTE*>(reinterpret_cast<const BYTE*>(pixels)),
-        bmp.GetAddressOf());
+        opaque ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat32bppPBGRA, stride, size,
+        const_cast<BYTE*>(reinterpret_cast<const BYTE*>(pixels)), bmp.GetAddressOf());
     if (FAILED(hr) || !bmp)
     {
         return nullptr;
@@ -3272,8 +3303,7 @@ image_from_bgra_impl(Backend::Impl& impl, const std::uint8_t* pixels, int w,
     return std::make_unique<D2DImage>(std::move(bmp), w, h, opaque);
 }
 
-std::unique_ptr<Image>
-make_image_from_rgba(Backend& b, const std::uint8_t* rgba, int w, int h)
+std::unique_ptr<Image> make_image_from_rgba(Backend& b, const std::uint8_t* rgba, int w, int h)
 {
     if (!rgba || w <= 0 || h <= 0)
     {
@@ -3378,8 +3408,7 @@ int read_frame_delay_ms(IWICBitmapFrameDecode* frame)
         // across codec versions; both are tried best-effort.
         UINT webp_ms = 0;
         if (delay_ms == 100 &&
-            (read_uint(L"/ANMF/FrameDuration", webp_ms) ||
-             read_uint(L"/ANMF/Duration", webp_ms)) &&
+            (read_uint(L"/ANMF/FrameDuration", webp_ms) || read_uint(L"/ANMF/Duration", webp_ms)) &&
             webp_ms > 0)
         {
             delay_ms = static_cast<int>(webp_ms);
@@ -3394,28 +3423,27 @@ int read_frame_delay_ms(IWICBitmapFrameDecode* frame)
 static void log_wic_failure(const wchar_t* step, HRESULT hr)
 {
     wchar_t msg[96];
-    std::swprintf(msg, std::size(msg),
-                  L"Tesseract: image %ls failed (hr=0x%08lX)\n", step,
+    std::swprintf(msg, std::size(msg), L"Tesseract: image %ls failed (hr=0x%08lX)\n", step,
                   static_cast<unsigned long>(hr));
     OutputDebugStringW(msg);
 }
 
 // Forward declaration — defined further down this file; decode_image needs
 // it for its own optional max_w/max_h downscale.
-static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
-                                               IWICBitmap* src, UINT w, UINT h,
-                                               int max_w, int max_h);
+static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic, IWICBitmap* src, UINT w,
+                                               UINT h, int max_w, int max_h);
 
-std::unique_ptr<Image> decode_image(Backend& /*b*/,
-                                    std::span<const std::uint8_t> bytes,
-                                    int max_w, int max_h)
+std::unique_ptr<Image> decode_image(Backend& /*b*/, std::span<const std::uint8_t> bytes, int max_w,
+                                    int max_h)
 {
     if (bytes.empty())
     {
         return nullptr;
     }
     if (!tk::decode_size_allowed(bytes, /*animated=*/false))
+    {
         return nullptr;
+    }
 
     // Create a per-call WIC factory in the calling thread's own apartment.
     // CoInitializeEx is ref-counted per thread: S_OK means we initialised and
@@ -3429,12 +3457,17 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
     struct ComGuard
     {
         bool owned;
-        ~ComGuard() { if (owned) CoUninitialize(); }
+        ~ComGuard()
+        {
+            if (owned)
+            {
+                CoUninitialize();
+            }
+        }
     } com_guard{coinit_hr == S_OK};
 
     ComPtr<IWICImagingFactory> wic;
-    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
-                                CLSCTX_INPROC_SERVER,
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(&wic))))
     {
         return nullptr;
@@ -3452,8 +3485,7 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
     }
 
     ComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr,
-                                            WICDecodeMetadataCacheOnLoad,
+    if (FAILED(wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
                                             decoder.GetAddressOf())))
     {
         return nullptr;
@@ -3478,35 +3510,45 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
                 PROPVARIANT pv;
                 PropVariantInit(&pv);
                 bool found = false;
-                if (SUCCEEDED(meta->GetMetadataByName(path, &pv)) &&
-                    pv.vt == VT_UI2)
+                if (SUCCEEDED(meta->GetMetadataByName(path, &pv)) && pv.vt == VT_UI2)
                 {
                     found = true;
                     switch (pv.uiVal)
                     {
-                    case 2: exif_transform = WICBitmapTransformFlipHorizontal; break;
-                    case 3: exif_transform = WICBitmapTransformRotate180; break;
-                    case 4: exif_transform = WICBitmapTransformFlipVertical; break;
+                    case 2:
+                        exif_transform = WICBitmapTransformFlipHorizontal;
+                        break;
+                    case 3:
+                        exif_transform = WICBitmapTransformRotate180;
+                        break;
+                    case 4:
+                        exif_transform = WICBitmapTransformFlipVertical;
+                        break;
                     case 5:
                         exif_transform = static_cast<WICBitmapTransformOptions>(
-                            WICBitmapTransformRotate90 |
-                            WICBitmapTransformFlipHorizontal);
+                            WICBitmapTransformRotate90 | WICBitmapTransformFlipHorizontal);
                         break;
-                    case 6: exif_transform = WICBitmapTransformRotate90; break;
+                    case 6:
+                        exif_transform = WICBitmapTransformRotate90;
+                        break;
                     case 7:
                         exif_transform = static_cast<WICBitmapTransformOptions>(
-                            WICBitmapTransformRotate270 |
-                            WICBitmapTransformFlipHorizontal);
+                            WICBitmapTransformRotate270 | WICBitmapTransformFlipHorizontal);
                         break;
-                    case 8: exif_transform = WICBitmapTransformRotate270; break;
-                    default: break; // 1 = normal; unknown values are ignored
+                    case 8:
+                        exif_transform = WICBitmapTransformRotate270;
+                        break;
+                    default:
+                        break; // 1 = normal; unknown values are ignored
                     }
                 }
                 PropVariantClear(&pv);
                 return found;
             };
             if (!try_path(L"/app1/ifd/{ushort=274}"))
+            {
                 try_path(L"/ifd/{ushort=274}");
+            }
         }
     }
 
@@ -3569,8 +3611,7 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
     {
         return scaled;
     }
-    return std::make_unique<D2DImage>(std::move(cached), static_cast<int>(w),
-                                      static_cast<int>(h));
+    return std::make_unique<D2DImage>(std::move(cached), static_cast<int>(w), static_cast<int>(h));
 }
 
 // Downscale `src` to fit within max_w x max_h (aspect-ratio-preserving,
@@ -3580,12 +3621,10 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/,
 // case. Takes a raw factory pointer (rather than Backend::Impl&) so it's
 // usable both from the shared-backend animated-decode path and from
 // decode_image's own per-call, per-thread WIC factory.
-static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
-                                               IWICBitmap* src, UINT w, UINT h,
-                                               int max_w, int max_h)
+static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic, IWICBitmap* src, UINT w,
+                                               UINT h, int max_w, int max_h)
 {
-    if (max_w <= 0 || max_h <= 0 ||
-        (static_cast<int>(w) <= max_w && static_cast<int>(h) <= max_h))
+    if (max_w <= 0 || max_h <= 0 || (static_cast<int>(w) <= max_w && static_cast<int>(h) <= max_h))
     {
         return nullptr;
     }
@@ -3604,8 +3643,8 @@ static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
         return nullptr;
     }
     ComPtr<IWICBitmap> scaled;
-    if (FAILED(wic->CreateBitmapFromSource(scaler.Get(), WICBitmapCacheOnLoad,
-                                           scaled.GetAddressOf())))
+    if (FAILED(
+            wic->CreateBitmapFromSource(scaler.Get(), WICBitmapCacheOnLoad, scaled.GetAddressOf())))
     {
         return nullptr;
     }
@@ -3625,14 +3664,16 @@ static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic,
 // decode_next_batch() rely on. Returns nullptr (canvas left unmodified) on
 // a decode failure for this specific frame, matching the `continue` cases
 // the two callers used to inline directly.
-static std::unique_ptr<Image> composite_gif_frame(
-    Backend::Impl& impl, IWICBitmapDecoder* decoder, UINT i, UINT canvas_w,
-    UINT canvas_h, UINT stride, std::vector<std::uint8_t>& canvas, int max_w,
-    int max_h, int& out_delay_ms)
+static std::unique_ptr<Image> composite_gif_frame(Backend::Impl& impl, IWICBitmapDecoder* decoder,
+                                                  UINT i, UINT canvas_w, UINT canvas_h, UINT stride,
+                                                  std::vector<std::uint8_t>& canvas, int max_w,
+                                                  int max_h, int& out_delay_ms)
 {
     ComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+    {
         return nullptr;
+    }
 
     // Read per-frame rect and disposal method from GIF metadata.
     UINT left = 0, top = 0, disposal = 0;
@@ -3647,15 +3688,24 @@ static std::unique_ptr<Image> composite_gif_frame(
                 UINT val = 0;
                 if (SUCCEEDED(fmeta->GetMetadataByName(path, &pv)))
                 {
-                    if (pv.vt == VT_UI1) val = pv.bVal;
-                    else if (pv.vt == VT_UI2) val = pv.uiVal;
-                    else if (pv.vt == VT_UI4) val = pv.uintVal;
+                    if (pv.vt == VT_UI1)
+                    {
+                        val = pv.bVal;
+                    }
+                    else if (pv.vt == VT_UI2)
+                    {
+                        val = pv.uiVal;
+                    }
+                    else if (pv.vt == VT_UI4)
+                    {
+                        val = pv.uintVal;
+                    }
                 }
                 PropVariantClear(&pv);
                 return val;
             };
-            left     = read_ui(L"/imgdesc/Left");
-            top      = read_ui(L"/imgdesc/Top");
+            left = read_ui(L"/imgdesc/Left");
+            top = read_ui(L"/imgdesc/Top");
             disposal = read_ui(L"/grctlext/Disposal");
         }
     }
@@ -3663,29 +3713,38 @@ static std::unique_ptr<Image> composite_gif_frame(
     // Decode the frame's sub-region to PBGRA pixels.
     ComPtr<IWICFormatConverter> converter;
     if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+    {
         return nullptr;
+    }
     if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
                                      WICBitmapDitherTypeNone, nullptr, 0.0f,
                                      WICBitmapPaletteTypeMedianCut)))
+    {
         return nullptr;
+    }
 
     UINT fw = 0, fh = 0;
     frame->GetSize(&fw, &fh);
     if (fw == 0 || fh == 0)
+    {
         return nullptr;
+    }
 
     // Clamp frame rect to canvas bounds.
     if (left >= canvas_w || top >= canvas_h)
+    {
         return nullptr;
+    }
     fw = std::min(fw, canvas_w - left);
     fh = std::min(fh, canvas_h - top);
 
     const UINT fstride = fw * 4;
     std::vector<std::uint8_t> frame_px(fstride * fh);
-    if (FAILED(converter->CopyPixels(nullptr, fstride,
-                                     static_cast<UINT>(frame_px.size()),
+    if (FAILED(converter->CopyPixels(nullptr, fstride, static_cast<UINT>(frame_px.size()),
                                      frame_px.data())))
+    {
         return nullptr;
+    }
 
     // For RESTORE_PREVIOUS (disposal==3): snapshot the region before we
     // write to it so we can put it back after this frame is stored.
@@ -3694,49 +3753,54 @@ static std::unique_ptr<Image> composite_gif_frame(
     {
         saved.resize(fstride * fh);
         for (UINT y = 0; y < fh; ++y)
-            std::memcpy(saved.data() + y * fstride,
-                        canvas.data() + (top + y) * stride + left * 4,
+        {
+            std::memcpy(saved.data() + y * fstride, canvas.data() + (top + y) * stride + left * 4,
                         fstride);
+        }
     }
 
     // Blit frame onto canvas.  PBGRA: alpha==0 means transparent; any
     // non-zero alpha replaces (GIF pixels are either opaque or absent).
     for (UINT y = 0; y < fh; ++y)
     {
-        const auto* src =
-            reinterpret_cast<const std::uint32_t*>(frame_px.data() + y * fstride);
-        auto* dst = reinterpret_cast<std::uint32_t*>(
-            canvas.data() + (top + y) * stride + left * 4);
+        const auto* src = reinterpret_cast<const std::uint32_t*>(frame_px.data() + y * fstride);
+        auto* dst = reinterpret_cast<std::uint32_t*>(canvas.data() + (top + y) * stride + left * 4);
         for (UINT x = 0; x < fw; ++x)
+        {
             if (src[x] >> 24)
+            {
                 dst[x] = src[x];
+            }
+        }
     }
 
     // Snapshot the composited canvas into an independent IWICBitmap.
     // CreateBitmapFromMemory wraps (aliases) the buffer, so we
     // immediately copy it via CreateBitmapFromSource+CacheOnLoad.
     ComPtr<IWICBitmap> alias;
-    if (FAILED(impl.wic->CreateBitmapFromMemory(
-            canvas_w, canvas_h, GUID_WICPixelFormat32bppPBGRA, stride,
-            static_cast<UINT>(canvas.size()), canvas.data(),
-            alias.GetAddressOf())))
+    if (FAILED(impl.wic->CreateBitmapFromMemory(canvas_w, canvas_h, GUID_WICPixelFormat32bppPBGRA,
+                                                stride, static_cast<UINT>(canvas.size()),
+                                                canvas.data(), alias.GetAddressOf())))
+    {
         return nullptr;
+    }
     ComPtr<IWICBitmap> snap;
-    if (FAILED(impl.wic->CreateBitmapFromSource(
-            alias.Get(), WICBitmapCacheOnLoad, snap.GetAddressOf())))
+    if (FAILED(impl.wic->CreateBitmapFromSource(alias.Get(), WICBitmapCacheOnLoad,
+                                                snap.GetAddressOf())))
+    {
         return nullptr;
+    }
 
     std::unique_ptr<Image> frame_image;
-    if (auto scaled = scale_wic_bitmap(impl.wic.Get(), snap.Get(), canvas_w,
-                                       canvas_h, max_w, max_h))
+    if (auto scaled =
+            scale_wic_bitmap(impl.wic.Get(), snap.Get(), canvas_w, canvas_h, max_w, max_h))
     {
         frame_image = std::move(scaled);
     }
     else
     {
-        frame_image = std::make_unique<D2DImage>(std::move(snap),
-                                                  static_cast<int>(canvas_w),
-                                                  static_cast<int>(canvas_h));
+        frame_image = std::make_unique<D2DImage>(std::move(snap), static_cast<int>(canvas_w),
+                                                 static_cast<int>(canvas_h));
     }
     out_delay_ms = read_frame_delay_ms(frame.Get());
 
@@ -3744,14 +3808,17 @@ static std::unique_ptr<Image> composite_gif_frame(
     if (disposal == 2) // restore to background (transparent)
     {
         for (UINT y = 0; y < fh; ++y)
-            std::memset(canvas.data() + (top + y) * stride + left * 4, 0,
-                        fstride);
+        {
+            std::memset(canvas.data() + (top + y) * stride + left * 4, 0, fstride);
+        }
     }
     else if (disposal == 3) // restore to previous state
     {
         for (UINT y = 0; y < fh; ++y)
-            std::memcpy(canvas.data() + (top + y) * stride + left * 4,
-                        saved.data() + y * fstride, fstride);
+        {
+            std::memcpy(canvas.data() + (top + y) * stride + left * 4, saved.data() + y * fstride,
+                        fstride);
+        }
     }
     // disposal 0/1: leave canvas as-is
 
@@ -3772,48 +3839,54 @@ static std::unique_ptr<Image> composite_gif_frame(
 // other than GIF, where every frame is already a full-canvas bitmap, e.g.
 // WebP) into a scaled/wrapped Image. Returns nullptr on decode failure for
 // this frame.
-static std::unique_ptr<Image> decode_wic_frame_at(Backend::Impl& impl,
-                                                   IWICBitmapDecoder* decoder,
-                                                   UINT i, int max_w,
-                                                   int max_h,
-                                                   int& out_delay_ms)
+static std::unique_ptr<Image> decode_wic_frame_at(Backend::Impl& impl, IWICBitmapDecoder* decoder,
+                                                  UINT i, int max_w, int max_h, int& out_delay_ms)
 {
     ComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+    {
         return nullptr;
+    }
 
     ComPtr<IWICFormatConverter> converter;
     if (FAILED(impl.wic->CreateFormatConverter(converter.GetAddressOf())))
+    {
         return nullptr;
+    }
     if (FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
                                      WICBitmapDitherTypeNone, nullptr, 0.0f,
                                      WICBitmapPaletteTypeMedianCut)))
+    {
         return nullptr;
+    }
 
     ComPtr<IWICBitmap> cached;
-    if (FAILED(impl.wic->CreateBitmapFromSource(
-            converter.Get(), WICBitmapCacheOnLoad, cached.GetAddressOf())))
+    if (FAILED(impl.wic->CreateBitmapFromSource(converter.Get(), WICBitmapCacheOnLoad,
+                                                cached.GetAddressOf())))
+    {
         return nullptr;
+    }
 
     UINT w = 0, h = 0;
     cached->GetSize(&w, &h);
     if (w == 0 || h == 0)
+    {
         return nullptr;
+    }
 
     out_delay_ms = read_frame_delay_ms(frame.Get());
 
-    if (auto scaled = scale_wic_bitmap(impl.wic.Get(), cached.Get(), w, h,
-                                       max_w, max_h))
+    if (auto scaled = scale_wic_bitmap(impl.wic.Get(), cached.Get(), w, h, max_w, max_h))
+    {
         return scaled;
-    return std::make_unique<D2DImage>(std::move(cached), static_cast<int>(w),
-                                      static_cast<int>(h));
+    }
+    return std::make_unique<D2DImage>(std::move(cached), static_cast<int>(w), static_cast<int>(h));
 }
 
 // Read the GIF logical screen descriptor's canvas size, falling back to
 // frame 0's own bitmap size if the metadata is absent. Returns false (and
 // leaves out_w/out_h at 0) if neither source yields a usable size.
-static bool read_gif_canvas_size(IWICBitmapDecoder* decoder, UINT& out_w,
-                                 UINT& out_h)
+static bool read_gif_canvas_size(IWICBitmapDecoder* decoder, UINT& out_w, UINT& out_h)
 {
     out_w = out_h = 0;
     ComPtr<IWICMetadataQueryReader> dmeta;
@@ -3826,8 +3899,14 @@ static bool read_gif_canvas_size(IWICBitmapDecoder* decoder, UINT& out_w,
             UINT val = 0;
             if (SUCCEEDED(dmeta->GetMetadataByName(path, &pv)))
             {
-                if (pv.vt == VT_UI2) val = pv.uiVal;
-                else if (pv.vt == VT_UI4) val = pv.uintVal;
+                if (pv.vt == VT_UI2)
+                {
+                    val = pv.uiVal;
+                }
+                else if (pv.vt == VT_UI4)
+                {
+                    val = pv.uintVal;
+                }
             }
             PropVariantClear(&pv);
             return val;
@@ -3840,23 +3919,27 @@ static bool read_gif_canvas_size(IWICBitmapDecoder* decoder, UINT& out_w,
     {
         ComPtr<IWICBitmapFrameDecode> f0;
         if (FAILED(decoder->GetFrame(0, f0.GetAddressOf())))
+        {
             return false;
+        }
         f0->GetSize(&out_w, &out_h);
     }
     return out_w != 0 && out_h != 0;
 }
 
-static std::vector<AnimatedFrame> decode_gif_animation(
-    Backend::Impl& impl, IWICBitmapDecoder* decoder, UINT frame_count,
-    int max_w, int max_h,
-    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
-    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
+static std::vector<AnimatedFrame>
+decode_gif_animation(Backend::Impl& impl, IWICBitmapDecoder* decoder, UINT frame_count, int max_w,
+                     int max_h,
+                     const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
+                     const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
 {
     std::vector<AnimatedFrame> result;
 
     UINT canvas_w = 0, canvas_h = 0;
     if (!read_gif_canvas_size(decoder, canvas_w, canvas_h))
+    {
         return result;
+    }
 
     // Compositing canvas: PBGRA, initially fully transparent.
     const UINT stride = canvas_w * 4;
@@ -3896,24 +3979,27 @@ static std::vector<AnimatedFrame> decode_gif_animation(
     for (UINT i = 0; i < frame_count; ++i)
     {
         int delay_ms = 0;
-        auto frame_image = composite_gif_frame(impl, decoder, i, canvas_w,
-                                               canvas_h, stride, canvas,
+        auto frame_image = composite_gif_frame(impl, decoder, i, canvas_w, canvas_h, stride, canvas,
                                                max_w, max_h, delay_ms);
         if (!frame_image)
+        {
             continue;
+        }
         emit(std::move(frame_image), delay_ms);
     }
 
     if (result.size() < 2)
+    {
         result.clear();
+    }
 
     return result;
 }
 
-std::vector<AnimatedFrame> decode_animation(
-    Backend& b, std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
-    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
+std::vector<AnimatedFrame>
+decode_animation(Backend& b, std::span<const std::uint8_t> bytes, int max_w, int max_h,
+                 const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
+                 const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
 {
     std::vector<AnimatedFrame> result;
     if (bytes.empty())
@@ -3935,9 +4021,8 @@ std::vector<AnimatedFrame> decode_animation(
     }
 
     ComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(impl.wic->CreateDecoderFromStream(stream.Get(), nullptr,
-                                                 WICDecodeMetadataCacheOnLoad,
-                                                 decoder.GetAddressOf())))
+    if (FAILED(impl.wic->CreateDecoderFromStream(
+            stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf())))
     {
         return result;
     }
@@ -3949,11 +4034,15 @@ std::vector<AnimatedFrame> decode_animation(
     // un-composited delta frames.  Skip the animation path entirely;
     // decode_image() fetches frame 0 (the IDAT default) correctly.
     if (container == GUID_ContainerFormatPng)
+    {
         return result;
+    }
 
     UINT frame_count = 0;
     if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
+    {
         return result;
+    }
 
     // Hard cap on decoded frame count — shared with every other platform's
     // decoder (tk::kAnimDecodeMaxFrames). A pathological/malicious animated
@@ -3966,8 +4055,10 @@ std::vector<AnimatedFrame> decode_animation(
     // GIF: delta frames require full compositing — delegate to the
     // dedicated compositor that handles offsets and disposal methods.
     if (container == GUID_ContainerFormatGif)
-        return decode_gif_animation(impl, decoder.Get(), frame_count, max_w,
-                                    max_h, on_first_frame, on_extra_frame);
+    {
+        return decode_gif_animation(impl, decoder.Get(), frame_count, max_w, max_h, on_first_frame,
+                                    on_extra_frame);
+    }
 
     // Other animated formats (WebP, etc.): each WIC frame is already a
     // full-canvas bitmap; store them directly.
@@ -4000,15 +4091,18 @@ std::vector<AnimatedFrame> decode_animation(
     for (UINT i = 0; i < frame_count; ++i)
     {
         int delay_ms = 0;
-        auto frame_image =
-            decode_wic_frame_at(impl, decoder.Get(), i, max_w, max_h, delay_ms);
+        auto frame_image = decode_wic_frame_at(impl, decoder.Get(), i, max_w, max_h, delay_ms);
         if (!frame_image)
+        {
             continue;
+        }
         emit(std::move(frame_image), delay_ms);
     }
 
     if (result.size() < 2)
+    {
         result.clear();
+    }
 
     return result;
 }
@@ -4044,20 +4138,25 @@ namespace
 // ShellBase::decode_image_streamed_windowed_'s doc comment); it was
 // unrelated to decoder lifetime or thread affinity. Returns null on
 // failure — callers should treat that as "no frames this call", not crash.
-ComPtr<IWICBitmapDecoder> open_wic_decoder(
-    Backend::Impl& impl, const std::vector<std::uint8_t>& bytes)
+ComPtr<IWICBitmapDecoder> open_wic_decoder(Backend::Impl& impl,
+                                           const std::vector<std::uint8_t>& bytes)
 {
     ComPtr<IWICStream> stream;
     if (FAILED(impl.wic->CreateStream(stream.GetAddressOf())))
+    {
         return nullptr;
-    if (FAILED(stream->InitializeFromMemory(
-            const_cast<BYTE*>(bytes.data()), static_cast<DWORD>(bytes.size()))))
+    }
+    if (FAILED(stream->InitializeFromMemory(const_cast<BYTE*>(bytes.data()),
+                                            static_cast<DWORD>(bytes.size()))))
+    {
         return nullptr;
+    }
     ComPtr<IWICBitmapDecoder> decoder;
     if (FAILED(impl.wic->CreateDecoderFromStream(
-            stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
-            decoder.GetAddressOf())))
+            stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf())))
+    {
         return nullptr;
+    }
     return decoder;
 }
 
@@ -4074,12 +4173,10 @@ class GifCompositorSession final : public tk::AnimDecodeSession
 public:
     GifCompositorSession(Backend& backend,
                          std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
-                         UINT canvas_w, UINT canvas_h, UINT frame_count,
-                         int max_w, int max_h)
-        : backend_(backend), owned_bytes_(std::move(owned_bytes)),
-          canvas_w_(canvas_w), canvas_h_(canvas_h), stride_(canvas_w * 4),
-          frame_count_(frame_count), max_w_(max_w), max_h_(max_h),
-          canvas_(static_cast<std::size_t>(stride_) * canvas_h, 0)
+                         UINT canvas_w, UINT canvas_h, UINT frame_count, int max_w, int max_h)
+        : backend_(backend), owned_bytes_(std::move(owned_bytes)), canvas_w_(canvas_w),
+          canvas_h_(canvas_h), stride_(canvas_w * 4), frame_count_(frame_count), max_w_(max_w),
+          max_h_(max_h), canvas_(static_cast<std::size_t>(stride_) * canvas_h, 0)
     {
     }
 
@@ -4089,9 +4186,7 @@ public:
     }
 
     int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) override
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         Backend::Impl& impl = backend_.impl();
         ComPtr<IWICBitmapDecoder> decoder = open_wic_decoder(impl, *owned_bytes_);
@@ -4113,23 +4208,26 @@ public:
         // end" and responds to by restarting the loop, i.e. it would look
         // like the animation playing its first few frames forever instead
         // of a stalled/stuck last frame.
-        for (int attempted = 0; attempted < n && cursor_ < frame_count_;
-             ++attempted)
+        for (int attempted = 0; attempted < n && cursor_ < frame_count_; ++attempted)
         {
             const UINT idx = cursor_++;
             int delay_ms = 0;
-            auto img = composite_gif_frame(impl, decoder.Get(), idx,
-                                           canvas_w_, canvas_h_, stride_,
+            auto img = composite_gif_frame(impl, decoder.Get(), idx, canvas_w_, canvas_h_, stride_,
                                            canvas_, max_w_, max_h_, delay_ms);
             if (!img)
+            {
                 continue; // matches decode_gif_animation: skip failed frames
+            }
             on_frame(static_cast<int>(idx), std::move(img), delay_ms);
             ++produced;
         }
         return produced;
     }
 
-    bool exhausted() const override { return cursor_ >= frame_count_; }
+    bool exhausted() const override
+    {
+        return cursor_ >= frame_count_;
+    }
 
     void restart() override
     {
@@ -4154,12 +4252,11 @@ private:
 class RandomAccessFrameSession final : public tk::AnimDecodeSession
 {
 public:
-    RandomAccessFrameSession(
-        Backend& backend,
-        std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
-        UINT frame_count, int max_w, int max_h)
-        : backend_(backend), owned_bytes_(std::move(owned_bytes)),
-          frame_count_(frame_count), max_w_(max_w), max_h_(max_h)
+    RandomAccessFrameSession(Backend& backend,
+                             std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
+                             UINT frame_count, int max_w, int max_h)
+        : backend_(backend), owned_bytes_(std::move(owned_bytes)), frame_count_(frame_count),
+          max_w_(max_w), max_h_(max_h)
     {
     }
 
@@ -4169,9 +4266,7 @@ public:
     }
 
     int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) override
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         Backend::Impl& impl = backend_.impl();
         ComPtr<IWICBitmapDecoder> decoder = open_wic_decoder(impl, *owned_bytes_);
@@ -4183,24 +4278,30 @@ public:
         // Bounded by attempts, not successes — see GifCompositorSession's
         // identical comment for why (a run of failures must not silently
         // advance cursor_ all the way to frame_count_ in one call).
-        for (int attempted = 0; attempted < n && cursor_ < frame_count_;
-             ++attempted)
+        for (int attempted = 0; attempted < n && cursor_ < frame_count_; ++attempted)
         {
             const UINT idx = cursor_++;
             int delay_ms = 0;
-            auto img = decode_wic_frame_at(impl, decoder.Get(), idx, max_w_,
-                                           max_h_, delay_ms);
+            auto img = decode_wic_frame_at(impl, decoder.Get(), idx, max_w_, max_h_, delay_ms);
             if (!img)
+            {
                 continue;
+            }
             on_frame(static_cast<int>(idx), std::move(img), delay_ms);
             ++produced;
         }
         return produced;
     }
 
-    bool exhausted() const override { return cursor_ >= frame_count_; }
+    bool exhausted() const override
+    {
+        return cursor_ >= frame_count_;
+    }
 
-    void restart() override { cursor_ = 0; }
+    void restart() override
+    {
+        cursor_ = 0;
+    }
 
 private:
     Backend& backend_;
@@ -4215,13 +4316,14 @@ private:
 bool decode_animation_windowed(
     Backend& b, std::span<const std::uint8_t> bytes, int max_w, int max_h,
     int window_threshold_frames,
-    const std::function<void(std::unique_ptr<Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
+    const std::function<void(std::unique_ptr<Image>, int, std::shared_ptr<tk::AnimDecodeSession>,
                              std::size_t)>& on_first_frame,
     const std::function<void(int, std::unique_ptr<Image>, int)>& on_extra_frame)
 {
     if (bytes.empty())
+    {
         return false;
+    }
 
     Backend::Impl& impl = b.impl();
 
@@ -4229,8 +4331,7 @@ bool decode_animation_windowed(
     // compositing state) must keep working across many later
     // decode_next_batch() calls made well after `bytes` — caller-owned,
     // transient — has gone away.
-    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(
-        bytes.begin(), bytes.end());
+    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
 
     // Used only for header sniffing (container/frame count/canvas size)
     // here — discarded once that's read. The session (constructed below)
@@ -4238,18 +4339,24 @@ bool decode_animation_windowed(
     // holding this one; see open_wic_decoder's comment for why.
     ComPtr<IWICBitmapDecoder> decoder = open_wic_decoder(impl, *owned_bytes);
     if (!decoder)
+    {
         return false;
+    }
 
     GUID container = {};
     decoder->GetContainerFormat(&container);
 
     // APNG isn't treated as animated here either — see decode_animation.
     if (container == GUID_ContainerFormatPng)
+    {
         return false;
+    }
 
     UINT frame_count = 0;
     if (FAILED(decoder->GetFrameCount(&frame_count)) || frame_count <= 1)
+    {
         return false;
+    }
 
     frame_count = std::min<UINT>(frame_count, tk::kAnimDecodeMaxFrames);
 
@@ -4274,14 +4381,16 @@ bool decode_animation_windowed(
     {
         UINT canvas_w = 0, canvas_h = 0;
         if (!read_gif_canvas_size(decoder.Get(), canvas_w, canvas_h))
+        {
             return false;
-        session = std::make_shared<GifCompositorSession>(
-            b, owned_bytes, canvas_w, canvas_h, frame_count, max_w, max_h);
+        }
+        session = std::make_shared<GifCompositorSession>(b, owned_bytes, canvas_w, canvas_h,
+                                                         frame_count, max_w, max_h);
     }
     else
     {
-        session = std::make_shared<RandomAccessFrameSession>(
-            b, owned_bytes, frame_count, max_w, max_h);
+        session =
+            std::make_shared<RandomAccessFrameSession>(b, owned_bytes, frame_count, max_w, max_h);
     }
     decoder.Reset(); // done with it — the session opens its own from here on
 
@@ -4296,25 +4405,25 @@ bool decode_animation_windowed(
     // shape ShellBase::make_streamed_decode_callbacks_windowed_ expects:
     // frame 0 via on_first_frame, the rest via on_extra_frame.
     bool got_first = false;
-    session->decode_next_batch(
-        tk::kAnimDecodeInitialBatchFrames,
-        [&](int idx, std::unique_ptr<Image> img, int delay_ms)
-        {
-            if (!got_first)
-            {
-                got_first = true;
-                // `session` is passed here, synchronously, as part of
-                // on_first_frame's own call — not returned via an out-param
-                // for the caller to assign after this whole function
-                // returns. See this function's doc comment (canvas_d2d.h)
-                // for the data race that distinction fixes.
-                on_first_frame(std::move(img), delay_ms, session, frame_count);
-            }
-            else
-            {
-                on_extra_frame(idx, std::move(img), delay_ms);
-            }
-        });
+    session->decode_next_batch(tk::kAnimDecodeInitialBatchFrames,
+                               [&](int idx, std::unique_ptr<Image> img, int delay_ms)
+                               {
+                                   if (!got_first)
+                                   {
+                                       got_first = true;
+                                       // `session` is passed here, synchronously, as part of
+                                       // on_first_frame's own call — not returned via an out-param
+                                       // for the caller to assign after this whole function
+                                       // returns. See this function's doc comment (canvas_d2d.h)
+                                       // for the data race that distinction fixes.
+                                       on_first_frame(std::move(img), delay_ms, session,
+                                                      frame_count);
+                                   }
+                                   else
+                                   {
+                                       on_extra_frame(idx, std::move(img), delay_ms);
+                                   }
+                               });
     return got_first;
 }
 

@@ -15,27 +15,23 @@ void ShortcodePopup::set_suggestions(std::vector<ShortcodeSuggestion> s)
     reset_transient_state_();
 }
 
-void ShortcodePopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
-                               size_t index, bool selected,
+void ShortcodePopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index, bool selected,
                                bool /*hovered*/)
 {
     const auto pal = tk::row_palette(ctx.theme, selected);
-    const auto& s   = suggestions_[index];
+    const auto& s = suggestions_[index];
 
     // 28×28 glyph cell left-aligned with 4px margin
-    tk::Rect cell{row.x + 4.0f, row.y + (kRowHeight - 28.0f) * 0.5f, 28.0f,
-                  28.0f};
+    tk::Rect cell{row.x + 4.0f, row.y + (kRowHeight - 28.0f) * 0.5f, 28.0f, 28.0f};
     if (!s.glyph.empty())
     {
         tk::TextStyle st{};
-        st.role =
-            tk::FontRole::Title; // 15pt — same as EmojiPicker, fits 28px cell
+        st.role = tk::FontRole::Title; // 15pt — same as EmojiPicker, fits 28px cell
         auto layout = ctx.factory.build_text(s.glyph, st);
         if (layout)
         {
             tk::Size sz = layout->measure();
-            tk::Point origin{cell.x + (cell.w - sz.w) * 0.5f,
-                             cell.y + (cell.h - sz.h) * 0.5f};
+            tk::Point origin{cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f};
             ctx.canvas.draw_text(*layout, origin, pal.text_primary);
         }
     }
@@ -48,8 +44,8 @@ void ShortcodePopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
             float ih = static_cast<float>(img->height());
             float sc = std::min(cell.w / iw, cell.h / ih);
             float dw = iw * sc, dh = ih * sc;
-            ctx.canvas.draw_image(*img, {cell.x + (cell.w - dw) * 0.5f,
-                                         cell.y + (cell.h - dh) * 0.5f, dw, dh});
+            ctx.canvas.draw_image(
+                *img, {cell.x + (cell.w - dw) * 0.5f, cell.y + (cell.h - dh) * 0.5f, dw, dh});
         }
         else
         {

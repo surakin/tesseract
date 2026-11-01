@@ -35,8 +35,7 @@ std::string truncate_utf8(std::string s, std::size_t max_bytes)
         return s;
     }
     std::size_t cut = max_bytes;
-    while (cut > 0 &&
-           (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80)
+    while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80)
     {
         --cut;
     }
@@ -55,10 +54,12 @@ std::string truncate_utf8(std::string s, std::size_t max_bytes)
 std::string format_thread_date(std::uint64_t timestamp_ms)
 {
     if (timestamp_ms == 0)
+    {
         return {};
+    }
 
     std::time_t now_t = std::time(nullptr);
-    std::time_t t     = static_cast<std::time_t>(timestamp_ms / 1000);
+    std::time_t t = static_cast<std::time_t>(timestamp_ms / 1000);
     std::tm now_tm{}, item_tm{};
 #if defined(_WIN32)
     localtime_s(&now_tm, &now_t);
@@ -68,10 +69,11 @@ std::string format_thread_date(std::uint64_t timestamp_ms)
     localtime_r(&t, &item_tm);
 #endif
 
-    if (item_tm.tm_year == now_tm.tm_year &&
-        item_tm.tm_mon  == now_tm.tm_mon  &&
+    if (item_tm.tm_year == now_tm.tm_year && item_tm.tm_mon == now_tm.tm_mon &&
         item_tm.tm_mday == now_tm.tm_mday)
+    {
         return tk::tr("Today");
+    }
 
     std::time_t yest_t = now_t - 86400;
     std::tm yest_tm{};
@@ -80,10 +82,11 @@ std::string format_thread_date(std::uint64_t timestamp_ms)
 #else
     localtime_r(&yest_t, &yest_tm);
 #endif
-    if (item_tm.tm_year == yest_tm.tm_year &&
-        item_tm.tm_mon  == yest_tm.tm_mon  &&
+    if (item_tm.tm_year == yest_tm.tm_year && item_tm.tm_mon == yest_tm.tm_mon &&
         item_tm.tm_mday == yest_tm.tm_mday)
+    {
         return tk::tr("Yesterday");
+    }
 
     if (now_t > t && static_cast<std::uint64_t>(now_t - t) < 7u * 86400u)
     {
@@ -92,7 +95,9 @@ std::string format_thread_date(std::uint64_t timestamp_ms)
 
     // TRANSLATORS: date patterns, see tk::format_date.
     if (item_tm.tm_year == now_tm.tm_year)
+    {
         return tk::format_date(item_tm, tk::tr("%b %-d"));
+    }
     return tk::format_date(item_tm, tk::tr("%-m/%-d/%y"));
 }
 
@@ -107,8 +112,7 @@ ThreadListView::ThreadListView()
     // even while a search filter is narrowing the visible rows.
     on_row_clicked = [this](int idx)
     {
-        if (idx < 1 || idx > static_cast<int>(filtered_indices_.size()) ||
-            !on_thread_clicked)
+        if (idx < 1 || idx > static_cast<int>(filtered_indices_.size()) || !on_thread_clicked)
         {
             return;
         }
@@ -122,37 +126,54 @@ ThreadListView::ThreadListView()
     // Added as a child so dispatch_pointer_down reaches it before the
     // ListView row hit-test, and this widget's own paint() (see below)
     // renders it on top of the rows painted earlier in the same call.
-    auto close = tk::create_widget<tk::Button>(this,
-        std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    auto close = tk::create_widget<tk::Button>(this, std::string{}, std::function<void()>{},
+                                               tk::Button::Variant::Icon);
     close->set_icon(kCloseSvg, 20.0f);
     close->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close));
-    close_btn_->set_on_click([this] {
-        if (on_close) on_close();
-    });
+    close_btn_->set_on_click(
+        [this]
+        {
+            if (on_close)
+            {
+                on_close();
+            }
+        });
 
-    auto mark_all = tk::create_widget<tk::Button>(this,
-        std::string{}, std::function<void()>{}, tk::Button::Variant::Icon);
+    auto mark_all = tk::create_widget<tk::Button>(this, std::string{}, std::function<void()>{},
+                                                  tk::Button::Variant::Icon);
     mark_all->set_icon(kListChecksSvg, 18.0f);
     mark_all->set_accessible_name(tk::tr("Mark all threads as read"));
     mark_all_btn_ = add_child(std::move(mark_all));
-    mark_all_btn_->set_on_click([this] {
-        if (on_mark_all_read) on_mark_all_read();
-    });
+    mark_all_btn_->set_on_click(
+        [this]
+        {
+            if (on_mark_all_read)
+            {
+                on_mark_all_read();
+            }
+        });
 
     auto filter = tk::create_widget<tk::ToggleButton>(this, std::string{});
     filter->set_icon(kBellSvg, 18.0f);
     filter->set_visible(false);
     follow_filter_btn_ = add_child(std::move(filter));
-    follow_filter_btn_->set_on_toggled([this](bool on) { set_only_followed(on); });
+    follow_filter_btn_->set_on_toggled(
+        [this](bool on)
+        {
+            set_only_followed(on);
+        });
     refresh_follow_filter_();
 
     if (host())
     {
-        auto search = tk::create_widget<tk::TextField>(
-            this, kHeaderH - 2.0f * kSearchInsetY);
+        auto search = tk::create_widget<tk::TextField>(this, kHeaderH - 2.0f * kSearchInsetY);
         search->set_placeholder(tk::tr("Search threads\xe2\x80\xa6"));
-        search->set_on_changed([this](const std::string& q) { set_search_text(q); });
+        search->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_search_text(q);
+            });
         search_field_ = add_child(std::move(search));
     }
 
@@ -160,9 +181,13 @@ ThreadListView::ThreadListView()
     // won't fire for it: pick up the live colours now. Also leaves the mark-all
     // button disabled (threads_ empty).
     if (host())
+    {
         on_theme_changed(host()->theme());
+    }
     else
+    {
         refresh_mark_all_enabled_();
+    }
 }
 
 void ThreadListView::on_theme_changed(const tk::Theme& t)
@@ -172,12 +197,16 @@ void ThreadListView::on_theme_changed(const tk::Theme& t)
     // override — set here (once per theme apply) rather than every paint,
     // since it's a fixed color, not state-dependent.
     if (close_btn_)
+    {
         close_btn_->set_icon_color_override(t.palette.text_secondary);
+    }
 
     if (follow_filter_btn_)
+    {
         follow_filter_btn_->set_unchecked_icon_color(t.palette.text_secondary);
+    }
     mark_all_tint_active_ = t.palette.text_secondary;
-    mark_all_tint_muted_  = t.palette.text_muted;
+    mark_all_tint_muted_ = t.palette.text_muted;
     refresh_mark_all_enabled_();
     refresh_follow_filter_();
 }
@@ -185,21 +214,26 @@ void ThreadListView::on_theme_changed(const tk::Theme& t)
 void ThreadListView::refresh_follow_filter_()
 {
     if (!follow_filter_btn_)
+    {
         return;
+    }
     follow_filter_btn_->set_visible(subscriptions_supported_);
-    follow_filter_btn_->set_accessible_name(
-        only_followed_ ? tk::tr("Show all threads")
-                       : tk::tr("Show only followed threads"));
+    follow_filter_btn_->set_accessible_name(only_followed_ ? tk::tr("Show all threads")
+                                                           : tk::tr("Show only followed threads"));
     follow_filter_btn_->set_checked(only_followed_);
 }
 
 void ThreadListView::set_subscriptions_supported(bool supported)
 {
     if (supported == subscriptions_supported_)
+    {
         return;
+    }
     subscriptions_supported_ = supported;
     if (!supported)
+    {
         only_followed_ = false;
+    }
     refresh_follow_filter_();
     rebuild_filtered_();
     invalidate_data();
@@ -209,7 +243,9 @@ void ThreadListView::set_only_followed(bool only)
 {
     only = only && subscriptions_supported_;
     if (only == only_followed_)
+    {
         return;
+    }
     only_followed_ = only;
     refresh_follow_filter_();
     rebuild_filtered_();
@@ -219,16 +255,20 @@ void ThreadListView::set_only_followed(bool only)
 void ThreadListView::refresh_mark_all_enabled_()
 {
     if (!mark_all_btn_)
+    {
         return;
-    const bool any_unread = std::any_of(
-        threads_.begin(), threads_.end(),
-        [](const tesseract::ThreadInfo& t) { return t.unread; });
+    }
+    const bool any_unread = std::any_of(threads_.begin(), threads_.end(),
+                                        [](const tesseract::ThreadInfo& t)
+                                        {
+                                            return t.unread;
+                                        });
     mark_all_btn_->set_enabled(any_unread);
     // Re-apply the override each time: Button::paint uses
     // icon_color_override_.value_or(...), so a fixed override would defeat the
     // disabled dim.
-    mark_all_btn_->set_icon_color_override(
-        any_unread ? mark_all_tint_active_ : mark_all_tint_muted_);
+    mark_all_btn_->set_icon_color_override(any_unread ? mark_all_tint_active_
+                                                      : mark_all_tint_muted_);
 }
 
 void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
@@ -238,11 +278,10 @@ void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
     // bottom) to match the message timeline. Older threads load via upward
     // pagination, so they sort in above the current top.
     std::sort(threads_.begin(), threads_.end(),
-              [](const tesseract::ThreadInfo& a, const tesseract::ThreadInfo& b) {
-                  std::uint64_t ta =
-                      a.latest_timestamp > 0 ? a.latest_timestamp : a.root_timestamp;
-                  std::uint64_t tb =
-                      b.latest_timestamp > 0 ? b.latest_timestamp : b.root_timestamp;
+              [](const tesseract::ThreadInfo& a, const tesseract::ThreadInfo& b)
+              {
+                  std::uint64_t ta = a.latest_timestamp > 0 ? a.latest_timestamp : a.root_timestamp;
+                  std::uint64_t tb = b.latest_timestamp > 0 ? b.latest_timestamp : b.root_timestamp;
                   return ta < tb;
               });
     rebuild_filtered_();
@@ -251,7 +290,11 @@ void ThreadListView::set_threads(std::vector<tesseract::ThreadInfo> threads)
     // prepended (older) threads don't shove the viewport — mirrors
     // MessageListView::set_messages. No-op while stuck to the bottom (reading
     // the newest), so newest/live additions keep the view pinned to the bottom.
-    preserve_top_through([this] { invalidate_data(); });
+    preserve_top_through(
+        [this]
+        {
+            invalidate_data();
+        });
     reset_near_top_latch();
 }
 
@@ -273,7 +316,9 @@ void ThreadListView::rebuild_filtered_()
     for (std::size_t i = 0; i < threads_.size(); ++i)
     {
         if (only_followed_ && !threads_[i].subscribed)
+        {
             continue;
+        }
         if (search_text_.empty())
         {
             filtered_indices_.push_back(i);
@@ -282,7 +327,7 @@ void ThreadListView::rebuild_filtered_()
         const auto& t = threads_[i];
         std::string haystack;
         haystack.reserve(t.root_sender_name.size() + t.root_body.size() +
-                          t.latest_sender_name.size() + t.latest_body.size() + 4);
+                         t.latest_sender_name.size() + t.latest_body.size() + 4);
         haystack += t.root_sender_name;
         haystack += ' ';
         haystack += t.root_body;
@@ -317,10 +362,14 @@ void ThreadListView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float cy = bounds.y + (kHeaderH - kCloseSz) * 0.5f;
     const float close_x = bounds.x + bounds.w - kCloseSz - kCloseInset;
     if (close_btn_)
+    {
         close_btn_->arrange(lc, {close_x, cy, kCloseSz, kCloseSz});
+    }
     const float mark_all_x = close_x - kCloseSz - kHeaderBtnGap;
     if (mark_all_btn_)
+    {
         mark_all_btn_->arrange(lc, {mark_all_x, cy, kCloseSz, kCloseSz});
+    }
 
     float buttons_left = mark_all_x;
     if (follow_filter_btn_ && follow_filter_btn_->visible())
@@ -360,14 +409,11 @@ void ThreadListView::paint(tk::PaintCtx& ctx)
     // bounds_, so when scrolled, thread rows draw into the header area.
     // Filling here eclipses that content before children paint on top of it
     // below.
-    ctx.canvas.fill_rect(
-        {bounds_.x, bounds_.y, bounds_.w, kHeaderH},
-        ctx.theme.palette.bg);
+    ctx.canvas.fill_rect({bounds_.x, bounds_.y, bounds_.w, kHeaderH}, ctx.theme.palette.bg);
 
     // Separator line below the header-row area.
-    ctx.canvas.fill_rect(
-        {bounds_.x, bounds_.y + kHeaderH - 1.f, bounds_.w, 1.f},
-        ctx.theme.palette.separator);
+    ctx.canvas.fill_rect({bounds_.x, bounds_.y + kHeaderH - 1.f, bounds_.w, 1.f},
+                         ctx.theme.palette.separator);
 
     // close_btn_ and search_field_ are real children, painted only here —
     // ListView::paint() above never calls paint_children() itself.
@@ -383,9 +429,8 @@ std::size_t ThreadListView::count() const
     return filtered_indices_.size() + 1;
 }
 
-float ThreadListView::measure_row_height(std::size_t index,
-                                          tk::LayoutCtx& /*ctx*/,
-                                          float /*available_width*/)
+float ThreadListView::measure_row_height(std::size_t index, tk::LayoutCtx& /*ctx*/,
+                                         float /*available_width*/)
 {
     return index == 0 ? kHeaderH : kRowH;
 }
@@ -395,10 +440,10 @@ bool ThreadListView::is_selectable(std::size_t index) const
     return index != 0;
 }
 
-void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
-                                tk::Rect r, bool /*selected*/, bool hovered)
+void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect r, bool /*selected*/,
+                               bool hovered)
 {
-    auto& cv        = ctx.canvas;
+    auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
     if (index == 0)
@@ -411,10 +456,14 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
 
     const std::size_t fi = index - 1;
     if (fi >= filtered_indices_.size())
+    {
         return;
+    }
     const std::size_t ti = filtered_indices_[fi];
     if (ti >= threads_.size())
+    {
         return;
+    }
     const auto& t = threads_[ti];
 
     // Row background.
@@ -436,8 +485,7 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
     cs.wrap = false;
 
     // Date label — most recent activity timestamp.
-    std::uint64_t eff_ts =
-        t.latest_timestamp > 0 ? t.latest_timestamp : t.root_timestamp;
+    std::uint64_t eff_ts = t.latest_timestamp > 0 ? t.latest_timestamp : t.root_timestamp;
     std::string date_str = format_thread_date(eff_ts);
     auto date_layout = ctx.factory.build_text(date_str, cs);
     float date_w = 0.0f;
@@ -445,9 +493,7 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
     {
         const tk::Size sz = date_layout->measure();
         date_w = sz.w;
-        cv.draw_text(*date_layout,
-                     {r.x + r.w - kPadX - sz.w, r.y + kPadY},
-                     pal.text_muted);
+        cv.draw_text(*date_layout, {r.x + r.w - kPadX - sz.w, r.y + kPadY}, pal.text_muted);
     }
 
     // Followed-thread bell (MSC4306), just left of the date.
@@ -456,45 +502,40 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
     if (show_bell)
     {
         const float bx = r.x + r.w - kPadX - date_w - kBellPx - 4.0f;
-        followed_icon_.draw(cv, ctx.factory, kBellSvg,
-                            {bx, r.y + kPadY, kBellPx, kBellPx}, kBellPx,
+        followed_icon_.draw(cv, ctx.factory, kBellSvg, {bx, r.y + kPadY, kBellPx, kBellPx}, kBellPx,
                             pal.text_muted);
         date_w += kBellPx + 4.0f;
     }
 
     // Reply count — bottom right.
-    const std::string count_buf = tk::trf(
-        tk::trn("{0} reply", "{0} replies", static_cast<long>(t.num_replies)),
-        {std::to_string(t.num_replies)});
+    const std::string count_buf =
+        tk::trf(tk::trn("{0} reply", "{0} replies", static_cast<long>(t.num_replies)),
+                {std::to_string(t.num_replies)});
     auto count_layout = ctx.factory.build_text(count_buf, cs);
     float count_w = 0.0f;
     if (count_layout)
     {
         const tk::Size sz = count_layout->measure();
         count_w = sz.w;
-        cv.draw_text(*count_layout,
-                     {r.x + r.w - kPadX - sz.w, r.y + kRowH - kPadY - sz.h},
+        cv.draw_text(*count_layout, {r.x + r.w - kPadX - sz.w, r.y + kRowH - kPadY - sz.h},
                      pal.text_secondary);
     }
 
     // Unread-thread dot in a small leading gutter. Reserved whenever the
     // thread has unread replies; accent-coloured when one of them pings us.
-    const ThreadDot dot    = thread_dot_for(t.unread, t.mentions_me);
-    const float     gutter = dot == ThreadDot::None ? 0.0f : 14.0f;
+    const ThreadDot dot = thread_dot_for(t.unread, t.mentions_me);
+    const float gutter = dot == ThreadDot::None ? 0.0f : 14.0f;
     if (dot != ThreadDot::None)
     {
         constexpr float kDotD = 8.0f;
-        cv.fill_rounded_rect({r.x + kPadX, r.y + kPadY + 3.0f, kDotD, kDotD},
-                             kDotD * 0.5f,
-                             dot == ThreadDot::Mention ? pal.accent
-                                                       : pal.unread_bg);
+        cv.fill_rounded_rect({r.x + kPadX, r.y + kPadY + 3.0f, kDotD, kDotD}, kDotD * 0.5f,
+                             dot == ThreadDot::Mention ? pal.accent : pal.unread_bg);
     }
 
     const float right_reserve = std::max(date_w, count_w);
-    const float text_left  = r.x + kPadX + gutter;
-    const float text_right = r.x + r.w - kPadX
-                             - right_reserve
-                             - (right_reserve > 0.0f ? 8.0f : 0.0f);
+    const float text_left = r.x + kPadX + gutter;
+    const float text_right =
+        r.x + r.w - kPadX - right_reserve - (right_reserve > 0.0f ? 8.0f : 0.0f);
     const float text_max_w = std::max(0.0f, text_right - text_left);
 
     // Top line: "<root_sender_name>: <root_body snippet>". Dimmed to
@@ -502,18 +543,22 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
     {
         std::string preview;
         if (!t.root_sender_name.empty())
+        {
             preview = t.root_sender_name + ": ";
+        }
         preview += truncate_utf8(t.root_body, 80);
 
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.wrap      = false;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Body;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_max_w;
-        auto layout  = ctx.factory.build_text(preview, st);
+        auto layout = ctx.factory.build_text(preview, st);
         if (layout)
+        {
             cv.draw_text(*layout, {text_left, r.y + kPadY},
                          t.unread ? pal.text_primary : pal.text_secondary);
+        }
     }
 
     // Bottom line: "↳ <latest_sender_name>: <latest_body snippet>" —
@@ -526,17 +571,15 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
         preview += truncate_utf8(t.latest_body, 80);
 
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.wrap      = false;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_max_w;
-        auto layout  = ctx.factory.build_text(preview, st);
+        auto layout = ctx.factory.build_text(preview, st);
         if (layout)
         {
             const tk::Size sz = layout->measure();
-            cv.draw_text(*layout,
-                         {text_left, r.y + kRowH - kPadY - sz.h},
-                         pal.text_secondary);
+            cv.draw_text(*layout, {text_left, r.y + kRowH - kPadY - sz.h}, pal.text_secondary);
         }
     }
 }
@@ -553,35 +596,46 @@ tk::Role ThreadListView::access_role_for_row(std::size_t index) const
 std::string ThreadListView::access_name_for_row(std::size_t index) const
 {
     if (index == 0)
+    {
         return {};
+    }
     // Rows are the filtered list, the same mapping on_row_clicked uses.
     const std::size_t fi = index - 1;
     if (fi >= filtered_indices_.size())
+    {
         return {};
+    }
     const auto& t = threads_[filtered_indices_[fi]];
 
     // Mirrors paint_row's top-line construction ("<sender>: <body>").
     std::string name;
     if (!t.root_sender_name.empty())
+    {
         name = t.root_sender_name + ": ";
+    }
     name += truncate_utf8(t.root_body, 80);
 
     name += " (" +
-           tk::trf(tk::trn("{0} reply", "{0} replies",
-                          static_cast<int>(t.num_replies)),
-                   {std::to_string(t.num_replies)}) +
-           ")";
+            tk::trf(tk::trn("{0} reply", "{0} replies", static_cast<int>(t.num_replies)),
+                    {std::to_string(t.num_replies)}) +
+            ")";
     if (t.unread)
+    {
         name += tk::tr(" (unread)");
+    }
     if (subscriptions_supported_ && t.subscribed)
+    {
         name += tk::tr(" (following)");
+    }
     return name;
 }
 
 bool ThreadListView::access_activate_row(std::size_t index)
 {
     if (index < 1 || index > filtered_indices_.size() || !on_thread_clicked)
+    {
         return false;
+    }
     on_thread_clicked(threads_[filtered_indices_[index - 1]].root_event_id);
     return true;
 }

@@ -52,8 +52,14 @@ public:
         return video_rect_;
     }
 
-    tk::Button* play_btn() const { return bar_.play_btn(); }
-    tk::Button* speed_btn() const { return bar_.speed_btn(); }
+    tk::Button* play_btn() const
+    {
+        return bar_.play_btn();
+    }
+    tk::Button* speed_btn() const
+    {
+        return bar_.speed_btn();
+    }
 
     // Called on the UI thread once the async byte fetch completes.
     // Starts playback immediately.
@@ -87,8 +93,7 @@ public:
     // the pre-roll queue.
     std::size_t memory_bytes() const
     {
-        return (video_player_ ? video_player_->memory_bytes() : 0) +
-               stream_buffer_.capacity();
+        return (video_player_ ? video_player_->memory_bytes() : 0) + stream_buffer_.capacity();
     }
 
 private:

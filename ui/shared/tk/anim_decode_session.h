@@ -35,9 +35,13 @@ inline constexpr int kAnimDecodeInitialBatchFrames = 8;
 inline int normalize_frame_delay_ms(int raw_delay_ms)
 {
     if (raw_delay_ms <= 0)
+    {
         return 100;
+    }
     if (raw_delay_ms < 20)
+    {
         return 20;
+    }
     return raw_delay_ms;
 }
 
@@ -81,9 +85,7 @@ public:
     // MUST be safe to call on a worker thread: no UI-thread or
     // device-context access.
     virtual int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) = 0;
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) = 0;
 
     // True once decode_next_batch() can produce no further frames (the
     // session has reached the end of the animation).
@@ -100,7 +102,10 @@ public:
     // its cache entry (the encoded source bytes it re-parses on restart(),
     // compositing canvases, decoder buffers) — NOT the decoded frames, which
     // AnimImageCache counts itself. Called on the UI thread.
-    virtual std::size_t memory_bytes() const { return 0; }
+    virtual std::size_t memory_bytes() const
+    {
+        return 0;
+    }
 };
 
 } // namespace tk

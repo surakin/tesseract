@@ -19,8 +19,8 @@ using cli::OptionSpec;
 
 bool is_valid_log_filter(std::string_view v)
 {
-    static constexpr std::array<std::string_view, 5> kLevels = {
-        "error", "warn", "info", "debug", "trace"};
+    static constexpr std::array<std::string_view, 5> kLevels = {"error", "warn", "info", "debug",
+                                                                "trace"};
     for (auto level : kLevels)
     {
         if (v == level)
@@ -30,8 +30,8 @@ bool is_valid_log_filter(std::string_view v)
     }
     // A full tracing EnvFilter directive list ("matrix_sdk=debug,tesseract=trace").
     // The Rust side validates it properly; here just reject obvious junk.
-    return !v.empty() && (v.find('=') != std::string_view::npos ||
-                          v.find(',') != std::string_view::npos);
+    return !v.empty() &&
+           (v.find('=') != std::string_view::npos || v.find(',') != std::string_view::npos);
 }
 
 } // namespace
@@ -78,38 +78,76 @@ std::string_view launch_action_option_id(LaunchAction action)
 std::vector<OptionSpec> launch_option_specs(const LaunchHelpFn& help)
 {
     auto h = [&help](std::string_view id)
-    { return help ? help(id) : std::string{}; };
+    {
+        return help ? help(id) : std::string{};
+    };
 
     std::vector<OptionSpec> specs = {
         {"help", "help", 'h', Arity::Flag, "", h("help"), false, false, {}},
         {"version", "version", 'V', Arity::Flag, "", h("version"), false, false, {}},
-        {"profile", "profile", 'p', Arity::Required, "NAME", h("profile"), false,
-         false, {}},
-        {"hidden", "hidden", '\0', Arity::Flag, "", h("hidden"), false, false,
-         {"minimized"}},
-        {"log-level", "log-level", '\0', Arity::Required, "LEVEL",
-         h("log-level"), false, false, {}},
-        {"verbose", "verbose", 'v', Arity::Flag, "", h("verbose"), false, false,
+        {"profile", "profile", 'p', Arity::Required, "NAME", h("profile"), false, false, {}},
+        {"hidden", "hidden", '\0', Arity::Flag, "", h("hidden"), false, false, {"minimized"}},
+        {"log-level",
+         "log-level",
+         '\0',
+         Arity::Required,
+         "LEVEL",
+         h("log-level"),
+         false,
+         false,
          {}},
-        {"open-room", "open-room", '\0', Arity::Required, "ROOM_ID",
-         h("open-room"), false, false, {}},
-        {"open-quick-switcher", "open-quick-switcher", '\0', Arity::Flag, "",
-         h("open-quick-switcher"), false, false, {}},
-        {"open-message-search", "open-message-search", '\0', Arity::Flag, "",
-         h("open-message-search"), false, false, {}},
-        {"open-settings", "open-settings", '\0', Arity::Flag, "",
-         h("open-settings"), false, false, {}},
-        {"logoutall", "logoutall", '\0', Arity::Flag, "", h("logoutall"), false,
-         false, {}},
+        {"verbose", "verbose", 'v', Arity::Flag, "", h("verbose"), false, false, {}},
+        {"open-room",
+         "open-room",
+         '\0',
+         Arity::Required,
+         "ROOM_ID",
+         h("open-room"),
+         false,
+         false,
+         {}},
+        {"open-quick-switcher",
+         "open-quick-switcher",
+         '\0',
+         Arity::Flag,
+         "",
+         h("open-quick-switcher"),
+         false,
+         false,
+         {}},
+        {"open-message-search",
+         "open-message-search",
+         '\0',
+         Arity::Flag,
+         "",
+         h("open-message-search"),
+         false,
+         false,
+         {}},
+        {"open-settings",
+         "open-settings",
+         '\0',
+         Arity::Flag,
+         "",
+         h("open-settings"),
+         false,
+         false,
+         {}},
+        {"logoutall", "logoutall", '\0', Arity::Flag, "", h("logoutall"), false, false, {}},
         // Written by the OS login-item registration, not typed by users.
-        {"autostart", "autostart", '\0', Arity::Flag, "", h("autostart"), false,
-         true, {}},
+        {"autostart", "autostart", '\0', Arity::Flag, "", h("autostart"), false, true, {}},
         // Passed by the app to itself when it restarts; not typed by users.
-        {"relaunch", "relaunch", '\0', Arity::Flag, "", h("relaunch"), false,
-         true, {}},
+        {"relaunch", "relaunch", '\0', Arity::Flag, "", h("relaunch"), false, true, {}},
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        {"screenshot-dir", "screenshot-dir", '\0', Arity::Required, "DIR",
-         h("screenshot-dir"), false, true, {}},
+        {"screenshot-dir",
+         "screenshot-dir",
+         '\0',
+         Arity::Required,
+         "DIR",
+         h("screenshot-dir"),
+         false,
+         true,
+         {}},
 #endif
     };
     return specs;
@@ -165,9 +203,8 @@ LaunchArgs parse_launch_args(const std::vector<std::string>& args)
         }
         else
         {
-            result.diagnostics.push_back(
-                {Diagnostic::Kind::InvalidValue, "--profile",
-                 "expected 1-32 characters from [A-Za-z0-9_-]"});
+            result.diagnostics.push_back({Diagnostic::Kind::InvalidValue, "--profile",
+                                          "expected 1-32 characters from [A-Za-z0-9_-]"});
         }
     }
 
@@ -228,8 +265,7 @@ LaunchArgs parse_launch_args(const std::vector<std::string>& args)
     // before.
     for (const auto& arg : parsed.positionals())
     {
-        if (Client::parse_matrix_link(arg).kind !=
-            Client::MatrixLink::Kind::Unknown)
+        if (Client::parse_matrix_link(arg).kind != Client::MatrixLink::Kind::Unknown)
         {
             result.matrix_uri = arg;
             break;

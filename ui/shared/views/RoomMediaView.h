@@ -117,8 +117,7 @@ public:
     // empty-state text.
     void set_reached_start(bool reached_start);
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc_or_url)>;
     void set_image_provider(ImageProvider p);
 
     // Fires (at most once per approach to the top) when more history should
@@ -131,17 +130,17 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    void     on_theme_changed(const tk::Theme&) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    void on_theme_changed(const tk::Theme&) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
-    static constexpr float kHeaderH     = 56.0f;
-    static constexpr float kCloseSz     = 32.0f;
-    static constexpr float kCloseInset  = 8.0f;
-    static constexpr float kCellSize    = 120.0f;
+    static constexpr float kHeaderH = 56.0f;
+    static constexpr float kCloseSz = 32.0f;
+    static constexpr float kCloseInset = 8.0f;
+    static constexpr float kCellSize = 120.0f;
     static constexpr float kCellSpacing = 2.0f;
-    static constexpr float kPadX        = 16.0f;
+    static constexpr float kPadX = 16.0f;
 
 private:
     class Adapter;
@@ -159,9 +158,9 @@ private:
             MediaStrip,
         };
         Kind kind = Kind::MonthHeader;
-        std::string month_key;   // "2026-03" — stable across rebuilds
-        std::string month_label; // "March 2026", already tk::tr'd
-        int strip_index = 0;     // this strip's position within its month
+        std::string month_key;             // "2026-03" — stable across rebuilds
+        std::string month_label;           // "March 2026", already tk::tr'd
+        int strip_index = 0;               // this strip's position within its month
         std::vector<MessageRowData> items; // MediaStrip only
         // Cached header text layout — built once on first paint, not on
         // every paint (paint_row fires every frame while scrolling; text
@@ -175,10 +174,8 @@ private:
     // `cols_` cells) and push the new row count to the list. Called whenever
     // items_ changes or cols_ changes (a width-driven relayout).
     void rebuild_rows_();
-    void paint_grid_row_(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                         bool hovered);
-    void paint_cell_(tk::PaintCtx& ctx, tk::Rect cell,
-                     const MessageRowData& item);
+    void paint_grid_row_(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool hovered);
+    void paint_cell_(tk::PaintCtx& ctx, tk::Rect cell, const MessageRowData& item);
     void activate_item_(const MessageRowData& item);
     // Called by MediaGridList when a press/release lands on the same row;
     // resolves the column from `world` and activates that cell.
@@ -194,15 +191,15 @@ private:
 
     // Flat, oldest-first, filtered to Image/Video.
     std::vector<MessageRowData> items_;
-    std::vector<MediaGridRow>   rows_;
+    std::vector<MediaGridRow> rows_;
     bool reached_start_ = false;
-    int  cols_          = 1; // recomputed in arrange() from the available width
+    int cols_ = 1; // recomputed in arrange() from the available width
 
     ImageProvider image_provider_;
 
     std::unique_ptr<Adapter> adapter_;
-    tk::ListView* list_      = nullptr; // actually a MediaGridList — see above
-    tk::Button*   close_btn_ = nullptr;
+    tk::ListView* list_ = nullptr; // actually a MediaGridList — see above
+    tk::Button* close_btn_ = nullptr;
 };
 
 } // namespace tesseract::views

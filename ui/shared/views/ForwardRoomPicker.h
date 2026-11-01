@@ -39,8 +39,7 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(ForwardRoomPicker)
 
 public:
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
     using RoomsProvider = std::function<std::vector<tesseract::RoomInfo>()>;
 
     ~ForwardRoomPicker() override;
@@ -49,7 +48,10 @@ public:
     // exclude_room_id: source room to omit from the picker list.
     void open(const std::string& exclude_room_id);
     void close();
-    bool is_open() const { return is_open_; }
+    bool is_open() const
+    {
+        return is_open_;
+    }
 
     // ── Data ──────────────────────────────────────────────────────────────
     void set_rooms_provider(RoomsProvider p);
@@ -58,8 +60,14 @@ public:
     void set_query(const std::string& q);
 
     // ── Native-field rect delegation ──────────────────────────────────────
-    tk::Rect search_field_rect() const { return search_field_rect_; }
-    bool search_field_visible() const { return is_open_ && !forwarding_; }
+    tk::Rect search_field_rect() const
+    {
+        return search_field_rect_;
+    }
+    bool search_field_visible() const
+    {
+        return is_open_ && !forwarding_;
+    }
 
     // The self-owned search field, or null when constructed without a
     // Host. The shell pushes its Up/Down/Escape handling onto it via
@@ -85,8 +93,7 @@ public:
     // stays open showing progress. Call add_forward_error() per failure and
     // mark_complete() when all pending forwards have resolved.
     void set_forwarding(int room_count);
-    void add_forward_error(const std::string& room_name,
-                           const std::string& detail);
+    void add_forward_error(const std::string& room_name, const std::string& detail);
     void mark_complete();
 
     // ── Callbacks ─────────────────────────────────────────────────────────
@@ -109,22 +116,31 @@ public:
     // ── Accessibility ─────────────────────────────────────────────────────
     // A modal dialog; rooms are checkboxes (see Adapter), and the painted
     // status / error / empty text is exposed as rows.
-    tk::Role    access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override;
-    bool        access_modal() const override { return is_open_ && visible(); }
-    std::size_t access_row_count() const override { return access_texts_().size(); }
-    tk::Role    access_role_for_widget_row(std::size_t) const override
+    bool access_modal() const override
+    {
+        return is_open_ && visible();
+    }
+    std::size_t access_row_count() const override
+    {
+        return access_texts_().size();
+    }
+    tk::Role access_role_for_widget_row(std::size_t) const override
     {
         return tk::Role::StaticText;
     }
     std::string access_name_for_widget_row(std::size_t i) const override;
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override;
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override;
 
-    static constexpr float kCardW    = 560.0f;
+    static constexpr float kCardW = 560.0f;
     static constexpr float kCardMaxH = 520.0f;
-    static constexpr float kHeaderH  = 52.0f;
-    static constexpr float kFooterH  = 52.0f;
-    static constexpr float kRowH     = 44.0f;
+    static constexpr float kHeaderH = 52.0f;
+    static constexpr float kFooterH = 52.0f;
+    static constexpr float kRowH = 44.0f;
 
 private:
     class Adapter;
@@ -165,7 +181,7 @@ private:
     // Filtered unselected rooms (query-matched, excludes selected_ids_).
     std::vector<tesseract::RoomInfo> filtered_unselected_;
 
-    RoomsProvider  rooms_provider_;
+    RoomsProvider rooms_provider_;
     AvatarProvider avatar_provider_;
 
     std::unique_ptr<Adapter> adapter_;
@@ -176,7 +192,7 @@ private:
     tk::TextField* search_field_ = nullptr; // owned via add_child when host provided
     // Footer buttons, positioned in arrange() and painted in paint();
     // Dismiss replaces Cancel / Forward (N) on the error body.
-    tk::Button* cancel_btn_  = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
     tk::Button* confirm_btn_ = nullptr;
     tk::Button* dismiss_btn_ = nullptr;
 
@@ -185,11 +201,11 @@ private:
     std::vector<std::string> access_texts_() const;
     void sync_footer_buttons_();
 
-    bool                     forwarding_      = false;
-    int                      forward_errors_  = 0;
-    std::string              forwarding_status_;
+    bool forwarding_ = false;
+    int forward_errors_ = 0;
+    std::string forwarding_status_;
     std::vector<std::string> error_lines_;
-    int                      forward_count_   = 0;
+    int forward_count_ = 0;
 };
 
 } // namespace tesseract::views

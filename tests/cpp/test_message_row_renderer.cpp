@@ -32,8 +32,7 @@ TEST_CASE("msgbubble::shaping_width never goes below kBubbleMinW", "[bubble]")
     CHECK(mb::shaping_width(0.0f, false) == Approx(mb::kBubbleMinW));
 }
 
-TEST_CASE("msgbubble::shaping_width subtracts the receipt reserve for other users",
-          "[bubble]")
+TEST_CASE("msgbubble::shaping_width subtracts the receipt reserve for other users", "[bubble]")
 {
     // 300 wide, other user, no reserve: avail = 300-24-40 = 236 -> content = 216.
     CHECK(mb::shaping_width(300.0f, false, 0.0f) == Approx(216.0f));
@@ -51,7 +50,7 @@ TEST_CASE("msgbubble::layout hugs a short own message", "[bubble]")
     const mb::Box b = mb::layout(900.0f, /*is_own=*/true, /*is_cont=*/false, 60.0f);
 
     CHECK(b.content_w == Approx(60.0f));
-    CHECK(b.bubble_w == Approx(60.0f + 2.0f * mb::kBubblePadX)); // 80
+    CHECK(b.bubble_w == Approx(60.0f + 2.0f * mb::kBubblePadX));      // 80
     CHECK(b.bubble_x == Approx(900.0f - mb::kEdgePadX - b.bubble_w)); // flush right
     CHECK(b.content_x == Approx(b.bubble_x + mb::kBubblePadX));
     CHECK(b.chip_x == Approx(b.content_x));
@@ -62,8 +61,7 @@ TEST_CASE("msgbubble::layout hugs a short own message", "[bubble]")
     CHECK_FALSE(b.reserve_receipt_width);
 }
 
-TEST_CASE("msgbubble::layout hugs an own message narrower than kBubbleMinW",
-          "[bubble]")
+TEST_CASE("msgbubble::layout hugs an own message narrower than kBubbleMinW", "[bubble]")
 {
     // A 2-character message ("ok") shapes to well under 48px. The bubble must
     // hug it exactly — no minimum width — so it stays flush to the right edge
@@ -151,12 +149,11 @@ TEST_CASE("msgbubble::shaping_width reserves the own-avatar gutter", "[bubble]")
           Catch::Approx(256.0f - mb::kAvatarSize - mb::kAvatarGap));
 }
 
-TEST_CASE("msgbubble::layout draws an own avatar and shifts the bubble left",
-          "[bubble]")
+TEST_CASE("msgbubble::layout draws an own avatar and shifts the bubble left", "[bubble]")
 {
     namespace mb = tesseract::views::msgbubble;
     const mb::Box off = mb::layout(900.0f, true, false, 60.0f, false);
-    const mb::Box on  = mb::layout(900.0f, true, false, 60.0f, true);
+    const mb::Box on = mb::layout(900.0f, true, false, 60.0f, true);
     CHECK_FALSE(off.draw_avatar);
     CHECK(on.draw_avatar);
     CHECK(on.draw_sender);

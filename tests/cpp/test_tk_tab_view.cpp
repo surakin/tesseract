@@ -74,15 +74,17 @@ TEST_CASE("TabView set_selected_index fires on_selected only when the index "
     CHECK(call_count == 1);
 }
 
-TEST_CASE("TabView set_selected_index out-of-range is a silent no-op",
-          "[tk][tab_view]")
+TEST_CASE("TabView set_selected_index out-of-range is a silent no-op", "[tk][tab_view]")
 {
     auto tv_owner = tk::create_root_widget<TabView>(nullptr);
     TabView& tv = *tv_owner;
     tv.set_items({"Join", "Create"});
 
     int fired = -99;
-    tv.on_selected = [&](int idx) { fired = idx; };
+    tv.on_selected = [&](int idx)
+    {
+        fired = idx;
+    };
 
     tv.set_selected_index(-1);
     tv.set_selected_index(5);
@@ -96,7 +98,10 @@ TEST_CASE("TabView set_items does not fire on_selected", "[tk][tab_view]")
     TabView& tv = *tv_owner;
 
     bool fired = false;
-    tv.on_selected = [&](int) { fired = true; };
+    tv.on_selected = [&](int)
+    {
+        fired = true;
+    };
 
     tv.set_items({"Join", "Create"});
     CHECK_FALSE(fired);
@@ -117,8 +122,7 @@ TEST_CASE("TabView focusable() requires more than one item", "[tk][tab_view]")
     CHECK(tv.focusable());
 }
 
-TEST_CASE("TabView measure and paint do not crash with two items",
-          "[tk][tab_view]")
+TEST_CASE("TabView measure and paint do not crash with two items", "[tk][tab_view]")
 {
     TkTabViewStage st;
     auto tv_owner = tk::create_root_widget<TabView>(nullptr);
@@ -146,8 +150,7 @@ TEST_CASE("TabView pointer click on a segment selects it", "[tk][tab_view]")
     CHECK(tv.selected_index() == 1);
 }
 
-TEST_CASE("TabView a press that releases outside inside_self does not commit",
-          "[tk][tab_view]")
+TEST_CASE("TabView a press that releases outside inside_self does not commit", "[tk][tab_view]")
 {
     TkTabViewStage st;
     auto tv_owner = tk::create_root_widget<TabView>(nullptr);

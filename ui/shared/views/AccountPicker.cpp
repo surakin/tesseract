@@ -166,12 +166,9 @@ void AccountPicker::paint_before_children(tk::PaintCtx& ctx)
     // half a pixel so the whole 1px border sits inside bounds_ (the host clips
     // to bounds_).
     constexpr float kCardRadius = 8.0f;
-    const tk::Rect card{bounds_.x + 0.5f, bounds_.y + 0.5f, bounds_.w - 1.0f,
-                        bounds_.h - 1.0f};
-    ctx.canvas.fill_rounded_rect(card, kCardRadius,
-                                 ctx.theme.palette.sidebar_bg);
-    ctx.canvas.stroke_rounded_rect(card, kCardRadius,
-                                   ctx.theme.palette.popup_border, 1.0f);
+    const tk::Rect card{bounds_.x + 0.5f, bounds_.y + 0.5f, bounds_.w - 1.0f, bounds_.h - 1.0f};
+    ctx.canvas.fill_rounded_rect(card, kCardRadius, ctx.theme.palette.sidebar_bg);
+    ctx.canvas.stroke_rounded_rect(card, kCardRadius, ctx.theme.palette.popup_border, 1.0f);
 }
 
 bool AccountPicker::on_key_down(const tk::KeyEvent& e)
@@ -182,16 +179,19 @@ bool AccountPicker::on_key_down(const tk::KeyEvent& e)
         return true;
     }
     if ((e.key != tk::Key::Up && e.key != tk::Key::Down) || e.ctrl || e.alt || e.meta)
+    {
         return false;
+    }
     // Built detached, so host() is null; the surface's root widget has the Host.
     tk::Host* h = host();
     if (!h)
     {
         if (auto* root = get_root_widget())
+        {
             h = root->host();
+        }
     }
     return h && h->advance_focus(e.key == tk::Key::Down);
 }
 
 } // namespace tesseract::views
-

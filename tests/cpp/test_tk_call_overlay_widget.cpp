@@ -16,8 +16,7 @@ namespace
 {
 
 tesseract::RtcParticipantInfo cow_part(const std::string& pid, const std::string& uid,
-                                       bool amute = false, bool vmute = false,
-                                       bool screen = false)
+                                       bool amute = false, bool vmute = false, bool screen = false)
 {
     tesseract::RtcParticipantInfo p;
     p.participant_id = pid;
@@ -36,14 +35,32 @@ struct CowStage : vt::Stage
     std::vector<std::pair<int, std::function<void()>>> delayed;
     CowStage()
     {
-        ov->set_repaint_requester([this] { ++repaints; });
-        ov->set_relayout_requester([this] { ++relayouts; });
-        ov->set_post_delayed([this](int ms, std::function<void()> f)
-                             { delayed.push_back({ms, std::move(f)}); });
+        ov->set_repaint_requester(
+            [this]
+            {
+                ++repaints;
+            });
+        ov->set_relayout_requester(
+            [this]
+            {
+                ++relayouts;
+            });
+        ov->set_post_delayed(
+            [this](int ms, std::function<void()> f)
+            {
+                delayed.push_back({ms, std::move(f)});
+            });
         ov->set_local_user_id("@me:x");
-        ov->set_display_name_provider([](const std::string& uid)
-                                      { return uid == "@bob:x" ? std::string("Bob") : std::string(); });
-        ov->set_avatar_provider([](const std::string&) -> const tk::Image* { return nullptr; });
+        ov->set_display_name_provider(
+            [](const std::string& uid)
+            {
+                return uid == "@bob:x" ? std::string("Bob") : std::string();
+            });
+        ov->set_avatar_provider(
+            [](const std::string&) -> const tk::Image*
+            {
+                return nullptr;
+            });
     }
     void run(tk::Rect r = {0, 0, 640, 480})
     {
@@ -84,8 +101,8 @@ TEST_CASE("CallOverlayWidget pinning a tile re-lays out with a pinned region",
           "[tk][view][call_overlay]")
 {
     CowStage s;
-    s.ov->update_participants({cow_part("p1", "@me:x"), cow_part("p2", "@bob:x"),
-                               cow_part("p3", "@eve:x")});
+    s.ov->update_participants(
+        {cow_part("p1", "@me:x"), cow_part("p2", "@bob:x"), cow_part("p3", "@eve:x")});
     s.run();
     auto tiles = vt::find_all<tesseract::views::ParticipantTile>(*s.ov);
     REQUIRE(tiles.size() == 3);
@@ -94,7 +111,7 @@ TEST_CASE("CallOverlayWidget pinning a tile re-lays out with a pinned region",
     CHECK(s.relayouts >= 2);
     s.run({0, 0, 900, 400}); // wide: pinned on the left
     CHECK(tiles[1]->bounds().w > before);
-    s.run({0, 0, 400, 900}); // tall: pinned on top
+    s.run({0, 0, 400, 900});        // tall: pinned on top
     tiles[1]->on_pin_toggled("p2"); // unpin
     s.run();
     CHECK(tiles[1]->bounds().w == before);
@@ -114,10 +131,22 @@ TEST_CASE("CallOverlayWidget controls fire callbacks via accessible names",
     s.run();
     bool muted = false, vmuted = false, sharing = false;
     int hangups = 0;
-    s.ov->on_toggle_audio = [&](bool m) { muted = m; };
-    s.ov->on_toggle_video = [&](bool m) { vmuted = m; };
-    s.ov->on_toggle_screen_share = [&](bool v) { sharing = v; };
-    s.ov->on_hang_up = [&] { ++hangups; };
+    s.ov->on_toggle_audio = [&](bool m)
+    {
+        muted = m;
+    };
+    s.ov->on_toggle_video = [&](bool m)
+    {
+        vmuted = m;
+    };
+    s.ov->on_toggle_screen_share = [&](bool v)
+    {
+        sharing = v;
+    };
+    s.ov->on_hang_up = [&]
+    {
+        ++hangups;
+    };
 
     REQUIRE(vt::press(*s.ov, "Mute microphone"));
     CHECK(muted);
@@ -148,7 +177,10 @@ TEST_CASE("CallOverlayWidget mode buttons request docked/floating/popout "
 {
     CowStage s;
     std::vector<CallOverlayWidget::Mode> req;
-    s.ov->on_mode_change_requested = [&](CallOverlayWidget::Mode m) { req.push_back(m); };
+    s.ov->on_mode_change_requested = [&](CallOverlayWidget::Mode m)
+    {
+        req.push_back(m);
+    };
 
     s.ov->set_mode(CallOverlayWidget::Mode::Docked);
     s.run();
@@ -189,7 +221,10 @@ TEST_CASE("CallOverlayWidget floating window drags by its header and moves "
     CHECK(s.ov->float_position().x == 100);
     s.run({100, 50, 320, 240});
     std::vector<tk::Point> pos;
-    s.ov->on_float_position_changed = [&](float x, float y) { pos.push_back({x, y}); };
+    s.ov->on_float_position_changed = [&](float x, float y)
+    {
+        pos.push_back({x, y});
+    };
 
     CHECK_FALSE(s.ov->on_pointer_down({10, 100})); // below the header
     s.ov->on_pointer_drag({20, 20});               // not dragging: ignored

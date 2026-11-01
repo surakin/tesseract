@@ -33,7 +33,9 @@ namespace
 struct AsShell : tesseract::test::TestShellBase
 {
     AsShell() = default;
-    explicit AsShell(tesseract::AccountManager& am) : TestShellBase(am) {}
+    explicit AsShell(tesseract::AccountManager& am) : TestShellBase(am)
+    {
+    }
     ~AsShell() override
     {
         wait_pools_idle();
@@ -41,14 +43,17 @@ struct AsShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
@@ -57,15 +62,36 @@ struct AsShell : tesseract::test::TestShellBase
     {
         statuses.push_back(m);
     }
-    void on_invites_updated_() override { ++invites_updated; }
-    void on_my_knocks_updated_() override { ++knocks_updated; }
-    void refresh_account_ui_after_switch_() override { ++ui_refreshes; }
-    void show_sync_status_text_(const std::string& t) override { sync_texts.push_back(t); }
+    void on_invites_updated_() override
+    {
+        ++invites_updated;
+    }
+    void on_my_knocks_updated_() override
+    {
+        ++knocks_updated;
+    }
+    void refresh_account_ui_after_switch_() override
+    {
+        ++ui_refreshes;
+    }
+    void show_sync_status_text_(const std::string& t) override
+    {
+        sync_texts.push_back(t);
+    }
     std::vector<std::string> sync_texts;
-    void raise_and_activate_() override { ++raised; }
+    void raise_and_activate_() override
+    {
+        ++raised;
+    }
 
-    void base_switch(const std::string& uid) { ShellBase::switch_active_account_(uid); }
-    void base_relogin(const std::string& uid) { ShellBase::request_relogin_(uid); }
+    void base_switch(const std::string& uid)
+    {
+        ShellBase::switch_active_account_(uid);
+    }
+    void base_relogin(const std::string& uid)
+    {
+        ShellBase::request_relogin_(uid);
+    }
     std::vector<std::function<void()>> delayed;
     std::vector<std::string> statuses;
     int invites_updated = 0, knocks_updated = 0, ui_refreshes = 0, raised = 0;
@@ -158,8 +184,7 @@ std::shared_ptr<tesseract::AccountSession> as_acct(const std::string& uid)
 }
 
 // An account whose event bridge delivers to `owner`.
-std::shared_ptr<tesseract::AccountSession> as_bridged(const std::string& uid,
-                                                      ShellBase* owner)
+std::shared_ptr<tesseract::AccountSession> as_bridged(const std::string& uid, ShellBase* owner)
 {
     auto a = as_acct(uid);
     a->bridge = std::make_unique<tesseract::EventHandlerBase>(owner);
@@ -228,8 +253,7 @@ TEST_CASE("begin_add_account without an active account records no return account
     CHECK(s.pending_login_temp_dir_.empty()); // retired; re-armed on OAuth start
 }
 
-TEST_CASE("switching to an account refreshes the sync status line",
-          "[shell][account_switch]")
+TEST_CASE("switching to an account refreshes the sync status line", "[shell][account_switch]")
 {
     AsShell s;
     s.account_manager_.add_account(as_acct("@a:x"));
@@ -276,8 +300,7 @@ TEST_CASE("switching adopts the incoming account's identity and snapshots",
     CHECK(s.invites_updated == 1);
     CHECK(s.knocks_updated == 1);
     // last_room is rotated to the front so it reopens as the active tab.
-    CHECK(s.pending_restore_rooms_ ==
-          std::vector<std::string>{"!z", "!x", "!y"});
+    CHECK(s.pending_restore_rooms_ == std::vector<std::string>{"!z", "!x", "!y"});
     CHECK(s.account_manager_.dedicated_window("@a:x") == &s);
     CHECK(tesseract::SessionStore::load_index().active_user_id == "@a:x");
 }
@@ -362,8 +385,7 @@ TEST_CASE("switching away and back restores the outgoing account's live tabs",
     REQUIRE(s.switch_active_account_impl_("@b:x"));
     s.pending_restore_rooms_.clear();
     REQUIRE(s.switch_active_account_impl_("@a:x"));
-    CHECK(s.pending_restore_rooms_ ==
-          std::vector<std::string>{"!two", "!one", "!three"});
+    CHECK(s.pending_restore_rooms_ == std::vector<std::string>{"!two", "!one", "!three"});
 }
 
 TEST_CASE("switching away from an account with no loaded tabs keeps its saved layout",
@@ -400,13 +422,14 @@ TEST_CASE("an outgoing account's pop-out scroll state is parked and restored",
     CHECK(s.other_account_pagination_.count("@a:x") == 0);
 }
 
-TEST_CASE("the recent-room list is trimmed to the cap on switch",
-          "[shell][account_switch]")
+TEST_CASE("the recent-room list is trimmed to the cap on switch", "[shell][account_switch]")
 {
     AsShell s;
     auto a = as_acct("@a:x");
     for (std::size_t i = 0; i < AsShell::kRecentRoomsMax + 4; ++i)
+    {
         a->recent_rooms.push_back("!r" + std::to_string(i));
+    }
     s.account_manager_.add_account(a);
     REQUIRE(s.switch_active_account_impl_("@a:x"));
     CHECK(s.recent_room_ids_.size() == AsShell::kRecentRoomsMax);
@@ -757,12 +780,12 @@ TEST_CASE("logout in a pinned window falls to the login page when another window
 
     bool remaining = true;
     std::string uid;
-    pinned.sign_out_active_account_(
-        [] {}, [&](const AsShell::LogoutResult& r)
-        {
-            remaining = r.has_remaining;
-            uid = r.logged_out_uid;
-        });
+    pinned.sign_out_active_account_([] {},
+                                    [&](const AsShell::LogoutResult& r)
+                                    {
+                                        remaining = r.has_remaining;
+                                        uid = r.logged_out_uid;
+                                    });
     CHECK(uid == "@b:x");
     CHECK_FALSE(remaining);
     CHECK(pinned.active_account_ == nullptr);
@@ -786,7 +809,7 @@ TEST_CASE("logout picks a survivor no other window owns",
     auto& am = pinned.account_manager_;
     auto a = as_bridged("@a:x", &primary); // owned by the other window
     auto b = as_bridged("@b:x", &pinned);
-    auto c = as_bridged("@c:x", &pinned);  // left earlier, still ours
+    auto c = as_bridged("@c:x", &pinned); // left earlier, still ours
     am.add_account(a);
     am.add_account(b);
     am.add_account(c);
@@ -935,8 +958,7 @@ TEST_CASE("secondary-window startup needs restored accounts, a pinned account an
     CHECK(s.is_secondary_window_startup_());
 }
 
-TEST_CASE("the pending-sync gate starts sync once for the held account",
-          "[shell][account_switch]")
+TEST_CASE("the pending-sync gate starts sync once for the held account", "[shell][account_switch]")
 {
     AsShell s;
     s.release_pending_sync_gate_(); // nothing held
@@ -980,15 +1002,25 @@ TEST_CASE("a retired login client outlives a worker that is still running",
     std::condition_variable cv;
     bool started = false;
     bool release = false;
-    s.run_async_([&] {
-        std::unique_lock<std::mutex> lk(mu);
-        started = true;
-        cv.notify_all();
-        cv.wait(lk, [&] { return release; });
-    });
+    s.run_async_(
+        [&]
+        {
+            std::unique_lock<std::mutex> lk(mu);
+            started = true;
+            cv.notify_all();
+            cv.wait(lk,
+                    [&]
+                    {
+                        return release;
+                    });
+        });
     {
         std::unique_lock<std::mutex> lk(mu);
-        cv.wait(lk, [&] { return started; }); // running, no longer queued
+        cv.wait(lk,
+                [&]
+                {
+                    return started;
+                }); // running, no longer queued
     }
     REQUIRE(s.pool_.pending_count() == 0);
 
@@ -1006,8 +1038,7 @@ TEST_CASE("a retired login client outlives a worker that is still running",
     CHECK(s.retired_login_clients_.size() == 1);
 }
 
-TEST_CASE("restart_sdk_begin_ needs a client and a stored session",
-          "[shell][account_switch]")
+TEST_CASE("restart_sdk_begin_ needs a client and a stored session", "[shell][account_switch]")
 {
     AsShell s;
     s.restart_sdk_begin_({}); // no client
@@ -1057,27 +1088,30 @@ TEST_CASE("finalize_login_async_ rejects a missing or user-less pending login",
     AsShell s;
     bool called = false;
     AsShell::FinalizeLoginResult got;
-    s.finalize_login_async_([&](AsShell::FinalizeLoginResult r) {
-        called = true;
-        got = std::move(r);
-    });
+    s.finalize_login_async_(
+        [&](AsShell::FinalizeLoginResult r)
+        {
+            called = true;
+            got = std::move(r);
+        });
     CHECK(called);
     CHECK_FALSE(got.ok);
     CHECK(got.error.empty()); // nothing to report: there was no login
 
     s.reset_pending_login_client_();
     called = false;
-    s.finalize_login_async_([&](AsShell::FinalizeLoginResult r) {
-        called = true;
-        got = std::move(r);
-    });
+    s.finalize_login_async_(
+        [&](AsShell::FinalizeLoginResult r)
+        {
+            called = true;
+            got = std::move(r);
+        });
     CHECK(called);
     CHECK_FALSE(got.ok);
     CHECK(got.error == "no user id");
 }
 
-TEST_CASE("finalizing a login with no session blob fails cleanly",
-          "[shell][account_switch][login]")
+TEST_CASE("finalizing a login with no session blob fails cleanly", "[shell][account_switch][login]")
 {
     AsShell s;
     const auto pending = std::filesystem::temp_directory_path() / "tesseract-test-pending-login";

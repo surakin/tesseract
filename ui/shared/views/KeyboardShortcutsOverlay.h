@@ -34,31 +34,46 @@ public:
 
     void open();
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     // Fires when the overlay opens or closes, so the shells re-query rect
     // accessors and hide the native text controls it covers.
     std::function<void()> on_layout_changed;
 
     // The scrolled list of groups and rows (tests, accessibility).
-    tk::ScrollView* scroll_view() const { return scroll_; }
-    tk::Button* close_button() const { return close_btn_; }
+    tk::ScrollView* scroll_view() const
+    {
+        return scroll_;
+    }
+    tk::Button* close_button() const
+    {
+        return close_btn_;
+    }
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
     // Scrolls the list (Up/Down, Page Up/Down, Home/End) while it's open.
-    bool     on_key_down(const tk::KeyEvent& event) override;
+    bool on_key_down(const tk::KeyEvent& event) override;
     // Swallows the wheel while open, so nothing behind the modal scrolls.
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-    void     on_theme_changed(const tk::Theme& t) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void on_theme_changed(const tk::Theme& t) override;
 
-    tk::Role access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override;
-    bool access_modal() const override { return open_ && visible(); }
+    bool access_modal() const override
+    {
+        return open_ && visible();
+    }
 
 private:
     void build_rows_();
@@ -69,8 +84,8 @@ private:
     // paint_before_children).
     bool pending_focus_ = false;
 
-    tk::ScrollView* scroll_ = nullptr;   // owned via add_child
-    tk::Button* close_btn_ = nullptr;    // owned via add_child
+    tk::ScrollView* scroll_ = nullptr; // owned via add_child
+    tk::Button* close_btn_ = nullptr;  // owned via add_child
 
     tk::Rect backdrop_rect_{};
     tk::Rect card_rect_{};
@@ -79,11 +94,11 @@ private:
 
     static constexpr float kCardMaxW = 600.0f;
     static constexpr float kCardMaxH = 640.0f;
-    static constexpr float kMargin   = 24.0f;
-    static constexpr float kCardPad  = 20.0f;
-    static constexpr float kTitleH   = 28.0f;
-    static constexpr float kGap      = 12.0f;
-    static constexpr float kBtnH     = 36.0f;
+    static constexpr float kMargin = 24.0f;
+    static constexpr float kCardPad = 20.0f;
+    static constexpr float kTitleH = 28.0f;
+    static constexpr float kGap = 12.0f;
+    static constexpr float kBtnH = 36.0f;
 };
 
 } // namespace tesseract::views

@@ -21,25 +21,23 @@ struct ShellThreadPanelTestShell : tesseract::test::TestShellBase
                                 std::vector<tesseract::views::MessageRowData> rows,
                                 bool switch_) override
     {
-        last_reset_root  = root;
-        last_reset_rows  = std::move(rows);
+        last_reset_root = root;
+        last_reset_rows = std::move(rows);
         last_reset_switch = switch_;
     }
-    void apply_thread_message_insert_(
-        const std::string& root, std::size_t idx,
-        tesseract::views::MessageRowData row) override
+    void apply_thread_message_insert_(const std::string& root, std::size_t idx,
+                                      tesseract::views::MessageRowData row) override
     {
         ++insert_calls;
         last_insert_root = root;
         last_insert_idx = idx;
         last_insert_row = std::move(row);
     }
-    void apply_thread_message_remove_(const std::string& root,
-                                      std::size_t idx) override
+    void apply_thread_message_remove_(const std::string& root, std::size_t idx) override
     {
         ++remove_calls;
         last_remove_root = root;
-        last_remove_idx  = idx;
+        last_remove_idx = idx;
     }
 
     using ShellBase::current_room_id_;
@@ -84,20 +82,17 @@ struct AttachedPane
     std::unique_ptr<tesseract::views::RoomView> view_owner =
         tk::create_root_widget<tesseract::views::RoomView>(nullptr);
 
-    explicit AttachedPane(ShellThreadPanelTestShell& s,
-                          const std::string& room_id = "!r:x")
+    explicit AttachedPane(ShellThreadPanelTestShell& s, const std::string& room_id = "!r:x")
     {
         s.main_room_pane_ = std::make_unique<RoomPane>(
-            RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
-            room_id);
+            RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, room_id);
         s.main_room_pane_->attach({.room_view = view_owner.get()});
     }
 };
 
 } // namespace
 
-TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match",
-          "[shell][thread_panel]")
+TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -118,8 +113,7 @@ TEST_CASE("handle_thread_reset_ui_ dispatches when room+root match",
     CHECK(s.last_reset_switch);
 }
 
-TEST_CASE("handle_thread_reset_ui_ drops mismatched room",
-          "[shell][thread_panel]")
+TEST_CASE("handle_thread_reset_ui_ drops mismatched room", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -128,8 +122,7 @@ TEST_CASE("handle_thread_reset_ui_ drops mismatched room",
     CHECK(s.last_reset_root.empty());
 }
 
-TEST_CASE("handle_thread_reset_ui_ drops mismatched root",
-          "[shell][thread_panel]")
+TEST_CASE("handle_thread_reset_ui_ drops mismatched root", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -138,8 +131,7 @@ TEST_CASE("handle_thread_reset_ui_ drops mismatched root",
     CHECK(s.last_reset_root.empty());
 }
 
-TEST_CASE("handle_thread_inserted_ui_ skips Unhandled events",
-          "[shell][thread_panel]")
+TEST_CASE("handle_thread_inserted_ui_ skips Unhandled events", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -150,8 +142,7 @@ TEST_CASE("handle_thread_inserted_ui_ skips Unhandled events",
     CHECK(s.insert_calls == 0);
 }
 
-TEST_CASE("handle_thread_inserted_ui_ dispatches when room+root match",
-          "[shell][thread_panel]")
+TEST_CASE("handle_thread_inserted_ui_ dispatches when room+root match", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -168,8 +159,7 @@ TEST_CASE("handle_thread_inserted_ui_ dispatches when room+root match",
     CHECK(s.last_insert_idx == 3);
 }
 
-TEST_CASE("handle_thread_removed_ui_ dispatches when room+root match",
-          "[shell][thread_panel]")
+TEST_CASE("handle_thread_removed_ui_ dispatches when room+root match", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -197,7 +187,7 @@ TEST_CASE("Closing the thread panel clears pending find-in-thread search state",
         tesseract::ThreadPanelController::ThreadTrigger::OpenFromMain, "$root");
     s.main_room_pane_->apply_thread_transition_(open);
     s.thread_search_matches_.push_back({});
-    s.thread_search_current_    = 0;
+    s.thread_search_current_ = 0;
     s.thread_search_pending_[1] = "query";
 
     auto close = s.compute_thread_transition_(
@@ -235,8 +225,7 @@ TEST_CASE("Opening a different thread clears pending find-in-thread search state
     CHECK(s.thread_search_current_ == -1);
 }
 
-TEST_CASE("Toggling the threads button is callable with null client",
-          "[shell][thread_panel]")
+TEST_CASE("Toggling the threads button is callable with null client", "[shell][thread_panel]")
 {
     ShellThreadPanelTestShell s;
     s.current_room_id_ = "!r:x";
@@ -248,8 +237,7 @@ TEST_CASE("Toggling the threads button is callable with null client",
         s.main_room_pane_->thread_root(),
         tesseract::ThreadPanelController::ThreadTrigger::ToggleList, {});
     s.main_room_pane_->apply_thread_transition_(open);
-    CHECK(s.main_room_pane_->thread_panel() ==
-          tesseract::ThreadPanelController::ThreadPanel::List);
+    CHECK(s.main_room_pane_->thread_panel() == tesseract::ThreadPanelController::ThreadPanel::List);
 
     auto close = s.compute_thread_transition_(
         s.main_room_pane_->thread_panel(), s.main_room_pane_->thread_panel_prev(),

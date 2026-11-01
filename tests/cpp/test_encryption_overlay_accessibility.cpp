@@ -40,14 +40,17 @@ using access_test::find_named;
 using access_test::find_prefix;
 
 TEST_CASE("Recover › Choose is a modal dialog with real option-card and link buttons",
-         "[encryption][overlay][accessibility]")
+          "[encryption][overlay][accessibility]")
 {
     EncOverlayA11yStage st;
-    auto ov = create_root_widget<EncryptionSetupOverlay>(nullptr,
-                                                         EncryptionSetupOverlay::Mode::Recover);
+    auto ov =
+        create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
     ov->set_has_verified_other_device(true);
     bool closed = false;
-    ov->on_close = [&] { closed = true; };
+    ov->on_close = [&]
+    {
+        closed = true;
+    };
     st.run(*ov);
 
     AccessNode tree = build_access_tree(ov.get());
@@ -85,11 +88,11 @@ TEST_CASE("Recover › Choose is a modal dialog with real option-card and link b
 }
 
 TEST_CASE("ShowKey exposes the recovery key grouped in fours",
-         "[encryption][overlay][accessibility]")
+          "[encryption][overlay][accessibility]")
 {
     EncOverlayA11yStage st;
-    auto ov = create_root_widget<EncryptionSetupOverlay>(nullptr,
-                                                         EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
     ov->advance_progress(4, "EsTcabcdEFGH", 0, 0);
     REQUIRE(ov->step() == EncryptionSetupOverlay::Step::ShowKey);
     st.run(*ov);
@@ -103,14 +106,14 @@ TEST_CASE("ShowKey exposes the recovery key grouped in fours",
 }
 
 TEST_CASE("CompareCodes reads the numbers and each emoji by name",
-         "[encryption][overlay][accessibility]")
+          "[encryption][overlay][accessibility]")
 {
     EncOverlayA11yStage st;
-    auto ov = create_root_widget<EncryptionSetupOverlay>(nullptr,
-                                                         EncryptionSetupOverlay::Mode::Verify);
+    auto ov =
+        create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Verify);
     tesseract::VerificationSas sas;
     sas.decimals = {1234, 5678, 9012};
-    sas.emojis   = {{"\xF0\x9F\x90\xB6", "Dog"}, {"\xF0\x9F\x90\xB1", "Cat"}};
+    sas.emojis = {{"\xF0\x9F\x90\xB6", "Dog"}, {"\xF0\x9F\x90\xB1", "Cat"}};
     ov->show_sas(sas);
     st.run(*ov);
 
@@ -125,11 +128,11 @@ TEST_CASE("CompareCodes reads the numbers and each emoji by name",
 }
 
 TEST_CASE("Progress is exposed as a progress node with the percentage",
-         "[encryption][overlay][accessibility]")
+          "[encryption][overlay][accessibility]")
 {
     EncOverlayA11yStage st;
-    auto ov = create_root_widget<EncryptionSetupOverlay>(nullptr,
-                                                         EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
     ov->simulate_primary_action(); // Intro → Progress
     REQUIRE(ov->step() == EncryptionSetupOverlay::Step::Progress);
     ov->advance_progress(3, "", 1, 4);
@@ -142,21 +145,23 @@ TEST_CASE("Progress is exposed as a progress node with the percentage",
     // the one carrying the progress role.
     bool found_bar = false;
     for (const auto& ch : tree.children)
+    {
         if (ch.role == Role::ProgressBar)
         {
             found_bar = true;
             CHECK(ch.name.find("25%") != std::string::npos);
         }
+    }
     CHECK(found_bar);
 }
 
 TEST_CASE("passphrase fields are labelled and never expose the typed text",
-         "[encryption][overlay][accessibility]")
+          "[encryption][overlay][accessibility]")
 {
     EncOverlayA11yStage st;
     StubHost host;
-    auto ov = create_root_widget<EncryptionSetupOverlay>(&host,
-                                                         EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov);
     ov->simulate_select_passphrase_mode();
     REQUIRE(ov->passphrase_field() != nullptr);
@@ -170,23 +175,26 @@ TEST_CASE("passphrase fields are labelled and never expose the typed text",
 }
 
 TEST_CASE("verification failure and completion are announced",
-         "[encryption][overlay][accessibility]")
+          "[encryption][overlay][accessibility]")
 {
     struct RecordingHost : StubHost
     {
         std::vector<std::string> said;
-        void on_announce_(const std::string& t, Politeness) override { said.push_back(t); }
+        void on_announce_(const std::string& t, Politeness) override
+        {
+            said.push_back(t);
+        }
     };
     RecordingHost host;
-    auto ov = create_root_widget<EncryptionSetupOverlay>(&host,
-                                                         EncryptionSetupOverlay::Mode::Verify);
+    auto ov =
+        create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Verify);
     ov->verification_failed("Timed out", true);
     ov->return_to_start();
     REQUIRE_FALSE(host.said.empty());
     CHECK(host.said.back() == "Timed out");
 
-    auto ov2 = create_root_widget<EncryptionSetupOverlay>(&host,
-                                                          EncryptionSetupOverlay::Mode::Verify);
+    auto ov2 =
+        create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Verify);
     ov2->verification_done(EncryptionSetupOverlay::DoneKind::UserVerified);
     CHECK(host.said.back().rfind("Verified.", 0) == 0);
 }

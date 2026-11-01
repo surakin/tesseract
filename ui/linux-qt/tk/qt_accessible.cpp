@@ -43,8 +43,7 @@ struct AccessKeyHash
 {
     std::size_t operator()(const AccessKey& k) const
     {
-        return std::hash<void*>()(k.widget) ^
-              (std::hash<int>()(k.row_index) << 1);
+        return std::hash<void*>()(k.widget) ^ (std::hash<int>()(k.row_index) << 1);
     }
 };
 
@@ -70,7 +69,9 @@ struct Snapshot
 bool node_disabled(const AccessNode& n)
 {
     if (n.state.disabled)
+    {
         return true;
+    }
     return n.row_index == -1 && n.widget && !n.activate && !n.widget->enabled();
 }
 
@@ -88,33 +89,54 @@ QAccessible::Role to_qaccessible_role(tk::Role r)
 {
     switch (r)
     {
-    case tk::Role::Button:      return QAccessible::Button;
-    case tk::Role::CheckBox:    return QAccessible::CheckBox;
+    case tk::Role::Button:
+        return QAccessible::Button;
+    case tk::Role::CheckBox:
+        return QAccessible::CheckBox;
     case tk::Role::Switch:
 #if QT_VERSION >= QT_VERSION_CHECK(6, 11, 0)
         return QAccessible::Switch;
 #else
         return QAccessible::CheckBox;
 #endif
-    case tk::Role::RadioButton: return QAccessible::RadioButton;
-    case tk::Role::ComboBox:    return QAccessible::ComboBox;
-    case tk::Role::TextInput:   return QAccessible::EditableText;
-    case tk::Role::StaticText:  return QAccessible::StaticText;
-    case tk::Role::Image:       return QAccessible::Graphic;
-    case tk::Role::Link:        return QAccessible::Link;
-    case tk::Role::List:        return QAccessible::List;
-    case tk::Role::ListItem:    return QAccessible::ListItem;
-    case tk::Role::Grid:        return QAccessible::Table;
-    case tk::Role::GridCell:    return QAccessible::Cell;
-    case tk::Role::Tab:         return QAccessible::PageTab;
-    case tk::Role::TabList:     return QAccessible::PageTabList;
-    case tk::Role::TabPanel:    return QAccessible::PropertyPage;
-    case tk::Role::Dialog:      return QAccessible::Dialog;
-    case tk::Role::MenuItem:    return QAccessible::MenuItem;
-    case tk::Role::Group:       return QAccessible::Grouping;
-    case tk::Role::ProgressBar: return QAccessible::ProgressBar;
-    case tk::Role::Slider:      return QAccessible::Slider;
-    case tk::Role::None:        return QAccessible::Client;
+    case tk::Role::RadioButton:
+        return QAccessible::RadioButton;
+    case tk::Role::ComboBox:
+        return QAccessible::ComboBox;
+    case tk::Role::TextInput:
+        return QAccessible::EditableText;
+    case tk::Role::StaticText:
+        return QAccessible::StaticText;
+    case tk::Role::Image:
+        return QAccessible::Graphic;
+    case tk::Role::Link:
+        return QAccessible::Link;
+    case tk::Role::List:
+        return QAccessible::List;
+    case tk::Role::ListItem:
+        return QAccessible::ListItem;
+    case tk::Role::Grid:
+        return QAccessible::Table;
+    case tk::Role::GridCell:
+        return QAccessible::Cell;
+    case tk::Role::Tab:
+        return QAccessible::PageTab;
+    case tk::Role::TabList:
+        return QAccessible::PageTabList;
+    case tk::Role::TabPanel:
+        return QAccessible::PropertyPage;
+    case tk::Role::Dialog:
+        return QAccessible::Dialog;
+    case tk::Role::MenuItem:
+        return QAccessible::MenuItem;
+    case tk::Role::Group:
+        return QAccessible::Grouping;
+    case tk::Role::ProgressBar:
+        return QAccessible::ProgressBar;
+    case tk::Role::Slider:
+        return QAccessible::Slider;
+    case tk::Role::None:
+        return QAccessible::Client;
     }
     return QAccessible::Client;
 }
@@ -167,7 +189,9 @@ class NodeAccessible;
 class AccessBridge
 {
 public:
-    explicit AccessBridge(Surface* surface) : surface_(surface) {}
+    explicit AccessBridge(Surface* surface) : surface_(surface)
+    {
+    }
     ~AccessBridge();
 
     Surface* surface() const
@@ -188,16 +212,19 @@ public:
     void schedule_refresh()
     {
         if (ids_.empty() || refresh_pending_ || !QAccessible::isActive())
+        {
             return;
+        }
         refresh_pending_ = true;
         // `surface_` as context: dropped if the Surface (and with it this
         // bridge, see bridge_for) is destroyed first.
-        QTimer::singleShot(kRefreshDelayMs, surface_, [this]
-        {
-            refresh_pending_ = false;
-            dirty_ = true;
-            rebuild_if_dirty();
-        });
+        QTimer::singleShot(kRefreshDelayMs, surface_,
+                           [this]
+                           {
+                               refresh_pending_ = false;
+                               dirty_ = true;
+                               rebuild_if_dirty();
+                           });
     }
 
     void announce(const std::string& text, bool assertive)
@@ -242,15 +269,16 @@ public:
     {
         QPoint top_left =
             surface_->mapToGlobal(QPoint(static_cast<int>(r.x), static_cast<int>(r.y)));
-        return QRect(top_left,
-                     QSize(static_cast<int>(r.w), static_cast<int>(r.h)));
+        return QRect(top_left, QSize(static_cast<int>(r.w), static_cast<int>(r.h)));
     }
 
 private:
     void rebuild_if_dirty()
     {
         if (!dirty_)
+        {
             return;
+        }
         dirty_ = false;
 
         Widget* root = surface_->root();
@@ -295,8 +323,11 @@ private:
                     QAccessible::updateAccessibility(&ev);
                 }
                 QAccessible::Id id = it->second;
-                QTimer::singleShot(0, qApp, [id]()
-                                    { QAccessible::deleteAccessibleInterface(id); });
+                QTimer::singleShot(0, qApp,
+                                   [id]()
+                                   {
+                                       QAccessible::deleteAccessibleInterface(id);
+                                   });
                 it = ids_.erase(it);
             }
             else
@@ -337,7 +368,7 @@ private:
         for (auto it = snapshots_.begin(); it != snapshots_.end();)
         {
             auto node_it = index_.find(it->first);
-            auto id_it   = ids_.find(it->first);
+            auto id_it = ids_.find(it->first);
             if (node_it == index_.end() || id_it == ids_.end())
             {
                 it = snapshots_.erase(it);
@@ -359,14 +390,14 @@ private:
                     QAccessible::updateAccessibility(&ev);
                 }
                 QAccessible::State changed{};
-                changed.checked  = now.state.checked != was.state.checked;
+                changed.checked = now.state.checked != was.state.checked;
                 changed.expanded = now.state.expanded != was.state.expanded;
                 changed.collapsed = changed.expanded;
                 changed.selected = now.state.selected != was.state.selected;
-                changed.busy     = now.state.busy != was.state.busy;
+                changed.busy = now.state.busy != was.state.busy;
                 changed.disabled = now.disabled != was.disabled;
-                if (changed.checked || changed.expanded || changed.selected ||
-                    changed.busy || changed.disabled)
+                if (changed.checked || changed.expanded || changed.selected || changed.busy ||
+                    changed.disabled)
                 {
                     QAccessibleStateChangeEvent ev(iface, changed);
                     QAccessible::updateAccessibility(&ev);
@@ -382,10 +413,9 @@ private:
         }
     }
 
-    void index_tree(
-        AccessNode& node,
-        std::unordered_map<AccessKey, const AccessNode*, AccessKeyHash>& index,
-        std::unordered_map<AccessKey, AccessKey, AccessKeyHash>& parent)
+    void index_tree(AccessNode& node,
+                    std::unordered_map<AccessKey, const AccessNode*, AccessKeyHash>& index,
+                    std::unordered_map<AccessKey, AccessKey, AccessKeyHash>& parent)
     {
         AccessKey key = key_for(node);
         index[key] = &node;
@@ -411,25 +441,33 @@ private:
     void hook_selection_changed(Widget* widget)
     {
         if (!widget || selection_hooked_.count(widget))
+        {
             return;
+        }
         selection_hooked_.insert(widget);
 
         if (auto* list = dynamic_cast<tk::ListView*>(widget))
         {
             list->on_selection_changed = [this, list](int idx)
-            { notify_current_row(list, idx); };
+            {
+                notify_current_row(list, idx);
+            };
         }
         else if (auto* grid = dynamic_cast<tk::GridView*>(widget))
         {
             grid->on_selection_changed = [this, grid](int idx)
-            { notify_current_row(grid, idx); };
+            {
+                notify_current_row(grid, idx);
+            };
         }
     }
 
     void notify_current_row(Widget* owner, int idx)
     {
         if (idx < 0)
+        {
             return; // deselected — nothing to report as "current"
+        }
         if (auto* iface = interface_for(AccessKey{owner, idx}))
         {
             QAccessibleEvent ev(iface, QAccessible::Focus);
@@ -453,7 +491,9 @@ public:
     {
         auto it = index_.find(key);
         if (it != index_.end())
+        {
             snapshots_[key] = snapshot_of(*it->second);
+        }
     }
 };
 
@@ -472,11 +512,14 @@ class NodeAccessible : public QAccessibleInterface,
                        public QAccessibleTableInterface,
                        public QAccessibleTableCellInterface
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
-                     , public QAccessibleAttributesInterface
+    ,
+                       public QAccessibleAttributesInterface
 #endif
 {
 public:
-    NodeAccessible(AccessBridge* bridge, AccessKey key) : bridge_(bridge), key_(key) {}
+    NodeAccessible(AccessBridge* bridge, AccessKey key) : bridge_(bridge), key_(key)
+    {
+    }
 
     // ---- QAccessibleInterface ----
     bool isValid() const override
@@ -490,32 +533,42 @@ public:
     QWindow* window() const override
     {
         if (!bridge_)
+        {
             return nullptr;
+        }
         return bridge_->surface()->windowHandle();
     }
     QAccessibleInterface* childAt(int x, int y) const override
     {
         const AccessNode* n = node();
         if (!n)
+        {
             return nullptr;
+        }
         for (const auto& child : n->children)
         {
             if (bridge_->to_screen_rect(child.rect).contains(x, y))
+            {
                 return bridge_->interface_for(key_for(child));
+            }
         }
         return nullptr;
     }
     QAccessibleInterface* parent() const override
     {
         if (!bridge_)
+        {
             return nullptr;
+        }
         return bridge_->parent_interface_for(key_);
     }
     QAccessibleInterface* child(int index) const override
     {
         const AccessNode* n = node();
         if (!n || index < 0 || static_cast<std::size_t>(index) >= n->children.size())
+        {
             return nullptr;
+        }
         return bridge_->interface_for(key_for(n->children[static_cast<std::size_t>(index)]));
     }
     int childCount() const override
@@ -527,11 +580,15 @@ public:
     {
         const AccessNode* n = node();
         if (!n)
+        {
             return -1;
+        }
         for (std::size_t i = 0; i < n->children.size(); ++i)
         {
             if (bridge_->interface_for(key_for(n->children[i])) == iface)
+            {
                 return static_cast<int>(i);
+            }
         }
         return -1;
     }
@@ -539,12 +596,18 @@ public:
     {
         const AccessNode* n = node();
         if (n && t == QAccessible::Name)
+        {
             return QString::fromStdString(n->name);
+        }
         if (n && t == QAccessible::Description)
+        {
             return QString::fromStdString(n->description);
+        }
         return {};
     }
-    void setText(QAccessible::Text, const QString&) override {}
+    void setText(QAccessible::Text, const QString&) override
+    {
+    }
     QRect rect() const override
     {
         const AccessNode* n = node();
@@ -560,7 +623,9 @@ public:
         QAccessible::State s{};
         const AccessNode* n = node();
         if (!n)
+        {
             return s;
+        }
         // QAccessibleWidget (the Surface's own top-level interface) already
         // derives "invisible" from the real QWidget's isVisible() — but
         // isVisible() reflects the whole ancestor chain (e.g. a
@@ -569,7 +634,9 @@ public:
         // *inside* the Surface needs the same check explicitly; nothing
         // else here has a way to know the Surface itself went invisible.
         if (!bridge_->surface()->isVisible())
+        {
             s.invisible = true;
+        }
         s.focusable = true;
         switch (n->role)
         {
@@ -585,31 +652,43 @@ public:
         default:
             break;
         }
-        s.checked  = n->state.checked;
+        s.checked = n->state.checked;
         s.expanded = n->state.expanded;
         s.collapsed = (n->role == tk::Role::ComboBox) && !n->state.expanded;
         s.selected = n->state.selected;
-        s.busy     = n->state.busy;
-        s.modal    = n->modal;
+        s.busy = n->state.busy;
+        s.modal = n->modal;
         s.disabled = node_disabled(*n);
         if (n->row_index == -1 && n->widget && !n->activate)
+        {
             s.focused = n->widget->has_focus();
+        }
         return s;
     }
     void* interface_cast(QAccessible::InterfaceType t) override
     {
         const AccessNode* n = node();
         if (t == QAccessible::ActionInterface)
+        {
             return static_cast<QAccessibleActionInterface*>(this);
+        }
         if (t == QAccessible::ValueInterface && n && n->value.present)
+        {
             return static_cast<QAccessibleValueInterface*>(this);
+        }
         if (t == QAccessible::TableInterface && n && n->grid_col_count > 0)
+        {
             return static_cast<QAccessibleTableInterface*>(this);
+        }
         if (t == QAccessible::TableCellInterface && n && n->grid_row >= 0)
+        {
             return static_cast<QAccessibleTableCellInterface*>(this);
+        }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
         if (t == QAccessible::AttributesInterface && n && !n->language.empty())
+        {
             return static_cast<QAccessibleAttributesInterface*>(this);
+        }
 #endif
         return nullptr;
     }
@@ -624,7 +703,9 @@ public:
     {
         const AccessNode* n = node();
         if (key == QAccessible::Attribute::Locale && n && !n->language.empty())
+        {
             return QVariant::fromValue(QLocale(QString::fromStdString(n->language)));
+        }
         return {};
     }
 #endif
@@ -641,7 +722,9 @@ public:
         bool ok = false;
         const double d = v.toDouble(&ok);
         if (n && ok)
+        {
             tk::set_node_value(*n, d);
+        }
     }
     QVariant maximumValue() const override
     {
@@ -671,10 +754,16 @@ public:
     {
         const AccessNode* n = node();
         if (!n)
+        {
             return nullptr;
+        }
         for (const auto& child : n->children)
+        {
             if (child.grid_row == row && child.grid_col == column)
+            {
                 return bridge_->interface_for(key_for(child));
+            }
+        }
         return nullptr;
     }
     int selectedCellCount() const override
@@ -685,10 +774,18 @@ public:
     {
         QList<QAccessibleInterface*> out;
         if (const AccessNode* n = node())
+        {
             for (const auto& child : n->children)
+            {
                 if (child.grid_row >= 0 && child.state.selected)
+                {
                     if (auto* iface = bridge_->interface_for(key_for(child)))
+                    {
                         out.push_back(iface);
+                    }
+                }
+            }
+        }
         return out;
     }
     QString columnDescription(int) const override
@@ -749,7 +846,9 @@ public:
     {
         return false;
     }
-    void modelChange(QAccessibleTableModelChangeEvent*) override {}
+    void modelChange(QAccessibleTableModelChangeEvent*) override
+    {
+    }
 
     // ---- QAccessibleTableCellInterface (grid cell) ----
     bool isSelected() const override
@@ -793,15 +892,21 @@ public:
     {
         const AccessNode* n = node();
         if (n && has_action_role(n->role))
+        {
             return {QAccessibleActionInterface::pressAction()};
+        }
         return {};
     }
     void doAction(const QString& actionName) override
     {
         if (actionName != QAccessibleActionInterface::pressAction())
+        {
             return;
+        }
         if (const AccessNode* n = node())
+        {
             tk::invoke_default_action(*n);
+        }
     }
     QStringList keyBindingsForAction(const QString&) const override
     {
@@ -819,7 +924,9 @@ private:
     const AccessNode* node() const
     {
         if (!bridge_)
+        {
             return nullptr;
+        }
         return bridge_->find(key_);
     }
 
@@ -839,27 +946,36 @@ AccessBridge::~AccessBridge()
     for (const auto& entry : ids_)
     {
         ids.push_back(entry.second);
-        if (auto* node = dynamic_cast<NodeAccessible*>(
-                QAccessible::accessibleInterface(entry.second)))
+        if (auto* node =
+                dynamic_cast<NodeAccessible*>(QAccessible::accessibleInterface(entry.second)))
+        {
             node->detach();
+        }
     }
     ids_.clear();
-    QTimer::singleShot(0, qApp, [ids]()
-    {
-        for (QAccessible::Id id : ids)
-            QAccessible::deleteAccessibleInterface(id);
-    });
+    QTimer::singleShot(0, qApp,
+                       [ids]()
+                       {
+                           for (QAccessible::Id id : ids)
+                           {
+                               QAccessible::deleteAccessibleInterface(id);
+                           }
+                       });
 }
 
 QAccessibleInterface* AccessBridge::interface_for(const AccessKey& key)
 {
     rebuild_if_dirty();
     if (index_.find(key) == index_.end())
+    {
         return nullptr;
+    }
 
     auto it = ids_.find(key);
     if (it != ids_.end())
+    {
         return QAccessible::accessibleInterface(it->second);
+    }
 
     auto* iface = new NodeAccessible(this, key);
     // QAccessibleCache owns the registered interface from here on — see its
@@ -876,7 +992,9 @@ QAccessibleInterface* AccessBridge::parent_interface_for(const AccessKey& key)
     rebuild_if_dirty();
     auto it = parent_of_.find(key);
     if (it == parent_of_.end())
+    {
         return QAccessible::queryAccessibleInterface(surface_);
+    }
     return interface_for(it->second);
 }
 
@@ -900,7 +1018,9 @@ public:
     QAccessibleInterface* child(int index) const override
     {
         if (index != 0)
+        {
             return nullptr;
+        }
         const AccessNode* root = bridge_->root_node();
         return root ? bridge_->interface_for(key_for(*root)) : nullptr;
     }
@@ -908,7 +1028,9 @@ public:
     {
         const AccessNode* root = bridge_->root_node();
         if (root && bridge_->interface_for(key_for(*root)) == iface)
+        {
             return 0;
+        }
         return -1;
     }
 
@@ -930,16 +1052,29 @@ AccessBridge* bridge_for(Surface* surface)
     auto& registry = bridge_registry();
     auto it = registry.find(surface);
     if (it != registry.end())
+    {
         return it->second.get();
+    }
 
     auto owned = std::make_unique<AccessBridge>(surface);
     AccessBridge* bridge = owned.get();
     registry.emplace(surface, std::move(owned));
 
-    surface->add_layout_listener([bridge] { bridge->mark_dirty(); });
-    surface->host().add_paint_listener([bridge] { bridge->schedule_refresh(); });
-    QObject::connect(surface, &QObject::destroyed, [surface]
-                     { bridge_registry().erase(surface); });
+    surface->add_layout_listener(
+        [bridge]
+        {
+            bridge->mark_dirty();
+        });
+    surface->host().add_paint_listener(
+        [bridge]
+        {
+            bridge->schedule_refresh();
+        });
+    QObject::connect(surface, &QObject::destroyed,
+                     [surface]
+                     {
+                         bridge_registry().erase(surface);
+                     });
 
     return bridge;
 }
@@ -954,7 +1089,9 @@ QAccessibleInterface* factory(const QString&, QObject* object)
     // only needs a polymorphic type, which QWidget already is), so use it
     // directly instead of trying to match on classname.
     if (auto* surface = dynamic_cast<Surface*>(object))
+    {
         return new SurfaceAccessible(surface, bridge_for(surface));
+    }
     return nullptr;
 }
 
@@ -968,13 +1105,17 @@ void install_accessible_factory()
 void announce(Surface* surface, const std::string& text, bool assertive)
 {
     if (surface)
+    {
         bridge_for(surface)->announce(text, assertive);
+    }
 }
 
 void notify_focus_changed(Surface* surface, tk::Widget*, tk::Widget* now)
 {
     if (!surface || !now)
+    {
         return;
+    }
     // Reusing AccessKey/interface_for from the anonymous namespace above is
     // fine here since this function is itself defined in this translation
     // unit, after that namespace closes — the names are still visible via

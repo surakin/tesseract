@@ -14,121 +14,127 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
     // every (copyable) std::function lambda can capture it without cloning the
     // callbacks. The Phase-1 alive_-token guarding lives in post_to_ui_alive_.
     auto s = std::make_shared<MediaFetchSpec>(std::move(spec));
-    run_async_(
-        "media-fetch-disk-read",
-        [this, s]() mutable
-        {
-            // io pool: only the (fast, local) disk-cache read happens here.
-            auto disk = s->load_disk_();
-            post_to_ui_alive_(
-                [this, s, disk = std::move(disk)]() mutable
-                {
-                    if (!disk.empty())
-                    {
-                        s->erase_inflight_();
-                        s->deliver_(std::move(disk));
-                        return;
-                    }
-                    if (!client_)
-                    {
-                        s->erase_inflight_();
-                        return;
-                    }
-                    // The room may have been switched away during the disk-read
-                    // hop above. The pending_media_ entry (and its cancel) only
-                    // exists after this point, so cancel_media_group_ couldn't
-                    // have caught it yet — suppress the now-stale download here.
-                    if (s->should_deliver_ && !s->should_deliver_())
-                    {
-                        s->erase_inflight_();
-                        return;
-                    }
-                    // Disk miss → non-blocking network fetch. The completion
-                    // runs on the UI thread via on_media_ready → pending_media_.
-                    auto id = begin_media_req_(
-                        s->group_id,
-                        [this, s](std::vector<std::uint8_t>&& net)
-                        {
-                            if (net.empty())
-                            {
-                                // Immediate failure — erase right away so a
-                                // retry isn't blocked forever.
-                                s->erase_inflight_();
-                                s->on_empty_();
-                                return;
-                            }
-                            // Persist to disk off the UI thread, then deliver —
-                            // the buffer moves through (no large-image copy).
-                            // erase_inflight_() is deferred until right before
-                            // deliver_(), NOT here at network completion: an
-                            // early erase left a window — between "bytes
-                            // arrived" and "disk-cache write + deliver_
-                            // actually ran" — where a second, redundant
-                            // ensure_media_image_() call for the same key saw
-                            // neither the in-flight guard (already cleared)
-                            // nor a populated cache (store_disk_ hadn't run
-                            // yet), so it dispatched its own independent
-                            // fetch+decode for the same media. Two decodes
-                            // racing for the same key, sometimes disagreeing
-                            // on the source bytes, was the actual cause of an
-                            // animated sticker's playback getting reset by a
-                            // second decode splicing/overwriting the first's
-                            // progress.
-                            run_async_(
-                                [this, s, net = std::move(net)]() mutable
-                                {
-                                    s->store_disk_(net);
-                                    post_to_ui_alive_(
-                                        [s, net = std::move(net)]() mutable
-                                        {
-                                            s->erase_inflight_();
-                                            s->deliver_(std::move(net));
-                                        });
-                                });
-                        },
-                        // on_cancel (room switch): free the dedup key so a
-                        // re-entry re-requests this media.
-                        [s] { s->erase_inflight_(); },
-                        s->priority_key);
-                    s->start_fetch_(id);
-                });
-        });
+    run_async_("media-fetch-disk-read",
+               [this, s]() mutable
+               {
+                   // io pool: only the (fast, local) disk-cache read happens here.
+                   auto disk = s->load_disk_();
+                   post_to_ui_alive_(
+                       [this, s, disk = std::move(disk)]() mutable
+                       {
+                           if (!disk.empty())
+                           {
+                               s->erase_inflight_();
+                               s->deliver_(std::move(disk));
+                               return;
+                           }
+                           if (!client_)
+                           {
+                               s->erase_inflight_();
+                               return;
+                           }
+                           // The room may have been switched away during the disk-read
+                           // hop above. The pending_media_ entry (and its cancel) only
+                           // exists after this point, so cancel_media_group_ couldn't
+                           // have caught it yet — suppress the now-stale download here.
+                           if (s->should_deliver_ && !s->should_deliver_())
+                           {
+                               s->erase_inflight_();
+                               return;
+                           }
+                           // Disk miss → non-blocking network fetch. The completion
+                           // runs on the UI thread via on_media_ready → pending_media_.
+                           auto id = begin_media_req_(
+                               s->group_id,
+                               [this, s](std::vector<std::uint8_t>&& net)
+                               {
+                                   if (net.empty())
+                                   {
+                                       // Immediate failure — erase right away so a
+                                       // retry isn't blocked forever.
+                                       s->erase_inflight_();
+                                       s->on_empty_();
+                                       return;
+                                   }
+                                   // Persist to disk off the UI thread, then deliver —
+                                   // the buffer moves through (no large-image copy).
+                                   // erase_inflight_() is deferred until right before
+                                   // deliver_(), NOT here at network completion: an
+                                   // early erase left a window — between "bytes
+                                   // arrived" and "disk-cache write + deliver_
+                                   // actually ran" — where a second, redundant
+                                   // ensure_media_image_() call for the same key saw
+                                   // neither the in-flight guard (already cleared)
+                                   // nor a populated cache (store_disk_ hadn't run
+                                   // yet), so it dispatched its own independent
+                                   // fetch+decode for the same media. Two decodes
+                                   // racing for the same key, sometimes disagreeing
+                                   // on the source bytes, was the actual cause of an
+                                   // animated sticker's playback getting reset by a
+                                   // second decode splicing/overwriting the first's
+                                   // progress.
+                                   run_async_(
+                                       [this, s, net = std::move(net)]() mutable
+                                       {
+                                           s->store_disk_(net);
+                                           post_to_ui_alive_(
+                                               [s, net = std::move(net)]() mutable
+                                               {
+                                                   s->erase_inflight_();
+                                                   s->deliver_(std::move(net));
+                                               });
+                                       });
+                               },
+                               // on_cancel (room switch): free the dedup key so a
+                               // re-entry re-requests this media.
+                               [s]
+                               {
+                                   s->erase_inflight_();
+                               },
+                               s->priority_key);
+                           s->start_fetch_(id);
+                       });
+               });
 }
 
 void ShellBase::note_media_fetch_failed_(const std::string& key,
-                                          const std::shared_ptr<AccountSession>& sess)
+                                         const std::shared_ptr<AccountSession>& sess)
 {
-    auto& e    = media_fetch_failed_[key];
+    auto& e = media_fetch_failed_[key];
     e.attempts = std::min<std::uint32_t>(e.attempts + 1, 7);
     const auto delay = std::min<std::chrono::seconds>(
-        std::chrono::minutes(5) * (1u << (e.attempts - 1)),
-        std::chrono::minutes(30));
+        std::chrono::minutes(5) * (1u << (e.attempts - 1)), std::chrono::minutes(30));
     e.retry_after = std::chrono::steady_clock::now() + delay;
 
-    const auto deadline_secs =
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count()
-        + std::chrono::duration_cast<std::chrono::seconds>(delay).count();
+    const auto deadline_secs = std::chrono::duration_cast<std::chrono::seconds>(
+                                   std::chrono::system_clock::now().time_since_epoch())
+                                   .count() +
+                               std::chrono::duration_cast<std::chrono::seconds>(delay).count();
     // Dispatch SH_FFI off the UI thread (ffi_mu must not be acquired on the
     // UI thread while SH_FFI network calls may be holding it shared).
     const auto attempts = e.attempts;
-    run_async_([sess, key, attempts, deadline_secs]()
-    {
-        if (sess && sess->client)
-            sess->client->note_media_backoff_failed(key, attempts, deadline_secs);
-    });
+    run_async_(
+        [sess, key, attempts, deadline_secs]()
+        {
+            if (sess && sess->client)
+            {
+                sess->client->note_media_backoff_failed(key, attempts, deadline_secs);
+            }
+        });
 }
 
 void ShellBase::note_media_fetch_ok_(const std::string& key,
                                      const std::shared_ptr<AccountSession>& sess)
 {
     media_fetch_failed_.erase(key);
-    run_async_([sess, key]()
-    {
-        if (sess && sess->client)
-            sess->client->note_media_backoff_ok(key);
-    });
+    run_async_(
+        [sess, key]()
+        {
+            if (sess && sess->client)
+            {
+                sess->client->note_media_backoff_ok(key);
+            }
+        });
 }
 
 // Compressed-bytes cache (L1) in front of media_disk_cache_ (L2), keyed by
@@ -138,8 +144,7 @@ void ShellBase::note_media_fetch_ok_(const std::string& key,
 // goes through these instead of touching media_disk_cache_ directly.
 //   load: L1 hit → return it; else disk read, populating L1 on a disk hit.
 //   store: write both tiers.  evict: drop from both tiers.
-std::vector<std::uint8_t>
-ShellBase::load_media_bytes_(const tk::CacheKey& key) const
+std::vector<std::uint8_t> ShellBase::load_media_bytes_(const tk::CacheKey& key) const
 {
     if (auto cached = account_manager_.compressed_cache().get(key))
     {
@@ -168,8 +173,7 @@ void ShellBase::evict_media_bytes_(const tk::CacheKey& key) const
 
 // ── Pre-paint disk-cache media prefetch ─────────────────────────────────────
 
-std::pair<int, int> ShellBase::media_decode_clamp_(MediaKind kind,
-                                                   const tk::CacheKey& cache_key)
+std::pair<int, int> ShellBase::media_decode_clamp_(MediaKind kind, const tk::CacheKey& cache_key)
 {
     if (cache_key.usage == tk::CacheUsage::PickerSticker)
     {
@@ -191,11 +195,9 @@ std::pair<int, int> ShellBase::media_prefetch_decode_clamp_(MediaKind kind)
         // Matches the avatar branch of on_media_bytes_ready_ — a FIXED clamp,
         // unscaled by current_scale_ (unlike the disk key, which IS scaled —
         // see run_media_prefetch_impl_'s is_thumb-style branch below).
-        return {tesseract::visual::kAvatarCacheSize,
-                tesseract::visual::kAvatarCacheSize};
+        return {tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize};
     default:
-        return {tesseract::visual::kMaxInlineImageWidth,
-                tesseract::visual::kMaxInlineImageHeight};
+        return {tesseract::visual::kMaxInlineImageWidth, tesseract::visual::kMaxInlineImageHeight};
     }
 }
 
@@ -207,15 +209,16 @@ bool ShellBase::media_prefetch_supports_kind_(MediaKind kind)
 }
 
 bool ShellBase::store_decoded_media_(const tk::CacheKey& cache_key, MediaKind kind,
-                                      DecodedImage&& decoded)
+                                     DecodedImage&& decoded)
 {
-    const bool is_avatar = (kind == MediaKind::RoomAvatar ||
-                            kind == MediaKind::UserAvatar);
+    const bool is_avatar = (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
     const bool is_thumb = is_avatar || (kind == MediaKind::MediaThumbnail);
     if (is_avatar)
+    {
         avatar_mxcs_.insert(cache_key.id);
-    auto& still_cache = is_thumb ? account_manager_.thumbnail_cache()
-                                 : account_manager_.image_cache();
+    }
+    auto& still_cache =
+        is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
     if (still_cache.contains(cache_key) || account_manager_.anim_cache().has(cache_key) ||
         (is_avatar && account_manager_.anim_cache().has(avatar_anim_key_(cache_key.id))))
     {
@@ -223,9 +226,9 @@ bool ShellBase::store_decoded_media_(const tk::CacheKey& cache_key, MediaKind ki
     }
     if (is_avatar && decoded.frames.size() > 1 && animate_avatars_effective_())
     {
-        account_manager_.anim_cache().store(
-            avatar_anim_key_(cache_key.id), std::move(decoded.frames),
-            std::move(decoded.delays_ms), monotonic_ms_());
+        account_manager_.anim_cache().store(avatar_anim_key_(cache_key.id),
+                                            std::move(decoded.frames), std::move(decoded.delays_ms),
+                                            monotonic_ms_());
         start_anim_tick_();
         return true;
     }
@@ -272,9 +275,9 @@ bool ShellBase::store_decoded_media_(const tk::CacheKey& cache_key, MediaKind ki
     return false; // decode failed
 }
 
-void ShellBase::run_media_prefetch_impl_(
-    const std::vector<MediaPrefetchKey>& keys,
-    std::chrono::steady_clock::time_point deadline, int max_items)
+void ShellBase::run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& keys,
+                                         std::chrono::steady_clock::time_point deadline,
+                                         int max_items)
 {
     // (memory key, kind, disk key) — disk key is computed here, on the UI
     // thread, because MediaThumbnail's disk key depends on current_scale_
@@ -283,14 +286,14 @@ void ShellBase::run_media_prefetch_impl_(
     struct Filtered
     {
         tk::CacheKey mem_key;
-        MediaKind    kind;
-        std::string  disk_key;       // in-flight-set bookkeeping identity
+        MediaKind kind;
+        std::string disk_key;        // in-flight-set bookkeeping identity
         tk::CacheKey disk_cache_key; // load_media_bytes_ argument
         std::uint64_t group_id = 0;  // for ensure_media_image_'s direct hand-off
     };
     std::vector<Filtered> filtered;
-    filtered.reserve(std::min<std::size_t>(keys.size(),
-                                            static_cast<std::size_t>(std::max(max_items, 0))));
+    filtered.reserve(
+        std::min<std::size_t>(keys.size(), static_cast<std::size_t>(std::max(max_items, 0))));
     for (const auto& k : keys)
     {
         if (static_cast<int>(filtered.size()) >= max_items)
@@ -309,11 +312,10 @@ void ShellBase::run_media_prefetch_impl_(
         {
             continue;
         }
-        const bool is_avatar = (k.kind == MediaKind::RoomAvatar ||
-                                k.kind == MediaKind::UserAvatar);
+        const bool is_avatar = (k.kind == MediaKind::RoomAvatar || k.kind == MediaKind::UserAvatar);
         const bool is_thumb = is_avatar || (k.kind == MediaKind::MediaThumbnail);
-        auto& still_cache = is_thumb ? account_manager_.thumbnail_cache()
-                                     : account_manager_.image_cache();
+        auto& still_cache =
+            is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
         const tk::CacheKey mem_key = tk::CacheKey::media(k.key.id);
         if (still_cache.contains(mem_key) || account_manager_.anim_cache().has(mem_key) ||
             (is_avatar && account_manager_.anim_cache().has(avatar_anim_key_(k.key.id))))
@@ -359,8 +361,7 @@ void ShellBase::run_media_prefetch_impl_(
         // sticker's playback getting corrupted/truncated even after
         // media_fetches_in_flight_'s own race was closed.
         if (auto it = media_decode_pending_until_ms_.find(disk_key);
-            it != media_decode_pending_until_ms_.end() &&
-            monotonic_ms_() < it->second)
+            it != media_decode_pending_until_ms_.end() && monotonic_ms_() < it->second)
         {
             continue;
         }
@@ -376,10 +377,9 @@ void ShellBase::run_media_prefetch_impl_(
         // fetch triggered *after* this prefetch dispatch (rather than
         // before it, the case the check above handles) doesn't race this
         // task's own decode_image_() call either.
-        media_decode_pending_until_ms_[disk_key] =
-            monotonic_ms_() + kDecodePendingWindowMs;
-        filtered.push_back({mem_key, k.kind, std::move(disk_key),
-                            std::move(disk_cache_key), k.group_id});
+        media_decode_pending_until_ms_[disk_key] = monotonic_ms_() + kDecodePendingWindowMs;
+        filtered.push_back(
+            {mem_key, k.kind, std::move(disk_key), std::move(disk_cache_key), k.group_id});
     }
     if (filtered.empty())
     {
@@ -392,8 +392,7 @@ void ShellBase::run_media_prefetch_impl_(
     {
         media_prefetch_pool_.post(
             [this, batch, key = std::move(f.mem_key), kind = f.kind,
-             disk_key = std::move(f.disk_key),
-             disk_cache_key = std::move(f.disk_cache_key),
+             disk_key = std::move(f.disk_key), disk_cache_key = std::move(f.disk_cache_key),
              group_id = f.group_id]() mutable
             {
                 auto bytes = load_media_bytes_(disk_cache_key); // disk-only, no SDK/network
@@ -408,8 +407,8 @@ void ShellBase::run_media_prefetch_impl_(
                     std::lock_guard<std::mutex> lock(batch->mu);
                     if (decoded && !decoded->empty())
                     {
-                        batch->ready.emplace_back(std::move(key), kind,
-                                                   std::move(*decoded), group_id);
+                        batch->ready.emplace_back(std::move(key), kind, std::move(*decoded),
+                                                  group_id);
                         became_ready = true;
                     }
                 }
@@ -467,11 +466,9 @@ void ShellBase::run_media_prefetch_impl_(
                             // re-dispatch and re-set it, so a view with no
                             // fetch trigger outside paint (the sticker
                             // picker) would never load this key.
-                            if (kind != MediaKind::RoomAvatar &&
-                                kind != MediaKind::UserAvatar)
+                            if (kind != MediaKind::RoomAvatar && kind != MediaKind::UserAvatar)
                             {
-                                ensure_media_image_(key_id, 0, 0, group_id,
-                                                    kind);
+                                ensure_media_image_(key_id, 0, 0, group_id, kind);
                             }
                             return;
                         }
@@ -479,8 +476,8 @@ void ShellBase::run_media_prefetch_impl_(
                         {
                             return;
                         }
-                        std::vector<std::tuple<tk::CacheKey, MediaKind, DecodedImage,
-                                               std::uint64_t>>
+                        std::vector<
+                            std::tuple<tk::CacheKey, MediaKind, DecodedImage, std::uint64_t>>
                             drained;
                         {
                             std::lock_guard<std::mutex> lock(batch->mu);
@@ -495,8 +492,7 @@ void ShellBase::run_media_prefetch_impl_(
                             // false return means "genuine failure" or "this
                             // animated result was deliberately deferred".
                             const bool is_avatar2 =
-                                (kind2 == MediaKind::RoomAvatar ||
-                                 kind2 == MediaKind::UserAvatar);
+                                (kind2 == MediaKind::RoomAvatar || kind2 == MediaKind::UserAvatar);
                             const bool would_defer_animated =
                                 !is_avatar2 && !decoded2.frames.empty();
                             if (store_decoded_media_(k2, kind2, std::move(decoded2)))
@@ -518,7 +514,9 @@ void ShellBase::run_media_prefetch_impl_(
                                 // blocked by it.
                                 media_decode_pending_until_ms_.erase(k2.id);
                                 if (!would_defer_animated && room_view_)
+                                {
                                     room_view_->notify_media_failed(k2.id);
+                                }
                                 if (would_defer_animated)
                                 {
                                     // Directly hand off to the lazy path
@@ -535,8 +533,7 @@ void ShellBase::run_media_prefetch_impl_(
                                     // result (see this function's earlier
                                     // TEMP-guard comment and
                                     // store_decoded_media_'s doc comment).
-                                    ensure_media_image_(k2.id, 0, 0, group_id2,
-                                                        kind2);
+                                    ensure_media_image_(k2.id, 0, 0, group_id2, kind2);
                                 }
                             }
                         }
@@ -549,8 +546,12 @@ void ShellBase::run_media_prefetch_impl_(
     }
 
     std::unique_lock<std::mutex> lock(batch->mu);
-    const bool all_done = batch->cv.wait_until(lock, deadline, [&batch]
-    { return batch->remaining.load(std::memory_order_acquire) == 0; });
+    const bool all_done =
+        batch->cv.wait_until(lock, deadline,
+                             [&batch]
+                             {
+                                 return batch->remaining.load(std::memory_order_acquire) == 0;
+                             });
     if (!all_done)
     {
         // Any task still in flight past this point must drain-and-store
@@ -566,8 +567,7 @@ void ShellBase::run_media_prefetch_impl_(
     // "repaint" that benefits from the now-warm cache.
     for (auto& [key, kind, decoded, group_id] : ready)
     {
-        const bool is_avatar =
-            (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
+        const bool is_avatar = (kind == MediaKind::RoomAvatar || kind == MediaKind::UserAvatar);
         const bool would_defer_animated = !is_avatar && !decoded.frames.empty();
         if (!store_decoded_media_(key, kind, std::move(decoded)))
         {
@@ -642,7 +642,7 @@ void ShellBase::run_media_prefetch_()
         return;
     }
     run_media_prefetch_impl_(keys, std::chrono::steady_clock::now() + kMediaPrefetchBudget,
-                              media_prefetch_max_items_);
+                             media_prefetch_max_items_);
 }
 
 // Shared async media pipeline used by the ensure_* helpers. The network
@@ -658,16 +658,15 @@ void ShellBase::run_media_prefetch_()
 // failure/ok backoff bookkeeping on `cache_key`. The caller must have
 // already done the in-memory cache check and inserted `inflight_key`.
 // `group_id` is the cancellation group (0 = never cancelled).
-void ShellBase::fetch_media_pipeline_(
-    std::string cache_key, tk::CacheKey disk_key, std::string inflight_key,
-    std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
-    std::string source, std::uint32_t w, std::uint32_t h, bool animated,
-    MediaKind out_kind, std::optional<tk::CacheKey> out_key)
+void ShellBase::fetch_media_pipeline_(std::string cache_key, tk::CacheKey disk_key,
+                                      std::string inflight_key, std::uint64_t group_id,
+                                      tesseract::Client::MediaReqKind kind, std::string source,
+                                      std::uint32_t w, std::uint32_t h, bool animated,
+                                      MediaKind out_kind, std::optional<tk::CacheKey> out_key)
 {
     // The key the decoded result is stored under; the plain media key unless
     // the caller (picker stickers) wants its own entry.
-    const tk::CacheKey deliver_key =
-        out_key ? std::move(*out_key) : tk::CacheKey::media(cache_key);
+    const tk::CacheKey deliver_key = out_key ? std::move(*out_key) : tk::CacheKey::media(cache_key);
     MediaFetchSpec spec;
     spec.group_id = group_id;
     // cache_key is the row's media fetch_token (what the view's image_provider
@@ -675,13 +674,21 @@ void ShellBase::fetch_media_pipeline_(
     // re-prioritize this fetch. Room-scoped media only — group 0 (avatars,
     // tiles) is never re-prioritized, so leave its key empty.
     if (group_id != 0)
+    {
         spec.priority_key = cache_key;
+    }
     spec.load_disk_ = [this, disk_key]
-    { return load_media_bytes_(disk_key); };
+    {
+        return load_media_bytes_(disk_key);
+    };
     spec.store_disk_ = [this, disk_key](const std::vector<std::uint8_t>& b)
-    { store_media_bytes_(disk_key, b); };
+    {
+        store_media_bytes_(disk_key, b);
+    };
     spec.erase_inflight_ = [this, inflight_key]
-    { media_fetches_in_flight_.erase(inflight_key); };
+    {
+        media_fetches_in_flight_.erase(inflight_key);
+    };
     // Suppress a now-stale download if the room was switched away during the
     // disk-read hop. Avatars/previews use group 0 (never cancelled) → always
     // deliver. Only the room-scoped pipeline gates on active_media_group_.
@@ -691,12 +698,11 @@ void ShellBase::fetch_media_pipeline_(
                active_media_view_groups_.count(group_id) != 0 ||
                active_popout_media_groups_.count(group_id) != 0;
     };
-    spec.start_fetch_ =
-        [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
+    spec.start_fetch_ = [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
     {
         const auto prio = media_fetch_failed_.count(cache_key)
-            ? tesseract::Client::MediaPriority::Backoff
-            : tesseract::Client::MediaPriority::Normal;
+                              ? tesseract::Client::MediaPriority::Backoff
+                              : tesseract::Client::MediaPriority::Normal;
         client_->fetch_media_async(id, group_id, kind, source, w, h, animated, prio);
     };
     // The account the fetch is issued for: its back-off belongs to that account.
@@ -712,12 +718,13 @@ void ShellBase::fetch_media_pipeline_(
         // A failed fetch will never resolve this key: release any room-switch
         // gate waiting on it instead of letting it run to its timeout.
         if (room_view_)
+        {
             room_view_->notify_media_failed(cache_key);
+        }
         on_media_bytes_ready_(deliver_key, out_kind, {});
     };
-    spec.deliver_ =
-        [this, cache_key, out_kind, animated, deliver_key,
-         gen = avatar_mode_gen_, sess](std::vector<std::uint8_t>&& bytes)
+    spec.deliver_ = [this, cache_key, out_kind, animated, deliver_key, gen = avatar_mode_gen_,
+                     sess](std::vector<std::uint8_t>&& bytes)
     {
         note_media_fetch_ok_(cache_key, sess);
         // Fetched under a different avatar animation mode than the current one
@@ -732,8 +739,7 @@ void ShellBase::fetch_media_pipeline_(
             return;
         }
         // An animated avatar bypasses the shells' still-only avatar branch.
-        if (animated &&
-            (out_kind == MediaKind::RoomAvatar || out_kind == MediaKind::UserAvatar) &&
+        if (animated && (out_kind == MediaKind::RoomAvatar || out_kind == MediaKind::UserAvatar) &&
             tk::bytes_may_be_animated(bytes))
         {
             deliver_animated_avatar_(cache_key, out_kind, std::move(bytes));
@@ -750,12 +756,13 @@ void ShellBase::fetch_media_pipeline_(
 // empty; `on_ready` fires on the UI thread when the download lands so the
 // caller can repaint and the user can replay. Replaces the blocking
 // fetch_source_bytes that previously froze the UI on an uncached clip.
-std::vector<std::uint8_t>
-ShellBase::voice_bytes_or_fetch_(const std::string& token,
-                                std::function<void()> on_ready)
+std::vector<std::uint8_t> ShellBase::voice_bytes_or_fetch_(const std::string& token,
+                                                           std::function<void()> on_ready)
 {
     if (token.empty() || !client_)
+    {
         return {};
+    }
     // Warmed already → hand the bytes to the player and drop our copy.
     auto it = voice_bytes_cache_.find(token);
     if (it != voice_bytes_cache_.end())
@@ -781,14 +788,17 @@ ShellBase::voice_bytes_or_fetch_(const std::string& token,
                     // files indefinitely — drop the lot if too many pile up.
                     constexpr std::size_t kVoiceWarmCacheMax = 8;
                     if (voice_bytes_cache_.size() >= kVoiceWarmCacheMax)
+                    {
                         voice_bytes_cache_.clear();
+                    }
                     voice_bytes_cache_.emplace(token, std::move(bytes));
                 }
                 if (on_ready)
+                {
                     on_ready();
+                }
             });
-        client_->fetch_media_async(id, /*group_id=*/0,
-                                   tesseract::Client::MediaReqKind::SourceFull,
+        client_->fetch_media_async(id, /*group_id=*/0, tesseract::Client::MediaReqKind::SourceFull,
                                    token, 0, 0, false);
     }
     return {};
@@ -813,10 +823,14 @@ std::size_t ShellBase::media_prefetch_window_() const
     // covers anything this window misses once real heights are known.
     constexpr std::size_t kFallbackWindow = 20;
     if (!room_view_ || !room_view_->message_list())
+    {
         return kFallbackWindow;
+    }
     const float h = room_view_->message_list()->bounds().h;
     if (h <= 0.0f)
+    {
         return kFallbackWindow;
+    }
     return static_cast<std::size_t>(std::ceil(h / kConservativeRowHeightPx));
 }
 
@@ -824,17 +838,27 @@ std::uint64_t ShellBase::video_memory_bytes_() const
 {
     std::uint64_t total = 0;
     if (room_view_)
+    {
         total += room_view_->video_memory_bytes();
+    }
     if (main_app_ && main_app_->media_viewer())
+    {
         total += main_app_->media_viewer()->memory_bytes();
+    }
     for (const auto& w : owned_secondary_windows_)
     {
         if (!w)
+        {
             continue;
+        }
         if (w->room_view())
+        {
             total += w->room_view()->video_memory_bytes();
+        }
         if (w->media_viewer())
+        {
             total += w->media_viewer()->memory_bytes();
+        }
     }
     return total;
 }
@@ -844,8 +868,11 @@ void ShellBase::run_image_gc_()
     auto activity_scope = activity_.begin("image-gc", "UI housekeeping", "periodic");
     // Retired inline video players hold a whole clip each; free the idle ones
     // on every tick, whether or not the activity gate below lets a cycle run.
-    for_each_room_view_([](views::RoomView& rv)
-                        { rv.release_idle_video_players(kVideoRetiredTtl); });
+    for_each_room_view_(
+        [](views::RoomView& rv)
+        {
+            rv.release_idle_video_players(kVideoRetiredTtl);
+        });
     // Generational mark-and-sweep of the decoded (L0) image caches. peek() (which
     // every image provider calls) stamps the current generation onto the touched
     // entry. Here we: gate on recent user activity (idle ⇒ no cycle ⇒ nothing
@@ -896,8 +923,11 @@ void ShellBase::run_image_gc_()
     // touch()es its inline player at the new generation.
     for (ShellBase* w : account_manager_.all_windows())
     {
-        w->for_each_room_view_([](views::RoomView& rv)
-                               { rv.advance_video_generation(); });
+        w->for_each_room_view_(
+            [](views::RoomView& rv)
+            {
+                rv.advance_video_generation();
+            });
     }
 
     for (ShellBase* w : account_manager_.all_windows())
@@ -915,9 +945,8 @@ void ShellBase::run_image_gc_()
                                       w->for_each_room_view_(
                                           [](views::RoomView& rv)
                                           {
-                                              rv.sweep_video_players(
-                                                  kVideoKeepGenerations,
-                                                  kVideoRetiredTtl);
+                                              rv.sweep_video_players(kVideoKeepGenerations,
+                                                                     kVideoRetiredTtl);
                                           });
                                   }
                                   if (any_visible)
@@ -928,64 +957,74 @@ void ShellBase::run_image_gc_()
 }
 
 void ShellBase::compute_cache_sizes_(
-    std::function<void(uint64_t, uint64_t, uint64_t,
-                       uint64_t, uint64_t, uint64_t, uint64_t)> callback)
+    std::function<void(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)>
+        callback)
 {
     if (my_user_id_.empty() || !callback)
-        return;
-    const auto uid = my_user_id_;
-    run_async_([this, uid, cb = std::move(callback)]
     {
-        namespace fs = std::filesystem;
-        std::error_code ec;
-
-        uint64_t local = 0;
-        for (const auto& de :
-             fs::recursive_directory_iterator(tesseract::cache_dir(), ec))
+        return;
+    }
+    const auto uid = my_user_id_;
+    run_async_(
+        [this, uid, cb = std::move(callback)]
         {
-            if (de.is_regular_file(ec))
-                local += de.file_size(ec);
-        }
+            namespace fs = std::filesystem;
+            std::error_code ec;
 
-        uint64_t sdk = 0;
-        const auto sdk_dir = tesseract::SessionStore::sdk_store_dir(uid);
-        for (const auto& de :
-             fs::recursive_directory_iterator(sdk_dir, ec))
-        {
-            if (de.is_regular_file(ec))
-                sdk += de.file_size(ec);
-        }
+            uint64_t local = 0;
+            for (const auto& de : fs::recursive_directory_iterator(tesseract::cache_dir(), ec))
+            {
+                if (de.is_regular_file(ec))
+                {
+                    local += de.file_size(ec);
+                }
+            }
 
-        // Read in-memory cache totals and hit/miss stats on the UI thread.
-        post_to_ui_alive_([this, cb, local, sdk]
-        {
-            uint64_t video_bytes = 0;
-            for (ShellBase* w : account_manager_.all_windows())
-                video_bytes += w->video_memory_bytes_();
-            uint64_t voice_bytes = 0;
-            for (const auto& kv : voice_bytes_cache_)
-                voice_bytes += kv.second.size();
-            // PixmapCache::total_bytes_all_instances() covers the avatar and
-            // thumbnail caches plus the small per-host/per-view pill caches.
-            const uint64_t memory =
-                static_cast<uint64_t>(tk::PixmapCache::total_bytes_all_instances()) +
-                account_manager_.anim_cache().current_bytes() +
-                account_manager_.compressed_cache().current_bytes() +
-                sum_image_map_bytes_(viewer_fullres_) +
-                sum_image_map_bytes_(gif_previews_) + voice_bytes + video_bytes;
-            const uint64_t mem_hits =
-                account_manager_.image_cache().hits() + account_manager_.thumbnail_cache().hits() +
-                account_manager_.anim_cache().hits() +
-                account_manager_.compressed_cache().hits();
-            const uint64_t mem_misses =
-                account_manager_.image_cache().misses() + account_manager_.thumbnail_cache().misses() +
-                account_manager_.anim_cache().misses() +
-                account_manager_.compressed_cache().misses();
-            const uint64_t disk_hits   = account_manager_.media_disk_cache().hits();
-            const uint64_t disk_misses = account_manager_.media_disk_cache().misses();
-            cb(local, sdk, memory, mem_hits, mem_misses, disk_hits, disk_misses);
+            uint64_t sdk = 0;
+            const auto sdk_dir = tesseract::SessionStore::sdk_store_dir(uid);
+            for (const auto& de : fs::recursive_directory_iterator(sdk_dir, ec))
+            {
+                if (de.is_regular_file(ec))
+                {
+                    sdk += de.file_size(ec);
+                }
+            }
+
+            // Read in-memory cache totals and hit/miss stats on the UI thread.
+            post_to_ui_alive_(
+                [this, cb, local, sdk]
+                {
+                    uint64_t video_bytes = 0;
+                    for (ShellBase* w : account_manager_.all_windows())
+                    {
+                        video_bytes += w->video_memory_bytes_();
+                    }
+                    uint64_t voice_bytes = 0;
+                    for (const auto& kv : voice_bytes_cache_)
+                    {
+                        voice_bytes += kv.second.size();
+                    }
+                    // PixmapCache::total_bytes_all_instances() covers the avatar and
+                    // thumbnail caches plus the small per-host/per-view pill caches.
+                    const uint64_t memory =
+                        static_cast<uint64_t>(tk::PixmapCache::total_bytes_all_instances()) +
+                        account_manager_.anim_cache().current_bytes() +
+                        account_manager_.compressed_cache().current_bytes() +
+                        sum_image_map_bytes_(viewer_fullres_) +
+                        sum_image_map_bytes_(gif_previews_) + voice_bytes + video_bytes;
+                    const uint64_t mem_hits = account_manager_.image_cache().hits() +
+                                              account_manager_.thumbnail_cache().hits() +
+                                              account_manager_.anim_cache().hits() +
+                                              account_manager_.compressed_cache().hits();
+                    const uint64_t mem_misses = account_manager_.image_cache().misses() +
+                                                account_manager_.thumbnail_cache().misses() +
+                                                account_manager_.anim_cache().misses() +
+                                                account_manager_.compressed_cache().misses();
+                    const uint64_t disk_hits = account_manager_.media_disk_cache().hits();
+                    const uint64_t disk_misses = account_manager_.media_disk_cache().misses();
+                    cb(local, sdk, memory, mem_hits, mem_misses, disk_hits, disk_misses);
+                });
         });
-    });
 }
 
 // Async: delete all on-disk caches best-effort (media files, waveform DB),
@@ -995,11 +1034,13 @@ void ShellBase::compute_cache_sizes_(
 // Refuses (status message, no-op) while a call or device-verification is in
 // flight. No-op when not signed in.
 void ShellBase::clear_all_caches_(
-    std::function<void(uint64_t, uint64_t, uint64_t,
-                       uint64_t, uint64_t, uint64_t, uint64_t)> recompute_callback)
+    std::function<void(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)>
+        recompute_callback)
 {
     if (my_user_id_.empty())
+    {
         return;
+    }
 
     // The wipe drops the matrix Client an active call / device-verification
     // depends on — refuse rather than yank it out from under them.
@@ -1010,51 +1051,53 @@ void ShellBase::clear_all_caches_(
     }
     if (encryption_flow_.has_flow())
     {
-        show_status_message_(
-            tk::tr("Finish confirming your device before clearing the cache."));
+        show_status_message_(tk::tr("Finish confirming your device before clearing the cache."));
         return;
     }
 
-    run_async_([this, recalc = std::move(recompute_callback)]() mutable
-    {
-        // Waveform SQLite — best-effort (locked on Windows if WAL is open).
-        std::error_code ec;
-        std::filesystem::remove(tesseract::cache_dir() / "waveforms.db", ec);
-
-        // The MediaDiskCache is owned by the shared AccountManager and is
-        // touched (load/store/prune/evict) from every window's worker pool.
-        // It has no internal lock, and a recursive delete of its directory
-        // would race those ops. So the UI thread only renames the directory
-        // aside, which is one syscall, and a worker deletes the aside copy.
-        post_to_ui_alive_([this, recalc = std::move(recalc)]() mutable
+    run_async_(
+        [this, recalc = std::move(recompute_callback)]() mutable
         {
-            const auto retired = account_manager_.media_disk_cache().retire_for_clear();
-            run_async_([this, retired]
-            {
-                account_manager_.media_disk_cache().finish_clear(retired);
-            });
-            account_manager_.compressed_cache().clear();
-            account_manager_.thumbnail_cache().clear();
-            account_manager_.image_cache().clear();
-            account_manager_.anim_cache().clear();
-            media_decode_failed_.clear();
-            media_fetch_failed_.clear();
-            url_previews_.clear();
-            url_preview_data_.clear();
-            url_preview_in_flight_.clear();
-            blurhash_attempted_.clear();
-            tile_fetch_failed_.clear();
-            voice_bytes_cache_.clear();
-            tesseract::init_waveform_cache(
-                (tesseract::cache_dir() / "waveforms.db").string());
+            // Waveform SQLite — best-effort (locked on Windows if WAL is open).
+            std::error_code ec;
+            std::filesystem::remove(tesseract::cache_dir() / "waveforms.db", ec);
 
-            // The media-fetch backoff table lives in app_cache.db, which
-            // clear_caches() now deletes wholesale — no separate clear needed.
+            // The MediaDiskCache is owned by the shared AccountManager and is
+            // touched (load/store/prune/evict) from every window's worker pool.
+            // It has no internal lock, and a recursive delete of its directory
+            // would race those ops. So the UI thread only renames the directory
+            // aside, which is one syscall, and a worker deletes the aside copy.
+            post_to_ui_alive_(
+                [this, recalc = std::move(recalc)]() mutable
+                {
+                    const auto retired = account_manager_.media_disk_cache().retire_for_clear();
+                    run_async_(
+                        [this, retired]
+                        {
+                            account_manager_.media_disk_cache().finish_clear(retired);
+                        });
+                    account_manager_.compressed_cache().clear();
+                    account_manager_.thumbnail_cache().clear();
+                    account_manager_.image_cache().clear();
+                    account_manager_.anim_cache().clear();
+                    media_decode_failed_.clear();
+                    media_fetch_failed_.clear();
+                    url_previews_.clear();
+                    url_preview_data_.clear();
+                    url_preview_in_flight_.clear();
+                    blurhash_attempted_.clear();
+                    tile_fetch_failed_.clear();
+                    voice_bytes_cache_.clear();
+                    tesseract::init_waveform_cache(
+                        (tesseract::cache_dir() / "waveforms.db").string());
 
-            // SDK wipe + in-place re-restore + UI rebuild; the recompute runs
-            // from its final (UI-thread) phase so it observes the cleared state.
-            restart_sdk_begin_(std::move(recalc));
+                    // The media-fetch backoff table lives in app_cache.db, which
+                    // clear_caches() now deletes wholesale — no separate clear needed.
+
+                    // SDK wipe + in-place re-restore + UI rebuild; the recompute runs
+                    // from its final (UI-thread) phase so it observes the cleared state.
+                    restart_sdk_begin_(std::move(recalc));
+                });
         });
-    });
 }
 } // namespace tesseract

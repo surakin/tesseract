@@ -16,8 +16,8 @@ using namespace tk;
 // one new piece: active_indicator_ mapping to AccessState::selected.
 
 TEST_CASE("AccountPicker's active-account row reports selected state; "
-         "others don't",
-         "[account_picker][accessibility]")
+          "others don't",
+          "[account_picker][accessibility]")
 {
     AccountPicker picker;
     AccountEntry alice;
@@ -43,8 +43,8 @@ TEST_CASE("AccountPicker's active-account row reports selected state; "
 // only while a real preview is showing.
 
 TEST_CASE("JoinRoomView stays Role::None (flattening through to its "
-         "buttons) before any lookup has completed",
-         "[join_room_view][accessibility]")
+          "buttons) before any lookup has completed",
+          "[join_room_view][accessibility]")
 {
     auto view_owner = tk::create_root_widget<JoinRoomView>(nullptr);
     JoinRoomView& view = *view_owner;
@@ -52,8 +52,8 @@ TEST_CASE("JoinRoomView stays Role::None (flattening through to its "
 }
 
 TEST_CASE("JoinRoomView summarizes the preview card as one Group node: "
-         "name, join rule, member count, and topic",
-         "[join_room_view][accessibility]")
+          "name, join rule, member count, and topic",
+          "[join_room_view][accessibility]")
 {
     auto view_owner = tk::create_root_widget<JoinRoomView>(nullptr);
     JoinRoomView& view = *view_owner;
@@ -67,13 +67,12 @@ TEST_CASE("JoinRoomView summarizes the preview card as one Group node: "
     view.set_preview(summary);
 
     CHECK(view.access_role() == Role::Group);
-    CHECK(view.access_name() ==
-         "General Discussion, Public, 42 members: Talk about anything");
+    CHECK(view.access_name() == "General Discussion, Public, 42 members: Talk about anything");
 }
 
 TEST_CASE("JoinRoomView's preview summary falls back to the room id when "
-         "no display name was resolved, and omits the topic when empty",
-         "[join_room_view][accessibility]")
+          "no display name was resolved, and omits the topic when empty",
+          "[join_room_view][accessibility]")
 {
     auto view_owner = tk::create_root_widget<JoinRoomView>(nullptr);
     JoinRoomView& view = *view_owner;

@@ -38,11 +38,17 @@ public:
     // Clear all state; widget becomes invisible.
     void clear();
 
-    bool has_knock() const { return knock_.has_value(); }
+    bool has_knock() const
+    {
+        return knock_.has_value();
+    }
 
     // A group named "{room} — Request pending"; topic and reason follow as
     // its description. The Cancel button is a real child.
-    tk::Role access_role() const override { return tk::Role::Group; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
     std::string access_name() const override;
     std::string access_description() const override;
 
@@ -51,8 +57,8 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
 private:
     std::optional<tesseract::KnockedRoomInfo> knock_;
@@ -68,13 +74,13 @@ private:
     mutable tk::CachedTextLayout reason_layout_; // shown when non-empty
 
     // Layout constants — mirror InviteCard's group variant.
-    static constexpr float kMinW     = 320.0f;
-    static constexpr float kMinH     = 280.0f;
-    static constexpr float kAvatarD  = 64.0f;
-    static constexpr float kPadX     = 24.0f;
-    static constexpr float kPadY     = 20.0f;
-    static constexpr float kGap      = 8.0f;
-    static constexpr float kBtnH     = 36.0f;
+    static constexpr float kMinW = 320.0f;
+    static constexpr float kMinH = 280.0f;
+    static constexpr float kAvatarD = 64.0f;
+    static constexpr float kPadX = 24.0f;
+    static constexpr float kPadY = 20.0f;
+    static constexpr float kGap = 8.0f;
+    static constexpr float kBtnH = 36.0f;
     static constexpr float kContentW = 280.0f;
 
     void reset_layouts();

@@ -32,9 +32,13 @@ public:
     {
         auto& s = expanded_[event_id];
         if (!s.erase(block))
+        {
             s.insert(block);
+        }
         if (s.empty())
+        {
             expanded_.erase(event_id);
+        }
     }
 
     // 0 when nothing in this event is expanded.
@@ -42,14 +46,21 @@ public:
     {
         auto it = expanded_.find(event_id);
         if (it == expanded_.end())
+        {
             return 0;
+        }
         std::size_t h = 0x9e3779b97f4a7c15ULL;
         for (int b : it->second)
+        {
             h = h * 1099511628211ULL ^ std::hash<int>{}(b + 1);
+        }
         return h;
     }
 
-    void clear() { expanded_.clear(); }
+    void clear()
+    {
+        expanded_.clear();
+    }
 
 private:
     std::unordered_map<std::string, std::set<int>> expanded_;

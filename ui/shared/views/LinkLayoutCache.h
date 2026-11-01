@@ -45,15 +45,15 @@ namespace tesseract::views
 // origin is stamped at paint time for subsequent hit-testing.
 struct SectionLayout
 {
-    BodyBlock::Kind kind  = BodyBlock::Kind::Paragraph;
-    int             level = 0;   // heading: 1-6; blockquote/list: nesting depth
-    int             index = 0;   // ordered list: 1-based item number
-    std::shared_ptr<tk::TextLayout> layout;  // null for a Table section
-    std::vector<tk::TextSpan>       spans;   // empty for a Table section
-    float x_offset = 0.0f;  // indentation from body column x
-    float y_offset = 0.0f;  // cumulative y from body top (build time)
-    float height   = 0.0f;
-    tk::Point origin{};     // world-space draw origin (paint time)
+    BodyBlock::Kind kind = BodyBlock::Kind::Paragraph;
+    int level = 0;                          // heading: 1-6; blockquote/list: nesting depth
+    int index = 0;                          // ordered list: 1-based item number
+    std::shared_ptr<tk::TextLayout> layout; // null for a Table section
+    std::vector<tk::TextSpan> spans;        // empty for a Table section
+    float x_offset = 0.0f;                  // indentation from body column x
+    float y_offset = 0.0f;                  // cumulative y from body top (build time)
+    float height = 0.0f;
+    tk::Point origin{}; // world-space draw origin (paint time)
     // Byte offset of this section's text within LinkLayout::plain (past any
     // "• " / "1. " / "> " prefix), so selection offsets are message-global.
     int plain_base = 0;
@@ -63,17 +63,17 @@ struct SectionLayout
     // layout is always shaped in full; while `collapsed` only the first
     // `clip_h` of it is painted. `height` already includes the panel padding
     // and the Expand/Collapse button row; `toggle_btn` is relative to `origin`.
-    int      code_block = -1;
-    bool     collapsed  = false;
-    float    clip_h     = 0.0f;
+    int code_block = -1;
+    bool collapsed = false;
+    float clip_h = 0.0f;
     tk::Rect toggle_btn{};
 
     // Table sections only (kind == BodyBlock::Kind::Table). col_x/col_w and
     // row_y/row_h are the outer cell rectangles relative to `origin`; the
     // 1px borders sit in the gaps between and around them.
     std::vector<TableCellBox> cells;
-    std::vector<float>        col_x, col_w, row_y, row_h;
-    int                       header_rows = 0;
+    std::vector<float> col_x, col_w, row_y, row_h;
+    int header_rows = 0;
 };
 
 // A cached, shaped body layout for one message, keyed by event_id.
@@ -105,8 +105,8 @@ struct LinkLayout
     bool key_dark = false;
     bool key_revealed = false;
     std::size_t key_hash = 0;
-    bool keyed = false;       // produced by get_or_build (reusable)
-    std::uint64_t lru = 0;    // last-touch tick for LRU eviction
+    bool keyed = false;    // produced by get_or_build (reusable)
+    std::uint64_t lru = 0; // last-touch tick for LRU eviction
 };
 
 class LinkLayoutCache
@@ -142,9 +142,9 @@ public:
         // path (headings, lists, blockquotes, tables) leaves `layout` null on
         // purpose, and rebuilding it every measure/paint would re-shape every
         // section (for a table, every cell).
-        if ((slot.layout || !slot.sections.empty()) && slot.keyed &&
-            slot.key_w == key.w && slot.key_dark == key.dark &&
-            slot.key_revealed == key.revealed && slot.key_hash == key.hash)
+        if ((slot.layout || !slot.sections.empty()) && slot.keyed && slot.key_w == key.w &&
+            slot.key_dark == key.dark && slot.key_revealed == key.revealed &&
+            slot.key_hash == key.hash)
         {
             slot.lru = ++lru_clock_;
             return slot;
@@ -184,21 +184,34 @@ public:
     {
         auto it = cache_.find(event_id);
         if (it == cache_.end())
+        {
             return nullptr;
+        }
         const LinkLayout& le = it->second;
         if (!le.layout && le.sections.empty())
+        {
             return nullptr;
+        }
         return &le;
     }
 
     // Drop a single entry (e.g. local-echo -> remote event_id swap).
-    void invalidate(const std::string& event_id) { cache_.erase(event_id); }
+    void invalidate(const std::string& event_id)
+    {
+        cache_.erase(event_id);
+    }
 
     // Drop everything (room/timeline switch).
-    void clear() { cache_.clear(); }
+    void clear()
+    {
+        cache_.clear();
+    }
 
     // Live entry count — exposed so tests can assert memory-boundedness.
-    std::size_t size() const { return cache_.size(); }
+    std::size_t size() const
+    {
+        return cache_.size();
+    }
 
 private:
     // Drop least-recently-used entries until back within kMaxEntries, never
@@ -212,7 +225,9 @@ private:
             for (auto it = cache_.begin(); it != cache_.end(); ++it)
             {
                 if (it->first == keep)
+                {
                     continue;
+                }
                 if (it->second.lru < lo)
                 {
                     lo = it->second.lru;
@@ -220,7 +235,9 @@ private:
                 }
             }
             if (victim == cache_.end())
+            {
                 break;
+            }
             cache_.erase(victim);
         }
     }

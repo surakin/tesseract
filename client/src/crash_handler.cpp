@@ -108,15 +108,20 @@ void prune_old_crash_files()
     for (const auto& entry : fs::directory_iterator(crash_dir(), ec))
     {
         if (entry.is_regular_file())
+        {
             files.push_back(entry);
+        }
     }
     if (files.size() <= kMaxCrashFiles)
-        return;
-
-    std::sort(files.begin(), files.end(), [](const fs::directory_entry& a, const fs::directory_entry& b)
     {
-        return a.last_write_time() < b.last_write_time();
-    });
+        return;
+    }
+
+    std::sort(files.begin(), files.end(),
+              [](const fs::directory_entry& a, const fs::directory_entry& b)
+              {
+                  return a.last_write_time() < b.last_write_time();
+              });
     std::size_t to_remove = files.size() - kMaxCrashFiles;
     for (std::size_t i = 0; i < to_remove; ++i)
     {
@@ -129,7 +134,9 @@ void write_metadata_header(const fs::path& path)
 {
     std::ofstream f(path, std::ios::app);
     if (!f.is_open())
+    {
         return;
+    }
     f << "Tesseract crash report\n"
       << "version: " << kVersion << "\n"
       << "platform: " << platform_name() << "\n"
@@ -166,8 +173,7 @@ void redirect_stderr_to(const fs::path& path)
 #else
     // Stderr from here on holds room ids, URLs and errors. Create the file
     // owner-only, rather than with the process umask, before redirecting.
-    if (int cfd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
-        cfd >= 0)
+    if (int cfd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600); cfd >= 0)
     {
         (void)::fchmod(cfd, 0600);
         ::close(cfd);
@@ -195,7 +201,9 @@ void restore_stderr()
     g_cerr_crash_file.close();
 
     if (g_saved_stderr_fd < 0)
+    {
         return;
+    }
 #if defined(_WIN32)
     _dup2(g_saved_stderr_fd, _fileno(stderr));
     _close(g_saved_stderr_fd);
@@ -210,39 +218,49 @@ void restore_stderr()
 
 void install_crash_handler(bool enabled)
 {
-    std::call_once(g_install_once, [enabled]
-    {
-        g_enabled.store(enabled, std::memory_order_relaxed);
+    std::call_once(g_install_once,
+                   [enabled]
+                   {
+                       g_enabled.store(enabled, std::memory_order_relaxed);
 
-        std::error_code ec;
-        fs::create_directories(crash_dir(), ec);
-        g_crash_file_path = compute_crash_file_path();
-        write_metadata_header(g_crash_file_path);
-        prune_old_crash_files();
+                       std::error_code ec;
+                       fs::create_directories(crash_dir(), ec);
+                       g_crash_file_path = compute_crash_file_path();
+                       write_metadata_header(g_crash_file_path);
+                       prune_old_crash_files();
 
-        if (enabled)
-            redirect_stderr_to(g_crash_file_path);
+                       if (enabled)
+                       {
+                           redirect_stderr_to(g_crash_file_path);
+                       }
 
-        // Process-lifetime: constructing this installs the platform fault
-        // handlers (sigaction on POSIX, SetUnhandledExceptionFilter via
-        // DbgHelp on Windows).
-        static backward::SignalHandling sh;
-        (void)sh;
+                       // Process-lifetime: constructing this installs the platform fault
+                       // handlers (sigaction on POSIX, SetUnhandledExceptionFilter via
+                       // DbgHelp on Windows).
+                       static backward::SignalHandling sh;
+                       (void)sh;
 
-        tesseract_ffi::install_rust_panic_hook(g_crash_file_path.string().c_str(), enabled);
-    });
+                       tesseract_ffi::install_rust_panic_hook(g_crash_file_path.string().c_str(),
+                                                              enabled);
+                   });
 }
 
 void set_crash_reporting_enabled(bool enabled)
 {
     bool was_enabled = g_enabled.exchange(enabled, std::memory_order_relaxed);
     if (enabled == was_enabled)
+    {
         return;
+    }
 
     if (enabled)
+    {
         redirect_stderr_to(g_crash_file_path);
+    }
     else
+    {
         restore_stderr();
+    }
 
     tesseract_ffi::set_rust_crash_reporting_enabled(enabled);
 }
@@ -254,8 +272,12 @@ void set_crash_reporting_enabled(bool enabled)
 namespace tesseract
 {
 
-void install_crash_handler(bool) {}
-void set_crash_reporting_enabled(bool) {}
+void install_crash_handler(bool)
+{
+}
+void set_crash_reporting_enabled(bool)
+{
+}
 
 } // namespace tesseract
 

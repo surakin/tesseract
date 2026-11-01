@@ -57,8 +57,7 @@ TEST_CASE("picker: Home plus one tab per entry", "[spacepicker]")
     CHECK(v.tab_rect_for_test(1).y > v.tab_rect_for_test(0).y);
 }
 
-TEST_CASE("picker: clicking a tab selects its space, Home fires on_home",
-          "[spacepicker]")
+TEST_CASE("picker: clicking a tab selects its space, Home fires on_home", "[spacepicker]")
 {
     PickerStage st;
     auto owner = tk::create_root_widget<SpacePickerView>(nullptr);
@@ -68,8 +67,14 @@ TEST_CASE("picker: clicking a tab selects its space, Home fires on_home",
 
     std::string selected;
     int home = 0;
-    v.on_select = [&](const std::string& id) { selected = id; };
-    v.on_home = [&] { ++home; };
+    v.on_select = [&](const std::string& id)
+    {
+        selected = id;
+    };
+    v.on_home = [&]
+    {
+        ++home;
+    };
 
     const tk::Point b = centre_of(v, 2);
     REQUIRE(v.on_pointer_down(b));
@@ -91,7 +96,10 @@ TEST_CASE("picker: releasing off the pressed tab does not select", "[spacepicker
     st.layout(v);
 
     std::string selected;
-    v.on_select = [&](const std::string& id) { selected = id; };
+    v.on_select = [&](const std::string& id)
+    {
+        selected = id;
+    };
     v.on_pointer_down(centre_of(v, 1));
     v.on_pointer_up(centre_of(v, 2), true);
     CHECK(selected.empty());
@@ -114,7 +122,10 @@ TEST_CASE("picker: right-click on a space tab offers unpin, Home has no menu",
     CHECK(items[0].label == "Unpin from sidebar");
 
     std::string unpinned;
-    v.on_unpin = [&](const std::string& id) { unpinned = id; };
+    v.on_unpin = [&](const std::string& id)
+    {
+        unpinned = id;
+    };
     items[0].on_selected();
     CHECK(unpinned == "!a");
 }
@@ -136,8 +147,7 @@ namespace
 
 struct DragStage : vt::Stage
 {
-    std::unique_ptr<SpacePickerView> picker =
-        tk::create_root_widget<SpacePickerView>(&host);
+    std::unique_ptr<SpacePickerView> picker = tk::create_root_widget<SpacePickerView>(&host);
     std::string moved;
     std::string before = "unset";
     int selected = 0;
@@ -152,7 +162,10 @@ struct DragStage : vt::Stage
             before = b;
             ++reorders;
         };
-        picker->on_select = [this](const std::string&) { ++selected; };
+        picker->on_select = [this](const std::string&)
+        {
+            ++selected;
+        };
         mount(*picker, {0, 0, SpacePickerView::kWidth, 400});
     }
     tk::Point at(int tab) const
@@ -181,7 +194,7 @@ TEST_CASE("picker: dragging a tab down uses the host drag and reorders on drop",
     s.host.dispatch_pointer_up(end);
 
     CHECK(s.moved == "!a");
-    CHECK(s.before == ""); // now last
+    CHECK(s.before == "");  // now last
     CHECK(s.selected == 0); // a drag is not a click
     CHECK_FALSE(s.host.is_dragging());
     CHECK(s.picker->drop_slot_for_test() == -1);
@@ -257,7 +270,9 @@ TEST_CASE("picker: the drag ghost is exactly one tab avatar in logical pixels",
 
     const auto& visual = s.host.active_drag_->visual;
     if (!visual.image) // backend without offscreen rendering
+    {
         SKIP("no offscreen surface on this backend");
+    }
     const float scale = s.surface->canvas().scale_factor();
     CHECK(visual.image->width() == static_cast<int>(std::ceil(36.0f * scale)));
     CHECK(visual.image->height() == static_cast<int>(std::ceil(36.0f * scale)));
@@ -273,21 +288,22 @@ TEST_CASE("picker: an open tab menu registers as the host popup so it can be dis
 
     // A real paint pass carries the host; PopupMenu::paint() registers itself
     // as the active popup there (click-outside / Escape dismissal hangs off it).
-    tk::PaintCtx ctx{s.surface->canvas(), s.surface->factory(), tk::Theme::light(),
-                     nullptr, &s.host};
+    tk::PaintCtx ctx{s.surface->canvas(), s.surface->factory(), tk::Theme::light(), nullptr,
+                     &s.host};
     s.picker->paint(ctx);
     CHECK(s.host.pending_popup_.lock() != nullptr);
 }
 
-TEST_CASE("picker: wheel scrolls tall tab lists and clamps at both ends",
-          "[spacepicker]")
+TEST_CASE("picker: wheel scrolls tall tab lists and clamps at both ends", "[spacepicker]")
 {
     auto surface = TestSurface::create(SpacePickerView::kWidth, 200);
     auto owner = tk::create_root_widget<SpacePickerView>(nullptr);
     SpacePickerView& v = *owner;
     std::vector<SpacePickerEntry> es;
     for (int i = 0; i < 30; ++i)
+    {
         es.push_back(entry("!s" + std::to_string(i), "Space " + std::to_string(i)));
+    }
     v.set_entries(es);
     tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
     v.measure(lc, {SpacePickerView::kWidth, 200});
@@ -316,14 +332,19 @@ TEST_CASE("picker: clicks hit the right tab after scrolling", "[spacepicker]")
     SpacePickerView& v = *owner;
     std::vector<SpacePickerEntry> es;
     for (int i = 0; i < 30; ++i)
+    {
         es.push_back(entry("!s" + std::to_string(i), "Space " + std::to_string(i)));
+    }
     v.set_entries(es);
     tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
     v.measure(lc, {SpacePickerView::kWidth, 200});
     v.arrange(lc, {0, 0, SpacePickerView::kWidth, 200});
 
     std::string selected;
-    v.on_select = [&](const std::string& id) { selected = id; };
+    v.on_select = [&](const std::string& id)
+    {
+        selected = id;
+    };
     v.on_wheel({10, 10}, 0, 480.0f, false);
 
     // Tab 12 is now on screen; a tab scrolled above the view is not hittable.

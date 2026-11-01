@@ -29,7 +29,6 @@ TileGrid best_tile_grid(int n, float w, float h, float aspect = kCallTileAspect)
 
 // Cell rects for `n` tiles inside `area` (row-major), using best_tile_grid.
 // A partial last row keeps the full cell width and is centred horizontally.
-std::vector<tk::Rect> layout_tiles(int n, tk::Rect area,
-                                   float aspect = kCallTileAspect);
+std::vector<tk::Rect> layout_tiles(int n, tk::Rect area, float aspect = kCallTileAspect);
 
 } // namespace tesseract::views

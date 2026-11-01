@@ -10,11 +10,11 @@ tesseract::RoomSummary make_summary(const std::string& id = "!room:s",
                                     const std::string& name = "Test Room")
 {
     tesseract::RoomSummary s;
-    s.room_id            = id;
-    s.name               = name;
-    s.topic              = "A test topic";
+    s.room_id = id;
+    s.name = name;
+    s.topic = "A test topic";
     s.num_joined_members = 42;
-    s.join_rule          = "public";
+    s.join_rule = "public";
     return s;
 }
 } // namespace
@@ -38,7 +38,10 @@ TEST_CASE("RoomPreviewView: on_join fires with room_id", "[roompreview]")
     v.set_summary(make_summary("!abc:s", "Alpha"));
 
     std::string fired_id;
-    v.on_join = [&](const std::string& id) { fired_id = id; };
+    v.on_join = [&](const std::string& id)
+    {
+        fired_id = id;
+    };
     v.trigger_join_for_test();
 
     CHECK(fired_id == "!abc:s");
@@ -52,8 +55,7 @@ TEST_CASE("RoomPreviewView: clear hides widget", "[roompreview]")
     CHECK(!v.visible());
 }
 
-TEST_CASE("RoomPreviewView: set_state Joining disables join button",
-          "[roompreview]")
+TEST_CASE("RoomPreviewView: set_state Joining disables join button", "[roompreview]")
 {
     RoomPreviewView v;
     v.set_summary(make_summary());

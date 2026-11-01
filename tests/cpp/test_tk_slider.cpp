@@ -20,11 +20,20 @@ struct SliderStage : vt::Stage
 
     SliderStage()
     {
-        slider->on_changed = [this](double v) { changes.push_back(v); };
-        slider->on_committed = [this](double v) { commits.push_back(v); };
+        slider->on_changed = [this](double v)
+        {
+            changes.push_back(v);
+        };
+        slider->on_committed = [this](double v)
+        {
+            commits.push_back(v);
+        };
         mount(*slider, {0, 0, 200, 24});
     }
-    Point mid() const { return {100.0f, 12.0f}; }
+    Point mid() const
+    {
+        return {100.0f, 12.0f};
+    }
 };
 
 } // namespace
@@ -85,8 +94,7 @@ TEST_CASE("Slider keys step, page, and jump to ends when focused", "[tk][slider]
     CHECK(s.commits.size() == 5);
 }
 
-TEST_CASE("Slider without keyboard focus is not a tab stop but still takes clicks",
-          "[tk][slider]")
+TEST_CASE("Slider without keyboard focus is not a tab stop but still takes clicks", "[tk][slider]")
 {
     SliderStage s;
     s.slider->set_keyboard_focusable(false);
@@ -113,8 +121,7 @@ TEST_CASE("Slider survives degenerate ranges", "[tk][slider]")
     CHECK(std::isfinite(s.slider->value()));
 }
 
-TEST_CASE("Slider exposes slider a11y role, value, and settable value",
-          "[tk][slider][a11y]")
+TEST_CASE("Slider exposes slider a11y role, value, and settable value", "[tk][slider][a11y]")
 {
     SliderStage s;
     s.slider->set_accessible_name("Width");

@@ -43,8 +43,12 @@ public:
     /// work spawned by `start()` (e.g. DBus distributor discovery) is tracked
     /// by `ShellBase::workers_in_flight_` and drained on shutdown. Default
     /// implementations are no-ops — only the Linux connectors need them.
-    virtual void set_run_async(std::function<void(std::function<void()>)>) {}
-    virtual void set_post_to_ui(std::function<void(std::function<void()>)>) {}
+    virtual void set_run_async(std::function<void(std::function<void()>)>)
+    {
+    }
+    virtual void set_post_to_ui(std::function<void(std::function<void()>)>)
+    {
+    }
 };
 
 } // namespace tesseract

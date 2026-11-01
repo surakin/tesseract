@@ -12,13 +12,12 @@ namespace qt6
 {
 
 CallWindow::CallWindow(MainWindow* parent_shell)
-    : QWidget(nullptr, Qt::Window),
-      tesseract::CallWindowBase(parent_shell)
+    : QWidget(nullptr, Qt::Window), tesseract::CallWindowBase(parent_shell)
 {
     setAttribute(Qt::WA_DeleteOnClose, false); // lifetime managed externally
     setWindowTitle(QString::fromStdString(tk::tr("Call")));
     setMinimumSize(static_cast<int>(tesseract::visual::kMinCallWindowWidth),
-                    static_cast<int>(tesseract::visual::kMinCallWindowHeight));
+                   static_cast<int>(tesseract::visual::kMinCallWindowHeight));
     resize(640, 480);
 
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
@@ -60,7 +59,9 @@ void CallWindow::apply_theme(const tk::Theme& t)
 void CallWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void CallWindow::request_relayout()
@@ -75,7 +76,9 @@ void CallWindow::request_relayout()
 void CallWindow::request_repaint()
 {
     if (surface_)
+    {
         surface_->update();
+    }
 }
 
 void CallWindow::schedule_delete()
@@ -90,7 +93,9 @@ void CallWindow::schedule_delete()
 void CallWindow::closeEvent(QCloseEvent* ev)
 {
     if (on_window_closed)
+    {
         on_window_closed();
+    }
     ev->accept();
 }
 

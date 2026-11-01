@@ -18,8 +18,7 @@ struct TkRoomPermissionsSectionStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -45,17 +44,17 @@ TEST_CASE("RoomPermissionsSection: set_permissions seeds all 10 combos to matchi
 {
     RoomPermissionsSection s;
     RoomPermissions p;
-    p.default_role       = 0;
-    p.send_messages      = 0;
-    p.remove_messages    = 50;
-    p.invite_users       = 0;
-    p.kick_users         = 50;
-    p.ban_users          = 50;
-    p.change_settings    = 50;
+    p.default_role = 0;
+    p.send_messages = 0;
+    p.remove_messages = 50;
+    p.invite_users = 0;
+    p.kick_users = 50;
+    p.ban_users = 50;
+    p.change_settings = 50;
     p.change_permissions = 100;
-    p.notify_everyone    = 50;
-    p.start_calls        = 50;
-    p.join_calls         = 0;
+    p.notify_everyone = 50;
+    p.start_calls = 50;
+    p.join_calls = 0;
     s.set_permissions(p);
 
     CHECK(s.default_role_combo()->selected_value() == "0");
@@ -190,8 +189,7 @@ TEST_CASE("RoomPermissionsSection: each combo's on_changed fires "
     CHECK(last.ban_users == RoomPermissions{}.ban_users);
 }
 
-TEST_CASE("RoomPermissionsSection: lockout warning hidden by default",
-          "[room_permissions_section]")
+TEST_CASE("RoomPermissionsSection: lockout warning hidden by default", "[room_permissions_section]")
 {
     RoomPermissionsSection s;
     CHECK_FALSE(s.lockout_warning()->visible());
@@ -215,7 +213,10 @@ TEST_CASE("RoomPermissionsSection: set_would_lock_out_self fires "
 {
     RoomPermissionsSection s;
     int count = 0;
-    s.on_layout_changed = [&]() { ++count; };
+    s.on_layout_changed = [&]()
+    {
+        ++count;
+    };
 
     s.set_would_lock_out_self(true);
     CHECK(count == 1);

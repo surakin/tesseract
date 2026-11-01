@@ -24,12 +24,12 @@ namespace
 
 using Entry = ServerBrowserOverlay::Entry;
 
-constexpr float kCardRadius  = 8.0f;
-constexpr float kRowPad      = 12.0f;
-constexpr float kRowSpacing  = 6.0f;
+constexpr float kCardRadius = 8.0f;
+constexpr float kRowPad = 12.0f;
+constexpr float kRowSpacing = 6.0f;
 constexpr float kListSpacing = 10.0f;
-constexpr float kRowBtnH     = 32.0f;
-constexpr float kIconSize    = 20.0f;
+constexpr float kRowBtnH = 32.0f;
+constexpr float kIconSize = 20.0f;
 constexpr float kTwoColumnMinW = 640.0f; // list width from which cards go two-up
 
 std::string join(const std::vector<std::string>& parts, const char* sep)
@@ -38,9 +38,13 @@ std::string join(const std::vector<std::string>& parts, const char* sep)
     for (const auto& p : parts)
     {
         if (p.empty())
+        {
             continue;
+        }
         if (!out.empty())
+        {
             out += sep;
+        }
         out += p;
     }
     return out;
@@ -56,8 +60,14 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(ServerCard)
 
 public:
-    void set_name(std::string n) { name_ = std::move(n); }
-    std::string access_name() const override { return name_; }
+    void set_name(std::string n)
+    {
+        name_ = std::move(n);
+    }
+    std::string access_name() const override
+    {
+        return name_;
+    }
 
     void paint_before_children(tk::PaintCtx& ctx) override
     {
@@ -96,24 +106,34 @@ private:
     {
         std::vector<tk::Widget*> kids;
         for (auto& ch : children())
+        {
             if (ch->visible())
+            {
                 kids.push_back(ch.get());
+            }
+        }
         const std::size_t cols =
             static_cast<std::size_t>(ServerBrowserOverlay::columns_for_width(width));
-        const float col_w =
-            std::max(0.0f, (width - kListSpacing * static_cast<float>(cols - 1)) /
-                               static_cast<float>(cols));
+        const float col_w = std::max(0.0f, (width - kListSpacing * static_cast<float>(cols - 1)) /
+                                               static_cast<float>(cols));
         float y = 0.0f;
         for (std::size_t i = 0; i < kids.size(); i += cols)
         {
             const std::size_t end = std::min(kids.size(), i + cols);
             float row_h = 0.0f;
             for (std::size_t j = i; j < end; ++j)
+            {
                 row_h = std::max(row_h, kids[j]->measure(lc, {col_w, 1'000'000.0f}).h);
+            }
             if (place)
+            {
                 for (std::size_t j = i; j < end; ++j)
-                    kids[j]->arrange(lc, {place->x + static_cast<float>(j - i) * (col_w + kListSpacing),
-                                          place->y + y, col_w, row_h});
+                {
+                    kids[j]->arrange(lc,
+                                     {place->x + static_cast<float>(j - i) * (col_w + kListSpacing),
+                                      place->y + y, col_w, row_h});
+                }
+            }
             y += row_h + kListSpacing;
         }
         return {width, kids.empty() ? 0.0f : y - kListSpacing};
@@ -143,20 +163,29 @@ ServerBrowserOverlay::ServerBrowserOverlay()
         auto field = tk::create_widget<tk::TextField>(this, kFieldH);
         field->set_placeholder(tk::tr("Search servers\xe2\x80\xa6"));
         field->set_accessible_name(tk::tr("Search servers"));
-        field->set_on_changed([this](const std::string& q) { set_query(q); });
+        field->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_query(q);
+            });
         field->set_visible(false);
         search_field_ = add_child(std::move(field));
     }
 
     auto check = tk::create_widget<tk::CheckButton>(this, tk::tr("Open registration only"), false);
-    check->on_change = [this](bool v) { set_open_registration_only(v); };
+    check->on_change = [this](bool v)
+    {
+        set_open_registration_only(v);
+    };
     open_only_check_ = add_child(std::move(check));
 
     scroll_ = add_child(tk::create_widget<tk::ScrollView>(this));
     scroll_->on_layout_changed = [this]
     {
         if (auto* h = host())
+        {
             h->mark_needs_relayout();
+        }
     };
 
     source_link_ = add_child(tk::create_widget<tk::Button>(
@@ -164,13 +193,20 @@ ServerBrowserOverlay::ServerBrowserOverlay()
         [this]
         {
             if (on_open_url && !source_url_.empty())
+            {
                 on_open_url(source_url_);
+            }
         },
         tk::Button::Variant::Link));
     source_link_->set_visible(false);
 
     close_btn_ = add_child(tk::create_widget<tk::Button>(
-        this, tk::tr("Close"), [this] { close(); }, tk::Button::Variant::Primary));
+        this, tk::tr("Close"),
+        [this]
+        {
+            close();
+        },
+        tk::Button::Variant::Primary));
 
     // Closed-by-default overlay (see ConfirmDialog).
     tk::Widget::set_visible(false);
@@ -205,7 +241,9 @@ void ServerBrowserOverlay::set_source(const std::string& name, const std::string
     source_link_->set_label(tk::trf(tk::tr("Server list from {0}"), {name}));
     source_link_->set_visible(!url.empty() && !name.empty());
     if (auto* h = host())
+    {
         h->mark_needs_relayout();
+    }
 }
 
 std::vector<Entry> ServerBrowserOverlay::arrange_for_display(std::vector<Entry> servers,
@@ -214,14 +252,18 @@ std::vector<Entry> ServerBrowserOverlay::arrange_for_display(std::vector<Entry> 
     // Group order: public+online, public+offline, other+online, other+offline.
     std::array<std::vector<Entry>, 4> groups;
     for (auto& e : servers)
+    {
         groups[(e.is_public ? 0 : 2) + (e.online ? 0 : 1)].push_back(std::move(e));
+    }
     std::vector<Entry> out;
     out.reserve(servers.size());
     for (auto& g : groups)
     {
         std::shuffle(g.begin(), g.end(), rng);
         for (auto& e : g)
+        {
             out.push_back(std::move(e));
+        }
     }
     return out;
 }
@@ -235,7 +277,9 @@ bool ServerBrowserOverlay::matches(const Entry& e, const std::string& query)
     while (words >> w)
     {
         if (!tesseract::text::name_matches(hay, w))
+        {
             return false;
+        }
     }
     return true;
 }
@@ -246,9 +290,13 @@ std::vector<const Entry*> ServerBrowserOverlay::visible_servers() const
     for (const auto& e : servers_)
     {
         if (open_registration_only_ && !e.is_public)
+        {
             continue;
+        }
         if (matches(e, query_))
+        {
             out.push_back(&e);
+        }
     }
     return out;
 }
@@ -256,7 +304,9 @@ std::vector<const Entry*> ServerBrowserOverlay::visible_servers() const
 void ServerBrowserOverlay::set_query(const std::string& q)
 {
     if (q == query_)
+    {
         return;
+    }
     query_ = q;
     rebuild_();
 }
@@ -264,17 +314,23 @@ void ServerBrowserOverlay::set_query(const std::string& q)
 void ServerBrowserOverlay::set_open_registration_only(bool v)
 {
     if (v == open_registration_only_)
+    {
         return;
+    }
     open_registration_only_ = v;
     if (open_only_check_ && open_only_check_->checked() != v)
+    {
         open_only_check_->set_checked(v);
+    }
     rebuild_();
 }
 
 void ServerBrowserOverlay::rebuild_()
 {
     if (!scroll_)
+    {
         return;
+    }
     auto column = tk::create_widget<tk::VBox>(scroll_);
     column->set_spacing(kListSpacing)
         .set_cross(tk::Cross::Stretch)
@@ -299,7 +355,9 @@ void ServerBrowserOverlay::rebuild_()
             [this]
             {
                 if (on_retry)
+                {
                     on_retry();
+                }
             },
             tk::Button::Variant::Primary));
     }
@@ -307,7 +365,9 @@ void ServerBrowserOverlay::rebuild_()
     {
         const auto shown = visible_servers();
         if (shown.empty())
+        {
             note(tk::tr("No servers match your search."));
+        }
         auto grid = tk::create_widget<CardGrid>(column.get());
         icon_views_.clear();
         for (const Entry* e : shown)
@@ -320,11 +380,17 @@ void ServerBrowserOverlay::rebuild_()
             card->set_name(e->name);
             card->set_hoverable(true, tk::HoverStyle::Fill);
             card->set_hover_radius(kCardRadius);
-            card->set_on_click([this, domain] { pick_(domain); });
+            card->set_on_click(
+                [this, domain]
+                {
+                    pick_(domain);
+                });
 
             std::string title = e->name;
             if (e->longstanding)
+            {
                 title = tk::trf(tk::tr("{0} \xc2\xb7 Established"), {title});
+            }
             auto title_row = tk::create_widget<tk::HBox>(card.get());
             title_row->set_spacing(8.0f).set_cross(tk::Cross::Center);
             auto icon = tk::create_widget<tk::ImageView>(title_row.get(), nullptr,
@@ -332,11 +398,16 @@ void ServerBrowserOverlay::rebuild_()
             icon->set_size({kIconSize, kIconSize});
             const auto have = icon_images_.find(domain);
             if (have != icon_images_.end() && have->second)
+            {
                 icon->set_image(have->second.get());
+            }
             else
+            {
                 icon->set_visible(false);
+            }
             icon_views_[domain] = title_row->add_child(std::move(icon));
-            auto name = make_label(title_row.get(), std::move(title), tk::FontRole::SenderName, true);
+            auto name =
+                make_label(title_row.get(), std::move(title), tk::FontRole::SenderName, true);
             name->set_layout_hints({.fill_main = true});
             title_row->add_child(std::move(name));
             card->add_child(std::move(title_row));
@@ -344,9 +415,13 @@ void ServerBrowserOverlay::rebuild_()
             const std::string meta =
                 join({e->jurisdiction, join(e->languages, ", "), e->software}, " \xc2\xb7 ");
             if (!meta.empty())
+            {
                 card->add_child(make_label(card.get(), meta, tk::FontRole::Small, true));
+            }
             if (!e->description.empty())
+            {
                 card->add_child(make_label(card.get(), e->description, tk::FontRole::Body, true));
+            }
 
             auto reg = make_label(card.get(),
                                   e->is_public ? tk::tr("Open registration")
@@ -354,30 +429,40 @@ void ServerBrowserOverlay::rebuild_()
                                   tk::FontRole::Small, true);
             card->add_child(std::move(reg));
             if (!e->online)
+            {
                 card->add_child(make_label(card.get(), tk::tr("Currently unreachable"),
                                            tk::FontRole::Small, true));
+            }
 
             auto row = tk::create_widget<tk::HBox>(card.get());
             row->set_spacing(8.0f).set_cross(tk::Cross::Center);
             auto link = [&](std::string label, const std::string& url)
             {
                 if (url.empty())
+                {
                     return;
+                }
                 auto b = tk::create_widget<tk::Button>(
                     row.get(), std::move(label),
                     [this, url]
                     {
                         if (on_open_url)
+                        {
                             on_open_url(url);
+                        }
                     },
                     tk::Button::Variant::Subtle);
                 b->set_min_size({0, kRowBtnH});
                 row->add_child(std::move(b));
             };
             if (e->is_public && !e->reg_link.empty())
+            {
                 link(tk::tr("Sign up"), e->reg_link);
+            }
             else
+            {
                 link(tk::tr("Website"), e->homepage);
+            }
             link(tk::tr("Rules"), e->rules);
             link(tk::tr("Privacy"), e->privacy);
             card->add_child(std::move(row));
@@ -389,17 +474,23 @@ void ServerBrowserOverlay::rebuild_()
     scroll_->set_child(std::move(column));
     scroll_->scroll_to_top();
     if (auto* h = host())
+    {
         h->mark_needs_relayout();
+    }
 }
 
 void ServerBrowserOverlay::set_icon(const std::string& client_domain,
                                     std::vector<std::uint8_t> bytes)
 {
     if (bytes.empty())
+    {
         return;
+    }
     pending_icons_[client_domain] = std::move(bytes);
     if (auto* h = host())
+    {
         h->mark_needs_relayout();
+    }
 }
 
 bool ServerBrowserOverlay::has_icon(const std::string& client_domain) const
@@ -411,7 +502,9 @@ void ServerBrowserOverlay::show_icon_(const std::string& client_domain, const tk
 {
     const auto it = icon_views_.find(client_domain);
     if (it == icon_views_.end() || !image)
+    {
         return;
+    }
     it->second->set_image(image);
     it->second->set_visible(true);
 }
@@ -420,7 +513,9 @@ void ServerBrowserOverlay::pick_(const std::string& client_domain)
 {
     close();
     if (on_pick)
+    {
         on_pick(client_domain);
+    }
 }
 
 // ── open / close ──────────────────────────────────────────────────────────
@@ -429,13 +524,17 @@ void ServerBrowserOverlay::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (!v && search_field_)
+    {
         search_field_->set_visible(false);
+    }
 }
 
 void ServerBrowserOverlay::open()
 {
     if (open_)
+    {
         return;
+    }
     open_ = true;
     press_backdrop_ = false;
     set_visible(true);
@@ -450,19 +549,25 @@ void ServerBrowserOverlay::open()
     // arrange() has run (see ForwardRoomPicker).
     pending_focus_ = true;
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void ServerBrowserOverlay::close()
 {
     if (!open_)
+    {
         return;
+    }
     open_ = false;
     press_backdrop_ = false;
     pending_focus_ = false;
     set_visible(false);
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -507,7 +612,9 @@ void ServerBrowserOverlay::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     search_rect_ = {x, y, inner_w, kFieldH};
     if (search_field_)
+    {
         search_field_->arrange(lc, search_rect_);
+    }
     y += kFieldH + kGap * 0.5f;
 
     open_only_check_->arrange(lc, {x, y, inner_w, kCheckH});
@@ -534,16 +641,22 @@ void ServerBrowserOverlay::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 void ServerBrowserOverlay::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!open_)
+    {
         return;
+    }
     // Focus the search field once laid out, and after MainAppWidget's own
     // paint pass cleared focus for the newly opened modal.
     if (pending_focus_)
     {
         pending_focus_ = false;
         if (search_field_)
+        {
             search_field_->set_focused(true);
+        }
         else if (auto* h = host())
+        {
             h->request_focus(close_btn_);
+        }
     }
     auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
@@ -570,7 +683,9 @@ void ServerBrowserOverlay::on_theme_changed(const tk::Theme& t)
     tk::Widget::on_theme_changed(t);
     title_layout_.reset(); // font scale may have changed
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 // ── input ─────────────────────────────────────────────────────────────────
@@ -578,10 +693,14 @@ void ServerBrowserOverlay::on_theme_changed(const tk::Theme& t)
 bool ServerBrowserOverlay::on_pointer_down(tk::Point local)
 {
     if (!open_)
+    {
         return false;
+    }
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (rect_contains(card_rect_, w))
+    {
         return true; // the card itself is inert; its children got first pick
+    }
     press_backdrop_ = true;
     return true;
 }
@@ -589,11 +708,15 @@ bool ServerBrowserOverlay::on_pointer_down(tk::Point local)
 void ServerBrowserOverlay::on_pointer_up(tk::Point local, bool inside_self)
 {
     if (!press_backdrop_)
+    {
         return;
+    }
     press_backdrop_ = false;
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (inside_self && !rect_contains(card_rect_, w))
+    {
         close();
+    }
 }
 
 bool ServerBrowserOverlay::on_wheel(tk::Point, float, float, bool)
@@ -606,14 +729,18 @@ bool ServerBrowserOverlay::on_wheel(tk::Point, float, float, bool)
 bool ServerBrowserOverlay::on_key_down(const tk::KeyEvent& event)
 {
     if (!open_)
+    {
         return false;
+    }
     if (event.key == tk::Key::Escape)
     {
         close();
         return true;
     }
     if (event.ctrl || event.alt || event.meta)
+    {
         return false;
+    }
     if (event.key == tk::Key::Up || event.key == tk::Key::Down)
     {
         constexpr float kLine = 60.0f;

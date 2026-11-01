@@ -20,7 +20,10 @@ struct RadioStage : vt::Stage
     RadioStage()
     {
         group->set_options({{"One", "1"}, {"Two", "2"}, {"Three", "3"}});
-        group->on_changed = [this](std::string v) { changes.push_back(v); };
+        group->on_changed = [this](std::string v)
+        {
+            changes.push_back(v);
+        };
         mount(*group, {0, 0, 300, 300});
     }
     std::vector<RadioButton*> buttons()
@@ -33,8 +36,7 @@ struct RadioStage : vt::Stage
 
 } // namespace
 
-TEST_CASE("RadioGroup set_selected_value is silent and checks exactly one",
-          "[tk][radio]")
+TEST_CASE("RadioGroup set_selected_value is silent and checks exactly one", "[tk][radio]")
 {
     RadioStage s;
     s.group->set_selected_value("2");
@@ -67,8 +69,7 @@ TEST_CASE("RadioGroup click selects and fires only on change", "[tk][radio]")
     CHECK(s.changes.size() == 1);
 }
 
-TEST_CASE("RadioGroup is a single Tab stop; arrows move and wrap",
-          "[tk][radio]")
+TEST_CASE("RadioGroup is a single Tab stop; arrows move and wrap", "[tk][radio]")
 {
     RadioStage s;
     s.group->set_selected_value("1");
@@ -89,8 +90,7 @@ TEST_CASE("RadioGroup is a single Tab stop; arrows move and wrap",
     CHECK(s.changes == std::vector<std::string>{"3", "1", "2"});
 }
 
-TEST_CASE("RadioButton exposes radio a11y role and checked state",
-          "[tk][radio][a11y]")
+TEST_CASE("RadioButton exposes radio a11y role and checked state", "[tk][radio][a11y]")
 {
     RadioStage s;
     s.group->set_selected_value("2");

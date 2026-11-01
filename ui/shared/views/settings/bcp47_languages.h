@@ -225,8 +225,12 @@ inline constexpr Bcp47Language kBcp47Languages[] = {
 inline std::string bcp47_language_name(std::string_view code)
 {
     for (const auto& lang : kBcp47Languages)
+    {
         if (lang.code == code)
+        {
             return tk::tr(lang.name.data());
+        }
+    }
     return std::string(code);
 }
 
@@ -287,11 +291,8 @@ inline constexpr Bcp47Language kBcp47Regions[] = {
 };
 
 inline constexpr Bcp47Language kBcp47Scripts[] = {
-    {"Hans", tk::N_("Simplified")},
-    {"Hant", tk::N_("Traditional")},
-    {"Latn", tk::N_("Latin")},
-    {"Cyrl", tk::N_("Cyrillic")},
-    {"Arab", tk::N_("Arabic script")},
+    {"Hans", tk::N_("Simplified")}, {"Hant", tk::N_("Traditional")},   {"Latn", tk::N_("Latin")},
+    {"Cyrl", tk::N_("Cyrillic")},   {"Arab", tk::N_("Arabic script")},
 };
 
 namespace detail
@@ -299,11 +300,17 @@ namespace detail
 inline bool ieq(std::string_view a, std::string_view b)
 {
     if (a.size() != b.size())
+    {
         return false;
+    }
     for (std::size_t i = 0; i < a.size(); ++i)
+    {
         if (std::tolower(static_cast<unsigned char>(a[i])) !=
             std::tolower(static_cast<unsigned char>(b[i])))
+        {
             return false;
+        }
+    }
     return true;
 }
 
@@ -311,8 +318,12 @@ template <std::size_t N>
 inline const Bcp47Language* find_ci(const Bcp47Language (&table)[N], std::string_view code)
 {
     for (const auto& e : table)
+    {
         if (ieq(e.code, code))
+        {
             return &e;
+        }
+    }
     return nullptr;
 }
 } // namespace detail
@@ -329,56 +340,83 @@ inline std::string bcp47_display_name(std::string_view tag)
     {
         std::size_t end = tag.find_first_of("-_", pos);
         if (end == std::string_view::npos)
+        {
             end = tag.size();
+        }
         parts.push_back(tag.substr(pos, end - pos));
         pos = end + 1;
     }
     const auto* lang = parts.empty() ? nullptr : detail::find_ci(kBcp47Languages, parts[0]);
     if (!lang)
+    {
         return std::string(tag);
+    }
 
     std::string qualifiers;
     for (std::size_t i = 1; i < parts.size(); ++i)
     {
         const std::string_view sub = parts[i];
         std::string text;
-        const bool alpha4 = sub.size() == 4 &&
-            std::all_of(sub.begin(), sub.end(),
-                        [](char c) { return std::isalpha(static_cast<unsigned char>(c)); });
-        const bool region = sub.size() == 3 &&
-            std::all_of(sub.begin(), sub.end(),
-                        [](char c) { return std::isdigit(static_cast<unsigned char>(c)); });
-        const bool alpha2 = sub.size() == 2 &&
-            std::all_of(sub.begin(), sub.end(),
-                        [](char c) { return std::isalpha(static_cast<unsigned char>(c)); });
+        const bool alpha4 =
+            sub.size() == 4 && std::all_of(sub.begin(), sub.end(),
+                                           [](char c)
+                                           {
+                                               return std::isalpha(static_cast<unsigned char>(c));
+                                           });
+        const bool region =
+            sub.size() == 3 && std::all_of(sub.begin(), sub.end(),
+                                           [](char c)
+                                           {
+                                               return std::isdigit(static_cast<unsigned char>(c));
+                                           });
+        const bool alpha2 =
+            sub.size() == 2 && std::all_of(sub.begin(), sub.end(),
+                                           [](char c)
+                                           {
+                                               return std::isalpha(static_cast<unsigned char>(c));
+                                           });
         if (alpha4)
         {
             if (const auto* sc = detail::find_ci(kBcp47Scripts, sub))
+            {
                 text = tk::tr(sc->name.data());
+            }
             else
+            {
                 text = std::string(sub);
+            }
         }
         else if (alpha2 || region)
         {
             if (const auto* rg = detail::find_ci(kBcp47Regions, sub))
+            {
                 text = tk::tr(rg->name.data());
+            }
             else
             {
                 text = std::string(sub);
                 for (char& c : text)
+                {
                     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                }
             }
         }
         else
+        {
             continue;
+        }
         if (!qualifiers.empty())
+        {
             qualifiers += ", ";
+        }
         qualifiers += text;
     }
 
     const std::string name = tk::tr(lang->name.data());
     if (qualifiers.empty())
+    {
         return name;
+    }
     return tk::trf(tk::tr("{0} ({1})"), {name, qualifiers});
 }
 

@@ -41,8 +41,7 @@ public:
         RemoveChip,
     };
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
 
     // `centre`/`diameter` are in the owner's local coordinate space.
     void set_geometry(tk::Point centre, float diameter);
@@ -68,11 +67,22 @@ public:
     // by set_busy(true).
     void set_error(std::string error);
 
-    bool editable() const { return editable_; }
-    bool busy() const { return busy_; }
+    bool editable() const
+    {
+        return editable_;
+    }
+    bool busy() const
+    {
+        return busy_;
+    }
     bool has_avatar() const
-    { return !avatar_url_.empty() || local_preview_ != nullptr; }
-    bool has_error() const { return !error_.empty(); }
+    {
+        return !avatar_url_.empty() || local_preview_ != nullptr;
+    }
+    bool has_error() const
+    {
+        return !error_.empty();
+    }
 
     // `local` uses the owner's local coordinate space.
     HitZone hit_test(tk::Point local) const;
@@ -89,9 +99,9 @@ public:
             Remove,
             Error,
         };
-        Kind        kind;
+        Kind kind;
         std::string name;
-        tk::Rect    rect;
+        tk::Rect rect;
     };
     std::vector<AccessItem> access_items(tk::Point world_origin) const;
 
@@ -104,8 +114,7 @@ public:
     // `bounds_.x`/`bounds_.y`) added to the local geometry set via
     // set_geometry(). `initials_source` picks the fallback-initials text
     // when no avatar image is available (e.g. a display name or room name).
-    void paint(tk::PaintCtx& ctx, tk::Point world_origin,
-              std::string_view initials_source) const;
+    void paint(tk::PaintCtx& ctx, tk::Point world_origin, std::string_view initials_source) const;
 
 private:
     tk::Point centre_{};
@@ -116,8 +125,8 @@ private:
     std::shared_ptr<tk::Image> local_preview_;
 
     bool editable_ = false;
-    bool busy_     = false;
-    bool hovered_  = false;
+    bool busy_ = false;
+    bool hovered_ = false;
     std::string error_;
     mutable tk::CachedTextLayout error_layout_;
 };
@@ -136,10 +145,11 @@ public:
     tk::Role access_role_for_widget_row(std::size_t i) const override
     {
         if (i >= items_.size())
+        {
             return tk::Role::None;
-        return items_[i].kind == AvatarEditControl::AccessItem::Kind::Error
-                   ? tk::Role::StaticText
-                   : tk::Role::Button;
+        }
+        return items_[i].kind == AvatarEditControl::AccessItem::Kind::Error ? tk::Role::StaticText
+                                                                            : tk::Role::Button;
     }
     std::string access_name_for_widget_row(std::size_t i) const override
     {
@@ -152,7 +162,9 @@ public:
     bool access_activate_widget_row(std::size_t i) override
     {
         if (i >= items_.size() || items_[i].kind == AvatarEditControl::AccessItem::Kind::Error)
+        {
             return false;
+        }
         avatar_activate_(items_[i].kind == AvatarEditControl::AccessItem::Kind::Remove);
         return true;
     }
@@ -175,21 +187,26 @@ private:
 // Drop into the public section of a tk::Widget that also derives from
 // AvatarAccessRows: makes the editable avatar a Tab stop whose arrow keys
 // pick Change / Remove and Enter runs it. Clicks keep their behaviour.
-#define AVATAR_ACCESS_ROWS_KEYBOARD                                              \
-    bool focusable() const override                                              \
-    {                                                                            \
-        return enabled() && avatar_control_().editable() &&                      \
-               !avatar_control_().busy();                                        \
-    }                                                                            \
-    bool focus_on_click() const override { return false; }                      \
-    bool on_key_down(const tk::KeyEvent& e) override                             \
-    {                                                                            \
-        return avatar_kbd_.handle_key(*this, *this, e);                          \
-    }                                                                            \
-    void paint_own_focus_ring(tk::PaintCtx& ctx) override                        \
-    {                                                                            \
-        avatar_kbd_.paint_ring(ctx, *this, *this);                               \
-    }                                                                            \
-    void on_focus_lost() override { avatar_kbd_.reset(); }
+#define AVATAR_ACCESS_ROWS_KEYBOARD                                                                \
+    bool focusable() const override                                                                \
+    {                                                                                              \
+        return enabled() && avatar_control_().editable() && !avatar_control_().busy();             \
+    }                                                                                              \
+    bool focus_on_click() const override                                                           \
+    {                                                                                              \
+        return false;                                                                              \
+    }                                                                                              \
+    bool on_key_down(const tk::KeyEvent& e) override                                               \
+    {                                                                                              \
+        return avatar_kbd_.handle_key(*this, *this, e);                                            \
+    }                                                                                              \
+    void paint_own_focus_ring(tk::PaintCtx& ctx) override                                          \
+    {                                                                                              \
+        avatar_kbd_.paint_ring(ctx, *this, *this);                                                 \
+    }                                                                                              \
+    void on_focus_lost() override                                                                  \
+    {                                                                                              \
+        avatar_kbd_.reset();                                                                       \
+    }
 
 } // namespace tesseract::views

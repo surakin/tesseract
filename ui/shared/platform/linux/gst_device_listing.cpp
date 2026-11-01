@@ -42,13 +42,17 @@ std::string device_path_from_properties(GstDevice* dev)
 {
     GstStructure* props = gst_device_get_properties(dev);
     if (!props)
+    {
         return {};
+    }
 
     for (const char* key : {kV4l2PathKey, kDevicePathKey})
     {
         const char* path = gst_structure_get_string(props, key);
         if (path && *path)
+        {
             return std::string(path);
+        }
     }
     return {};
 }
@@ -64,7 +68,9 @@ std::string device_path_from_element(GstDevice* dev, const char** elem_type)
 
     GstElement* elem = gst_device_create_element(dev, nullptr);
     if (!elem)
+    {
         return {};
+    }
 
     gchar* dev_path = nullptr;
     g_object_get(elem, "device", &dev_path, nullptr);
@@ -102,17 +108,20 @@ std::string clean_device_display_name(const std::string& display)
     {
         const std::size_t keep = out.size() - suffix.size();
         if (out.compare(keep, suffix.size(), suffix) == 0)
+        {
             out.erase(keep);
+        }
     }
 
     while (!out.empty() && out.back() == ' ')
+    {
         out.pop_back();
+    }
 
     return out;
 }
 
-std::vector<DeviceListing>
-enumerate_gst_devices(const char* gst_class, const char* caps_mime)
+std::vector<DeviceListing> enumerate_gst_devices(const char* gst_class, const char* caps_mime)
 {
     tk::gst::ensure_gst_init();
 
@@ -122,12 +131,13 @@ enumerate_gst_devices(const char* gst_class, const char* caps_mime)
     GstCaps* caps = caps_mime ? gst_caps_new_empty_simple(caps_mime) : nullptr;
     gst_device_monitor_add_filter(monitor, gst_class, caps);
     if (caps)
+    {
         gst_caps_unref(caps);
+    }
 
     if (!gst_device_monitor_start(monitor))
     {
-        g_warning("tesseract: device monitor for %s failed to start",
-                  gst_class);
+        g_warning("tesseract: device monitor for %s failed to start", gst_class);
         gst_object_unref(monitor);
         return result;
     }
@@ -148,9 +158,7 @@ enumerate_gst_devices(const char* gst_class, const char* caps_mime)
                 gchar* name = gst_device_get_display_name(dev);
                 g_warning("tesseract: skipping %s device '%s' — no usable id"
                           " (element: %s)",
-                          gst_class,
-                          name ? name : "(unnamed)",
-                          elem_type ? elem_type : "none");
+                          gst_class, name ? name : "(unnamed)", elem_type ? elem_type : "none");
                 g_free(name);
                 gst_object_unref(dev);
                 continue;

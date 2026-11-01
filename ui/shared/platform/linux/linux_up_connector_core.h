@@ -41,9 +41,18 @@ public:
     // Returns false if already started. Reads the persisted Notifications
     // toggle so a user who disabled push isn't silently re-registered.
     bool begin(tesseract::Client* client, const std::string& user_id);
-    void end() { client_ = nullptr; }
-    bool active() const { return client_ != nullptr; }
-    const std::string& token() const { return token_; }
+    void end()
+    {
+        client_ = nullptr;
+    }
+    bool active() const
+    {
+        return client_ != nullptr;
+    }
+    const std::string& token() const
+    {
+        return token_;
+    }
 
     void on_new_endpoint(const std::string& endpoint);
     void set_enabled(bool enabled);

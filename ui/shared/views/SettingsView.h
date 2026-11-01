@@ -98,8 +98,7 @@ public:
     // ----- Account section --------------------------------------------------
 
     // Populate the Account section with the signed-in user's info.
-    void set_account_info(std::string display_name, std::string user_id,
-                          std::string avatar_mxc);
+    void set_account_info(std::string display_name, std::string user_id, std::string avatar_mxc);
 
     // Wire up the avatar image cache from the shell.
     void set_image_provider(AccountSection::ImageProvider provider);
@@ -140,8 +139,7 @@ public:
 
     // Update the search-index stats line under the checkbox (shown only while
     // enabled). Driven by the shell on settings-open and a slow poll.
-    void set_search_index_stats(const tesseract::SearchIndexStats& stats,
-                                bool enabled);
+    void set_search_index_stats(const tesseract::SearchIndexStats& stats, bool enabled);
 
     // ----- Server section ---------------------------------------------------
 
@@ -158,8 +156,7 @@ public:
     // Personal-pack passthrough (baseline load resets the editor's dirty bit).
     void set_user_pack_images(std::vector<tesseract::ImagePackImage> images);
     void set_user_pack_image_provider(ImagePackImageProvider p);
-    void set_user_pack_tile_preview(std::uint64_t local_id,
-                                    std::shared_ptr<tk::Image> image);
+    void set_user_pack_tile_preview(std::uint64_t local_id, std::shared_ptr<tk::Image> image);
     void set_user_pack_saving(bool saving);
     void set_user_pack_save_result(bool ok, std::string error);
 
@@ -167,8 +164,7 @@ public:
     // editor. Wired by each shell (mirrors RoomSettingsView's
     // on_image_pack_pending_image_added) to decode the bytes off-thread and
     // push the preview back via set_user_pack_tile_preview.
-    std::function<void(std::uint64_t local_id,
-                       const std::vector<std::uint8_t>& bytes,
+    std::function<void(std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                        const std::string& mime)>
         on_user_pack_pending_image_added;
 
@@ -260,8 +256,7 @@ public:
     // Fired when a profile field value changes (on_submit from its
     // self-owned field, wired by set_controller()). key = MSC key string,
     // value_json = JSON or "null".
-    std::function<void(std::string key, std::string value_json)>
-        on_profile_field_changed;
+    std::function<void(std::string key, std::string value_json)> on_profile_field_changed;
 
     // Fired when the user clicks the avatar disc (for shell to delegate to controller).
     std::function<void()> on_avatar_upload_requested;
@@ -317,10 +312,9 @@ public:
 
     // Update the About section's storage size labels and hit/miss stats.
     // Call on the UI thread after ShellBase::compute_cache_sizes_() posts its result.
-    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                         uint64_t memory_bytes,
-                         uint64_t mem_hits   = 0, uint64_t mem_misses  = 0,
-                         uint64_t disk_hits  = 0, uint64_t disk_misses = 0);
+    void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes, uint64_t memory_bytes,
+                         uint64_t mem_hits = 0, uint64_t mem_misses = 0, uint64_t disk_hits = 0,
+                         uint64_t disk_misses = 0);
 
     // Fired by the language section's "Restart now" button.
     std::function<void()> on_restart_requested;
@@ -338,7 +332,9 @@ public:
     void access_detached_children(std::vector<tk::Widget*>& out) const override
     {
         if (status_emoji_picker_visible_ && status_emoji_picker_)
+        {
             out.push_back(status_emoji_picker_.get());
+        }
     }
     void on_theme_changed(const tk::Theme&) override;
 
@@ -383,16 +379,16 @@ private:
     GeneralSection* general_ = nullptr;
     AppearanceSection* appearance_ = nullptr;
     NotificationsSection* notifications_ = nullptr;
-    MediaSection*    media_          = nullptr;
-    PrivacySection*  privacy_        = nullptr;
-    ServerSection*   server_section_ = nullptr;
-    DevicesSection*  devices_        = nullptr;
-    AboutSection*    about_          = nullptr;
-    AdvancedSection* advanced_       = nullptr;
-    ConfirmDialog*   confirm_dialog_ = nullptr;
-    LanguageSection* language_       = nullptr;
-    NetworkSection*  network_        = nullptr;
-    ImagePacksSection* image_packs_  = nullptr;
+    MediaSection* media_ = nullptr;
+    PrivacySection* privacy_ = nullptr;
+    ServerSection* server_section_ = nullptr;
+    DevicesSection* devices_ = nullptr;
+    AboutSection* about_ = nullptr;
+    AdvancedSection* advanced_ = nullptr;
+    ConfirmDialog* confirm_dialog_ = nullptr;
+    LanguageSection* language_ = nullptr;
+    NetworkSection* network_ = nullptr;
+    ImagePacksSection* image_packs_ = nullptr;
 
     std::unique_ptr<EmojiPicker> status_emoji_picker_;
     bool status_emoji_picker_visible_ = false;

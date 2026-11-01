@@ -35,15 +35,17 @@ struct InsertShell : tesseract::test::TestShellBase
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override
     {
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
     void apply_thread_message_insert_(const std::string&, std::size_t,
                                       tesseract::views::MessageRowData) override
     {
     }
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     // Isolate the guard under test from media-prefetch machinery, and record
     // which events the handler chose to process. The base handler only calls
@@ -102,8 +104,7 @@ TEST_CASE("handle_message_inserted_ui_ excludes in-thread replies from the "
     // and these rows leaked into the main list (and to pop-out windows). The
     // base handler short-circuits *before* prep_row_media_, so no work runs and
     // no row is added.
-    s.handle_message_inserted_ui_(info.id, 0,
-                                  make_event("$t1", "$root:example.org"));
+    s.handle_message_inserted_ui_(info.id, 0, make_event("$t1", "$root:example.org"));
     CHECK(s.prepped_event_ids.empty());
     CHECK(view.message_list()->messages().empty());
 
@@ -115,8 +116,7 @@ TEST_CASE("handle_message_inserted_ui_ excludes in-thread replies from the "
     CHECK(view.message_list()->messages()[0].event_id == "$m1");
 
     // A second in-thread reply still does no work and adds no row.
-    s.handle_message_inserted_ui_(info.id, 1,
-                                  make_event("$t2", "$root:example.org"));
+    s.handle_message_inserted_ui_(info.id, 1, make_event("$t2", "$root:example.org"));
     CHECK(s.prepped_event_ids.size() == 1);
     CHECK(view.message_list()->messages().size() == 1);
 }

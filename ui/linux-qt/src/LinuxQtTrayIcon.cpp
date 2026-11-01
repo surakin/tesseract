@@ -9,11 +9,10 @@
 #include <QIcon>
 #include <QPainter>
 
-LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
-                                 std::function<void()> on_toggle,
+LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show, std::function<void()> on_toggle,
                                  std::function<void()> on_quit, QObject* parent)
-    : QObject(parent), on_show_(std::move(on_show)),
-      on_toggle_(std::move(on_toggle)), on_quit_(std::move(on_quit))
+    : QObject(parent), on_show_(std::move(on_show)), on_toggle_(std::move(on_toggle)),
+      on_quit_(std::move(on_quit))
 {
     if (!QSystemTrayIcon::isSystemTrayAvailable())
     {
@@ -54,8 +53,7 @@ LinuxQtTrayIcon::LinuxQtTrayIcon(std::function<void()> on_show,
     QObject::connect(tray_.get(), &QSystemTrayIcon::activated, this,
                      [this](QSystemTrayIcon::ActivationReason r)
                      {
-                         if (r == QSystemTrayIcon::Trigger ||
-                             r == QSystemTrayIcon::DoubleClick)
+                         if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick)
                          {
                              if (on_toggle_)
                              {
@@ -88,32 +86,53 @@ void LinuxQtTrayIcon::rebuild_menu(
     std::vector<std::pair<std::string, std::function<void()>>> window_items)
 {
     if (!tray_)
+    {
         return;
+    }
 
     auto new_menu = std::make_unique<QMenu>();
     QAction* show_action = new_menu->addAction(QString::fromStdString(tk::tr("Show App")));
     QObject::connect(show_action, &QAction::triggered, this,
-                     [this] { if (on_show_) on_show_(); });
+                     [this]
+                     {
+                         if (on_show_)
+                         {
+                             on_show_();
+                         }
+                     });
 
     if (!window_items.empty())
+    {
         new_menu->addSeparator();
+    }
     for (auto& [label, cb] : window_items)
     {
         QAction* act = new_menu->addAction(QString::fromStdString(label));
         QObject::connect(act, &QAction::triggered, this,
-                         [fn = std::move(cb)] { fn(); });
+                         [fn = std::move(cb)]
+                         {
+                             fn();
+                         });
     }
     new_menu->addSeparator();
 
     QAction* quit_action = new_menu->addAction(QString::fromStdString(tk::tr("Quit")));
     QObject::connect(quit_action, &QAction::triggered, this,
-                     [this] { if (on_quit_) on_quit_(); });
+                     [this]
+                     {
+                         if (on_quit_)
+                         {
+                             on_quit_();
+                         }
+                     });
 
     tray_->setContextMenu(new_menu.get());
     // The previous menu can be on screen (a fallback tray shows it as a popup
     // while it is open), so it is deleted on the next event-loop turn, not here.
     if (menu_)
+    {
         menu_.release()->deleteLater();
+    }
     menu_ = std::move(new_menu);
 }
 
@@ -138,14 +157,14 @@ void LinuxQtTrayIcon::set_unread(bool has_unread, bool has_highlight)
 
     // Dot sized at ~38% of the icon edge, anchored to the bottom-right with a
     // small inset so the outline isn't clipped.
-    const int side  = std::min(pm.width(), pm.height());
-    const int dot   = tesseract::badge_dot_px(side);
+    const int side = std::min(pm.width(), pm.height());
+    const int dot = tesseract::badge_dot_px(side);
     const int inset = tesseract::badge_inset_px(side);
     const int x = pm.width() - dot - inset;
     const int y = pm.height() - dot - inset;
 
-    const unsigned int rgb = has_highlight ? tesseract::kBadgeColorMention
-                                           : tesseract::kBadgeColorUnread;
+    const unsigned int rgb =
+        has_highlight ? tesseract::kBadgeColorMention : tesseract::kBadgeColorUnread;
     const QColor fill((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     // White stroke so the dot stays legible on both light and dark trays.
     p.setBrush(fill);

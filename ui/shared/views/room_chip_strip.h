@@ -20,8 +20,7 @@
 namespace tesseract::views
 {
 
-using ChipAvatarProvider =
-    std::function<const tk::Image*(const std::string& mxc_url)>;
+using ChipAvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
 using ChipAvatarNeeded = std::function<void(const tesseract::RoomInfo&)>;
 
 struct RoomChipStripStyle
@@ -56,8 +55,7 @@ struct RoomChipStripStyle
 void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
                       const std::vector<tesseract::RoomInfo>& rooms,
                       const ChipAvatarProvider& avatar_provider,
-                      const ChipAvatarNeeded& on_avatar_needed,
-                      const RoomChipStripStyle& style,
+                      const ChipAvatarNeeded& on_avatar_needed, const RoomChipStripStyle& style,
                       std::vector<std::pair<tk::Rect, std::string>>& out_chips);
 
 // Pointer side of the chip strip: one tk::HoverArea per painted chip, as
@@ -82,8 +80,7 @@ public:
 
     // Places one area per chip in `chips` (creating them under `owner` on
     // demand) and parks the rest.
-    void sync(tk::Widget& owner,
-              const std::vector<std::pair<tk::Rect, std::string>>& chips,
+    void sync(tk::Widget& owner, const std::vector<std::pair<tk::Rect, std::string>>& chips,
               OnChip on_chip);
 
 private:

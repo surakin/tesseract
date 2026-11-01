@@ -104,14 +104,13 @@
 }
 
 - (void)observeValueForKeyPath:(NSString*)keyPath
-                       ofObject:(id)object
-                         change:(NSDictionary*)change
-                        context:(void*)context
+                      ofObject:(id)object
+                        change:(NSDictionary*)change
+                       context:(void*)context
 {
     (void)change;
     (void)context;
-    if ([keyPath isEqualToString:@"status"] &&
-        [object isKindOfClass:[AVPlayerItem class]])
+    if ([keyPath isEqualToString:@"status"] && [object isKindOfClass:[AVPlayerItem class]])
     {
         AVPlayerItem* item = (AVPlayerItem*)object;
         if (item.status == AVPlayerItemStatusFailed && self.onError)
@@ -193,14 +192,12 @@
 {
     if (_failed)
     {
-        NSError* err =
-            [NSError errorWithDomain:@"tesseract.video" code:-1 userInfo:nil];
+        NSError* err = [NSError errorWithDomain:@"tesseract.video" code:-1 userInfo:nil];
         [request finishLoadingWithError:err];
         return YES;
     }
 
-    if (request.contentInformationRequest &&
-        !request.contentInformationRequest.contentType)
+    if (request.contentInformationRequest && !request.contentInformationRequest.contentType)
     {
         // Only answer once the real total length is known — an explicit
         // Content-Length (setTotalLength:) or the end of the download
@@ -216,8 +213,7 @@
         }
         uint64_t length = _knownLength > 0 ? _knownLength : _buffer.length;
         request.contentInformationRequest.contentType = _contentType;
-        request.contentInformationRequest.contentLength =
-            static_cast<long long>(length);
+        request.contentInformationRequest.contentLength = static_cast<long long>(length);
         request.contentInformationRequest.byteRangeAccessSupported = YES;
     }
 
@@ -239,24 +235,20 @@
         long long want = available;
         if (!dataRequest.requestsAllDataToEndOfResource)
         {
-            long long remaining = (dataRequest.requestedOffset +
-                                    dataRequest.requestedLength) -
-                                   offset;
+            long long remaining =
+                (dataRequest.requestedOffset + dataRequest.requestedLength) - offset;
             want = MIN(available, remaining);
         }
         if (want > 0)
         {
-            NSData* chunk =
-                [_buffer subdataWithRange:NSMakeRange(
-                                               static_cast<NSUInteger>(offset),
-                                               static_cast<NSUInteger>(want))];
+            NSData* chunk = [_buffer subdataWithRange:NSMakeRange(static_cast<NSUInteger>(offset),
+                                                                  static_cast<NSUInteger>(want))];
             [dataRequest respondWithData:chunk];
         }
     }
 
     if (!dataRequest.requestsAllDataToEndOfResource &&
-        dataRequest.currentOffset >=
-            dataRequest.requestedOffset + dataRequest.requestedLength)
+        dataRequest.currentOffset >= dataRequest.requestedOffset + dataRequest.requestedLength)
     {
         [request finishLoading];
         return YES;
@@ -271,8 +263,7 @@
         }
         // Download ended short of this request's explicit range —
         // truncated or malformed source.
-        NSError* err =
-            [NSError errorWithDomain:@"tesseract.video" code:-2 userInfo:nil];
+        NSError* err = [NSError errorWithDomain:@"tesseract.video" code:-2 userInfo:nil];
         [request finishLoadingWithError:err];
         return YES;
     }
@@ -349,8 +340,7 @@
 #pragma mark - AVAssetResourceLoaderDelegate
 
 - (BOOL)resourceLoader:(AVAssetResourceLoader*)resourceLoader
-    shouldWaitForLoadingOfRequestedResource:
-        (AVAssetResourceLoadingRequest*)loadingRequest
+    shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest*)loadingRequest
 {
     (void)resourceLoader;
     [_pending addObject:loadingRequest];
@@ -399,8 +389,7 @@ public:
         teardown();
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view /*mime*/) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view /*mime*/) override
     {
         if (!data || size == 0)
         {
@@ -419,8 +408,8 @@ public:
         // AVAssetResourceLoaderDelegate instead.
         NSString* tmp_dir = NSTemporaryDirectory();
         NSString* uuid = [[NSUUID UUID] UUIDString];
-        NSString* tmp_path_ns = [[tmp_dir stringByAppendingPathComponent:uuid]
-            stringByAppendingPathExtension:@"mp4"];
+        NSString* tmp_path_ns =
+            [[tmp_dir stringByAppendingPathComponent:uuid] stringByAppendingPathExtension:@"mp4"];
         tmp_path_ = [tmp_path_ns UTF8String];
         BOOL ok = [ns_data writeToFile:tmp_path_ns atomically:NO];
         if (!ok)
@@ -438,15 +427,13 @@ public:
         start_playback_with_asset_(va);
     }
 
-    bool begin_stream(std::string_view mime,
-                      std::uint64_t total_size_hint) override
+    bool begin_stream(std::string_view mime, std::uint64_t total_size_hint) override
     {
         teardown();
         is_streaming_ = true;
 
         NSString* content_type = content_type_for_mime_(mime);
-        stream_loader_ =
-            [[TkVideoStreamLoader alloc] initWithContentType:content_type];
+        stream_loader_ = [[TkVideoStreamLoader alloc] initWithContentType:content_type];
         if (total_size_hint > 0)
         {
             [stream_loader_ setTotalLength:total_size_hint];
@@ -454,8 +441,7 @@ public:
 
         NSURL* url = [NSURL URLWithString:@"tesseract-video-stream://stream"];
         AVURLAsset* asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        [asset.resourceLoader setDelegate:stream_loader_
-                                     queue:dispatch_get_main_queue()];
+        [asset.resourceLoader setDelegate:stream_loader_ queue:dispatch_get_main_queue()];
 
         start_playback_with_asset_(asset);
         return true;
@@ -541,11 +527,8 @@ public:
         {
             return;
         }
-        CMTime t = CMTimeMakeWithSeconds(static_cast<Float64>(ms) / 1000.0,
-                                         NSEC_PER_SEC);
-        [player_ seekToTime:t
-            toleranceBefore:kCMTimeZero
-             toleranceAfter:kCMTimeZero];
+        CMTime t = CMTimeMakeWithSeconds(static_cast<Float64>(ms) / 1000.0, NSEC_PER_SEC);
+        [player_ seekToTime:t toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
         if (on_progress)
         {
             on_progress();
@@ -607,7 +590,9 @@ public:
         std::size_t total = bytes_.size();
         std::lock_guard lk(frame_mutex_);
         if (current_frame_)
+        {
             total += current_frame_->memory_bytes();
+        }
         return total;
     }
 
@@ -642,12 +627,9 @@ private:
         AVPlayerItem* item = [AVPlayerItem playerItemWithAsset:asset];
 
         // Video output: BGRA pixel format for direct tk::cg conversion.
-        NSDictionary* settings = @{
-            (NSString*)
-            kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA)
-        };
-        video_output_ = [[AVPlayerItemVideoOutput alloc]
-            initWithPixelBufferAttributes:settings];
+        NSDictionary* settings =
+            @{(NSString*)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA)};
+        video_output_ = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:settings];
         [item addOutput:video_output_];
 
         player_ = [[AVPlayer alloc] initWithPlayerItem:item];
@@ -763,9 +745,8 @@ private:
             CMTime t = player_.currentTime;
             if ([video_output_ hasNewPixelBufferForItemTime:t])
             {
-                CVPixelBufferRef pbuf =
-                    [video_output_ copyPixelBufferForItemTime:t
-                                           itemTimeForDisplay:nil];
+                CVPixelBufferRef pbuf = [video_output_ copyPixelBufferForItemTime:t
+                                                               itemTimeForDisplay:nil];
                 if (pbuf)
                 {
                     capture_frame(pbuf);
@@ -783,9 +764,9 @@ private:
     {
         CVPixelBufferLockBaseAddress(pbuf, kCVPixelBufferLock_ReadOnly);
 
-        const OSType fmt  = CVPixelBufferGetPixelFormatType(pbuf);
-        const size_t w    = CVPixelBufferGetWidth(pbuf);
-        const size_t h    = CVPixelBufferGetHeight(pbuf);
+        const OSType fmt = CVPixelBufferGetPixelFormatType(pbuf);
+        const size_t w = CVPixelBufferGetWidth(pbuf);
+        const size_t h = CVPixelBufferGetHeight(pbuf);
         const size_t stride = CVPixelBufferGetBytesPerRow(pbuf);
         void* base = CVPixelBufferGetBaseAddress(pbuf);
 
@@ -804,8 +785,7 @@ private:
 #pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
         CGContextRef ctx = CGBitmapContextCreate(
             nullptr, // let CG allocate its own buffer (safe copy)
-            w, h, 8, w * 4, cs,
-            kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+            w, h, 8, w * 4, cs, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
 #pragma clang diagnostic pop
         CGColorSpaceRelease(cs);
 
@@ -819,7 +799,9 @@ private:
                 if (is_bgra)
                 {
                     for (size_t row = 0; row < h; ++row)
+                    {
                         memcpy(dst + row * row_bytes, src + row * stride, row_bytes);
+                    }
                 }
                 else // RGBA → BGRA: swap byte 0 (R) and byte 2 (B) per pixel
                 {

@@ -14,8 +14,7 @@ using PS = MessageRowData::PendingState;
 //  make_row_data: PendingState mapping
 // ─────────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("make_row_data maps sending state to PendingState::Sending",
-          "[ui][pending]")
+TEST_CASE("make_row_data maps sending state to PendingState::Sending", "[ui][pending]")
 {
     tesseract::TextEvent ev;
     ev.event_id = "$txn1";
@@ -33,9 +32,8 @@ TEST_CASE("make_row_data maps sending state to PendingState::Sending",
     CHECK(row.is_own == true); // sender matches my_user_id
 }
 
-TEST_CASE(
-    "make_row_data maps failed recoverable to PendingState::Failed with error",
-    "[ui][pending]")
+TEST_CASE("make_row_data maps failed recoverable to PendingState::Failed with error",
+          "[ui][pending]")
 {
     tesseract::TextEvent ev;
     ev.event_id = "$txn2";
@@ -79,8 +77,7 @@ TEST_CASE("make_row_data maps failed unrecoverable to PendingState::Failed "
     CHECK(row.pending_recoverable == false);
 }
 
-TEST_CASE("make_row_data maps empty pending_state to PendingState::None",
-          "[ui][pending]")
+TEST_CASE("make_row_data maps empty pending_state to PendingState::None", "[ui][pending]")
 {
     tesseract::TextEvent ev;
     ev.event_id = "$evt1";

@@ -9,16 +9,16 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kLobbyPadX        = 24.0f;
+constexpr float kLobbyPadX = 24.0f;
 constexpr float kLobbyToggleBtnSz = 48.0f;
-constexpr float kLobbyToggleBtnGap= 16.0f;
-constexpr float kLobbyToggleRowH  = 64.0f;
-constexpr float kLobbyActionBtnW  = 120.0f;
-constexpr float kLobbyActionBtnH  = 40.0f;
-constexpr float kLobbyActionBtnGap= 12.0f;
-constexpr float kLobbyActionRowH  = 80.0f;
-constexpr float kLobbyToggleIconPx= 22.0f;
-constexpr float kLobbyErrorRowH   = 28.0f;
+constexpr float kLobbyToggleBtnGap = 16.0f;
+constexpr float kLobbyToggleRowH = 64.0f;
+constexpr float kLobbyActionBtnW = 120.0f;
+constexpr float kLobbyActionBtnH = 40.0f;
+constexpr float kLobbyActionBtnGap = 12.0f;
+constexpr float kLobbyActionRowH = 80.0f;
+constexpr float kLobbyToggleIconPx = 22.0f;
+constexpr float kLobbyErrorRowH = 28.0f;
 // The preview tile is dark in every theme, so the strip labels over it use
 // the tile's own light text colour rather than the themed default.
 constexpr tk::Color kLobbyStripText{255, 255, 255, 230};
@@ -42,32 +42,43 @@ CallLobbyView::CallLobbyView()
     blocked_label->set_visible(false);
     blocked_label_ = add_child(std::move(blocked_label));
 
-    auto mic = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                            tk::Button::Variant::Icon);
+    auto mic =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     mic_btn_ = add_child(std::move(mic));
     mic_btn_->set_on_click(
         [this]
         {
             mic_enabled_ = !mic_enabled_;
             apply_preview_state_();
-            if (repaint_requester_) repaint_requester_();
+            if (repaint_requester_)
+            {
+                repaint_requester_();
+            }
         });
 
-    auto cam = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                            tk::Button::Variant::Icon);
+    auto cam =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     cam_btn_ = add_child(std::move(cam));
     cam_btn_->set_on_click(
         [this]
         {
             cam_enabled_ = !cam_enabled_;
-            if (cam_enabled_) start_camera_();
-            else               stop_camera_();
+            if (cam_enabled_)
+            {
+                start_camera_();
+            }
+            else
+            {
+                stop_camera_();
+            }
             apply_preview_state_();
-            if (repaint_requester_) repaint_requester_();
+            if (repaint_requester_)
+            {
+                repaint_requester_();
+            }
         });
 
-    auto join = tk::create_widget<tk::Button>(this, tk::tr("Join call"),
-                                              std::function<void()>{},
+    auto join = tk::create_widget<tk::Button>(this, tk::tr("Join call"), std::function<void()>{},
                                               tk::Button::Variant::Primary);
     join_btn_ = add_child(std::move(join));
     join_btn_->set_on_click(
@@ -78,21 +89,25 @@ CallLobbyView::CallLobbyView()
             // lobby still holding it would make the call find it busy.
             stop_camera_();
             if (on_join)
+            {
                 on_join(room_id_, slot_id_,
                         /*audio_only=*/!cam_enabled_ && !cam_failed,
                         /*start_audio_muted=*/!mic_enabled_,
                         /*start_video_muted=*/cam_failed);
+            }
             close();
         });
 
-    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"),
-                                                std::function<void()>{},
+    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
                                                 tk::Button::Variant::Subtle);
     cancel_btn_ = add_child(std::move(cancel));
     cancel_btn_->set_on_click(
         [this]
         {
-            if (on_cancel) on_cancel();
+            if (on_cancel)
+            {
+                on_cancel();
+            }
             close();
         });
 }
@@ -102,8 +117,7 @@ CallLobbyView::~CallLobbyView()
     stop_camera_();
 }
 
-void CallLobbyView::open(std::string room_id, std::string slot_id,
-                         bool default_audio_only)
+void CallLobbyView::open(std::string room_id, std::string slot_id, bool default_audio_only)
 {
     room_id_ = std::move(room_id);
     slot_id_ = std::move(slot_id);
@@ -113,13 +127,19 @@ void CallLobbyView::open(std::string room_id, std::string slot_id,
     open_ = true;
     set_visible(true);
 
-    if (cam_enabled_) start_camera_();
+    if (cam_enabled_)
+    {
+        start_camera_();
+    }
     apply_preview_state_();
 }
 
 void CallLobbyView::close()
 {
-    if (!open_) return;
+    if (!open_)
+    {
+        return;
+    }
     open_ = false;
     stop_camera_();
     set_visible(false);
@@ -128,34 +148,48 @@ void CallLobbyView::close()
     set_join_blocked({});
 }
 
-void CallLobbyView::set_avatar_provider(
-    std::function<const tk::Image*(const std::string&)> fn)
+void CallLobbyView::set_avatar_provider(std::function<const tk::Image*(const std::string&)> fn)
 {
     avatar_provider_ = std::move(fn);
-    if (preview_tile_) preview_tile_->set_avatar_provider(avatar_provider_);
+    if (preview_tile_)
+    {
+        preview_tile_->set_avatar_provider(avatar_provider_);
+    }
 }
 
 void CallLobbyView::set_repaint_requester(std::function<void()> fn)
 {
     repaint_requester_ = std::move(fn);
-    if (preview_tile_) preview_tile_->set_repaint_requester(repaint_requester_);
+    if (preview_tile_)
+    {
+        preview_tile_->set_repaint_requester(repaint_requester_);
+    }
 }
 
 void CallLobbyView::set_join_blocked(const std::string& reason)
 {
     join_blocked_ = !reason.empty();
-    if (join_btn_) join_btn_->set_enabled(!join_blocked_);
+    if (join_btn_)
+    {
+        join_btn_->set_enabled(!join_blocked_);
+    }
     if (blocked_label_)
     {
         blocked_label_->set_text(reason);
         blocked_label_->set_visible(join_blocked_);
     }
-    if (repaint_requester_) repaint_requester_();
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void CallLobbyView::start_camera_()
 {
-    if (capture_) return;
+    if (capture_)
+    {
+        return;
+    }
 
     set_camera_error_(tk::VideoCapture::Error::None);
     capture_ = tk::VideoCapture::create();
@@ -178,7 +212,9 @@ void CallLobbyView::start_camera_()
     capture_->start();
     // Synchronous failures (no device node, permission) are known already.
     if (capture_ && capture_->error() != tk::VideoCapture::Error::None)
+    {
         set_camera_error_(capture_->error());
+    }
 }
 
 void CallLobbyView::stop_camera_()
@@ -208,24 +244,30 @@ void CallLobbyView::set_camera_error_(tk::VideoCapture::Error err)
         cam_error_label_->set_text(tk::VideoCapture::describe(err));
         cam_error_label_->set_visible(failed);
     }
-    if (failed && repaint_requester_) repaint_requester_();
+    if (failed && repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void CallLobbyView::apply_preview_state_()
 {
-    if (!preview_tile_) return;
+    if (!preview_tile_)
+    {
+        return;
+    }
 
     ParticipantTile::State s;
     s.participant_id = "self";
-    s.user_id         = local_user_id_;
-    s.is_self          = true;
-    s.audio_muted      = !mic_enabled_;
-    s.video_muted      = !cam_enabled_;
+    s.user_id = local_user_id_;
+    s.is_self = true;
+    s.audio_muted = !mic_enabled_;
+    s.video_muted = !cam_enabled_;
     {
         std::lock_guard<std::mutex> lk(frame_mu_);
         s.pending_bgra = pending_frame_;
-        s.pending_w    = frame_w_;
-        s.pending_h    = frame_h_;
+        s.pending_w = frame_w_;
+        s.pending_h = frame_h_;
     }
     preview_tile_->set_state(std::move(s));
 }
@@ -238,19 +280,24 @@ tk::Size CallLobbyView::measure(tk::LayoutCtx&, tk::Size constraints)
 void CallLobbyView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
-    if (!open_) return;
+    if (!open_)
+    {
+        return;
+    }
 
     // A join-blocked reason takes its own strip at the top of the action row,
     // directly above Cancel/Join; the row grows to make room for it.
     const float blocked_h = join_blocked_ ? kLobbyErrorRowH : 0.0f;
-    const float action_y  = bounds.y + bounds.h - kLobbyActionRowH - blocked_h;
-    const float toggle_y  = action_y - kLobbyToggleRowH;
+    const float action_y = bounds.y + bounds.h - kLobbyActionRowH - blocked_h;
+    const float toggle_y = action_y - kLobbyToggleRowH;
     const float preview_y = bounds.y;
     const float preview_h = std::max(0.0f, toggle_y - preview_y);
 
     if (preview_tile_)
-        preview_tile_->arrange(ctx, {bounds.x + kLobbyPadX, preview_y,
-                                     bounds.w - kLobbyPadX * 2.0f, preview_h});
+    {
+        preview_tile_->arrange(
+            ctx, {bounds.x + kLobbyPadX, preview_y, bounds.w - kLobbyPadX * 2.0f, preview_h});
+    }
     if (blocked_label_ && join_blocked_)
     {
         // Centre the reason, both ways, in its strip at the label's own
@@ -260,16 +307,16 @@ void CallLobbyView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         const float w = std::min(strip_w, sz.w);
         const float h = std::min(kLobbyErrorRowH, sz.h);
         blocked_label_->arrange(
-            ctx, {bounds.x + (bounds.w - w) * 0.5f,
-                  action_y + (kLobbyErrorRowH - h) * 0.5f, w, h});
+            ctx, {bounds.x + (bounds.w - w) * 0.5f, action_y + (kLobbyErrorRowH - h) * 0.5f, w, h});
     }
     // Camera failure reason: a strip along the bottom of the preview, just
     // above the toggles it explains.
     if (cam_error_label_)
-        cam_error_label_->arrange(
-            ctx, {bounds.x + kLobbyPadX,
-                  std::max(preview_y, toggle_y - kLobbyErrorRowH),
-                  bounds.w - kLobbyPadX * 2.0f, kLobbyErrorRowH});
+    {
+        cam_error_label_->arrange(ctx, {bounds.x + kLobbyPadX,
+                                        std::max(preview_y, toggle_y - kLobbyErrorRowH),
+                                        bounds.w - kLobbyPadX * 2.0f, kLobbyErrorRowH});
+    }
 
     // Mic/camera toggle row, centred.
     const float toggle_total_w = kLobbyToggleBtnSz * 2.0f + kLobbyToggleBtnGap;
@@ -281,25 +328,31 @@ void CallLobbyView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         tx += kLobbyToggleBtnSz + kLobbyToggleBtnGap;
     }
     if (cam_btn_)
+    {
         cam_btn_->arrange(ctx, {tx, toggle_btn_y, kLobbyToggleBtnSz, kLobbyToggleBtnSz});
+    }
 
     // Join/Cancel row, centred, at the bottom.
     const float action_total_w = kLobbyActionBtnW * 2.0f + kLobbyActionBtnGap;
     float ax = bounds.x + (bounds.w - action_total_w) * 0.5f;
-    const float action_btn_y =
-        action_y + blocked_h + (kLobbyActionRowH - kLobbyActionBtnH) * 0.5f;
+    const float action_btn_y = action_y + blocked_h + (kLobbyActionRowH - kLobbyActionBtnH) * 0.5f;
     if (cancel_btn_)
     {
         cancel_btn_->arrange(ctx, {ax, action_btn_y, kLobbyActionBtnW, kLobbyActionBtnH});
         ax += kLobbyActionBtnW + kLobbyActionBtnGap;
     }
     if (join_btn_)
+    {
         join_btn_->arrange(ctx, {ax, action_btn_y, kLobbyActionBtnW, kLobbyActionBtnH});
+    }
 }
 
 void CallLobbyView::paint(tk::PaintCtx& ctx)
 {
-    if (!open_ || bounds_.h <= 0.0f) return;
+    if (!open_ || bounds_.h <= 0.0f)
+    {
+        return;
+    }
 
     // Themed panel background (not a fixed dark scrim) so the ordinary
     // Primary/Subtle button styling — designed for the app's own light/dark
@@ -311,7 +364,9 @@ void CallLobbyView::paint(tk::PaintCtx& ctx)
     // the lobby repaints continuously while the camera is on, so polling here
     // picks it up without marshalling a callback.
     if (capture_ && capture_->error() != tk::VideoCapture::Error::None)
+    {
         set_camera_error_(capture_->error());
+    }
 
     // Pull in the latest camera frame (captured on a background thread) and
     // hand it to the preview tile here, on the UI thread — mirrors
@@ -327,14 +382,23 @@ void CallLobbyView::paint(tk::PaintCtx& ctx)
             h = frame_h_;
         }
         if (frame && preview_tile_)
+        {
             preview_tile_->push_video_frame(w, h, std::move(frame));
+        }
     }
 
-    if (preview_tile_) preview_tile_->paint(ctx);
+    if (preview_tile_)
+    {
+        preview_tile_->paint(ctx);
+    }
     if (cam_error_label_ && cam_error_label_->visible())
+    {
         cam_error_label_->paint(ctx);
+    }
     if (blocked_label_ && blocked_label_->visible())
+    {
         blocked_label_->paint(ctx);
+    }
 
     if (mic_btn_)
     {
@@ -349,7 +413,7 @@ void CallLobbyView::paint(tk::PaintCtx& ctx)
             mic_btn_->set_icon_color_override(ctx.theme.palette.destructive);
         }
         mic_btn_->set_accessible_name(mic_enabled_ ? tk::tr("Mute microphone")
-                                                    : tk::tr("Unmute microphone"));
+                                                   : tk::tr("Unmute microphone"));
         mic_btn_->paint(ctx);
     }
     if (cam_btn_)
@@ -365,15 +429,23 @@ void CallLobbyView::paint(tk::PaintCtx& ctx)
             cam_btn_->set_icon_color_override(ctx.theme.palette.destructive);
         }
         cam_btn_->set_accessible_name(cam_enabled_ ? tk::tr("Turn camera off")
-                                                    : tk::tr("Turn camera on"));
+                                                   : tk::tr("Turn camera on"));
         cam_btn_->paint(ctx);
     }
-    if (cancel_btn_) cancel_btn_->paint(ctx);
-    if (join_btn_)   join_btn_->paint(ctx);
+    if (cancel_btn_)
+    {
+        cancel_btn_->paint(ctx);
+    }
+    if (join_btn_)
+    {
+        join_btn_->paint(ctx);
+    }
 
     // Keep repainting while the camera is live so the preview stays smooth.
     if (cam_enabled_ && ctx.host)
+    {
         ctx.host->request_repaint();
+    }
 }
 
 bool CallLobbyView::on_pointer_down(tk::Point /*local*/)
@@ -384,8 +456,7 @@ bool CallLobbyView::on_pointer_down(tk::Point /*local*/)
     return open_;
 }
 
-bool CallLobbyView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/,
-                             bool /*is_touchpad*/)
+bool CallLobbyView::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
 {
     return open_;
 }

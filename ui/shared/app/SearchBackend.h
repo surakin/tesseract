@@ -40,15 +40,15 @@ public:
 
     struct Result
     {
-        ResultKind  kind;
+        ResultKind kind;
         // room_id ("!...:server") or mxid ("@...:server") — both already
         // globally unique and sigil-disambiguated, so this doubles as the
         // opaque result identifier the D-Bus adapters hand back on Activate.
         std::string id;
-        std::string title;      // room name / display name (falls back to
+        std::string title;       // room name / display name (falls back to
                                  // alias or the bare id when empty)
-        std::string subtitle;   // topic / mxid
-        bool        has_unread = false; // room results only
+        std::string subtitle;    // topic / mxid
+        bool has_unread = false; // room results only
         // mxc:// URI of the room/DM or contact avatar, empty when none.
         // Resolving this to actual image bytes (a disk-cache lookup only —
         // GetResultMetas/Match must answer synchronously, no network fetch)
@@ -57,31 +57,30 @@ public:
         std::string avatar_url;
     };
 
-    using RoomsProvider   = std::function<std::vector<tesseract::RoomInfo>()>;
-    using UsersProvider   = std::function<std::vector<tesseract::RoomMember>()>;
-    using ActivateRoom    = std::function<void(const std::string& room_id)>;
+    using RoomsProvider = std::function<std::vector<tesseract::RoomInfo>()>;
+    using UsersProvider = std::function<std::vector<tesseract::RoomMember>()>;
+    using ActivateRoom = std::function<void(const std::string& room_id)>;
     using ActivateContact = std::function<void(const std::string& mxid)>;
 
     struct ShellRegistration
     {
-        RoomsProvider   rooms;
-        UsersProvider   known_users;
-        ActivateRoom    activate_room;
+        RoomsProvider rooms;
+        UsersProvider known_users;
+        ActivateRoom activate_room;
         ActivateContact activate_contact;
     };
 
     using Handle = std::size_t;
 
     Handle register_shell(ShellRegistration reg);
-    void   unregister_shell(Handle h);
+    void unregister_shell(Handle h);
 
     // Case-insensitive substring match (tesseract::text::name_matches) over
     // every registered shell's rooms (name/topic/canonical_alias) and known
     // contacts (display_name/mxid). A fast in-memory scan — safe to call
     // from a synchronous D-Bus request/response handler. Rooms are ranked
     // ahead of contacts; each group is sorted case-insensitively by title.
-    std::vector<Result> query(const std::string& term,
-                               std::size_t max_results = 10) const;
+    std::vector<Result> query(const std::string& term, std::size_t max_results = 10) const;
 
     // Re-resolves `id` against every registered shell's current rooms/
     // known_users and invokes the owning shell's activate_room/

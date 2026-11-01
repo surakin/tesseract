@@ -10,8 +10,7 @@
 namespace fs = std::filesystem;
 using V = tesseract::Client::MediaTypeVerdict;
 
-TEST_CASE("open_media writes private per-call files and purges them",
-          "[open_media]")
+TEST_CASE("open_media writes private per-call files and purges them", "[open_media]")
 {
     const std::vector<std::uint8_t> data{1, 2, 3};
     auto a = tesseract::write_open_media_file("photo.png", data);
@@ -31,8 +30,7 @@ TEST_CASE("open_media writes private per-call files and purges them",
     CHECK_FALSE(fs::exists(*b));
 }
 
-TEST_CASE("open_media refuses path-like names and files outside its directory",
-          "[open_media]")
+TEST_CASE("open_media refuses path-like names and files outside its directory", "[open_media]")
 {
     const std::vector<std::uint8_t> data{1};
     CHECK_FALSE(tesseract::write_open_media_file("../evil", data));
@@ -45,21 +43,17 @@ TEST_CASE("open_media refuses path-like names and files outside its directory",
     CHECK_FALSE(tesseract::open_local_file("relative.png"));
 }
 
-TEST_CASE("Client::check_media_file classifies through the FFI",
-          "[open_media]")
+TEST_CASE("Client::check_media_file classifies through the FFI", "[open_media]")
 {
     const std::vector<std::uint8_t> png{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    CHECK(tesseract::Client::check_media_file("a.png", "image/png", png).verdict ==
-          V::Ok);
+    CHECK(tesseract::Client::check_media_file("a.png", "image/png", png).verdict == V::Ok);
     const auto r = tesseract::Client::check_media_file("a.jpg", "image/jpeg", png);
     CHECK(r.verdict == V::ContentMismatch);
     CHECK(r.renamed_filename == "a.png");
-    CHECK(tesseract::Client::check_media_file("x.exe", "image/png", png).verdict ==
-          V::Executable);
+    CHECK(tesseract::Client::check_media_file("x.exe", "image/png", png).verdict == V::Executable);
 }
 
-TEST_CASE("open_local_file refuses executables even inside the media dir",
-          "[open_media]")
+TEST_CASE("open_local_file refuses executables even inside the media dir", "[open_media]")
 {
     const std::vector<std::uint8_t> elf{0x7f, 'E', 'L', 'F', 2, 1, 1};
     auto p = tesseract::write_open_media_file("photo.png", elf);
@@ -82,8 +76,7 @@ TEST_CASE("open_media handles non-ASCII names without throwing", "[open_media]")
     tesseract::purge_open_media_dir();
 }
 
-TEST_CASE("open_media shortens an over-long name and keeps its extension",
-          "[open_media]")
+TEST_CASE("open_media shortens an over-long name and keeps its extension", "[open_media]")
 {
     const std::vector<std::uint8_t> data{1, 2, 3};
     const std::string long_name = std::string(300, 'x') + ".png";

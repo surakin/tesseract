@@ -19,8 +19,7 @@ using namespace tk;
 using tesseract::views::RoomView;
 using tesseract::views::SettingsView;
 
-TEST_CASE("close_pickers hides an open emoji picker",
-          "[screenshot][room_view]")
+TEST_CASE("close_pickers hides an open emoji picker", "[screenshot][room_view]")
 {
     auto surface = TestSurface::create(1000, 700);
     TestHost host(nullptr);
@@ -28,7 +27,7 @@ TEST_CASE("close_pickers hides an open emoji picker",
     RoomView& view = *view_owner;
     host.set_root(&view);
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
     LayoutCtx lc{surface->factory(), Theme::light()};
@@ -42,8 +41,7 @@ TEST_CASE("close_pickers hides an open emoji picker",
     CHECK_FALSE(view.emoji_picker()->visible());
 }
 
-TEST_CASE("show_appearance_section selects the Appearance tab",
-          "[screenshot][settings]")
+TEST_CASE("show_appearance_section selects the Appearance tab", "[screenshot][settings]")
 {
     TestHost host(nullptr);
     auto view_owner = tk::create_root_widget<SettingsView>(&host);
@@ -56,8 +54,7 @@ TEST_CASE("show_appearance_section selects the Appearance tab",
     CHECK(view.selected_tab_label() == tk::tr("Appearance"));
 }
 
-TEST_CASE("show_emoji_picker anchors on the compose bar's emoji button",
-          "[screenshot][room_view]")
+TEST_CASE("show_emoji_picker anchors on the compose bar's emoji button", "[screenshot][room_view]")
 {
     auto surface = TestSurface::create(1000, 700);
     TestHost host(nullptr);
@@ -65,7 +62,7 @@ TEST_CASE("show_emoji_picker anchors on the compose bar's emoji button",
     RoomView& view = *view_owner;
     host.set_root(&view);
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
     LayoutCtx lc{surface->factory(), Theme::light()};

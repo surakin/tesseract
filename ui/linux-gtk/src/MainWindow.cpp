@@ -59,7 +59,6 @@
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
 
-
 namespace gtk4
 {
 
@@ -68,8 +67,7 @@ namespace gtk4
 // provider preview URL's bytes into a cairo surface off the UI thread.
 namespace
 {
-cairo_surface_t*
-decode_image_to_cairo_surface(const std::vector<std::uint8_t>& bytes);
+cairo_surface_t* decode_image_to_cairo_surface(const std::vector<std::uint8_t>& bytes);
 }
 
 // Posts an arbitrary callable onto the GTK main loop via g_idle_add/
@@ -125,14 +123,13 @@ void gtk_post_timeout(guint ms, F&& fn)
 // ---------------------------------------------------------------------------
 
 void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
-                                       std::string description,
-                                       bool soft_logout)
+                                       std::string description, bool soft_logout)
 {
     // Agnostic state machine lives in ShellBase; this shell only supplies the
     // native restart timer (post_to_ui_after_), status label, user strip
     // (refresh_user_strip_).
-    handle_sync_error_impl_(std::move(context), std::move(user_id),
-                            std::move(description), soft_logout);
+    handle_sync_error_impl_(std::move(context), std::move(user_id), std::move(description),
+                            soft_logout);
 }
 
 void MainWindow::on_room_list_state_ui_()
@@ -149,7 +146,9 @@ bool MainWindow::tray_available_() const
 void MainWindow::on_inflight_ui_()
 {
     if (!inflight_dot_)
+    {
         return;
+    }
     gtk_widget_queue_draw(inflight_dot_);
     const std::string tip = inflight_tooltip_text_();
     gtk_widget_set_tooltip_text(inflight_dot_, tip.c_str());
@@ -159,7 +158,9 @@ void MainWindow::on_inflight_ui_()
 void MainWindow::refresh_low_power_icon_()
 {
     if (!low_power_label_)
+    {
         return;
+    }
     const int scale = gtk_widget_get_scale_factor(low_power_label_);
     const int phys = std::max(1, 14 * (scale > 0 ? scale : 1));
     auto rgba = tk::rasterize_svg_rgba(tk::low_power_icon_svg(), phys,
@@ -170,13 +171,12 @@ void MainWindow::refresh_low_power_icon_()
         return;
     }
     GBytes* bytes = g_bytes_new(rgba.data(), rgba.size());
-    GdkTexture* tex = gdk_memory_texture_new(
-        phys, phys, GDK_MEMORY_R8G8B8A8, bytes, static_cast<gsize>(phys) * 4);
+    GdkTexture* tex = gdk_memory_texture_new(phys, phys, GDK_MEMORY_R8G8B8A8, bytes,
+                                             static_cast<gsize>(phys) * 4);
     g_bytes_unref(bytes);
     if (tex)
     {
-        gtk_image_set_from_paintable(GTK_IMAGE(low_power_label_),
-                                     GDK_PAINTABLE(tex));
+        gtk_image_set_from_paintable(GTK_IMAGE(low_power_label_), GDK_PAINTABLE(tex));
         g_object_unref(tex);
     }
 }
@@ -184,27 +184,28 @@ void MainWindow::refresh_low_power_icon_()
 void MainWindow::on_low_power_mode_ui_(bool active)
 {
     if (low_power_label_)
+    {
         gtk_widget_set_visible(low_power_label_, active ? TRUE : FALSE);
+    }
 }
 
 void MainWindow::draw_inflight_dot_(cairo_t* cr)
 {
-    auto       cv      = tk::cairo_pango::make_canvas(cr);
+    auto cv = tk::cairo_pango::make_canvas(cr);
     const auto dot_col = inflight_dot_color_();
     constexpr tk::Color ring_col = tk::Color::rgb(0xA0A0A6);
     const float c = tk::kInflightViewSize / 2.0f;
-    tk::draw_inflight_indicator(*cv, {c, c},
-                                tk::kInflightDotR, tk::kInflightOrbitR,
-                                tk::kInflightRingDotR,
-                                dot_col, ring_col,
-                                inflight_spin_phase_(),
+    tk::draw_inflight_indicator(*cv, {c, c}, tk::kInflightDotR, tk::kInflightOrbitR,
+                                tk::kInflightRingDotR, dot_col, ring_col, inflight_spin_phase_(),
                                 inflight_needs_anim_());
 }
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
 {
     if (!status_bar_)
+    {
         return;
+    }
     const auto segs = parse_status_message_(msg); // opt-in gate (server text → plain)
     if (!tesseract::status_has_links(segs))
     {
@@ -253,8 +254,10 @@ void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
 // User context menu helpers — trampoline + cleanup for g_signal_connect_data
 // ---------------------------------------------------------------------------
 
-namespace {
-struct UserMenuCtx {
+namespace
+{
+struct UserMenuCtx
+{
     std::function<void()> cb;
 };
 void user_menu_activate_(GSimpleAction*, GVariant*, gpointer p)
@@ -271,17 +274,17 @@ void user_menu_ctx_free_(gpointer p, GClosure*)
 // MainWindow
 // ---------------------------------------------------------------------------
 
-MainWindow::MainWindow(tesseract::AccountManager& account_manager,
-                       GtkApplication* app, bool start_hidden
+MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplication* app,
+                       bool start_hidden
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                       , std::filesystem::path screenshot_dir
+                       ,
+                       std::filesystem::path screenshot_dir
 #endif
                        )
-    : ShellBase(account_manager)
-    , app_(app)
-    , start_hidden_(start_hidden)
+    : ShellBase(account_manager), app_(app), start_hidden_(start_hidden)
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    , screenshot_dir_(std::move(screenshot_dir))
+      ,
+      screenshot_dir_(std::move(screenshot_dir))
 #endif
 {
     set_screen_lock_(std::make_unique<LinuxScreenLockGtk>());
@@ -301,17 +304,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
 
     window_ = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window_), "Tesseract");
-    gtk_widget_set_size_request(
-        GTK_WIDGET(window_),
-        static_cast<int>(tesseract::visual::kMinWindowWidth),
-        static_cast<int>(tesseract::visual::kMinWindowHeight));
+    gtk_widget_set_size_request(GTK_WIDGET(window_),
+                                static_cast<int>(tesseract::visual::kMinWindowWidth),
+                                static_cast<int>(tesseract::visual::kMinWindowHeight));
     // Size is applied after Settings load (see below); fall back to 1100×768.
     gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
 
 #ifdef TESSERACT_ICON_SEARCH_PATH
-    gtk_icon_theme_add_search_path(
-        gtk_icon_theme_get_for_display(gtk_widget_get_display(window_)),
-        TESSERACT_ICON_SEARCH_PATH);
+    gtk_icon_theme_add_search_path(gtk_icon_theme_get_for_display(gtk_widget_get_display(window_)),
+                                   TESSERACT_ICON_SEARCH_PATH);
     gtk_window_set_icon_name(GTK_WINDOW(window_), "tesseract");
 #endif
 
@@ -370,14 +371,13 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             color: #65676B;
         }
     )css");
-    gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(), GTK_STYLE_PROVIDER(theme_css_provider_),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                               GTK_STYLE_PROVIDER(theme_css_provider_),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     // ---- Layout ----
     content_stack_ = gtk_stack_new();
-    gtk_stack_set_transition_type(GTK_STACK(content_stack_),
-                                  GTK_STACK_TRANSITION_TYPE_NONE);
+    gtk_stack_set_transition_type(GTK_STACK(content_stack_), GTK_STACK_TRANSITION_TYPE_NONE);
     gtk_window_set_child(GTK_WINDOW(window_), content_stack_);
 
     branding_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
@@ -393,8 +393,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         tk::create_root_widget<tesseract::views::BrandView>(&branding_surface_->host());
     branding_view_ = branding_owner.get();
     branding_surface_->set_root(std::move(branding_owner));
-    gtk_stack_add_named(GTK_STACK(content_stack_),
-                        branding_surface_->widget(), "branding");
+    gtk_stack_add_named(GTK_STACK(content_stack_), branding_surface_->widget(), "branding");
 
     // The login page is created lazily by ShellBase::ensure_login_view_
     // (through create_login_surface_ui_) before each show.
@@ -405,7 +404,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     {
         const auto& saved = tesseract::Settings::instance().main_window_geometry;
         if (saved.valid && saved.w > 0 && saved.h > 0)
+        {
             gtk_window_set_default_size(GTK_WINDOW(window_), saved.w, saved.h);
+        }
     }
 
     // Save window size to Settings on every resize (debounced 500 ms).
@@ -415,36 +416,35 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // is captured once when it opens and never recomputed, so leaving one
     // open across a resize would strand it away from whatever control
     // anchored it — close everything instead.
-    g_signal_connect(
-        window_, "notify::default-width",
-        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
-                   {
-                       auto* self = static_cast<MainWindow*>(data);
-                       auto& g    = tesseract::Settings::instance().main_window_geometry;
-                       g.w        = gtk_widget_get_width(GTK_WIDGET(self->window_));
-                       g.h        = gtk_widget_get_height(GTK_WIDGET(self->window_));
-                       g.valid    = (g.w > 0 && g.h > 0);
-                       self->save_settings_debounced_();
-                       self->dismiss_popups_on_resize_();
-                   }),
-        this);
-    g_signal_connect(
-        window_, "notify::default-height",
-        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
-                   {
-                       auto* self = static_cast<MainWindow*>(data);
-                       auto& g    = tesseract::Settings::instance().main_window_geometry;
-                       g.w        = gtk_widget_get_width(GTK_WIDGET(self->window_));
-                       g.h        = gtk_widget_get_height(GTK_WIDGET(self->window_));
-                       g.valid    = (g.w > 0 && g.h > 0);
-                       self->save_settings_debounced_();
-                       self->dismiss_popups_on_resize_();
-                   }),
-        this);
+    g_signal_connect(window_, "notify::default-width",
+                     G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                                {
+                                    auto* self = static_cast<MainWindow*>(data);
+                                    auto& g = tesseract::Settings::instance().main_window_geometry;
+                                    g.w = gtk_widget_get_width(GTK_WIDGET(self->window_));
+                                    g.h = gtk_widget_get_height(GTK_WIDGET(self->window_));
+                                    g.valid = (g.w > 0 && g.h > 0);
+                                    self->save_settings_debounced_();
+                                    self->dismiss_popups_on_resize_();
+                                }),
+                     this);
+    g_signal_connect(window_, "notify::default-height",
+                     G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                                {
+                                    auto* self = static_cast<MainWindow*>(data);
+                                    auto& g = tesseract::Settings::instance().main_window_geometry;
+                                    g.w = gtk_widget_get_width(GTK_WIDGET(self->window_));
+                                    g.h = gtk_widget_get_height(GTK_WIDGET(self->window_));
+                                    g.valid = (g.w > 0 && g.h > 0);
+                                    self->save_settings_debounced_();
+                                    self->dismiss_popups_on_resize_();
+                                }),
+                     this);
 
     // Single surface hosting the full main-app widget tree.
     main_app_surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
-    wire_main_surface_(static_cast<float>(gtk_widget_get_scale_factor(main_app_surface_->widget())));
+    wire_main_surface_(
+        static_cast<float>(gtk_widget_get_scale_factor(main_app_surface_->widget())));
 
     // The per-frame media-prefetch item cap stays lower here than on Qt6/Win32/macOS purely as a glycin
     // subprocess contention guard (gdk-pixbuf routes decode through a
@@ -477,11 +477,27 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             }
 
             const auto items = build_user_menu_items_(
-                [this] { open_settings_(); },
-                [this] { begin_add_account(); },
-                [this] { start_qr_grant_overlay(); },
-                [this] { logout_active_account_ui_(); },
-                [this] { tray_.reset(); g_application_quit(G_APPLICATION(app_)); },
+                [this]
+                {
+                    open_settings_();
+                },
+                [this]
+                {
+                    begin_add_account();
+                },
+                [this]
+                {
+                    start_qr_grant_overlay();
+                },
+                [this]
+                {
+                    logout_active_account_ui_();
+                },
+                [this]
+                {
+                    tray_.reset();
+                    g_application_quit(G_APPLICATION(app_));
+                },
                 verify_session_menu_callback_());
 
             GMenu* top = g_menu_new();
@@ -506,10 +522,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 g_menu_append(cur, item.label.c_str(), full);
 
                 GSimpleAction* act = g_simple_action_new(name, nullptr);
-                g_signal_connect_data(act, "activate",
-                                      G_CALLBACK(user_menu_activate_),
-                                      new UserMenuCtx{item.callback},
-                                      user_menu_ctx_free_,
+                g_signal_connect_data(act, "activate", G_CALLBACK(user_menu_activate_),
+                                      new UserMenuCtx{item.callback}, user_menu_ctx_free_,
                                       static_cast<GConnectFlags>(0));
                 g_action_map_add_action(G_ACTION_MAP(grp), G_ACTION(act));
                 g_object_unref(act);
@@ -522,12 +536,10 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             g_object_unref(top);
             gtk_widget_set_parent(user_popover_, main_app_surface_->widget());
             gtk_popover_set_has_arrow(GTK_POPOVER(user_popover_), FALSE);
-            gtk_widget_insert_action_group(user_popover_, "usr",
-                                           G_ACTION_GROUP(grp));
+            gtk_widget_insert_action_group(user_popover_, "usr", G_ACTION_GROUP(grp));
             g_object_unref(grp);
 
-            GdkRectangle r = {static_cast<int>(world.x),
-                              static_cast<int>(world.y), 1, 1};
+            GdkRectangle r = {static_cast<int>(world.x), static_cast<int>(world.y), 1, 1};
             gtk_popover_set_pointing_to(GTK_POPOVER(user_popover_), &r);
             gtk_popover_popup(GTK_POPOVER(user_popover_));
         };
@@ -603,21 +615,25 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             }
             build_copy_context_menu_();
             if (!copy_ctx_menu_)
+            {
                 return;
+            }
             GtkWidget* w = main_app_surface_->widget();
             GdkDisplay* dpy = gtk_widget_get_display(w);
             GdkSeat* seat = gdk_display_get_default_seat(dpy);
             GdkDevice* ptr = gdk_seat_get_pointer(seat);
-            GdkSurface* surf = gtk_native_get_surface(
-                GTK_NATIVE(gtk_widget_get_native(w)));
+            GdkSurface* surf = gtk_native_get_surface(GTK_NATIVE(gtk_widget_get_native(w)));
             double sx = 0, sy = 0;
             if (surf)
+            {
                 gdk_surface_get_device_position(surf, ptr, &sx, &sy, nullptr);
+            }
             graphene_point_t pt_in{static_cast<float>(sx), static_cast<float>(sy)};
             graphene_point_t pt_out{};
-            if (!gtk_widget_compute_point(
-                    GTK_WIDGET(gtk_widget_get_native(w)), w, &pt_in, &pt_out))
+            if (!gtk_widget_compute_point(GTK_WIDGET(gtk_widget_get_native(w)), w, &pt_in, &pt_out))
+            {
                 pt_out = {};
+            }
             GdkRectangle r{static_cast<int>(pt_out.x), static_cast<int>(pt_out.y), 1, 1};
             gtk_popover_set_pointing_to(GTK_POPOVER(copy_ctx_menu_), &r);
             gtk_popover_popup(GTK_POPOVER(copy_ctx_menu_));
@@ -627,18 +643,16 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             using HC = tesseract::views::MessageListView::HoverCursor;
             const HC hc = tesseract::views::MessageListView::hover_cursor_for(url);
             GtkWidget* w = main_app_surface_->widget();
-            gtk_widget_set_cursor_from_name(
-                w, hc == HC::Text ? "text" : hc == HC::Pointer ? "pointer"
-                                                               : "default");
+            gtk_widget_set_cursor_from_name(w, hc == HC::Text      ? "text"
+                                               : hc == HC::Pointer ? "pointer"
+                                                                   : "default");
         };
         main_app_->space_root()->on_link_hovered = [this](const std::string& url)
         {
             GtkWidget* w = main_app_surface_->widget();
-            gtk_widget_set_cursor_from_name(w, url.empty() ? "default"
-                                                           : "pointer");
+            gtk_widget_set_cursor_from_name(w, url.empty() ? "default" : "pointer");
         };
-        main_app_->on_sidebar_cursor =
-            [this](tesseract::views::MainAppWidget::SidebarCursor c)
+        main_app_->on_sidebar_cursor = [this](tesseract::views::MainAppWidget::SidebarCursor c)
         {
             using SC = tesseract::views::MainAppWidget::SidebarCursor;
             const char* name = c == SC::Resize   ? "col-resize"
@@ -702,12 +716,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // Right-click on the chat area: the user-strip menu (message menus are tk popups).
     {
         GtkGesture* gesture = gtk_gesture_click_new();
-        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
-                                      GDK_BUTTON_SECONDARY);
-        g_signal_connect(gesture, "pressed", G_CALLBACK(on_msg_right_click_),
-                         this);
-        gtk_widget_add_controller(main_app_surface_->widget(),
-                                  GTK_EVENT_CONTROLLER(gesture));
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), GDK_BUTTON_SECONDARY);
+        g_signal_connect(gesture, "pressed", G_CALLBACK(on_msg_right_click_), this);
+        gtk_widget_add_controller(main_app_surface_->widget(), GTK_EVENT_CONTROLLER(gesture));
     }
 
     GtkWidget* main_widget = main_app_surface_->widget();
@@ -728,10 +739,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // that mechanism for advancing the cycle but not for committing it).
     {
         GtkEventController* key_ctl = gtk_event_controller_key_new();
-        g_signal_connect(key_ctl, "key-pressed",
-                         G_CALLBACK(on_window_key_pressed_), this);
-        g_signal_connect(key_ctl, "key-released",
-                         G_CALLBACK(on_window_key_released_), this);
+        g_signal_connect(key_ctl, "key-pressed", G_CALLBACK(on_window_key_pressed_), this);
+        g_signal_connect(key_ctl, "key-released", G_CALLBACK(on_window_key_released_), this);
         gtk_widget_add_controller(window_, key_ctl);
     }
 
@@ -747,26 +756,30 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // above — GtkShortcutController only ever fires on key-down/repeat.
     {
         GtkEventController* sc = gtk_shortcut_controller_new();
-        gtk_shortcut_controller_set_scope(GTK_SHORTCUT_CONTROLLER(sc),
-                                          GTK_SHORTCUT_SCOPE_GLOBAL);
+        gtk_shortcut_controller_set_scope(GTK_SHORTCUT_CONTROLLER(sc), GTK_SHORTCUT_SCOPE_GLOBAL);
         gtk_event_controller_set_propagation_phase(sc, GTK_PHASE_CAPTURE);
         for (const auto& def : tesseract::views::shortcuts())
         {
             if (def.scope == tesseract::views::ShortcutScope::Contextual)
+            {
                 continue;
+            }
             for (const auto& chord : def.chords)
             {
                 GtkShortcutTrigger* trigger = gtk_trigger_from_chord_(chord);
                 if (!trigger)
+                {
                     continue;
+                }
                 auto* binding = new ShortcutBinding_{this, tk::to_key_event(chord)};
                 GtkShortcut* shortcut = gtk_shortcut_new(
                     trigger,
-                    gtk_callback_action_new(
-                        on_registry_shortcut_, binding,
-                        [](gpointer data) { delete static_cast<ShortcutBinding_*>(data); }));
-                gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
-                                                     shortcut);
+                    gtk_callback_action_new(on_registry_shortcut_, binding,
+                                            [](gpointer data)
+                                            {
+                                                delete static_cast<ShortcutBinding_*>(data);
+                                            }));
+                gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc), shortcut);
             }
         }
         gtk_widget_add_controller(window_, sc);
@@ -785,11 +798,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // markup; route activation through the shared opener instead of
     // gtk_show_uri so all platforms share one code path.
     g_signal_connect(status_bar_, "activate-link",
-                     G_CALLBACK(+[](GtkLabel*, const char* uri,
-                                    gpointer) -> gboolean
+                     G_CALLBACK(+[](GtkLabel*, const char* uri, gpointer) -> gboolean
                                 {
-                                    tesseract::Client::open_in_browser(
-                                        uri ? uri : "");
+                                    tesseract::Client::open_in_browser(uri ? uri : "");
                                     return TRUE;
                                 }),
                      nullptr);
@@ -800,16 +811,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // status slot.
     {
         GtkGesture* status_click = gtk_gesture_click_new();
-        g_signal_connect(status_click, "released",
-                         G_CALLBACK(+[](GtkGestureClick*, int, double, double,
-                                        gpointer data)
-                                    {
-                                        static_cast<MainWindow*>(data)
-                                            ->trigger_persistent_status_click_();
-                                    }),
-                         this);
-        gtk_widget_add_controller(status_bar_,
-                                  GTK_EVENT_CONTROLLER(status_click));
+        g_signal_connect(
+            status_click, "released",
+            G_CALLBACK(+[](GtkGestureClick*, int, double, double, gpointer data)
+                       {
+                           static_cast<MainWindow*>(data)->trigger_persistent_status_click_();
+                       }),
+            this);
+        gtk_widget_add_controller(status_bar_, GTK_EVENT_CONTROLLER(status_click));
     }
     inflight_dot_ = gtk_drawing_area_new();
     gtk_drawing_area_set_draw_func(
@@ -819,9 +828,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             static_cast<MainWindow*>(data)->draw_inflight_dot_(cr);
         },
         this, nullptr);
-    gtk_widget_set_size_request(inflight_dot_,
-                               static_cast<int>(tk::kInflightViewSize),
-                               static_cast<int>(tk::kInflightViewSize));
+    gtk_widget_set_size_request(inflight_dot_, static_cast<int>(tk::kInflightViewSize),
+                                static_cast<int>(tk::kInflightViewSize));
     gtk_widget_set_margin_end(inflight_dot_, 4);
     gtk_widget_set_margin_bottom(inflight_dot_, 2);
     {
@@ -833,8 +841,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         gtk_image_set_pixel_size(GTK_IMAGE(low_power_label_), 14);
         gtk_widget_set_margin_end(low_power_label_, 4);
         gtk_widget_set_margin_bottom(low_power_label_, 2);
-        gtk_widget_set_tooltip_text(
-            low_power_label_, tk::tr("Low power mode — background sync paused").c_str());
+        gtk_widget_set_tooltip_text(low_power_label_,
+                                    tk::tr("Low power mode — background sync paused").c_str());
         gtk_widget_set_visible(low_power_label_, FALSE);
         refresh_low_power_icon_();
         gtk_box_append(GTK_BOX(status_row), status_bar_);
@@ -857,34 +865,36 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // The GdkSurface (and its GdkToplevel:state property, which is_main_window_visible_()
     // reads for the minimized bit) doesn't exist until the widget is realized —
     // catch that via "realize" rather than assuming it's already there.
-    g_signal_connect(window_, "realize",
-                     G_CALLBACK(+[](GtkWidget* w, gpointer data)
-                                {
-                                    auto* self = static_cast<MainWindow*>(data);
-                                    auto* surf = gtk_native_get_surface(
-                                        GTK_NATIVE(w));
-                                    if (!surf)
-                                        return;
-                                    g_signal_connect(
-                                        surf, "notify::state",
-                                        G_CALLBACK(
-                                            +[](GdkToplevel*, GParamSpec*,
-                                               gpointer d)
-                                            {
-                                                static_cast<MainWindow*>(d)
-                                                    ->update_video_playback_suspension_();
-                                            }),
-                                        self);
-                                }),
-                     this);
+    g_signal_connect(
+        window_, "realize",
+        G_CALLBACK(+[](GtkWidget* w, gpointer data)
+                   {
+                       auto* self = static_cast<MainWindow*>(data);
+                       auto* surf = gtk_native_get_surface(GTK_NATIVE(w));
+                       if (!surf)
+                       {
+                           return;
+                       }
+                       g_signal_connect(
+                           surf, "notify::state",
+                           G_CALLBACK(
+                               +[](GdkToplevel*, GParamSpec*, gpointer d)
+                               {
+                                   static_cast<MainWindow*>(d)->update_video_playback_suspension_();
+                               }),
+                           self);
+                   }),
+        this);
 
     if (!start_hidden_)
+    {
         gtk_widget_set_visible(window_, TRUE);
+    }
 
     // Notifiers are created per-account in do_login / on_login_succeeded.
 
-    g_signal_connect(window_, "close-request",
-                     G_CALLBACK(&MainWindow::on_window_close_request_), this);
+    g_signal_connect(window_, "close-request", G_CALLBACK(&MainWindow::on_window_close_request_),
+                     this);
 
     // GTK4 has no gtk_window_set_urgency_hint (removed, not deprecated), so
     // the "visible but unfocused" attention request is delivered as a
@@ -898,7 +908,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                     const bool active = gtk_window_is_active(w);
                                     self->notify_window_active_(active);
                                     if (active)
+                                    {
                                         self->start_anim_tick_if_needed_();
+                                    }
                                 }),
                      this);
 
@@ -923,9 +935,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     if (portal_bus_)
     {
         portal_setting_changed_sub_ = g_dbus_connection_signal_subscribe(
-            portal_bus_, "org.freedesktop.portal.Desktop",
-            "org.freedesktop.portal.Settings", "SettingChanged",
-            "/org/freedesktop/portal/desktop", nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+            portal_bus_, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Settings",
+            "SettingChanged", "/org/freedesktop/portal/desktop", nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
             on_portal_setting_changed_, this, nullptr);
     }
     read_portal_color_scheme_();
@@ -936,23 +947,27 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     // Re-apply when the OS dark-mode setting changes (System mode only).
     // Store the handler ID so after_theme_applied_ can block it while writing
     // the same property, preventing a notify → apply → notify feedback loop.
-    prefer_dark_notify_id_ = g_signal_connect(
-        gtk_settings_get_default(), "notify::gtk-application-prefer-dark-theme",
-        G_CALLBACK(+[](GObject*, GParamSpec*, gpointer data)
-                   {
-                       auto* self = static_cast<MainWindow*>(data);
-                       if (tesseract::Settings::instance().theme_pref ==
-                           tesseract::Settings::ThemePreference::System)
-                       {
-                           self->apply_current_theme_();
-                       }
-                   }),
-        this);
+    prefer_dark_notify_id_ =
+        g_signal_connect(gtk_settings_get_default(), "notify::gtk-application-prefer-dark-theme",
+                         G_CALLBACK(+[](GObject*, GParamSpec*, gpointer data)
+                                    {
+                                        auto* self = static_cast<MainWindow*>(data);
+                                        if (tesseract::Settings::instance().theme_pref ==
+                                            tesseract::Settings::ThemePreference::System)
+                                        {
+                                            self->apply_current_theme_();
+                                        }
+                                    }),
+                         this);
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     if (screenshot_dir_.empty())
 #endif
-        gtk_post_idle(guarded([this] { do_login(); }));
+        gtk_post_idle(guarded(
+            [this]
+            {
+                do_login();
+            }));
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
@@ -965,23 +980,27 @@ bool MainWindow::save_screenshot_(const char* filename)
     GtkSnapshot* snapshot = gtk_snapshot_new();
     const int width = gtk_widget_get_width(window_);
     const int height = gtk_widget_get_height(window_);
-    gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot),
-                           width, height);
+    gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), width, height);
     GskRenderNode* node = gtk_snapshot_free_to_node(snapshot);
     GskRenderer* renderer = gtk_native_get_renderer(GTK_NATIVE(window_));
-    GdkTexture* texture = node && renderer
-        ? gsk_renderer_render_texture(renderer, node, nullptr)
-        : nullptr;
+    GdkTexture* texture =
+        node && renderer ? gsk_renderer_render_texture(renderer, node, nullptr) : nullptr;
 
     const auto path = screenshot_dir_ / filename;
     const bool ok = texture && gdk_texture_save_to_png(texture, path.string().c_str());
     if (texture)
+    {
         g_object_unref(texture);
+    }
     if (node)
+    {
         gsk_render_node_unref(node);
+    }
     g_object_unref(paintable);
     if (!ok)
+    {
         g_printerr("Could not save screenshot: %s\n", path.string().c_str());
+    }
     return ok;
 }
 
@@ -991,14 +1010,18 @@ namespace
 class GtkScreenshotHost final : public tesseract::screenshot::ScreenshotHost
 {
 public:
-    explicit GtkScreenshotHost(MainWindow& window) : window_(window) {}
+    explicit GtkScreenshotHost(MainWindow& window) : window_(window)
+    {
+    }
 
     void apply_theme(tesseract::screenshot::ScreenshotTheme theme) override
     {
-        window_.apply_screenshot_theme_(
-            theme == tesseract::screenshot::ScreenshotTheme::Dark);
+        window_.apply_screenshot_theme_(theme == tesseract::screenshot::ScreenshotTheme::Dark);
     }
-    void refresh() override { window_.refresh_for_screenshot_(); }
+    void refresh() override
+    {
+        window_.refresh_for_screenshot_();
+    }
     bool save_png(const std::string& filename) override
     {
         return window_.save_screenshot_(filename.c_str());
@@ -1016,7 +1039,10 @@ public:
             },
             new std::function<void()>(std::move(fn)));
     }
-    void finish(bool ok) override { window_.finish_screenshots_(ok); }
+    void finish(bool ok) override
+    {
+        window_.finish_screenshots_(ok);
+    }
 
 private:
     MainWindow& window_;
@@ -1039,7 +1065,9 @@ void MainWindow::finish_screenshots_(bool ok)
     // g_application_run's status can't be set from here; a failed capture
     // must still fail the CI step.
     if (!ok)
+    {
         std::exit(EXIT_FAILURE);
+    }
     g_application_quit(G_APPLICATION(app_));
 }
 
@@ -1061,8 +1089,7 @@ void MainWindow::start_screenshot_mode()
     std::filesystem::create_directories(screenshot_dir_, ec);
     if (ec)
     {
-        g_printerr("Could not create screenshot directory: %s\n",
-                   screenshot_dir_.string().c_str());
+        g_printerr("Could not create screenshot directory: %s\n", screenshot_dir_.string().c_str());
         finish_screenshots_(false);
         return;
     }
@@ -1085,7 +1112,10 @@ void MainWindow::start_tray_if_needed_()
         return;
     }
     tray_ = std::make_unique<GtkSniTrayIcon>(
-        [this](std::string token) { tray_toggle_(token); },
+        [this](std::string token)
+        {
+            tray_toggle_(token);
+        },
         [this]
         {
             // Real quit: drop the tray so close-request falls through to
@@ -1153,8 +1183,7 @@ void MainWindow::start_mpris_if_needed_()
     }
 }
 
-gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/,
-                                              gpointer user_data)
+gboolean MainWindow::on_window_close_request_(GtkWindow* /*window*/, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     // Only the window that owns the app-wide tray icon consults CloseAction —
@@ -1203,16 +1232,15 @@ tk::ThemeMode MainWindow::os_color_scheme_() const
 {
     if (portal_color_scheme_ != -1)
     {
-        return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark
-                                         : tk::ThemeMode::Light;
+        return portal_color_scheme_ == 1 ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
     }
     // Portal unreachable (no xdg-desktop-portal running). Fall back to
     // whatever GtkSettings has — usually only meaningful if something like
     // kde-gtk-config populated it from ~/.config/gtk-4.0/settings.ini at
     // GTK init time, or if the app itself wrote it in after_theme_applied_.
     gboolean prefer_dark = FALSE;
-    g_object_get(gtk_settings_get_default(),
-                 "gtk-application-prefer-dark-theme", &prefer_dark, nullptr);
+    g_object_get(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", &prefer_dark,
+                 nullptr);
     return prefer_dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light;
 }
 
@@ -1233,13 +1261,13 @@ void portal_read_async(GDBusConnection* bus, const char* key, F&& done)
     g_dbus_connection_call(
         bus, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
         "org.freedesktop.portal.Settings", "ReadOne",
-        g_variant_new("(ss)", "org.freedesktop.appearance", key),
-        G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
+        g_variant_new("(ss)", "org.freedesktop.appearance", key), G_VARIANT_TYPE("(v)"),
+        G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
         [](GObject* source, GAsyncResult* res, gpointer p)
         {
             auto* closure = static_cast<Closure*>(p);
-            GVariant* reply = g_dbus_connection_call_finish(
-                G_DBUS_CONNECTION(source), res, nullptr);
+            GVariant* reply =
+                g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, nullptr);
             GVariant* value = nullptr;
             if (reply)
             {
@@ -1267,8 +1295,11 @@ void MainWindow::read_portal_color_scheme_()
         return;
     }
     portal_read_async(portal_bus_, "color-scheme",
-                      guarded([this](GVariant* value)
-                              { apply_portal_color_scheme_(value); }));
+                      guarded(
+                          [this](GVariant* value)
+                          {
+                              apply_portal_color_scheme_(value);
+                          }));
 }
 
 // The portal reports 0 = no preference, 1 = dark, 2 = light. Applies the new
@@ -1330,8 +1361,11 @@ void MainWindow::read_portal_accent_color_()
         return;
     }
     portal_read_async(portal_bus_, "accent-color",
-                      guarded([this](GVariant* value)
-                              { apply_portal_accent_(value); }));
+                      guarded(
+                          [this](GVariant* value)
+                          {
+                              apply_portal_accent_(value);
+                          }));
 }
 
 void MainWindow::apply_portal_accent_(GVariant* value)
@@ -1344,10 +1378,8 @@ void MainWindow::apply_portal_accent_(GVariant* value)
     on_system_accent_changed_();
 }
 
-void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
-                                            const char*, const char*,
-                                            const char*, GVariant* parameters,
-                                            gpointer user_data)
+void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*, const char*, const char*,
+                                            const char*, GVariant* parameters, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     const char* ns = nullptr;
@@ -1358,7 +1390,9 @@ void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
     if (std::string(ns) != "org.freedesktop.appearance")
     {
         if (value)
+        {
             g_variant_unref(value);
+        }
         return;
     }
     if (std::string(key) == "color-scheme")
@@ -1370,7 +1404,9 @@ void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
         self->apply_portal_accent_(value);
     }
     if (value)
+    {
         g_variant_unref(value);
+    }
 }
 
 void MainWindow::apply_native_theme_(const tk::Theme& t)
@@ -1387,12 +1423,15 @@ void MainWindow::after_theme_applied_(const tk::Theme& t)
     // our own g_object_set would re-trigger apply_current_theme_ indefinitely.
     bool dark = (t.mode == tk::ThemeMode::Dark);
     if (prefer_dark_notify_id_)
+    {
         g_signal_handler_block(gtk_settings_get_default(), prefer_dark_notify_id_);
-    g_object_set(gtk_settings_get_default(),
-                 "gtk-application-prefer-dark-theme", dark ? TRUE : FALSE,
-                 nullptr);
+    }
+    g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme",
+                 dark ? TRUE : FALSE, nullptr);
     if (prefer_dark_notify_id_)
+    {
         g_signal_handler_unblock(gtk_settings_get_default(), prefer_dark_notify_id_);
+    }
 
     // Rebuild dynamic CSS rules. The compose-area rule is static but lives
     // here because load_from_string replaces all prior content in the provider.
@@ -1406,20 +1445,22 @@ void MainWindow::after_theme_applied_(const tk::Theme& t)
                       "textview.compose-area,"
                       "textview.compose-area text {"
                       " background: transparent; }\n",
-                      t.palette.sidebar_bg.r, t.palette.sidebar_bg.g,
-                      t.palette.sidebar_bg.b, t.palette.separator.r,
-                      t.palette.separator.g, t.palette.separator.b);
+                      t.palette.sidebar_bg.r, t.palette.sidebar_bg.g, t.palette.sidebar_bg.b,
+                      t.palette.separator.r, t.palette.separator.g, t.palette.separator.b);
         gtk_css_provider_load_from_string(theme_css_provider_, css);
     }
 }
 
-void MainWindow::for_each_shell_surface_(
-    const std::function<void(tk::SurfaceBase&)>& fn)
+void MainWindow::for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn)
 {
     if (branding_surface_)
+    {
         fn(*branding_surface_);
+    }
     if (main_app_surface_)
+    {
         fn(*main_app_surface_);
+    }
 }
 
 MainWindow::~MainWindow()
@@ -1450,8 +1491,7 @@ MainWindow::~MainWindow()
     {
         if (portal_setting_changed_sub_)
         {
-            g_dbus_connection_signal_unsubscribe(portal_bus_,
-                                                 portal_setting_changed_sub_);
+            g_dbus_connection_signal_unsubscribe(portal_bus_, portal_setting_changed_sub_);
         }
         g_object_unref(portal_bus_);
         portal_bus_ = nullptr;
@@ -1507,12 +1547,16 @@ MainWindow::~MainWindow()
         for (auto& sess : account_manager_.accounts())
         {
             if (sess->sync_started)
+            {
                 sess->client->request_stop();
+            }
         }
         for (auto& sess : account_manager_.accounts())
         {
             if (sess->sync_started)
+            {
                 sess->client->stop_sync();
+            }
         }
     }
     if (pending_login_client_)
@@ -1534,7 +1578,9 @@ MainWindow::~MainWindow()
 void MainWindow::close_app_settings_ui_()
 {
     if (!settings_surface_)
+    {
         return;
+    }
     stop_search_index_stats_poll_();
     leave_settings_();
 }
@@ -1542,7 +1588,9 @@ void MainWindow::close_app_settings_ui_()
 void MainWindow::rebind_login_client_ui_()
 {
     if (!login_view_)
+    {
         return;
+    }
     login_view_->set_client(reset_pending_login_client_());
     // Swap only. Settings is open on top of the login view, and reset() would
     // refocus its homeserver field mid-typing; the homeserver check is re-run
@@ -1559,10 +1607,14 @@ void MainWindow::leave_settings_()
         // A proxy change made in Settings replaced the client: re-run the
         // homeserver check against it.
         if (take_login_recheck_())
+        {
             login_view_->reset();
+        }
     }
     else
+    {
         show_main_content_();
+    }
     set_app_settings_open_(false);
     teardown_settings_view_();
 }
@@ -1612,13 +1664,16 @@ void MainWindow::do_login()
                 start_hidden_ = false;
                 gtk_widget_set_visible(window_, TRUE);
             }
-            show_login_after_restore_(restore, [this] { do_login(); });
+            show_login_after_restore_(restore,
+                                      [this]
+                                      {
+                                          do_login();
+                                      });
         },
         network_available);
 }
 
-std::unique_ptr<tesseract::IEventHandler>
-MainWindow::make_account_bridge_(const std::string& uid)
+std::unique_ptr<tesseract::IEventHandler> MainWindow::make_account_bridge_(const std::string& uid)
 {
     auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
     bridge->set_user_id(uid);
@@ -1640,19 +1695,16 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
     // Per-account notifier: click switches to this account then navigates.
     const std::string notif_uid = session.user_id;
     session.notifier = std::make_unique<LinuxNotifierGtk>(
-        [this, notif_uid](std::string room_id, std::string event_id,
-                          std::string token)
+        [this, notif_uid](std::string room_id, std::string event_id, std::string token)
         {
-            on_notification_clicked_(notif_uid, std::move(room_id),
-                                     std::move(event_id), std::move(token));
+            on_notification_clicked_(notif_uid, std::move(room_id), std::move(event_id),
+                                     std::move(token));
         },
-        [this, notif_uid](std::string room_id, std::string event_id,
-                          std::string reply_text)
+        [this, notif_uid](std::string room_id, std::string event_id, std::string reply_text)
         {
             // Deliberately does not switch account or navigate — matches
             // KDE's own reply UX of not raising the app on submit.
-            send_notification_reply_(notif_uid, std::move(room_id),
-                                     std::move(event_id),
+            send_notification_reply_(notif_uid, std::move(room_id), std::move(event_id),
                                      std::move(reply_text));
         });
 }
@@ -1711,14 +1763,12 @@ void deliver_file_result(GFile* file, PathCtx* c)
 }
 } // namespace
 
-void MainWindow::prompt_passphrase_(std::string title,
-                                    std::function<void(std::string)> cb)
+void MainWindow::prompt_passphrase_(std::string title, std::function<void(std::string)> cb)
 {
     G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     GtkWidget* dlg = gtk_dialog_new_with_buttons(
-        title.c_str(), GTK_WINDOW(window_), GTK_DIALOG_MODAL,
-        tk::tr("_Cancel").c_str(), GTK_RESPONSE_CANCEL, tk::tr("_OK").c_str(),
-        GTK_RESPONSE_OK, nullptr);
+        title.c_str(), GTK_WINDOW(window_), GTK_DIALOG_MODAL, tk::tr("_Cancel").c_str(),
+        GTK_RESPONSE_CANCEL, tk::tr("_OK").c_str(), GTK_RESPONSE_OK, nullptr);
     GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dlg));
     G_GNUC_END_IGNORE_DEPRECATIONS
     GtkWidget* entry = gtk_entry_new();
@@ -1731,26 +1781,29 @@ void MainWindow::prompt_passphrase_(std::string title,
     gtk_box_append(GTK_BOX(content), entry);
     gtk_window_present(GTK_WINDOW(dlg));
 
-    struct PassphraseCtx {
+    struct PassphraseCtx
+    {
         std::function<void(std::string)> cb;
         GtkWidget* entry;
     };
     auto* ctx = new PassphraseCtx{std::move(cb), entry};
-    g_signal_connect(
-        dlg, "response",
-        G_CALLBACK(+[](GtkDialog* d, int resp, gpointer data)
-        {
-            auto* c = static_cast<PassphraseCtx*>(data);
-            if (resp == GTK_RESPONSE_OK)
-            {
-                const char* text = gtk_editable_get_text(GTK_EDITABLE(c->entry));
-                if (text && text[0] != '\0')
-                    c->cb(std::string(text));
-            }
-            delete c;
-            gtk_window_destroy(GTK_WINDOW(d));
-        }),
-        ctx);
+    g_signal_connect(dlg, "response",
+                     G_CALLBACK(+[](GtkDialog* d, int resp, gpointer data)
+                                {
+                                    auto* c = static_cast<PassphraseCtx*>(data);
+                                    if (resp == GTK_RESPONSE_OK)
+                                    {
+                                        const char* text =
+                                            gtk_editable_get_text(GTK_EDITABLE(c->entry));
+                                        if (text && text[0] != '\0')
+                                        {
+                                            c->cb(std::string(text));
+                                        }
+                                    }
+                                    delete c;
+                                    gtk_window_destroy(GTK_WINDOW(d));
+                                }),
+                     ctx);
 }
 
 void MainWindow::pick_save_file_(std::string title, std::string suggested_name,
@@ -1759,68 +1812,76 @@ void MainWindow::pick_save_file_(std::string title, std::string suggested_name,
     GtkFileDialog* dlg = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dlg, title.c_str());
     gtk_file_dialog_set_initial_name(dlg, suggested_name.c_str());
-    gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
+    gtk_file_dialog_save(
+        dlg, GTK_WINDOW(window_), nullptr,
         +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
         {
             GError* err = nullptr;
-            GFile* file = gtk_file_dialog_save_finish(
-                GTK_FILE_DIALOG(dialog_obj), res, &err);
-            if (err) g_error_free(err);
+            GFile* file = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(dialog_obj), res, &err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             deliver_file_result(file, static_cast<PathCtx*>(data));
         },
         new PathCtx{std::move(cb)});
     g_object_unref(dlg);
 }
 
-void MainWindow::pick_open_file_(std::string title,
-                                 std::function<void(std::string)> cb)
+void MainWindow::pick_open_file_(std::string title, std::function<void(std::string)> cb)
 {
     GtkFileDialog* dlg = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dlg, title.c_str());
-    gtk_file_dialog_open(dlg, GTK_WINDOW(window_), nullptr,
+    gtk_file_dialog_open(
+        dlg, GTK_WINDOW(window_), nullptr,
         +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
         {
             GError* err = nullptr;
-            GFile* file = gtk_file_dialog_open_finish(
-                GTK_FILE_DIALOG(dialog_obj), res, &err);
-            if (err) g_error_free(err);
+            GFile* file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(dialog_obj), res, &err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             deliver_file_result(file, static_cast<PathCtx*>(data));
         },
         new PathCtx{std::move(cb)});
     g_object_unref(dlg);
 }
 
-void MainWindow::pick_folder_(std::string title,
-                              std::function<void(std::string)> cb)
+void MainWindow::pick_folder_(std::string title, std::function<void(std::string)> cb)
 {
     GtkFileDialog* dlg = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dlg, title.c_str());
-    gtk_file_dialog_select_folder(dlg, GTK_WINDOW(window_), nullptr,
+    gtk_file_dialog_select_folder(
+        dlg, GTK_WINDOW(window_), nullptr,
         +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
         {
             GError* err = nullptr;
-            GFile* file = gtk_file_dialog_select_folder_finish(
-                GTK_FILE_DIALOG(dialog_obj), res, &err);
-            if (err) g_error_free(err);
+            GFile* file =
+                gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(dialog_obj), res, &err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             deliver_file_result(file, static_cast<PathCtx*>(data));
         },
         new PathCtx{std::move(cb)});
     g_object_unref(dlg);
 }
 
-void MainWindow::show_message_dialog_(std::string title, std::string text,
-                                      bool is_error)
+void MainWindow::show_message_dialog_(std::string title, std::string text, bool is_error)
 {
     G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    GtkWidget* dlg = gtk_message_dialog_new(
-        GTK_WINDOW(window_), GTK_DIALOG_MODAL,
-        is_error ? GTK_MESSAGE_ERROR : GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "%s",
-        text.c_str());
+    GtkWidget* dlg = gtk_message_dialog_new(GTK_WINDOW(window_), GTK_DIALOG_MODAL,
+                                            is_error ? GTK_MESSAGE_ERROR : GTK_MESSAGE_INFO,
+                                            GTK_BUTTONS_OK, "%s", text.c_str());
     gtk_window_set_title(GTK_WINDOW(dlg), title.c_str());
     G_GNUC_END_IGNORE_DEPRECATIONS
     g_signal_connect(dlg, "response",
                      G_CALLBACK(+[](GtkDialog* d, int, gpointer)
-                     { gtk_window_destroy(GTK_WINDOW(d)); }),
+                                {
+                                    gtk_window_destroy(GTK_WINDOW(d));
+                                }),
                      nullptr);
     gtk_window_present(GTK_WINDOW(dlg));
 }
@@ -1828,7 +1889,9 @@ void MainWindow::show_message_dialog_(std::string title, std::string text,
 void MainWindow::apply_window_title_ui_(const std::string& title)
 {
     if (!window_)
+    {
         return;
+    }
     gtk_window_set_title(GTK_WINDOW(window_), title.c_str());
 }
 
@@ -1839,8 +1902,7 @@ void MainWindow::on_login_clicked(GtkButton*, gpointer user_data)
 
 // ---------------------------------------------------------------------------
 
-void MainWindow::push_rooms(std::string user_id,
-                            std::vector<tesseract::RoomInfo> rooms)
+void MainWindow::push_rooms(std::string user_id, std::vector<tesseract::RoomInfo> rooms)
 {
     push_rooms_(std::move(user_id), std::move(rooms));
 }
@@ -1863,8 +1925,6 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
         tray_->set_unread(has_unread, has_highlight);
     }
 }
-
-
 
 // ---------------------------------------------------------------------------
 //  Avatar / inline-media decode into tk::Image
@@ -1893,8 +1953,7 @@ cairo_surface_t* pixbuf_to_premultiplied_argb32(GdkPixbuf* pb)
     int in_stride = gdk_pixbuf_get_rowstride(pb);
     const guchar* pixels = gdk_pixbuf_read_pixels(pb);
 
-    cairo_surface_t* surface =
-        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
     if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
     {
         cairo_surface_destroy(surface);
@@ -1926,8 +1985,7 @@ cairo_surface_t* pixbuf_to_premultiplied_argb32(GdkPixbuf* pb)
     return surface;
 }
 
-cairo_surface_t*
-decode_image_to_cairo_surface(const std::vector<uint8_t>& bytes)
+cairo_surface_t* decode_image_to_cairo_surface(const std::vector<uint8_t>& bytes)
 {
     if (!tk::decode_size_allowed(bytes, /*animated=*/false))
     {
@@ -1946,7 +2004,9 @@ decode_image_to_cairo_surface(const std::vector<uint8_t>& bytes)
                                     const std::uint64_t px = std::uint64_t(std::max(w, 0)) *
                                                              std::uint64_t(std::max(h, 0));
                                     if (px <= tk::kMaxStillDecodePixels)
+                                    {
                                         return;
+                                    }
                                     const double s =
                                         std::sqrt(double(tk::kMaxStillDecodePixels) / double(px));
                                     gdk_pixbuf_loader_set_size(l, std::max(1, int(w * s)),
@@ -2019,8 +2079,7 @@ struct DecodedAnimation
 // cairo status failure), matching a decode failure to the caller. Shared by
 // decode_animation's own emit() and GtkAnimSession::decode_next_batch()
 // below.
-cairo_surface_t* scale_cairo_surface_to_fit(cairo_surface_t* surf, int max_w,
-                                            int max_h)
+cairo_surface_t* scale_cairo_surface_to_fit(cairo_surface_t* surf, int max_w, int max_h)
 {
     if (max_w <= 0 || max_h <= 0)
     {
@@ -2032,12 +2091,10 @@ cairo_surface_t* scale_cairo_surface_to_fit(cairo_surface_t* surf, int max_w,
     {
         return surf;
     }
-    const float scale = std::min(static_cast<float>(max_w) / w,
-                                 static_cast<float>(max_h) / h);
+    const float scale = std::min(static_cast<float>(max_w) / w, static_cast<float>(max_h) / h);
     const int tw = std::max(1, static_cast<int>(w * scale));
     const int th = std::max(1, static_cast<int>(h * scale));
-    cairo_surface_t* dst =
-        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+    cairo_surface_t* dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
     if (cairo_surface_status(dst) != CAIRO_STATUS_SUCCESS)
     {
         cairo_surface_destroy(dst);
@@ -2056,11 +2113,10 @@ cairo_surface_t* scale_cairo_surface_to_fit(cairo_surface_t* surf, int max_w,
 }
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-std::optional<DecodedAnimation> decode_animation(
-    const std::vector<uint8_t>& bytes, int max_w = 0, int max_h = 0,
-    const std::function<void(cairo_surface_t*, int)>* on_first_frame = nullptr,
-    const std::function<void(int, cairo_surface_t*, int)>* on_extra_frame =
-        nullptr)
+std::optional<DecodedAnimation>
+decode_animation(const std::vector<uint8_t>& bytes, int max_w = 0, int max_h = 0,
+                 const std::function<void(cairo_surface_t*, int)>* on_first_frame = nullptr,
+                 const std::function<void(int, cairo_surface_t*, int)>* on_extra_frame = nullptr)
 {
     if (bytes.empty())
     {
@@ -2208,15 +2264,18 @@ public:
     // session's first iterator. `owned_bytes` (a copy of the original
     // compressed source) is kept only for restart()'s later rebuild.
     GtkAnimSession(GdkPixbufLoader* loader, GdkPixbufAnimation* anim,
-                   std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes,
-                   int max_w, int max_h)
-        : owned_bytes_(std::move(owned_bytes)), loader_(loader), anim_(anim),
-          max_w_(max_w), max_h_(max_h)
+                   std::shared_ptr<const std::vector<std::uint8_t>> owned_bytes, int max_w,
+                   int max_h)
+        : owned_bytes_(std::move(owned_bytes)), loader_(loader), anim_(anim), max_w_(max_w),
+          max_h_(max_h)
     {
         open_iter_();
     }
 
-    ~GtkAnimSession() override { close_(); }
+    ~GtkAnimSession() override
+    {
+        close_();
+    }
 
     std::size_t memory_bytes() const override
     {
@@ -2224,14 +2283,10 @@ public:
     }
 
     int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) override
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         int produced = 0;
-        for (int attempted = 0;
-             attempted < n && !exhausted_ &&
-             cursor_ < tk::kAnimDecodeMaxFrames;
+        for (int attempted = 0; attempted < n && !exhausted_ && cursor_ < tk::kAnimDecodeMaxFrames;
              ++attempted)
         {
             if (!iter_)
@@ -2301,7 +2356,10 @@ public:
         return produced;
     }
 
-    bool exhausted() const override { return exhausted_; }
+    bool exhausted() const override
+    {
+        return exhausted_;
+    }
 
     void restart() override
     {
@@ -2332,8 +2390,7 @@ private:
     {
         loader_ = gdk_pixbuf_loader_new();
         GError* err = nullptr;
-        if (!gdk_pixbuf_loader_write(loader_, owned_bytes_->data(),
-                                     owned_bytes_->size(), &err) ||
+        if (!gdk_pixbuf_loader_write(loader_, owned_bytes_->data(), owned_bytes_->size(), &err) ||
             !gdk_pixbuf_loader_close(loader_, &err))
         {
             if (err)
@@ -2395,23 +2452,19 @@ private:
 bool decode_animation_windowed(
     const std::vector<uint8_t>& bytes, int max_w, int max_h,
     const std::function<void(std::unique_ptr<tk::Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t)>& on_first_frame,
-    const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-        on_extra_frame)
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>& on_first_frame,
+    const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_extra_frame)
 {
     if (bytes.empty())
     {
         return false;
     }
 
-    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(
-        bytes.begin(), bytes.end());
+    auto owned_bytes = std::make_shared<std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
 
     GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
     GError* err = nullptr;
-    if (!gdk_pixbuf_loader_write(loader, owned_bytes->data(),
-                                 owned_bytes->size(), &err))
+    if (!gdk_pixbuf_loader_write(loader, owned_bytes->data(), owned_bytes->size(), &err))
     {
         if (err)
         {
@@ -2437,23 +2490,21 @@ bool decode_animation_windowed(
     }
 
     // Ownership of loader/anim transfers into the session from here.
-    auto session = std::make_shared<GtkAnimSession>(loader, anim, owned_bytes,
-                                                     max_w, max_h);
+    auto session = std::make_shared<GtkAnimSession>(loader, anim, owned_bytes, max_w, max_h);
     bool got_first = false;
-    session->decode_next_batch(
-        tk::kAnimDecodeInitialBatchFrames,
-        [&](int idx, std::unique_ptr<tk::Image> img, int delay_ms)
-        {
-            if (!got_first)
-            {
-                got_first = true;
-                on_first_frame(std::move(img), delay_ms, session, 0);
-            }
-            else
-            {
-                on_extra_frame(idx, std::move(img), delay_ms);
-            }
-        });
+    session->decode_next_batch(tk::kAnimDecodeInitialBatchFrames,
+                               [&](int idx, std::unique_ptr<tk::Image> img, int delay_ms)
+                               {
+                                   if (!got_first)
+                                   {
+                                       got_first = true;
+                                       on_first_frame(std::move(img), delay_ms, session, 0);
+                                   }
+                                   else
+                                   {
+                                       on_extra_frame(idx, std::move(img), delay_ms);
+                                   }
+                               });
     return got_first;
 }
 
@@ -2472,8 +2523,8 @@ void MainWindow::start_anim_tick_if_needed_()
     // with no cached animated images never gets a timer at all, and the
     // spinner (whose phase is computed from elapsed time at paint time)
     // never advances until something unrelated forces a repaint.
-    const bool spinner_active = room_view_ && room_view_->message_list() &&
-                                room_view_->message_list()->paginating();
+    const bool spinner_active =
+        room_view_ && room_view_->message_list() && room_view_->message_list()->paginating();
     if (account_manager_.anim_cache().empty() && !spinner_active)
     {
         return;
@@ -2483,11 +2534,16 @@ void MainWindow::start_anim_tick_if_needed_()
 
 bool MainWindow::is_main_window_visible_() const
 {
-    if (!window_ || !gtk_widget_is_visible(GTK_WIDGET(window_))) return false;
+    if (!window_ || !gtk_widget_is_visible(GTK_WIDGET(window_)))
+    {
+        return false;
+    }
     auto* surface = gtk_native_get_surface(GTK_NATIVE(window_));
-    if (!surface) return true;  // surface not yet realized — assume visible
-    return !(gdk_toplevel_get_state(GDK_TOPLEVEL(surface)) &
-             GDK_TOPLEVEL_STATE_MINIMIZED);
+    if (!surface)
+    {
+        return true; // surface not yet realized — assume visible
+    }
+    return !(gdk_toplevel_get_state(GDK_TOPLEVEL(surface)) & GDK_TOPLEVEL_STATE_MINIMIZED);
 }
 
 gboolean MainWindow::on_tk_anim_tick_(gpointer user_data)
@@ -2510,7 +2566,9 @@ gboolean MainWindow::on_tk_inflight_tick_(gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     if (self->inflight_tick_())
+    {
         return G_SOURCE_CONTINUE;
+    }
     // The source is going away: forget its id, so a later start re-arms it.
     self->tk_inflight_tick_id_ = 0;
     return G_SOURCE_REMOVE;
@@ -2519,7 +2577,9 @@ gboolean MainWindow::on_tk_inflight_tick_(gpointer user_data)
 void MainWindow::start_inflight_tick_()
 {
     if (!tk_inflight_tick_id_)
+    {
         tk_inflight_tick_id_ = g_timeout_add(16, on_tk_inflight_tick_, this);
+    }
 }
 
 void MainWindow::stop_inflight_tick_()
@@ -2527,14 +2587,18 @@ void MainWindow::stop_inflight_tick_()
     // Remove the source, not just forget its id: a tick left queued would fire
     // on this window after it is freed (M85).
     if (tk_inflight_tick_id_)
+    {
         g_source_remove(tk_inflight_tick_id_);
+    }
     tk_inflight_tick_id_ = 0;
 }
 
 void MainWindow::repaint_inflight_spinner_()
 {
     if (inflight_dot_)
+    {
         gtk_widget_queue_draw(inflight_dot_);
+    }
 }
 
 void MainWindow::update_main_anim_regions_()
@@ -2616,8 +2680,7 @@ void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
     gtk_post_timeout(static_cast<guint>(ms), guarded(std::move(fn)));
 }
 
-std::unique_ptr<tk::Image>
-MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
+std::unique_ptr<tk::Image> MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
 {
     // Stills only: skips the animation probe the generic decode_image_ does.
     cairo_surface_t* surface = decode_image_to_cairo_surface(bytes);
@@ -2630,8 +2693,7 @@ MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
     return img;
 }
 
-void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key,
-                                    std::vector<std::uint8_t> bytes)
+void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key, std::vector<std::uint8_t> bytes)
 {
     run_async_(
         [this, cache_key, bytes = std::move(bytes)]()
@@ -2659,8 +2721,7 @@ void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key,
         });
 }
 
-void MainWindow::pick_image_file_(
-    std::function<void(std::vector<uint8_t>, std::string)> cb)
+void MainWindow::pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb)
 {
     GtkFileDialog* dlg = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dlg, tk::tr("Select image").c_str());
@@ -2676,39 +2737,45 @@ void MainWindow::pick_image_file_(
     gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(flist));
     g_object_unref(flist);
 
-    struct Ctx {
+    struct Ctx
+    {
         std::function<void(std::vector<uint8_t>, std::string)> cb;
         MainWindow* self;
     };
     auto* ctx = new Ctx{std::move(cb), this};
 
-    gtk_file_dialog_open(dlg, GTK_WINDOW(window_), nullptr,
+    gtk_file_dialog_open(
+        dlg, GTK_WINDOW(window_), nullptr,
         +[](GObject* dialog_obj, GAsyncResult* res, gpointer data)
         {
             auto* c = static_cast<Ctx*>(data);
             GError* err = nullptr;
-            GFile* file = gtk_file_dialog_open_finish(
-                GTK_FILE_DIALOG(dialog_obj), res, &err);
+            GFile* file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(dialog_obj), res, &err);
             if (file)
             {
                 // The file is chosen by the user but read here on the UI thread,
                 // so refuse anything too large to be a still worth sending
                 // before reading it. Same limit as the Qt picker.
                 constexpr goffset kMaxPickedImageBytes = 64LL * 1024 * 1024;
-                GFileInfo* info = g_file_query_info(
-                    file, G_FILE_ATTRIBUTE_STANDARD_SIZE,
-                    G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
+                GFileInfo* info = g_file_query_info(file, G_FILE_ATTRIBUTE_STANDARD_SIZE,
+                                                    G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
                 const goffset size = info ? g_file_info_get_size(info) : 0;
                 if (info)
+                {
                     g_object_unref(info);
+                }
 
                 gsize len = 0;
                 char* raw = nullptr;
                 GError* load_err = nullptr;
                 if (size > kMaxPickedImageBytes)
+                {
                     c->self->show_status_message_(tk::tr("That image is too large to send."));
+                }
                 else
+                {
                     g_file_load_contents(file, nullptr, &raw, &len, nullptr, &load_err);
+                }
                 if (!load_err && raw && len > 0)
                 {
                     std::vector<uint8_t> bytes(raw, raw + len);
@@ -2725,31 +2792,42 @@ void MainWindow::pick_image_file_(
                         const std::string mime(sniffed);
                         auto callback = std::move(c->cb);
                         c->self->post_to_ui_(
-                            [callback = std::move(callback),
-                             bytes = std::move(bytes), mime]() mutable
-                            { callback(std::move(bytes), mime); });
+                            [callback = std::move(callback), bytes = std::move(bytes),
+                             mime]() mutable
+                            {
+                                callback(std::move(bytes), mime);
+                            });
                     }
                 }
                 g_free(raw);
-                if (load_err) g_error_free(load_err);
+                if (load_err)
+                {
+                    g_error_free(load_err);
+                }
                 g_object_unref(file);
             }
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             delete c;
         },
         ctx);
     g_object_unref(dlg);
 }
 
-MainWindow::DecodedImage
-MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                          int max_h)
+MainWindow::DecodedImage MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                                                   int max_h)
 {
     if (tesseract::is_jxl_data(bytes))
+    {
         return tesseract::jxl::decode_image(bytes, max_w, max_h, tk::cairo_pango::make_image_rgba);
+    }
     // Untrusted bytes: refuse over-budget images before any codec allocates (tk/image_sniff.h).
     if (!tk::decode_size_allowed(bytes, tk::bytes_may_be_animated(bytes)))
+    {
         return DecodedImage{};
+    }
     // decode_image_to_cairo_surface / decode_animation are in this
     // file's anonymous namespace and are thread-safe (GdkPixbuf + cairo).
     // tk::cairo_pango::make_image refcounts the surface (thread-safe).
@@ -2783,13 +2861,16 @@ bool MainWindow::decode_image_streamed_(
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
-        return tesseract::jxl::decode_streamed(bytes, max_w, max_h, tk::cairo_pango::make_image_rgba,
-                                               on_first_frame, on_frame);
+    {
+        return tesseract::jxl::decode_streamed(
+            bytes, max_w, max_h, tk::cairo_pango::make_image_rgba, on_first_frame, on_frame);
+    }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     bool got_first = false;
-    std::function<void(cairo_surface_t*, int)> first_cb =
-        [&](cairo_surface_t* surf, int delay_ms)
+    std::function<void(cairo_surface_t*, int)> first_cb = [&](cairo_surface_t* surf, int delay_ms)
     {
         got_first = true;
         on_first_frame(tk::cairo_pango::make_image(surf), delay_ms);
@@ -2808,17 +2889,19 @@ bool MainWindow::decode_image_streamed_(
 bool MainWindow::decode_image_streamed_windowed_(
     const std::vector<uint8_t>& bytes, int max_w, int max_h,
     const std::function<void(std::unique_ptr<tk::Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t)>& on_first_frame,
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>& on_first_frame,
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
-        return tesseract::jxl::decode_streamed_windowed(bytes, max_w, max_h, tk::cairo_pango::make_image_rgba,
-                                                        on_first_frame, on_frame);
+    {
+        return tesseract::jxl::decode_streamed_windowed(
+            bytes, max_w, max_h, tk::cairo_pango::make_image_rgba, on_first_frame, on_frame);
+    }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
-    return decode_animation_windowed(bytes, max_w, max_h, on_first_frame,
-                                     on_frame);
+    }
+    return decode_animation_windowed(bytes, max_w, max_h, on_first_frame, on_frame);
 }
 
 std::int64_t MainWindow::monotonic_ms_()
@@ -2835,227 +2918,248 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::u
                                    tesseract::views::ComposeBar* target,
                                    std::shared_ptr<bool> target_alive)
 {
-    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
-                bytes = std::move(bytes)]() mutable
-    {
-        tesseract::views::MediaInfo info;
-        info.pending_gen = pending_gen;
-        GstElement* pipe = gst_pipeline_new(nullptr);
-        GstElement* gsrc =
-            gst_element_factory_make("giostreamsrc", nullptr);
-        GstElement* dec = gst_element_factory_make("decodebin", nullptr);
-        GstElement* vconv =
-            gst_element_factory_make("videoconvert", nullptr);
-        GstElement* vsink =
-            gst_element_factory_make("appsink", nullptr);
-        if (!pipe || !gsrc || !dec || !vconv || !vsink)
+    run_async_(
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes)]() mutable
         {
-            if (pipe) gst_object_unref(pipe);
-            if (gsrc) gst_object_unref(gsrc);
-            if (dec)  gst_object_unref(dec);
-            if (vconv) gst_object_unref(vconv);
-            if (vsink) gst_object_unref(vsink);
-        }
-        else
-        {
-            GstCaps* caps =
-                gst_caps_from_string("video/x-raw,format=BGRA");
-            gst_app_sink_set_caps(GST_APP_SINK(vsink), caps);
-            gst_caps_unref(caps);
-            gst_app_sink_set_drop(GST_APP_SINK(vsink), FALSE);
-            gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
-
-            GInputStream* mem_stream =
-                g_memory_input_stream_new_from_data(
-                    bytes.data(),
-                    static_cast<gssize>(bytes.size()), nullptr);
-            g_object_set(gsrc, "stream", mem_stream, nullptr);
-            g_object_unref(mem_stream);
-
-            gst_bin_add_many(GST_BIN(pipe), gsrc, dec, vconv, vsink,
-                             nullptr);
-            gst_element_link(gsrc, dec);
-            gst_element_link(vconv, vsink);
-            struct PadCtx { GstElement* vconv; };
-            auto* pad_ctx = new PadCtx{vconv};
-            g_signal_connect(
-                dec, "pad-added",
-                G_CALLBACK(
-                    +[](GstElement*, GstPad* pad, gpointer ud)
-                    {
-                        auto* pc = static_cast<PadCtx*>(ud);
-                        GstCaps* c2 = gst_pad_get_current_caps(pad);
-                        if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
-                        GstStructure* st =
-                            gst_caps_get_structure(c2, 0);
-                        if (g_str_has_prefix(
-                                gst_structure_get_name(st), "video"))
-                        {
-                            GstPad* sp = gst_element_get_static_pad(
-                                pc->vconv, "sink");
-                            if (sp && !gst_pad_is_linked(sp))
-                                gst_pad_link(pad, sp);
-                            if (sp) gst_object_unref(sp);
-                        }
-                        gst_caps_unref(c2);
-                    }),
-                pad_ctx);
-
-            gst_element_set_state(pipe, GST_STATE_PAUSED);
-            gst_element_get_state(pipe, nullptr, nullptr,
-                                  5 * GST_SECOND);
-            GstSample* sample = gst_app_sink_try_pull_preroll(
-                GST_APP_SINK(vsink), 0);
-
-            // Duration query after pipeline reaches PAUSED.
-            gint64 dur_ns = 0;
-            if (gst_element_query_duration(pipe, GST_FORMAT_TIME,
-                                           &dur_ns) &&
-                dur_ns > 0)
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            GstElement* pipe = gst_pipeline_new(nullptr);
+            GstElement* gsrc = gst_element_factory_make("giostreamsrc", nullptr);
+            GstElement* dec = gst_element_factory_make("decodebin", nullptr);
+            GstElement* vconv = gst_element_factory_make("videoconvert", nullptr);
+            GstElement* vsink = gst_element_factory_make("appsink", nullptr);
+            if (!pipe || !gsrc || !dec || !vconv || !vsink)
             {
-                info.duration_ms =
-                    static_cast<std::uint64_t>(dur_ns / 1000000);
-            }
-            gst_element_set_state(pipe, GST_STATE_NULL);
-            delete pad_ctx;
-            gst_object_unref(pipe);
-
-            if (sample)
-            {
-                GstBuffer* buf = gst_sample_get_buffer(sample);
-                GstCaps* scaps = gst_sample_get_caps(sample);
-                int w = 0, h = 0;
-                if (scaps)
+                if (pipe)
                 {
-                    GstStructure* st =
-                        gst_caps_get_structure(scaps, 0);
-                    gst_structure_get_int(st, "width", &w);
-                    gst_structure_get_int(st, "height", &h);
+                    gst_object_unref(pipe);
                 }
-                if (buf && w > 0 && h > 0)
+                if (gsrc)
                 {
-                    GstMapInfo map;
-                    if (gst_buffer_map(buf, &map, GST_MAP_READ))
+                    gst_object_unref(gsrc);
+                }
+                if (dec)
+                {
+                    gst_object_unref(dec);
+                }
+                if (vconv)
+                {
+                    gst_object_unref(vconv);
+                }
+                if (vsink)
+                {
+                    gst_object_unref(vsink);
+                }
+            }
+            else
+            {
+                GstCaps* caps = gst_caps_from_string("video/x-raw,format=BGRA");
+                gst_app_sink_set_caps(GST_APP_SINK(vsink), caps);
+                gst_caps_unref(caps);
+                gst_app_sink_set_drop(GST_APP_SINK(vsink), FALSE);
+                gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
+
+                GInputStream* mem_stream = g_memory_input_stream_new_from_data(
+                    bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
+                g_object_set(gsrc, "stream", mem_stream, nullptr);
+                g_object_unref(mem_stream);
+
+                gst_bin_add_many(GST_BIN(pipe), gsrc, dec, vconv, vsink, nullptr);
+                gst_element_link(gsrc, dec);
+                gst_element_link(vconv, vsink);
+                struct PadCtx
+                {
+                    GstElement* vconv;
+                };
+                auto* pad_ctx = new PadCtx{vconv};
+                g_signal_connect(
+                    dec, "pad-added",
+                    G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud)
+                               {
+                                   auto* pc = static_cast<PadCtx*>(ud);
+                                   GstCaps* c2 = gst_pad_get_current_caps(pad);
+                                   if (!c2)
+                                   {
+                                       c2 = gst_pad_query_caps(pad, nullptr);
+                                   }
+                                   GstStructure* st = gst_caps_get_structure(c2, 0);
+                                   if (g_str_has_prefix(gst_structure_get_name(st), "video"))
+                                   {
+                                       GstPad* sp = gst_element_get_static_pad(pc->vconv, "sink");
+                                       if (sp && !gst_pad_is_linked(sp))
+                                       {
+                                           gst_pad_link(pad, sp);
+                                       }
+                                       if (sp)
+                                       {
+                                           gst_object_unref(sp);
+                                       }
+                                   }
+                                   gst_caps_unref(c2);
+                               }),
+                    pad_ctx);
+
+                gst_element_set_state(pipe, GST_STATE_PAUSED);
+                gst_element_get_state(pipe, nullptr, nullptr, 5 * GST_SECOND);
+                GstSample* sample = gst_app_sink_try_pull_preroll(GST_APP_SINK(vsink), 0);
+
+                // Duration query after pipeline reaches PAUSED.
+                gint64 dur_ns = 0;
+                if (gst_element_query_duration(pipe, GST_FORMAT_TIME, &dur_ns) && dur_ns > 0)
+                {
+                    info.duration_ms = static_cast<std::uint64_t>(dur_ns / 1000000);
+                }
+                gst_element_set_state(pipe, GST_STATE_NULL);
+                delete pad_ctx;
+                gst_object_unref(pipe);
+
+                if (sample)
+                {
+                    GstBuffer* buf = gst_sample_get_buffer(sample);
+                    GstCaps* scaps = gst_sample_get_caps(sample);
+                    int w = 0, h = 0;
+                    if (scaps)
                     {
-                        // BGRA pixels → PNG via GdkPixbuf → JPEG
-                        GdkPixbuf* pb = gdk_pixbuf_new_from_data(
-                            map.data, GDK_COLORSPACE_RGB, TRUE, 8,
-                            w, h, w * 4, nullptr, nullptr);
-                        if (pb)
-                        {
-                            GError* gerr = nullptr;
-                            gchar* data = nullptr;
-                            gsize  sz = 0;
-                            if (gdk_pixbuf_save_to_buffer(
-                                    pb, &data, &sz, "jpeg", &gerr,
-                                    "quality", "85", nullptr))
-                            {
-                                info.thumb_bytes.assign(
-                                    reinterpret_cast<const std::uint8_t*>(data),
-                                    reinterpret_cast<const std::uint8_t*>(data) + sz);
-                                g_free(data);
-                            }
-                            if (gerr) g_error_free(gerr);
-                            info.video_w = static_cast<std::uint32_t>(w);
-                            info.video_h = static_cast<std::uint32_t>(h);
-                            info.thumb_w  = info.video_w;
-                            info.thumb_h  = info.video_h;
-                            g_object_unref(pb);
-                        }
-                        gst_buffer_unmap(buf, &map);
+                        GstStructure* st = gst_caps_get_structure(scaps, 0);
+                        gst_structure_get_int(st, "width", &w);
+                        gst_structure_get_int(st, "height", &h);
                     }
+                    if (buf && w > 0 && h > 0)
+                    {
+                        GstMapInfo map;
+                        if (gst_buffer_map(buf, &map, GST_MAP_READ))
+                        {
+                            // BGRA pixels → PNG via GdkPixbuf → JPEG
+                            GdkPixbuf* pb =
+                                gdk_pixbuf_new_from_data(map.data, GDK_COLORSPACE_RGB, TRUE, 8, w,
+                                                         h, w * 4, nullptr, nullptr);
+                            if (pb)
+                            {
+                                GError* gerr = nullptr;
+                                gchar* data = nullptr;
+                                gsize sz = 0;
+                                if (gdk_pixbuf_save_to_buffer(pb, &data, &sz, "jpeg", &gerr,
+                                                              "quality", "85", nullptr))
+                                {
+                                    info.thumb_bytes.assign(
+                                        reinterpret_cast<const std::uint8_t*>(data),
+                                        reinterpret_cast<const std::uint8_t*>(data) + sz);
+                                    g_free(data);
+                                }
+                                if (gerr)
+                                {
+                                    g_error_free(gerr);
+                                }
+                                info.video_w = static_cast<std::uint32_t>(w);
+                                info.video_h = static_cast<std::uint32_t>(h);
+                                info.thumb_w = info.video_w;
+                                info.thumb_h = info.video_h;
+                                g_object_unref(pb);
+                            }
+                            gst_buffer_unmap(buf, &map);
+                        }
+                    }
+                    gst_sample_unref(sample);
                 }
-                gst_sample_unref(sample);
             }
-        }
 
-        post_pending_attachment_(std::move(info), target,
-                                 std::move(target_alive));
-    });
+            post_pending_attachment_(std::move(info), target, std::move(target_alive));
+        });
 }
 
 void MainWindow::probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                                    tesseract::views::ComposeBar* target,
                                    std::shared_ptr<bool> target_alive)
 {
-    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
-                bytes = std::move(bytes)]() mutable
-    {
-        tesseract::views::MediaInfo info;
-        info.pending_gen = pending_gen;
-        GstElement* pipe = gst_pipeline_new(nullptr);
-        GstElement* gsrc =
-            gst_element_factory_make("giostreamsrc", nullptr);
-        GstElement* dec = gst_element_factory_make("decodebin", nullptr);
-        GstElement* fsink =
-            gst_element_factory_make("fakesink", nullptr);
-        if (!pipe || !gsrc || !dec || !fsink)
+    run_async_(
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes)]() mutable
         {
-            if (pipe)  gst_object_unref(pipe);
-            if (gsrc)  gst_object_unref(gsrc);
-            if (dec)   gst_object_unref(dec);
-            if (fsink) gst_object_unref(fsink);
-        }
-        else
-        {
-            GInputStream* mem_stream =
-                g_memory_input_stream_new_from_data(
-                    bytes.data(),
-                    static_cast<gssize>(bytes.size()), nullptr);
-            g_object_set(gsrc, "stream", mem_stream, nullptr);
-            g_object_unref(mem_stream);
-
-            gst_bin_add_many(GST_BIN(pipe), gsrc, dec, fsink, nullptr);
-            gst_element_link(gsrc, dec);
-            struct PadCtx { GstElement* fsink; };
-            auto* pad_ctx = new PadCtx{fsink};
-            g_signal_connect(
-                dec, "pad-added",
-                G_CALLBACK(
-                    +[](GstElement*, GstPad* pad, gpointer ud)
-                    {
-                        auto* pc = static_cast<PadCtx*>(ud);
-                        GstCaps* c2 = gst_pad_get_current_caps(pad);
-                        if (!c2) c2 = gst_pad_query_caps(pad, nullptr);
-                        GstStructure* st =
-                            gst_caps_get_structure(c2, 0);
-                        if (!g_str_has_prefix(
-                                gst_structure_get_name(st), "video"))
-                        {
-                            GstPad* sp = gst_element_get_static_pad(
-                                pc->fsink, "sink");
-                            if (sp && !gst_pad_is_linked(sp))
-                                gst_pad_link(pad, sp);
-                            if (sp) gst_object_unref(sp);
-                        }
-                        gst_caps_unref(c2);
-                    }),
-                pad_ctx);
-
-            gst_element_set_state(pipe, GST_STATE_PAUSED);
-            gst_element_get_state(pipe, nullptr, nullptr,
-                                  5 * GST_SECOND);
-            gint64 dur_ns = 0;
-            if (gst_element_query_duration(pipe, GST_FORMAT_TIME,
-                                           &dur_ns) &&
-                dur_ns > 0)
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            GstElement* pipe = gst_pipeline_new(nullptr);
+            GstElement* gsrc = gst_element_factory_make("giostreamsrc", nullptr);
+            GstElement* dec = gst_element_factory_make("decodebin", nullptr);
+            GstElement* fsink = gst_element_factory_make("fakesink", nullptr);
+            if (!pipe || !gsrc || !dec || !fsink)
             {
-                info.duration_ms =
-                    static_cast<std::uint64_t>(dur_ns / 1000000);
+                if (pipe)
+                {
+                    gst_object_unref(pipe);
+                }
+                if (gsrc)
+                {
+                    gst_object_unref(gsrc);
+                }
+                if (dec)
+                {
+                    gst_object_unref(dec);
+                }
+                if (fsink)
+                {
+                    gst_object_unref(fsink);
+                }
             }
-            gst_element_set_state(pipe, GST_STATE_NULL);
-            delete pad_ctx;
-            gst_object_unref(pipe);
-        }
+            else
+            {
+                GInputStream* mem_stream = g_memory_input_stream_new_from_data(
+                    bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
+                g_object_set(gsrc, "stream", mem_stream, nullptr);
+                g_object_unref(mem_stream);
 
-        post_pending_attachment_(std::move(info), target,
-                                 std::move(target_alive));
-    });
+                gst_bin_add_many(GST_BIN(pipe), gsrc, dec, fsink, nullptr);
+                gst_element_link(gsrc, dec);
+                struct PadCtx
+                {
+                    GstElement* fsink;
+                };
+                auto* pad_ctx = new PadCtx{fsink};
+                g_signal_connect(
+                    dec, "pad-added",
+                    G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud)
+                               {
+                                   auto* pc = static_cast<PadCtx*>(ud);
+                                   GstCaps* c2 = gst_pad_get_current_caps(pad);
+                                   if (!c2)
+                                   {
+                                       c2 = gst_pad_query_caps(pad, nullptr);
+                                   }
+                                   GstStructure* st = gst_caps_get_structure(c2, 0);
+                                   if (!g_str_has_prefix(gst_structure_get_name(st), "video"))
+                                   {
+                                       GstPad* sp = gst_element_get_static_pad(pc->fsink, "sink");
+                                       if (sp && !gst_pad_is_linked(sp))
+                                       {
+                                           gst_pad_link(pad, sp);
+                                       }
+                                       if (sp)
+                                       {
+                                           gst_object_unref(sp);
+                                       }
+                                   }
+                                   gst_caps_unref(c2);
+                               }),
+                    pad_ctx);
+
+                gst_element_set_state(pipe, GST_STATE_PAUSED);
+                gst_element_get_state(pipe, nullptr, nullptr, 5 * GST_SECOND);
+                gint64 dur_ns = 0;
+                if (gst_element_query_duration(pipe, GST_FORMAT_TIME, &dur_ns) && dur_ns > 0)
+                {
+                    info.duration_ms = static_cast<std::uint64_t>(dur_ns / 1000000);
+                }
+                gst_element_set_state(pipe, GST_STATE_NULL);
+                delete pad_ctx;
+                gst_object_unref(pipe);
+            }
+
+            post_pending_attachment_(std::move(info), target, std::move(target_alive));
+        });
 }
 
-void MainWindow::decode_video_first_frame_(
-    std::vector<std::uint8_t> bytes,
-    std::function<void(std::vector<std::uint8_t>)> done)
+void MainWindow::decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                           std::function<void(std::vector<std::uint8_t>)> done)
 {
     // Runs the GStreamer decode + PNG-encode pipeline against `bytes`
     // off-thread and invokes `done(png)` on the UI thread (empty png on any
@@ -3065,11 +3169,9 @@ void MainWindow::decode_video_first_frame_(
         {
             // Extract first frame via GStreamer appsink.
             GstElement* pipe = gst_pipeline_new(nullptr);
-            GstElement* gsrc =
-                gst_element_factory_make("giostreamsrc", nullptr);
+            GstElement* gsrc = gst_element_factory_make("giostreamsrc", nullptr);
             GstElement* dec = gst_element_factory_make("decodebin", nullptr);
-            GstElement* vconv =
-                gst_element_factory_make("videoconvert", nullptr);
+            GstElement* vconv = gst_element_factory_make("videoconvert", nullptr);
             GstElement* vsink = gst_element_factory_make("appsink", nullptr);
             if (!pipe || !gsrc || !dec || !vconv || !vsink)
             {
@@ -3124,11 +3226,9 @@ void MainWindow::decode_video_first_frame_(
                                    c2 = gst_pad_query_caps(pad, nullptr);
                                }
                                GstStructure* st = gst_caps_get_structure(c2, 0);
-                               if (g_str_has_prefix(gst_structure_get_name(st),
-                                                    "video"))
+                               if (g_str_has_prefix(gst_structure_get_name(st), "video"))
                                {
-                                   GstPad* sp = gst_element_get_static_pad(
-                                       pc->vconv, "sink");
+                                   GstPad* sp = gst_element_get_static_pad(pc->vconv, "sink");
                                    if (sp && !gst_pad_is_linked(sp))
                                    {
                                        gst_pad_link(pad, sp);
@@ -3186,23 +3286,17 @@ void MainWindow::decode_video_first_frame_(
                 [done, pixels = std::move(frame_bytes), w, h]() mutable
                 {
                     // Create an owned cairo surface and blit the BGRA pixels in.
-                    cairo_surface_t* surf = cairo_image_surface_create(
-                        CAIRO_FORMAT_ARGB32, w, h);
+                    cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
                     std::vector<uint8_t> png;
-                    if (surf &&
-                        cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
+                    if (surf && cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
                     {
-                        int dst_stride =
-                            cairo_image_surface_get_stride(surf);
-                        unsigned char* dst =
-                            cairo_image_surface_get_data(surf);
+                        int dst_stride = cairo_image_surface_get_stride(surf);
+                        unsigned char* dst = cairo_image_surface_get_data(surf);
                         int src_stride = w * 4;
                         for (int row = 0; row < h; ++row)
                         {
-                            std::memcpy(
-                                dst + row * dst_stride,
-                                pixels.data() + row * src_stride,
-                                static_cast<std::size_t>(src_stride));
+                            std::memcpy(dst + row * dst_stride, pixels.data() + row * src_stride,
+                                        static_cast<std::size_t>(src_stride));
                         }
                         cairo_surface_mark_dirty(surf);
                         cairo_surface_write_to_png_stream(
@@ -3210,11 +3304,8 @@ void MainWindow::decode_video_first_frame_(
                             [](void* closure, const unsigned char* data,
                                unsigned int length) -> cairo_status_t
                             {
-                                auto* out =
-                                    static_cast<std::vector<uint8_t>*>(
-                                        closure);
-                                out->insert(out->end(), data,
-                                           data + length);
+                                auto* out = static_cast<std::vector<uint8_t>*>(closure);
+                                out->insert(out->end(), data, data + length);
                                 return CAIRO_STATUS_SUCCESS;
                             },
                             &png);
@@ -3229,17 +3320,17 @@ void MainWindow::decode_video_first_frame_(
         }); // run_async_
 }
 
-void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
-                                   std::vector<uint8_t> rgba)
+void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h, std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key))
     {
         return;
     }
-    cairo_surface_t* surf =
-        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
     if (!surf)
+    {
         return;
+    }
     cairo_surface_flush(surf);
     uint8_t* dst = cairo_image_surface_get_data(surf);
     int stride = cairo_image_surface_get_stride(surf);
@@ -3315,7 +3406,9 @@ std::unique_ptr<tk::SurfaceBase> MainWindow::create_login_surface_ui_()
 void MainWindow::unmount_login_surface_ui_()
 {
     if (login_surface_)
+    {
         gtk_stack_remove(GTK_STACK(content_stack_), login_native_()->widget());
+    }
 }
 
 void MainWindow::show_login_page_ui_()
@@ -3336,7 +3429,9 @@ std::unique_ptr<tk::SurfaceBase> MainWindow::create_settings_surface_ui_()
 void MainWindow::unmount_settings_surface_ui_()
 {
     if (settings_surface_)
+    {
         gtk_stack_remove(GTK_STACK(content_stack_), settings_native_()->widget());
+    }
 }
 
 void MainWindow::settings_view_created_ui_(tesseract::views::SettingsView& view)
@@ -3344,19 +3439,29 @@ void MainWindow::settings_view_created_ui_(tesseract::views::SettingsView& view)
     // GTK's native GtkEntry needs compact mode for a snug visual fit inside
     // these rows; every other backend uses the default chrome.
     if (auto* f = view.name_field())
+    {
         f->set_compact(true);
+    }
     if (auto* pe = view.pronouns_editor())
+    {
         pe->set_compact(true);
+    }
     if (auto* f = view.tz_field())
+    {
         f->set_compact(true);
+    }
     if (auto* f = view.bio_field())
+    {
         f->set_compact(true);
+    }
 }
 
 void MainWindow::grab_main_surface_focus_()
 {
     if (main_app_surface_)
+    {
         gtk_widget_grab_focus(main_app_surface_->widget());
+    }
 }
 
 tk::SurfaceBase* MainWindow::main_surface_()
@@ -3369,19 +3474,25 @@ void MainWindow::update_settings_anim_regions_()
     // The settings page reports no animated-image damage, so repaint it whole
     // to advance its animations.
     if (app_settings_open_ && settings_surface_)
+    {
         settings_surface_->host().request_repaint();
+    }
 }
 
 void MainWindow::repaint_settings_ui_()
 {
     if (app_settings_open_ && settings_surface_)
+    {
         gtk_widget_queue_draw(settings_native_()->widget());
+    }
 }
 
 void MainWindow::open_settings_()
 {
     if (!prepare_settings_view_())
+    {
         return;
+    }
 
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "settings");
     set_app_settings_open_(true);
@@ -3400,16 +3511,23 @@ void MainWindow::do_logout()
 
 void MainWindow::dismiss_popups_on_resize_()
 {
-    if (main_app_surface_) main_app_surface_->host().dismiss_active_popup();
-    if (room_view_) room_view_->dismiss_popups();
+    if (main_app_surface_)
+    {
+        main_app_surface_->host().dismiss_active_popup();
+    }
+    if (room_view_)
+    {
+        room_view_->dismiss_popups();
+    }
     hide_compose_popups_();
     close_account_picker_();
 }
 
 // ── Slash-command popup ────────────────────────────────────────────────────
 
-tesseract::ShellBase::DecodedImage MainWindow::decode_inline_fallback_(
-    const std::vector<std::uint8_t>& bytes, int /*max_w*/, int /*max_h*/)
+tesseract::ShellBase::DecodedImage
+MainWindow::decode_inline_fallback_(const std::vector<std::uint8_t>& bytes, int /*max_w*/,
+                                    int /*max_h*/)
 {
     // Stills only: the windowed decoder already declined this image, so the
     // animation probe in decode_image_ would just repeat that decode.
@@ -3422,8 +3540,7 @@ tesseract::ShellBase::DecodedImage MainWindow::decode_inline_fallback_(
     return d;
 }
 
-std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
-    int w, int h, const std::uint8_t* bgra)
+std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(int w, int h, const std::uint8_t* bgra)
 {
     cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
     if (!surf || cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS)
@@ -3439,8 +3556,7 @@ std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
     const int src_stride = w * 4;
     for (int y = 0; y < h; ++y)
     {
-        std::memcpy(dst + y * dst_stride, bgra + y * src_stride,
-                    std::min(src_stride, dst_stride));
+        std::memcpy(dst + y * dst_stride, bgra + y * src_stride, std::min(src_stride, dst_stride));
     }
     cairo_surface_mark_dirty(surf);
     auto img = tk::cairo_pango::make_image(surf);
@@ -3464,9 +3580,7 @@ std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
 void MainWindow::build_copy_context_menu_()
 {
     GMenu* menu = g_menu_new();
-    g_menu_append(menu,
-                  (room_view_ ? room_view_->copy_menu_label()
-                              : tk::tr("Copy")).c_str(),
+    g_menu_append(menu, (room_view_ ? room_view_->copy_menu_label() : tk::tr("Copy")).c_str(),
                   "copy-sel.copy");
 
     copy_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
@@ -3484,17 +3598,18 @@ void MainWindow::build_copy_context_menu_()
 }
 
 // static
-void MainWindow::on_copy_action_(GSimpleAction* /*action*/,
-                                  GVariant* /*parameter*/,
-                                  gpointer user_data)
+void MainWindow::on_copy_action_(GSimpleAction* /*action*/, GVariant* /*parameter*/,
+                                 gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     if (self->room_view_)
+    {
         self->room_view_->copy_context_menu_target();
+    }
 }
 
-void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
-                                     double x, double y, gpointer user_data)
+void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/, double x, double y,
+                                     gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
 
@@ -3505,11 +3620,9 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
         self->main_app_->user_info()->on_secondary)
     {
         const auto& strip = self->main_app_->user_info()->bounds();
-        if (x >= strip.x && x < strip.right() && y >= strip.y &&
-            y < strip.bottom())
+        if (x >= strip.x && x < strip.right() && y >= strip.y && y < strip.bottom())
         {
-            gtk_gesture_set_state(GTK_GESTURE(gesture),
-                                  GTK_EVENT_SEQUENCE_CLAIMED);
+            gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
             self->main_app_->user_info()->on_secondary(
                 tk::Point{static_cast<float>(x), static_cast<float>(y)});
             return;
@@ -3523,35 +3636,54 @@ GtkShortcutTrigger* MainWindow::gtk_trigger_from_chord_(const tk::KeyChord& chor
     guint keyval = 0;
     unsigned mods = 0;
     if (chord.mods & (tk::ModPrimary | tk::ModCtrl))
+    {
         mods |= GDK_CONTROL_MASK;
+    }
     if (chord.mods & tk::ModAlt)
+    {
         mods |= GDK_ALT_MASK;
+    }
     if (chord.mods & tk::ModMeta)
+    {
         mods |= GDK_META_MASK;
+    }
     // Shift+Tab is its own keyval (below), so it carries no Shift bit.
     if ((chord.mods & tk::ModShift) && chord.key != tk::Key::Tab)
+    {
         mods |= GDK_SHIFT_MASK;
+    }
     switch (chord.key)
     {
     case tk::Key::Character:
         // GTK normalizes a shifted key event to the unshifted lowercase
         // keyval before matching, so letter triggers use the lowercase keyval.
         if (chord.text.size() == 1)
-            keyval = gdk_unicode_to_keyval(static_cast<guint32>(
-                std::tolower(static_cast<unsigned char>(chord.text.front()))));
+        {
+            keyval = gdk_unicode_to_keyval(
+                static_cast<guint32>(std::tolower(static_cast<unsigned char>(chord.text.front()))));
+        }
         break;
     case tk::Key::Tab:
         // GTK reports Shift+Tab as the distinct keyval GDK_KEY_ISO_Left_Tab
         // (as host_gtk.cpp's key_from_gdk does), not Tab plus the shift bit.
         keyval = (chord.mods & tk::ModShift) ? GDK_KEY_ISO_Left_Tab : GDK_KEY_Tab;
         break;
-    case tk::Key::Left: keyval = GDK_KEY_Left; break;
-    case tk::Key::Right: keyval = GDK_KEY_Right; break;
-    case tk::Key::F1: keyval = GDK_KEY_F1; break;
-    default: break;
+    case tk::Key::Left:
+        keyval = GDK_KEY_Left;
+        break;
+    case tk::Key::Right:
+        keyval = GDK_KEY_Right;
+        break;
+    case tk::Key::F1:
+        keyval = GDK_KEY_F1;
+        break;
+    default:
+        break;
     }
     if (keyval == 0 || keyval == GDK_KEY_VoidSymbol)
+    {
         return nullptr;
+    }
     return gtk_keyval_trigger_new(keyval, static_cast<GdkModifierType>(mods));
 }
 
@@ -3559,14 +3691,18 @@ gboolean MainWindow::on_registry_shortcut_(GtkWidget*, GVariant*, gpointer user_
 {
     auto* binding = static_cast<ShortcutBinding_*>(user_data);
     if (binding->self->main_app_)
+    {
         binding->self->main_app_->dispatch_key_down(binding->event);
+    }
     return TRUE;
 }
 
 void MainWindow::focus_forward_picker_field_()
 {
     if (!main_app_ || !main_app_->forward_picker())
+    {
         return;
+    }
     if (auto* f = main_app_->forward_picker()->search_field())
     {
         f->set_text("");
@@ -3577,26 +3713,29 @@ void MainWindow::focus_forward_picker_field_()
 void MainWindow::hide_forward_picker_field_()
 {
     if (main_app_ && main_app_->forward_picker())
+    {
         if (auto* f = main_app_->forward_picker()->search_field())
+        {
             f->set_visible(false);
+        }
+    }
 }
 
-gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*,
-                                            guint keyval, guint,
-                                            GdkModifierType state,
-                                            gpointer user_data)
+gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*, guint keyval, guint,
+                                            GdkModifierType state, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     // Ctrl+K is handled by a global-scope GtkShortcutController (see ctor) so
     // it works while a native entry / text view has focus.
     if (keyval == GDK_KEY_Escape && self->handle_escape_key_())
+    {
         return TRUE;
+    }
     return FALSE;
 }
 
-void MainWindow::on_window_key_released_(GtkEventControllerKey*, guint keyval,
-                                         guint, GdkModifierType,
-                                         gpointer user_data)
+void MainWindow::on_window_key_released_(GtkEventControllerKey*, guint keyval, guint,
+                                         GdkModifierType, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     if (keyval == GDK_KEY_Control_L || keyval == GDK_KEY_Control_R)
@@ -3612,8 +3751,8 @@ void MainWindow::on_window_key_released_(GtkEventControllerKey*, guint keyval,
 // Multi-account management
 // ---------------------------------------------------------------------------
 
-std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(
-    const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h)
+std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
+                                                          std::uint32_t h)
 {
     // GdkPixbuf expects RGBA; swap R and B channels.
     std::vector<std::uint8_t> rgba(static_cast<std::size_t>(w) * h * 4);
@@ -3625,31 +3764,33 @@ std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(
         rgba[i + 3] = bgra[i + 3]; // A
     }
     std::vector<std::uint8_t> jpeg;
-    GdkPixbuf* pb = gdk_pixbuf_new_from_data(
-        rgba.data(), GDK_COLORSPACE_RGB, TRUE, 8, static_cast<int>(w),
-        static_cast<int>(h), static_cast<int>(w * 4), nullptr, nullptr);
+    GdkPixbuf* pb =
+        gdk_pixbuf_new_from_data(rgba.data(), GDK_COLORSPACE_RGB, TRUE, 8, static_cast<int>(w),
+                                 static_cast<int>(h), static_cast<int>(w * 4), nullptr, nullptr);
     if (!pb)
+    {
         return jpeg;
+    }
     GError* gerr = nullptr;
     gchar* data = nullptr;
     gsize sz = 0;
-    if (gdk_pixbuf_save_to_buffer(pb, &data, &sz, "jpeg", &gerr, "quality", "90",
-                                  nullptr))
+    if (gdk_pixbuf_save_to_buffer(pb, &data, &sz, "jpeg", &gerr, "quality", "90", nullptr))
     {
         jpeg.assign(reinterpret_cast<const std::uint8_t*>(data),
                     reinterpret_cast<const std::uint8_t*>(data) + sz);
         g_free(data);
     }
     if (gerr)
+    {
         g_error_free(gerr);
+    }
     g_object_unref(pb);
     return jpeg;
 }
 
 bool MainWindow::main_window_foreground_for_tray_() const
 {
-    return gtk_widget_get_visible(window_) &&
-           gtk_window_is_active(GTK_WINDOW(window_));
+    return gtk_widget_get_visible(window_) && gtk_window_is_active(GTK_WINDOW(window_));
 }
 
 void MainWindow::hide_main_window_for_tray_()
@@ -3665,7 +3806,9 @@ void MainWindow::show_main_window_for_tray_(const std::string& token)
     // focus-stealing prevention lets the window come forward — same mechanism
     // as the notification-click path.
     if (!token.empty())
+    {
         gtk_window_set_startup_id(GTK_WINDOW(window_), token.c_str());
+    }
     gtk_window_present(GTK_WINDOW(window_));
     update_video_playback_suspension_();
 }
@@ -3679,25 +3822,27 @@ void MainWindow::start_platform_services_ui_()
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
 
-
 std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
 {
     std::vector<tk::Rect> result;
     GdkDisplay* display = gdk_display_get_default();
     if (!display)
+    {
         return result;
+    }
     GListModel* monitors = gdk_display_get_monitors(display);
     const guint n = g_list_model_get_n_items(monitors);
     for (guint i = 0; i < n; ++i)
     {
         GdkMonitor* mon = GDK_MONITOR(g_list_model_get_item(monitors, i));
-        if (!mon) continue;
+        if (!mon)
+        {
+            continue;
+        }
         GdkRectangle geom{};
         gdk_monitor_get_geometry(mon, &geom);
-        result.push_back({static_cast<float>(geom.x),
-                          static_cast<float>(geom.y),
-                          static_cast<float>(geom.width),
-                          static_cast<float>(geom.height)});
+        result.push_back({static_cast<float>(geom.x), static_cast<float>(geom.y),
+                          static_cast<float>(geom.width), static_cast<float>(geom.height)});
         g_object_unref(mon);
     }
     return result;
@@ -3706,21 +3851,31 @@ std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
 void MainWindow::raise_and_activate_()
 {
     if (window_)
+    {
         gtk_window_present(GTK_WINDOW(window_));
+    }
 }
 
 void MainWindow::set_window_fullscreen_(bool on)
 {
     if (!window_)
+    {
         return;
+    }
     // Drop the status strip too — it looks wrong along the bottom of
     // full-screen media.
     if (status_row_)
+    {
         gtk_widget_set_visible(status_row_, !on);
+    }
     if (on)
+    {
         gtk_window_fullscreen(GTK_WINDOW(window_));
+    }
     else
+    {
         gtk_window_unfullscreen(GTK_WINDOW(window_));
+    }
 }
 
 bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
@@ -3738,17 +3893,21 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
         g_free(self);
     }
     if (program.empty())
+    {
         return false;
+    }
 
     std::vector<gchar*> argv;
     argv.push_back(const_cast<gchar*>(program.c_str()));
     for (const auto& a : args)
+    {
         argv.push_back(const_cast<gchar*>(a.c_str()));
+    }
     argv.push_back(nullptr);
 
     GError* error = nullptr;
-    if (!g_spawn_async(nullptr, argv.data(), nullptr, G_SPAWN_DEFAULT, nullptr,
-                       nullptr, nullptr, &error))
+    if (!g_spawn_async(nullptr, argv.data(), nullptr, G_SPAWN_DEFAULT, nullptr, nullptr, nullptr,
+                       &error))
     {
         g_warning("relaunch failed: %s", error ? error->message : "unknown");
         g_clear_error(&error);
@@ -3766,7 +3925,9 @@ void MainWindow::quit_app_()
 void MainWindow::rebuild_tray_()
 {
     if (!tray_ || !tray_->is_available())
+    {
         return;
+    }
 
     auto items = build_tray_items_();
     tray_->rebuild_menu(std::move(items));
@@ -3782,16 +3943,17 @@ bool MainWindow::click_modifier_held_() const
 bool MainWindow::is_ctrl_held_() const
 {
     GdkDisplay* disp = gdk_display_get_default();
-    GdkSeat*    seat = disp ? gdk_display_get_default_seat(disp) : nullptr;
-    GdkDevice*  kbd  = seat ? gdk_seat_get_keyboard(seat) : nullptr;
+    GdkSeat* seat = disp ? gdk_display_get_default_seat(disp) : nullptr;
+    GdkDevice* kbd = seat ? gdk_seat_get_keyboard(seat) : nullptr;
     if (!kbd)
+    {
         return false;
+    }
     GdkModifierType mods = gdk_device_get_modifier_state(kbd);
     return (mods & GDK_CONTROL_MASK) != 0;
 }
 
-void MainWindow::spawn_main_window_(
-    std::shared_ptr<tesseract::AccountSession> account)
+void MainWindow::spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account)
 {
     auto* win = new gtk4::MainWindow(account_manager_, app_);
     win->set_initial_account(account);

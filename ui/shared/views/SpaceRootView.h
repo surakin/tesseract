@@ -26,8 +26,7 @@ namespace tesseract::views
 class SpaceRootView : public tk::Widget
 {
 public:
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc)>;
 
 protected:
     // host() is nullable: when null, settings_view_'s name field is simply
@@ -39,8 +38,7 @@ protected:
 public:
     ~SpaceRootView() override = default;
 
-    void set_space(const tesseract::RoomInfo& space,
-                   std::size_t joined_children,
+    void set_space(const tesseract::RoomInfo& space, std::size_t joined_children,
                    std::size_t unjoined_children);
     void clear();
     void set_avatar_provider(AvatarProvider p);
@@ -80,7 +78,10 @@ public:
     // Owned settings overlay opened via the wrench icon (top-left, mirrors
     // RoomInfoPanel's). Replaces this view's own summary content entirely
     // while open — see arrange()/paint().
-    RoomSettingsView* settings_view() const { return settings_view_; }
+    RoomSettingsView* settings_view() const
+    {
+        return settings_view_;
+    }
 
     // Fired when settings_view_'s own layout-affecting state changes (open/
     // close, tab switches) so the shell can relayout native overlays.
@@ -104,8 +105,8 @@ public:
     std::function<void(std::string space_id)> on_leave_space;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx& ctx) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx& ctx) override;
 
     // Claims any press landing on this view's own empty background (the
     // gaps around/between the avatar/topic block and the room-management
@@ -124,13 +125,13 @@ private:
     std::size_t unjoined_children_ = 0;
     AvatarProvider avatar_provider_;
 
-    tk::Button*       settings_btn_  = nullptr;
-    tk::IconCache     settings_icon_;
+    tk::Button* settings_btn_ = nullptr;
+    tk::IconCache settings_icon_;
     RoomSettingsView* settings_view_ = nullptr;
 
-    tk::Button*       leave_btn_  = nullptr;
+    tk::Button* leave_btn_ = nullptr;
 
-    SpaceAddRoomList*   add_list_   = nullptr;
+    SpaceAddRoomList* add_list_ = nullptr;
     SpaceChildRoomGrid* child_grid_ = nullptr;
     // Topic/description: a real scrollable child (tk::ScrollView wrapping a
     // TopicLinkLabel), not a manually clipped/height-capped TextLayout — an
@@ -139,7 +140,7 @@ private:
     // it. topic_label_'s text is set once in set_space(), not every paint().
     class TopicLinkLabel;
     tk::ScrollView* topic_scroll_ = nullptr;
-    TopicLinkLabel* topic_label_  = nullptr;
+    TopicLinkLabel* topic_label_ = nullptr;
     // Whether the room-management section (add_list_/child_grid_ + the
     // explanatory label) is shown at all — set via set_can_manage_children.
     // The whole section is hidden, not just individually disabled, when the
@@ -174,16 +175,19 @@ private:
 
     // Room-management section (add_list_ / child_grid_), carved out of the
     // vertical space between the top row and the room-count row.
-    static constexpr float kTopicMaxH = 80.0f;       // fixed cap, stacked-narrow layout only
+    static constexpr float kTopicMaxH = 80.0f;        // fixed cap, stacked-narrow layout only
     static constexpr float kSectionMinH = 180.0f;     // never shrinks below this
     static constexpr float kSectionPadX = 24.0f;      // inset from bounds_ edges
     static constexpr float kSectionGap = 16.0f;       // between list and grid
     static constexpr float kSectionLabelGap = 8.0f;   // between label and lists
     static constexpr float kStackBreakpoint = 560.0f; // side-by-side vs. stacked
-    static constexpr float kLeftColumnW = 280.0f;      // candidate list width
+    static constexpr float kLeftColumnW = 280.0f;     // candidate list width
 
     void reset_layouts_();
-    void on_fonts_changed() override { factory_seen_ = nullptr; }
+    void on_fonts_changed() override
+    {
+        factory_seen_ = nullptr;
+    }
     std::string child_count_label_() const;
 };
 

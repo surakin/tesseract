@@ -43,15 +43,16 @@ struct TkRoomViewStage
 // sample point below is deep inside a flat fill_rect, not near an edge.
 bool exact_ish(Color a, Color b, int tol = 3)
 {
-    auto delta = [](int x, int y) { return x > y ? x - y : y - x; };
-    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol &&
-           delta(a.b, b.b) <= tol;
+    auto delta = [](int x, int y)
+    {
+        return x > y ? x - y : y - x;
+    };
+    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol && delta(a.b, b.b) <= tol;
 }
 
 } // namespace
 
-TEST_CASE("RoomView exposes a compose text-area rect while a room is active",
-          "[tk][view][room]")
+TEST_CASE("RoomView exposes a compose text-area rect while a room is active", "[tk][view][room]")
 {
     TkRoomViewStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
@@ -66,8 +67,7 @@ TEST_CASE("RoomView exposes a compose text-area rect while a room is active",
     CHECK_FALSE(view.compose_text_area_rect().empty());
 }
 
-TEST_CASE("RoomView clears the compose text-area rect after the room closes",
-          "[tk][view][room]")
+TEST_CASE("RoomView clears the compose text-area rect after the room closes", "[tk][view][room]")
 {
     TkRoomViewStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
@@ -132,22 +132,20 @@ TEST_CASE("RoomView does not claim drag-hover while its compose bar is "
     CHECK(target == nullptr);
 }
 
-TEST_CASE("RoomView closes the action-pill overflow menu on room switch",
-          "[tk][view][room]")
+TEST_CASE("RoomView closes the action-pill overflow menu on room switch", "[tk][view][room]")
 {
     TkRoomViewStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
 
     tesseract::RoomInfo room_a;
-    room_a.id   = "!a:example.org";
+    room_a.id = "!a:example.org";
     room_a.name = "Room A";
     view.set_room(room_a);
     st.run(view, {0, 0, 800, 600});
 
     REQUIRE(view.overflow_menu() != nullptr);
-    view.overflow_menu()->open({{"", {}, "Pin message", false, [] {}}},
-                               {10, 10, 20, 20});
+    view.overflow_menu()->open({{"", {}, "Pin message", false, [] {}}}, {10, 10, 20, 20});
     REQUIRE(view.overflow_menu()->is_open());
 
     // Switching to a different room must not leave the previous room's
@@ -155,7 +153,7 @@ TEST_CASE("RoomView closes the action-pill overflow menu on room switch",
     // happened to click in the timeline, which triggers the popup's own
     // backdrop-dismiss handler.
     tesseract::RoomInfo room_b;
-    room_b.id   = "!b:example.org";
+    room_b.id = "!b:example.org";
     room_b.name = "Room B";
     view.set_room(room_b);
     st.run(view, {0, 0, 800, 600});
@@ -186,7 +184,7 @@ TEST_CASE("RoomView scopes Tab traversal to the open Room Settings modal, "
     host.set_root(&view);
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
     REQUIRE(view.header() != nullptr);
@@ -211,8 +209,8 @@ TEST_CASE("RoomView scopes Tab traversal to the open Room Settings modal, "
     REQUIRE(view.room_settings_view() != nullptr);
     view.room_settings_view()->open(info);
     view.room_settings_view()->set_field_permissions(/*can_name=*/true,
-                                                      /*can_topic=*/true,
-                                                      /*can_avatar=*/true);
+                                                     /*can_topic=*/true,
+                                                     /*can_avatar=*/true);
 
     // Second pass with Settings now open — this is what must sync the focus
     // scope (mirrors the real per-frame repaint that follows opening it).
@@ -230,7 +228,9 @@ TEST_CASE("RoomView scopes Tab traversal to the open Room Settings modal, "
     for (int i = 0; i < 30; ++i)
     {
         if (host.advance_focus(/*forward=*/true))
+        {
             advanced_at_least_once = true;
+        }
         CHECK(host.focused_widget() != header_search);
     }
     CHECK(advanced_at_least_once);
@@ -256,7 +256,7 @@ TEST_CASE("RoomView scopes Tab traversal to the open room media gallery, "
     host.set_root(&view);
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 
@@ -289,7 +289,9 @@ TEST_CASE("RoomView scopes Tab traversal to the open room media gallery, "
     for (int i = 0; i < 30; ++i)
     {
         if (host.advance_focus(/*forward=*/true))
+        {
             advanced_at_least_once = true;
+        }
         CHECK(host.focused_widget() != compose_text_area);
     }
     CHECK(advanced_at_least_once);
@@ -317,7 +319,7 @@ TEST_CASE("RoomView actually paints the room media gallery when open, not "
     host.set_root(&view);
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 
@@ -346,8 +348,7 @@ TEST_CASE("RoomView actually paints the room media gallery when open, not "
     const int x = 400;
     const int y = 580;
     CHECK(exact_ish(st.surface->read_pixel(x, y), Theme::light().palette.bg));
-    CHECK_FALSE(exact_ish(st.surface->read_pixel(x, y),
-                          Theme::light().palette.compose_card_bg));
+    CHECK_FALSE(exact_ish(st.surface->read_pixel(x, y), Theme::light().palette.compose_card_bg));
 }
 
 TEST_CASE("RoomView::is_overlay_open() is true while the room media "
@@ -357,7 +358,7 @@ TEST_CASE("RoomView::is_overlay_open() is true while the room media "
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 
@@ -378,7 +379,7 @@ TEST_CASE("RoomView::set_room() closes the room media gallery on a genuine "
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     tesseract::RoomInfo room_a;
-    room_a.id   = "!a:example.org";
+    room_a.id = "!a:example.org";
     room_a.name = "Room A";
     view.set_room(room_a);
 
@@ -387,7 +388,7 @@ TEST_CASE("RoomView::set_room() closes the room media gallery on a genuine "
     REQUIRE(view.room_media_view()->is_open());
 
     tesseract::RoomInfo room_b;
-    room_b.id   = "!b:example.org";
+    room_b.id = "!b:example.org";
     room_b.name = "Room B";
     view.set_room(room_b); // genuine switch — different id
 
@@ -419,7 +420,7 @@ TEST_CASE("RoomView::set_room() focuses the composer on a genuine room switch",
     host.set_root(&view);
 
     tesseract::RoomInfo room_a;
-    room_a.id   = "!a:example.org";
+    room_a.id = "!a:example.org";
     room_a.name = "Room A";
     view.set_room(room_a);
 
@@ -434,7 +435,7 @@ TEST_CASE("RoomView::set_room() focuses the composer on a genuine room switch",
     REQUIRE(view.compose_bar()->text_area() != nullptr);
 
     tesseract::RoomInfo room_b;
-    room_b.id   = "!b:example.org";
+    room_b.id = "!b:example.org";
     room_b.name = "Room B";
     view.set_room(room_b); // genuine switch - different id
 
@@ -458,7 +459,7 @@ TEST_CASE("RoomView::set_room() does not steal focus when re-selecting the "
     host.set_root(&view);
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 
@@ -496,7 +497,7 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects an unclaimed click "
     host.set_root(&view);
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 
@@ -559,7 +560,7 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects a click on a real "
     host.set_root(&view);
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 
@@ -588,8 +589,7 @@ TEST_CASE("RoomView::dispatch_pointer_down redirects a click on a real "
     CHECK(claimed == view.compose_bar()->text_area());
 }
 
-TEST_CASE("RoomView clears the identity warning even while hidden",
-          "[tk][view][room]")
+TEST_CASE("RoomView clears the identity warning even while hidden", "[tk][view][room]")
 {
     TkRoomViewStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);

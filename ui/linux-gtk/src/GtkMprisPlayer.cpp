@@ -76,18 +76,14 @@ GVariant* build_metadata(const tesseract::NowPlaying& np)
         return g_variant_builder_end(&b); // empty dict — nothing loaded
     }
     const std::string track_id = sanitize_track_id(np.event_id);
-    g_variant_builder_add(&b, "{sv}", "mpris:trackid",
-                          g_variant_new_object_path(track_id.c_str()));
-    g_variant_builder_add(
-        &b, "{sv}", "mpris:length",
-        g_variant_new_int64(static_cast<gint64>(np.duration_ms) * 1000));
-    g_variant_builder_add(&b, "{sv}", "xesam:title",
-                          g_variant_new_string(np.title.c_str()));
+    g_variant_builder_add(&b, "{sv}", "mpris:trackid", g_variant_new_object_path(track_id.c_str()));
+    g_variant_builder_add(&b, "{sv}", "mpris:length",
+                          g_variant_new_int64(static_cast<gint64>(np.duration_ms) * 1000));
+    g_variant_builder_add(&b, "{sv}", "xesam:title", g_variant_new_string(np.title.c_str()));
     if (!np.artist.empty())
     {
         const char* artists[] = {np.artist.c_str(), nullptr};
-        g_variant_builder_add(&b, "{sv}", "xesam:artist",
-                              g_variant_new_strv(artists, -1));
+        g_variant_builder_add(&b, "{sv}", "xesam:artist", g_variant_new_strv(artists, -1));
     }
     return g_variant_builder_end(&b);
 }
@@ -106,50 +102,54 @@ struct GtkMprisPlayer::Impl
     ~Impl()
     {
         if (conn && root_reg_id)
+        {
             g_dbus_connection_unregister_object(conn, root_reg_id);
+        }
         if (conn && player_reg_id)
+        {
             g_dbus_connection_unregister_object(conn, player_reg_id);
+        }
         if (own_name_id)
+        {
             g_bus_unown_name(own_name_id);
+        }
         if (conn)
+        {
             g_object_unref(conn);
+        }
     }
 
     void emit_properties_changed()
     {
         if (!conn)
+        {
             return;
+        }
         auto& hub = account_manager->media_playback_hub();
         const auto& np = hub.current();
         const bool loaded = np.kind != tesseract::NowPlaying::Kind::None;
         GVariantBuilder changed;
         g_variant_builder_init(&changed, G_VARIANT_TYPE("a{sv}"));
-        g_variant_builder_add(
-            &changed, "{sv}", "PlaybackStatus",
-            g_variant_new_string(np.kind == tesseract::NowPlaying::Kind::None
-                                      ? "Stopped"
-                                  : np.is_playing ? "Playing"
-                                                  : "Paused"));
-        g_variant_builder_add(&changed, "{sv}", "Metadata",
-                              build_metadata(np));
+        g_variant_builder_add(&changed, "{sv}", "PlaybackStatus",
+                              g_variant_new_string(np.kind == tesseract::NowPlaying::Kind::None
+                                                       ? "Stopped"
+                                                   : np.is_playing ? "Playing"
+                                                                   : "Paused"));
+        g_variant_builder_add(&changed, "{sv}", "Metadata", build_metadata(np));
         // CanPlay/CanPause/CanSeek flip false->true (and back) alongside
         // PlaybackStatus/Metadata — clients like Plasma's media widget cache
         // the initial GetAll snapshot and only re-read on PropertiesChanged,
         // so omitting these left the controls permanently disabled after the
         // very first (nothing-loaded) snapshot.
-        g_variant_builder_add(&changed, "{sv}", "CanPlay",
-                              g_variant_new_boolean(loaded));
-        g_variant_builder_add(&changed, "{sv}", "CanPause",
-                              g_variant_new_boolean(loaded));
-        g_variant_builder_add(&changed, "{sv}", "CanSeek",
-                              g_variant_new_boolean(loaded));
+        g_variant_builder_add(&changed, "{sv}", "CanPlay", g_variant_new_boolean(loaded));
+        g_variant_builder_add(&changed, "{sv}", "CanPause", g_variant_new_boolean(loaded));
+        g_variant_builder_add(&changed, "{sv}", "CanSeek", g_variant_new_boolean(loaded));
         GVariantBuilder invalidated;
         g_variant_builder_init(&invalidated, G_VARIANT_TYPE("as"));
         g_dbus_connection_emit_signal(
-            conn, nullptr, "/org/mpris/MediaPlayer2",
-            "org.freedesktop.DBus.Properties", "PropertiesChanged",
-            g_variant_new("(sa{sv}as)", "org.mpris.MediaPlayer2.Player",
-                         &changed, &invalidated),
+            conn, nullptr, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties",
+            "PropertiesChanged",
+            g_variant_new("(sa{sv}as)", "org.mpris.MediaPlayer2.Player", &changed, &invalidated),
             nullptr);
     }
 };
@@ -157,9 +157,8 @@ struct GtkMprisPlayer::Impl
 namespace
 {
 
-void root_method(GDBusConnection*, const char*, const char*, const char*,
-                 const char* method, GVariant*,
-                 GDBusMethodInvocation* invocation, gpointer user_data)
+void root_method(GDBusConnection*, const char*, const char*, const char*, const char* method,
+                 GVariant*, GDBusMethodInvocation* invocation, gpointer user_data)
 {
     auto* impl = static_cast<GtkMprisPlayer::Impl*>(user_data);
     if (g_strcmp0(method, "Raise") == 0)
@@ -179,30 +178,42 @@ void root_method(GDBusConnection*, const char*, const char*, const char*,
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
-GVariant* root_get_property(GDBusConnection*, const char*, const char*,
-                            const char*, const char* prop, GError**,
-                            gpointer)
+GVariant* root_get_property(GDBusConnection*, const char*, const char*, const char*,
+                            const char* prop, GError**, gpointer)
 {
     if (g_strcmp0(prop, "CanQuit") == 0)
+    {
         return g_variant_new_boolean(FALSE);
+    }
     if (g_strcmp0(prop, "CanRaise") == 0)
+    {
         return g_variant_new_boolean(FALSE);
+    }
     if (g_strcmp0(prop, "HasTrackList") == 0)
+    {
         return g_variant_new_boolean(FALSE);
+    }
     if (g_strcmp0(prop, "Identity") == 0)
+    {
         return g_variant_new_string("Tesseract");
+    }
     if (g_strcmp0(prop, "DesktopEntry") == 0)
+    {
         return g_variant_new_string("tesseract-matrix-gtk");
+    }
     if (g_strcmp0(prop, "SupportedUriSchemes") == 0)
+    {
         return g_variant_new_strv(nullptr, 0);
+    }
     if (g_strcmp0(prop, "SupportedMimeTypes") == 0)
+    {
         return g_variant_new_strv(nullptr, 0);
+    }
     return nullptr;
 }
 
-void player_method(GDBusConnection*, const char*, const char*, const char*,
-                   const char* method, GVariant* params,
-                   GDBusMethodInvocation* invocation, gpointer user_data)
+void player_method(GDBusConnection*, const char*, const char*, const char*, const char* method,
+                   GVariant* params, GDBusMethodInvocation* invocation, gpointer user_data)
 {
     auto* impl = static_cast<GtkMprisPlayer::Impl*>(user_data);
     auto& hub = impl->account_manager->media_playback_hub();
@@ -238,36 +249,50 @@ void player_method(GDBusConnection*, const char*, const char*, const char*,
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
-GVariant* player_get_property(GDBusConnection*, const char*, const char*,
-                             const char*, const char* prop, GError**,
-                             gpointer user_data)
+GVariant* player_get_property(GDBusConnection*, const char*, const char*, const char*,
+                              const char* prop, GError**, gpointer user_data)
 {
     auto* impl = static_cast<GtkMprisPlayer::Impl*>(user_data);
     const auto& np = impl->account_manager->media_playback_hub().current();
     const bool loaded = np.kind != tesseract::NowPlaying::Kind::None;
 
     if (g_strcmp0(prop, "PlaybackStatus") == 0)
-        return g_variant_new_string(!loaded              ? "Stopped"
-                                    : np.is_playing ? "Playing"
-                                                    : "Paused");
+    {
+        return g_variant_new_string(!loaded ? "Stopped" : np.is_playing ? "Playing" : "Paused");
+    }
     if (g_strcmp0(prop, "Rate") == 0)
+    {
         return g_variant_new_double(1.0);
+    }
     if (g_strcmp0(prop, "Metadata") == 0)
+    {
         return build_metadata(np);
+    }
     if (g_strcmp0(prop, "Volume") == 0)
+    {
         return g_variant_new_double(1.0);
+    }
     if (g_strcmp0(prop, "Position") == 0)
+    {
         return g_variant_new_int64(static_cast<gint64>(np.position_ms) * 1000);
-    if (g_strcmp0(prop, "MinimumRate") == 0 ||
-        g_strcmp0(prop, "MaximumRate") == 0)
+    }
+    if (g_strcmp0(prop, "MinimumRate") == 0 || g_strcmp0(prop, "MaximumRate") == 0)
+    {
         return g_variant_new_double(1.0);
+    }
     if (g_strcmp0(prop, "CanGoNext") == 0 || g_strcmp0(prop, "CanGoPrevious") == 0)
+    {
         return g_variant_new_boolean(FALSE); // no playlist concept
+    }
     if (g_strcmp0(prop, "CanPlay") == 0 || g_strcmp0(prop, "CanPause") == 0 ||
         g_strcmp0(prop, "CanSeek") == 0)
+    {
         return g_variant_new_boolean(loaded ? TRUE : FALSE);
+    }
     if (g_strcmp0(prop, "CanControl") == 0)
+    {
         return g_variant_new_boolean(TRUE);
+    }
     return nullptr;
 }
 
@@ -295,27 +320,25 @@ GtkMprisPlayer::GtkMprisPlayer(tesseract::AccountManager& account_manager)
 
     GDBusInterfaceInfo* root_iface =
         g_dbus_node_info_lookup_interface(node, "org.mpris.MediaPlayer2");
-    GDBusInterfaceInfo* player_iface = g_dbus_node_info_lookup_interface(
-        node, "org.mpris.MediaPlayer2.Player");
+    GDBusInterfaceInfo* player_iface =
+        g_dbus_node_info_lookup_interface(node, "org.mpris.MediaPlayer2.Player");
 
-    static const GDBusInterfaceVTable kRootVtable = {root_method,
-                                                     root_get_property,
-                                                     nullptr, {nullptr}};
-    static const GDBusInterfaceVTable kPlayerVtable = {player_method,
-                                                       player_get_property,
-                                                       nullptr, {nullptr}};
+    static const GDBusInterfaceVTable kRootVtable = {
+        root_method, root_get_property, nullptr, {nullptr}};
+    static const GDBusInterfaceVTable kPlayerVtable = {
+        player_method, player_get_property, nullptr, {nullptr}};
 
     if (root_iface)
     {
-        impl_->root_reg_id = g_dbus_connection_register_object(
-            impl_->conn, "/org/mpris/MediaPlayer2", root_iface, &kRootVtable,
-            impl_.get(), nullptr, &err);
+        impl_->root_reg_id =
+            g_dbus_connection_register_object(impl_->conn, "/org/mpris/MediaPlayer2", root_iface,
+                                              &kRootVtable, impl_.get(), nullptr, &err);
     }
     if (impl_->root_reg_id && player_iface)
     {
-        impl_->player_reg_id = g_dbus_connection_register_object(
-            impl_->conn, "/org/mpris/MediaPlayer2", player_iface,
-            &kPlayerVtable, impl_.get(), nullptr, &err);
+        impl_->player_reg_id =
+            g_dbus_connection_register_object(impl_->conn, "/org/mpris/MediaPlayer2", player_iface,
+                                              &kPlayerVtable, impl_.get(), nullptr, &err);
     }
     g_dbus_node_info_unref(node);
     if (!impl_->root_reg_id || !impl_->player_reg_id)
@@ -325,11 +348,13 @@ GtkMprisPlayer::GtkMprisPlayer(tesseract::AccountManager& account_manager)
     }
 
     impl_->own_name_id = g_bus_own_name_on_connection(
-        impl_->conn, "org.mpris.MediaPlayer2.Tesseract",
-        G_BUS_NAME_OWNER_FLAGS_NONE, nullptr, nullptr, nullptr, nullptr);
+        impl_->conn, "org.mpris.MediaPlayer2.Tesseract", G_BUS_NAME_OWNER_FLAGS_NONE, nullptr,
+        nullptr, nullptr, nullptr);
 
     account_manager.media_playback_hub().on_changed = [impl = impl_.get()]
-    { impl->emit_properties_changed(); };
+    {
+        impl->emit_properties_changed();
+    };
 
     available_ = true;
 }

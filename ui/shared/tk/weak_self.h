@@ -27,7 +27,10 @@ struct CallbackScope
     {
         ++state->callback_depth;
     }
-    ~CallbackScope() { --state->callback_depth; }
+    ~CallbackScope()
+    {
+        --state->callback_depth;
+    }
     CallbackScope(const CallbackScope&) = delete;
     CallbackScope& operator=(const CallbackScope&) = delete;
     std::shared_ptr<WeakSelfState> state;
@@ -139,20 +142,24 @@ public:
     template <typename F>
     void operator()(F fn) const
     {
-        post_([alive = alive_, fn = std::move(fn)]() mutable
-              {
-                  if (auto state = alive.lock())
-                  {
-                      detail::CallbackScope scope(std::move(state));
-                      fn();
-                  }
-              });
+        post_(
+            [alive = alive_, fn = std::move(fn)]() mutable
+            {
+                if (auto state = alive.lock())
+                {
+                    detail::CallbackScope scope(std::move(state));
+                    fn();
+                }
+            });
     }
 
     // False once the owner has started destructing. A worker checks this
     // before starting a job whose result nobody would read. It makes nothing
     // else safe: the owner may go away right after the check.
-    bool owner_alive() const { return !alive_.expired(); }
+    bool owner_alive() const
+    {
+        return !alive_.expired();
+    }
 
 private:
     Post post_;
@@ -177,7 +184,9 @@ protected:
     void invalidate_weak_self()
     {
         if (self_alive_ && self_alive_->callback_depth > 0)
+        {
             detail::report_destroyed_in_own_callback(typeid(T).name());
+        }
         self_alive_.reset();
     }
 
@@ -193,8 +202,7 @@ protected:
     template <typename U = T>
     std::weak_ptr<U> weak_self() const
     {
-        return std::shared_ptr<U>(
-            self_alive_, static_cast<U*>(const_cast<EnableWeakSelf*>(this)));
+        return std::shared_ptr<U>(self_alive_, static_cast<U*>(const_cast<EnableWeakSelf*>(this)));
     }
 
     // Thin bool-only liveness signal, for call sites that only ever checked
@@ -244,15 +252,13 @@ protected:
     template <typename Post>
     UiPoster<Post> ui_poster(Post post) const
     {
-        return UiPoster<Post>(std::move(post),
-                              std::weak_ptr<detail::WeakSelfState>(self_alive_));
+        return UiPoster<Post>(std::move(post), std::weak_ptr<detail::WeakSelfState>(self_alive_));
     }
 
 private:
     // Owns only the small state block; weak_self()/weak_flag() alias into its
     // control block, so their handles expire together when it is reset.
-    std::shared_ptr<detail::WeakSelfState> self_alive_ =
-        std::make_shared<detail::WeakSelfState>();
+    std::shared_ptr<detail::WeakSelfState> self_alive_ = std::make_shared<detail::WeakSelfState>();
     bool flag_ = true; // weak_flag()'s alias target once self_alive_ is reset
 };
 

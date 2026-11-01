@@ -14,15 +14,20 @@ namespace
 
 struct PolicyClock
 {
-    PowerPolicy::Clock::time_point now =
-        PowerPolicy::Clock::time_point{} + 1h;
+    PowerPolicy::Clock::time_point now = PowerPolicy::Clock::time_point{} + 1h;
 
     PowerPolicy::NowProvider provider()
     {
-        return [this] { return now; };
+        return [this]
+        {
+            return now;
+        };
     }
 
-    void advance(std::chrono::seconds s) { now += s; }
+    void advance(std::chrono::seconds s)
+    {
+        now += s;
+    }
 };
 
 struct PolicyRecorder
@@ -31,14 +36,16 @@ struct PolicyRecorder
 
     std::function<void(bool)> sink()
     {
-        return [this](bool a) { seen.push_back(a); };
+        return [this](bool a)
+        {
+            seen.push_back(a);
+        };
     }
 };
 
 } // namespace
 
-TEST_CASE("PowerPolicy: Off is never active for any signal combination",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: Off is never active for any signal combination", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -56,8 +63,7 @@ TEST_CASE("PowerPolicy: Off is never active for any signal combination",
     REQUIRE_FALSE(p.has_pending());
 }
 
-TEST_CASE("PowerPolicy: On is active immediately and ignores signals",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: On is active immediately and ignores signals", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -76,8 +82,7 @@ TEST_CASE("PowerPolicy: On is active immediately and ignores signals",
     REQUIRE_FALSE(p.has_pending());
 }
 
-TEST_CASE("PowerPolicy: Auto activates on power-saver only after the debounce",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: Auto activates on power-saver only after the debounce", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -97,8 +102,7 @@ TEST_CASE("PowerPolicy: Auto activates on power-saver only after the debounce",
     REQUIRE_FALSE(p.has_pending());
 }
 
-TEST_CASE("PowerPolicy: Auto signal that reverts before settling never emits",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: Auto signal that reverts before settling never emits", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -118,8 +122,7 @@ TEST_CASE("PowerPolicy: Auto signal that reverts before settling never emits",
     REQUIRE(rec.seen.empty());
 }
 
-TEST_CASE("PowerPolicy: Auto deactivates after both signals clear and settle",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: Auto deactivates after both signals clear and settle", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -142,8 +145,7 @@ TEST_CASE("PowerPolicy: Auto deactivates after both signals clear and settle",
     REQUIRE(rec.seen == std::vector<bool>{true, false});
 }
 
-TEST_CASE("PowerPolicy: Auto stays active while one signal remains set",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: Auto stays active while one signal remains set", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -167,8 +169,7 @@ TEST_CASE("PowerPolicy: Auto stays active while one signal remains set",
     REQUIRE(rec.seen == std::vector<bool>{true});
 }
 
-TEST_CASE("PowerPolicy: repeated ticks with no change never re-fire",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: repeated ticks with no change never re-fire", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -184,8 +185,7 @@ TEST_CASE("PowerPolicy: repeated ticks with no change never re-fire",
     REQUIRE(rec.seen == std::vector<bool>{true});
 }
 
-TEST_CASE("PowerPolicy: set_pref(On) supersedes a pending Auto deactivation",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: set_pref(On) supersedes a pending Auto deactivation", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};
@@ -208,8 +208,7 @@ TEST_CASE("PowerPolicy: set_pref(On) supersedes a pending Auto deactivation",
     REQUIRE(rec.seen == std::vector<bool>{true});
 }
 
-TEST_CASE("PowerPolicy: switching back to Auto applies immediately",
-          "[power][policy]")
+TEST_CASE("PowerPolicy: switching back to Auto applies immediately", "[power][policy]")
 {
     PolicyClock clk;
     PowerPolicy p{clk.provider()};

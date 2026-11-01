@@ -22,8 +22,7 @@ TEST_CASE("timeline column: the 468px floor wins over a small percentage", "[tim
     CHECK(c.w == 468.0f);
 }
 
-TEST_CASE("timeline column: a timeline narrower than the floor is used whole",
-          "[timeline_column]")
+TEST_CASE("timeline column: a timeline narrower than the floor is used whole", "[timeline_column]")
 {
     const auto c = timeline_column(300, 30, A::Center);
     CHECK(c.x == 0.0f);
@@ -50,8 +49,7 @@ TEST_CASE("timeline column: zero or negative width gives an empty column", "[tim
     }
 }
 
-TEST_CASE("timeline column: out-of-range percentages are clamped to 30..100",
-          "[timeline_column]")
+TEST_CASE("timeline column: out-of-range percentages are clamped to 30..100", "[timeline_column]")
 {
     CHECK(timeline_column(2000, 10, A::Left).w == 600.0f);
     CHECK(timeline_column(2000, 500, A::Left).w == 2000.0f);

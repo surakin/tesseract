@@ -61,18 +61,21 @@ public:
     // pop-out's frame to Settings in top-left-origin coords.
     void save_geometry()
     {
-        if (window_closed_ || !controller_ || !controller_.window) return;
+        if (window_closed_ || !controller_ || !controller_.window)
+        {
+            return;
+        }
         NSRect f = controller_.window.frame;
         NSArray<NSScreen*>* screens = [NSScreen screens];
-        if (!screens.count) return;
+        if (!screens.count)
+        {
+            return;
+        }
         const CGFloat primaryTop =
-            [[screens firstObject] frame].origin.y +
-            [[screens firstObject] frame].size.height;
-        save_popout_geometry_(
-            static_cast<int>(f.origin.x),
-            static_cast<int>(primaryTop - f.origin.y - f.size.height),
-            static_cast<int>(f.size.width),
-            static_cast<int>(f.size.height));
+            [[screens firstObject] frame].origin.y + [[screens firstObject] frame].size.height;
+        save_popout_geometry_(static_cast<int>(f.origin.x),
+                              static_cast<int>(primaryTop - f.origin.y - f.size.height),
+                              static_cast<int>(f.size.width), static_cast<int>(f.size.height));
     }
 
     // Called by -windowDidResize: delegate method. A popup's screen position
@@ -81,10 +84,18 @@ public:
     // anchored it. Close everything instead.
     void dismiss_popups_on_resize()
     {
-        if (surface_) surface_->host().dismiss_active_popup();
-        if (room_view_) room_view_->dismiss_popups();
+        if (surface_)
+        {
+            surface_->host().dismiss_active_popup();
+        }
+        if (room_view_)
+        {
+            room_view_->dismiss_popups();
+        }
         if (popups_)
+        {
             popups_->hide_all();
+        }
     }
 
     // Called by -keyDown: when Escape is pressed.
@@ -108,8 +119,7 @@ protected:
     // pop-out; only the controller that issued the search matches).
     void on_gif_results(std::uint64_t request_id,
                         std::vector<tesseract::GifResult> results) override;
-    void on_gif_search_failed(std::uint64_t request_id,
-                              const std::string& message) override;
+    void on_gif_search_failed(std::uint64_t request_id, const std::string& message) override;
 
 private:
     __strong RoomWindowController* controller_ = nil;
@@ -119,7 +129,7 @@ private:
     // RoomSearchBar::search_field() / ForwardRoomPicker::search_field().
     tk::TextArea* text_area_ = nullptr;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
+    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr;    // borrowed
 
     // Composer popups (@mention, /command, :shortcode:, /gif). Declared after
     // surface_ so the popups are destroyed before the Host they came from.
@@ -132,20 +142,18 @@ private:
 // MacRoomWindow implementation
 // ─────────────────────────────────────────────────────────────────────────────
 
-MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
-                             const std::string&    room_id)
+MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell, const std::string& room_id)
     : tesseract::RoomWindowBase(shell, room_id)
 {
     NSRect frame = NSMakeRect(0, 0, 800, 600);
-    NSWindowStyleMask style =
-        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+    NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                              NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
     NSWindow* win = [[NSWindow alloc] initWithContentRect:frame
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
-    win.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth,
-                              tesseract::visual::kMinWindowHeight);
+    win.minSize =
+        NSMakeSize(tesseract::visual::kMinWindowWidth, tesseract::visual::kMinWindowHeight);
     NSString* title = [NSString stringWithUTF8String:room_id.c_str()] ?: @"";
     [win setTitle:title];
 
@@ -155,15 +163,11 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         if (saved.valid)
         {
             NSArray<NSScreen*>* screens = [NSScreen screens];
-            const CGFloat primaryTop =
-                screens.count > 0
-                    ? ([[screens firstObject] frame].origin.y +
-                       [[screens firstObject] frame].size.height)
-                    : 768.0;
-            NSRect f = NSMakeRect(saved.x,
-                                  primaryTop - saved.y - saved.h,
-                                  saved.w,
-                                  saved.h);
+            const CGFloat primaryTop = screens.count > 0
+                                           ? ([[screens firstObject] frame].origin.y +
+                                              [[screens firstObject] frame].size.height)
+                                           : 768.0;
+            NSRect f = NSMakeRect(saved.x, primaryTop - saved.y - saved.h, saved.w, saved.h);
             [win setFrame:f display:NO];
         }
         else
@@ -176,10 +180,10 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     NSView* surfaceView = (__bridge NSView*)surface_->view_handle();
     [win setContentView:surfaceView];
 
-    auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
-        &surface_->host());
-    room_view_             = room_widget->room_view();
-    media_viewer_          = room_widget->media_viewer();
+    auto room_widget =
+        tk::create_root_widget<tesseract::views::PopoutRoomWidget>(&surface_->host());
+    room_view_ = room_widget->room_view();
+    media_viewer_ = room_widget->media_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
     room_widget->on_layout_changed = [this]
@@ -198,21 +202,29 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         .media_viewer = media_viewer_,
         .forward_picker = forward_picker_widget_,
         .room_media_view = room_media_view_widget_,
-        .focus_forward_picker_field = [this]
+        .focus_forward_picker_field =
+            [this]
         {
             if (!forward_picker_widget_)
+            {
                 return;
+            }
             if (auto* f = forward_picker_widget_->search_field())
             {
                 f->set_text("");
                 f->set_focused(true);
             }
         },
-        .hide_forward_picker_field = [this]
+        .hide_forward_picker_field =
+            [this]
         {
             if (forward_picker_widget_)
+            {
                 if (auto* f = forward_picker_widget_->search_field())
+                {
                     f->set_visible(false);
+                }
+            }
         },
     });
 
@@ -226,10 +238,12 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     // player above — MessageListView falls back to a static thumbnail unless
     // both of these are set).
     room_view_->set_video_player_factory(
-        [this]() { return surface_->host().make_video_player(); });
+        [this]()
+        {
+            return surface_->host().make_video_player();
+        });
     room_view_->set_video_fetch_provider(
-        [this](const std::string& src,
-               std::function<void(std::vector<std::uint8_t>)> on_ready)
+        [this](const std::string& src, std::function<void(std::vector<std::uint8_t>)> on_ready)
         {
             pane_->fetch_source_bytes_(src, std::move(on_ready));
         });
@@ -238,15 +252,16 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     // One handler for every viewer kind: RoomPane builds the spec and writes
     // the file; this window only shows the panel.
     pane_->install_media_viewer_save_(
-        [](const tesseract::views::MediaSaveSpec& spec,
-           std::function<void(std::string)> done)
+        [](const tesseract::views::MediaSaveSpec& spec, std::function<void(std::string)> done)
         {
             NSSavePanel* panel = [NSSavePanel savePanel];
             panel.nameFieldStringValue =
                 [NSString stringWithUTF8String:spec.suggested_name.c_str()];
             NSModalResponse resp = [panel runModal];
             if (resp != NSModalResponseOK || !panel.URL)
+            {
                 return;
+            }
             done(std::string(panel.URL.path.UTF8String));
         });
 
@@ -254,11 +269,14 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     const auto set_fs = [this](bool on)
     {
         if (window_closed_ || !controller_ || !controller_.window)
+        {
             return;
-        const bool is_fs =
-            (controller_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+        }
+        const bool is_fs = (controller_.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
         if (is_fs != on)
+        {
             [controller_.window toggleFullScreen:nil];
+        }
     };
     media_viewer_->on_request_fullscreen = set_fs;
 
@@ -296,20 +314,26 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     room_view_->on_set_clipboard = [this](std::string_view t)
     {
         if (surface_)
+        {
             surface_->host().set_clipboard_text(t);
+        }
     };
     room_view_->on_selection_started = [this]()
     {
         if (surface_)
+        {
             surface_->host().release_focus_to_canvas();
+        }
     };
     room_view_->on_show_copy_menu = [this]()
     {
-        if (!surface_) return;
+        if (!surface_)
+        {
+            return;
+        }
         NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
         NSMenuItem* item = [[NSMenuItem alloc]
-            initWithTitle:[NSString stringWithUTF8String:
-                              room_view_->copy_menu_label().c_str()]
+            initWithTitle:[NSString stringWithUTF8String:room_view_->copy_menu_label().c_str()]
                    action:@selector(copy:)
             keyEquivalent:@""];
         // Explicit target: with nil, copy: walks the responder chain and a
@@ -319,14 +343,16 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         NSEvent* event = [NSApp currentEvent];
         NSView* view = (__bridge NSView*)surface_->view_handle();
         if (event && view)
+        {
             [NSMenu popUpContextMenu:menu withEvent:event forView:view];
+        }
     };
 
     // ── Compose text area (self-owned — see ComposeBar::text_area()) ────────
     // + composer popups (@mention, /command, :shortcode:, /gif).
     text_area_ = room_view_->compose_bar()->text_area();
-    popups_ = std::make_unique<tesseract::ComposerPopups>(
-        surface_->host(), text_area_, pane_.get(), room_view_);
+    popups_ = std::make_unique<tesseract::ComposerPopups>(surface_->host(), text_area_, pane_.get(),
+                                                          room_view_);
 
     // Per-room "find in conversation" — search field is self-owned; only the
     // shell-level Up/Down/Escape nav needs wiring here (on_close is already
@@ -341,16 +367,22 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                     [this](tk::NavKey nk) -> bool
                     {
                         if (!room_view_ || !room_view_->room_search_open())
+                        {
                             return false;
+                        }
                         switch (nk)
                         {
                         case tk::NavKey::Up:
                             if (room_view_->on_room_search_navigate)
+                            {
                                 room_view_->on_room_search_navigate(-1);
+                            }
                             return true;
                         case tk::NavKey::Down:
                             if (room_view_->on_room_search_navigate)
+                            {
                                 room_view_->on_room_search_navigate(+1);
+                            }
                             return true;
                         case tk::NavKey::Escape:
                             room_view_->close_room_search();
@@ -373,16 +405,24 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
                 [this](tk::NavKey nk) -> bool
                 {
                     if (!forward_picker_widget_ || !forward_picker_widget_->is_open())
+                    {
                         return false;
+                    }
                     switch (nk)
                     {
                     case tk::NavKey::Up:
                         forward_picker_widget_->move_selection(-1);
-                        if (surface_) surface_->relayout();
+                        if (surface_)
+                        {
+                            surface_->relayout();
+                        }
                         return true;
                     case tk::NavKey::Down:
                         forward_picker_widget_->move_selection(+1);
-                        if (surface_) surface_->relayout();
+                        if (surface_)
+                        {
+                            surface_->relayout();
+                        }
                         return true;
                     case tk::NavKey::Escape:
                         forward_picker_widget_->close();
@@ -398,16 +438,25 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     {
         // 0 = none pushed, 1 = pointing hand, 2 = I-beam.
         const auto hc = tesseract::views::MessageListView::hover_cursor_for(url);
-        const int want = hc == tesseract::views::MessageListView::HoverCursor::Text ? 2
-                         : hc == tesseract::views::MessageListView::HoverCursor::Pointer ? 1 : 0;
+        const int want = hc == tesseract::views::MessageListView::HoverCursor::Text      ? 2
+                         : hc == tesseract::views::MessageListView::HoverCursor::Pointer ? 1
+                                                                                         : 0;
         if (want == link_hovered_)
+        {
             return;
+        }
         if (link_hovered_ != 0)
+        {
             [NSCursor pop];
+        }
         if (want == 2)
+        {
             [[NSCursor IBeamCursor] push];
+        }
         else if (want == 1)
+        {
             [[NSCursor pointingHandCursor] push];
+        }
         link_hovered_ = want;
     };
 
@@ -421,11 +470,10 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
     // — this is an independent window the user can drag to a
     // differently-scaled display on its own, so it needs its own observer
     // rather than relying on the main window's.
-    [[NSNotificationCenter defaultCenter]
-        addObserver:controller_
-           selector:@selector(_windowDidChangeBackingProperties:)
-               name:NSWindowDidChangeBackingPropertiesNotification
-             object:win];
+    [[NSNotificationCenter defaultCenter] addObserver:controller_
+                                             selector:@selector(_windowDidChangeBackingProperties:)
+                                                 name:NSWindowDidChangeBackingPropertiesNotification
+                                               object:win];
 
     [win makeKeyAndOrderFront:nil];
 
@@ -480,8 +528,7 @@ void MacRoomWindow::on_gif_results(std::uint64_t request_id,
     }
 }
 
-void MacRoomWindow::on_gif_search_failed(std::uint64_t request_id,
-                                         const std::string& message)
+void MacRoomWindow::on_gif_search_failed(std::uint64_t request_id, const std::string& message)
 {
     if (popups_)
     {
@@ -506,7 +553,9 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
         surface_->root()->apply_theme(t);
     }
     if (popups_)
+    {
         popups_->apply_theme(t);
+    }
     // Window chrome mirrors the main controller's -_applyTheme: policy: in
     // System mode leave it nil so it keeps tracking NSApp's (and thus the
     // OS's) appearance; only pin a concrete appearance for an explicit
@@ -520,9 +569,8 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
         }
         else
         {
-            NSAppearanceName name = (t.mode == tk::ThemeMode::Dark)
-                                        ? NSAppearanceNameDarkAqua
-                                        : NSAppearanceNameAqua;
+            NSAppearanceName name =
+                (t.mode == tk::ThemeMode::Dark) ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua;
             controller_.window.appearance = [NSAppearance appearanceNamed:name];
         }
     }
@@ -531,7 +579,9 @@ void MacRoomWindow::apply_theme(const tk::Theme& t)
 void MacRoomWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void MacRoomWindow::surface_repaint_()
@@ -552,17 +602,26 @@ void MacRoomWindow::surface_repaint_()
 
 - (void)windowDidEndLiveResize:(NSNotification*)notification
 {
-    if (_cppWindow) _cppWindow->save_geometry();
+    if (_cppWindow)
+    {
+        _cppWindow->save_geometry();
+    }
 }
 
 - (void)windowDidResize:(NSNotification*)notification
 {
-    if (_cppWindow) _cppWindow->dismiss_popups_on_resize();
+    if (_cppWindow)
+    {
+        _cppWindow->dismiss_popups_on_resize();
+    }
 }
 
 - (void)windowDidMove:(NSNotification*)notification
 {
-    if (_cppWindow) _cppWindow->save_geometry();
+    if (_cppWindow)
+    {
+        _cppWindow->save_geometry();
+    }
 }
 
 - (void)windowWillClose:(NSNotification*)notification
@@ -578,7 +637,9 @@ void MacRoomWindow::surface_repaint_()
 - (void)_windowDidChangeBackingProperties:(NSNotification*)note
 {
     if (_cppWindow)
+    {
         _cppWindow->apply_scale_change((float)self.window.backingScaleFactor);
+    }
 }
 
 - (void)dealloc
@@ -591,7 +652,9 @@ void MacRoomWindow::surface_repaint_()
     if (event.keyCode == 53 /* kVK_Escape */ && _cppWindow)
     {
         if (_cppWindow->on_escape_key())
+        {
             return;
+        }
     }
     [super keyDown:event];
 }
@@ -610,7 +673,9 @@ void MacRoomWindow::surface_repaint_()
 {
     auto* rv = _cppWindow ? _cppWindow->room_view() : nullptr;
     if (rv)
+    {
         rv->copy_context_menu_target();
+    }
 }
 
 @end
@@ -622,8 +687,7 @@ void MacRoomWindow::surface_repaint_()
 namespace tesseract
 {
 
-RoomWindowBase* make_mac_room_window(ShellBase*         shell,
-                                     const std::string& room_id)
+RoomWindowBase* make_mac_room_window(ShellBase* shell, const std::string& room_id)
 {
     return new MacRoomWindow(shell, room_id);
 }

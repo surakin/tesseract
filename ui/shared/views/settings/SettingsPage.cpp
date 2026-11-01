@@ -96,10 +96,14 @@ bool SettingsPage::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool is
 tk::Widget* SettingsPage::dispatch_pointer_down(tk::Point world)
 {
     if (!visible() || !contains_world(world))
+    {
         return nullptr;
+    }
     tk::Point local = world_to_local(world);
     if (thumb_hit(local) && scrollbar_on_pointer_down(local))
+    {
         return this;
+    }
     return tk::Widget::dispatch_pointer_down(world);
 }
 

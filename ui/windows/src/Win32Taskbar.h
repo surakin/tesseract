@@ -28,19 +28,24 @@ public:
     struct Snapshot
     {
         std::uint64_t current = 0;
-        std::uint64_t total   = 0;
+        std::uint64_t total = 0;
         bool active = false;
     };
 
-    void update(std::uint64_t request_id, std::uint64_t current,
-                std::uint64_t total)
+    void update(std::uint64_t request_id, std::uint64_t current, std::uint64_t total)
     {
-        if (request_id == 0 || total == 0) return;
+        if (request_id == 0 || total == 0)
+        {
+            return;
+        }
         transfers_[request_id] = {std::min(current, total), total};
     }
     std::optional<Snapshot> finish(std::uint64_t request_id)
     {
-        if (!transfers_.contains(request_id)) return std::nullopt;
+        if (!transfers_.contains(request_id))
+        {
+            return std::nullopt;
+        }
         auto before = snapshot();
         transfers_.erase(request_id);
         return before;
@@ -51,61 +56,69 @@ public:
         out.active = !transfers_.empty();
         for (const auto& [_, transfer] : transfers_)
         {
-            out.current += std::min(transfer.current,
-                std::numeric_limits<std::uint64_t>::max() - out.current);
-            out.total += std::min(transfer.total,
-                std::numeric_limits<std::uint64_t>::max() - out.total);
+            out.current +=
+                std::min(transfer.current, std::numeric_limits<std::uint64_t>::max() - out.current);
+            out.total +=
+                std::min(transfer.total, std::numeric_limits<std::uint64_t>::max() - out.total);
         }
         return out;
     }
-    void clear() { transfers_.clear(); }
+    void clear()
+    {
+        transfers_.clear();
+    }
 
 private:
-    struct Transfer { std::uint64_t current, total; };
+    struct Transfer
+    {
+        std::uint64_t current, total;
+    };
     std::unordered_map<std::uint64_t, Transfer> transfers_;
 };
 
 class Win32Taskbar
 {
 public:
-    enum class Role { Main, Room, Call };
+    enum class Role
+    {
+        Main,
+        Room,
+        Call
+    };
 
     static constexpr UINT kNextUnreadButton = 5101;
-    static constexpr UINT kMuteButton       = 5102;
-    static constexpr UINT kVideoButton      = 5103;
-    static constexpr UINT kHangupButton     = 5104;
+    static constexpr UINT kMuteButton = 5102;
+    static constexpr UINT kVideoButton = 5103;
+    static constexpr UINT kHangupButton = 5104;
 
     explicit Win32Taskbar(HINSTANCE instance);
     ~Win32Taskbar();
     Win32Taskbar(const Win32Taskbar&) = delete;
     Win32Taskbar& operator=(const Win32Taskbar&) = delete;
 
-    UINT taskbar_button_created_message() const { return taskbar_button_created_; }
+    UINT taskbar_button_created_message() const
+    {
+        return taskbar_button_created_;
+    }
 
     void register_main_window(HWND hwnd, std::function<void()> next_unread);
     void register_room_window(HWND hwnd);
-    void register_call_window(HWND hwnd,
-                              std::function<void()> toggle_audio,
-                              std::function<void()> toggle_video,
-                              std::function<void()> hang_up);
+    void register_call_window(HWND hwnd, std::function<void()> toggle_audio,
+                              std::function<void()> toggle_video, std::function<void()> hang_up);
     void unregister_window(HWND hwnd);
     void on_taskbar_button_created(HWND hwnd);
     bool handle_thumbnail_command(HWND hwnd, WPARAM wparam);
 
     void set_unread(bool has_unread, bool has_highlight);
     void set_next_unread_available(HWND hwnd, bool available);
-    void set_call_state(HWND hwnd, bool audio_muted, bool video_muted,
-                        bool show_video);
+    void set_call_state(HWND hwnd, bool audio_muted, bool video_muted, bool show_video);
 
-    void upload_progress(std::uint64_t request_id, std::uint64_t current,
-                         std::uint64_t total);
+    void upload_progress(std::uint64_t request_id, std::uint64_t current, std::uint64_t total);
     void upload_finished(std::uint64_t request_id, bool ok);
 
-    void rebuild_jump_list(const std::wstring& quick_switcher,
-                           const std::wstring& message_search,
+    void rebuild_jump_list(const std::wstring& quick_switcher, const std::wstring& message_search,
                            const std::wstring& settings);
-    void record_recent_room(const std::wstring& room_id,
-                            const std::wstring& title);
+    void record_recent_room(const std::wstring& room_id, const std::wstring& title);
     void record_recent_room_avatar(const std::wstring& room_id,
                                    std::span<const std::uint8_t> bytes);
 

@@ -1,7 +1,8 @@
 #pragma once
 #include <string>
 
-namespace tk::gst {
+namespace tk::gst
+{
 
 // Initialize GStreamer exactly once (thread-safe). Called implicitly by
 // apply_hw_decoder_cache; other GStreamer users may call this directly.

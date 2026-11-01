@@ -5,8 +5,7 @@
 namespace tk
 {
 
-TextField::TextField(float min_height)
-    : Label("", FontRole::Body), min_height_(min_height)
+TextField::TextField(float min_height) : Label("", FontRole::Body), min_height_(min_height)
 {
     set_halign(TextHAlign::Leading);
     set_min_size({0.0f, min_height_});
@@ -15,13 +14,18 @@ TextField::TextField(float min_height)
 void TextField::ensure_native_()
 {
     // Not attached to a host yet: the native field is made on a later call.
-    if (field_ || creating_native_ || !host()) return;
+    if (field_ || creating_native_ || !host())
+    {
+        return;
+    }
     creating_native_ = true;
     auto f = host()->make_text_field();
     creating_native_ = false;
     field_ = std::move(f);
     if (!field_)
+    {
         return; // e.g. a test Host with no native backend — stay a plain spacer
+    }
 
     // Sync canvas focus when the user clicks directly into the native
     // field — that click bypasses canvas hit-testing entirely (the native
@@ -34,9 +38,13 @@ void TextField::ensure_native_()
         {
             syncing_from_native_ = true;
             if (now_focused)
+            {
                 host()->request_focus(this);
+            }
             else if (host()->focused_widget() == this)
+            {
                 host()->clear_focus();
+            }
             syncing_from_native_ = false;
         });
 
@@ -48,11 +56,19 @@ void TextField::ensure_native_()
     // NativeTextField::set_on_pointer_down's). request_focus() is a no-op
     // when `this` is already the focused widget, so this is safe to fire on
     // every click.
-    field_->set_on_pointer_down([this] { host()->request_focus(this); });
+    field_->set_on_pointer_down(
+        [this]
+        {
+            host()->request_focus(this);
+        });
 
     // Keep an open popup drawn over this control from losing pointer input
     // to it — see NativeTextField::set_occlusion_query.
-    field_->set_occlusion_query([this] { return host()->popup_rect_over(this); });
+    field_->set_occlusion_query(
+        [this]
+        {
+            return host()->popup_rect_over(this);
+        });
 
     // Forward Tab/Shift-Tab into canvas traversal. Reuses the existing
     // popup-nav mechanism rather than a new callback type — safe to install
@@ -62,10 +78,21 @@ void TextField::ensure_native_()
     field_->set_on_popup_nav(
         [this](NavKey nk) -> bool
         {
-            if (nk == NavKey::Tab)      return host()->advance_focus(true);
-            if (nk == NavKey::ShiftTab) return host()->advance_focus(false);
+            if (nk == NavKey::Tab)
+            {
+                return host()->advance_focus(true);
+            }
+            if (nk == NavKey::ShiftTab)
+            {
+                return host()->advance_focus(false);
+            }
             for (auto it = nav_handlers_.rbegin(); it != nav_handlers_.rend(); ++it)
-                if ((*it)(nk)) return true;
+            {
+                if ((*it)(nk))
+                {
+                    return true;
+                }
+            }
             return false;
         });
 
@@ -76,21 +103,49 @@ void TextField::ensure_native_()
     // backends that don't support a scoped native repaint (see its doc
     // comment in host.h). No-op on backends that still composite on screen
     // directly.
-    field_->set_on_repaint_needed([this](Rect r) { host()->request_repaint_rect(r); });
+    field_->set_on_repaint_needed(
+        [this](Rect r)
+        {
+            host()->request_repaint_rect(r);
+        });
 
     // Replay whatever was set before this field existed — see PendingState's
     // doc comment. field_ is the sole source of truth from here on, so
     // pending_ is fully consumed and left empty.
-    if (pending_.text)        field_->set_text(std::move(*pending_.text));
-    if (pending_.placeholder) field_->set_placeholder(std::move(*pending_.placeholder));
+    if (pending_.text)
+    {
+        field_->set_text(std::move(*pending_.text));
+    }
+    if (pending_.placeholder)
+    {
+        field_->set_placeholder(std::move(*pending_.placeholder));
+    }
     field_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
-    if (pending_.password)    field_->set_password(*pending_.password);
-    if (pending_.compact)     field_->set_compact(*pending_.compact);
-    if (pending_.text_color)  field_->set_text_color(*pending_.text_color);
+    if (pending_.password)
+    {
+        field_->set_password(*pending_.password);
+    }
+    if (pending_.compact)
+    {
+        field_->set_compact(*pending_.compact);
+    }
+    if (pending_.text_color)
+    {
+        field_->set_text_color(*pending_.text_color);
+    }
     field_->set_font_role(role());
-    if (pending_.enabled)     field_->set_enabled(*pending_.enabled);
-    if (pending_.on_changed)  field_->set_on_changed(std::move(pending_.on_changed));
-    if (pending_.on_submit)   field_->set_on_submit(std::move(pending_.on_submit));
+    if (pending_.enabled)
+    {
+        field_->set_enabled(*pending_.enabled);
+    }
+    if (pending_.on_changed)
+    {
+        field_->set_on_changed(std::move(pending_.on_changed));
+    }
+    if (pending_.on_submit)
+    {
+        field_->set_on_submit(std::move(pending_.on_submit));
+    }
     pending_ = PendingState{};
 }
 
@@ -103,65 +158,119 @@ void TextField::on_theme_changed(const Theme& t)
 
 void TextField::on_fonts_changed()
 {
-    if (field_) field_->set_font_role(role());
+    if (field_)
+    {
+        field_->set_font_role(role());
+    }
     Label::on_fonts_changed();
 }
 
 void TextField::set_text(std::string text)
 {
-    if (field_) field_->set_text(std::move(text));
-    else pending_.text = std::move(text);
+    if (field_)
+    {
+        field_->set_text(std::move(text));
+    }
+    else
+    {
+        pending_.text = std::move(text);
+    }
 }
 
 std::string TextField::text() const
 {
-    if (field_) return field_->text();
+    if (field_)
+    {
+        return field_->text();
+    }
     return pending_.text.value_or(std::string{});
 }
 
 void TextField::set_placeholder(std::string text)
 {
     placeholder_ = text; // kept for access_name()'s empty-field fallback
-    if (field_) field_->set_placeholder(std::move(text));
-    else pending_.placeholder = std::move(text);
-    if (field_) field_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    if (field_)
+    {
+        field_->set_placeholder(std::move(text));
+    }
+    else
+    {
+        pending_.placeholder = std::move(text);
+    }
+    if (field_)
+    {
+        field_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    }
 }
 
 void TextField::set_accessible_name(std::string name)
 {
     accessible_name_ = std::move(name);
-    if (field_) field_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    if (field_)
+    {
+        field_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    }
 }
 
 void TextField::set_password(bool password)
 {
     password_ = password;
-    if (field_) field_->set_password(password);
-    else pending_.password = password;
+    if (field_)
+    {
+        field_->set_password(password);
+    }
+    else
+    {
+        pending_.password = password;
+    }
 }
 
 void TextField::set_compact(bool compact)
 {
-    if (field_) field_->set_compact(compact);
-    else pending_.compact = compact;
+    if (field_)
+    {
+        field_->set_compact(compact);
+    }
+    else
+    {
+        pending_.compact = compact;
+    }
 }
 
 void TextField::set_text_color(Color c)
 {
-    if (field_) field_->set_text_color(c);
-    else pending_.text_color = c;
+    if (field_)
+    {
+        field_->set_text_color(c);
+    }
+    else
+    {
+        pending_.text_color = c;
+    }
 }
 
 void TextField::set_on_changed(std::function<void(const std::string&)> cb)
 {
-    if (field_) field_->set_on_changed(std::move(cb));
-    else pending_.on_changed = std::move(cb);
+    if (field_)
+    {
+        field_->set_on_changed(std::move(cb));
+    }
+    else
+    {
+        pending_.on_changed = std::move(cb);
+    }
 }
 
 void TextField::set_on_submit(std::function<void()> cb)
 {
-    if (field_) field_->set_on_submit(std::move(cb));
-    else pending_.on_submit = std::move(cb);
+    if (field_)
+    {
+        field_->set_on_submit(std::move(cb));
+    }
+    else
+    {
+        pending_.on_submit = std::move(cb);
+    }
 }
 
 void TextField::set_on_focus_changed(std::function<void(bool)> cb)
@@ -177,41 +286,67 @@ void TextField::push_popup_nav(std::function<bool(NavKey)> cb)
 void TextField::pop_popup_nav()
 {
     if (!nav_handlers_.empty())
+    {
         nav_handlers_.pop_back();
+    }
 }
 
 void TextField::set_enabled(bool enabled)
 {
     Widget::set_enabled(enabled);
-    if (field_) field_->set_enabled(enabled);
-    else pending_.enabled = enabled;
+    if (field_)
+    {
+        field_->set_enabled(enabled);
+    }
+    else
+    {
+        pending_.enabled = enabled;
+    }
 }
 
 void TextField::set_visible(bool v)
 {
-    if (v == own_visible()) return; // own flag unchanged — see header comment
-    if (v && !field_) ensure_native_();
+    if (v == own_visible())
+    {
+        return; // own flag unchanged — see header comment
+    }
+    if (v && !field_)
+    {
+        ensure_native_();
+    }
     Widget::set_visible(v);
     // Forward the *effective* visibility (v && every ancestor) — a
     // set_visible(true) on a field that sits under a still-hidden ancestor
     // must not reveal the native control.
-    if (field_) field_->set_visible(visible());
+    if (field_)
+    {
+        field_->set_visible(visible());
+    }
 }
 
 void TextField::on_effective_visibility_changed_(bool now_visible)
 {
-    if (field_) field_->set_visible(now_visible);
+    if (field_)
+    {
+        field_->set_visible(now_visible);
+    }
 }
 
 void TextField::set_focused(bool focused)
 {
     auto* h = host();
     if (!h)
+    {
         return; // not attached: there is nothing to focus yet
+    }
     if (focused)
+    {
         h->request_focus(this);
+    }
     else if (h->focused_widget() == this)
+    {
         h->clear_focus();
+    }
 }
 
 void TextField::arrange(LayoutCtx& ctx, Rect bounds)
@@ -235,13 +370,17 @@ void TextField::arrange(LayoutCtx& ctx, Rect bounds)
         // backend leaves an unshown window at (typically hidden) regardless
         // of this widget's own already-true visible_ state. Effective
         // visibility, so a field created under a hidden ancestor stays hidden.
-        if (field_) field_->set_visible(visible());
+        if (field_)
+        {
+            field_->set_visible(visible());
+        }
     }
     if (!field_)
+    {
         return;
+    }
     float h = std::max(bounds_.h, min_height_);
-    Rect r{bounds_.x + overlay_inset_,
-           bounds_.y - (h - bounds_.h) * 0.5f + overlay_inset_,
+    Rect r{bounds_.x + overlay_inset_, bounds_.y - (h - bounds_.h) * 0.5f + overlay_inset_,
            std::max(0.0f, bounds_.w - overlay_inset_ * 2.0f),
            std::max(0.0f, h - overlay_inset_ * 2.0f)};
     field_->set_rect(r);
@@ -254,7 +393,9 @@ void TextField::paint(PaintCtx& ctx)
     // parity with a plain Label for the no-native-backend test-Host case.
     Label::paint(ctx);
     if (!field_)
+    {
         return;
+    }
     // Forward the inherited background (see Widget::background_color()) to
     // the native backend so an offscreen capture (rendered_image() below)
     // can pre-fill an opaque buffer instead of a transparent one — see
@@ -274,7 +415,9 @@ void TextField::paint(PaintCtx& ctx)
         // that narrowing; bounds_ is already correct in that case.
         Rect draw_rect = field_->rendered_image_rect();
         if (draw_rect.w <= 0.0f || draw_rect.h <= 0.0f)
+        {
             draw_rect = bounds_;
+        }
         ctx.canvas.draw_image(*img, draw_rect);
     }
     // Canvas-owned caret (see NativeTextField::caret_owned_by_canvas()'s doc
@@ -296,13 +439,18 @@ void TextField::paint(PaintCtx& ctx)
 
 void TextField::on_scale_changed(float)
 {
-    if (field_) field_->invalidate_for_scale_change();
+    if (field_)
+    {
+        field_->invalidate_for_scale_change();
+    }
 }
 
 bool TextField::on_pointer_down(Point local)
 {
     if (!field_)
+    {
         return false;
+    }
     field_->forward_pointer_down({bounds_.x + local.x, bounds_.y + local.y});
     return true;
 }
@@ -310,26 +458,34 @@ bool TextField::on_pointer_down(Point local)
 void TextField::on_pointer_drag(Point local)
 {
     if (field_)
+    {
         field_->forward_pointer_drag({bounds_.x + local.x, bounds_.y + local.y});
+    }
 }
 
 void TextField::on_pointer_up(Point local, bool)
 {
     if (field_)
+    {
         field_->forward_pointer_up({bounds_.x + local.x, bounds_.y + local.y});
+    }
 }
 
 bool TextField::on_pointer_move(Point)
 {
     if (field_)
+    {
         field_->set_hovering(true);
+    }
     return false;
 }
 
 void TextField::on_pointer_leave()
 {
     if (field_)
+    {
         field_->set_hovering(false);
+    }
 }
 
 } // namespace tk

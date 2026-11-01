@@ -35,13 +35,27 @@ std::string json_quote(const std::string& s)
     {
         switch (c)
         {
-        case '\\': out += "\\\\"; break;
-        case '"': out += "\\\""; break;
-        case '\n': out += "\\n"; break;
-        case '\r': out += "\\r"; break;
-        case '\t': out += "\\t"; break;
-        case '\b': out += "\\b"; break;
-        case '\f': out += "\\f"; break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '"':
+            out += "\\\"";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        case '\b':
+            out += "\\b";
+            break;
+        case '\f':
+            out += "\\f";
+            break;
         default:
             if (c < 0x20)
             {
@@ -68,12 +82,18 @@ SettingsView::SettingsView()
 {
     // Back button — placed left-aligned inside the bar by arrange().
     auto back = tk::create_widget<tk::Button>(this, tk::tr("← Back"), std::function<void()>{},
-                                             tk::Button::Variant::Subtle);
+                                              tk::Button::Variant::Subtle);
     back->set_on_click(
         [this]
         {
-            if (auto* pe = account_->pronouns_editor()) pe->flush();
-            if (auto* se = account_->status_editor()) se->flush();
+            if (auto* pe = account_->pronouns_editor())
+            {
+                pe->flush();
+            }
+            if (auto* se = account_->status_editor())
+            {
+                se->flush();
+            }
             hide_status_emoji_picker_();
             if (on_close)
             {
@@ -86,7 +106,10 @@ SettingsView::SettingsView()
     auto account = tk::create_widget<AccountSection>(this);
     account_ = account.get();
     if (auto* auto_tz = account_->tz_auto_check())
-        binder_.bind(auto_tz, &tesseract::Settings::auto_detect_timezone, SettingKey::AutoDetectTimezone);
+    {
+        binder_.bind(auto_tz, &tesseract::Settings::auto_detect_timezone,
+                     SettingKey::AutoDetectTimezone);
+    }
 
     // General section.
     auto general = std::make_unique<GeneralSection>(binder_);
@@ -132,18 +155,23 @@ SettingsView::SettingsView()
     advanced_ = advanced.get();
     advanced_->on_open_activity_monitor = [this]
     {
-        if (on_open_activity_monitor) on_open_activity_monitor();
+        if (on_open_activity_monitor)
+        {
+            on_open_activity_monitor();
+        }
     };
 
     // Emojis & Stickers section.
     auto image_packs = std::make_unique<ImagePacksSection>();
     image_packs_ = image_packs.get();
-    image_packs_->on_user_pack_pending_image_added =
-        [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
-              const std::string& mime)
+    image_packs_->on_user_pack_pending_image_added = [this](std::uint64_t local_id,
+                                                            const std::vector<std::uint8_t>& bytes,
+                                                            const std::string& mime)
     {
         if (on_user_pack_pending_image_added)
+        {
             on_user_pack_pending_image_added(local_id, bytes, mime);
+        }
     };
 
     // Network section.
@@ -151,7 +179,9 @@ SettingsView::SettingsView()
     network->on_restart_requested = [this]
     {
         if (on_restart_requested)
+        {
             on_restart_requested();
+        }
     };
     network_ = network.get();
 
@@ -160,7 +190,9 @@ SettingsView::SettingsView()
     language->on_restart_requested = [this]
     {
         if (on_restart_requested)
+        {
             on_restart_requested();
+        }
     };
     language_ = language.get();
 
@@ -186,7 +218,9 @@ SettingsView::SettingsView()
         // Re-hide Advanced as soon as the user navigates to any other tab —
         // it should only ever be visible while actively selected.
         if (idx != kAdvancedTabIdx)
+        {
             tabs_->set_tab_visible(kAdvancedTabIdx, false);
+        }
         // Account's four self-owned fields position themselves from their
         // own arrange(), but an inactive tab's subtree isn't arrange()'d —
         // so a field left visible from the last time Account was shown
@@ -194,14 +228,23 @@ SettingsView::SettingsView()
         // RoomSettingsView's identical tab-switch fix.
         if (idx != 0 && account_)
         {
-            if (auto* f = account_->name_field())      f->set_visible(false);
+            if (auto* f = account_->name_field())
+            {
+                f->set_visible(false);
+            }
             if (auto* pe = account_->pronouns_editor())
             {
                 pe->flush();
                 pe->set_visible(false);
             }
-            if (auto* f = account_->tz_field())         f->set_visible(false);
-            if (auto* f = account_->bio_field())        f->set_visible(false);
+            if (auto* f = account_->tz_field())
+            {
+                f->set_visible(false);
+            }
+            if (auto* f = account_->bio_field())
+            {
+                f->set_visible(false);
+            }
             if (auto* se = account_->status_editor())
             {
                 se->flush();
@@ -209,8 +252,14 @@ SettingsView::SettingsView()
             }
             hide_status_emoji_picker_();
         }
-        if (on_tab_changed) on_tab_changed();
-        if (idx == kAboutTabIdx && on_about_tab_shown) on_about_tab_shown();
+        if (on_tab_changed)
+        {
+            on_tab_changed();
+        }
+        if (idx == kAboutTabIdx && on_about_tab_shown)
+        {
+            on_about_tab_shown();
+        }
     };
     tabs_ = add_child(std::move(tabs));
     // Advanced is hidden until the About tab's "Advanced" button reveals it.
@@ -220,28 +269,40 @@ SettingsView::SettingsView()
     account_->on_logout = [this]
     {
         confirm_dialog_->open(
-            {.title         = tk::tr("Log out?"),
-             .body          = tk::tr("You will need to sign in again to access your messages."),
+            {.title = tk::tr("Log out?"),
+             .body = tk::tr("You will need to sign in again to access your messages."),
              .confirm_label = tk::tr("Log Out"),
-             .cancel_label  = tk::tr("Cancel"),
-             .destructive   = true},
-            [this] { if (on_logout) on_logout(); });
+             .cancel_label = tk::tr("Cancel"),
+             .destructive = true},
+            [this]
+            {
+                if (on_logout)
+                {
+                    on_logout();
+                }
+            });
     };
 
     // AboutSection: route "Clear all caches" through the shared ConfirmDialog.
     about_->on_clear_caches = [this]
     {
         confirm_dialog_->open(
-            {.title         = tk::tr("Clear all caches?"),
-             .body          = tk::tr("Deletes all downloaded media and cached message "
-                              "history for this account, and closes open tabs and "
-                              "pop-out windows. Your rooms and messages reload from the "
-                              "server afterwards. Your sign-in and message keys are "
-                              "kept, so you stay logged in and confirmed."),
+            {.title = tk::tr("Clear all caches?"),
+             .body = tk::tr("Deletes all downloaded media and cached message "
+                            "history for this account, and closes open tabs and "
+                            "pop-out windows. Your rooms and messages reload from the "
+                            "server afterwards. Your sign-in and message keys are "
+                            "kept, so you stay logged in and confirmed."),
              .confirm_label = tk::tr("Clear"),
-             .cancel_label  = tk::tr("Cancel"),
-             .destructive   = true},
-            [this] { if (on_clear_caches) on_clear_caches(); });
+             .cancel_label = tk::tr("Cancel"),
+             .destructive = true},
+            [this]
+            {
+                if (on_clear_caches)
+                {
+                    on_clear_caches();
+                }
+            });
     };
 
     // PrivacySection: route "Reset encryption" (a cryptographic identity
@@ -250,16 +311,22 @@ SettingsView::SettingsView()
     privacy_->on_reset_identity = [this]
     {
         confirm_dialog_->open(
-            {.title         = tk::tr("Reset digital identity?"),
-             .body          = tk::tr("Only do this if you've lost your recovery key and "
-                              "have no other signed-in device. Messages you can't "
-                              "read now will stay unreadable, and your other devices "
-                              "and the people you chat with will need to confirm you "
-                              "again. You'll get a new recovery key right after."),
+            {.title = tk::tr("Reset digital identity?"),
+             .body = tk::tr("Only do this if you've lost your recovery key and "
+                            "have no other signed-in device. Messages you can't "
+                            "read now will stay unreadable, and your other devices "
+                            "and the people you chat with will need to confirm you "
+                            "again. You'll get a new recovery key right after."),
              .confirm_label = tk::tr("Reset"),
-             .cancel_label  = tk::tr("Cancel"),
-             .destructive   = true},
-            [this] { if (on_reset_identity) on_reset_identity(); });
+             .cancel_label = tk::tr("Cancel"),
+             .destructive = true},
+            [this]
+            {
+                if (on_reset_identity)
+                {
+                    on_reset_identity();
+                }
+            });
     };
 
     // AboutSection: "Advanced" button reveals the hidden Advanced tab and
@@ -268,7 +335,10 @@ SettingsView::SettingsView()
     {
         tabs_->set_tab_visible(kAdvancedTabIdx, true);
         tabs_->select(kAdvancedTabIdx);
-        if (on_tab_changed) on_tab_changed();
+        if (on_tab_changed)
+        {
+            on_tab_changed();
+        }
     };
 
     // ConfirmDialog — painted last so it overlays the entire settings view.
@@ -280,21 +350,33 @@ SettingsView::SettingsView()
     // mirroring RoomView's own emoji picker. Unicode-only here: no Client is
     // wired, so the Frequents tab and custom (MSC2545) packs stay empty.
     status_emoji_picker_ = tk::create_widget<EmojiPicker>(this);
-    status_emoji_picker_->on_dismiss = [this] { hide_status_emoji_picker_(); };
+    status_emoji_picker_->on_dismiss = [this]
+    {
+        hide_status_emoji_picker_();
+    };
     status_emoji_picker_->on_selected = [this](const std::string& glyph)
     {
-        if (auto* se = status_editor()) se->set_emoji(glyph);
+        if (auto* se = status_editor())
+        {
+            se->set_emoji(glyph);
+        }
         hide_status_emoji_picker_();
     };
     status_emoji_picker_->on_skin_tone_changed = [this](tesseract::emoji::SkinTone tone)
     {
-        if (on_emoji_skin_tone_changed) on_emoji_skin_tone_changed(tone);
+        if (on_emoji_skin_tone_changed)
+        {
+            on_emoji_skin_tone_changed(tone);
+        }
     };
 
     binder_.on_changed = [this](SettingKey key)
     {
         react_locally_(key);
-        if (on_setting_changed) on_setting_changed(key);
+        if (on_setting_changed)
+        {
+            on_setting_changed(key);
+        }
     };
     binder_.reload();
     apply_tz_auto_state_();
@@ -304,7 +386,9 @@ void SettingsView::apply_tz_auto_state_()
 {
     // While following the computer's timezone the manual picker is read-only.
     if (auto* tz = account_->tz_field())
+    {
         tz->set_enabled(!tesseract::Settings::instance().auto_detect_timezone);
+    }
 }
 
 void SettingsView::react_locally_(SettingKey key)
@@ -322,11 +406,13 @@ void SettingsView::react_locally_(SettingKey key)
         // Reflect immediately in the Emojis & Stickers tab — the personal
         // pack disappears/reappears without waiting for the async
         // on_image_packs_updated round-trip from the Rust rebuild.
-        if (image_packs_) image_packs_->set_personal_pack_enabled(s.msc2545_legacy_compat);
+        if (image_packs_)
+        {
+            image_packs_->set_personal_pack_enabled(s.msc2545_legacy_compat);
+        }
         break;
     case SettingKey::Proxy:
-        set_proxy_restart_pending(
-            tesseract::proxy_changed_since_launch(s.proxy_mode, s.proxy_url));
+        set_proxy_restart_pending(tesseract::proxy_changed_since_launch(s.proxy_mode, s.proxy_url));
         break;
     case SettingKey::Language:
         set_language_restart_pending(s.language != tesseract::launch_language());
@@ -374,8 +460,8 @@ SettingsView::~SettingsView()
 // Public setters — forwarded to child sections
 // ---------------------------------------------------------------------------
 
-void SettingsView::set_account_info(std::string display_name,
-                                    std::string user_id, std::string avatar_mxc)
+void SettingsView::set_account_info(std::string display_name, std::string user_id,
+                                    std::string avatar_mxc)
 {
     if (!account_)
     {
@@ -396,32 +482,50 @@ void SettingsView::set_image_provider(AccountSection::ImageProvider provider)
 
 void SettingsView::set_mentions_enabled_ui(bool enabled)
 {
-    if (notifications_) notifications_->set_mentions_enabled(enabled);
+    if (notifications_)
+    {
+        notifications_->set_mentions_enabled(enabled);
+    }
 }
 
 void SettingsView::set_room_mentions_enabled_ui(bool enabled)
 {
-    if (notifications_) notifications_->set_room_mentions_enabled(enabled);
+    if (notifications_)
+    {
+        notifications_->set_room_mentions_enabled(enabled);
+    }
 }
 
 void SettingsView::set_notify_all_messages_ui(bool enabled)
 {
-    if (notifications_) notifications_->set_notify_all_messages(enabled);
+    if (notifications_)
+    {
+        notifications_->set_notify_all_messages(enabled);
+    }
 }
 
 void SettingsView::set_notification_keywords_ui(std::vector<std::string> keywords)
 {
-    if (notifications_) notifications_->set_notification_keywords(std::move(keywords));
+    if (notifications_)
+    {
+        notifications_->set_notification_keywords(std::move(keywords));
+    }
 }
 
 void SettingsView::set_mentions_loading_ui(bool loading)
 {
-    if (notifications_) notifications_->set_mentions_loading(loading);
+    if (notifications_)
+    {
+        notifications_->set_mentions_loading(loading);
+    }
 }
 
 void SettingsView::set_keyword_error_ui(std::string error)
 {
-    if (notifications_) notifications_->set_keyword_error(std::move(error));
+    if (notifications_)
+    {
+        notifications_->set_keyword_error(std::move(error));
+    }
 }
 
 void SettingsView::set_proxy_restart_pending(bool pending)
@@ -434,32 +538,50 @@ void SettingsView::set_proxy_restart_pending(bool pending)
 
 void SettingsView::set_audio_input_devices(std::vector<tk::DeviceListing> devices)
 {
-    if (media_) media_->set_audio_input_devices(std::move(devices));
+    if (media_)
+    {
+        media_->set_audio_input_devices(std::move(devices));
+    }
 }
 
 void SettingsView::set_audio_output_devices(std::vector<tk::DeviceListing> devices)
 {
-    if (media_) media_->set_audio_output_devices(std::move(devices));
+    if (media_)
+    {
+        media_->set_audio_output_devices(std::move(devices));
+    }
 }
 
 void SettingsView::set_camera_devices(std::vector<tk::DeviceListing> devices)
 {
-    if (media_) media_->set_camera_devices(std::move(devices));
+    if (media_)
+    {
+        media_->set_camera_devices(std::move(devices));
+    }
 }
 
 void SettingsView::set_selected_audio_input(const std::string& id)
 {
-    if (media_) media_->set_selected_audio_input(id);
+    if (media_)
+    {
+        media_->set_selected_audio_input(id);
+    }
 }
 
 void SettingsView::set_selected_audio_output(const std::string& id)
 {
-    if (media_) media_->set_selected_audio_output(id);
+    if (media_)
+    {
+        media_->set_selected_audio_output(id);
+    }
 }
 
 void SettingsView::set_selected_camera(const std::string& id)
 {
-    if (media_) media_->set_selected_camera(id);
+    if (media_)
+    {
+        media_->set_selected_camera(id);
+    }
 }
 
 void SettingsView::set_launch_at_login_pref(bool enabled)
@@ -494,7 +616,9 @@ void SettingsView::load_device_lists()
 {
     auto* h = host();
     if (!h)
+    {
         return;
+    }
     set_audio_input_devices(h->enumerate_audio_inputs());
     set_audio_output_devices(h->enumerate_audio_outputs());
     set_camera_devices(h->enumerate_cameras());
@@ -510,8 +634,7 @@ void SettingsView::load_persisted_settings()
     apply_tz_auto_state_();
 }
 
-void SettingsView::set_search_index_stats(
-    const tesseract::SearchIndexStats& stats, bool enabled)
+void SettingsView::set_search_index_stats(const tesseract::SearchIndexStats& stats, bool enabled)
 {
     if (privacy_)
     {
@@ -529,8 +652,8 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
     {
         account_->set_editable(info.can_set_displayname);
         account_->set_avatar_editable(info.can_set_avatar);
-        account_->set_profile_fields_editable(
-            info.supports_profile_fields && info.profile_fields_enabled);
+        account_->set_profile_fields_editable(info.supports_profile_fields &&
+                                              info.profile_fields_enabled);
     }
     if (privacy_)
     {
@@ -546,45 +669,58 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
 void SettingsView::set_current_device_id(std::string id)
 {
     if (devices_)
+    {
         devices_->set_current_device_id(std::move(id));
+    }
 }
 
-void SettingsView::set_user_pack_images(
-    std::vector<tesseract::ImagePackImage> images)
+void SettingsView::set_user_pack_images(std::vector<tesseract::ImagePackImage> images)
 {
     if (image_packs_)
+    {
         image_packs_->set_user_pack_images(std::move(images));
+    }
 }
 
 void SettingsView::set_user_pack_image_provider(ImagePackImageProvider p)
 {
     if (image_packs_)
+    {
         image_packs_->set_user_pack_image_provider(std::move(p));
+    }
 }
 
 void SettingsView::set_user_pack_tile_preview(std::uint64_t local_id,
                                               std::shared_ptr<tk::Image> image)
 {
     if (image_packs_)
+    {
         image_packs_->set_user_pack_tile_preview(local_id, std::move(image));
+    }
 }
 
 void SettingsView::set_user_pack_saving(bool saving)
 {
     if (image_packs_)
+    {
         image_packs_->set_user_pack_saving(saving);
+    }
 }
 
 void SettingsView::set_user_pack_save_result(bool ok, std::string error)
 {
     if (image_packs_)
+    {
         image_packs_->set_user_pack_save_result(ok, std::move(error));
+    }
 }
 
 void SettingsView::set_known_packs(std::vector<tesseract::ImagePack> all_room_packs)
 {
     if (image_packs_)
+    {
         image_packs_->set_known_packs(std::move(all_room_packs));
+    }
 }
 
 UserPackEditor* SettingsView::user_pack_editor() const
@@ -595,13 +731,14 @@ UserPackEditor* SettingsView::user_pack_editor() const
 void SettingsView::set_language_restart_pending(bool pending)
 {
     if (language_)
+    {
         language_->set_restart_pending(pending);
+    }
 }
 
-void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,
-                                   uint64_t memory_bytes,
-                                   uint64_t mem_hits, uint64_t mem_misses,
-                                   uint64_t disk_hits, uint64_t disk_misses)
+void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes, uint64_t memory_bytes,
+                                   uint64_t mem_hits, uint64_t mem_misses, uint64_t disk_hits,
+                                   uint64_t disk_misses)
 {
     if (about_)
     {
@@ -622,7 +759,9 @@ bool SettingsView::about_tab_selected() const
 void SettingsView::request_relayout()
 {
     if (auto* h = host())
+    {
         h->request_relayout();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -693,8 +832,7 @@ void SettingsView::paint_before_children(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bar_rect, pal.sidebar_bg);
 
     // 1 px separator between the back bar and the tab view.
-    const tk::Rect sep_rect = {bounds_.x, bounds_.y + kBarHeight, bounds_.w,
-                               1.0f};
+    const tk::Rect sep_rect = {bounds_.x, bounds_.y + kBarHeight, bounds_.w, 1.0f};
     ctx.canvas.fill_rect(sep_rect, pal.separator);
 
     // Children paint via the ordinary paint_children() traversal that
@@ -710,8 +848,7 @@ void SettingsView::paint_after_children(tk::PaintCtx& ctx)
     // routes to it first and paint_overlay() reaches it — mirrors RoomView.
     if (status_emoji_picker_visible_ && status_emoji_picker_ && ctx.host)
     {
-        tk::Widget* trigger =
-            status_editor() ? status_editor()->emoji_button() : nullptr;
+        tk::Widget* trigger = status_editor() ? status_editor()->emoji_button() : nullptr;
         ctx.host->register_popup(status_emoji_picker_.get(), trigger);
     }
 }
@@ -721,7 +858,9 @@ void SettingsView::paint_overlay(tk::PaintCtx& ctx)
     tk::Widget::paint_overlay(ctx);
     // Not a tree child, so the recursion above never reaches it.
     if (status_emoji_picker_visible_ && status_emoji_picker_)
+    {
         status_emoji_picker_->paint_overlay(ctx);
+    }
 }
 
 void SettingsView::on_theme_changed(const tk::Theme& t)
@@ -730,16 +869,22 @@ void SettingsView::on_theme_changed(const tk::Theme& t)
     // The status-emoji picker isn't a tree child, so apply_theme()'s
     // recursion never reaches it — forward explicitly (mirrors RoomView).
     if (status_emoji_picker_)
+    {
         status_emoji_picker_->apply_theme(t);
+    }
 }
 
 void SettingsView::show_status_emoji_picker_(tk::Rect world_anchor)
 {
     if (!status_emoji_picker_)
+    {
         return;
+    }
 
     if (emoji_skin_tone_provider)
+    {
         status_emoji_picker_->set_skin_tone(emoji_skin_tone_provider());
+    }
     status_emoji_picker_->refresh_frequents();
     status_emoji_picker_->set_search_query("");
 
@@ -750,7 +895,9 @@ void SettingsView::show_status_emoji_picker_(tk::Rect world_anchor)
     float px = world_anchor.x;
     float py = world_anchor.y - h - 4.0f;
     if (py < bounds_.y)
+    {
         py = world_anchor.y + world_anchor.h + 4.0f;
+    }
     px = std::clamp(px, bounds_.x, bounds_.x + bounds_.w - w);
     py = std::clamp(py, bounds_.y, bounds_.y + bounds_.h - h);
     status_emoji_picker_->open_at({px, py, w, h});
@@ -763,7 +910,9 @@ void SettingsView::hide_status_emoji_picker_()
 {
     status_emoji_picker_visible_ = false;
     if (status_emoji_picker_)
+    {
         status_emoji_picker_->set_visible(false);
+    }
     request_relayout();
 }
 
@@ -780,14 +929,18 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     {
         account_->set_avatar_busy(false);
         if (!ok)
+        {
             account_->set_avatar_error(std::move(error));
+        }
         request_relayout();
     };
     ctrl->on_name_result = [this](bool ok, std::string error)
     {
         account_->set_name_busy(false);
         if (!ok)
+        {
             account_->set_name_error(std::move(error));
+        }
         request_relayout();
     };
     ctrl->on_avatar_changed = [this](std::string mxc)
@@ -804,7 +957,9 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     {
         account_->set_display_name(name);
         if (auto* nf = account_->name_field())
+        {
             nf->set_text(std::move(name));
+        }
         request_relayout();
     };
 
@@ -823,12 +978,16 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     account_->on_avatar_upload_clicked = [this]
     {
         if (on_avatar_upload_requested)
+        {
             on_avatar_upload_requested();
+        }
     };
     account_->on_avatar_remove_clicked = [this]
     {
         if (on_avatar_remove_requested)
+        {
             on_avatar_remove_requested();
+        }
     };
 
     // Wire the scalar extended-profile field's on_submit — serialise the
@@ -848,7 +1007,10 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
         {"gay.fomx.biography", &AccountSection::bio_field,
          [](const std::string& text) -> std::string
          {
-             if (text.empty()) return "null";
+             if (text.empty())
+             {
+                 return "null";
+             }
              return "{\"m.text\":[{\"body\":" + json_quote(text) + "}]}";
          }},
     };
@@ -861,8 +1023,9 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                 {
                     account_->set_profile_field_busy(spec.key, true);
                     if (on_profile_field_changed)
-                        on_profile_field_changed(spec.key,
-                                                 spec.to_json(f->text()));
+                    {
+                        on_profile_field_changed(spec.key, spec.to_json(f->text()));
+                    }
                     request_relayout();
                 });
         }
@@ -877,15 +1040,14 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     // key only; an m.tz failure on a server without stable MSC4133 is benign.
     if (auto* tz = account_->tz_field())
     {
-        static constexpr const char* kTzKey       = "us.cloke.msc4175.tz";
+        static constexpr const char* kTzKey = "us.cloke.msc4175.tz";
         static constexpr const char* kStableTzKey = "m.tz";
         tz->on_changed = [this](std::string value)
         {
             account_->set_profile_field_busy(kTzKey, true);
             if (on_profile_field_changed)
             {
-                const std::string json =
-                    value.empty() ? "null" : json_quote(value);
+                const std::string json = value.empty() ? "null" : json_quote(value);
                 on_profile_field_changed(kStableTzKey, json);
                 on_profile_field_changed(kTzKey, json);
             }
@@ -899,8 +1061,7 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     if (auto* pe = account_->pronouns_editor())
     {
         static constexpr const char* kPronounsKey = "io.fsky.nyx.pronouns";
-        pe->on_changed =
-            [this](std::vector<tesseract::PronounEntry> entries)
+        pe->on_changed = [this](std::vector<tesseract::PronounEntry> entries)
         {
             account_->set_profile_field_busy(kPronounsKey, true);
             if (on_profile_field_changed)
@@ -915,7 +1076,10 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                     json = "[";
                     for (std::size_t i = 0; i < entries.size(); ++i)
                     {
-                        if (i > 0) json += ",";
+                        if (i > 0)
+                        {
+                            json += ",";
+                        }
                         json += "{\"summary\":" + json_quote(entries[i].summary) +
                                 ",\"language\":" + json_quote(entries[i].language);
                         if (!entries[i].grammatical_gender.empty())
@@ -939,7 +1103,9 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     {
         static constexpr const char* kStatusKey = "org.matrix.msc4426.status";
         se->on_emoji_button_clicked = [this](tk::Rect anchor)
-        { show_status_emoji_picker_(anchor); };
+        {
+            show_status_emoji_picker_(anchor);
+        };
         se->on_changed = [this](std::string emoji, std::string text)
         {
             account_->set_profile_field_busy(kStatusKey, true);
@@ -952,8 +1118,8 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                 }
                 else
                 {
-                    json = "{\"text\":" + json_quote(text) +
-                           ",\"emoji\":" + json_quote(emoji) + "}";
+                    json =
+                        "{\"text\":" + json_quote(text) + ",\"emoji\":" + json_quote(emoji) + "}";
                 }
                 on_profile_field_changed(kStatusKey, json);
             }
@@ -965,34 +1131,44 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     // widget-tree state must trigger a repaint via request_repaint_ — the
     // shared layer has no other way to invalidate the surface from an
     // async callback.
-    ctrl->on_devices_loaded =
-        [this](std::vector<tesseract::Client::Device> devices)
+    ctrl->on_devices_loaded = [this](std::vector<tesseract::Client::Device> devices)
     {
-        if (!devices_) return;
+        if (!devices_)
+        {
+            return;
+        }
         devices_->set_devices(std::move(devices));
         request_relayout();
     };
-    ctrl->on_device_renamed =
-        [this](std::string id, bool ok, std::string err)
+    ctrl->on_device_renamed = [this](std::string id, bool ok, std::string err)
     {
-        if (!devices_) return;
+        if (!devices_)
+        {
+            return;
+        }
         devices_->set_device_busy(id, false);
         if (!ok)
+        {
             devices_->set_device_error(id, std::move(err));
+        }
         request_relayout();
     };
     ctrl->on_device_needs_uia =
         [this](std::string id, std::string fallback_url, std::string session)
     {
-        if (!devices_) return;
-        devices_->enter_uia_state(id, std::move(fallback_url),
-                                  std::move(session));
+        if (!devices_)
+        {
+            return;
+        }
+        devices_->enter_uia_state(id, std::move(fallback_url), std::move(session));
         request_relayout();
     };
-    ctrl->on_device_deleted =
-        [this, ctrl](std::string id, bool ok, std::string err)
+    ctrl->on_device_deleted = [this, ctrl](std::string id, bool ok, std::string err)
     {
-        if (!devices_) return;
+        if (!devices_)
+        {
+            return;
+        }
         devices_->set_device_busy(id, false);
         if (ok)
         {
@@ -1016,8 +1192,7 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
         ctrl->delete_device(std::move(id));
         request_relayout();
     };
-    devices_->on_uia_confirmed =
-        [this, ctrl](std::string id, std::string session)
+    devices_->on_uia_confirmed = [this, ctrl](std::string id, std::string session)
     {
         devices_->set_device_busy(id, true);
         devices_->set_device_error(id, "");
@@ -1042,11 +1217,14 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     ctrl->load_devices();
 
     // Wire controller → NotificationsSection's Mentions & Keywords state.
-    ctrl->on_mentions_settings_loaded =
-        [this](bool mentions, bool room_mentions, bool all_messages,
-              bool notify_on_keywords, std::vector<std::string> keywords)
+    ctrl->on_mentions_settings_loaded = [this](bool mentions, bool room_mentions, bool all_messages,
+                                               bool notify_on_keywords,
+                                               std::vector<std::string> keywords)
     {
-        if (!notifications_) return;
+        if (!notifications_)
+        {
+            return;
+        }
         notifications_->set_mentions_loading(false);
         notifications_->set_mentions_enabled(mentions);
         notifications_->set_room_mentions_enabled(room_mentions);
@@ -1057,31 +1235,58 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     };
     ctrl->on_mentions_toggle_result = [this](bool ok, bool enabled)
     {
-        if (!notifications_) return;
-        if (!ok) notifications_->set_mentions_enabled(!enabled); // revert on failure
+        if (!notifications_)
+        {
+            return;
+        }
+        if (!ok)
+        {
+            notifications_->set_mentions_enabled(!enabled); // revert on failure
+        }
         request_relayout();
     };
     ctrl->on_room_mentions_toggle_result = [this](bool ok, bool enabled)
     {
-        if (!notifications_) return;
-        if (!ok) notifications_->set_room_mentions_enabled(!enabled);
+        if (!notifications_)
+        {
+            return;
+        }
+        if (!ok)
+        {
+            notifications_->set_room_mentions_enabled(!enabled);
+        }
         request_relayout();
     };
     ctrl->on_notify_all_messages_result = [this](bool ok, bool enabled)
     {
-        if (!notifications_) return;
-        if (!ok) notifications_->set_notify_all_messages(!enabled);
+        if (!notifications_)
+        {
+            return;
+        }
+        if (!ok)
+        {
+            notifications_->set_notify_all_messages(!enabled);
+        }
         request_relayout();
     };
     ctrl->on_notify_on_keywords_result = [this](bool ok, bool enabled)
     {
-        if (!notifications_) return;
-        if (!ok) notifications_->set_notify_on_keywords(!enabled);
+        if (!notifications_)
+        {
+            return;
+        }
+        if (!ok)
+        {
+            notifications_->set_notify_on_keywords(!enabled);
+        }
         request_relayout();
     };
     ctrl->on_keyword_add_result = [this](bool ok, std::string keyword)
     {
-        if (!notifications_) return;
+        if (!notifications_)
+        {
+            return;
+        }
         if (!ok)
         {
             notifications_->revert_keyword_add(keyword);
@@ -1096,7 +1301,10 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     };
     ctrl->on_keyword_remove_result = [this](bool ok, std::string keyword)
     {
-        if (!notifications_) return;
+        if (!notifications_)
+        {
+            return;
+        }
         if (!ok)
         {
             notifications_->revert_keyword_remove(keyword);
@@ -1114,17 +1322,29 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     if (notifications_)
     {
         notifications_->on_mentions_changed = [ctrl](bool v)
-        { ctrl->set_mentions_enabled(v); };
+        {
+            ctrl->set_mentions_enabled(v);
+        };
         notifications_->on_room_mentions_changed = [ctrl](bool v)
-        { ctrl->set_room_mentions_enabled(v); };
+        {
+            ctrl->set_room_mentions_enabled(v);
+        };
         notifications_->on_notify_all_messages_changed = [ctrl](bool v)
-        { ctrl->set_notify_all_messages(v); };
+        {
+            ctrl->set_notify_all_messages(v);
+        };
         notifications_->on_notify_on_keywords_changed = [ctrl](bool v)
-        { ctrl->set_notify_on_keywords(v); };
+        {
+            ctrl->set_notify_on_keywords(v);
+        };
         notifications_->on_keyword_add_requested = [ctrl](std::string kw)
-        { ctrl->add_notification_keyword(std::move(kw)); };
+        {
+            ctrl->add_notification_keyword(std::move(kw));
+        };
         notifications_->on_keyword_remove_requested = [ctrl](std::string kw)
-        { ctrl->remove_notification_keyword(std::move(kw)); };
+        {
+            ctrl->remove_notification_keyword(std::move(kw));
+        };
     }
 
     notifications_->set_mentions_loading(true);
@@ -1133,28 +1353,41 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     // Wire PrivacySection buttons → controller key export/import flows.
     if (privacy_)
     {
-        privacy_->on_export_keys = [ctrl] { ctrl->export_room_keys(); };
-        privacy_->on_import_keys = [ctrl] { ctrl->import_room_keys(); };
+        privacy_->on_export_keys = [ctrl]
+        {
+            ctrl->export_room_keys();
+        };
+        privacy_->on_import_keys = [ctrl]
+        {
+            ctrl->import_room_keys();
+        };
     }
 
     // Wire controller → ImagePacksSection state.
-    ctrl->on_image_packs_loaded =
-        [this](std::vector<tesseract::ImagePack> packs)
+    ctrl->on_image_packs_loaded = [this](std::vector<tesseract::ImagePack> packs)
     {
-        if (!image_packs_) return;
+        if (!image_packs_)
+        {
+            return;
+        }
         image_packs_->set_known_packs(std::move(packs));
         request_relayout();
     };
-    ctrl->on_user_pack_images_loaded =
-        [this](std::vector<tesseract::ImagePackImage> images)
+    ctrl->on_user_pack_images_loaded = [this](std::vector<tesseract::ImagePackImage> images)
     {
-        if (!image_packs_) return;
+        if (!image_packs_)
+        {
+            return;
+        }
         image_packs_->set_user_pack_images(std::move(images));
         request_relayout();
     };
     ctrl->on_user_pack_save_result = [this](bool ok, std::string error)
     {
-        if (!image_packs_) return;
+        if (!image_packs_)
+        {
+            return;
+        }
         image_packs_->set_user_pack_saving(false);
         image_packs_->set_user_pack_save_result(ok, std::move(error));
         request_relayout();
@@ -1163,9 +1396,15 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     // Wire ImagePacksSection click callbacks → controller.
     image_packs_->on_user_pack_save_clicked = [this, ctrl]
     {
-        if (!image_packs_ || !image_packs_->user_pack_editor()) return;
+        if (!image_packs_ || !image_packs_->user_pack_editor())
+        {
+            return;
+        }
         auto* editor = image_packs_->user_pack_editor();
-        if (!editor->has_changes()) return;
+        if (!editor->has_changes())
+        {
+            return;
+        }
         image_packs_->set_user_pack_saving(true);
         request_relayout();
         ctrl->save_user_pack_changes(editor->build_result());
@@ -1173,8 +1412,7 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     image_packs_->on_pack_subscription_toggled =
         [ctrl](std::string room_id, std::string state_key, bool subscribed)
     {
-        ctrl->set_pack_subscribed(std::move(room_id), std::move(state_key),
-                                  subscribed);
+        ctrl->set_pack_subscribed(std::move(room_id), std::move(state_key), subscribed);
     };
 
     // Kick off the initial image-pack load, exactly like the devices load
@@ -1185,19 +1423,41 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     ctrl->load_image_packs();
 }
 
-void SettingsView::set_name_busy(bool busy)        { account_->set_name_busy(busy); }
-void SettingsView::set_name_error(std::string e)   { account_->set_name_error(std::move(e)); }
-void SettingsView::set_avatar_busy(bool busy)      { account_->set_avatar_busy(busy); }
-void SettingsView::set_avatar_error(std::string e) { account_->set_avatar_error(std::move(e)); }
-void SettingsView::set_avatar_url(std::string m)   { account_->set_avatar_url(std::move(m)); }
+void SettingsView::set_name_busy(bool busy)
+{
+    account_->set_name_busy(busy);
+}
+void SettingsView::set_name_error(std::string e)
+{
+    account_->set_name_error(std::move(e));
+}
+void SettingsView::set_avatar_busy(bool busy)
+{
+    account_->set_avatar_busy(busy);
+}
+void SettingsView::set_avatar_error(std::string e)
+{
+    account_->set_avatar_error(std::move(e));
+}
+void SettingsView::set_avatar_url(std::string m)
+{
+    account_->set_avatar_url(std::move(m));
+}
 void SettingsView::set_avatar_preview(std::shared_ptr<tk::Image> img)
-{ account_->set_avatar_preview(std::move(img)); }
-void SettingsView::set_display_name_text(std::string n) { account_->set_display_name(std::move(n)); }
+{
+    account_->set_avatar_preview(std::move(img));
+}
+void SettingsView::set_display_name_text(std::string n)
+{
+    account_->set_display_name(std::move(n));
+}
 
 tk::Rect SettingsView::name_field_rect() const
 {
     if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
+    {
         return {};
+    }
     return account_->name_field_rect();
 }
 
@@ -1213,25 +1473,33 @@ tk::TextField* SettingsView::name_field() const
 void SettingsView::set_extended_profile(const tesseract::ExtendedProfile& profile)
 {
     if (account_)
+    {
         account_->set_extended_profile(profile);
+    }
 }
 
 void SettingsView::set_profile_fields_editable(bool editable)
 {
     if (account_)
+    {
         account_->set_profile_fields_editable(editable);
+    }
 }
 
 void SettingsView::set_profile_field_busy(const std::string& key, bool busy)
 {
     if (account_)
+    {
         account_->set_profile_field_busy(key, busy);
+    }
 }
 
 void SettingsView::set_profile_field_error(const std::string& key, std::string error)
 {
     if (account_)
+    {
         account_->set_profile_field_error(key, std::move(error));
+    }
 }
 
 PronounsEditor* SettingsView::pronouns_editor() const
@@ -1257,26 +1525,35 @@ StatusEditor* SettingsView::status_editor() const
 void SettingsView::show_account_section()
 {
     if (tabs_)
+    {
         tabs_->select(kAccountTabIdx); // no-op + no signal if already there
+    }
 }
 
 void SettingsView::set_signed_out_mode(bool on)
 {
     if (!tabs_)
+    {
         return;
+    }
     for (int i = 0; i <= kAboutTabIdx; ++i)
     {
-        const bool keep =
-            i == kNetworkTabIdx || i == kLanguageTabIdx || i == kAboutTabIdx;
+        const bool keep = i == kNetworkTabIdx || i == kLanguageTabIdx || i == kAboutTabIdx;
         tabs_->set_tab_visible(i, !on || keep);
     }
     tabs_->set_tab_visible(kAdvancedTabIdx, false);
     if (about_)
+    {
         about_->set_account_actions_visible(!on);
+    }
     if (network_)
+    {
         network_->set_applies_immediately(on);
+    }
     if (on)
+    {
         tabs_->select(kNetworkTabIdx);
+    }
 }
 
 bool SettingsView::tab_visible(int idx) const
@@ -1287,7 +1564,9 @@ bool SettingsView::tab_visible(int idx) const
 void SettingsView::show_appearance_section()
 {
     if (tabs_)
+    {
         tabs_->select(kAppearanceTabIdx);
+    }
 }
 
 std::string SettingsView::selected_tab_label() const

@@ -29,19 +29,21 @@ public:
     explicit MacCallWindow(tesseract::ShellBase* shell);
     ~MacCallWindow() override;
 
-    void bring_to_front()               override;
-    void close_window()                 override;
-    void apply_theme(const tk::Theme&)  override;
+    void bring_to_front() override;
+    void close_window() override;
+    void apply_theme(const tk::Theme&) override;
     void apply_scale_change(float scale) override;
-    void request_relayout()             override;
-    void request_repaint()              override;
+    void request_relayout() override;
+    void request_repaint() override;
 
     // Called by -windowWillClose: delegate method.
     void on_window_will_close()
     {
         window_closed_ = true;
         if (on_window_closed)
+        {
             on_window_closed();
+        }
     }
 
 private:
@@ -54,19 +56,17 @@ private:
 // MacCallWindow implementation
 // ─────────────────────────────────────────────────────────────────────────────
 
-MacCallWindow::MacCallWindow(tesseract::ShellBase* shell)
-    : tesseract::CallWindowBase(shell)
+MacCallWindow::MacCallWindow(tesseract::ShellBase* shell) : tesseract::CallWindowBase(shell)
 {
     NSRect frame = NSMakeRect(0, 0, 640, 480);
-    NSWindowStyleMask style =
-        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+    NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                              NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
     NSWindow* win = [[NSWindow alloc] initWithContentRect:frame
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
-    win.minSize = NSMakeSize(tesseract::visual::kMinCallWindowWidth,
-                              tesseract::visual::kMinCallWindowHeight);
+    win.minSize =
+        NSMakeSize(tesseract::visual::kMinCallWindowWidth, tesseract::visual::kMinCallWindowHeight);
     [win setTitle:TkTr("Call")];
     [win center];
 
@@ -85,11 +85,10 @@ MacCallWindow::MacCallWindow(tesseract::ShellBase* shell)
     // Re-rasterize native-control image captures when this window's own
     // backing scale factor changes — see the identical comment in
     // RoomWindowController.mm's MacRoomWindow constructor.
-    [[NSNotificationCenter defaultCenter]
-        addObserver:controller_
-           selector:@selector(_windowDidChangeBackingProperties:)
-               name:NSWindowDidChangeBackingPropertiesNotification
-             object:win];
+    [[NSNotificationCenter defaultCenter] addObserver:controller_
+                                             selector:@selector(_windowDidChangeBackingProperties:)
+                                                 name:NSWindowDidChangeBackingPropertiesNotification
+                                               object:win];
 
     [win makeKeyAndOrderFront:nil];
 }
@@ -102,7 +101,9 @@ MacCallWindow::~MacCallWindow()
 void MacCallWindow::bring_to_front()
 {
     if (controller_ && controller_.window)
+    {
         [controller_.window makeKeyAndOrderFront:nil];
+    }
 }
 
 void MacCallWindow::close_window()
@@ -126,19 +127,25 @@ void MacCallWindow::apply_theme(const tk::Theme& t)
 void MacCallWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void MacCallWindow::request_relayout()
 {
     if (surface_)
+    {
         surface_->relayout();
+    }
 }
 
 void MacCallWindow::request_repaint()
 {
     if (surface_)
+    {
         surface_->host().request_repaint();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -167,13 +174,17 @@ void MacCallWindow::request_repaint()
 {
     (void)notification;
     if (self.cppWindow)
+    {
         self.cppWindow->on_window_will_close();
+    }
 }
 
 - (void)_windowDidChangeBackingProperties:(NSNotification*)note
 {
     if (self.cppWindow)
+    {
         self.cppWindow->apply_scale_change((float)self.window.backingScaleFactor);
+    }
 }
 
 - (void)dealloc
@@ -196,4 +207,3 @@ CallWindowBase* make_mac_call_window(ShellBase* shell)
 }
 
 } // namespace tesseract
-

@@ -66,7 +66,9 @@ public:
     // Media content (and caption); drawn above the scrim.
     virtual void paint_content(tk::PaintCtx& ctx) = 0;
     // Transport controls; drawn above the content, below the shared chrome.
-    virtual void paint_controls(tk::PaintCtx&) {}
+    virtual void paint_controls(tk::PaintCtx&)
+    {
+    }
 
     // Press that no button claimed. Return true to consume (not an outside tap).
     virtual bool on_content_pointer_down(tk::Point world, tk::Point local) = 0;
@@ -75,19 +77,31 @@ public:
     {
         return false;
     }
-    virtual void on_pointer_drag(tk::Point /*local*/) {}
-    virtual bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/,
-                          bool /*is_touchpad*/)
+    virtual void on_pointer_drag(tk::Point /*local*/)
+    {
+    }
+    virtual bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
     {
         return true;
     }
-    virtual bool on_key(const tk::KeyEvent&) { return false; }
-    virtual void on_fullscreen_changed(bool /*fullscreen*/) {}
+    virtual bool on_key(const tk::KeyEvent&)
+    {
+        return false;
+    }
+    virtual void on_fullscreen_changed(bool /*fullscreen*/)
+    {
+    }
 
     // Whether the overlay should show its copy-to-clipboard chrome button.
-    virtual bool wants_copy_button() const { return false; }
+    virtual bool wants_copy_button() const
+    {
+        return false;
+    }
     // True while the pointer is on one of the page's own buttons.
-    virtual bool controls_hovered() const { return false; }
+    virtual bool controls_hovered() const
+    {
+        return false;
+    }
 };
 
 } // namespace tesseract::views

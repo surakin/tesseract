@@ -35,13 +35,11 @@ public:
     }
 
 private:
-    static void on_upower_props(GDBusConnection*, const char* sender,
-                                const char* path, const char* iface,
-                                const char* signal, GVariant* params,
+    static void on_upower_props(GDBusConnection*, const char* sender, const char* path,
+                                const char* iface, const char* signal, GVariant* params,
                                 gpointer user_data);
-    static void on_ppd_props(GDBusConnection*, const char* sender,
-                             const char* path, const char* iface,
-                             const char* signal, GVariant* params,
+    static void on_ppd_props(GDBusConnection*, const char* sender, const char* path,
+                             const char* iface, const char* signal, GVariant* params,
                              gpointer user_data);
 
     void refresh_on_battery_();
@@ -50,8 +48,7 @@ private:
     void notify_();
 
     // Read one D-Bus property; returns nullptr on failure (caller g_variant_unref).
-    GVariant* get_prop_(const char* service, const char* path,
-                        const char* iface, const char* name);
+    GVariant* get_prop_(const char* service, const char* path, const char* iface, const char* name);
 
     GDBusConnection* bus_ = nullptr; // owned (g_object_unref)
     guint sub_upower_ = 0;

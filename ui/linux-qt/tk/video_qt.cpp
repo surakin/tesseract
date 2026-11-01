@@ -75,8 +75,7 @@ public:
                 return;
             }
             ended_ = true;
-            final_length_ =
-                (total_hint >= buf_.size()) ? total_hint : buf_.size();
+            final_length_ = (total_hint >= buf_.size()) ? total_hint : buf_.size();
         }
         cv_.notify_all();
         emit readyRead();
@@ -125,9 +124,9 @@ public:
         // over the current partial buffer size — reporting a growing
         // partial size instead is what would make the demuxer conclude it
         // has caught up to EOF and stop asking for more.
-        return static_cast<qint64>(ended_          ? final_length_
+        return static_cast<qint64>(ended_             ? final_length_
                                    : known_total_ > 0 ? known_total_
-                                                       : buf_.size());
+                                                      : buf_.size());
     }
 
     bool seek(qint64 pos) override
@@ -153,8 +152,7 @@ public:
         // would re-lock the non-recursive mu_ on this same thread and
         // self-deadlock (Qt's FFmpeg probe reaches here via avio_read →
         // QIODevice::atEnd()).
-        return pos_ < buf_.size() ? static_cast<qint64>(buf_.size() - pos_)
-                                  : 0;
+        return pos_ < buf_.size() ? static_cast<qint64>(buf_.size() - pos_) : 0;
     }
 
     bool atEnd() const override
@@ -187,11 +185,11 @@ protected:
         // timeout should fire first in practice; this is defense in depth
         // against a request the caller forgot to terminate.
         const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
-            [&]
-            {
-                return cancelled_ || failed_ || pos_ < buf_.size() ||
-                      (ended_ && pos_ >= buf_.size());
-            });
+                                       [&]
+                                       {
+                                           return cancelled_ || failed_ || pos_ < buf_.size() ||
+                                                  (ended_ && pos_ >= buf_.size());
+                                       });
         if (cancelled_ || failed_ || !woke)
         {
             return -1;
@@ -201,8 +199,7 @@ protected:
             return 0; // clean EOF
         }
         const std::uint64_t avail = buf_.size() - pos_;
-        const qint64 n =
-            std::min<qint64>(maxlen, static_cast<qint64>(avail));
+        const qint64 n = std::min<qint64>(maxlen, static_cast<qint64>(avail));
         std::memcpy(data, buf_.data() + pos_, static_cast<std::size_t>(n));
         pos_ += static_cast<std::uint64_t>(n);
         return n;
@@ -250,8 +247,7 @@ public:
                              }
                              {
                                  std::lock_guard lk(frame_mutex_);
-                                 current_frame_ =
-                                     tk::qt6::make_image(std::move(img));
+                                 current_frame_ = tk::qt6::make_image(std::move(img));
                              }
                              if (on_frame)
                              {
@@ -275,8 +271,7 @@ public:
                          {
                              fire_progress();
                          });
-        QObject::connect(&player_, &QMediaPlayer::playbackStateChanged,
-                         &player_,
+        QObject::connect(&player_, &QMediaPlayer::playbackStateChanged, &player_,
                          [this](QMediaPlayer::PlaybackState s)
                          {
                              if (s == QMediaPlayer::StoppedState)
@@ -285,15 +280,14 @@ public:
                              }
                              fire_progress();
                          });
-        QObject::connect(
-            &player_, &QMediaPlayer::errorOccurred, &player_,
-            [this](QMediaPlayer::Error error, const QString&)
-            {
-                if (error != QMediaPlayer::NoError && on_error)
-                {
-                    on_error();
-                }
-            });
+        QObject::connect(&player_, &QMediaPlayer::errorOccurred, &player_,
+                         [this](QMediaPlayer::Error error, const QString&)
+                         {
+                             if (error != QMediaPlayer::NoError && on_error)
+                             {
+                                 on_error();
+                             }
+                         });
     }
 
     ~QtVideoPlayer() override
@@ -314,8 +308,7 @@ public:
         player_.setSourceDevice(nullptr);
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view /*mime*/) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view /*mime*/) override
     {
         player_.stop();
         // Detach the previous clip first. QMediaPlayer skips re-probing when the
@@ -330,8 +323,7 @@ public:
             stream_device_.reset();
         }
         buffer_.close();
-        bytes_ = QByteArray(reinterpret_cast<const char*>(data),
-                            static_cast<qsizetype>(size));
+        bytes_ = QByteArray(reinterpret_cast<const char*>(data), static_cast<qsizetype>(size));
         buffer_.setBuffer(&bytes_);
         buffer_.open(QIODevice::ReadOnly);
         player_.setSourceDevice(&buffer_);
@@ -342,8 +334,7 @@ public:
         ticker_.start();
     }
 
-    bool begin_stream(std::string_view /*mime*/,
-                      std::uint64_t /*total_size_hint*/) override
+    bool begin_stream(std::string_view /*mime*/, std::uint64_t /*total_size_hint*/) override
     {
         player_.stop();
         player_.setSourceDevice(nullptr);
@@ -500,10 +491,14 @@ public:
     {
         std::size_t total = static_cast<std::size_t>(bytes_.size());
         if (stream_device_)
+        {
             total += stream_device_->buffered_bytes();
+        }
         std::lock_guard lk(frame_mutex_);
         if (current_frame_)
+        {
             total += current_frame_->memory_bytes();
+        }
         return total;
     }
 

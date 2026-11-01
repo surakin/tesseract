@@ -26,9 +26,10 @@ std::string_view last_segment(std::string_view id)
 TimezonePicker::TimezonePicker()
 {
     if (!host())
+    {
         return;
-    init_(kFieldH, kRowH, kWidth, kMaxRows,
-         tk::tr("Timezone (e.g. Europe/London)"));
+    }
+    init_(kFieldH, kRowH, kWidth, kMaxRows, tk::tr("Timezone (e.g. Europe/London)"));
 }
 
 std::size_t TimezonePicker::entry_count_() const
@@ -42,15 +43,25 @@ int TimezonePicker::match_rank_(std::size_t index, std::string_view query) const
 {
     const std::string_view id = kIanaTimezones[index].id;
     if (query.empty())
+    {
         return 3; // everything matches the empty query, lowest priority tier
+    }
     if (iequals(id, query))
+    {
         return 0;
+    }
     if (istarts_with(id, query))
+    {
         return 1;
+    }
     if (istarts_with(last_segment(id), query))
+    {
         return 2;
+    }
     if (icontains(id, query))
+    {
         return 3;
+    }
     return -1;
 }
 

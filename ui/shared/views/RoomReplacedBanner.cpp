@@ -24,7 +24,14 @@ RoomReplacedBanner::RoomReplacedBanner()
 
     auto action = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                                 tk::Button::Variant::Primary);
-    action->set_on_click([this] { if (on_open) on_open(); });
+    action->set_on_click(
+        [this]
+        {
+            if (on_open)
+            {
+                on_open();
+            }
+        });
     action->set_min_size({90.0f, kReplacedButtonH});
     action_ = add_child(std::move(action));
 
@@ -33,7 +40,10 @@ RoomReplacedBanner::RoomReplacedBanner()
 
 void RoomReplacedBanner::set_successor_joined(bool joined)
 {
-    if (successor_joined_ == joined) return;
+    if (successor_joined_ == joined)
+    {
+        return;
+    }
     successor_joined_ = joined;
     apply_();
 }
@@ -50,8 +60,14 @@ std::string RoomReplacedBanner::action_text() const
 
 void RoomReplacedBanner::apply_()
 {
-    if (label_) label_->set_text(label_text());
-    if (action_) action_->set_label(action_text());
+    if (label_)
+    {
+        label_->set_text(label_text());
+    }
+    if (action_)
+    {
+        action_->set_label(action_text());
+    }
 }
 
 tk::Size RoomReplacedBanner::measure(tk::LayoutCtx&, tk::Size constraints)

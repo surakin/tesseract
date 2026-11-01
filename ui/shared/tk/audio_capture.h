@@ -49,8 +49,7 @@ public:
     //           window, each in [0, 1000].
     // duration_ms: total clip length in milliseconds.
     // Empty pcm indicates a permission or device error (don't send).
-    std::function<void(std::vector<std::uint8_t> pcm,
-                       std::vector<std::uint16_t> waveform,
+    std::function<void(std::vector<std::uint8_t> pcm, std::vector<std::uint16_t> waveform,
                        std::uint64_t duration_ms)>
         on_stopped;
 
@@ -59,8 +58,7 @@ public:
     // mono). May be called concurrently with on_amplitude/on_stopped dispatch.
     // Must not be called while a set_frame_callback/clear_frame_callback is in
     // progress on another thread — callers must serialize those transitions.
-    virtual void set_frame_callback(
-        std::function<void(const std::int16_t*, std::size_t)> cb) = 0;
+    virtual void set_frame_callback(std::function<void(const std::int16_t*, std::size_t)> cb) = 0;
     virtual void clear_frame_callback() = 0;
 };
 

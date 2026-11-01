@@ -19,9 +19,8 @@ public:
         // kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast = RGBA
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
-        ctx_ = CGBitmapContextCreate(
-            nullptr, w, h, 8, static_cast<size_t>(w) * 4, cs,
-            kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
+        ctx_ = CGBitmapContextCreate(nullptr, w, h, 8, static_cast<size_t>(w) * 4, cs,
+                                     kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
 #pragma clang diagnostic pop
         CGColorSpaceRelease(cs);
         if (!ctx_)
@@ -59,8 +58,7 @@ public:
     tk::Color read_pixel(int x, int y) override
     {
         // Re-wrap the context after each draw so the CTM is still correct.
-        const auto* data =
-            static_cast<const std::uint8_t*>(CGBitmapContextGetData(ctx_));
+        const auto* data = static_cast<const std::uint8_t*>(CGBitmapContextGetData(ctx_));
         size_t stride = CGBitmapContextGetBytesPerRow(ctx_);
         // Bitmap is stored top-down (we flipped the CTM at construction).
         const std::uint8_t* px =

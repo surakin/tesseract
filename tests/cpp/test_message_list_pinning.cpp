@@ -44,8 +44,7 @@ TEST_CASE("set_can_pin flips the flag", "[message_list][pinning]")
     CHECK_FALSE(v.can_pin());
 }
 
-TEST_CASE("set_messages(.., room_switch=true) preserves pinning state",
-          "[message_list][pinning]")
+TEST_CASE("set_messages(.., room_switch=true) preserves pinning state", "[message_list][pinning]")
 {
     // ShellBase::refresh_pinned_for_current_room_() pushes the new room's
     // pinning state via set_pinned_event_ids()/set_can_pin() synchronously on
@@ -61,8 +60,7 @@ TEST_CASE("set_messages(.., room_switch=true) preserves pinning state",
     CHECK(v.can_pin());
 }
 
-TEST_CASE("set_messages(.., room_switch=false) preserves pinning state",
-          "[message_list][pinning]")
+TEST_CASE("set_messages(.., room_switch=false) preserves pinning state", "[message_list][pinning]")
 {
     MessageListView v;
     v.set_pinned_event_ids({"$a"});
@@ -77,19 +75,19 @@ TEST_CASE("PinnedStateEvent produces Kind::PinnedEvent row with correct fields",
 {
     // Build a PinnedStateEvent using the SDK type.
     tesseract::PinnedStateEvent ev;
-    ev.event_id    = "$pin:server";
-    ev.sender      = "@alice:server";
+    ev.event_id = "$pin:server";
+    ev.sender = "@alice:server";
     ev.sender_name = "Alice";
-    ev.body        = "pinned a message";
-    ev.timestamp   = 1700000042000ULL;
+    ev.body = "pinned a message";
+    ev.timestamp = 1700000042000ULL;
 
     // Convert via make_row_data (the same path the shell uses at runtime).
     MessageRowData row = make_row_data(ev, /*my_user_id=*/"@bot:server");
 
     REQUIRE(row.kind == MessageRowData::Kind::PinnedEvent);
-    CHECK(row.event_id    == "$pin:server");
+    CHECK(row.event_id == "$pin:server");
     CHECK(row.sender_name == "Alice");
-    CHECK(row.body        == "pinned a message");
+    CHECK(row.body == "pinned a message");
     CHECK(row.timestamp_ms == 1700000042000ULL);
     CHECK_FALSE(row.is_own); // sender != my_user_id
 
@@ -97,8 +95,8 @@ TEST_CASE("PinnedStateEvent produces Kind::PinnedEvent row with correct fields",
     MessageListView v;
     v.set_messages({row}, /*room_switch=*/false);
     REQUIRE(v.messages().size() == 1);
-    CHECK(v.messages()[0].kind         == MessageRowData::Kind::PinnedEvent);
-    CHECK(v.messages()[0].sender_name  == "Alice");
-    CHECK(v.messages()[0].body         == "pinned a message");
+    CHECK(v.messages()[0].kind == MessageRowData::Kind::PinnedEvent);
+    CHECK(v.messages()[0].sender_name == "Alice");
+    CHECK(v.messages()[0].body == "pinned a message");
     CHECK(v.messages()[0].timestamp_ms == 1700000042000ULL);
 }

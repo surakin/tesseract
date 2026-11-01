@@ -40,9 +40,9 @@ class SkinTonePopover;
 /// shortcode or body contains `query`, case-insensitively. An image that
 /// appears in more than one pack (same mxc URL) is kept once, from the
 /// first pack. Backs the custom half of EmojiPicker's search results.
-std::vector<tesseract::ImagePackImage> match_pack_emoticons(
-    const std::vector<std::vector<tesseract::ImagePackImage>>& pack_images,
-    const std::string& query);
+std::vector<tesseract::ImagePackImage>
+match_pack_emoticons(const std::vector<std::vector<tesseract::ImagePackImage>>& pack_images,
+                     const std::string& query);
 
 class EmojiPicker : public TabbedGridPicker
 {
@@ -54,7 +54,7 @@ public:
     // Popup card dimensions (logical px) — canonical size for hosts using
     // register_popup()/open_at(), replacing the shell-duplicated size
     // constants each native-popup wrapper used to define separately.
-    static constexpr float kWidth  = 304.0f;
+    static constexpr float kWidth = 304.0f;
     static constexpr float kHeight = 360.0f;
 
     ~EmojiPicker() override;
@@ -96,8 +96,7 @@ public:
     const tk::Image* resolve_image(const std::string& mxc_url) const
     {
         // Inline-insert into the compose box: no hover surface, always play.
-        return image_provider() ? image_provider()(mxc_url, mxc_url, true)
-                                : nullptr;
+        return image_provider() ? image_provider()(mxc_url, mxc_url, true) : nullptr;
     }
 
     /// Pull the latest Frequents from the client. Call before each
@@ -148,8 +147,7 @@ public:
     // in the picker closes it and is consumed.
     tk::Widget* dispatch_pointer_down(tk::Point world) override;
     tk::Widget* dispatch_right_click(tk::Point world) override;
-    bool dispatch_wheel(tk::Point world, float dx, float dy,
-                        bool is_touchpad = false) override;
+    bool dispatch_wheel(tk::Point world, float dx, float dy, bool is_touchpad = false) override;
 
     /// Fires when the user picks a custom (MSC2545) emoticon from a pack
     /// tab. For now hosts insert `:shortcode:` into the compose field;
@@ -192,8 +190,8 @@ protected:
 
     // Item model.
     std::size_t item_count() const override;
-    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                    bool selected, bool hovered) override;
+    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                    bool hovered) override;
     void on_item_activated(int index) override;
     bool on_item_context_requested(int index, tk::Rect cell) override;
     std::string cell_tooltip(int index) const override;
@@ -206,8 +204,7 @@ protected:
     std::string tab_label(int index) const override;
 
     // Search.
-    void on_search_query_changed(const std::string& query,
-                                 bool cleared) override;
+    void on_search_query_changed(const std::string& query, bool cleared) override;
 
 private:
     enum class Page : std::uint8_t
@@ -251,17 +248,15 @@ private:
     std::vector<std::string> current_room_parent_spaces_;
 
     Page page_ = Page::Category;
-    tesseract::emoji::Category category_ =
-        tesseract::emoji::Category::SmileysPeople;
+    tesseract::emoji::Category category_ = tesseract::emoji::Category::SmileysPeople;
     int custom_pack_idx_ = -1;
 
     std::vector<std::string> frequents_glyphs_;
     std::vector<std::string> current_glyphs_;        // unicode cells
     std::vector<tesseract::ImagePack> custom_packs_; // emoticon-capable
     std::vector<tesseract::ImagePackImage>
-        current_emoticons_; // image cells (after the glyphs on Search)
-    std::vector<std::string>
-        current_shortcodes_; // one per cell, glyphs then emoticons
+        current_emoticons_;                       // image cells (after the glyphs on Search)
+    std::vector<std::string> current_shortcodes_; // one per cell, glyphs then emoticons
 
     tesseract::emoji::SkinTone skin_tone_ = tesseract::emoji::SkinTone::None;
     SkinTonePopover* tone_popover_ = nullptr; // borrowed child

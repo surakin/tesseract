@@ -10,7 +10,9 @@ namespace tesseract::views
 LanguagePicker::LanguagePicker()
 {
     if (!host())
+    {
         return;
+    }
     init_(kFieldH, kRowH, kWidth, kMaxRows, tk::tr("Language"));
 }
 
@@ -26,16 +28,26 @@ int LanguagePicker::match_rank_(std::size_t index, std::string_view query) const
 {
     const auto& lang = kBcp47Languages[index];
     if (query.empty())
+    {
         return 3; // everything matches the empty query, lowest priority tier
+    }
     if (iequals(lang.code, query))
+    {
         return 0;
+    }
     if (istarts_with(lang.code, query))
+    {
         return 1;
+    }
     const std::string local = tk::tr(lang.name.data());
     if (istarts_with(local, query) || istarts_with(lang.name, query))
+    {
         return 2;
+    }
     if (icontains(local, query) || icontains(lang.name, query))
+    {
         return 3;
+    }
     return -1;
 }
 

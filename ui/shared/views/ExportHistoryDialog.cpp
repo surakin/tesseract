@@ -16,75 +16,117 @@ namespace tesseract::views
 
 ExportHistoryDialog::ExportHistoryDialog()
 {
-    include_images_btn_ = add_child(tk::create_widget<tk::CheckButton>(this, tk::tr("Include images")));
-    include_images_btn_->on_change = [this](bool on) { include_images_ = on; };
+    include_images_btn_ =
+        add_child(tk::create_widget<tk::CheckButton>(this, tk::tr("Include images")));
+    include_images_btn_->on_change = [this](bool on)
+    {
+        include_images_ = on;
+    };
 
-    zip_output_btn_ = add_child(tk::create_widget<tk::CheckButton>(this, tk::tr("Package as a .zip file")));
-    zip_output_btn_->on_change = [this](bool on) { zip_output_ = on; };
+    zip_output_btn_ =
+        add_child(tk::create_widget<tk::CheckButton>(this, tk::tr("Package as a .zip file")));
+    zip_output_btn_->on_change = [this](bool on)
+    {
+        zip_output_ = on;
+    };
 
     export_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Export"), std::function<void()>{}, tk::Button::Variant::Primary));
-    export_btn_->set_on_click([this]() {
-        Request req;
-        req.room_id = room_id_;
-        req.format = format_;
-        req.include_images = include_images_ && format_ == Format::Html;
-        req.zip_output = zip_output_;
-        const auto now_ms = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count());
-        req.stop_at_ts_ms = resolve_stop_at_ts_ms(time_range_, now_ms);
-        if (on_export_requested) on_export_requested(req);
-    });
+    export_btn_->set_on_click(
+        [this]()
+        {
+            Request req;
+            req.room_id = room_id_;
+            req.format = format_;
+            req.include_images = include_images_ && format_ == Format::Html;
+            req.zip_output = zip_output_;
+            const auto now_ms =
+                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count());
+            req.stop_at_ts_ms = resolve_stop_at_ts_ms(time_range_, now_ms);
+            if (on_export_requested)
+            {
+                on_export_requested(req);
+            }
+        });
 
     resume_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Resume export"), std::function<void()>{}, tk::Button::Variant::Primary));
-    resume_btn_->set_on_click([this]() {
-        Request req;
-        req.room_id = room_id_;
-        req.format = format_;
-        req.include_images = include_images_ && format_ == Format::Html;
-        req.zip_output = zip_output_;
-        req.resume_from_event_id = checkpoint_.oldest_event_id;
-        if (on_export_requested) on_export_requested(req);
-    });
+    resume_btn_->set_on_click(
+        [this]()
+        {
+            Request req;
+            req.room_id = room_id_;
+            req.format = format_;
+            req.include_images = include_images_ && format_ == Format::Html;
+            req.zip_output = zip_output_;
+            req.resume_from_event_id = checkpoint_.oldest_event_id;
+            if (on_export_requested)
+            {
+                on_export_requested(req);
+            }
+        });
 
     start_new_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Start new export"), std::function<void()>{}, tk::Button::Variant::Subtle));
-    start_new_btn_->set_on_click([this]() {
-        resume_available_ = false;
-        body_layout_.reset();
-        update_child_visibility_();
-        // Switches the Options screen from the resume-choice layout back
-        // to the full format form — a differently-sized card with an
-        // entirely different set of visible widgets/rects. Same
-        // "state change resizes the card, so it needs a relayout" gap as
-        // set_resume_checkpoint()'s fix above.
-        if (on_layout_changed) on_layout_changed();
-    });
+    start_new_btn_->set_on_click(
+        [this]()
+        {
+            resume_available_ = false;
+            body_layout_.reset();
+            update_child_visibility_();
+            // Switches the Options screen from the resume-choice layout back
+            // to the full format form — a differently-sized card with an
+            // entirely different set of visible widgets/rects. Same
+            // "state change resizes the card, so it needs a relayout" gap as
+            // set_resume_checkpoint()'s fix above.
+            if (on_layout_changed)
+            {
+                on_layout_changed();
+            }
+        });
 
     stop_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Stop & save"), std::function<void()>{}, tk::Button::Variant::Primary));
-    stop_btn_->set_on_click([this]() {
-        if (on_stop_requested) on_stop_requested();
-    });
+    stop_btn_->set_on_click(
+        [this]()
+        {
+            if (on_stop_requested)
+            {
+                on_stop_requested();
+            }
+        });
 
     cancel_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle));
-    cancel_btn_->set_on_click([this]() {
-        if (on_cancel_requested) on_cancel_requested();
-    });
+    cancel_btn_->set_on_click(
+        [this]()
+        {
+            if (on_cancel_requested)
+            {
+                on_cancel_requested();
+            }
+        });
 
     go_to_other_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Go to that export"), std::function<void()>{}, tk::Button::Variant::Primary));
-    go_to_other_btn_->set_on_click([this]() {
-        if (on_go_to_other_export) on_go_to_other_export(busy_room_id_);
-    });
+    go_to_other_btn_->set_on_click(
+        [this]()
+        {
+            if (on_go_to_other_export)
+            {
+                on_go_to_other_export(busy_room_id_);
+            }
+        });
 
     close_btn_ = add_child(tk::create_widget<tk::Button>(
         this, tk::tr("Close"), std::function<void()>{}, tk::Button::Variant::Primary));
-    close_btn_->set_on_click([this]() { close(); });
+    close_btn_->set_on_click(
+        [this]()
+        {
+            close();
+        });
 
     progress_bar_ = add_child(tk::create_widget<tk::ProgressBar>(this));
 
@@ -95,11 +137,12 @@ ExportHistoryDialog::ExportHistoryDialog()
     // click.
     auto format_combo = tk::create_widget<tk::ComboBox>(this);
     format_combo->set_options({
-        {.label = tk::tr("HTML"),       .value = "html"},
+        {.label = tk::tr("HTML"), .value = "html"},
         {.label = tk::tr("Plain text"), .value = "txt"},
     });
     format_combo->set_selected_value("html");
-    format_combo->on_changed = [this](std::string value) {
+    format_combo->on_changed = [this](std::string value)
+    {
         set_format_(value == "txt" ? Format::Text : Format::Html);
     };
     format_combo_ = add_child(std::move(format_combo));
@@ -108,15 +151,18 @@ ExportHistoryDialog::ExportHistoryDialog()
     // format_combo_ above, and added after it for the same reason.
     auto range_combo = tk::create_widget<tk::ComboBox>(this);
     range_combo->set_options({
-        {.label = tk::tr("All history"),   .value = "all"},
+        {.label = tk::tr("All history"), .value = "all"},
         {.label = tk::tr("Last 24 hours"), .value = "24h"},
-        {.label = tk::tr("Last 7 days"),   .value = "7d"},
-        {.label = tk::tr("Last 30 days"),  .value = "30d"},
+        {.label = tk::tr("Last 7 days"), .value = "7d"},
+        {.label = tk::tr("Last 30 days"), .value = "30d"},
         {.label = tk::tr("Last 3 months"), .value = "90d"},
-        {.label = tk::tr("Last year"),     .value = "365d"},
+        {.label = tk::tr("Last year"), .value = "365d"},
     });
     range_combo->set_selected_value("all");
-    range_combo->on_changed = [this](std::string value) { time_range_ = value; };
+    range_combo->on_changed = [this](std::string value)
+    {
+        time_range_ = value;
+    };
     range_combo_ = add_child(std::move(range_combo));
 
     set_visible(false);
@@ -126,7 +172,9 @@ void ExportHistoryDialog::set_format_(Format f)
 {
     format_ = f;
     if (format_combo_)
+    {
         format_combo_->set_selected_value(f == Format::Text ? "txt" : "html");
+    }
     if (f == Format::Text)
     {
         include_images_ = false;
@@ -160,13 +208,19 @@ void ExportHistoryDialog::open(std::string room_id, std::string room_display_nam
 
     reset_for_room_(std::move(room_id), std::move(room_display_name));
     state_ = State::Options;
-    open_  = true;
+    open_ = true;
     set_visible(true);
     press_backdrop_ = false;
     update_child_visibility_();
 
-    if (on_query_resume) on_query_resume(opened_room_id);
-    if (!was_open && on_layout_changed) on_layout_changed();
+    if (on_query_resume)
+    {
+        on_query_resume(opened_room_id);
+    }
+    if (!was_open && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ExportHistoryDialog::open_busy_elsewhere(std::string busy_room_id,
@@ -178,13 +232,16 @@ void ExportHistoryDialog::open_busy_elsewhere(std::string busy_room_id,
     busy_room_display_name_ = std::move(busy_room_display_name);
     last_progress_ = last_progress;
     state_ = State::BusyElsewhere;
-    open_  = true;
+    open_ = true;
     set_visible(true);
     press_backdrop_ = false;
     title_layout_.reset();
     body_layout_.reset();
     update_child_visibility_();
-    if (!was_open && on_layout_changed) on_layout_changed();
+    if (!was_open && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ExportHistoryDialog::open_in_progress(std::string room_id, std::string room_display_name,
@@ -195,7 +252,7 @@ void ExportHistoryDialog::open_in_progress(std::string room_id, std::string room
     room_display_name_ = std::move(room_display_name);
     last_progress_ = last_progress;
     state_ = State::InProgress;
-    open_  = true;
+    open_ = true;
     set_visible(true);
     press_backdrop_ = false;
     title_layout_.reset();
@@ -204,7 +261,10 @@ void ExportHistoryDialog::open_in_progress(std::string room_id, std::string room
     finalizing_started_ = false;
     ++finish_generation_;
     update_child_visibility_();
-    if (!was_open && on_layout_changed) on_layout_changed();
+    if (!was_open && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ExportHistoryDialog::close()
@@ -214,13 +274,18 @@ void ExportHistoryDialog::close()
     set_visible(false);
     press_backdrop_ = false;
     update_child_visibility_();
-    if (was_open && on_layout_changed) on_layout_changed();
+    if (was_open && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ExportHistoryDialog::set_resume_checkpoint(tesseract::RoomExportCheckpoint checkpoint)
 {
     if (state_ != State::Options || checkpoint.room_id != room_id_)
+    {
         return;
+    }
     checkpoint_ = std::move(checkpoint);
     resume_available_ = checkpoint_.exists;
     body_layout_.reset();
@@ -231,7 +296,10 @@ void ExportHistoryDialog::set_resume_checkpoint(tesseract::RoomExportCheckpoint 
     // whatever stale rect the last arrange() pass left them at (same
     // reasoning as enter_in_progress_()'s call below, and
     // show_progress()'s room_created_just_learned branch).
-    if (on_layout_changed) on_layout_changed();
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ExportHistoryDialog::enter_in_progress_()
@@ -243,10 +311,14 @@ void ExportHistoryDialog::enter_in_progress_()
     finalizing_started_ = false;
     ++finish_generation_;
     update_child_visibility_();
-    if (on_layout_changed) on_layout_changed();
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
-std::optional<float> ExportHistoryDialog::compute_progress_fraction(const tesseract::RoomExportProgress& p)
+std::optional<float>
+ExportHistoryDialog::compute_progress_fraction(const tesseract::RoomExportProgress& p)
 {
     // Gathering (pagination) has no reliable fraction at all — a time-ratio
     // estimate (newest/oldest vs. room creation) assumes roughly uniform
@@ -269,7 +341,10 @@ std::optional<float> ExportHistoryDialog::compute_progress_fraction(const tesser
     if (p.finalizing)
     {
         if (p.assembly_total == 0)
-            return std::nullopt; // defensive: no known total (shouldn't happen for a non-empty export)
+        {
+            return std::
+                nullopt; // defensive: no known total (shouldn't happen for a non-empty export)
+        }
         const float done = static_cast<float>(p.assembly_done);
         const float total = static_cast<float>(p.assembly_total);
         const float sub = std::clamp(done / total, 0.0f, 1.0f);
@@ -292,26 +367,46 @@ std::string ExportHistoryDialog::format_short_date(std::uint64_t ts_ms)
     localtime_r(&t, &tm_val);
 #endif
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
-                 tm_val.tm_year + 1900, tm_val.tm_mon + 1, tm_val.tm_mday);
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm_val.tm_year + 1900, tm_val.tm_mon + 1,
+                  tm_val.tm_mday);
     return std::string(buf);
 }
 
-std::uint64_t ExportHistoryDialog::select_progress_display_ts(const tesseract::RoomExportProgress& p)
+std::uint64_t
+ExportHistoryDialog::select_progress_display_ts(const tesseract::RoomExportProgress& p)
 {
     return (p.reached_start && p.room_created_ts_ms != 0) ? p.room_created_ts_ms : p.oldest_ts_ms;
 }
 
-std::uint64_t ExportHistoryDialog::resolve_stop_at_ts_ms(const std::string& range_key, std::uint64_t now_ms)
+std::uint64_t ExportHistoryDialog::resolve_stop_at_ts_ms(const std::string& range_key,
+                                                         std::uint64_t now_ms)
 {
     constexpr std::uint64_t kDayMs = 24ull * 60 * 60 * 1000;
     std::uint64_t days = 0;
-    if (range_key == "24h")       days = 1;
-    else if (range_key == "7d")   days = 7;
-    else if (range_key == "30d")  days = 30;
-    else if (range_key == "90d")  days = 90;
-    else if (range_key == "365d") days = 365;
-    else return 0; // "all" (or anything unrecognized) = no cutoff
+    if (range_key == "24h")
+    {
+        days = 1;
+    }
+    else if (range_key == "7d")
+    {
+        days = 7;
+    }
+    else if (range_key == "30d")
+    {
+        days = 30;
+    }
+    else if (range_key == "90d")
+    {
+        days = 90;
+    }
+    else if (range_key == "365d")
+    {
+        days = 365;
+    }
+    else
+    {
+        return 0; // "all" (or anything unrecognized) = no cutoff
+    }
 
     const std::uint64_t span_ms = days * kDayMs;
     return now_ms > span_ms ? now_ms - span_ms : 0;
@@ -325,7 +420,9 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
     const bool was_options = state_ == State::Options;
     last_progress_ = progress;
     if (was_options)
+    {
         enter_in_progress_(); // its own on_layout_changed() already reflects last_progress_ above
+    }
     if (room_created_just_learned)
     {
         // The InProgress body line only exists once room_created_ts_ms is
@@ -337,7 +434,9 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
         // the new body line draws right on top of it.
         body_layout_.reset();
         if (!was_options && on_layout_changed)
+        {
             on_layout_changed();
+        }
     }
     if (finalizing_just_started)
     {
@@ -347,13 +446,19 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
     update_child_visibility_(); // e.g. hides Cancel once finalizing starts
 
     if (!progress_bar_)
+    {
         return;
+    }
 
     const auto fraction = compute_progress_fraction(last_progress_);
     if (fraction)
+    {
         progress_bar_->set_progress(*fraction);
+    }
     else
+    {
         progress_bar_->set_indeterminate();
+    }
 
     if (last_progress_.finalizing)
     {
@@ -371,9 +476,10 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
         // select_progress_display_ts() falls back to the true oldest
         // message written, which is what should show there anyway.
         std::string label = last_progress_.assembly_total != 0
-            ? tk::trf(tk::tr("Finalizing export… ({0} of {1})"),
-                     {std::to_string(last_progress_.assembly_done), std::to_string(last_progress_.assembly_total)})
-            : tk::tr("Finalizing export…");
+                                ? tk::trf(tk::tr("Finalizing export… ({0} of {1})"),
+                                          {std::to_string(last_progress_.assembly_done),
+                                           std::to_string(last_progress_.assembly_total)})
+                                : tk::tr("Finalizing export…");
         if (last_progress_.room_created_ts_ms != 0 || last_progress_.stop_at_ts_ms != 0)
         {
             label = tk::trf(tk::tr("{0} — back to {1}"),
@@ -394,15 +500,15 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
         progress_bar_->set_label(
             last_progress_.events_written != 0
                 ? tk::trf(tk::tr("{0} messages — now at {1}"),
-                         {std::to_string(last_progress_.events_written),
-                          format_short_date(select_progress_display_ts(last_progress_))})
+                          {std::to_string(last_progress_.events_written),
+                           format_short_date(select_progress_display_ts(last_progress_))})
                 : tk::trf(tk::tr("Reading messages — now at {0}"),
-                         {format_short_date(select_progress_display_ts(last_progress_))}));
+                          {format_short_date(select_progress_display_ts(last_progress_))}));
     }
     else
     {
-        progress_bar_->set_label(tk::trf(
-            tk::tr("{0} messages exported"), {std::to_string(last_progress_.events_written)}));
+        progress_bar_->set_label(tk::trf(tk::tr("{0} messages exported"),
+                                         {std::to_string(last_progress_.events_written)}));
     }
 
     // set_progress()/set_label() above only mutate this widget's own
@@ -412,7 +518,9 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
     // updates data the screen never actually redraws, looking frozen
     // between the state transitions that do happen to trigger a repaint.
     if (auto* h = host())
+    {
         h->request_repaint();
+    }
 
     // This tick is real activity — arm the silence watchdog fresh. If
     // nothing else arrives within kSilenceWatchMs, the bar switches to its
@@ -422,16 +530,23 @@ void ExportHistoryDialog::show_progress(const tesseract::RoomExportProgress& pro
     const int gen = ++silence_watch_generation_;
     if (auto* h = host())
     {
-        h->post_delayed(kSilenceWatchMs, [this, gen]()
-        {
-            if (gen != silence_watch_generation_)
-                return; // a newer tick already arrived — not silent after all
-            if (state_ != State::InProgress || !progress_bar_)
-                return;
-            progress_bar_->set_indeterminate();
-            if (auto* h2 = host())
-                h2->request_repaint();
-        });
+        h->post_delayed(kSilenceWatchMs,
+                        [this, gen]()
+                        {
+                            if (gen != silence_watch_generation_)
+                            {
+                                return; // a newer tick already arrived — not silent after all
+                            }
+                            if (state_ != State::InProgress || !progress_bar_)
+                            {
+                                return;
+                            }
+                            progress_bar_->set_indeterminate();
+                            if (auto* h2 = host())
+                            {
+                                h2->request_repaint();
+                            }
+                        });
     }
 }
 
@@ -446,19 +561,24 @@ void ExportHistoryDialog::show_finished(bool ok, bool cancelled, std::string out
     // whichever is later: entering InProgress, or finalizing starting.
     const auto& baseline = finalizing_started_ ? finalizing_started_at_ : in_progress_started_at_;
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - baseline).count();
+                             std::chrono::steady_clock::now() - baseline)
+                             .count();
     if (state_ == State::InProgress && elapsed < kMinInProgressDurationMs)
     {
         const int remaining_ms = static_cast<int>(kMinInProgressDurationMs - elapsed);
         const int gen = finish_generation_;
         if (auto* h = host())
         {
-            h->post_delayed(remaining_ms,
+            h->post_delayed(
+                remaining_ms,
                 [this, gen, ok, cancelled, out_path, events_written, error]() mutable
                 {
                     if (gen != finish_generation_)
+                    {
                         return; // a new export started in the meantime — this completion is stale
-                    apply_finished_(ok, cancelled, std::move(out_path), events_written, std::move(error));
+                    }
+                    apply_finished_(ok, cancelled, std::move(out_path), events_written,
+                                    std::move(error));
                 });
             return;
         }
@@ -485,7 +605,10 @@ void ExportHistoryDialog::apply_finished_(bool ok, bool cancelled, std::string o
                          ok || cancelled ? tk::Host::Politeness::Polite
                                          : tk::Host::Politeness::Assertive);
     }
-    if (open_ && on_layout_changed) on_layout_changed();
+    if (open_ && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ExportHistoryDialog::update_child_visibility_()
@@ -534,13 +657,19 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
     case State::Options:
         if (resume_available_)
+        {
             card_h += kRowH * 2 + kRowGap + kBtnH;
+        }
         else
+        {
             card_h += kRowH * 5 + kRowGap * 4 + kBtnH;
+        }
         break;
     case State::InProgress:
         if (last_progress_.stop_at_ts_ms != 0 || last_progress_.room_created_ts_ms != 0)
+        {
             card_h += kTitleGap + 20.0f /* "Exporting back to {date}" line */;
+        }
         card_h += 40.0f /* progress bar + caption */ + kRowGap + kBtnH;
         break;
     case State::BusyElsewhere:
@@ -553,8 +682,7 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     const float card_w = std::min(kCardW, bounds.w);
     const float clamped_h = std::min(card_h, bounds.h);
-    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f,
-                  bounds.y + (bounds.h - clamped_h) * 0.5f,
+    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f, bounds.y + (bounds.h - clamped_h) * 0.5f,
                   card_w, clamped_h};
 
     const float content_x = card_rect_.x + kCardPad;
@@ -587,7 +715,9 @@ void ExportHistoryDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     else if (state_ == State::InProgress)
     {
         if (last_progress_.stop_at_ts_ms != 0 || last_progress_.room_created_ts_ms != 0)
+        {
             y += kTitleGap + 20.0f; // body text row drawn in paint()
+        }
         progress_bar_->arrange(lc, {content_x, y, content_w, 40.0f});
         y += 40.0f + kRowGap;
         // Right-aligned pair, cancel left of stop — same
@@ -628,8 +758,12 @@ std::pair<std::string, std::string> ExportHistoryDialog::title_and_body_() const
     case State::Options:
         title = tk::trf(tk::tr("Export History of {0}"), {room_display_name_});
         if (resume_available_)
-            body = tk::trf(tk::tr("A previous export of this room was interrupted after {0} messages. Resume it, or start over?"),
-                          {std::to_string(checkpoint_.events_written)});
+        {
+            body = tk::trf(
+                tk::tr(
+                    "A previous export of this room was interrupted after {0} messages. Resume it, or start over?"),
+                {std::to_string(checkpoint_.events_written)});
+        }
         break;
     case State::InProgress:
     {
@@ -638,10 +772,12 @@ std::pair<std::string, std::string> ExportHistoryDialog::title_and_body_() const
         // to room creation for an all-history export, matching the
         // "Oldest event to include" semantics of stop_at_ts_ms.
         const std::uint64_t target_ts = last_progress_.stop_at_ts_ms != 0
-            ? last_progress_.stop_at_ts_ms
-            : last_progress_.room_created_ts_ms;
+                                            ? last_progress_.stop_at_ts_ms
+                                            : last_progress_.room_created_ts_ms;
         if (target_ts != 0)
+        {
             body = tk::trf(tk::tr("Exporting back to {0}"), {format_short_date(target_ts)});
+        }
         break;
     }
     case State::BusyElsewhere:
@@ -649,8 +785,9 @@ std::pair<std::string, std::string> ExportHistoryDialog::title_and_body_() const
         body = tk::trf(tk::tr("Currently exporting {0}."), {busy_room_display_name_});
         break;
     case State::Done:
-        title = finished_cancelled_ ? tk::tr("Export cancelled")
-                                    : (finished_ok_ ? tk::tr("Export complete") : tk::tr("Export failed"));
+        title = finished_cancelled_
+                    ? tk::tr("Export cancelled")
+                    : (finished_ok_ ? tk::tr("Export complete") : tk::tr("Export failed"));
         body = finished_ok_ ? finished_out_path_
                             : (finished_error_.empty() ? std::string() : finished_error_);
         break;
@@ -671,7 +808,10 @@ std::string ExportHistoryDialog::access_description() const
 
 void ExportHistoryDialog::paint_before_children(tk::PaintCtx& ctx)
 {
-    if (!open_) return;
+    if (!open_)
+    {
+        return;
+    }
 
     auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
@@ -712,7 +852,9 @@ void ExportHistoryDialog::paint_before_children(tk::PaintCtx& ctx)
             body_layout_ = ctx.factory.build_text(body, st);
         }
         if (body_layout_)
+        {
             cv.draw_text(*body_layout_, {text_x, y}, pal.text_secondary);
+        }
     }
 }
 
@@ -720,18 +862,30 @@ void ExportHistoryDialog::paint_before_children(tk::PaintCtx& ctx)
 
 bool ExportHistoryDialog::on_pointer_down(tk::Point local)
 {
-    if (!open_) return false;
+    if (!open_)
+    {
+        return false;
+    }
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
-    if (rect_contains(card_rect_, w)) return false;
+    if (rect_contains(card_rect_, w))
+    {
+        return false;
+    }
     press_backdrop_ = true;
     return true;
 }
 
 void ExportHistoryDialog::on_pointer_up(tk::Point local, bool inside_self)
 {
-    if (!press_backdrop_) return;
+    if (!press_backdrop_)
+    {
+        return;
+    }
     press_backdrop_ = false;
-    if (!inside_self) return;
+    if (!inside_self)
+    {
+        return;
+    }
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (!rect_contains(card_rect_, w))
     {

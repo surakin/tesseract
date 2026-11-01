@@ -34,28 +34,50 @@ CONTROLTYPEID to_uia_control_type(tk::Role r)
 {
     switch (r)
     {
-    case tk::Role::Button:      return UIA_ButtonControlTypeId;
-    case tk::Role::CheckBox:    return UIA_CheckBoxControlTypeId;
-    case tk::Role::Switch:      return UIA_CheckBoxControlTypeId;
-    case tk::Role::RadioButton: return UIA_RadioButtonControlTypeId;
-    case tk::Role::ComboBox:    return UIA_ComboBoxControlTypeId;
-    case tk::Role::TextInput:   return UIA_EditControlTypeId;
-    case tk::Role::StaticText:  return UIA_TextControlTypeId;
-    case tk::Role::Image:       return UIA_ImageControlTypeId;
-    case tk::Role::Link:        return UIA_HyperlinkControlTypeId;
-    case tk::Role::List:        return UIA_ListControlTypeId;
-    case tk::Role::ListItem:    return UIA_ListItemControlTypeId;
-    case tk::Role::Grid:        return UIA_DataGridControlTypeId;
-    case tk::Role::GridCell:    return UIA_DataItemControlTypeId;
-    case tk::Role::Tab:         return UIA_TabItemControlTypeId;
-    case tk::Role::TabList:     return UIA_TabControlTypeId;
-    case tk::Role::TabPanel:    return UIA_PaneControlTypeId;
-    case tk::Role::Dialog:      return UIA_PaneControlTypeId;
-    case tk::Role::MenuItem:    return UIA_MenuItemControlTypeId;
-    case tk::Role::Group:       return UIA_GroupControlTypeId;
-    case tk::Role::ProgressBar: return UIA_ProgressBarControlTypeId;
-    case tk::Role::Slider:      return UIA_SliderControlTypeId;
-    case tk::Role::None:        return UIA_PaneControlTypeId;
+    case tk::Role::Button:
+        return UIA_ButtonControlTypeId;
+    case tk::Role::CheckBox:
+        return UIA_CheckBoxControlTypeId;
+    case tk::Role::Switch:
+        return UIA_CheckBoxControlTypeId;
+    case tk::Role::RadioButton:
+        return UIA_RadioButtonControlTypeId;
+    case tk::Role::ComboBox:
+        return UIA_ComboBoxControlTypeId;
+    case tk::Role::TextInput:
+        return UIA_EditControlTypeId;
+    case tk::Role::StaticText:
+        return UIA_TextControlTypeId;
+    case tk::Role::Image:
+        return UIA_ImageControlTypeId;
+    case tk::Role::Link:
+        return UIA_HyperlinkControlTypeId;
+    case tk::Role::List:
+        return UIA_ListControlTypeId;
+    case tk::Role::ListItem:
+        return UIA_ListItemControlTypeId;
+    case tk::Role::Grid:
+        return UIA_DataGridControlTypeId;
+    case tk::Role::GridCell:
+        return UIA_DataItemControlTypeId;
+    case tk::Role::Tab:
+        return UIA_TabItemControlTypeId;
+    case tk::Role::TabList:
+        return UIA_TabControlTypeId;
+    case tk::Role::TabPanel:
+        return UIA_PaneControlTypeId;
+    case tk::Role::Dialog:
+        return UIA_PaneControlTypeId;
+    case tk::Role::MenuItem:
+        return UIA_MenuItemControlTypeId;
+    case tk::Role::Group:
+        return UIA_GroupControlTypeId;
+    case tk::Role::ProgressBar:
+        return UIA_ProgressBarControlTypeId;
+    case tk::Role::Slider:
+        return UIA_SliderControlTypeId;
+    case tk::Role::None:
+        return UIA_PaneControlTypeId;
     }
     return UIA_PaneControlTypeId;
 }
@@ -91,8 +113,8 @@ bool supports_toggle(tk::Role r)
 
 bool supports_selection_item(tk::Role r)
 {
-    return r == tk::Role::ListItem || r == tk::Role::GridCell ||
-          r == tk::Role::Tab || r == tk::Role::RadioButton;
+    return r == tk::Role::ListItem || r == tk::Role::GridCell || r == tk::Role::Tab ||
+           r == tk::Role::RadioButton;
 }
 
 bool supports_expand_collapse(tk::Role r)
@@ -133,7 +155,9 @@ AccessKey key_for(const tk::AccessNode& n)
 bool node_disabled(const tk::AccessNode& n)
 {
     if (n.state.disabled)
+    {
         return true;
+    }
     return n.row_index == -1 && n.widget && !n.activate && !n.widget->enabled();
 }
 
@@ -201,7 +225,9 @@ class AccessNodeProvider;
 class AccessBridge
 {
 public:
-    explicit AccessBridge(Surface* surface) : surface_(surface) {}
+    explicit AccessBridge(Surface* surface) : surface_(surface)
+    {
+    }
 
     Surface* surface() const
     {
@@ -245,7 +271,9 @@ public:
         rebuild_if_dirty();
         auto it = parent_of_.find(key);
         if (it == parent_of_.end())
+        {
             return nullptr;
+        }
         auto it2 = index_.find(it->second);
         return it2 == index_.end() ? nullptr : it2->second;
     }
@@ -260,7 +288,9 @@ public:
     {
         RECT rc{0, 0, 0, 0};
         if (!surface_)
+        {
             return rc;
+        }
         const float scale = surface_->dpi_scale();
         POINT top_left{static_cast<LONG>(std::lround(r.x * scale)),
                        static_cast<LONG>(std::lround(r.y * scale))};
@@ -312,18 +342,24 @@ private:
     void hook_selection_changed(tk::Widget* widget)
     {
         if (!widget || selection_hooked_.count(widget))
+        {
             return;
+        }
         selection_hooked_.insert(widget);
 
         if (auto* list = dynamic_cast<tk::ListView*>(widget))
         {
             list->on_selection_changed = [this, list](int idx)
-            { notify_current_row(list, idx); };
+            {
+                notify_current_row(list, idx);
+            };
         }
         else if (auto* grid = dynamic_cast<tk::GridView*>(widget))
         {
             grid->on_selection_changed = [this, grid](int idx)
-            { notify_current_row(grid, idx); };
+            {
+                notify_current_row(grid, idx);
+            };
         }
     }
 
@@ -349,7 +385,10 @@ public:
     void ensure_root_hooked();
     void unhook_root();
     void schedule_window_moved_();
-    void forget_root_() { hooked_root_ = nullptr; }
+    void forget_root_()
+    {
+        hooked_root_ = nullptr;
+    }
 
 private:
     std::unordered_map<AccessKey, std::vector<AccessKey>, AccessKeyHash> children_of_;
@@ -362,7 +401,9 @@ public:
     {
         auto it = index_.find(key);
         if (it != index_.end())
+        {
             snapshots_[key] = snapshot_of(*it->second);
+        }
     }
 
 private:
@@ -426,35 +467,59 @@ public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
     {
         if (!ppv)
+        {
             return E_POINTER;
+        }
         *ppv = nullptr;
 
         const tk::Role role = node() ? node()->role : tk::Role::None;
 
         if (riid == __uuidof(IUnknown) || riid == __uuidof(IRawElementProviderSimple))
+        {
             *ppv = static_cast<IRawElementProviderSimple*>(this);
+        }
         else if (riid == __uuidof(IRawElementProviderFragment))
+        {
             *ppv = static_cast<IRawElementProviderFragment*>(this);
+        }
         else if (riid == __uuidof(IRawElementProviderFragmentRoot) && bridge_ &&
-                bridge_->is_root(key_))
+                 bridge_->is_root(key_))
+        {
             *ppv = static_cast<IRawElementProviderFragmentRoot*>(this);
+        }
         else if (riid == __uuidof(IInvokeProvider) && has_action_role(role))
+        {
             *ppv = static_cast<IInvokeProvider*>(this);
+        }
         else if (riid == __uuidof(IToggleProvider) && supports_toggle(role))
+        {
             *ppv = static_cast<IToggleProvider*>(this);
+        }
         else if (riid == __uuidof(ISelectionItemProvider) && supports_selection_item(role))
+        {
             *ppv = static_cast<ISelectionItemProvider*>(this);
+        }
         else if (riid == __uuidof(IExpandCollapseProvider) && supports_expand_collapse(role))
+        {
             *ppv = static_cast<IExpandCollapseProvider*>(this);
+        }
         else if (riid == __uuidof(IRangeValueProvider) && node() && node()->value.present)
+        {
             *ppv = static_cast<IRangeValueProvider*>(this);
+        }
         else if (riid == __uuidof(IGridProvider) && node() && node()->grid_col_count > 0)
+        {
             *ppv = static_cast<IGridProvider*>(this);
+        }
         else if (riid == __uuidof(IGridItemProvider) && node() && node()->grid_row >= 0)
+        {
             *ppv = static_cast<IGridItemProvider*>(this);
+        }
 
         if (!*ppv)
+        {
             return E_NOINTERFACE;
+        }
         AddRef();
         return S_OK;
     }
@@ -466,7 +531,9 @@ public:
     {
         ULONG n = --refs_;
         if (n == 0)
+        {
             delete this;
+        }
         return n;
     }
 
@@ -474,7 +541,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_ProviderOptions(ProviderOptions* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         // UseComThreading: UI Automation calls the provider on the window's STA
         // thread, so the tree walk and the row callbacks stay on the UI thread.
         *pRetVal = ProviderOptions_ServerSideProvider | ProviderOptions_UseComThreading;
@@ -483,11 +552,15 @@ public:
     HRESULT STDMETHODCALLTYPE GetPatternProvider(PATTERNID patternId, IUnknown** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         const tk::AccessNode* n = node();
         if (!n)
+        {
             return S_OK;
+        }
         switch (patternId)
         {
         case UIA_InvokePatternId:
@@ -547,11 +620,15 @@ public:
     HRESULT STDMETHODCALLTYPE GetPropertyValue(PROPERTYID propertyId, VARIANT* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         VariantInit(pRetVal);
         const tk::AccessNode* n = node();
         if (!n)
+        {
             return S_OK;
+        }
         // A real Widget node (row_index == -1) can read enabled/focus state
         // straight off its Widget; a synthesized row/cell has neither (see
         // AccessState's own doc comment — enabled/focused deliberately
@@ -580,27 +657,37 @@ public:
             {
                 const LCID lcid = LocaleNameToLCID(utf8_to_wide(n->language).c_str(), 0);
                 if (lcid != 0)
+                {
                     *pRetVal = i4_variant(static_cast<int>(lcid));
+                }
             }
             break;
         case UIA_HelpTextPropertyId:
             if (!n->description.empty())
+            {
                 *pRetVal = bstr_variant(n->description);
+            }
             break;
 #ifdef UIA_FullDescriptionPropertyId
         case UIA_FullDescriptionPropertyId:
             if (!n->description.empty())
+            {
                 *pRetVal = bstr_variant(n->description);
+            }
             break;
 #endif
 #ifdef UIA_PositionInSetPropertyId
         case UIA_PositionInSetPropertyId:
             if (n->pos_in_set > 0)
+            {
                 *pRetVal = i4_variant(n->pos_in_set);
+            }
             break;
         case UIA_SizeOfSetPropertyId:
             if (n->row_set_size > 0)
+            {
                 *pRetVal = i4_variant(n->row_set_size);
+            }
             break;
 #endif
 #ifdef UIA_IsDialogPropertyId
@@ -631,13 +718,18 @@ public:
         }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE get_HostRawElementProvider(IRawElementProviderSimple** pRetVal) override
+    HRESULT STDMETHODCALLTYPE
+    get_HostRawElementProvider(IRawElementProviderSimple** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (bridge_ && bridge_->is_root(key_))
+        {
             return UiaHostProviderFromHwnd(bridge_->hwnd(), pRetVal);
+        }
         return S_OK;
     }
 
@@ -646,17 +738,23 @@ public:
                                        IRawElementProviderFragment** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (!bridge_)
+        {
             return S_OK;
+        }
 
         switch (direction)
         {
         case NavigateDirection_Parent:
         {
             if (bridge_->is_root(key_))
+            {
                 return S_OK;
+            }
             if (auto* p = bridge_->parent_provider_for(key_))
             {
                 p->AddRef();
@@ -669,7 +767,9 @@ public:
         {
             const tk::AccessNode* n = node();
             if (!n || n->children.empty())
+            {
                 return S_OK;
+            }
             const tk::AccessNode& child = (direction == NavigateDirection_FirstChild)
                                               ? n->children.front()
                                               : n->children.back();
@@ -685,23 +785,31 @@ public:
         {
             const tk::AccessNode* parent = bridge_->parent_node_for(key_);
             if (!parent)
+            {
                 return S_OK;
+            }
             const auto& kids = parent->children;
             for (std::size_t i = 0; i < kids.size(); ++i)
             {
                 if (!(key_for(kids[i]) == key_))
+                {
                     continue;
+                }
                 std::size_t j;
                 if (direction == NavigateDirection_NextSibling)
                 {
                     if (i + 1 >= kids.size())
+                    {
                         return S_OK;
+                    }
                     j = i + 1;
                 }
                 else
                 {
                     if (i == 0)
+                    {
                         return S_OK;
+                    }
                     j = i - 1;
                 }
                 if (auto* p = bridge_->provider_for(key_for(kids[j])))
@@ -719,31 +827,43 @@ public:
     HRESULT STDMETHODCALLTYPE GetRuntimeId(SAFEARRAY** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         // Null = "this is the fragment root associated with the hwnd" —
         // required by the UIA contract for the element WM_GETOBJECT/
         // UiaReturnRawElementProvider returns for UiaRootObjectId.
         if (bridge_ && bridge_->is_root(key_))
+        {
             return S_OK;
+        }
 
         int rt_id[2] = {static_cast<int>(UiaAppendRuntimeId), runtime_id_};
         SAFEARRAY* sa = SafeArrayCreateVector(VT_I4, 0, 2);
         if (!sa)
+        {
             return E_OUTOFMEMORY;
+        }
         for (LONG i = 0; i < 2; ++i)
+        {
             SafeArrayPutElement(sa, &i, &rt_id[i]);
+        }
         *pRetVal = sa;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_BoundingRectangle(UiaRect* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = UiaRect{0, 0, 0, 0};
         const tk::AccessNode* n = node();
         if (!n || !bridge_)
+        {
             return S_OK;
+        }
         RECT rc = bridge_->to_screen_rect(n->rect);
         pRetVal->left = rc.left;
         pRetVal->top = rc.top;
@@ -754,7 +874,9 @@ public:
     HRESULT STDMETHODCALLTYPE GetEmbeddedFragmentRoots(SAFEARRAY** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         return S_OK;
     }
@@ -762,16 +884,22 @@ public:
     {
         const tk::AccessNode* n = node();
         if (n && n->widget && bridge_ && bridge_->surface())
+        {
             bridge_->surface()->host().request_focus(n->widget);
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_FragmentRoot(IRawElementProviderFragmentRoot** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (!bridge_)
+        {
             return S_OK;
+        }
         if (auto* root = bridge_->root_provider())
         {
             root->AddRef();
@@ -784,23 +912,31 @@ public:
     // Only ever reachable via QueryInterface on the actual root node (see
     // QueryInterface's is_root() gate above), so no extra guard is needed
     // here beyond the usual node()/bridge_ null checks.
-    HRESULT STDMETHODCALLTYPE ElementProviderFromPoint(double x, double y,
-                                                       IRawElementProviderFragment** pRetVal) override
+    HRESULT STDMETHODCALLTYPE
+    ElementProviderFromPoint(double x, double y, IRawElementProviderFragment** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (!bridge_)
+        {
             return S_OK;
+        }
         POINT screen{static_cast<LONG>(std::lround(x)), static_cast<LONG>(std::lround(y))};
         POINT client = screen;
         if (!ScreenToClient(bridge_->hwnd(), &client))
+        {
             return S_OK;
+        }
         const float scale = bridge_->surface() ? bridge_->surface()->dpi_scale() : 1.f;
         const tk::Point world{client.x / scale, client.y / scale};
         const tk::AccessNode* root = bridge_->root_node();
         if (!root)
+        {
             return S_OK;
+        }
         const tk::AccessNode* hit = hit_test(*root, world);
         if (hit == root)
         {
@@ -818,13 +954,19 @@ public:
     HRESULT STDMETHODCALLTYPE GetFocus(IRawElementProviderFragment** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (!bridge_ || !bridge_->surface())
+        {
             return S_OK;
+        }
         tk::Widget* focused = bridge_->surface()->host().focused_widget();
         if (!focused)
+        {
             return S_OK;
+        }
         if (auto* p = bridge_->provider_for(AccessKey{focused, -1}))
         {
             p->AddRef();
@@ -837,7 +979,9 @@ public:
     HRESULT STDMETHODCALLTYPE Invoke() override
     {
         if (const tk::AccessNode* n = node())
+        {
             tk::invoke_default_action(*n);
+        }
         return S_OK;
     }
 
@@ -845,13 +989,17 @@ public:
     HRESULT STDMETHODCALLTYPE Toggle() override
     {
         if (const tk::AccessNode* n = node())
+        {
             tk::invoke_default_action(*n);
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_ToggleState(ToggleState* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = (n && n->state.checked) ? ToggleState_On : ToggleState_Off;
         return S_OK;
@@ -861,7 +1009,9 @@ public:
     HRESULT STDMETHODCALLTYPE Select() override
     {
         if (const tk::AccessNode* n = node())
+        {
             tk::invoke_default_action(*n);
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE AddToSelection() override
@@ -878,7 +1028,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_IsSelected(BOOL* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = (n && n->state.selected) ? TRUE : FALSE;
         return S_OK;
@@ -886,7 +1038,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_SelectionContainer(IRawElementProviderSimple** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         // Left null: full multi/single-selection container semantics
         // (ISelectionProvider/IGridProvider on the owning List/Grid) are an
         // explicitly accepted v1 gap — see the plan doc's note on
@@ -901,20 +1055,26 @@ public:
     {
         const tk::AccessNode* n = node();
         if (n && !n->state.expanded)
+        {
             tk::invoke_default_action(*n);
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Collapse() override
     {
         const tk::AccessNode* n = node();
         if (n && n->state.expanded)
+        {
             tk::invoke_default_action(*n);
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_ExpandCollapseState(ExpandCollapseState* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal =
             (n && n->state.expanded) ? ExpandCollapseState_Expanded : ExpandCollapseState_Collapsed;
@@ -926,13 +1086,17 @@ public:
     {
         const tk::AccessNode* n = node();
         if (!n || n->role != tk::Role::Slider || !tk::set_node_value(*n, v))
+        {
             return UIA_E_ELEMENTNOTENABLED;
+        }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_Value(double* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->value.now : 0.0;
         return S_OK;
@@ -940,17 +1104,20 @@ public:
     HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
-        *pRetVal = (n && n->role == tk::Role::Slider && n->widget && n->widget->enabled())
-                       ? FALSE
-                       : TRUE;
+        *pRetVal =
+            (n && n->role == tk::Role::Slider && n->widget && n->widget->enabled()) ? FALSE : TRUE;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_Maximum(double* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->value.max : 0.0;
         return S_OK;
@@ -958,7 +1125,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_Minimum(double* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->value.min : 0.0;
         return S_OK;
@@ -966,14 +1135,18 @@ public:
     HRESULT STDMETHODCALLTYPE get_LargeChange(double* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = 0.0;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_SmallChange(double* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = 0.0;
         return S_OK;
     }
@@ -983,11 +1156,15 @@ public:
                                       IRawElementProviderSimple** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         const tk::AccessNode* n = node();
         if (!n || !bridge_)
+        {
             return E_INVALIDARG;
+        }
         for (const auto& child : n->children)
         {
             if (child.grid_row == row && child.grid_col == column)
@@ -1005,7 +1182,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_RowCount(int* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->grid_row_count : 0;
         return S_OK;
@@ -1013,7 +1192,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_ColumnCount(int* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->grid_col_count : 0;
         return S_OK;
@@ -1023,7 +1204,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_Row(int* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->grid_row : 0;
         return S_OK;
@@ -1031,7 +1214,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_Column(int* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         const tk::AccessNode* n = node();
         *pRetVal = n ? n->grid_col : 0;
         return S_OK;
@@ -1039,21 +1224,27 @@ public:
     HRESULT STDMETHODCALLTYPE get_RowSpan(int* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = 1;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_ColumnSpan(int* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = 1;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_ContainingGrid(IRawElementProviderSimple** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (bridge_)
         {
@@ -1082,7 +1273,9 @@ private:
         {
             if (child.rect.x <= world.x && world.x <= child.rect.x + child.rect.w &&
                 child.rect.y <= world.y && world.y <= child.rect.y + child.rect.h)
+            {
                 return hit_test(child, world);
+            }
         }
         return &node;
     }
@@ -1096,10 +1289,14 @@ private:
 void AccessBridge::rebuild_if_dirty()
 {
     if (!dirty_)
+    {
         return;
+    }
     dirty_ = false;
     if (!surface_)
+    {
         return; // detached
+    }
 
     tk::Widget* root = surface_->root();
     tree_ = root ? tk::build_access_tree(root) : tk::AccessNode{};
@@ -1138,33 +1335,47 @@ void AccessBridge::rebuild_if_dirty()
     for (const auto& [key, node] : index_)
     {
         if (node->children.empty())
+        {
             continue;
+        }
         auto& kids = new_children[key];
         kids.reserve(node->children.size());
         for (const auto& ch : node->children)
+        {
             kids.push_back(key_for(ch));
+        }
     }
     const AccessKey root_key = tree_.widget ? key_for(tree_) : AccessKey{};
     for (const auto& [key, kids] : new_children)
     {
         if (key == root_key)
+        {
             continue;
+        }
         auto old = children_of_.find(key);
         if (old != children_of_.end() && old->second == kids)
+        {
             continue;
+        }
         auto prov = providers_.find(key);
         if (prov != providers_.end())
+        {
             UiaRaiseStructureChangedEvent(prov->second.Get(),
                                           StructureChangeType_ChildrenInvalidated, nullptr, 0);
+        }
     }
     for (const auto& [key, kids] : children_of_)
     {
         if (key == root_key || new_children.count(key))
+        {
             continue;
+        }
         auto prov = providers_.find(key);
         if (prov != providers_.end()) // all children removed
+        {
             UiaRaiseStructureChangedEvent(prov->second.Get(),
                                           StructureChangeType_ChildrenInvalidated, nullptr, 0);
+        }
     }
     children_of_ = std::move(new_children);
 
@@ -1195,26 +1406,38 @@ void AccessBridge::raise_change_events()
             VariantClear(&newv);
         };
         if (now.name != was.name)
+        {
             raise(UIA_NamePropertyId, bstr_variant(was.name), bstr_variant(now.name));
+        }
         if (now.description != was.description)
+        {
             raise(UIA_HelpTextPropertyId, bstr_variant(was.description),
                   bstr_variant(now.description));
+        }
         if (now.disabled != was.disabled)
+        {
             raise(UIA_IsEnabledPropertyId, bool_variant(!was.disabled),
                   bool_variant(!now.disabled));
+        }
         if (now.state.checked != was.state.checked && supports_toggle(node.role))
+        {
             raise(UIA_ToggleToggleStatePropertyId,
                   i4_variant(was.state.checked ? ToggleState_On : ToggleState_Off),
                   i4_variant(now.state.checked ? ToggleState_On : ToggleState_Off));
+        }
         if (now.state.expanded != was.state.expanded && supports_expand_collapse(node.role))
+        {
             raise(UIA_ExpandCollapseExpandCollapseStatePropertyId,
                   i4_variant(was.state.expanded ? ExpandCollapseState_Expanded
                                                 : ExpandCollapseState_Collapsed),
                   i4_variant(now.state.expanded ? ExpandCollapseState_Expanded
                                                 : ExpandCollapseState_Collapsed));
+        }
         if (now.state.selected != was.state.selected && supports_selection_item(node.role))
+        {
             raise(UIA_SelectionItemIsSelectedPropertyId, bool_variant(was.state.selected),
                   bool_variant(now.state.selected));
+        }
         if (node.value.present && now.value != was.value)
         {
             VARIANT oldv;
@@ -1231,24 +1454,38 @@ void AccessBridge::raise_change_events()
                            now.rect.w != was.rect.w || now.rect.h != was.rect.h;
         was = std::move(now);
         if (moved)
+        {
             moved_keys.push_back(it->first);
+        }
         ++it;
     }
     // Scrolling moves every row; only tell UIA about what it is tracking.
     for (const AccessKey& k : tracked_keys_())
+    {
         if (std::find(moved_keys.begin(), moved_keys.end(), k) != moved_keys.end())
+        {
             raise_rect_changed_(k);
+        }
+    }
 }
 
 std::vector<AccessKey> AccessBridge::tracked_keys_() const
 {
     std::vector<AccessKey> keys;
     if (surface_)
+    {
         if (tk::Widget* f = surface_->host().focused_widget())
+        {
             keys.push_back(AccessKey{f, -1});
+        }
+    }
     for (const auto& [owner, idx] : current_row_)
+    {
         if (idx >= 0)
+        {
             keys.push_back(AccessKey{owner, idx});
+        }
+    }
     return keys;
 }
 
@@ -1257,18 +1494,22 @@ void AccessBridge::raise_rect_changed_(const AccessKey& key)
     auto prov = providers_.find(key);
     auto node = index_.find(key);
     if (prov == providers_.end() || node == index_.end())
+    {
         return;
+    }
     const RECT rc = to_screen_rect(node->second->rect);
     VARIANT newv;
     VariantInit(&newv);
-    newv.vt     = VT_R8 | VT_ARRAY;
+    newv.vt = VT_R8 | VT_ARRAY;
     newv.parray = SafeArrayCreateVector(VT_R8, 0, 4);
     if (newv.parray)
     {
         double vals[4] = {double(rc.left), double(rc.top), double(rc.right - rc.left),
                           double(rc.bottom - rc.top)};
         for (LONG i = 0; i < 4; ++i)
+        {
             SafeArrayPutElement(newv.parray, &i, &vals[i]);
+        }
     }
     VARIANT oldv;
     VariantInit(&oldv); // VT_EMPTY: unknown — clients re-query
@@ -1280,27 +1521,37 @@ void AccessBridge::raise_rect_changed_(const AccessKey& key)
 void AccessBridge::on_window_moved()
 {
     for (const AccessKey& k : tracked_keys_())
+    {
         raise_rect_changed_(k);
+    }
 }
 
 void AccessBridge::notify_current_row(tk::Widget* owner, int idx)
 {
     current_row_[owner] = idx;
     if (idx < 0)
+    {
         return; // deselected — nothing to report as "current"
+    }
     if (auto* p = provider_for(AccessKey{owner, idx}))
+    {
         UiaRaiseAutomationEvent(p, UIA_AutomationFocusChangedEventId);
+    }
 }
 
 AccessNodeProvider* AccessBridge::provider_for(const AccessKey& key)
 {
     rebuild_if_dirty();
     if (index_.find(key) == index_.end())
+    {
         return nullptr;
+    }
 
     auto it = providers_.find(key);
     if (it != providers_.end())
+    {
         return it->second.Get();
+    }
 
     ComPtr<AccessNodeProvider> p;
     p.Attach(new AccessNodeProvider(this, key, next_runtime_id_++));
@@ -1316,7 +1567,9 @@ AccessNodeProvider* AccessBridge::parent_provider_for(const AccessKey& key)
     rebuild_if_dirty();
     auto it = parent_of_.find(key);
     if (it == parent_of_.end())
+    {
         return nullptr;
+    }
     return provider_for(it->second);
 }
 
@@ -1368,8 +1621,8 @@ AccessBridge* bridge_for_hwnd(HWND hwnd)
 // rather than one per WM_WINDOWPOSCHANGED.
 constexpr int kMoveSettleMs = 150;
 
-LRESULT CALLBACK root_move_subclass_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
-                                         UINT_PTR id, DWORD_PTR ref)
+LRESULT CALLBACK root_move_subclass_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id,
+                                         DWORD_PTR ref)
 {
     const HWND surface_hwnd = reinterpret_cast<HWND>(ref);
     switch (msg)
@@ -1378,15 +1631,21 @@ LRESULT CALLBACK root_move_subclass_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
     {
         const auto* pos = reinterpret_cast<const WINDOWPOS*>(lp);
         if (pos && (pos->flags & SWP_NOMOVE))
+        {
             break;
+        }
         if (AccessBridge* b = bridge_for_hwnd(surface_hwnd))
+        {
             b->schedule_window_moved_();
+        }
         break;
     }
     case WM_NCDESTROY:
         RemoveWindowSubclass(hwnd, root_move_subclass_proc, id);
         if (AccessBridge* b = bridge_for_hwnd(surface_hwnd))
+        {
             b->forget_root_();
+        }
         break;
     default:
         break;
@@ -1397,63 +1656,79 @@ LRESULT CALLBACK root_move_subclass_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
 void AccessBridge::ensure_root_hooked()
 {
     if (hooked_root_ || !surface_)
+    {
         return;
+    }
     const HWND self = surface_->hwnd();
     const HWND root = self ? GetAncestor(self, GA_ROOT) : nullptr;
     if (!root || root == self)
+    {
         return; // a top-level surface gets WM_WINDOWPOSCHANGED itself
-    if (SetWindowSubclass(root, root_move_subclass_proc,
-                          reinterpret_cast<UINT_PTR>(self), reinterpret_cast<DWORD_PTR>(self)))
+    }
+    if (SetWindowSubclass(root, root_move_subclass_proc, reinterpret_cast<UINT_PTR>(self),
+                          reinterpret_cast<DWORD_PTR>(self)))
+    {
         hooked_root_ = root;
+    }
 }
 
 void AccessBridge::unhook_root()
 {
     if (hooked_root_ && surface_ && IsWindow(hooked_root_))
+    {
         RemoveWindowSubclass(hooked_root_, root_move_subclass_proc,
                              reinterpret_cast<UINT_PTR>(surface_->hwnd()));
+    }
     hooked_root_ = nullptr;
 }
 
 void AccessBridge::schedule_window_moved_()
 {
     if (move_pending_ || !surface_ || providers_.empty())
+    {
         return;
+    }
     move_pending_ = true;
     HWND hwnd = surface_->hwnd();
-    surface_->host().post_delayed(kMoveSettleMs, [hwnd]
-    {
-        if (AccessBridge* b = bridge_for_hwnd(hwnd))
-        {
-            b->move_pending_ = false;
-            b->on_window_moved();
-        }
-    });
+    surface_->host().post_delayed(kMoveSettleMs,
+                                  [hwnd]
+                                  {
+                                      if (AccessBridge* b = bridge_for_hwnd(hwnd))
+                                      {
+                                          b->move_pending_ = false;
+                                          b->on_window_moved();
+                                      }
+                                  });
 }
 
 void AccessBridge::schedule_refresh()
 {
     if (providers_.empty() || refresh_pending_ || !surface_)
+    {
         return;
+    }
     refresh_pending_ = true;
     HWND hwnd = surface_->hwnd();
-    surface_->host().post_delayed(kRefreshDelayMs, [hwnd]
-    {
-        if (AccessBridge* b = bridge_for_hwnd(hwnd))
-        {
-            b->refresh_pending_ = false;
-            b->dirty_ = true;
-            b->rebuild_if_dirty();
-        }
-    });
+    surface_->host().post_delayed(kRefreshDelayMs,
+                                  [hwnd]
+                                  {
+                                      if (AccessBridge* b = bridge_for_hwnd(hwnd))
+                                      {
+                                          b->refresh_pending_ = false;
+                                          b->dirty_ = true;
+                                          b->rebuild_if_dirty();
+                                      }
+                                  });
 }
 
 void AccessBridge::announce(const std::string& text, bool assertive)
 {
     AccessNodeProvider* root = root_provider();
     if (!root)
+    {
         return;
-    BSTR display  = SysAllocString(utf8_to_wide(text).c_str());
+    }
+    BSTR display = SysAllocString(utf8_to_wide(text).c_str());
     BSTR activity = SysAllocString(L"tesseract.announce");
     UiaRaiseNotificationEvent(root, NotificationKind_Other,
                               assertive ? NotificationProcessing_ImportantMostRecent
@@ -1481,30 +1756,43 @@ public:
     void detach()
     {
         live_ = false;
-        cb_   = {};
+        cb_ = {};
     }
 
     // ---- IUnknown ----
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
     {
         if (!ppv)
+        {
             return E_POINTER;
+        }
         *ppv = nullptr;
         if (riid == __uuidof(IUnknown) || riid == __uuidof(IRawElementProviderSimple))
+        {
             *ppv = static_cast<IRawElementProviderSimple*>(this);
+        }
         else if (riid == __uuidof(IValueProvider))
+        {
             *ppv = static_cast<IValueProvider*>(this);
+        }
         if (!*ppv)
+        {
             return E_NOINTERFACE;
+        }
         AddRef();
         return S_OK;
     }
-    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs_; }
+    ULONG STDMETHODCALLTYPE AddRef() override
+    {
+        return ++refs_;
+    }
     ULONG STDMETHODCALLTYPE Release() override
     {
         ULONG n = --refs_;
         if (n == 0)
+        {
             delete this;
+        }
         return n;
     }
 
@@ -1512,7 +1800,9 @@ public:
     HRESULT STDMETHODCALLTYPE get_ProviderOptions(ProviderOptions* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         // UseComThreading: UI Automation calls the provider on the window's STA
         // thread, so the tree walk and the row callbacks stay on the UI thread.
         *pRetVal = ProviderOptions_ServerSideProvider | ProviderOptions_UseComThreading;
@@ -1521,7 +1811,9 @@ public:
     HRESULT STDMETHODCALLTYPE GetPatternProvider(PATTERNID id, IUnknown** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = nullptr;
         if (id == UIA_ValuePatternId && live_)
         {
@@ -1533,10 +1825,14 @@ public:
     HRESULT STDMETHODCALLTYPE GetPropertyValue(PROPERTYID id, VARIANT* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         VariantInit(pRetVal);
         if (!live_)
+        {
             return S_OK;
+        }
         switch (id)
         {
         case UIA_ControlTypePropertyId:
@@ -1558,10 +1854,13 @@ public:
         }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE get_HostRawElementProvider(IRawElementProviderSimple** pRetVal) override
+    HRESULT STDMETHODCALLTYPE
+    get_HostRawElementProvider(IRawElementProviderSimple** pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         return UiaHostProviderFromHwnd(hwnd_, pRetVal);
     }
 
@@ -1569,14 +1868,18 @@ public:
     HRESULT STDMETHODCALLTYPE SetValue(LPCWSTR val) override
     {
         if (!live_ || !cb_.set_text)
+        {
             return UIA_E_ELEMENTNOTAVAILABLE;
+        }
         cb_.set_text(wide_to_utf8(val ? std::wstring(val) : std::wstring()));
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_Value(BSTR* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         // A password field's content is never exposed.
         const std::string t = (live_ && !is_password_() && cb_.text) ? cb_.text() : std::string();
         *pRetVal = SysAllocString(utf8_to_wide(t).c_str());
@@ -1585,13 +1888,18 @@ public:
     HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* pRetVal) override
     {
         if (!pRetVal)
+        {
             return E_POINTER;
+        }
         *pRetVal = FALSE;
         return S_OK;
     }
 
 private:
-    bool is_password_() const { return cb_.password && cb_.password(); }
+    bool is_password_() const
+    {
+        return cb_.password && cb_.password();
+    }
 
     HWND hwnd_;
     NativeEditAccessible::Callbacks cb_;
@@ -1607,7 +1915,8 @@ struct NativeEditAccessible::Impl
     ComPtr<NativeEditProvider> provider;
 };
 
-NativeEditAccessible::NativeEditAccessible(HWND hwnd, Callbacks cb) : impl_(std::make_unique<Impl>())
+NativeEditAccessible::NativeEditAccessible(HWND hwnd, Callbacks cb)
+    : impl_(std::make_unique<Impl>())
 {
     impl_->hwnd = hwnd;
     impl_->provider.Attach(new NativeEditProvider(hwnd, std::move(cb)));
@@ -1625,7 +1934,9 @@ NativeEditAccessible::~NativeEditAccessible()
 bool NativeEditAccessible::handle_get_object(WPARAM wParam, LPARAM lParam, LRESULT* result)
 {
     if (static_cast<long>(lParam) != UiaRootObjectId || !impl_->provider)
+    {
         return false;
+    }
     *result = UiaReturnRawElementProvider(impl_->hwnd, wParam, lParam, impl_->provider.Get());
     return true;
 }
@@ -1633,7 +1944,9 @@ bool NativeEditAccessible::handle_get_object(WPARAM wParam, LPARAM lParam, LRESU
 void NativeEditAccessible::name_changed(const std::string& old_name, const std::string& new_name)
 {
     if (!impl_->provider || old_name == new_name || !UiaClientsAreListening())
+    {
         return;
+    }
     VARIANT oldv = bstr_variant(old_name);
     VARIANT newv = bstr_variant(new_name);
     UiaRaiseAutomationPropertyChangedEvent(impl_->provider.Get(), UIA_NamePropertyId, oldv, newv);
@@ -1645,22 +1958,33 @@ void attach_accessible_bridge(Surface& surface)
 {
     HWND hwnd = surface.hwnd();
     if (!hwnd)
+    {
         return;
+    }
     auto bridge = std::make_unique<AccessBridge>(&surface);
     AccessBridge* raw = bridge.get();
     bridge_registry().emplace(hwnd, std::move(bridge));
-    surface.add_layout_listener([raw] { raw->mark_dirty(); });
-    surface.host().add_paint_listener([hwnd]
-    {
-        if (AccessBridge* b = bridge_for_hwnd(hwnd))
-            b->schedule_refresh();
-    });
+    surface.add_layout_listener(
+        [raw]
+        {
+            raw->mark_dirty();
+        });
+    surface.host().add_paint_listener(
+        [hwnd]
+        {
+            if (AccessBridge* b = bridge_for_hwnd(hwnd))
+            {
+                b->schedule_refresh();
+            }
+        });
 }
 
 void announce(HWND hwnd, const std::string& text, bool assertive)
 {
     if (AccessBridge* b = bridge_for_hwnd(hwnd))
+    {
         b->announce(text, assertive);
+    }
 }
 
 void detach_accessible_bridge(HWND hwnd)
@@ -1668,7 +1992,9 @@ void detach_accessible_bridge(HWND hwnd)
     auto& registry = bridge_registry();
     auto it = registry.find(hwnd);
     if (it == registry.end())
+    {
         return;
+    }
     // Erase from the registry before detach() runs, not after: detach()'s
     // UiaDisconnectProvider() call can pump a reentrant WM_GETOBJECT to this
     // still-live hwnd, and handle_get_object()/notify_focus_changed() must
@@ -1682,12 +2008,16 @@ void detach_accessible_bridge(HWND hwnd)
 LRESULT handle_get_object(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     if (static_cast<long>(lParam) != UiaRootObjectId)
+    {
         return DefWindowProcW(hwnd, WM_GETOBJECT, wParam, lParam);
+    }
 
     AccessBridge* bridge = bridge_for_hwnd(hwnd);
     AccessNodeProvider* root = bridge ? bridge->root_provider() : nullptr;
     if (!root)
+    {
         return DefWindowProcW(hwnd, WM_GETOBJECT, wParam, lParam);
+    }
 
     return UiaReturnRawElementProvider(hwnd, wParam, lParam, root);
 }
@@ -1696,14 +2026,18 @@ void notify_focus_changed(HWND hwnd, tk::Widget* /*old_widget*/, tk::Widget* now
 {
     AccessBridge* bridge = bridge_for_hwnd(hwnd);
     if (!bridge || !now_widget)
+    {
         return;
+    }
     // Reusing AccessKey/provider_for from an internal (anonymous-namespace)
     // type outside that namespace is fine here since this function is
     // itself defined in this translation unit, after the anonymous
     // namespace closes — the names are still visible via unqualified
     // lookup within the enclosing tk::win32 namespace.
     if (auto* p = bridge->provider_for(AccessKey{now_widget, -1}))
+    {
         UiaRaiseAutomationEvent(p, UIA_AutomationFocusChangedEventId);
+    }
 }
 
 } // namespace tk::win32

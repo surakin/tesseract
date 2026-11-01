@@ -34,12 +34,10 @@ public:
 
         D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
             D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                              D2D1_ALPHA_MODE_PREMULTIPLIED),
-            96.0f, 96.0f);
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96.0f,
+            96.0f);
 
-        f.d2d->CreateWicBitmapRenderTarget(wic_bitmap_.Get(), props,
-                                           rt_.GetAddressOf());
+        f.d2d->CreateWicBitmapRenderTarget(wic_bitmap_.Get(), props, rt_.GetAddressOf());
 
         factory_ = tk::d2d::make_factory(backend_);
         canvas_ = tk::d2d::make_canvas(backend_, rt_.Get());
@@ -80,8 +78,7 @@ public:
             int r = (int(v) * 255 + a / 2) / a;
             return static_cast<std::uint8_t>(std::min(r, 255));
         };
-        return tk::Color::rgba(unmul(pixel[2]), unmul(pixel[1]),
-                               unmul(pixel[0]), a);
+        return tk::Color::rgba(unmul(pixel[2]), unmul(pixel[1]), unmul(pixel[0]), a);
     }
 
     int width() const override
@@ -136,7 +133,10 @@ public:
         *collection = nullptr;
         return E_FAIL;
     }
-    const wchar_t* EmojiFallbackFamily() const override { return L"Segoe UI Emoji"; }
+    const wchar_t* EmojiFallbackFamily() const override
+    {
+        return L"Segoe UI Emoji";
+    }
 };
 } // namespace
 

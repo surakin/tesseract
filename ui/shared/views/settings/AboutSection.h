@@ -45,11 +45,11 @@ public:
 
 private:
     class CacheSizeRow;
-    tk::Widget* storage_row_ = nullptr; // borrowed
+    tk::Widget* storage_row_ = nullptr;  // borrowed
     tk::Widget* advanced_row_ = nullptr; // borrowed
     CacheSizeRow* memory_row_ = nullptr; // borrowed
-    CacheSizeRow* local_row_  = nullptr; // borrowed
-    CacheSizeRow* sdk_row_    = nullptr; // borrowed
+    CacheSizeRow* local_row_ = nullptr;  // borrowed
+    CacheSizeRow* sdk_row_ = nullptr;    // borrowed
 };
 
 } // namespace tesseract::views

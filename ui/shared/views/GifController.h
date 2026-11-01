@@ -63,8 +63,7 @@ public:
         // Called on the UI thread before the async send. Returns cached bytes
         // if the strip already downloaded image_url (avoids a re-fetch at send
         // time). Returns an empty vector when no cache entry exists.
-        std::function<std::vector<std::uint8_t>(const std::string& url)>
-            get_cached_gif_bytes;
+        std::function<std::vector<std::uint8_t>(const std::string& url)> get_cached_gif_bytes;
     };
 
     GifController(tk::TextArea* text_area, GifPopup* popup, Hooks hooks);
@@ -81,8 +80,7 @@ public:
     bool on_submit();
 
     // SDK callback fan-in (routed by the shell). Stale request_ids are dropped.
-    void on_results(std::uint64_t request_id,
-                    std::vector<tesseract::GifResult> results);
+    void on_results(std::uint64_t request_id, std::vector<tesseract::GifResult> results);
     void on_search_failed(std::uint64_t request_id, const std::string& message);
 
     bool visible() const
@@ -106,7 +104,7 @@ private:
     GifEngine engine_;
 
     std::string pending_query_;
-    std::uint64_t request_seq_ = 0; // last-issued search id
+    std::uint64_t request_seq_ = 0;  // last-issued search id
     std::uint64_t debounce_seq_ = 0; // last-scheduled debounce generation
     bool visible_ = false;
 

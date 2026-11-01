@@ -47,7 +47,9 @@ static const UINT kAligns[] = {64u, 128u, 256u, 512u, 1024u, 2048u, 4096u};
 static VideoFrame rotate_bgra(VideoFrame src, UINT32 deg)
 {
     if (deg == 0 || src.w <= 0 || src.h <= 0)
+    {
         return src;
+    }
     const int sw = src.w, sh = src.h;
     VideoFrame out;
     out.delay_ms = src.delay_ms;
@@ -57,17 +59,18 @@ static VideoFrame rotate_bgra(VideoFrame src, UINT32 deg)
         out.h = sh;
         out.bgra.resize(src.bgra.size());
         for (int y = 0; y < sh; ++y)
+        {
             for (int x = 0; x < sw; ++x)
             {
-                const auto* s =
-                    src.bgra.data() +
-                    (static_cast<std::size_t>(y) * sw + x) * 4;
-                auto* d =
-                    out.bgra.data() +
-                    (static_cast<std::size_t>(sh - 1 - y) * sw +
-                     (sw - 1 - x)) * 4;
-                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+                const auto* s = src.bgra.data() + (static_cast<std::size_t>(y) * sw + x) * 4;
+                auto* d = out.bgra.data() +
+                          (static_cast<std::size_t>(sh - 1 - y) * sw + (sw - 1 - x)) * 4;
+                d[0] = s[0];
+                d[1] = s[1];
+                d[2] = s[2];
+                d[3] = s[3];
             }
+        }
     }
     else // 90 or 270
     {
@@ -75,11 +78,10 @@ static VideoFrame rotate_bgra(VideoFrame src, UINT32 deg)
         out.h = sw;
         out.bgra.resize(static_cast<std::size_t>(out.w) * out.h * 4);
         for (int sy = 0; sy < sh; ++sy)
+        {
             for (int sx = 0; sx < sw; ++sx)
             {
-                const auto* s =
-                    src.bgra.data() +
-                    (static_cast<std::size_t>(sy) * sw + sx) * 4;
+                const auto* s = src.bgra.data() + (static_cast<std::size_t>(sy) * sw + sx) * 4;
                 int dx, dy;
                 if (deg == 90)
                 {
@@ -91,21 +93,21 @@ static VideoFrame rotate_bgra(VideoFrame src, UINT32 deg)
                     dx = sy;
                     dy = sw - 1 - sx;
                 }
-                auto* d =
-                    out.bgra.data() +
-                    (static_cast<std::size_t>(dy) * out.w + dx) * 4;
-                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+                auto* d = out.bgra.data() + (static_cast<std::size_t>(dy) * out.w + dx) * 4;
+                d[0] = s[0];
+                d[1] = s[1];
+                d[2] = s[2];
+                d[3] = s[3];
             }
+        }
     }
     return out;
 }
 
 } // namespace
 
-DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
-                                       std::size_t size,
-                                       int max_w, int max_h,
-                                       int max_frames)
+DecodedVideoFrames decode_video_frames(const std::uint8_t* data, std::size_t size, int max_w,
+                                       int max_h, int max_frames)
 {
     const int frame_cap = max_frames > 0 ? max_frames : kMaxFrames;
     DecodedVideoFrames result;
@@ -130,8 +132,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
 
     // Wrap the raw bytes in an IStream / IMFByteStream.
     Microsoft::WRL::ComPtr<IStream> stream;
-    stream.Attach(SHCreateMemStream(
-        reinterpret_cast<const BYTE*>(data), static_cast<UINT>(size)));
+    stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(data), static_cast<UINT>(size)));
     if (!stream)
     {
         cleanup_com();
@@ -139,8 +140,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     }
 
     Microsoft::WRL::ComPtr<IMFByteStream> mf_stream;
-    if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
-                                            mf_stream.GetAddressOf())))
+    if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(), mf_stream.GetAddressOf())))
     {
         cleanup_com();
         return result;
@@ -155,8 +155,8 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     }
 
     Microsoft::WRL::ComPtr<IMFSourceReader> reader;
-    if (FAILED(MFCreateSourceReaderFromByteStream(
-            mf_stream.Get(), attrs.Get(), reader.GetAddressOf())))
+    if (FAILED(MFCreateSourceReaderFromByteStream(mf_stream.Get(), attrs.Get(),
+                                                  reader.GetAddressOf())))
     {
         cleanup_com();
         return result;
@@ -170,15 +170,13 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     {
         video_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
         video_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
-        reader->SetCurrentMediaType(
-            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-            nullptr, video_type.Get());
+        reader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                    nullptr, video_type.Get());
     }
 
     Microsoft::WRL::ComPtr<IMFMediaType> actual_type;
-    if (FAILED(reader->GetCurrentMediaType(
-            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-            actual_type.GetAddressOf())))
+    if (FAILED(reader->GetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                           actual_type.GetAddressOf())))
     {
         cleanup_com();
         return result;
@@ -197,14 +195,16 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     UINT32 rotation_deg = 0;
     {
         Microsoft::WRL::ComPtr<IMFMediaType> native_type;
-        if (SUCCEEDED(reader->GetNativeMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                0, native_type.GetAddressOf())))
+        if (SUCCEEDED(
+                reader->GetNativeMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                           0, native_type.GetAddressOf())))
         {
             native_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
         }
         if (rotation_deg == 0)
+        {
             actual_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
+        }
         rotation_deg %= 360;
     }
 
@@ -222,12 +222,11 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     int frame_delay_ms = 33; // 30 fps fallback
     {
         UINT32 fps_num = 0, fps_den = 0;
-        if (SUCCEEDED(MFGetAttributeRatio(actual_type.Get(), MF_MT_FRAME_RATE,
-                                          &fps_num, &fps_den)) &&
+        if (SUCCEEDED(
+                MFGetAttributeRatio(actual_type.Get(), MF_MT_FRAME_RATE, &fps_num, &fps_den)) &&
             fps_num > 0 && fps_den > 0)
         {
-            const int ms = static_cast<int>(
-                static_cast<UINT64>(fps_den) * 1000u / fps_num);
+            const int ms = static_cast<int>(static_cast<UINT64>(fps_den) * 1000u / fps_num);
             if (ms >= 1 && ms <= 500)
             {
                 frame_delay_ms = ms;
@@ -243,9 +242,8 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         DWORD stream_idx = 0, flags = 0;
         LONGLONG ts = 0;
         Microsoft::WRL::ComPtr<IMFSample> sample;
-        hr = reader->ReadSample(
-            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
-            &stream_idx, &flags, &ts, sample.GetAddressOf());
+        hr = reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
+                                &stream_idx, &flags, &ts, sample.GetAddressOf());
 
         if (FAILED(hr))
         {
@@ -262,12 +260,12 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
 
         // Try Lock2D on the primary buffer first (preserves original stride
         // metadata). Fall back to ConvertToContiguousBuffer + flat lock.
-        BYTE* src_ptr      = nullptr;
-        LONG  pitch        = 0;
-        bool  locked_2d    = false;
+        BYTE* src_ptr = nullptr;
+        LONG pitch = 0;
+        bool locked_2d = false;
 
         Microsoft::WRL::ComPtr<IMFMediaBuffer> buf;
-        Microsoft::WRL::ComPtr<IMF2DBuffer>    buf2d;
+        Microsoft::WRL::ComPtr<IMF2DBuffer> buf2d;
         {
             Microsoft::WRL::ComPtr<IMFMediaBuffer> direct;
             if (SUCCEEDED(sample->GetBufferByIndex(0, direct.GetAddressOf())))
@@ -277,8 +275,8 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                 {
                     if (SUCCEEDED(d2d->Lock2D(&src_ptr, &pitch)))
                     {
-                        buf       = std::move(direct);
-                        buf2d     = std::move(d2d);
+                        buf = std::move(direct);
+                        buf2d = std::move(d2d);
                         locked_2d = true;
                     }
                 }
@@ -288,8 +286,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         DWORD flat_len = 0;
         if (!locked_2d)
         {
-            if (FAILED(sample->ConvertToContiguousBuffer(
-                    buf.ReleaseAndGetAddressOf())))
+            if (FAILED(sample->ConvertToContiguousBuffer(buf.ReleaseAndGetAddressOf())))
             {
                 continue;
             }
@@ -321,47 +318,55 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                     abs_p = target;
                 }
             }
-            pitch = (src_stride < 0) ? -static_cast<LONG>(abs_p)
-                                      : static_cast<LONG>(abs_p);
+            pitch = (src_stride < 0) ? -static_cast<LONG>(abs_p) : static_cast<LONG>(abs_p);
         }
 
-        const UINT abs_pitch = pitch < 0 ? static_cast<UINT>(-pitch)
-                                         : static_cast<UINT>(pitch);
-        const bool pitch_ok =
-            abs_pitch >= dst_stride &&
-            (locked_2d ||
-             static_cast<std::uint64_t>(abs_pitch) * frame_h <=
-                 static_cast<std::uint64_t>(flat_len));
+        const UINT abs_pitch = pitch < 0 ? static_cast<UINT>(-pitch) : static_cast<UINT>(pitch);
+        const bool pitch_ok = abs_pitch >= dst_stride &&
+                              (locked_2d || static_cast<std::uint64_t>(abs_pitch) * frame_h <=
+                                                static_cast<std::uint64_t>(flat_len));
         if (!pitch_ok)
         {
-            if (locked_2d) buf2d->Unlock2D();
-            else           buf->Unlock();
+            if (locked_2d)
+            {
+                buf2d->Unlock2D();
+            }
+            else
+            {
+                buf->Unlock();
+            }
             continue;
         }
 
         // Repack into a tightly-packed BGRA row buffer.
         VideoFrame f;
-        f.w        = static_cast<int>(frame_w);
-        f.h        = static_cast<int>(frame_h);
+        f.w = static_cast<int>(frame_w);
+        f.h = static_cast<int>(frame_h);
         f.delay_ms = frame_delay_ms;
         f.bgra.resize(static_cast<std::size_t>(dst_stride) * frame_h);
 
-        const BYTE* src_base = (pitch < 0)
-            ? src_ptr + static_cast<std::size_t>(abs_pitch) * (frame_h - 1)
-            : src_ptr;
+        const BYTE* src_base =
+            (pitch < 0) ? src_ptr + static_cast<std::size_t>(abs_pitch) * (frame_h - 1) : src_ptr;
         for (UINT y = 0; y < frame_h; ++y)
         {
-            const BYTE* src_row =
-                src_base + static_cast<ptrdiff_t>(y) * pitch;
-            std::memcpy(f.bgra.data() + static_cast<std::size_t>(y) * dst_stride,
-                        src_row, dst_stride);
+            const BYTE* src_row = src_base + static_cast<ptrdiff_t>(y) * pitch;
+            std::memcpy(f.bgra.data() + static_cast<std::size_t>(y) * dst_stride, src_row,
+                        dst_stride);
         }
 
-        if (locked_2d) buf2d->Unlock2D();
-        else           buf->Unlock();
+        if (locked_2d)
+        {
+            buf2d->Unlock2D();
+        }
+        else
+        {
+            buf->Unlock();
+        }
 
         if (rotation_deg != 0)
+        {
             f = rotate_bgra(std::move(f), rotation_deg);
+        }
 
         // Scale to the preview cell size so the cached frames stay small.
         result.frames.push_back(downscale_bgra(std::move(f), max_w, max_h));

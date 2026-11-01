@@ -45,13 +45,28 @@ public:
     // Fired when Enter opens a cycled link (set_links()).
     std::function<void(const std::string& url)> on_link_activated;
 
-    void set_accessible_name(std::string name) { name_ = std::move(name); }
-    void set_accessible_description(std::string d) { description_ = std::move(d); }
-    void set_role(Role r) { role_ = r; }
-    void set_focus_ring_radius(float r) { ring_radius_ = r; }
+    void set_accessible_name(std::string name)
+    {
+        name_ = std::move(name);
+    }
+    void set_accessible_description(std::string d)
+    {
+        description_ = std::move(d);
+    }
+    void set_role(Role r)
+    {
+        role_ = r;
+    }
+    void set_focus_ring_radius(float r)
+    {
+        ring_radius_ = r;
+    }
     // Places the target without a LayoutCtx — for owners that only learn
     // the painted rect during paint() (an empty rect = not focusable).
-    void set_target_rect(Rect r) { bounds_ = r; }
+    void set_target_rect(Rect r)
+    {
+        bounds_ = r;
+    }
     // Extra keys the owner wants while the target has focus (e.g. Delete on
     // a row). Return true to consume. Runs before the built-in handling.
     std::function<bool(const KeyEvent&)> on_key;
@@ -62,15 +77,29 @@ public:
     // Convenience: every span carrying a url.
     void set_links_from_spans(const std::vector<TextSpan>& spans);
     // Index of the link currently selected by Left/Right, or -1.
-    int link_index() const { return link_index_; }
+    int link_index() const
+    {
+        return link_index_;
+    }
 
-    Size measure(LayoutCtx&, Size) override { return {}; }
-    void arrange(LayoutCtx&, Rect bounds) override { bounds_ = bounds; }
-    void paint(PaintCtx&) override {}
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {};
+    }
+    void arrange(LayoutCtx&, Rect bounds) override
+    {
+        bounds_ = bounds;
+    }
+    void paint(PaintCtx&) override
+    {
+    }
     void paint_own_focus_ring(PaintCtx& ctx) override;
 
     // Pointer-transparent: no pointer dispatch ever lands here.
-    bool contains_world(Point) const override { return false; }
+    bool contains_world(Point) const override
+    {
+        return false;
+    }
 
     // Focusable with an activation, or with links to cycle (a topic block
     // whose only interactive content is its links).
@@ -79,17 +108,32 @@ public:
         return enabled_ && (static_cast<bool>(on_activate) || !links_.empty()) &&
                bounds_.w > 0.0f && bounds_.h > 0.0f;
     }
-    bool focus_on_click() const override { return false; }
+    bool focus_on_click() const override
+    {
+        return false;
+    }
     bool on_key_down(const KeyEvent& e) override;
     bool on_context_menu_key() override
     {
         return on_context_menu && on_context_menu();
     }
-    void on_focus_lost() override { link_index_ = -1; }
+    void on_focus_lost() override
+    {
+        link_index_ = -1;
+    }
 
-    Role access_role() const override { return role_; }
-    std::string access_name() const override { return name_; }
-    std::string access_description() const override { return description_; }
+    Role access_role() const override
+    {
+        return role_;
+    }
+    std::string access_name() const override
+    {
+        return name_;
+    }
+    std::string access_description() const override
+    {
+        return description_;
+    }
     bool access_default_action() override;
 
 private:

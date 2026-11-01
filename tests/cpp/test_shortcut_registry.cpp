@@ -52,29 +52,33 @@ TEST_CASE("shortcut registry: groups are contiguous", "[shortcuts]")
     for (const auto& def : shortcuts())
     {
         if (def.group == current)
+        {
             continue;
+        }
         current = def.group;
         CHECK(seen.insert(current).second);
     }
 }
 
-TEST_CASE("shortcut registry: bound chords match their own forwarded event",
-          "[shortcuts]")
+TEST_CASE("shortcut registry: bound chords match their own forwarded event", "[shortcuts]")
 {
     for (Platform p : kPlatforms)
     {
         for (const auto& def : shortcuts(p))
         {
             if (def.scope == ShortcutScope::Contextual)
+            {
                 continue;
+            }
             for (const auto& chord : def.chords)
+            {
                 CHECK(tk::chord_matches(chord, tk::to_key_event(chord, p)));
+            }
         }
     }
 }
 
-TEST_CASE("shortcut registry: no two bound shortcuts share a chord",
-          "[shortcuts]")
+TEST_CASE("shortcut registry: no two bound shortcuts share a chord", "[shortcuts]")
 {
     for (Platform p : kPlatforms)
     {
@@ -82,23 +86,24 @@ TEST_CASE("shortcut registry: no two bound shortcuts share a chord",
         for (const auto& def : shortcuts(p))
         {
             if (def.scope == ShortcutScope::Contextual)
+            {
                 continue;
+            }
             for (const auto& chord : def.chords)
+            {
                 CHECK(seen.insert(chord_key(chord, p)).second);
+            }
         }
     }
 }
 
 TEST_CASE("shortcut registry: platform variants", "[shortcuts]")
 {
-    CHECK(shortcut_label(ShortcutId::HistoryBack, Platform::Linux) ==
-          "Alt+\xe2\x86\x90");
-    CHECK(shortcut_label(ShortcutId::HistoryBack, Platform::MacOS) ==
-          "\xe2\x8c\x98[");
+    CHECK(shortcut_label(ShortcutId::HistoryBack, Platform::Linux) == "Alt+\xe2\x86\x90");
+    CHECK(shortcut_label(ShortcutId::HistoryBack, Platform::MacOS) == "\xe2\x8c\x98[");
     CHECK(shortcut_label(ShortcutId::ShowShortcuts, Platform::Windows) == "Ctrl+/ / F1");
     // F1 is a media key on Mac keyboards.
-    CHECK(shortcut_label(ShortcutId::ShowShortcuts, Platform::MacOS) ==
-          "\xe2\x8c\x98/");
+    CHECK(shortcut_label(ShortcutId::ShowShortcuts, Platform::MacOS) == "\xe2\x8c\x98/");
     // Recent-room cycling stays on literal Control on macOS (⌘Tab is the
     // system app switcher).
     CHECK(shortcut_label(ShortcutId::RecentRoomNext, Platform::MacOS) ==

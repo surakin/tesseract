@@ -35,20 +35,17 @@ bool is_webp_data(std::span<const std::uint8_t> bytes);
 // called once the caller has confirmed `bytes` is WebP via is_webp_data().
 DecodedFrames decode_webp_bytes_libwebp(
     std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame =
-        nullptr,
-    const std::function<void(int, std::unique_ptr<Image>, int)>*
-        on_extra_frame = nullptr);
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame = nullptr,
+    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame = nullptr);
 
 // libwebp-backed equivalent of decode_image_bytes_windowed (canvas_cg.h) —
 // identical contract.
 DecodedFrames decode_webp_bytes_windowed_libwebp(
-    std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    int window_threshold_frames,
+    std::span<const std::uint8_t> bytes, int max_w, int max_h, int window_threshold_frames,
     const std::function<void(std::unique_ptr<Image>, int delay_ms,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t total_frames)>& on_first_frame,
-    const std::function<void(int frame_index, std::unique_ptr<Image>,
-                             int delay_ms)>& on_extra_frame);
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t total_frames)>&
+        on_first_frame,
+    const std::function<void(int frame_index, std::unique_ptr<Image>, int delay_ms)>&
+        on_extra_frame);
 
 } // namespace tk::cg

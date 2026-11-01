@@ -49,7 +49,8 @@ TEST_CASE("set_messages does NOT clear search_match_ids", "[message_list][search
     v.set_search_matches({"$a", "$b"});
 
     // Pagination / context rebuild (room_switch=false) must not clear matches.
-    v.set_messages({make_row_search_highlight("$a"), make_row_search_highlight("$x")}, /*room_switch=*/false);
+    v.set_messages({make_row_search_highlight("$a"), make_row_search_highlight("$x")},
+                   /*room_switch=*/false);
     CHECK(v.has_search_matches());
     CHECK(v.search_match_ids().count("$a") == 1);
     CHECK(v.search_match_ids().count("$b") == 1);
@@ -65,7 +66,11 @@ TEST_CASE("set_search_matches with same set skips repaint", "[message_list][sear
 {
     MessageListView v;
     int repaint_count = 0;
-    v.set_repaint_requester([&]{ ++repaint_count; });
+    v.set_repaint_requester(
+        [&]
+        {
+            ++repaint_count;
+        });
 
     v.set_search_matches({"$a", "$b"});
     CHECK(repaint_count == 1);

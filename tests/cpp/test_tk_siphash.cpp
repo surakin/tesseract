@@ -29,5 +29,7 @@ TEST_CASE("siphash128 depends on the key and every input byte", "[siphash]")
     CHECK(tk::siphash128(a, body) != tk::siphash128(a, body + " "));
     // Lengths straddling the 8-byte block boundary all differ.
     for (std::size_t n = 0; n < 24; ++n)
+    {
         CHECK(tk::siphash128(a, std::string(n, 'x')) != tk::siphash128(a, std::string(n + 1, 'x')));
+    }
 }

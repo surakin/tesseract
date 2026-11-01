@@ -55,8 +55,7 @@ public:
     /// The function that actually performs the (blocking) persistence for one
     /// job. Pulled out as a parameter purely so the coalescing/ordering logic
     /// is unit-testable without touching the real credential store / disk.
-    using Writer = void (*)(const std::string& user_id,
-                            const std::string& json);
+    using Writer = void (*)(const std::string& user_id, const std::string& json);
 
     explicit SessionPersistQueue(Writer writer);
     ~SessionPersistQueue();
@@ -105,9 +104,9 @@ private:
 
     std::mutex mutex_;
     std::condition_variable cv_;
-    std::deque<Job> queue_;       // distinct user_ids, FIFO among themselves
-    bool busy_ = false;           // a job is currently being written
-    std::string busy_user_;       // user_id of that job, when busy_
+    std::deque<Job> queue_; // distinct user_ids, FIFO among themselves
+    bool busy_ = false;     // a job is currently being written
+    std::string busy_user_; // user_id of that job, when busy_
     // Users discard()ed and not yet revive()d. A late token refresh for one of
     // them must not recreate its credentials.
     std::set<std::string> tombstones_;

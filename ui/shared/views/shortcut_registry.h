@@ -84,8 +84,7 @@ enum class ShortcutId
 };
 
 // Number of ShortcutId values (MediaNext is the last).
-inline constexpr std::size_t kShortcutIdCount =
-    static_cast<std::size_t>(ShortcutId::MediaNext) + 1;
+inline constexpr std::size_t kShortcutIdCount = static_cast<std::size_t>(ShortcutId::MediaNext) + 1;
 
 enum class ShortcutGroup
 {

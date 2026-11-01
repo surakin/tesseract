@@ -60,11 +60,9 @@ public:
     TimelineVideoPlaylist(const TimelineVideoPlaylist&) = delete;
     TimelineVideoPlaylist& operator=(const TimelineVideoPlaylist&) = delete;
 
-    using VideoPlayerFactory =
-        std::function<std::unique_ptr<tk::VideoPlayer>()>;
+    using VideoPlayerFactory = std::function<std::unique_ptr<tk::VideoPlayer>()>;
     using VideoFetchProvider = std::function<void(
-        const std::string& source_json,
-        std::function<void(std::vector<std::uint8_t>)> on_ready)>;
+        const std::string& source_json, std::function<void(std::vector<std::uint8_t>)> on_ready)>;
 
     void set_player_factory(VideoPlayerFactory f)
     {
@@ -75,15 +73,24 @@ public:
         fetch_provider_ = std::move(f);
     }
     // Repaint requester, invoked when an inline player produces a new frame.
-    void set_repaint(std::function<void()> f) { repaint_ = std::move(f); }
+    void set_repaint(std::function<void()> f)
+    {
+        repaint_ = std::move(f);
+    }
 
     // True when both factory + fetch provider are wired; mirrors the historical
     // guard at the top of start_inline_video().
-    bool active() const { return player_factory_ && fetch_provider_; }
+    bool active() const
+    {
+        return player_factory_ && fetch_provider_;
+    }
 
     // Number of live players (used by the bounded set_messages bootstrap loop
     // to stop once it reaches the cap).
-    int size() const { return static_cast<int>(players_.size()); }
+    int size() const
+    {
+        return static_cast<int>(players_.size());
+    }
     bool has(const std::string& event_id) const
     {
         return players_.count(event_id) != 0;
@@ -135,8 +142,7 @@ public:
     // but not resumed here (because their row isn't currently visible) stay
     // paused until the normal drop()/ensure_playing() scroll churn cycles them
     // through the retired pool.
-    void resume_all(
-        const std::function<bool(const std::string& event_id)>& is_row_visible);
+    void resume_all(const std::function<bool(const std::string& event_id)>& is_row_visible);
 
     // ── Mark-and-sweep GC (mirrors the decoded-image GC; see
     // ShellBase::run_image_gc_) ─────────────────────────────────────────────
@@ -148,21 +154,29 @@ public:
     // GC had put the row's player to sleep — wakes it again (ensure_playing()
     // with the remembered source), so scrolling back to a swept row resumes it.
     void touch(const std::string& event_id);
-    void advance_generation() { ++gen_; }
-    std::uint64_t generation() const { return gen_; }
+    void advance_generation()
+    {
+        ++gen_;
+    }
+    std::uint64_t generation() const
+    {
+        return gen_;
+    }
     // Retire every live player not touch()ed within the last `keep`
     // generations, remembering its source so touch() can wake it later.
     void retire_unseen(unsigned keep);
     // Destroy retired (paused, source still loaded) players idle longer than
     // `ttl`. Independent of user activity: it only ever frees memory.
     void release_idle_retired(std::chrono::milliseconds ttl);
-    std::size_t retired_count() const { return retired_pool_.size(); }
+    std::size_t retired_count() const
+    {
+        return retired_pool_.size();
+    }
     // Resident bytes across live and retired players (see VideoPlayer::
     // memory_bytes()).
     std::size_t memory_bytes() const;
     // Test seam: override the monotonic clock used for the retired-pool TTL.
-    void set_clock_for_testing(
-        std::function<std::chrono::steady_clock::time_point()> clock)
+    void set_clock_for_testing(std::function<std::chrono::steady_clock::time_point()> clock)
     {
         clock_ = std::move(clock);
     }
@@ -211,8 +225,7 @@ private:
     // at kRetiredPoolCap. Clears on_frame/on_progress/on_error first so a
     // stale closure never fires against a player that no longer belongs to
     // any row.
-    void retire_(const std::string& event_id,
-                 std::unique_ptr<tk::VideoPlayer> player);
+    void retire_(const std::string& event_id, std::unique_ptr<tk::VideoPlayer> player);
 
     // Oldest-first; see retire_().
     std::vector<RetiredPlayer> retired_pool_;

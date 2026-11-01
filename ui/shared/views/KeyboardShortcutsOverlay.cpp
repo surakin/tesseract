@@ -52,13 +52,14 @@ public:
         // Side by side: both centred in the row. Stacked (narrow): the
         // description on top, the chips on their own line below it.
         const float desc_h = desc_layout_ ? desc_layout_->measure().h : 0.0f;
-        const float desc_y = stacked_ ? bounds_.y + kRowPadY
-                                      : bounds_.y + (height_ - desc_h) * 0.5f;
-        const float chips_y = stacked_
-            ? desc_y + desc_h + kStackGap
-            : bounds_.y + (height_ - chip_h_) * 0.5f;
+        const float desc_y =
+            stacked_ ? bounds_.y + kRowPadY : bounds_.y + (height_ - desc_h) * 0.5f;
+        const float chips_y =
+            stacked_ ? desc_y + desc_h + kStackGap : bounds_.y + (height_ - chip_h_) * 0.5f;
         if (desc_layout_)
+        {
             cv.draw_text(*desc_layout_, {bounds_.x, desc_y}, pal.text_primary);
+        }
         // Chips are right-aligned, in chord order, never left of the row.
         float x = std::max(bounds_.x, bounds_.x + bounds_.w - chips_w_);
         for (const auto& chip : chip_layouts_)
@@ -79,14 +80,19 @@ public:
         laid_out_w_ = -1.0f; // font scale may have changed
     }
 
-    tk::Role access_role() const override { return tk::Role::StaticText; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::StaticText;
+    }
     std::string access_name() const override
     {
         std::string keys;
         for (const auto& k : keys_)
         {
             if (!keys.empty())
+            {
                 keys += " / ";
+            }
             keys += k;
         }
         return tk::trf(tk::tr("{0}, {1}"), {description_, keys});
@@ -96,7 +102,9 @@ private:
     void layout_(tk::LayoutCtx& lc, float w)
     {
         if (w == laid_out_w_ && desc_layout_)
+        {
             return;
+        }
         laid_out_w_ = w;
         chip_layouts_.clear();
         chips_w_ = 0.0f;
@@ -107,10 +115,14 @@ private:
             st.role = tk::FontRole::UiSemibold;
             auto layout = lc.factory.build_text(k, st);
             if (!layout)
+            {
                 continue;
+            }
             const tk::Size s = layout->measure();
             if (!chip_layouts_.empty())
+            {
                 chips_w_ += kChipGap;
+            }
             chips_w_ += s.w + kChipPadX * 2;
             chip_h_ = std::max(chip_h_, s.h + kChipPadY * 2);
             chip_layouts_.push_back(std::move(layout));
@@ -124,8 +136,8 @@ private:
         st.max_width = std::max(1.0f, stacked_ ? w : w - chips_w_ - kDescGap);
         desc_layout_ = lc.factory.build_text(description_, st);
         const float desc_h = desc_layout_ ? desc_layout_->measure().h : 0.0f;
-        height_ = (stacked_ ? desc_h + kStackGap + chip_h_ : std::max(desc_h, chip_h_)) +
-                  kRowPadY * 2;
+        height_ =
+            (stacked_ ? desc_h + kStackGap + chip_h_ : std::max(desc_h, chip_h_)) + kRowPadY * 2;
     }
 
     std::string description_;
@@ -162,7 +174,9 @@ public:
         const float w = row_w_(constraints.w);
         float h = 0.0f;
         for (const auto& c : children())
+        {
             h += c->measure(lc, {w, 0}).h + gap_before_(c.get());
+        }
         return {constraints.w, h};
     }
 
@@ -199,15 +213,23 @@ private:
 KeyboardShortcutsOverlay::KeyboardShortcutsOverlay()
 {
     auto scroll = tk::create_widget<tk::ScrollView>(this);
-    scroll->on_layout_changed = [this]() {
+    scroll->on_layout_changed = [this]()
+    {
         if (auto* h = host())
+        {
             h->mark_needs_relayout();
+        }
     };
     scroll_ = add_child(std::move(scroll));
     build_rows_();
 
     close_btn_ = add_child(tk::create_widget<tk::Button>(
-        this, tk::tr("Close"), [this]() { close(); }, tk::Button::Variant::Primary));
+        this, tk::tr("Close"),
+        [this]()
+        {
+            close();
+        },
+        tk::Button::Variant::Primary));
 
     // Closed-by-default overlay (see ConfirmDialog).
     set_visible(false);
@@ -224,15 +246,17 @@ void KeyboardShortcutsOverlay::build_rows_()
         if (group != def.group)
         {
             group = def.group;
-            auto heading = tk::create_widget<tk::Label>(
-                column.get(), group_title(def.group), tk::FontRole::SenderName);
+            auto heading = tk::create_widget<tk::Label>(column.get(), group_title(def.group),
+                                                        tk::FontRole::SenderName);
             column->add_child(std::move(heading));
         }
         std::vector<std::string> keys;
         for (const auto& chord : def.chords)
+        {
             keys.push_back(tk::chord_label(chord));
-        column->add_child(tk::create_widget<ShortcutRow>(
-            column.get(), tk::tr(def.description), std::move(keys)));
+        }
+        column->add_child(
+            tk::create_widget<ShortcutRow>(column.get(), tk::tr(def.description), std::move(keys)));
     }
     scroll_->set_child(std::move(column));
 }
@@ -245,26 +269,34 @@ std::string KeyboardShortcutsOverlay::access_name() const
 void KeyboardShortcutsOverlay::open()
 {
     if (open_)
+    {
         return;
+    }
     open_ = true;
     press_backdrop_ = false;
     set_visible(true);
     scroll_->scroll_to_top();
     pending_focus_ = true;
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void KeyboardShortcutsOverlay::close()
 {
     if (!open_)
+    {
         return;
+    }
     open_ = false;
     press_backdrop_ = false;
     pending_focus_ = false;
     set_visible(false);
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -295,13 +327,14 @@ void KeyboardShortcutsOverlay::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // The card is as tall as the list needs, up to the surface (and a
     // comfortable reading height); the list scrolls beyond that.
     const float chrome_h = kCardPad * 2 + kTitleH + kGap * 2 + kBtnH;
-    const float list_natural_h = scroll_->child()
-        ? scroll_->child()->measure(lc, {text_w + tk::ScrollableBase::kScrollbarGutter, 0}).h
-        : 0.0f;
+    const float list_natural_h =
+        scroll_->child()
+            ? scroll_->child()->measure(lc, {text_w + tk::ScrollableBase::kScrollbarGutter, 0}).h
+            : 0.0f;
     const float max_h = std::max(0.0f, std::min(kCardMaxH, bounds.h - kMargin * 2));
     const float card_h = std::min(chrome_h + list_natural_h, max_h);
-    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f,
-                  bounds.y + (bounds.h - card_h) * 0.5f, card_w, card_h};
+    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f, bounds.y + (bounds.h - card_h) * 0.5f,
+                  card_w, card_h};
 
     const float list_y = card_rect_.y + kCardPad + kTitleH + kGap;
     const float btn_y = card_rect_.y + card_rect_.h - kCardPad - kBtnH;
@@ -314,8 +347,7 @@ void KeyboardShortcutsOverlay::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     const tk::Size btn_sz = close_btn_->measure(lc, {-1.0f, kBtnH});
     const float btn_w = std::max(btn_sz.w, 88.0f);
-    close_btn_->arrange(lc, {card_rect_.x + card_rect_.w - kCardPad - btn_w, btn_y,
-                             btn_w, kBtnH});
+    close_btn_->arrange(lc, {card_rect_.x + card_rect_.w - kCardPad - btn_w, btn_y, btn_w, kBtnH});
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -323,7 +355,9 @@ void KeyboardShortcutsOverlay::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 void KeyboardShortcutsOverlay::paint_before_children(tk::PaintCtx& ctx)
 {
     if (!open_)
+    {
         return;
+    }
     // Focus the Close button once the overlay is laid out, and after
     // MainAppWidget's own paint pass cleared focus for the newly opened
     // modal — so keys stop reaching the widget focused behind it.
@@ -331,7 +365,9 @@ void KeyboardShortcutsOverlay::paint_before_children(tk::PaintCtx& ctx)
     {
         pending_focus_ = false;
         if (auto* h = host())
+        {
             h->request_focus(close_btn_);
+        }
     }
     auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
@@ -343,8 +379,7 @@ void KeyboardShortcutsOverlay::paint_before_children(tk::PaintCtx& ctx)
     {
         const float th = title_layout_->measure().h;
         cv.draw_text(*title_layout_,
-                     {card_rect_.x + kCardPad,
-                      card_rect_.y + kCardPad + (kTitleH - th) * 0.5f},
+                     {card_rect_.x + kCardPad, card_rect_.y + kCardPad + (kTitleH - th) * 0.5f},
                      pal.text_primary);
     }
 }
@@ -354,10 +389,14 @@ void KeyboardShortcutsOverlay::paint_before_children(tk::PaintCtx& ctx)
 bool KeyboardShortcutsOverlay::on_pointer_down(tk::Point local)
 {
     if (!open_)
+    {
         return false;
+    }
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (rect_contains(card_rect_, w))
+    {
         return true; // the card itself is inert; its children got first pick
+    }
     press_backdrop_ = true;
     return true;
 }
@@ -365,11 +404,15 @@ bool KeyboardShortcutsOverlay::on_pointer_down(tk::Point local)
 void KeyboardShortcutsOverlay::on_pointer_up(tk::Point local, bool inside_self)
 {
     if (!press_backdrop_)
+    {
         return;
+    }
     press_backdrop_ = false;
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (inside_self && !rect_contains(card_rect_, w))
+    {
         close();
+    }
 }
 
 bool KeyboardShortcutsOverlay::on_wheel(tk::Point, float, float, bool)
@@ -389,7 +432,9 @@ void KeyboardShortcutsOverlay::on_theme_changed(const tk::Theme& t)
 bool KeyboardShortcutsOverlay::on_key_down(const tk::KeyEvent& event)
 {
     if (!open_ || event.ctrl || event.alt || event.meta)
+    {
         return false;
+    }
     if (event.key == tk::Key::Up || event.key == tk::Key::Down)
     {
         constexpr float kLine = 40.0f;

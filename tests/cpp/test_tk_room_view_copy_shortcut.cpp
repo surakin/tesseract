@@ -49,7 +49,7 @@ MessageRowData make_text(const std::string& id, const std::string& body)
 void open_room(RoomView& view)
 {
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
 }
@@ -58,7 +58,7 @@ void open_room(RoomView& view)
 // positions depend on the backend's fonts, so probe rather than hardcode.
 bool select_word_in_first_row(MessageListView& ml)
 {
-    const Rect b  = ml.bounds();
+    const Rect b = ml.bounds();
     const Rect r0 = ml.row_world_rect(0);
     for (float dy = 6.0f; dy < r0.h; dy += 3.0f)
     {
@@ -69,7 +69,9 @@ bool select_word_in_first_row(MessageListView& ml)
             ml.on_pointer_down(local); // 2nd press = word select
             ml.on_pointer_up(local, true);
             if (ml.has_selection())
+            {
                 return true;
+            }
         }
     }
     return false;
@@ -78,7 +80,7 @@ bool select_word_in_first_row(MessageListView& ml)
 KeyEvent ctrl_c()
 {
     KeyEvent e;
-    e.key  = Key::Character;
+    e.key = Key::Character;
     e.text = "c";
     e.ctrl = true;
     return e;
@@ -86,14 +88,16 @@ KeyEvent ctrl_c()
 
 } // namespace
 
-TEST_CASE("Ctrl+C copies the main timeline selection",
-          "[tk][view][room][clipboard]")
+TEST_CASE("Ctrl+C copies the main timeline selection", "[tk][view][room][clipboard]")
 {
     TkRoomViewCopyShortcutStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "hello world")});
     st.run(view);
@@ -126,14 +130,16 @@ TEST_CASE("Ctrl+C copies the main timeline selection",
     CHECK(std::string("hello world").find(clip) != std::string::npos);
 }
 
-TEST_CASE("Ctrl+Shift+C and Ctrl+Alt+C are not treated as copy",
-          "[tk][view][room][clipboard]")
+TEST_CASE("Ctrl+Shift+C and Ctrl+Alt+C are not treated as copy", "[tk][view][room][clipboard]")
 {
     TkRoomViewCopyShortcutStage st;
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "hello world")});
     st.run(view);
@@ -155,7 +161,10 @@ TEST_CASE("Ctrl+C copies a selection made in the thread panel",
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "main timeline text")});
     view.set_thread_panel(RoomView::ThreadPanelState::Open, "$root:example.org");
@@ -178,7 +187,10 @@ TEST_CASE("Starting a selection in one timeline clears the other's",
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "main timeline text")});
     view.set_thread_panel(RoomView::ThreadPanelState::Open, "$root:example.org");
@@ -207,7 +219,10 @@ TEST_CASE("Right-click on a selection uses the shell's copy menu if set",
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "hello world")});
     st.run(view);
@@ -234,7 +249,10 @@ TEST_CASE("Right-click with no selection and no link under the pointer does noth
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "hello world")});
     st.run(view);
@@ -248,8 +266,7 @@ TEST_CASE("Right-click with no selection and no link under the pointer does noth
     CHECK_FALSE(view.copy_context_menu_target());
 }
 
-TEST_CASE("A selection covered by a modal overlay is not copied",
-          "[tk][view][room][clipboard]")
+TEST_CASE("A selection covered by a modal overlay is not copied", "[tk][view][room][clipboard]")
 {
     TkRoomViewCopyShortcutStage st;
     TestHost host(nullptr);
@@ -257,7 +274,10 @@ TEST_CASE("A selection covered by a modal overlay is not copied",
     RoomView& view = *view_owner;
     host.set_root(&view);
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "hello world")});
     st.run(view);
@@ -284,7 +304,10 @@ TEST_CASE("A selection left in a closed thread panel is not copied",
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string clip;
-    view.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    view.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     open_room(view);
     view.set_messages({make_text("$a:example.org", "main timeline text")});
     view.set_thread_panel(RoomView::ThreadPanelState::Open, "$root:example.org");

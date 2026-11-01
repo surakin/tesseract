@@ -12,8 +12,7 @@ using tesseract::views::make_row_data;
 using tesseract::views::MapViewport;
 using tesseract::views::MessageRowData;
 
-static tesseract::LocationEvent make_loc_event(double lat, double lon,
-                                               const std::string& desc = "")
+static tesseract::LocationEvent make_loc_event(double lat, double lon, const std::string& desc = "")
 {
     tesseract::LocationEvent ev;
     ev.event_id = "!loc:example.org";
@@ -45,8 +44,7 @@ TEST_CASE("make_row_data: description is carried through", "[location]")
     CHECK(row.location_description == "Parliament Square");
 }
 
-TEST_CASE("make_row_data: map_viewport initialised to event coords at zoom 15",
-          "[location]")
+TEST_CASE("make_row_data: map_viewport initialised to event coords at zoom 15", "[location]")
 {
     auto ev = make_loc_event(48.8566, 2.3522);
     auto row = make_row_data(ev, "@other:example.org");

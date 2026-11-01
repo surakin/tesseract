@@ -19,12 +19,14 @@ NowPlaying playing(const std::string& event_id, bool is_playing = true)
 }
 } // namespace
 
-TEST_CASE("report populates current() and dispatches controls",
-          "[media_playback_hub]")
+TEST_CASE("report populates current() and dispatches controls", "[media_playback_hub]")
 {
     MediaPlaybackHub hub;
     int play_calls = 0;
-    hub.report(playing("$a"), {.play = [&] { ++play_calls; }});
+    hub.report(playing("$a"), {.play = [&]
+                               {
+                                   ++play_calls;
+                               }});
 
     CHECK(hub.current().event_id == "$a");
     CHECK(hub.current().is_playing);
@@ -36,7 +38,10 @@ TEST_CASE("report_stopped clears current() and controls", "[media_playback_hub]"
 {
     MediaPlaybackHub hub;
     int play_calls = 0;
-    hub.report(playing("$a"), {.play = [&] { ++play_calls; }});
+    hub.report(playing("$a"), {.play = [&]
+                               {
+                                   ++play_calls;
+                               }});
     hub.report_stopped();
 
     CHECK(hub.current().kind == NowPlaying::Kind::None);
@@ -50,7 +55,10 @@ TEST_CASE("on_changed fires on track change and play/pause, not on position tick
 {
     MediaPlaybackHub hub;
     int changed = 0;
-    hub.on_changed = [&] { ++changed; };
+    hub.on_changed = [&]
+    {
+        ++changed;
+    };
 
     hub.report(playing("$a"));
     CHECK(changed == 1);
@@ -75,7 +83,10 @@ TEST_CASE("on_changed fires on report_stopped only if something was playing",
 {
     MediaPlaybackHub hub;
     int changed = 0;
-    hub.on_changed = [&] { ++changed; };
+    hub.on_changed = [&]
+    {
+        ++changed;
+    };
 
     hub.report_stopped(); // nothing was playing — no signal
     CHECK(changed == 0);
@@ -87,8 +98,7 @@ TEST_CASE("on_changed fires on report_stopped only if something was playing",
     CHECK(changed == 2);
 }
 
-TEST_CASE("seek/pause/play_pause/stop no-op when no controls are set",
-          "[media_playback_hub]")
+TEST_CASE("seek/pause/play_pause/stop no-op when no controls are set", "[media_playback_hub]")
 {
     MediaPlaybackHub hub;
     hub.report(playing("$a")); // no Controls fields set

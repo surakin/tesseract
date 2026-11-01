@@ -19,16 +19,23 @@ namespace
 class TooltipProbeWidget : public Widget
 {
 public:
-    explicit TooltipProbeWidget(Rect rect) { bounds_ = rect; }
+    explicit TooltipProbeWidget(Rect rect)
+    {
+        bounds_ = rect;
+    }
 
-    Size measure(LayoutCtx&, Size) override { return {bounds_.w, bounds_.h}; }
-    void paint(PaintCtx&) override {}
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void paint(PaintCtx&) override
+    {
+    }
 };
 
 } // namespace
 
-TEST_CASE("show_tooltip does not become visible until the dwell delay fires",
-          "[tk][host][tooltip]")
+TEST_CASE("show_tooltip does not become visible until the dwell delay fires", "[tk][host][tooltip]")
 {
     TooltipProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);
@@ -130,8 +137,7 @@ TEST_CASE("a new owner mid-dwell invalidates the stale timer", "[tk][host][toolt
     CHECK(host.tooltip_text_ == "b");
 }
 
-TEST_CASE("hide_tooltip before the delay elapses cancels the pending show",
-          "[tk][host][tooltip]")
+TEST_CASE("hide_tooltip before the delay elapses cancels the pending show", "[tk][host][tooltip]")
 {
     TooltipProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);
@@ -178,8 +184,7 @@ TEST_CASE("an open popup suppresses show_tooltip entirely", "[tk][host][tooltip]
     CHECK(host.pending_delays_.empty());
 }
 
-TEST_CASE("dispatch_pointer_down cancels an active or pending tooltip",
-          "[tk][host][tooltip]")
+TEST_CASE("dispatch_pointer_down cancels an active or pending tooltip", "[tk][host][tooltip]")
 {
     TooltipProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);
@@ -236,8 +241,7 @@ TEST_CASE("update_tooltip_text adopts ownership only when nobody else owns "
     CHECK(host.tooltip_text_ == "updated");
 }
 
-TEST_CASE("update_tooltip_text is a no-op while a popup is open",
-          "[tk][host][tooltip]")
+TEST_CASE("update_tooltip_text is a no-op while a popup is open", "[tk][host][tooltip]")
 {
     TooltipProbeWidget root({0, 0, 400, 400});
     TooltipProbeWidget popup({100, 100, 50, 50});

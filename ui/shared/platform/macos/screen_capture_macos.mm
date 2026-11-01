@@ -21,8 +21,10 @@
 API_AVAILABLE(macos(12.3))
 @interface TKScreenStreamOutput : NSObject <SCStreamOutput>
 {
-    @public tk::ScreenCapture::FrameCallback callback_;
-    @public std::mutex                        mu_;
+@public
+    tk::ScreenCapture::FrameCallback callback_;
+@public
+    std::mutex mu_;
 }
 - (void)setCallback:(tk::ScreenCapture::FrameCallback)cb;
 @end
@@ -41,11 +43,15 @@ API_AVAILABLE(macos(12.3))
                    ofType:(SCStreamOutputType)type
 {
     if (type != SCStreamOutputTypeScreen)
+    {
         return;
+    }
 
     CVImageBufferRef img = CMSampleBufferGetImageBuffer(sampleBuffer);
     if (!img)
+    {
         return;
+    }
 
     CVPixelBufferLockBaseAddress(img, kCVPixelBufferLock_ReadOnly);
 
@@ -65,11 +71,11 @@ API_AVAILABLE(macos(12.3))
                fmt == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange))
     {
         // NV12: Y plane + interleaved UV plane → I420
-        const auto* y_src  = static_cast<const std::uint8_t*>(
-            CVPixelBufferGetBaseAddressOfPlane(img, 0));
-        const auto* uv_src = static_cast<const std::uint8_t*>(
-            CVPixelBufferGetBaseAddressOfPlane(img, 1));
-        const auto stride_y  = CVPixelBufferGetBytesPerRowOfPlane(img, 0);
+        const auto* y_src =
+            static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(img, 0));
+        const auto* uv_src =
+            static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(img, 1));
+        const auto stride_y = CVPixelBufferGetBytesPerRowOfPlane(img, 0);
         const auto stride_uv = CVPixelBufferGetBytesPerRowOfPlane(img, 1);
 
         std::vector<std::uint8_t> i420(w * h + 2 * w_uv * h_uv);
@@ -79,7 +85,9 @@ API_AVAILABLE(macos(12.3))
 
         // Copy Y plane (de-stride)
         for (std::uint32_t row = 0; row < h; ++row)
+        {
             std::memcpy(dst_y + row * w, y_src + row * stride_y, w);
+        }
 
         // Deinterleave UV
         for (std::uint32_t row = 0; row < h_uv; ++row)
@@ -95,11 +103,11 @@ API_AVAILABLE(macos(12.3))
         }
 
         tk::ScreenCapture::Frame f;
-        f.y        = dst_y;
-        f.u        = dst_u;
-        f.v        = dst_v;
-        f.width    = w;
-        f.height   = h;
+        f.y = dst_y;
+        f.u = dst_u;
+        f.v = dst_v;
+        f.width = w;
+        f.height = h;
         f.stride_y = w;
         f.stride_u = w_uv;
         f.stride_v = w_uv;
@@ -122,7 +130,10 @@ namespace
 class API_AVAILABLE(macos(12.3)) ScreenCaptureMacOS : public tk::ScreenCapture
 {
 public:
-    ~ScreenCaptureMacOS() override { stop(); }
+    ~ScreenCaptureMacOS() override
+    {
+        stop();
+    }
 
     std::vector<tk::ScreenSource> enumerate_sources() override
     {
@@ -130,19 +141,22 @@ public:
         __block std::vector<tk::ScreenSource>* out = &result;
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
         [SCShareableContent
-            getShareableContentWithCompletionHandler:^(SCShareableContent* content,
-                                                       NSError* err) {
+            getShareableContentWithCompletionHandler:^(SCShareableContent* content, NSError* err) {
                 if (content && !err)
                 {
                     for (SCDisplay* d in content.displays)
                     {
                         std::string id = "display:" + std::to_string(d.displayID);
-                        out->push_back({id, tk::trf(tk::tr("Display {0}"), {std::to_string(out->size() + 1)}), false});
+                        out->push_back(
+                            {id, tk::trf(tk::tr("Display {0}"), {std::to_string(out->size() + 1)}),
+                             false});
                     }
                     for (SCWindow* w in content.windows)
                     {
                         if (!w.isOnScreen || w.title.length == 0)
+                        {
                             continue;
+                        }
                         std::string id = "window:" + std::to_string(w.windowID);
                         std::string name(w.title.UTF8String ? w.title.UTF8String : "");
                         out->push_back({id, name, true});
@@ -163,7 +177,9 @@ public:
     void set_callback(tk::ScreenCapture::FrameCallback cb) override
     {
         if (output_)
+        {
             [output_ setCallback:std::move(cb)];
+        }
         else
         {
             std::lock_guard<std::mutex> lk(mu_);
@@ -174,7 +190,9 @@ public:
     void start() override
     {
         if (running_)
+        {
             return;
+        }
 
         // Check/request permission.
         if (!CGPreflightScreenCaptureAccess())
@@ -193,21 +211,22 @@ public:
         {
             std::lock_guard<std::mutex> lk(mu_);
             sid = source_id_;
-            cb  = std::move(pending_cb_);
+            cb = std::move(pending_cb_);
         }
 
         output_ = [[TKScreenStreamOutput alloc] init];
         if (cb)
+        {
             [output_ setCallback:std::move(cb)];
+        }
 
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-        __block TKScreenStreamOutput* out   = output_;
-        __block bool                  ok    = false;
-        __block SCStream*             strm  = nil;
+        __block TKScreenStreamOutput* out = output_;
+        __block bool ok = false;
+        __block SCStream* strm = nil;
 
         [SCShareableContent
-            getShareableContentWithCompletionHandler:^(SCShareableContent* content,
-                                                       NSError* err) {
+            getShareableContentWithCompletionHandler:^(SCShareableContent* content, NSError* err) {
                 if (!content || err)
                 {
                     dispatch_semaphore_signal(sem);
@@ -219,14 +238,18 @@ public:
                 if (sid.rfind("window:", 0) == 0)
                 {
                     uint32_t wid = 0;
-                    try { wid = static_cast<uint32_t>(std::stoul(sid.substr(7))); }
-                    catch (...) {}
+                    try
+                    {
+                        wid = static_cast<uint32_t>(std::stoul(sid.substr(7)));
+                    }
+                    catch (...)
+                    {
+                    }
                     for (SCWindow* w in content.windows)
                     {
                         if (w.windowID == wid)
                         {
-                            filter = [[SCContentFilter alloc]
-                                initWithDesktopIndependentWindow:w];
+                            filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:w];
                             break;
                         }
                     }
@@ -237,15 +260,23 @@ public:
                     if (sid.rfind("display:", 0) == 0)
                     {
                         uint32_t did = 0;
-                        try { did = static_cast<uint32_t>(std::stoul(sid.substr(8))); }
-                        catch (...) {}
+                        try
+                        {
+                            did = static_cast<uint32_t>(std::stoul(sid.substr(8)));
+                        }
+                        catch (...)
+                        {
+                        }
                         for (SCDisplay* d in content.displays)
                         {
-                            if (d.displayID == did) { target = d; break; }
+                            if (d.displayID == did)
+                            {
+                                target = d;
+                                break;
+                            }
                         }
                     }
-                    filter = [[SCContentFilter alloc]
-                        initWithDisplay:target excludingWindows:@[]];
+                    filter = [[SCContentFilter alloc] initWithDisplay:target excludingWindows:@[]];
                 }
                 if (!filter)
                 {
@@ -258,16 +289,17 @@ public:
                 cfg.minimumFrameInterval = CMTimeMake(1, 15); // 15 fps
                 cfg.showsCursor = YES;
 
-                strm = [[SCStream alloc] initWithFilter:filter
-                                          configuration:cfg
-                                               delegate:nil];
+                strm = [[SCStream alloc] initWithFilter:filter configuration:cfg delegate:nil];
                 NSError* addErr = nil;
                 [strm addStreamOutput:out
-                                 type:SCStreamOutputTypeScreen
-                   sampleHandlerQueue:dispatch_get_global_queue(
-                                          QOS_CLASS_USER_INTERACTIVE, 0)
-                                error:&addErr];
-                if (addErr) { dispatch_semaphore_signal(sem); return; }
+                                  type:SCStreamOutputTypeScreen
+                    sampleHandlerQueue:dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0)
+                                 error:&addErr];
+                if (addErr)
+                {
+                    dispatch_semaphore_signal(sem);
+                    return;
+                }
 
                 [strm startCaptureWithCompletionHandler:^(NSError* startErr) {
                     ok = (startErr == nil);
@@ -286,17 +318,21 @@ public:
     void stop() override
     {
         if (!running_)
+        {
             return;
+        }
         running_ = false;
         SCStream* s = stream_;
         stream_ = nil;
         if (s)
-            [s stopCaptureWithCompletionHandler:^(NSError*) {}];
+        {
+            [s stopCaptureWithCompletionHandler:^(NSError*){
+            }];
+        }
         output_ = nil;
     }
 
-    bool capture_thumbnail(const std::string& source_id,
-                           std::vector<std::uint8_t>& out_rgba,
+    bool capture_thumbnail(const std::string& source_id, std::vector<std::uint8_t>& out_rgba,
                            std::uint32_t& out_w, std::uint32_t& out_h) override
     {
         if (@available(macOS 14.0, *))
@@ -317,58 +353,72 @@ private:
     // while waiting for the second one deadlocks that queue; the inner wait
     // always times out and result_image stays nil.
     API_AVAILABLE(macos(14.0))
-    bool capture_thumbnail_impl_(const std::string& sid,
-                                 std::vector<std::uint8_t>& out_rgba,
+    bool capture_thumbnail_impl_(const std::string& sid, std::vector<std::uint8_t>& out_rgba,
                                  std::uint32_t& out_w, std::uint32_t& out_h)
     {
         // Step 1: resolve source_id → SCContentFilter (wait is outside the block).
         __block SCContentFilter* filter = nil;
         {
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            [SCShareableContent
-                getShareableContentWithCompletionHandler:^(SCShareableContent* content,
-                                                           NSError* err) {
-                    if (content && !err)
+            [SCShareableContent getShareableContentWithCompletionHandler:^(
+                                    SCShareableContent* content, NSError* err) {
+                if (content && !err)
+                {
+                    if (sid.rfind("window:", 0) == 0)
                     {
-                        if (sid.rfind("window:", 0) == 0)
+                        uint32_t wid = 0;
+                        try
                         {
-                            uint32_t wid = 0;
-                            try { wid = static_cast<uint32_t>(std::stoul(sid.substr(7))); }
-                            catch (...) {}
-                            for (SCWindow* w in content.windows)
+                            wid = static_cast<uint32_t>(std::stoul(sid.substr(7)));
+                        }
+                        catch (...)
+                        {
+                        }
+                        for (SCWindow* w in content.windows)
+                        {
+                            if (w.windowID == wid)
                             {
-                                if (w.windowID == wid)
+                                filter =
+                                    [[SCContentFilter alloc] initWithDesktopIndependentWindow:w];
+                                break;
+                            }
+                        }
+                    }
+                    if (!filter && content.displays.count > 0)
+                    {
+                        SCDisplay* target = content.displays.firstObject;
+                        if (sid.rfind("display:", 0) == 0)
+                        {
+                            uint32_t did = 0;
+                            try
+                            {
+                                did = static_cast<uint32_t>(std::stoul(sid.substr(8)));
+                            }
+                            catch (...)
+                            {
+                            }
+                            for (SCDisplay* d in content.displays)
+                            {
+                                if (d.displayID == did)
                                 {
-                                    filter = [[SCContentFilter alloc]
-                                        initWithDesktopIndependentWindow:w];
+                                    target = d;
                                     break;
                                 }
                             }
                         }
-                        if (!filter && content.displays.count > 0)
-                        {
-                            SCDisplay* target = content.displays.firstObject;
-                            if (sid.rfind("display:", 0) == 0)
-                            {
-                                uint32_t did = 0;
-                                try { did = static_cast<uint32_t>(std::stoul(sid.substr(8))); }
-                                catch (...) {}
-                                for (SCDisplay* d in content.displays)
-                                {
-                                    if (d.displayID == did) { target = d; break; }
-                                }
-                            }
-                            filter = [[SCContentFilter alloc]
-                                initWithDisplay:target excludingWindows:@[]];
-                        }
+                        filter = [[SCContentFilter alloc] initWithDisplay:target
+                                                         excludingWindows:@[]];
                     }
-                    dispatch_semaphore_signal(sem);
-                }];
+                }
+                dispatch_semaphore_signal(sem);
+            }];
             dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
         }
 
         if (!filter)
+        {
             return false;
+        }
 
         // Step 2: one-shot screenshot. Semaphore wait is outside the block so
         // SCScreenshotManager's completion can run freely on the SCKit queue.
@@ -378,22 +428,23 @@ private:
             cfg.showsCursor = NO;
 
             dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-            [SCScreenshotManager
-                captureImageWithFilter:filter
-                          configuration:cfg
-                      completionHandler:^(CGImageRef image, NSError* shotErr) {
-                          if (image && !shotErr)
-                          {
-                              CGImageRetain(image);
-                              result_image = image;
-                          }
-                          dispatch_semaphore_signal(sem);
-                      }];
+            [SCScreenshotManager captureImageWithFilter:filter
+                                          configuration:cfg
+                                      completionHandler:^(CGImageRef image, NSError* shotErr) {
+                                          if (image && !shotErr)
+                                          {
+                                              CGImageRetain(image);
+                                              result_image = image;
+                                          }
+                                          dispatch_semaphore_signal(sem);
+                                      }];
             dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
         }
 
         if (!result_image)
+        {
             return false;
+        }
 
         const std::size_t w = CGImageGetWidth(result_image);
         const std::size_t h = CGImageGetHeight(result_image);
@@ -407,9 +458,9 @@ private:
         // straight (non-premultiplied-BGRA) RGBA byte order.
         out_rgba.assign(w * h * 4, 0);
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        CGContextRef ctx = CGBitmapContextCreate(
-            out_rgba.data(), w, h, 8, w * 4, cs,
-            (uint32_t)kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGContextRef ctx = CGBitmapContextCreate(out_rgba.data(), w, h, 8, w * 4, cs,
+                                                 (uint32_t)kCGImageAlphaPremultipliedLast |
+                                                     kCGBitmapByteOrder32Big);
         CGColorSpaceRelease(cs);
         if (!ctx)
         {
@@ -425,11 +476,11 @@ private:
         return true;
     }
 
-    bool                   running_  = false;
-    SCStream*              stream_   = nil;
-    TKScreenStreamOutput*  output_   = nil;
-    std::mutex             mu_;
-    std::string            source_id_;
+    bool running_ = false;
+    SCStream* stream_ = nil;
+    TKScreenStreamOutput* output_ = nil;
+    std::mutex mu_;
+    std::string source_id_;
     tk::ScreenCapture::FrameCallback pending_cb_;
 };
 
@@ -441,7 +492,9 @@ namespace tk
 std::unique_ptr<ScreenCapture> make_screen_capture_macos()
 {
     if (@available(macOS 12.3, *))
+    {
         return std::make_unique<ScreenCaptureMacOS>();
+    }
     return nullptr;
 }
 

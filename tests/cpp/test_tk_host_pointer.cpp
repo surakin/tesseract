@@ -31,14 +31,19 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
 
     bool on_pointer_down(Point) override
     {
         ++down_count;
         return claim_down_;
     }
-    bool focusable() const override { return focusable_; }
+    bool focusable() const override
+    {
+        return focusable_;
+    }
 
     // Set to make this widget a keyboard-focus target (base Widget is not).
     bool focusable_ = false;
@@ -47,14 +52,23 @@ public:
         ++up_count;
         last_up_inside = inside;
     }
-    void on_pointer_drag(Point) override { ++drag_count; }
+    void on_pointer_drag(Point) override
+    {
+        ++drag_count;
+    }
     bool on_pointer_move(Point) override
     {
         ++move_count;
         return false;
     }
-    void on_pointer_leave() override { ++leave_count; }
-    void on_popup_dismiss() override { ++dismiss_count; }
+    void on_pointer_leave() override
+    {
+        ++leave_count;
+    }
+    void on_popup_dismiss() override
+    {
+        ++dismiss_count;
+    }
     bool on_right_click(Point) override
     {
         ++right_count;
@@ -105,14 +119,21 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
-    bool on_pointer_down(Point) override { return true; }
+    void paint(PaintCtx&) override
+    {
+    }
+    bool on_pointer_down(Point) override
+    {
+        return true;
+    }
     void on_pointer_up(Point, bool) override
     {
         if (on_change)
+        {
             on_change();
+        }
         ++after_callback_count; // would be a use-after-free write if this
-                                 // widget had already been freed by on_change
+                                // widget had already been freed by on_change
     }
 
     std::function<void()> on_change;
@@ -121,8 +142,7 @@ public:
 
 } // namespace
 
-TEST_CASE("Click outside an open popup dismisses it and falls through",
-          "[tk][host][popup]")
+TEST_CASE("Click outside an open popup dismisses it and falls through", "[tk][host][popup]")
 {
     ProbeWidget root({0, 0, 400, 400});
     ProbeWidget popup({100, 100, 100, 100});
@@ -137,8 +157,7 @@ TEST_CASE("Click outside an open popup dismisses it and falls through",
     REQUIRE(root.down_count == 1);     // press fell through to the tree
 }
 
-TEST_CASE("Click inside an open popup routes to it and does not dismiss",
-          "[tk][host][popup]")
+TEST_CASE("Click inside an open popup routes to it and does not dismiss", "[tk][host][popup]")
 {
     ProbeWidget root({0, 0, 400, 400});
     ProbeWidget popup({100, 100, 100, 100}, /*claim_down=*/true);
@@ -149,13 +168,12 @@ TEST_CASE("Click inside an open popup routes to it and does not dismiss",
 
     REQUIRE(popup.down_count == 1);
     REQUIRE(popup.dismiss_count == 0);
-    REQUIRE(host.popup() == &popup);         // still open
-    REQUIRE(root.down_count == 0);           // tree never saw it
+    REQUIRE(host.popup() == &popup);                      // still open
+    REQUIRE(root.down_count == 0);                        // tree never saw it
     REQUIRE(host.pressed_widget_.lock().get() == &popup); // popup captured the press
 }
 
-TEST_CASE("Click on the popup's registered trigger does not dismiss it",
-          "[tk][host][popup]")
+TEST_CASE("Click on the popup's registered trigger does not dismiss it", "[tk][host][popup]")
 {
     // Regression coverage: clicking the control that opened a popup (e.g.
     // the emoji-picker toggle button) used to unconditionally dismiss it as
@@ -163,8 +181,7 @@ TEST_CASE("Click on the popup's registered trigger does not dismiss it",
     // decide — causing a dismiss-then-reopen flicker. register_popup()'s
     // optional trigger widget exempts exactly this case.
     ProbeWidget root({0, 0, 400, 400});
-    ProbeWidget* trigger =
-        root.add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 30, 30}));
+    ProbeWidget* trigger = root.add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 30, 30}));
     ProbeWidget popup({100, 100, 100, 100});
     TestHost host(&root);
     host.set_active_popup(&popup, trigger);
@@ -176,12 +193,10 @@ TEST_CASE("Click on the popup's registered trigger does not dismiss it",
     REQUIRE(trigger->down_count == 1); // press still reached the trigger
 }
 
-TEST_CASE("Click outside both the popup and its trigger still dismisses it",
-          "[tk][host][popup]")
+TEST_CASE("Click outside both the popup and its trigger still dismisses it", "[tk][host][popup]")
 {
     ProbeWidget root({0, 0, 400, 400});
-    ProbeWidget* trigger =
-        root.add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 30, 30}));
+    ProbeWidget* trigger = root.add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 30, 30}));
     ProbeWidget popup({100, 100, 100, 100});
     TestHost host(&root);
     host.set_active_popup(&popup, trigger);
@@ -192,8 +207,7 @@ TEST_CASE("Click outside both the popup and its trigger still dismisses it",
     REQUIRE(host.popup() == nullptr);
 }
 
-TEST_CASE("Pointer-move inside an open popup routes hover to it, not the tree",
-          "[tk][host][popup]")
+TEST_CASE("Pointer-move inside an open popup routes hover to it, not the tree", "[tk][host][popup]")
 {
     ProbeWidget root({0, 0, 400, 400});
     ProbeWidget popup({100, 100, 100, 100});
@@ -207,13 +221,11 @@ TEST_CASE("Pointer-move inside an open popup routes hover to it, not the tree",
     REQUIRE(host.hovered_widget_.lock().get() == &popup);
 }
 
-TEST_CASE("Captured widget gets drag on move and inside-release on up",
-          "[tk][host][popup]")
+TEST_CASE("Captured widget gets drag on move and inside-release on up", "[tk][host][popup]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
     ProbeWidget* child =
-        root->add_child(std::make_unique<ProbeWidget>(
-            Rect{50, 50, 100, 100}, /*claim_down=*/true));
+        root->add_child(std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}, /*claim_down=*/true));
     TestHost host(root.get());
 
     host.dispatch_pointer_down({60, 60}); // press inside the claiming child
@@ -229,13 +241,11 @@ TEST_CASE("Captured widget gets drag on move and inside-release on up",
     REQUIRE(host.pressed_widget_.expired());
 }
 
-TEST_CASE("Pointer-leave clears hover and synthesises an outside release",
-          "[tk][host][popup]")
+TEST_CASE("Pointer-leave clears hover and synthesises an outside release", "[tk][host][popup]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
     ProbeWidget* child =
-        root->add_child(std::make_unique<ProbeWidget>(
-            Rect{50, 50, 100, 100}, /*claim_down=*/true));
+        root->add_child(std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}, /*claim_down=*/true));
     TestHost host(root.get());
 
     host.dispatch_pointer_down({60, 60});
@@ -253,8 +263,8 @@ TEST_CASE("clear_children()/remove_child() defer actual destruction until "
 {
     auto inner_root_owned = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
     Widget* inner_root = inner_root_owned.get();
-    ProbeWidget* raw_child = inner_root_owned->add_child(
-        std::make_unique<ProbeWidget>(Rect{0, 0, 100, 100}));
+    ProbeWidget* raw_child =
+        inner_root_owned->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 100, 100}));
     TestHost host(inner_root);
     auto wrapper = create_root_widget<RootWidget>(&host);
     wrapper->add_child(std::move(inner_root_owned));
@@ -266,7 +276,7 @@ TEST_CASE("clear_children()/remove_child() defer actual destruction until "
     REQUIRE(inner_root->children().empty()); // detached immediately
     REQUIRE_FALSE(tracked.expired());        // but not yet actually destroyed
 
-    host.fire_all_ui_tasks(); // runs the posted drain
+    host.fire_all_ui_tasks();   // runs the posted drain
     REQUIRE(tracked.expired()); // now actually freed
 }
 
@@ -276,18 +286,21 @@ TEST_CASE("A widget can safely remove itself from within its own callback "
 {
     auto inner_root_owned = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
     Widget* inner_root = inner_root_owned.get();
-    SelfRemovingWidget* child = inner_root_owned->add_child(
-        std::make_unique<SelfRemovingWidget>(Rect{0, 0, 100, 100}));
+    SelfRemovingWidget* child =
+        inner_root_owned->add_child(std::make_unique<SelfRemovingWidget>(Rect{0, 0, 100, 100}));
     TestHost host(inner_root);
     auto wrapper = create_root_widget<RootWidget>(&host);
     wrapper->add_child(std::move(inner_root_owned));
 
-    child->on_change = [inner_root, child] { inner_root->remove_child(child); };
+    child->on_change = [inner_root, child]
+    {
+        inner_root->remove_child(child);
+    };
 
     host.dispatch_pointer_down({10, 10});
     host.dispatch_pointer_up({10, 10}); // -> on_pointer_up -> on_change ->
-                                         // remove_child(child), then
-                                         // ++after_callback_count on `this`
+                                        // remove_child(child), then
+                                        // ++after_callback_count on `this`
 
     // If destruction weren't deferred, the increment above (and this read)
     // would be a use-after-free.
@@ -310,11 +323,9 @@ TEST_CASE("A disabled widget absorbs a press instead of letting it fall "
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
     // `behind` is added first → earlier in children_ → painted under `front`,
     // hit-tested after it. It claims every press it sees.
-    ProbeWidget* behind = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100},
-                                      /*claim_down=*/true));
-    ProbeWidget* front = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
+    ProbeWidget* behind = root->add_child(std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100},
+                                                                        /*claim_down=*/true));
+    ProbeWidget* front = root->add_child(std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
 
     // Sanity: while `front` is enabled but doesn't claim the press, it falls
     // through to `behind` (the historical behaviour).
@@ -332,15 +343,12 @@ TEST_CASE("A disabled widget absorbs a press instead of letting it fall "
     CHECK(root->down_count == 0);            // parent never gets it either
 }
 
-TEST_CASE("A disabled container makes its whole subtree non-interactable",
-          "[tk][widget][disabled]")
+TEST_CASE("A disabled container makes its whole subtree non-interactable", "[tk][widget][disabled]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
-    ProbeWidget* panel =
-        root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 200, 200}));
-    ProbeWidget* child = panel->add_child(
-        std::make_unique<ProbeWidget>(Rect{20, 20, 60, 60},
-                                      /*claim_down=*/true));
+    ProbeWidget* panel = root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 200, 200}));
+    ProbeWidget* child = panel->add_child(std::make_unique<ProbeWidget>(Rect{20, 20, 60, 60},
+                                                                        /*claim_down=*/true));
 
     panel->set_enabled(false);
 
@@ -355,11 +363,9 @@ TEST_CASE("A disabled widget absorbs hover, right-click, drag-hover and "
           "[tk][widget][disabled]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
-    ProbeWidget* behind = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
+    ProbeWidget* behind = root->add_child(std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
     behind->claim_generic = true; // claims right-click / drag-hover / file-drop
-    ProbeWidget* front = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
+    ProbeWidget* front = root->add_child(std::make_unique<ProbeWidget>(Rect{50, 50, 100, 100}));
     front->set_enabled(false);
 
     bool dirty = false;
@@ -381,10 +387,8 @@ TEST_CASE("A disabled widget absorbs hover, right-click, drag-hover and "
 TEST_CASE("hit_test stops at a disabled widget", "[tk][widget][disabled]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
-    ProbeWidget* panel =
-        root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 200, 200}));
-    ProbeWidget* child =
-        panel->add_child(std::make_unique<ProbeWidget>(Rect{20, 20, 60, 60}));
+    ProbeWidget* panel = root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 200, 200}));
+    ProbeWidget* child = panel->add_child(std::make_unique<ProbeWidget>(Rect{20, 20, 60, 60}));
 
     CHECK(root->hit_test({30, 30}) == child); // enabled: descends to the leaf
     panel->set_enabled(false);
@@ -395,11 +399,9 @@ TEST_CASE("Clicking a disabled widget does not clear the focused widget",
           "[tk][host][disabled][focus]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
-    ProbeWidget* field = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{10, 10, 100, 30}));
+    ProbeWidget* field = root->add_child(std::make_unique<ProbeWidget>(Rect{10, 10, 100, 30}));
     field->focusable_ = true;
-    ProbeWidget* dead = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{10, 200, 100, 30}));
+    ProbeWidget* dead = root->add_child(std::make_unique<ProbeWidget>(Rect{10, 200, 100, 30}));
     dead->set_enabled(false);
     TestHost host(root.get());
 
@@ -409,18 +411,16 @@ TEST_CASE("Clicking a disabled widget does not clear the focused widget",
     host.dispatch_pointer_down({50, 210}); // press on the disabled widget
     CHECK(host.focused_widget() == field); // focus preserved, not cleared
 
-    host.dispatch_pointer_down({300, 300}); // press on genuinely empty space
+    host.dispatch_pointer_down({300, 300});  // press on genuinely empty space
     CHECK(host.focused_widget() == nullptr); // that still clears focus
 }
 
 TEST_CASE("Tab traversal skips a disabled subtree", "[tk][widget][disabled]")
 {
     auto root = std::make_unique<ProbeWidget>(Rect{0, 0, 400, 400});
-    ProbeWidget* a = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{0, 0, 100, 20}));
+    ProbeWidget* a = root->add_child(std::make_unique<ProbeWidget>(Rect{0, 0, 100, 20}));
     a->focusable_ = true;
-    ProbeWidget* b = root->add_child(
-        std::make_unique<ProbeWidget>(Rect{0, 40, 100, 20}));
+    ProbeWidget* b = root->add_child(std::make_unique<ProbeWidget>(Rect{0, 40, 100, 20}));
     b->focusable_ = true;
 
     CHECK(next_focusable(root.get(), a, /*forward=*/true) == b);
@@ -428,18 +428,15 @@ TEST_CASE("Tab traversal skips a disabled subtree", "[tk][widget][disabled]")
     CHECK(next_focusable(root.get(), a, /*forward=*/true) == a); // b skipped
 }
 
-TEST_CASE("popup_rect_over reports the open popup only to widgets outside it",
-          "[tk][host][popup]")
+TEST_CASE("popup_rect_over reports the open popup only to widgets outside it", "[tk][host][popup]")
 {
     // Feeds NativeTextField/NativeTextArea::set_occlusion_query: a native
     // control under the popup (the composer under a reaction picker) must
     // stop hit-testing there, but the popup's own search field must not.
     ProbeWidget root({0, 0, 400, 400});
-    ProbeWidget* composer =
-        root.add_child(std::make_unique<ProbeWidget>(Rect{0, 350, 400, 50}));
+    ProbeWidget* composer = root.add_child(std::make_unique<ProbeWidget>(Rect{0, 350, 400, 50}));
     ProbeWidget popup({100, 200, 200, 180});
-    ProbeWidget* search =
-        popup.add_child(std::make_unique<ProbeWidget>(Rect{110, 210, 180, 24}));
+    ProbeWidget* search = popup.add_child(std::make_unique<ProbeWidget>(Rect{110, 210, 180, 24}));
     TestHost host(&root);
 
     REQUIRE_FALSE(host.popup_rect_over(composer).has_value()); // none open

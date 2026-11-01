@@ -26,9 +26,9 @@ bool can_remove_verification(std::string_view code);
 /// `setting_on` (what is saved).
 enum class RetryAction
 {
-    Explain,        ///< still blocked: show the explanation dialog
-    RetryDirectly,  ///< the check is off in this run: just retry
-    NeedsRestart,   ///< turned off but not applied yet: say so
+    Explain,       ///< still blocked: show the explanation dialog
+    RetryDirectly, ///< the check is off in this run: just retry
+    NeedsRestart,  ///< turned off but not applied yet: say so
 };
 RetryAction retry_action(std::string_view code, bool setting_on, bool applied);
 

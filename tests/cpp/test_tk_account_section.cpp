@@ -21,8 +21,7 @@ struct TkAccountSectionStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -36,8 +35,7 @@ struct TkAccountSectionStage
 
 } // namespace
 
-TEST_CASE("AccountSection: name_field_rect empty when not editable",
-          "[account][section]")
+TEST_CASE("AccountSection: name_field_rect empty when not editable", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -51,8 +49,7 @@ TEST_CASE("AccountSection: name_field_rect empty when not editable",
     CHECK(sec.name_field_rect().empty());
 }
 
-TEST_CASE("AccountSection: name_field_rect non-empty when editable",
-          "[account][section]")
+TEST_CASE("AccountSection: name_field_rect non-empty when editable", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -66,8 +63,7 @@ TEST_CASE("AccountSection: name_field_rect non-empty when editable",
     CHECK(!sec.name_field_rect().empty());
 }
 
-TEST_CASE("AccountSection: name_field_rect empty when busy",
-          "[account][section]")
+TEST_CASE("AccountSection: name_field_rect empty when busy", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -81,8 +77,7 @@ TEST_CASE("AccountSection: name_field_rect empty when busy",
     CHECK(sec.name_field_rect().empty());
 }
 
-TEST_CASE("AccountSection: paints without crash in all edit states",
-          "[account][section]")
+TEST_CASE("AccountSection: paints without crash in all edit states", "[account][section]")
 {
     TkAccountSectionStage st;
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
@@ -117,8 +112,7 @@ TEST_CASE("AccountSection: paints without crash in all edit states",
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 }
 
-TEST_CASE("AccountSection: avatar upload callback fires on disc click",
-          "[account][section]")
+TEST_CASE("AccountSection: avatar upload callback fires on disc click", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -129,7 +123,10 @@ TEST_CASE("AccountSection: avatar upload callback fires on disc click",
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int upload_count = 0;
-    sec.on_avatar_upload_clicked = [&]{ ++upload_count; };
+    sec.on_avatar_upload_clicked = [&]
+    {
+        ++upload_count;
+    };
 
     // Click centre of disc (kPadX + kAvatarDiameter/2 = 24 + 32 = 56, kPadY + kAvatarRadius = 56).
     // Use dispatch_pointer_down so the click walks into the section's bespoke
@@ -138,8 +135,7 @@ TEST_CASE("AccountSection: avatar upload callback fires on disc click",
     CHECK(upload_count == 1);
 }
 
-TEST_CASE("AccountSection: remove callback fires on X chip click",
-          "[account][section]")
+TEST_CASE("AccountSection: remove callback fires on X chip click", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -151,7 +147,10 @@ TEST_CASE("AccountSection: remove callback fires on X chip click",
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int remove_count = 0;
-    sec.on_avatar_remove_clicked = [&]{ ++remove_count; };
+    sec.on_avatar_remove_clicked = [&]
+    {
+        ++remove_count;
+    };
 
     // The X chip sits at the top-right of the disc.
     // disc centre ~= (56, 56), radius = 32 -> top-right corner ~= (75, 37)
@@ -159,8 +158,7 @@ TEST_CASE("AccountSection: remove callback fires on X chip click",
     CHECK(remove_count == 1);
 }
 
-TEST_CASE("AccountSection: avatar click ignored when not editable",
-          "[account][section]")
+TEST_CASE("AccountSection: avatar click ignored when not editable", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -171,13 +169,15 @@ TEST_CASE("AccountSection: avatar click ignored when not editable",
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int upload_count = 0;
-    sec.on_avatar_upload_clicked = [&]{ ++upload_count; };
+    sec.on_avatar_upload_clicked = [&]
+    {
+        ++upload_count;
+    };
     sec.dispatch_pointer_down({56.0f, 56.0f});
     CHECK(upload_count == 0);
 }
 
-TEST_CASE("AccountSection: avatar click ignored when busy",
-          "[account][section]")
+TEST_CASE("AccountSection: avatar click ignored when busy", "[account][section]")
 {
     auto sec_owner = tk::create_root_widget<AccountSection>(nullptr);
     AccountSection& sec = *sec_owner;
@@ -189,7 +189,10 @@ TEST_CASE("AccountSection: avatar click ignored when busy",
     st.run(sec, {0.0f, 0.0f, 640.0f, 200.0f});
 
     int upload_count = 0;
-    sec.on_avatar_upload_clicked = [&]{ ++upload_count; };
+    sec.on_avatar_upload_clicked = [&]
+    {
+        ++upload_count;
+    };
     sec.dispatch_pointer_down({56.0f, 56.0f});
     CHECK(upload_count == 0);
 }

@@ -21,8 +21,7 @@ namespace tesseract::views
 // on_changed: run detection in priority order; the first controller that
 // consumes the change wins and every other popup is hidden. Returns true if any
 // popup handled the change.
-inline bool dispatch_compose_text_changed(const std::string& text, int cursor,
-                                          GifController* gif,
+inline bool dispatch_compose_text_changed(const std::string& text, int cursor, GifController* gif,
                                           SlashCommandController* slash,
                                           ShortcodeController* shortcode,
                                           MentionController* mention)
@@ -30,8 +29,7 @@ inline bool dispatch_compose_text_changed(const std::string& text, int cursor,
     bool g = gif && gif->on_text_changed(text);
     bool sl = !g && slash && slash->on_text_changed(text, cursor);
     bool sc = !g && !sl && shortcode && shortcode->on_text_changed(text, cursor);
-    bool me =
-        !g && !sl && !sc && mention && mention->on_text_changed(text, cursor);
+    bool me = !g && !sl && !sc && mention && mention->on_text_changed(text, cursor);
     // Hide every popup that isn't the winner. Short-circuit && means a
     // lower-priority controller may not have been polled this tick, so its
     // popup could still be showing from a previous keystroke. hide() is
@@ -39,60 +37,81 @@ inline bool dispatch_compose_text_changed(const std::string& text, int cursor,
     // unconditionally keeps the "at most one visible" invariant with no special
     // cases.
     if (gif && !g)
+    {
         gif->hide();
+    }
     if (slash && !sl)
+    {
         slash->hide();
+    }
     if (shortcode && !sc)
+    {
         shortcode->hide();
+    }
     if (mention && !me)
+    {
         mention->hide();
+    }
     return g || sl || sc || me;
 }
 
 // on_submit (Enter): let the visible popup consume the keystroke. Returns true
 // if a popup accepted a selection — the caller must NOT send the message. Only
 // one popup is ever visible, so the polling order here is immaterial.
-inline bool dispatch_compose_submit(GifController* gif,
-                                    SlashCommandController* slash,
-                                    ShortcodeController* shortcode,
-                                    MentionController* mention)
+inline bool dispatch_compose_submit(GifController* gif, SlashCommandController* slash,
+                                    ShortcodeController* shortcode, MentionController* mention)
 {
     if (gif && gif->on_submit())
+    {
         return true;
+    }
     if (slash && slash->on_submit())
+    {
         return true;
+    }
     if (shortcode && shortcode->on_submit())
+    {
         return true;
+    }
     if (mention && mention->on_submit())
+    {
         return true;
+    }
     return false;
 }
 
 // popup-nav (Up/Down/Tab/Esc/ShiftTab): route to whichever popup is open. Each
 // controller's on_nav returns false when it isn't visible, so a single shared
 // handler can replace the per-popup reinstall dance.
-inline bool dispatch_compose_nav(tk::NavKey nk, GifController* gif,
-                                 SlashCommandController* slash,
-                                 ShortcodeController* shortcode,
-                                 MentionController* mention)
+inline bool dispatch_compose_nav(tk::NavKey nk, GifController* gif, SlashCommandController* slash,
+                                 ShortcodeController* shortcode, MentionController* mention)
 {
     return (gif && gif->on_nav(nk)) || (slash && slash->on_nav(nk)) ||
-           (shortcode && shortcode->on_nav(nk)) ||
-           (mention && mention->on_nav(nk));
+           (shortcode && shortcode->on_nav(nk)) || (mention && mention->on_nav(nk));
 }
 
 // Hide all four popups unconditionally — e.g. on window resize, where a
 // stale-positioned popup should just close rather than stay open in the
 // wrong place. Mirrors the nullable-pointer convention above.
-inline void hide_all_compose_popups(GifController* gif,
-                                    SlashCommandController* slash,
-                                    ShortcodeController* shortcode,
-                                    MentionController* mention)
+inline void hide_all_compose_popups(GifController* gif, SlashCommandController* slash,
+                                    ShortcodeController* shortcode, MentionController* mention)
 {
-    if (gif) gif->hide();
-    if (slash) slash->hide();
-    if (shortcode) shortcode->hide();
-    if (mention) mention->hide();
+    if (gif)
+    {
+        gif->hide();
+    }
+    if (slash)
+    {
+        slash->hide();
+    }
+    if (shortcode)
+    {
+        shortcode->hide();
+    }
+    if (mention)
+    {
+        mention->hide();
+    }
 }
 
 } // namespace tesseract::views

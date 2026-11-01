@@ -17,7 +17,7 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kRoomPreviewWidth  = 260.0f;
+constexpr float kRoomPreviewWidth = 260.0f;
 constexpr float kRoomPreviewHeight = 190.0f;
 
 std::vector<tesseract::RoomInfo> make_preview_rooms()
@@ -68,10 +68,14 @@ RoomListPreview::RoomListPreview()
 void RoomListPreview::set_compact(bool compact)
 {
     if (!list_)
+    {
         return;
+    }
     list_->set_compact(compact);
     if (host())
+    {
         host()->request_repaint_rect(bounds_);
+    }
 }
 
 tk::Size RoomListPreview::measure(tk::LayoutCtx&, tk::Size constraints)

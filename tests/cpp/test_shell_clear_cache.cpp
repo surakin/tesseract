@@ -15,15 +15,20 @@ struct ShellClearCacheTestShell : tesseract::test::TestShellBase
 {
 
     // Drop deferred work so save_settings_debounced_() never touches the disk.
-    void post_to_ui_after_(int, std::function<void()>) override {}
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void post_to_ui_after_(int, std::function<void()>) override
+    {
+    }
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::close_all_popouts_;
     using ShellBase::my_user_id_;

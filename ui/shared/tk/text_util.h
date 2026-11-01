@@ -25,7 +25,9 @@ inline bool ci_contains(std::string_view haystack, std::string_view needle)
         return false;
     }
     auto lower = [](char c)
-    { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
+    {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    };
     for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i)
     {
         bool match = true;

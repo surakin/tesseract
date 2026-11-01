@@ -62,10 +62,14 @@ MessageLayoutPreview::MessageLayoutPreview()
 void MessageLayoutPreview::refresh_layout()
 {
     if (!list_)
+    {
         return;
+    }
     list_->on_display_prefs_changed();
     if (host())
+    {
         host()->request_repaint_rect(bounds_);
+    }
 }
 
 tk::Size MessageLayoutPreview::measure(tk::LayoutCtx&, tk::Size constraints)

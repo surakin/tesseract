@@ -19,7 +19,11 @@ TEST_CASE("begin_paginate rejects a second call while one is in flight",
 {
     ThreadPanelController ctl;
     int runs = 0;
-    ctl.set_run_paginate([&] { ++runs; });
+    ctl.set_run_paginate(
+        [&]
+        {
+            ++runs;
+        });
 
     CHECK(ctl.begin_paginate(/*can_paginate=*/true));
     CHECK(runs == 1);
@@ -36,7 +40,11 @@ TEST_CASE("begin_paginate succeeds again once on_paginate_result clears in-fligh
 {
     ThreadPanelController ctl;
     int runs = 0;
-    ctl.set_run_paginate([&] { ++runs; });
+    ctl.set_run_paginate(
+        [&]
+        {
+            ++runs;
+        });
 
     REQUIRE(ctl.begin_paginate(true));
     REQUIRE(runs == 1);
@@ -55,7 +63,11 @@ TEST_CASE("begin_paginate stays rejected forever once reached_start is reported"
 {
     ThreadPanelController ctl;
     int runs = 0;
-    ctl.set_run_paginate([&] { ++runs; });
+    ctl.set_run_paginate(
+        [&]
+        {
+            ++runs;
+        });
 
     REQUIRE(ctl.begin_paginate(true));
     REQUIRE(runs == 1);

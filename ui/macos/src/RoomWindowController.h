@@ -12,6 +12,5 @@
 // C++ factory — called from macos::MainWindow::create_secondary_room_window_.
 namespace tesseract
 {
-RoomWindowBase* make_mac_room_window(ShellBase*         shell,
-                                     const std::string& room_id);
+RoomWindowBase* make_mac_room_window(ShellBase* shell, const std::string& room_id);
 } // namespace tesseract

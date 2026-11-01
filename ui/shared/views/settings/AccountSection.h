@@ -55,8 +55,7 @@ public:
     // on_avatar_preview.
     void set_avatar_preview(std::shared_ptr<tk::Image> image);
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_image_provider(ImageProvider provider);
 
     // ----- Editing capabilities (gated by ServerInfo) -----------------------
@@ -113,9 +112,9 @@ public:
     std::function<void()> on_logout;
 
 private:
-    class Content;         // defined in AccountSection.cpp
-    class ExtendedFields;  // defined in AccountSection.cpp
-    Content*        content_    = nullptr;
+    class Content;        // defined in AccountSection.cpp
+    class ExtendedFields; // defined in AccountSection.cpp
+    Content* content_ = nullptr;
     ExtendedFields* ext_fields_ = nullptr;
 };
 

@@ -27,8 +27,7 @@ TEST_CASE("parse_launch_args: --autostart alone")
 
 TEST_CASE("parse_launch_args: matrix URI alone")
 {
-    auto args = tesseract::parse_launch_args(
-        {"https://matrix.to/#/@alice:example.org"});
+    auto args = tesseract::parse_launch_args({"https://matrix.to/#/@alice:example.org"});
     CHECK(args.autostart == false);
     REQUIRE(args.matrix_uri.has_value());
     CHECK(*args.matrix_uri == "https://matrix.to/#/@alice:example.org");
@@ -36,8 +35,8 @@ TEST_CASE("parse_launch_args: matrix URI alone")
 
 TEST_CASE("parse_launch_args: --autostart then matrix URI")
 {
-    auto args = tesseract::parse_launch_args(
-        {"--autostart", "https://matrix.to/#/@alice:example.org"});
+    auto args =
+        tesseract::parse_launch_args({"--autostart", "https://matrix.to/#/@alice:example.org"});
     CHECK(args.autostart == true);
     REQUIRE(args.matrix_uri.has_value());
     CHECK(*args.matrix_uri == "https://matrix.to/#/@alice:example.org");
@@ -45,8 +44,8 @@ TEST_CASE("parse_launch_args: --autostart then matrix URI")
 
 TEST_CASE("parse_launch_args: matrix URI then --autostart")
 {
-    auto args = tesseract::parse_launch_args(
-        {"https://matrix.to/#/@alice:example.org", "--autostart"});
+    auto args =
+        tesseract::parse_launch_args({"https://matrix.to/#/@alice:example.org", "--autostart"});
     CHECK(args.autostart == true);
     REQUIRE(args.matrix_uri.has_value());
     CHECK(*args.matrix_uri == "https://matrix.to/#/@alice:example.org");
@@ -71,16 +70,16 @@ TEST_CASE("parse_launch_args: taskbar actions are parsed")
 
 TEST_CASE("parse_launch_args: first taskbar action wins")
 {
-    auto args = tesseract::parse_launch_args(
-        {"--open-settings", "--open-message-search", "--autostart"});
+    auto args =
+        tesseract::parse_launch_args({"--open-settings", "--open-message-search", "--autostart"});
     CHECK(args.action == tesseract::LaunchAction::Settings);
     CHECK(args.autostart);
 }
 
 TEST_CASE("parse_launch_args: recent room action retains the room ID")
 {
-    auto args = tesseract::parse_launch_args(
-        {"--open-room=!abcdef:example.org", "--open-settings"});
+    auto args =
+        tesseract::parse_launch_args({"--open-room=!abcdef:example.org", "--open-settings"});
     CHECK(args.action == tesseract::LaunchAction::Room);
     REQUIRE(args.room_id);
     CHECK(*args.room_id == "!abcdef:example.org");
@@ -160,9 +159,9 @@ TEST_CASE("parse_launch_args: log level and verbose")
 
 TEST_CASE("parse_launch_args: toolkit arguments are skipped silently")
 {
-    auto args = tesseract::parse_launch_args(
-        {"-platform", "wayland", "-psn_0_12345", "-NSDocumentRevisionsDebugMode",
-         "YES", "matrix:r/room:example.org"});
+    auto args = tesseract::parse_launch_args({"-platform", "wayland", "-psn_0_12345",
+                                              "-NSDocumentRevisionsDebugMode", "YES",
+                                              "matrix:r/room:example.org"});
     CHECK(args.diagnostics.empty());
     REQUIRE(args.matrix_uri);
     CHECK(*args.matrix_uri == "matrix:r/room:example.org");
@@ -177,7 +176,10 @@ TEST_CASE("parse_launch_args: a URI after -- is still honoured")
 TEST_CASE("launch_option_specs: help callback fills every visible option")
 {
     auto specs = tesseract::launch_option_specs(
-        [](std::string_view id) { return "help for " + std::string(id); });
+        [](std::string_view id)
+        {
+            return "help for " + std::string(id);
+        });
     for (const auto& s : specs)
     {
         CHECK(s.help == "help for " + std::string(s.id));
@@ -187,8 +189,7 @@ TEST_CASE("launch_option_specs: help callback fills every visible option")
 TEST_CASE("profile_relaunch_args")
 {
     CHECK(tesseract::profile_relaunch_args("").empty());
-    CHECK(tesseract::profile_relaunch_args("work") ==
-          std::vector<std::string>{"--profile=work"});
+    CHECK(tesseract::profile_relaunch_args("work") == std::vector<std::string>{"--profile=work"});
 }
 
 TEST_CASE("parse_launch_args: --relaunch waits for the single-instance lock")
@@ -307,19 +308,16 @@ TEST_CASE("LaunchPlan: --hidden with nothing to forward stays quiet")
 TEST_CASE("LaunchPlan: anything to forward reaches the running instance")
 {
     ScopedStartMinimized off(false);
-    CHECK(plan_with({"--open-room=!room:example.org"})
-              .should_raise_existing_instance());
+    CHECK(plan_with({"--open-room=!room:example.org"}).should_raise_existing_instance());
     CHECK(plan_with({"--open-settings"}).should_raise_existing_instance());
-    CHECK(plan_with({"--open-settings", "--autostart"})
-              .should_raise_existing_instance());
+    CHECK(plan_with({"--open-settings", "--autostart"}).should_raise_existing_instance());
     CHECK(plan_with({"matrix:u/user:example.org"}).should_raise_existing_instance());
 }
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 TEST_CASE("parse_launch_args: screenshot output is available in CI builds")
 {
-    auto args = tesseract::parse_launch_args(
-        {"--screenshot-dir=/tmp/tesseract-shots"});
+    auto args = tesseract::parse_launch_args({"--screenshot-dir=/tmp/tesseract-shots"});
     REQUIRE(args.screenshot_dir);
     CHECK(*args.screenshot_dir == "/tmp/tesseract-shots");
     CHECK_FALSE(args.autostart);
@@ -344,7 +342,6 @@ TEST_CASE("parse_launch_args: quote break-out after -- stays positional")
 {
     // What CommandLineToArgvW yields for  "exe" -- "matrix:x" --logoutall ""
     // i.e. a URI containing a raw quote launched through the registered handler.
-    auto args = tesseract::parse_launch_args(
-        {"--", "matrix:r/x:example.org", "--logoutall", ""});
+    auto args = tesseract::parse_launch_args({"--", "matrix:r/x:example.org", "--logoutall", ""});
     CHECK_FALSE(args.logout_all);
 }

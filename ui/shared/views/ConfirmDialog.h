@@ -25,15 +25,15 @@ public:
     struct Options
     {
         std::string title;
-        std::string body;                   // optional; may be empty
+        std::string body; // optional; may be empty
         std::string confirm_label = tk::tr("Confirm");
-        std::string cancel_label  = tk::tr("Cancel");
-        bool        destructive   = false;  // red confirm button
+        std::string cancel_label = tk::tr("Cancel");
+        bool destructive = false; // red confirm button
         // Show a single-line free-text field under the body (e.g. a
         // kick/ban reason). Its trimmed text is handed to `on_reason`
         // immediately before the on_confirm callback fires; cancel/backdrop
         // never fire it. No-op without a Host (the field isn't created).
-        bool        reason_field  = false;
+        bool reason_field = false;
         std::string reason_placeholder;
         std::function<void(std::string reason)> on_reason;
         // Optional third button between Cancel and Confirm (shown when
@@ -52,12 +52,18 @@ public:
     // already up replaces the contents (mirrors RoomInfoPanel::open).
     void open(Options opts, std::function<void()> on_confirm);
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
     // Same as clicking the confirm button (Enter in the reason field, tests).
     void confirm();
 
     // The Options::reason_field input; null without a Host.
-    tk::TextField* reason_field() const { return reason_field_; }
+    tk::TextField* reason_field() const
+    {
+        return reason_field_;
+    }
 
     // Fires when the dialog opens or closes. MainAppWidget routes this into
     // the shared layout-changed chain so the shells re-query rect accessors
@@ -67,16 +73,19 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    void     on_theme_changed(const tk::Theme& t) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    void on_theme_changed(const tk::Theme& t) override;
 
     // Accessibility: a modal Dialog named by its (canvas-painted) title and
     // described by its body; the buttons attach under it. While open,
     // build_access_tree hides everything behind it.
-    tk::Role access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override
     {
         return opts_.title.empty() ? opts_.body : opts_.title;
@@ -85,7 +94,10 @@ public:
     {
         return opts_.title.empty() ? std::string() : opts_.body;
     }
-    bool access_modal() const override { return open_ && visible(); }
+    bool access_modal() const override
+    {
+        return open_ && visible();
+    }
 
 private:
     bool open_ = false;
@@ -95,7 +107,7 @@ private:
 
     // Child buttons — owned via add_child, raw pointers borrowed back.
     tk::Button* confirm_btn_ = nullptr;
-    tk::Button* cancel_btn_  = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
     tk::Button* secondary_btn_ = nullptr;
     // Options::reason_field input; null without a Host.
     tk::TextField* reason_field_ = nullptr;
@@ -110,15 +122,15 @@ private:
 
     bool press_backdrop_ = false;
 
-    static constexpr float kCardW   = 360.0f;
+    static constexpr float kCardW = 360.0f;
     static constexpr float kCardWWide = 520.0f; // with a secondary button
     static constexpr float kCardPad = 20.0f;
-    static constexpr float kBtnH    = 36.0f;
-    static constexpr float kBtnGap  = 8.0f;
-    static constexpr float kTitleH  = 22.0f;
+    static constexpr float kBtnH = 36.0f;
+    static constexpr float kBtnGap = 8.0f;
+    static constexpr float kTitleH = 22.0f;
     static constexpr float kTitleGap = 12.0f;
-    static constexpr float kBodyGap  = 20.0f;
-    static constexpr float kFieldH   = 32.0f;
+    static constexpr float kBodyGap = 20.0f;
+    static constexpr float kFieldH = 32.0f;
 };
 
 } // namespace tesseract::views

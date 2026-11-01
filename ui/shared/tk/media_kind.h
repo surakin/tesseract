@@ -39,7 +39,7 @@ enum class MediaKind : std::uint8_t
 // prefetched today — see ShellBase::run_media_prefetch_impl_'s scope note.
 struct MediaPrefetchKey
 {
-    CacheKey  key;
+    CacheKey key;
     MediaKind kind;
     // Room-scoped media-fetch group this key belongs to (0 for group-less
     // content: pickers, room-list avatars/tiles). Views themselves don't

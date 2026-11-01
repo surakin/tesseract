@@ -40,22 +40,27 @@ namespace
 class VideoCaptureGst : public tk::VideoCapture
 {
 public:
-    ~VideoCaptureGst() override { stop(); }
+    ~VideoCaptureGst() override
+    {
+        stop();
+    }
 
     void start() override
     {
         if (running_)
+        {
             return;
+        }
         clear_error_();
 
         const char* format = bgra_mode_ ? "BGRA" : "I420";
         // Build pipeline with a named v4l2src; set the device property
         // programmatically after parsing to avoid pipeline injection.
-        gchar* desc = g_strdup_printf(
-            "v4l2src name=cam_src ! videoconvert ! videoscale ! "
-            "video/x-raw,format=%s,width=640,height=480 ! "
-            "appsink name=vsink emit-signals=true max-buffers=2 drop=true",
-            format);
+        gchar* desc =
+            g_strdup_printf("v4l2src name=cam_src ! videoconvert ! videoscale ! "
+                            "video/x-raw,format=%s,width=640,height=480 ! "
+                            "appsink name=vsink emit-signals=true max-buffers=2 drop=true",
+                            format);
 
         GError* err = nullptr;
         pipeline_ = gst_parse_launch(desc, &err);
@@ -66,8 +71,7 @@ public:
             const std::string& cam_pref = tesseract::Settings::instance().camera_device_id;
             if (!cam_pref.empty())
             {
-                GstElement* src_elem =
-                    gst_bin_get_by_name(GST_BIN(pipeline_), "cam_src");
+                GstElement* src_elem = gst_bin_get_by_name(GST_BIN(pipeline_), "cam_src");
                 if (src_elem)
                 {
                     g_object_set(src_elem, "device", cam_pref.c_str(), nullptr);
@@ -80,8 +84,7 @@ public:
         {
             if (err)
             {
-                g_warning("tesseract video capture: gst_parse_launch failed: %s",
-                          err->message);
+                g_warning("tesseract video capture: gst_parse_launch failed: %s", err->message);
                 g_error_free(err);
             }
             else
@@ -114,8 +117,7 @@ public:
 
         g_signal_connect(sink_, "new-sample", G_CALLBACK(on_new_sample_), this);
 
-        GstStateChangeReturn ret =
-            gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+        GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
         if (ret == GST_STATE_CHANGE_FAILURE)
         {
             g_warning("tesseract video capture: pipeline failed to reach PLAYING state");
@@ -135,7 +137,9 @@ public:
     void stop() override
     {
         if (!running_)
+        {
             return;
+        }
         running_ = false;
 
         if (pipeline_)
@@ -155,7 +159,9 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         callback_ = std::move(cb);
         if (callback_)
+        {
             bgra_mode_ = false;
+        }
     }
 
     void set_bgra_callback(tk::VideoCapture::BgraCallback cb) override
@@ -163,7 +169,9 @@ public:
         std::lock_guard<std::mutex> lk(mu_);
         bgra_callback_ = std::move(cb);
         if (bgra_callback_)
+        {
             bgra_mode_ = true;
+        }
     }
 
 private:
@@ -187,13 +195,22 @@ private:
         // error rather than GST_RESOURCE_ERROR_BUSY — so check the text first.
         std::string text = err && err->message ? err->message : "";
         if (debug)
+        {
             text.append(" ").append(debug);
+        }
         std::transform(text.begin(), text.end(), text.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                       [](unsigned char c)
+                       {
+                           return static_cast<char>(std::tolower(c));
+                       });
         if (text.find("busy") != std::string::npos)
+        {
             return Error::Busy;
+        }
         if (text.find("permission denied") != std::string::npos)
+        {
             return Error::PermissionDenied;
+        }
 
         if (err && err->domain == GST_RESOURCE_ERROR)
         {
@@ -219,13 +236,16 @@ private:
         if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
         {
             auto* self = static_cast<VideoCaptureGst*>(user_data);
-            GError* err  = nullptr;
+            GError* err = nullptr;
             gchar* debug = nullptr;
             gst_message_parse_error(msg, &err, &debug);
-            g_warning("tesseract video capture: %s (%s)",
-                      err ? err->message : "?", debug ? debug : "");
+            g_warning("tesseract video capture: %s (%s)", err ? err->message : "?",
+                      debug ? debug : "");
             self->report_error_(classify_(err, debug));
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             g_free(debug);
         }
         return GST_BUS_DROP;
@@ -237,7 +257,9 @@ private:
 
         GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
         if (!sample)
+        {
             return GST_FLOW_OK;
+        }
 
         GstCaps* caps = gst_sample_get_caps(sample);
         GstStructure* s = gst_caps_get_structure(caps, 0);
@@ -259,8 +281,10 @@ private:
                 // GStreamer BGRA appsink: packed, stride = width*4 for
                 // the constrained 640x480 format we requested.
                 if (bgra_cb)
+                {
                     bgra_cb(map.data, static_cast<std::uint32_t>(width),
                             static_cast<std::uint32_t>(height));
+                }
             }
             else
             {
@@ -271,18 +295,18 @@ private:
                 }
                 if (cb)
                 {
-                    const auto w         = static_cast<std::uint32_t>(width);
-                    const auto h         = static_cast<std::uint32_t>(height);
-                    const std::uint32_t stride_y  = w;
+                    const auto w = static_cast<std::uint32_t>(width);
+                    const auto h = static_cast<std::uint32_t>(height);
+                    const std::uint32_t stride_y = w;
                     const std::uint32_t stride_uv = (w + 1) / 2;
-                    const std::uint32_t h_uv      = (h + 1) / 2;
+                    const std::uint32_t h_uv = (h + 1) / 2;
 
                     tk::VideoCapture::Frame f;
-                    f.y        = map.data;
-                    f.u        = map.data + stride_y * h;
-                    f.v        = map.data + stride_y * h + stride_uv * h_uv;
-                    f.width    = w;
-                    f.height   = h;
+                    f.y = map.data;
+                    f.u = map.data + stride_y * h;
+                    f.v = map.data + stride_y * h + stride_uv * h_uv;
+                    f.width = w;
+                    f.height = h;
                     f.stride_y = stride_y;
                     f.stride_u = stride_uv;
                     f.stride_v = stride_uv;
@@ -296,13 +320,13 @@ private:
         return GST_FLOW_OK;
     }
 
-    bool         running_   = false;
-    bool         bgra_mode_ = false;
-    GstElement*  pipeline_  = nullptr;
-    GstElement*  sink_      = nullptr;
-    std::mutex   mu_;
+    bool running_ = false;
+    bool bgra_mode_ = false;
+    GstElement* pipeline_ = nullptr;
+    GstElement* sink_ = nullptr;
+    std::mutex mu_;
     tk::VideoCapture::FrameCallback callback_;
-    tk::VideoCapture::BgraCallback  bgra_callback_;
+    tk::VideoCapture::BgraCallback bgra_callback_;
 };
 
 } // namespace
@@ -315,7 +339,9 @@ std::unique_ptr<VideoCapture> make_video_capture_gst()
     // Quick check: if v4l2src element is not installed, don't even try.
     GstElementFactory* f = gst_element_factory_find("v4l2src");
     if (!f)
+    {
         return nullptr;
+    }
     gst_object_unref(f);
     return std::make_unique<VideoCaptureGst>();
 }

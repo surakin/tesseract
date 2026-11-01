@@ -16,9 +16,9 @@ namespace tesseract::views
 namespace
 {
 
-constexpr int64_t kLevelDefault   = 0;
+constexpr int64_t kLevelDefault = 0;
 constexpr int64_t kLevelModerator = 50;
-constexpr int64_t kLevelAdmin     = 100;
+constexpr int64_t kLevelAdmin = 100;
 
 // Shared by all 10 rows: seeds a combo's option list from the room's actual
 // value, synthesizing a 4th "Custom (N)" option (selected) when that value
@@ -29,9 +29,9 @@ constexpr int64_t kLevelAdmin     = 100;
 void set_level_combo(tk::ComboBox* combo, int64_t level)
 {
     std::vector<tk::ComboBox::Option> opts = {
-        {tk::tr("Default"),   "0"},
+        {tk::tr("Default"), "0"},
         {tk::tr("Moderator"), "50"},
-        {tk::tr("Admin"),     "100"},
+        {tk::tr("Admin"), "100"},
     };
     const std::string value = std::to_string(level);
     if (level != kLevelDefault && level != kLevelModerator && level != kLevelAdmin)
@@ -80,7 +80,10 @@ RoomPermissionsSection::RoomPermissionsSection()
                 return; // not a number: keep the current value
             }
             current_.*field = parsed;
-            if (on_permissions_changed) on_permissions_changed(current_);
+            if (on_permissions_changed)
+            {
+                on_permissions_changed(current_);
+            }
         };
     };
 
@@ -96,50 +99,50 @@ RoomPermissionsSection::RoomPermissionsSection()
     auto* messages_group = add_group(tk::tr("Messages"));
     auto* messages_form = messages_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     messages_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
-    send_messages_combo_ = messages_form->add_row(
-        tk::tr("Send messages"), tk::create_widget<tk::ComboBox>(this));
+    send_messages_combo_ =
+        messages_form->add_row(tk::tr("Send messages"), tk::create_widget<tk::ComboBox>(this));
     wire(send_messages_combo_, &tesseract::RoomPermissions::send_messages);
-    remove_messages_combo_ = messages_form->add_row(
-        tk::tr("Remove messages sent by others"), tk::create_widget<tk::ComboBox>(this));
+    remove_messages_combo_ = messages_form->add_row(tk::tr("Remove messages sent by others"),
+                                                    tk::create_widget<tk::ComboBox>(this));
     wire(remove_messages_combo_, &tesseract::RoomPermissions::remove_messages);
 
     // ── Membership ────────────────────────────────────────────────────────
     auto* membership_group = add_group(tk::tr("Membership"));
     auto* membership_form = membership_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     membership_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
-    invite_users_combo_ = membership_form->add_row(
-        tk::tr("Invite users"), tk::create_widget<tk::ComboBox>(this));
+    invite_users_combo_ =
+        membership_form->add_row(tk::tr("Invite users"), tk::create_widget<tk::ComboBox>(this));
     wire(invite_users_combo_, &tesseract::RoomPermissions::invite_users);
-    kick_users_combo_ = membership_form->add_row(
-        tk::tr("Kick users"), tk::create_widget<tk::ComboBox>(this));
+    kick_users_combo_ =
+        membership_form->add_row(tk::tr("Kick users"), tk::create_widget<tk::ComboBox>(this));
     wire(kick_users_combo_, &tesseract::RoomPermissions::kick_users);
-    ban_users_combo_ = membership_form->add_row(
-        tk::tr("Ban users"), tk::create_widget<tk::ComboBox>(this));
+    ban_users_combo_ =
+        membership_form->add_row(tk::tr("Ban users"), tk::create_widget<tk::ComboBox>(this));
     wire(ban_users_combo_, &tesseract::RoomPermissions::ban_users);
 
     // ── Calls ─────────────────────────────────────────────────────────────
     calls_group_ = add_group(tk::tr("Calls"));
     auto* calls_form = calls_group_->add_widget(tk::create_widget<tk::FormLayout>(this));
     calls_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
-    start_calls_combo_ = calls_form->add_row(
-        tk::tr("Start calls"), tk::create_widget<tk::ComboBox>(this));
+    start_calls_combo_ =
+        calls_form->add_row(tk::tr("Start calls"), tk::create_widget<tk::ComboBox>(this));
     wire(start_calls_combo_, &tesseract::RoomPermissions::start_calls);
-    join_calls_combo_ = calls_form->add_row(
-        tk::tr("Join calls"), tk::create_widget<tk::ComboBox>(this));
+    join_calls_combo_ =
+        calls_form->add_row(tk::tr("Join calls"), tk::create_widget<tk::ComboBox>(this));
     wire(join_calls_combo_, &tesseract::RoomPermissions::join_calls);
 
     // ── Advanced ──────────────────────────────────────────────────────────
     auto* advanced_group = add_group(tk::tr("Advanced"));
     auto* advanced_form = advanced_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     advanced_form->set_label_gap(8.0f).set_spacing(8.0f).set_label_group(&label_group_);
-    change_settings_combo_ = advanced_form->add_row(
-        tk::tr("Change settings"), tk::create_widget<tk::ComboBox>(this));
+    change_settings_combo_ =
+        advanced_form->add_row(tk::tr("Change settings"), tk::create_widget<tk::ComboBox>(this));
     wire(change_settings_combo_, &tesseract::RoomPermissions::change_settings);
-    change_permissions_combo_ = advanced_form->add_row(
-        tk::tr("Change permissions"), tk::create_widget<tk::ComboBox>(this));
+    change_permissions_combo_ =
+        advanced_form->add_row(tk::tr("Change permissions"), tk::create_widget<tk::ComboBox>(this));
     wire(change_permissions_combo_, &tesseract::RoomPermissions::change_permissions);
-    notify_everyone_combo_ = advanced_form->add_row(
-        tk::tr("Notify everyone (@room)"), tk::create_widget<tk::ComboBox>(this));
+    notify_everyone_combo_ = advanced_form->add_row(tk::tr("Notify everyone (@room)"),
+                                                    tk::create_widget<tk::ComboBox>(this));
     wire(notify_everyone_combo_, &tesseract::RoomPermissions::notify_everyone);
 }
 
@@ -195,7 +198,9 @@ void RoomPermissionsSection::set_calls_supported(bool supported)
     // FlexBox::arrange() skips invisible children, so a widget that just
     // became visible has stale bounds_ until the next full arrange() pass.
     if (was_visible != supported && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 tk::Widget* RoomPermissionsSection::calls_group() const
@@ -213,7 +218,9 @@ void RoomPermissionsSection::set_would_lock_out_self(bool would_lock_out)
     // request one whenever the visibility actually flips. Mirrors
     // RoomSecuritySection::refresh_encryption_warning_.
     if (was_visible != would_lock_out && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void RoomPermissionsSection::set_would_strip_other_admins(bool would_strip)
@@ -222,7 +229,9 @@ void RoomPermissionsSection::set_would_strip_other_admins(bool would_strip)
     other_admin_warning_->set_visible(would_strip);
     // Same visibility-flip-needs-relayout idiom as set_would_lock_out_self.
     if (was_visible != would_strip && on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 } // namespace tesseract::views

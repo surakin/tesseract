@@ -43,13 +43,19 @@ public:
     void append_messages(std::vector<MessageRowData> rows);
     void prepend_messages(std::vector<MessageRowData> rows);
 
-    MessageListView* message_list() { return message_list_; }
+    MessageListView* message_list()
+    {
+        return message_list_;
+    }
 
     // Find-in-thread search bar — embedded directly in the header, visible
     // from construction (no toggle). The shell (ShellBase) wires its
     // on_query_changed / on_navigate callbacks and drives set_match_status()
     // the same way RoomView does for its own room_search_bar().
-    RoomSearchBar* search_bar() const { return search_bar_; }
+    RoomSearchBar* search_bar() const
+    {
+        return search_bar_;
+    }
     // Resets the query (and, via the shell's on_query_changed handling,
     // matches/highlights) without touching focus — for switching to a
     // different thread underneath the always-open bar.
@@ -62,16 +68,22 @@ public:
     // homeserver supports thread subscriptions (`supported`). `following`
     // picks the bell glyph + accessible name; set silently (no callback).
     void set_follow_state(bool supported, bool following);
-    bool follow_supported() const { return follow_supported_; }
-    bool following() const { return following_; }
+    bool follow_supported() const
+    {
+        return follow_supported_;
+    }
+    bool following() const
+    {
+        return following_;
+    }
     // Fires on click with the desired new state (true = follow).
     std::function<void(bool follow)> on_follow_toggled;
 
     // tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    void     paint_after_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
 
     // Layout constants — exposed for tests so they can place pointer events
     // on the close button without re-computing the layout themselves.
@@ -79,19 +91,19 @@ public:
     // exactly RoomSearchBar::kStripH tall — RoomSearchBar centers its own
     // buttons using that constant directly rather than its arranged bounds'
     // height.
-    static constexpr float kHeaderH    = RoomSearchBar::kStripH;
-    static constexpr float kCloseSz    = 32.0f;
+    static constexpr float kHeaderH = RoomSearchBar::kStripH;
+    static constexpr float kCloseSz = 32.0f;
     static constexpr float kCloseInset = 8.0f;
-    static constexpr float kHeaderGap  = 4.0f;
+    static constexpr float kHeaderGap = 4.0f;
 
 private:
     // Borrowed pointers — ownership is in the tk::Widget child list.
     MessageListView* message_list_ = nullptr;
-    tk::Button*      close_btn_    = nullptr;
-    tk::ToggleButton* follow_btn_  = nullptr;
-    bool             follow_supported_ = false;
-    bool             following_        = false;
-    RoomSearchBar*   search_bar_   = nullptr;
+    tk::Button* close_btn_ = nullptr;
+    tk::ToggleButton* follow_btn_ = nullptr;
+    bool follow_supported_ = false;
+    bool following_ = false;
+    RoomSearchBar* search_bar_ = nullptr;
     // Cached Lucide close icon (kCloseSvg), tint-aware — see paint().
     tk::IconCache close_icon_;
 };

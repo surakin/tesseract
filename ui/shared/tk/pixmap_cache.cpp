@@ -40,7 +40,9 @@ std::size_t PixmapCache::total_bytes_all_instances()
     std::lock_guard<std::mutex> lock(registry_mutex());
     std::size_t total = 0;
     for (const PixmapCache* c : registry())
+    {
         total += c->current_bytes();
+    }
     return total;
 }
 
@@ -150,8 +152,8 @@ void PixmapCache::clear()
     std::lock_guard<std::mutex> lock(mu_);
     entries_.clear();
     current_bytes_ = 0;
-    hits_          = 0;
-    misses_        = 0;
+    hits_ = 0;
+    misses_ = 0;
 }
 
 void PixmapCache::retain_recent(unsigned keep)
@@ -208,15 +210,16 @@ void PixmapCache::retain_recent(unsigned keep)
     std::vector<std::unordered_map<CacheKey, Entry, CacheKeyHash>::iterator> evictable;
     for (auto it = entries_.begin(); it != entries_.end(); ++it)
     {
-        if (it->second.img.use_count() == 1 &&
-            (gen_ - it->second.last_peek_gen) >= keep)
+        if (it->second.img.use_count() == 1 && (gen_ - it->second.last_peek_gen) >= keep)
         {
             evictable.push_back(it);
         }
     }
     std::sort(evictable.begin(), evictable.end(),
               [](const auto& a, const auto& b)
-              { return a->second.last_use < b->second.last_use; });
+              {
+                  return a->second.last_use < b->second.last_use;
+              });
     for (auto it : evictable)
     {
         if (current_bytes_ <= max_bytes_)
@@ -268,7 +271,9 @@ void PixmapCache::sweep()
     }
     std::sort(evictable.begin(), evictable.end(),
               [](const auto& a, const auto& b)
-              { return a->second.last_use < b->second.last_use; });
+              {
+                  return a->second.last_use < b->second.last_use;
+              });
 
     for (auto it : evictable)
     {
@@ -298,7 +303,9 @@ std::size_t PixmapCache::current_bytes() const
     std::lock_guard<std::mutex> lock(mu_);
     std::size_t total = 0;
     for (const auto& [_, e] : entries_)
+    {
         total += e.img ? e.img->memory_bytes() : 0;
+    }
     return total;
 }
 

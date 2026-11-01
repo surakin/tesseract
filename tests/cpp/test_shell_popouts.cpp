@@ -34,8 +34,7 @@ namespace
 
 struct PoWindow : RoomWindowBase
 {
-    PoWindow(ShellBase* shell, std::string room_id)
-        : RoomWindowBase(shell, room_id)
+    PoWindow(ShellBase* shell, std::string room_id) : RoomWindowBase(shell, room_id)
     {
         view = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
         tesseract::RoomInfo info;
@@ -47,19 +46,40 @@ struct PoWindow : RoomWindowBase
         pane_->attach({.room_view = view.get()});
         finish_init_();
     }
-    void bring_to_front() override { ++fronted; }
-    void close_window() override {}
-    void self_close() { schedule_self_close_(); }
-    void request_relayout() override { ++relayouts; }
-    void apply_theme(const tk::Theme&) override { ++themes; }
-    void apply_scale_change(float) override {}
-    bool is_visible() const override { return visible; }
+    void bring_to_front() override
+    {
+        ++fronted;
+    }
+    void close_window() override
+    {
+    }
+    void self_close()
+    {
+        schedule_self_close_();
+    }
+    void request_relayout() override
+    {
+        ++relayouts;
+    }
+    void apply_theme(const tk::Theme&) override
+    {
+        ++themes;
+    }
+    void apply_scale_change(float) override
+    {
+    }
+    bool is_visible() const override
+    {
+        return visible;
+    }
 
     std::vector<std::string> ids() const
     {
         std::vector<std::string> v;
         for (const auto& m : view->message_list()->messages())
+        {
             v.push_back(m.event_id);
+        }
         return v;
     }
 
@@ -68,14 +88,19 @@ struct PoWindow : RoomWindowBase
     bool visible = true;
 
 protected:
-    void surface_repaint_() override { ++repaints; }
+    void surface_repaint_() override
+    {
+        ++repaints;
+    }
     int repaints = 0;
 };
 
 struct PoShell : tesseract::test::TestShellBase
 {
     PoShell() = default;
-    explicit PoShell(tesseract::AccountManager& am) : TestShellBase(am) {}
+    explicit PoShell(tesseract::AccountManager& am) : TestShellBase(am)
+    {
+    }
     ~PoShell() override
     {
         wait_pools_idle();
@@ -85,30 +110,49 @@ struct PoShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
     }
-    void prep_row_media_(const tesseract::Event&, bool) override {}
+    void prep_row_media_(const tesseract::Event&, bool) override
+    {
+    }
     RoomWindowBase* create_secondary_room_window_(const std::string& id) override
     {
         if (!create_windows)
+        {
             return nullptr;
+        }
         return new PoWindow(this, id);
     }
-    void repaint_pickers_() override { ++picker_repaints; }
-    bool is_main_window_visible_() const override { return main_visible; }
+    void repaint_pickers_() override
+    {
+        ++picker_repaints;
+    }
+    bool is_main_window_visible_() const override
+    {
+        return main_visible;
+    }
     // Tray: record what the shared click logic asks the platform to do.
-    bool main_window_foreground_for_tray_() const override { return tray_foreground; }
-    void hide_main_window_for_tray_() override { ++tray_hides; }
+    bool main_window_foreground_for_tray_() const override
+    {
+        return tray_foreground;
+    }
+    void hide_main_window_for_tray_() override
+    {
+        ++tray_hides;
+    }
     void show_main_window_for_tray_(const std::string& t) override
     {
         tray_shows.push_back(t);
@@ -125,9 +169,12 @@ struct PoShell : tesseract::test::TestShellBase
     PoWindow* window(const std::string& room, const std::string& uid = "")
     {
         for (auto& w : owned_secondary_windows_)
-            if (w->room_id() == room &&
-                (uid.empty() || w->owner_user_id() == uid))
+        {
+            if (w->room_id() == room && (uid.empty() || w->owner_user_id() == uid))
+            {
                 return static_cast<PoWindow*>(w.get());
+            }
+        }
         return nullptr;
     }
 
@@ -209,8 +256,7 @@ struct PoFx
     }
 };
 
-std::unique_ptr<tesseract::Event> po_ev(const std::string& id,
-                                        const std::string& reply_to = "")
+std::unique_ptr<tesseract::Event> po_ev(const std::string& id, const std::string& reply_to = "")
 {
     auto e = std::make_unique<tesseract::Event>();
     e->event_id = id;
@@ -224,14 +270,15 @@ tesseract::EventList po_list(std::initializer_list<const char*> ids)
 {
     tesseract::EventList l;
     for (auto* i : ids)
+    {
         l.push_back(po_ev(i));
+    }
     return l;
 }
 
 } // namespace
 
-TEST_CASE("opening a pop-out registers it, themes it and records it in settings",
-          "[shell][popout]")
+TEST_CASE("opening a pop-out registers it, themes it and records it in settings", "[shell][popout]")
 {
     PoFx f;
     f.s.open_room_in_new_window("");
@@ -311,8 +358,7 @@ TEST_CASE("tray click: an unread room that is not popped out opens in the shown 
     CHECK(f.s.current_room_id_ == "!a:x");
 }
 
-TEST_CASE("popping out a room that is open in a tab closes the tab first",
-          "[shell][popout]")
+TEST_CASE("popping out a room that is open in a tab closes the tab first", "[shell][popout]")
 {
     PoFx f;
     f.s.tab_select_room("!a:x");
@@ -322,8 +368,7 @@ TEST_CASE("popping out a room that is open in a tab closes the tab first",
     CHECK(f.s.tabs_[0].room_id == "!a:x");
 }
 
-TEST_CASE("a pre-migration settings entry is claimed rather than duplicated",
-          "[shell][popout]")
+TEST_CASE("a pre-migration settings entry is claimed rather than duplicated", "[shell][popout]")
 {
     PoFx f;
     tesseract::Settings::PopoutEntry old;
@@ -361,8 +406,7 @@ TEST_CASE("pop-outs of two accounts for the same room coexist", "[shell][popout]
     CHECK(f.s.room_subscription_refs_.size() == 1);
 }
 
-TEST_CASE("a pop-out's self-close is ignored while the shell is tearing down",
-          "[shell][popout]")
+TEST_CASE("a pop-out's self-close is ignored while the shell is tearing down", "[shell][popout]")
 {
     PoFx f;
     f.s.open_room_in_new_window("!a:x");
@@ -461,8 +505,7 @@ TEST_CASE("live edits fan out to the pop-out", "[shell][popout][dispatch]")
     CHECK(w->view->message_list()->messages()[2].body == "batch");
 }
 
-TEST_CASE("a reply event triggers the pop-out's reply lookup path",
-          "[shell][popout][dispatch]")
+TEST_CASE("a reply event triggers the pop-out's reply lookup path", "[shell][popout][dispatch]")
 {
     PoFx f;
     f.s.open_room_in_new_window("!a:x");
@@ -470,11 +513,13 @@ TEST_CASE("a reply event triggers the pop-out's reply lookup path",
     f.s.handle_timeline_reset_ui_("!a:x", po_list({"$1"}));
     f.s.handle_message_inserted_ui_("!a:x", 1, po_ev("$r", "$1"));
     f.s.handle_message_updated_ui_("!a:x", 1, po_ev("$r", "$1"));
-    f.s.handle_messages_appended_ui_("!a:x", [] {
-        tesseract::EventList l;
-        l.push_back(po_ev("$r2", "$1"));
-        return l;
-    }());
+    f.s.handle_messages_appended_ui_("!a:x",
+                                     []
+                                     {
+                                         tesseract::EventList l;
+                                         l.push_back(po_ev("$r2", "$1"));
+                                         return l;
+                                     }());
     CHECK(w->ids().size() >= 3);
 }
 
@@ -500,15 +545,16 @@ TEST_CASE("media readiness refreshes each pop-out per kind", "[shell][popout][me
     f.s.open_room_in_new_window("!b:x");
     auto* a = f.s.window("!a:x");
     const int base = a->relayouts;
-    for (auto k : {K::MediaImage, K::MediaThumbnail, K::Sticker, K::Reaction,
-                   K::Tile, K::RoomAvatar, K::UserAvatar})
+    for (auto k : {K::MediaImage, K::MediaThumbnail, K::Sticker, K::Reaction, K::Tile,
+                   K::RoomAvatar, K::UserAvatar})
+    {
         f.s.notify_secondary_media_ready_("mxc://hs/x", k);
+    }
     CHECK(a->relayouts == base + 7);
     CHECK(f.s.picker_repaints == 1); // sticker only
 }
 
-TEST_CASE("room-info updates reach the pop-out from its own account's list",
-          "[shell][popout]")
+TEST_CASE("room-info updates reach the pop-out from its own account's list", "[shell][popout]")
 {
     PoFx f;
     f.s.open_room_in_new_window("!a:x");
@@ -521,8 +567,7 @@ TEST_CASE("room-info updates reach the pop-out from its own account's list",
     SUCCEED();
 }
 
-TEST_CASE("window visibility drives video suspension and the animation gate",
-          "[shell][popout]")
+TEST_CASE("window visibility drives video suspension and the animation gate", "[shell][popout]")
 {
     PoFx f;
     auto rv = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
@@ -546,15 +591,18 @@ TEST_CASE("window visibility drives video suspension and the animation gate",
     CHECK_FALSE(f.s.video_playback_suspended_);
 }
 
-TEST_CASE("room views are enumerated and looked up across windows",
-          "[shell][popout]")
+TEST_CASE("room views are enumerated and looked up across windows", "[shell][popout]")
 {
     PoFx f;
     auto rv = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
     f.s.room_view_ = rv.get();
     f.s.open_room_in_new_window("!a:x");
     int n = 0;
-    f.s.for_each_room_view_([&](tesseract::views::RoomView&) { ++n; });
+    f.s.for_each_room_view_(
+        [&](tesseract::views::RoomView&)
+        {
+            ++n;
+        });
     CHECK(n == 2);
     CHECK(f.s.room_view_for_room_("!main") == rv.get());
     CHECK(f.s.room_view_for_room_("!a:x") == f.s.window("!a:x")->room_view());
@@ -571,8 +619,7 @@ TEST_CASE("gif results fan out to every pop-out", "[shell][popout]")
     CHECK(f.s.cached_gif_source_bytes_("https://x/y.gif").empty());
 }
 
-TEST_CASE("an account another window keeps pop-outs of is not taken",
-          "[shell][popout][windows]")
+TEST_CASE("an account another window keeps pop-outs of is not taken", "[shell][popout][windows]")
 {
     tesseract::test::SettingsGuard guard;
     tesseract::Settings::instance().popout_windows.clear();

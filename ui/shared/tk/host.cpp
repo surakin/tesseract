@@ -54,7 +54,7 @@ void Host::dispatch_pointer_down(Point world)
         }
     }
     wheel_latch_.reset();
-    cancel_tooltip_(); // any click anywhere dismisses an active/pending tooltip
+    cancel_tooltip_();      // any click anywhere dismisses an active/pending tooltip
     focus_visible_ = false; // mouse navigation doesn't need a focus ring
     Widget* root = input_root_();
     if (!root)
@@ -89,8 +89,7 @@ void Host::dispatch_pointer_down(Point world)
         // query with the same traversal order as dispatch_pointer_down()'s
         // own hit-test, so it agrees on which widget would be pressed.
         Widget* trigger = popup_trigger_.lock().get();
-        if (!(trigger && trigger->enabled() &&
-              root->hit_test(world) == trigger))
+        if (!(trigger && trigger->enabled() && root->hit_test(world) == trigger))
         {
             // Dismiss it, then let the click through. Reset popup_ BEFORE
             // calling on_popup_dismiss() — the dismiss callback commonly
@@ -129,9 +128,13 @@ void Host::dispatch_pointer_down(Point world)
     // load-bearing). Inert until some widget actually overrides
     // focusable() — see Widget::focusable()'s default in widget.h.
     if (pressed && pressed->focusable() && pressed->focus_on_click())
+    {
         request_focus(pressed);
+    }
     else if (!pressed)
+    {
         clear_focus();
+    }
 }
 
 void Host::dispatch_pointer_up(Point world)
@@ -147,27 +150,34 @@ void Host::dispatch_pointer_up(Point world)
         DragPayload payload = std::move(active_drag_->payload);
         Point local{};
         if (target)
+        {
             local = target->world_to_local(world);
+        }
         active_drag_.reset(); // clear before callback (re-entrancy safe)
         pressed_widget_.reset();
         if (target)
+        {
             target->on_drop(local, std::move(payload));
+        }
         request_repaint();
         return;
     }
     auto w = pressed_widget_.lock();
     if (!w)
+    {
         return;
-    pressed_widget_.reset();  // clear before callback (re-entrancy safe)
+    }
+    pressed_widget_.reset(); // clear before callback (re-entrancy safe)
     Point ws = w->world_to_local(world);
-    bool inside = (ws.x >= 0 && ws.y >= 0 &&
-                   ws.x < w->bounds().w && ws.y < w->bounds().h);
+    bool inside = (ws.x >= 0 && ws.y >= 0 && ws.x < w->bounds().w && ws.y < w->bounds().h);
     // Guard: if the callback destroys this host (e.g. hang-up → call_window_.reset()),
     // the weak flag expires — do not touch `this` after.
     std::weak_ptr<bool> still_alive = weak_flag();
     w->on_pointer_up(ws, inside);
     if (!still_alive.expired())
+    {
         request_repaint();
+    }
 }
 
 void Host::dispatch_pointer_move(Point world)
@@ -177,7 +187,9 @@ void Host::dispatch_pointer_move(Point world)
         const float dx = world.x - wheel_latch_->anchor.x;
         const float dy = world.y - wheel_latch_->anchor.y;
         if (dx * dx + dy * dy > kWheelLatchMoveSlop * kWheelLatchMoveSlop)
+        {
             wheel_latch_.reset();
+        }
     }
     Widget* root = input_root_();
     if (!root)
@@ -209,11 +221,15 @@ void Host::dispatch_pointer_move(Point world)
         if (target != current)
         {
             if (current)
+            {
                 current->on_drag_leave_target();
+            }
             active_drag_->current_target = track(target);
         }
         if (target)
+        {
             target->on_drag_over(target->world_to_local(world), active_drag_->payload);
+        }
         request_repaint();
         return;
     }
@@ -234,8 +250,8 @@ void Host::dispatch_pointer_move(Point world)
         // The popup is above everything else: hover feedback comes from the
         // popup's own subtree, never from the tree behind it.
         bool fb_changed = false;
-        const CursorShape want = begin_hover_feedback_(
-            hover_target_for_(p->hit_test(world)), &fb_changed);
+        const CursorShape want =
+            begin_hover_feedback_(hover_target_for_(p->hit_test(world)), &fb_changed);
         // Recursive dispatch (see dispatch_pointer_down's comment above) so
         // hover reaches whichever child of the popup is actually under the
         // pointer, not just the popup widget itself.
@@ -245,12 +261,16 @@ void Host::dispatch_pointer_move(Point world)
         if (widget_changed)
         {
             if (auto hw = hovered_widget_.lock())
+            {
                 hw->on_pointer_leave();
+            }
             hovered_widget_ = track(moved);
         }
         end_hover_feedback_(want);
         if (fb_changed || widget_changed || dirty)
+        {
             request_repaint();
+        }
         return;
     }
 
@@ -271,7 +291,9 @@ void Host::dispatch_pointer_move(Point world)
     }
     end_hover_feedback_(want);
     if (fb_changed || widget_changed || dirty)
+    {
         request_repaint();
+    }
 }
 
 // The widget that should show hover for a pointer over `hit`: the nearest
@@ -280,11 +302,15 @@ void Host::dispatch_pointer_move(Point world)
 Widget* Host::hover_target_for_(Widget* hit)
 {
     if (!hit || !hit->enabled())
+    {
         return nullptr;
+    }
     for (Widget* w = hit; w; w = w->parent())
     {
         if (w->hoverable())
+        {
             return w->enabled() ? w : nullptr;
+        }
     }
     return nullptr;
 }
@@ -300,12 +326,18 @@ CursorShape Host::begin_hover_feedback_(Widget* target, bool* changed)
     if (target != hover_feedback_.lock().get())
     {
         if (changed)
+        {
             *changed = true;
+        }
         if (auto old = hover_feedback_.lock())
+        {
             old->set_hovered(false);
+        }
         hover_feedback_ = track(target);
         if (target)
+        {
             target->set_hovered(true);
+        }
     }
     const CursorShape want = target ? target->cursor() : CursorShape::Default;
     if (want == CursorShape::Default && applied_cursor_ != CursorShape::Default)
@@ -319,15 +351,23 @@ CursorShape Host::begin_hover_feedback_(Widget* target, bool* changed)
 void Host::revalidate_hover_feedback_()
 {
     if (hover_feedback_.expired())
+    {
         return;
+    }
     auto target = hover_feedback_.lock();
     if (!target)
+    {
         return;
+    }
     bool inert = !target->visible();
     for (Widget* w = target.get(); w && !inert; w = w->parent())
+    {
         inert = !w->enabled();
+    }
     if (!inert)
+    {
         return;
+    }
     // Reset before notifying: on_hover_leave may itself hide/disable widgets
     // and re-enter here.
     hover_feedback_.reset();
@@ -352,7 +392,9 @@ void Host::end_hover_feedback_(CursorShape want)
 Widget* Host::live_wheel_latch_target_(Point world)
 {
     if (!wheel_latch_)
+    {
         return nullptr;
+    }
     Widget* t = wheel_latch_->target.lock().get();
     bool live = t && t->visible() && t->enabled();
     if (live)
@@ -384,7 +426,9 @@ bool Host::dispatch_wheel(Point world, float dx, float dy, bool is_touchpad)
 {
     Widget* root = input_root_();
     if (!root)
+    {
         return false;
+    }
     const auto now = wheel_clock_now_();
 
     // Mid-gesture: the widget that took the gesture keeps it, even when it
@@ -392,8 +436,7 @@ bool Host::dispatch_wheel(Point world, float dx, float dy, bool is_touchpad)
     // the rest of the gesture to whatever slid under the pointer).
     if (Widget* latched = live_wheel_latch_target_(world))
     {
-        if (now - wheel_latch_->last < kWheelLatchQuiet ||
-            latched->wheel_motion_active())
+        if (now - wheel_latch_->last < kWheelLatchQuiet || latched->wheel_motion_active())
         {
             wheel_latch_->anchor = world;
             wheel_latch_->last = now;
@@ -406,17 +449,25 @@ bool Host::dispatch_wheel(Point world, float dx, float dy, bool is_touchpad)
     wheel_consumer_ = nullptr;
     bool consumed = false;
     if (auto p = popup_.lock(); p && p->contains_world(world))
+    {
         // Recursive dispatch (see dispatch_pointer_down's comment above) so
         // a scroll over e.g. TabbedGridPicker's grid reaches the grid's own
         // wheel handling, not just the popup's own on_wheel.
         consumed = p->dispatch_wheel(world, dx, dy, is_touchpad);
+    }
     else
+    {
         consumed = root->dispatch_wheel(world, dx, dy, is_touchpad);
+    }
 
     if (consumed && wheel_consumer_)
+    {
         wheel_latch_ = WheelLatch{track(wheel_consumer_), world, now};
+    }
     else
+    {
         wheel_latch_.reset();
+    }
     wheel_consumer_ = nullptr;
     return consumed;
 }
@@ -425,10 +476,14 @@ Widget* Host::dispatch_file_drop(Point world, FileDropPayload& payload)
 {
     Widget* root = input_root_();
     if (!root)
+    {
         return nullptr;
+    }
     Widget* target = root->dispatch_file_drop(world, payload);
     if (target)
+    {
         request_repaint();
+    }
     return target;
 }
 
@@ -436,17 +491,23 @@ Widget* Host::dispatch_native_drag_hover(Point world)
 {
     Widget* root = input_root_();
     if (!root)
+    {
         return nullptr;
+    }
     Widget* target = root->dispatch_native_drag_hover(world);
     bool changed = (target != native_drag_hovered_widget_.lock().get());
     if (changed)
     {
         if (auto d = native_drag_hovered_widget_.lock())
+        {
             d->on_native_drag_leave();
+        }
         native_drag_hovered_widget_ = track(target);
     }
     if (changed || target)
+    {
         request_repaint();
+    }
     return target;
 }
 
@@ -479,9 +540,13 @@ void Host::begin_drag(DragPayload payload, DragVisual visual, Point source_local
 void Host::cancel_drag()
 {
     if (!active_drag_)
+    {
         return;
+    }
     if (auto t = active_drag_->current_target.lock())
+    {
         t->on_drag_leave_target();
+    }
     active_drag_.reset();
     pressed_widget_.reset();
     request_repaint();
@@ -490,7 +555,9 @@ void Host::cancel_drag()
 void Host::paint_drag_overlay(PaintCtx& ctx, Rect /*surface_bounds*/)
 {
     if (!active_drag_ || !active_drag_->visual.image)
+    {
         return;
+    }
     const DragVisual& visual = active_drag_->visual;
     Point cursor = active_drag_->cursor_world;
     // Image::width()/height() are device pixels (the visual is rendered at the
@@ -499,8 +566,8 @@ void Host::paint_drag_overlay(PaintCtx& ctx, Rect /*surface_bounds*/)
     // ghost is drawn scale-times too big on a HiDPI display.
     const float scale = ctx.canvas.scale_factor() > 0.0f ? ctx.canvas.scale_factor() : 1.0f;
     Rect dst{cursor.x - visual.hotspot.x, cursor.y - visual.hotspot.y,
-              static_cast<float>(visual.image->width()) / scale,
-              static_cast<float>(visual.image->height()) / scale};
+             static_cast<float>(visual.image->width()) / scale,
+             static_cast<float>(visual.image->height()) / scale};
     OpacityScope fade(ctx.canvas, visual.opacity);
     ctx.canvas.draw_image(*visual.image, dst);
 }
@@ -629,7 +696,9 @@ void Host::request_focus(Widget* w)
     // Tab, Enter, ...) keep reaching Host::dispatch_key_down instead of
     // dangling nowhere. See claim_native_focus_container_()'s doc comment.
     if (!w->holds_native_focus())
+    {
         claim_native_focus_container_();
+    }
     scroll_widget_into_view(w);
     request_repaint();
 }
@@ -667,7 +736,9 @@ bool Host::advance_focus_(bool forward)
     // advance_focus() wrapper (which never goes through dispatch_key_down).
     Widget* root = input_root_();
     if (!root)
+    {
         return false;
+    }
     // Narrowing order: an explicit focus scope wins — its owner (RoomView,
     // MainAppWidget) already picks whichever overlay is on top, including a
     // non-modal one stacked over a modal. With no scope set, the topmost
@@ -675,8 +746,7 @@ bool Host::advance_focus_(bool forward)
     // for surfaces whose owners set no scope (Settings, login, pop-outs). A
     // registered popup that scopes focus beats both, since it paints above
     // everything.
-    if (Widget* scope = focus_scope_.lock().get();
-        scope && scope->visible_in_tree())
+    if (Widget* scope = focus_scope_.lock().get(); scope && scope->visible_in_tree())
     {
         root = scope;
     }
@@ -684,14 +754,15 @@ bool Host::advance_focus_(bool forward)
     {
         root = modal;
     }
-    if (auto p = popup_.lock();
-        p && p->popup_scopes_focus() && p->visible_in_tree())
+    if (auto p = popup_.lock(); p && p->popup_scopes_focus() && p->visible_in_tree())
     {
         root = p.get();
     }
     Widget* next = next_focusable(root, focused_widget_.lock().get(), forward);
     if (!next)
+    {
         return false;
+    }
     request_focus(next);
     // Set after request_focus(), which clears focus_visible_ whenever focus
     // actually lands on a new widget — Tab/Shift-Tab traversal is the one
@@ -703,7 +774,9 @@ bool Host::advance_focus_(bool forward)
         tooltip_anchor_follows_focus_ = true;
     }
     else
+    {
         cancel_tooltip_();
+    }
     return true;
 }
 
@@ -720,7 +793,9 @@ bool Host::dispatch_key_down(const KeyEvent& event)
     // dismisses a tooltip — e.g. Enter activating a Tab-focused icon
     // button shouldn't leave its focus tooltip floating over what opens.
     if (event.key != Key::Tab && event.key != Key::Backtab)
+    {
         cancel_tooltip_();
+    }
     // A drag in progress is the most "modal" transient state a surface can
     // be in — Escape cancels it ahead of every other Escape-consumer below
     // (popup dismiss, etc.), which would be reaching for state that no
@@ -743,7 +818,9 @@ bool Host::dispatch_key_down(const KeyEvent& event)
     // focused text field flips on a focus ring around it even though the
     // user never Tab-navigated anywhere.
     if (auto f = focused_widget_.lock(); !f || !f->holds_native_focus())
+    {
         focus_visible_ = true;
+    }
     if (auto p = popup_.lock(); p && p->dispatch_key_down(event))
     {
         request_repaint();
@@ -751,7 +828,9 @@ bool Host::dispatch_key_down(const KeyEvent& event)
     }
     bool context_menu_key = false;
     for (const KeyChord& chord : context_menu_chords())
+    {
         context_menu_key = context_menu_key || chord_matches(chord, event);
+    }
     if (context_menu_key)
     {
         if (auto f = focused_widget_.lock())
@@ -828,7 +907,9 @@ void Host::paint_focus_overlay(PaintCtx& ctx)
 {
     auto w = focused_widget_.lock();
     if (!w)
+    {
         return;
+    }
     // The focused widget (or an ancestor — e.g. its owning panel/overlay
     // was dismissed) is no longer visible/enabled. Clear focus outright
     // rather than just skipping the ring: leaving focused_widget_ pointing
@@ -840,21 +921,26 @@ void Host::paint_focus_overlay(PaintCtx& ctx)
         return;
     }
     if (focus_visible_)
+    {
         w->paint_own_focus_ring(ctx);
+    }
 }
 
 void Host::queue_for_deletion(std::unique_ptr<Widget> subtree)
 {
     pending_deletions_.push_back(std::move(subtree));
     if (drain_scheduled_)
+    {
         return;
+    }
     drain_scheduled_ = true;
     // Guard against the Host itself being destroyed before this posted
     // closure runs.
-    post_to_ui(guarded([this]
-    {
-        drain_deferred_deletions_();
-    }));
+    post_to_ui(guarded(
+        [this]
+        {
+            drain_deferred_deletions_();
+        }));
 }
 
 void Host::drain_deferred_deletions_()
@@ -870,14 +956,16 @@ void Host::drain_deferred_deletions_()
 
 // ── Tooltip management ──────────────────────────────────────────────────────
 
-void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world,
-                        bool from_popup)
+void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world, bool from_popup)
 {
     tooltip_anchor_follows_focus_ = false;
     // A real popup is open — tooltips are suppressed entirely, unless this
     // request comes from the popup's own content (see from_popup's doc
     // comment in host.h).
-    if (!popup_.expired() && !from_popup) return;
+    if (!popup_.expired() && !from_popup)
+    {
+        return;
+    }
     if (owner == tooltip_owner_)
     {
         // Same owner: refresh content/anchor. If already visible, take effect
@@ -890,48 +978,69 @@ void Host::show_tooltip(const void* owner, std::string text, Rect anchor_world,
         // coalesce redundant invalidations, but fatal on Win32: raw
         // InvalidateRect during WM_PAINT re-arms immediately and starves
         // the thread-wide WM_TIMER driving animation frame ticks.
-        const bool changed = text != tooltip_text_ ||
-            anchor_world.x != tooltip_anchor_.x ||
-            anchor_world.y != tooltip_anchor_.y ||
-            anchor_world.w != tooltip_anchor_.w ||
-            anchor_world.h != tooltip_anchor_.h;
+        const bool changed = text != tooltip_text_ || anchor_world.x != tooltip_anchor_.x ||
+                             anchor_world.y != tooltip_anchor_.y ||
+                             anchor_world.w != tooltip_anchor_.w ||
+                             anchor_world.h != tooltip_anchor_.h;
         tooltip_text_ = std::move(text);
         tooltip_anchor_ = anchor_world;
-        if (tooltip_visible_ && changed) request_repaint();
+        if (tooltip_visible_ && changed)
+        {
+            request_repaint();
+        }
         return;
     }
     // New owner — reset and re-arm the dwell delay.
-    tooltip_owner_   = owner;
-    tooltip_text_    = std::move(text);
-    tooltip_anchor_  = anchor_world;
+    tooltip_owner_ = owner;
+    tooltip_text_ = std::move(text);
+    tooltip_anchor_ = anchor_world;
     tooltip_visible_ = false;
     const auto gen = ++tooltip_gen_;
-    post_delayed(kTooltipShowDelayMs, guarded([this, gen, owner] {
-        if (gen != tooltip_gen_ || owner != tooltip_owner_) return; // superseded/cancelled
-        if (tooltip_anchor_follows_focus_)
-            if (auto f = focused_widget_.lock(); f && f.get() == owner)
-                tooltip_anchor_ = f->bounds();
-        tooltip_visible_ = true;
-        tooltip_reveal_pending_ = true;
-        request_repaint();
-    }));
+    post_delayed(kTooltipShowDelayMs, guarded(
+                                          [this, gen, owner]
+                                          {
+                                              if (gen != tooltip_gen_ || owner != tooltip_owner_)
+                                              {
+                                                  return; // superseded/cancelled
+                                              }
+                                              if (tooltip_anchor_follows_focus_)
+                                              {
+                                                  if (auto f = focused_widget_.lock();
+                                                      f && f.get() == owner)
+                                                  {
+                                                      tooltip_anchor_ = f->bounds();
+                                                  }
+                                              }
+                                              tooltip_visible_ = true;
+                                              tooltip_reveal_pending_ = true;
+                                              request_repaint();
+                                          }));
 }
 
 void Host::hide_tooltip(const void* owner)
 {
-    if (owner != tooltip_owner_) return;
+    if (owner != tooltip_owner_)
+    {
+        return;
+    }
     cancel_tooltip_();
 }
 
 void Host::update_tooltip_text(const void* owner, std::string text)
 {
-    if (!popup_.expired()) return;
+    if (!popup_.expired())
+    {
+        return;
+    }
     if (owner != tooltip_owner_)
     {
-        if (tooltip_owner_ != nullptr) return; // someone else owns it — not ours to steal
+        if (tooltip_owner_ != nullptr)
+        {
+            return; // someone else owns it — not ours to steal
+        }
         tooltip_owner_ = owner; // adopt: caller asserts it's genuinely hovered right now
     }
-    tooltip_text_    = std::move(text);
+    tooltip_text_ = std::move(text);
     if (!tooltip_visible_)
     {
         tooltip_reveal_pending_ = true;
@@ -943,9 +1052,11 @@ void Host::update_tooltip_text(const void* owner, std::string text)
 void Host::cancel_tooltip_()
 {
     if (tooltip_owner_ == nullptr && !tooltip_visible_ && tooltip_text_.empty())
+    {
         return; // nothing active/pending — avoid a spurious repaint request
+    }
     ++tooltip_gen_; // invalidates any in-flight show timer
-    tooltip_owner_   = nullptr;
+    tooltip_owner_ = nullptr;
     tooltip_visible_ = false;
     tooltip_reveal_pending_ = false;
     tooltip_text_.clear();
@@ -954,8 +1065,14 @@ void Host::cancel_tooltip_()
 
 void Host::paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds)
 {
-    if (!tooltip_visible_ || tooltip_text_.empty()) return;
-    if (!tooltip_widget_) tooltip_widget_ = std::make_unique<Tooltip>();
+    if (!tooltip_visible_ || tooltip_text_.empty())
+    {
+        return;
+    }
+    if (!tooltip_widget_)
+    {
+        tooltip_widget_ = std::make_unique<Tooltip>();
+    }
     if (tooltip_reveal_pending_)
     {
         tooltip_widget_->reset_reveal();
@@ -963,7 +1080,10 @@ void Host::paint_tooltip_overlay(PaintCtx& ctx, Rect surface_bounds)
     }
     tooltip_widget_->set_content(tooltip_text_, tooltip_anchor_);
     tooltip_widget_->paint_overlay(ctx, surface_bounds);
-    if (tooltip_widget_->still_revealing()) request_repaint();
+    if (tooltip_widget_->still_revealing())
+    {
+        request_repaint();
+    }
 }
 
 void Host::show_toast(std::string message)
@@ -973,20 +1093,34 @@ void Host::show_toast(std::string message)
     toast_visible_ = true;
     const auto gen = ++toast_gen_;
     request_repaint();
-    post_delayed(kToastDurationMs, guarded([this, gen] {
-        if (gen != toast_gen_) return; // superseded by a newer show_toast()
-        toast_visible_ = false;
-        request_repaint();
-    }));
+    post_delayed(kToastDurationMs, guarded(
+                                       [this, gen]
+                                       {
+                                           if (gen != toast_gen_)
+                                           {
+                                               return; // superseded by a newer show_toast()
+                                           }
+                                           toast_visible_ = false;
+                                           request_repaint();
+                                       }));
 }
 
 void Host::paint_toast_overlay(PaintCtx& ctx, Rect surface_bounds)
 {
-    if (!toast_visible_ || toast_message_.empty()) return;
-    if (!toast_widget_) toast_widget_ = std::make_unique<Toast>();
+    if (!toast_visible_ || toast_message_.empty())
+    {
+        return;
+    }
+    if (!toast_widget_)
+    {
+        toast_widget_ = std::make_unique<Toast>();
+    }
     toast_widget_->set_message(toast_message_);
     toast_widget_->paint_overlay(ctx, surface_bounds);
-    if (toast_widget_->still_revealing()) request_repaint();
+    if (toast_widget_->still_revealing())
+    {
+        request_repaint();
+    }
 }
 
 } // namespace tk

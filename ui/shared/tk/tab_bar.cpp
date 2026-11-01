@@ -15,8 +15,7 @@ TabBar::TabBar()
 
 // ── Public mutators ────────────────────────────────────────────────────────
 
-void TabBar::add_tab(std::string room_id, std::string display_name,
-                     const Image* avatar)
+void TabBar::add_tab(std::string room_id, std::string display_name, const Image* avatar)
 {
     TabItem item;
     item.room_id = std::move(room_id);
@@ -77,20 +76,23 @@ void TabBar::set_active(const std::string& room_id)
             // scrolled out of the bar's horizontal viewport (e.g. after
             // keyboard Left/Right cycling, or a click/programmatic switch
             // to a tab off-screen).
-            const float left  = items_[i].x;
+            const float left = items_[i].x;
             const float right = left + items_[i].width;
             if (left < scroll_x_)
+            {
                 scroll_x_ = left;
+            }
             else if (right > scroll_x_ + bounds_.w)
+            {
                 scroll_x_ = right - bounds_.w;
+            }
             clamp_scroll_();
             return;
         }
     }
 }
 
-void TabBar::update_tab(const std::string& room_id, std::string display_name,
-                        const Image* avatar)
+void TabBar::update_tab(const std::string& room_id, std::string display_name, const Image* avatar)
 {
     for (auto& t : items_)
     {
@@ -127,16 +129,15 @@ bool TabBar::close_button_hit_(int idx, Point local) const
 {
     Rect cr = close_scroll_rect_(idx);
     float widget_x = cr.x - scroll_x_;
-    return local.x >= widget_x && local.x < widget_x + kCloseSz &&
-           local.y >= cr.y - bounds_.y && local.y < cr.y - bounds_.y + kCloseSz;
+    return local.x >= widget_x && local.x < widget_x + kCloseSz && local.y >= cr.y - bounds_.y &&
+           local.y < cr.y - bounds_.y + kCloseSz;
 }
 
 int TabBar::tab_at_(float scroll_local) const
 {
     for (int i = 0; i < static_cast<int>(items_.size()); ++i)
     {
-        if (scroll_local >= items_[i].x &&
-            scroll_local < items_[i].x + items_[i].width)
+        if (scroll_local >= items_[i].x && scroll_local < items_[i].x + items_[i].width)
         {
             return i;
         }
@@ -162,8 +163,7 @@ void TabBar::clamp_scroll_()
 template <typename Ctx>
 void TabBar::ensure_layout_(Ctx& ctx, TabItem& t, float max_w)
 {
-    if (t.layout && std::abs(t.layout_max_w - max_w) < 0.5f &&
-        t.layout_name == t.display_name)
+    if (t.layout && std::abs(t.layout_max_w - max_w) < 0.5f && t.layout_name == t.display_name)
     {
         return;
     }
@@ -193,8 +193,7 @@ void TabBar::arrange(LayoutCtx& ctx, Rect bounds)
     const int n = static_cast<int>(items_.size());
 
     // All tabs the same width: divide bar evenly, clamp to [kTabMin, kTabMax].
-    const float tab_w =
-        std::clamp(bounds.w / static_cast<float>(n), kTabMin, kTabMax);
+    const float tab_w = std::clamp(bounds.w / static_cast<float>(n), kTabMin, kTabMax);
 
     // Position tabs and build name layouts.
     float x = 0.f;
@@ -227,8 +226,7 @@ void TabBar::paint_before_children(PaintCtx& ctx)
     // Tab bar background.
     c.fill_rect(bounds_, pal.chrome_bg);
     // 1-px bottom border.
-    c.fill_rect({bounds_.x, bounds_.y + bounds_.h - 1.f, bounds_.w, 1.f},
-                pal.separator);
+    c.fill_rect({bounds_.x, bounds_.y + bounds_.h - 1.f, bounds_.w, 1.f}, pal.separator);
 
     ClipScope clip(c, bounds_);
 
@@ -251,24 +249,22 @@ void TabBar::paint_before_children(PaintCtx& ctx)
 
         // Background.
         const bool is_active = (i == active_idx_);
-        Color bg = is_active   ? pal.sidebar_selected
-                   : t.hovered ? pal.sidebar_hover
-                               : pal.chrome_bg;
+        Color bg = is_active ? pal.sidebar_selected : t.hovered ? pal.sidebar_hover : pal.chrome_bg;
         c.fill_rounded_rect(tab_rect, kRadius, bg);
         if (!is_active && t.hovered)
+        {
             paint_hc_hover_outline(c, ctx.theme, tab_rect, kRadius);
+        }
 
         // Avatar or initials fallback.
-        Point av_centre{tx + kPadOuter + kAvatarSz * 0.5f,
-                        bounds_.y + kHeight * 0.5f};
+        Point av_centre{tx + kPadOuter + kAvatarSz * 0.5f, bounds_.y + kHeight * 0.5f};
         if (t.avatar)
         {
             c.draw_circle_image(*t.avatar, av_centre, kAvatarSz);
         }
         else
         {
-            c.draw_initials_circle(t.display_name, av_centre, kAvatarSz,
-                                   pal.sidebar_selected,
+            c.draw_initials_circle(t.display_name, av_centre, kAvatarSz, pal.sidebar_selected,
                                    on_selected(ctx.theme, pal.text_primary));
         }
 
@@ -292,17 +288,16 @@ void TabBar::paint_before_children(PaintCtx& ctx)
         {
             Rect cr = close_scroll_rect_(i);
             cr.x = tx + t.width - kPadOuter - kCloseSz;
-            Color close_col =
-                t.close_hovered ? pal.text_primary : pal.text_secondary;
+            Color close_col = t.close_hovered ? pal.text_primary : pal.text_secondary;
             if (i == active_idx_)
+            {
                 close_col = on_selected(ctx.theme, close_col);
+            }
             Size x_sz = close_layout_->measure();
-            Point x_origin{cr.x + (kCloseSz - x_sz.w) * 0.5f,
-                           cr.y + (kCloseSz - x_sz.h) * 0.5f};
+            Point x_origin{cr.x + (kCloseSz - x_sz.w) * 0.5f, cr.y + (kCloseSz - x_sz.h) * 0.5f};
             c.draw_text(*close_layout_, x_origin, close_col);
         }
     }
-
 }
 
 // ── Pointer events ─────────────────────────────────────────────────────────

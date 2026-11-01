@@ -39,8 +39,14 @@ public:
     std::function<void(std::size_t index)> on_row_activated;
 
     // Keyboard highlight (shared with the pointer hover): -1 for none.
-    int  highlighted() const { return hovered_index_; }
-    void set_highlighted(int i) { hovered_index_ = i; }
+    int highlighted() const
+    {
+        return hovered_index_;
+    }
+    void set_highlighted(int i)
+    {
+        hovered_index_ = i;
+    }
     bool actionable(int i) const
     {
         return i >= 0 && i < int(items_.size()) && !items_[std::size_t(i)].is_separator &&
@@ -50,17 +56,26 @@ public:
     int next_actionable(int from, int dir) const
     {
         for (int i = from + dir; i >= 0 && i < int(items_.size()); i += dir)
+        {
             if (actionable(i))
+            {
                 return i;
+            }
+        }
         return -1;
     }
-    int item_count() const { return int(items_.size()); }
+    int item_count() const
+    {
+        return int(items_.size());
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
         float h = 0.0f;
         for (int i = 0; i < int(items_.size()); ++i)
+        {
             h += row_height_(i);
+        }
         return {constraints.w > 0 ? constraints.w : kWidth, h};
     }
 
@@ -72,7 +87,9 @@ public:
     void paint(tk::PaintCtx& ctx) override
     {
         if (items_.empty())
+        {
             return;
+        }
 
         const auto& pal = ctx.theme.palette;
         const int n = int(items_.size());
@@ -83,7 +100,9 @@ public:
         {
             icon_scale_ = scale;
             for (auto& ic : icon_cache_)
+            {
                 ic.reset();
+            }
         }
         constexpr float kMenuIconPx = 18.0f;
 
@@ -96,7 +115,7 @@ public:
         glyph_st.role = tk::FontRole::Title; // matches action-pill glyph style
 
         tk::TextStyle label_st{};
-        label_st.role   = tk::FontRole::Body;
+        label_st.role = tk::FontRole::Body;
         label_st.halign = tk::TextHAlign::Leading;
         label_st.valign = tk::TextVAlign::Top;
 
@@ -114,15 +133,16 @@ public:
 
             const bool hot = i == hovered_index_;
             if (hot)
+            {
                 ctx.canvas.fill_rect(row, tk::hot_row_fill(ctx.theme));
+            }
 
             // High Contrast: the hot row is Highlight-filled, so everything on
             // it (including destructive and dimmed items) uses selected_text.
-            const tk::Color text_col =
-                hot && ctx.theme.high_contrast ? pal.selected_text
-                : !item.enabled                ? pal.text_secondary // dimmed
-                : item.destructive             ? pal.destructive
-                                               : pal.text_primary;
+            const tk::Color text_col = hot && ctx.theme.high_contrast ? pal.selected_text
+                                       : !item.enabled                ? pal.text_secondary // dimmed
+                                       : item.destructive             ? pal.destructive
+                                                                      : pal.text_primary;
             const tk::Color glyph_col =
                 hot && ctx.theme.high_contrast ? pal.selected_text : pal.text_secondary;
 
@@ -132,22 +152,24 @@ public:
             if (!item.svg_icon.empty())
             {
                 auto& cached = icon_cache_[std::size_t(i)];
-                auto& tint   = icon_tint_[std::size_t(i)];
+                auto& tint = icon_tint_[std::size_t(i)];
                 if (cached && !(tint == text_col))
+                {
                     cached.reset(); // hot-row colour differs from the cached tint
+                }
                 if (!cached)
                 {
                     tint = text_col;
-                    cached = tk::rasterize_svg(
-                        ctx.factory, item.svg_icon,
-                        std::max(1, int(std::lround(kMenuIconPx * scale))),
-                        text_col);
+                    cached = tk::rasterize_svg(ctx.factory, item.svg_icon,
+                                               std::max(1, int(std::lround(kMenuIconPx * scale))),
+                                               text_col);
                 }
                 if (cached)
-                    ctx.canvas.draw_image(
-                        *cached,
-                        {row.x + kGlyphX, row.y + (row.h - kMenuIconPx) * 0.5f,
-                         kMenuIconPx, kMenuIconPx});
+                {
+                    ctx.canvas.draw_image(*cached,
+                                          {row.x + kGlyphX, row.y + (row.h - kMenuIconPx) * 0.5f,
+                                           kMenuIconPx, kMenuIconPx});
+                }
                 label_x = row.x + kTextX;
             }
             else if (!item.glyph.empty())
@@ -166,7 +188,7 @@ public:
             if (ll)
             {
                 tk::Size sz = ll->measure();
-                float ly    = row.y + (row.h - sz.h) * 0.5f;
+                float ly = row.y + (row.h - sz.h) * 0.5f;
                 ctx.canvas.draw_text(*ll, {label_x, ly}, text_col);
             }
         }
@@ -190,7 +212,9 @@ public:
         int was = pressed_index_;
         pressed_index_ = -1;
         if (!inside_self)
+        {
             return;
+        }
         int r = row_at_(local);
         if (r == was && r >= 0 && r < int(items_.size()))
         {
@@ -199,21 +223,24 @@ public:
             // don't act on it — matches native disabled-menu-item behavior
             // (menu stays open, click is absorbed).
             if (item.is_separator || !item.enabled)
+            {
                 return;
+            }
             if (on_row_activated)
+            {
                 on_row_activated(std::size_t(r));
+            }
         }
     }
 
     bool on_pointer_move(tk::Point local) override
     {
         int prev = hovered_index_;
-        int r    = row_at_(local);
+        int r = row_at_(local);
         // Separators and disabled items never show a hover highlight.
         hovered_index_ =
-            (r >= 0 && !items_[std::size_t(r)].is_separator && items_[std::size_t(r)].enabled)
-                ? r
-                : -1;
+            (r >= 0 && !items_[std::size_t(r)].is_separator && items_[std::size_t(r)].enabled) ? r
+                                                                                               : -1;
         return hovered_index_ != prev;
     }
 
@@ -226,12 +253,20 @@ public:
     // An AT client can enumerate and invoke items without holding keyboard
     // focus; PopupMenu::on_key_down drives the same highlight from the
     // keyboard (reported as `selected`).
-    tk::Role access_role() const override { return tk::Role::List; }
-    std::size_t access_row_count() const override { return items_.size(); }
+    tk::Role access_role() const override
+    {
+        return tk::Role::List;
+    }
+    std::size_t access_row_count() const override
+    {
+        return items_.size();
+    }
     tk::Role access_role_for_widget_row(std::size_t index) const override
     {
         if (index >= items_.size())
+        {
             return tk::Role::None;
+        }
         // Separators are decoration; disabled items stay listed (reported
         // disabled) so the menu's shape matches what a sighted user sees.
         return items_[index].is_separator ? tk::Role::None : tk::Role::MenuItem;
@@ -253,17 +288,20 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         if (index >= items_.size())
+        {
             return false;
+        }
         const Item& it = items_[index];
         if (it.is_separator || !it.enabled || !on_row_activated)
+        {
             return false;
+        }
         on_row_activated(index); // same path as on_pointer_up
         return true;
     }
     tk::Rect access_rect_for_widget_row(std::size_t index) const override
     {
-        return index < items_.size() ? item_rect_(static_cast<int>(index))
-                                     : tk::Rect{};
+        return index < items_.size() ? item_rect_(static_cast<int>(index)) : tk::Rect{};
     }
 
 private:
@@ -276,7 +314,9 @@ private:
     {
         float y = bounds_.y;
         for (int j = 0; j < i; ++j)
+        {
             y += row_height_(j);
+        }
         return {bounds_.x, y, bounds_.w, row_height_(i)};
     }
 
@@ -286,14 +326,16 @@ private:
         for (int i = 0; i < n; ++i)
         {
             if (rect_contains(item_rect_(i), local))
+            {
                 return i;
+            }
         }
         return -1;
     }
 
     std::vector<Item> items_;
-    int  hovered_index_  = -1;
-    int  pressed_index_  = -1;
+    int hovered_index_ = -1;
+    int pressed_index_ = -1;
 
     // Per-item rasterized SVG icons (Item::svg_icon), tinted to the row colour.
     // Rebuilt when items change (set_items) or the canvas DPI scale changes.
@@ -308,9 +350,9 @@ private:
 
 void PopupMenu::open(std::vector<Item> items, tk::Rect anchor_world)
 {
-    items_        = std::move(items);
+    items_ = std::move(items);
     anchor_world_ = anchor_world;
-    open_         = true;
+    open_ = true;
 
     if (!popup_surface_)
     {
@@ -324,12 +366,18 @@ void PopupMenu::open(std::vector<Item> items, tk::Rect anchor_world)
                 list_->on_row_activated = [this](std::size_t idx)
                 {
                     if (idx >= items_.size())
+                    {
                         return;
+                    }
                     auto cb = items_[idx].on_selected; // copy before firing on_dismissed
                     if (on_dismissed)
+                    {
                         on_dismissed(); // owner's handler typically calls close()
+                    }
                     if (cb)
+                    {
                         cb();
+                    }
                 };
                 popup_surface_->set_root(std::move(list));
             }
@@ -337,24 +385,36 @@ void PopupMenu::open(std::vector<Item> items, tk::Rect anchor_world)
     }
 
     if (list_)
+    {
         list_->set_items(items_); // also clears the highlight
+    }
     reposition_();
     if (popup_surface_)
+    {
         popup_surface_->set_visible(true);
+    }
 
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void PopupMenu::close()
 {
     if (!open_)
+    {
         return;
+    }
     open_ = false;
     if (popup_surface_)
+    {
         popup_surface_->set_visible(false);
+    }
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 tk::Size PopupMenu::measure(tk::LayoutCtx&, tk::Size)
@@ -370,11 +430,15 @@ void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect /*bounds*/)
 void PopupMenu::reposition_()
 {
     if (!open_ || items_.empty() || !popup_surface_)
+    {
         return;
+    }
 
     float popup_h = 0.0f;
     for (int i = 0; i < int(items_.size()); ++i)
+    {
         popup_h += row_height(i);
+    }
 
     // PopupSurfaceHandle::set_rect() aligns the popup's LEFT edge straight to
     // anchor_world_rect.x (no built-in right-align mode) — pre-adjust the
@@ -384,8 +448,7 @@ void PopupMenu::reposition_()
     adjusted.x = anchor_world_.x + anchor_world_.w - kWidth;
     adjusted.w = 0.0f; // set_rect ignores width for x; only .x/.h matter now
 
-    popup_surface_->set_rect(adjusted, {kWidth, popup_h},
-                             tk::PopupPlacement::PreferBelow);
+    popup_surface_->set_rect(adjusted, {kWidth, popup_h}, tk::PopupPlacement::PreferBelow);
 }
 
 void PopupMenu::paint(tk::PaintCtx& ctx)
@@ -395,19 +458,25 @@ void PopupMenu::paint(tk::PaintCtx& ctx)
     // active popup (click-anywhere-dismiss input priority) each frame it's
     // open.
     if (open_ && ctx.host)
+    {
         ctx.host->register_popup(this);
+    }
 }
 
 void PopupMenu::on_theme_changed(const tk::Theme& t)
 {
     if (popup_surface_)
+    {
         popup_surface_->set_theme(t);
+    }
 }
 
 bool PopupMenu::on_key_down(const tk::KeyEvent& e)
 {
     if (!open_ || !list_)
+    {
         return false;
+    }
     const int cur = list_->highlighted();
     int next = cur;
     switch (e.key)
@@ -415,12 +484,16 @@ bool PopupMenu::on_key_down(const tk::KeyEvent& e)
     case tk::Key::Down:
         next = list_->next_actionable(cur, 1);
         if (next < 0) // wrap
+        {
             next = list_->next_actionable(-1, 1);
+        }
         break;
     case tk::Key::Up:
         next = list_->next_actionable(cur < 0 ? list_->item_count() : cur, -1);
         if (next < 0)
+        {
             next = list_->next_actionable(list_->item_count(), -1);
+        }
         break;
     case tk::Key::Home:
         next = list_->next_actionable(-1, 1);
@@ -431,7 +504,9 @@ bool PopupMenu::on_key_down(const tk::KeyEvent& e)
     case tk::Key::Enter:
     case tk::Key::Space:
         if (list_->actionable(cur) && list_->on_row_activated)
+        {
             list_->on_row_activated(std::size_t(cur));
+        }
         return true;
     case tk::Key::Escape:
     case tk::Key::Tab:
@@ -445,7 +520,9 @@ bool PopupMenu::on_key_down(const tk::KeyEvent& e)
     {
         list_->set_highlighted(next);
         if (popup_surface_)
+        {
             popup_surface_->request_repaint();
+        }
     }
     return true;
 }
@@ -453,11 +530,17 @@ bool PopupMenu::on_key_down(const tk::KeyEvent& e)
 void PopupMenu::on_popup_dismiss()
 {
     if (!open_)
+    {
         return;
+    }
     if (on_dismissed)
+    {
         on_dismissed();
+    }
     else
+    {
         close(); // no owner handler wired — fall back to closing directly
+    }
 }
 
 float PopupMenu::row_height(int i) const

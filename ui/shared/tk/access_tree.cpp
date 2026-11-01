@@ -34,10 +34,10 @@ void key_subtree(std::vector<AccessNode>& nodes, Widget* owner, int row,
         std::size_t h = std::hash<std::string>()(id);
         h ^= std::hash<int>()(row) + 0x9e3779b9u + (h << 6) + (h >> 2);
         h ^= std::hash<int>()(occurrence) + 0x9e3779b9u + (h << 6) + (h >> 2);
-        n.widget       = owner;
-        n.row_index    = -2 - static_cast<int>(h & 0x3fffffff);
+        n.widget = owner;
+        n.row_index = -2 - static_cast<int>(h & 0x3fffffff);
         n.row_set_size = -1;
-        n.pos_in_set   = -1;
+        n.pos_in_set = -1;
         key_subtree(n.children, owner, row, seen);
     }
 }
@@ -49,7 +49,7 @@ void number_set(std::vector<AccessNode>& out, std::size_t first)
     const int n = static_cast<int>(out.size() - first);
     for (int k = 0; k < n; ++k)
     {
-        out[first + static_cast<std::size_t>(k)].pos_in_set   = k + 1;
+        out[first + static_cast<std::size_t>(k)].pos_in_set = k + 1;
         out[first + static_cast<std::size_t>(k)].row_set_size = n;
     }
 }
@@ -68,7 +68,9 @@ void collect_list_rows(ListView* list, std::vector<AccessNode>& out)
 {
     auto* accessible = dynamic_cast<ListAdapterAccessibility*>(list->adapter());
     if (!accessible)
+    {
         return;
+    }
 
     const std::size_t n = list->adapter()->count();
     const std::size_t first = out.size();
@@ -82,20 +84,22 @@ void collect_list_rows(ListView* list, std::vector<AccessNode>& out)
         // Role::None Widget elsewhere in the tree, so skip entirely rather
         // than push an empty node.
         if (accessible->access_role_for_row(i) == Role::None)
+        {
             continue;
+        }
 
         AccessNode node;
-        node.widget        = list;
-        node.role          = accessible->access_role_for_row(i);
-        node.name          = accessible->access_name_for_row(i);
-        node.state         = accessible->access_state_for_row(i);
-        node.description   = accessible->access_description_for_row(i);
-        node.row_index     = static_cast<int>(i);
-        node.rect          = list->row_world_rect(static_cast<int>(i));
+        node.widget = list;
+        node.role = accessible->access_role_for_row(i);
+        node.name = accessible->access_name_for_row(i);
+        node.state = accessible->access_state_for_row(i);
+        node.description = accessible->access_description_for_row(i);
+        node.row_index = static_cast<int>(i);
+        node.rect = list->row_world_rect(static_cast<int>(i));
         // Optional per-row subtree (reactions / actions / receipts on a
         // virtualized message row). Each returned node carries its own
         // `activate` closure — see AccessNode / invoke_default_action.
-        node.children      = accessible->access_subtree_for_row(i);
+        node.children = accessible->access_subtree_for_row(i);
         std::unordered_map<std::string, int> seen;
         key_subtree(node.children, list, static_cast<int>(i), seen);
         out.push_back(std::move(node));
@@ -114,7 +118,9 @@ void collect_grid_cells(GridView* grid, std::vector<AccessNode>& out)
 {
     auto* accessible = dynamic_cast<GridAdapterAccessibility*>(grid->adapter());
     if (!accessible)
+    {
         return;
+    }
 
     const std::size_t n = grid->adapter()->count();
     // Cells flow left-to-right in index order, so the 2-D position falls
@@ -125,18 +131,20 @@ void collect_grid_cells(GridView* grid, std::vector<AccessNode>& out)
     for (std::size_t i = 0; i < n; ++i)
     {
         if (accessible->access_role_for_cell(i) == Role::None)
+        {
             continue;
+        }
 
         AccessNode node;
-        node.widget        = grid;
-        node.role          = accessible->access_role_for_cell(i);
-        node.name          = accessible->access_name_for_cell(i);
-        node.state         = accessible->access_state_for_cell(i);
-        node.description   = accessible->access_description_for_cell(i);
-        node.row_index     = static_cast<int>(i);
-        node.grid_row      = static_cast<int>(i) / cols;
-        node.grid_col      = static_cast<int>(i) % cols;
-        node.rect          = grid->rect_at(static_cast<int>(i));
+        node.widget = grid;
+        node.role = accessible->access_role_for_cell(i);
+        node.name = accessible->access_name_for_cell(i);
+        node.state = accessible->access_state_for_cell(i);
+        node.description = accessible->access_description_for_cell(i);
+        node.row_index = static_cast<int>(i);
+        node.grid_row = static_cast<int>(i) / cols;
+        node.grid_col = static_cast<int>(i) % cols;
+        node.rect = grid->rect_at(static_cast<int>(i));
         out.push_back(std::move(node));
     }
     number_set(out, first);
@@ -147,8 +155,7 @@ void collect_grid_cells(GridView* grid, std::vector<AccessNode>& out)
 // than through a separate adapter object — e.g. ListPopupBase, which
 // paints its rows via ScrollableBase's own hit-test/scroll/paint loop, not
 // a tk::ListView.
-void collect_widget_rows(Widget* w, WidgetRowAccessibility* rows,
-                         std::vector<AccessNode>& out)
+void collect_widget_rows(Widget* w, WidgetRowAccessibility* rows, std::vector<AccessNode>& out)
 {
     const std::size_t n = rows->access_row_count();
     const std::size_t first = out.size();
@@ -156,19 +163,21 @@ void collect_widget_rows(Widget* w, WidgetRowAccessibility* rows,
     for (std::size_t i = 0; i < n; ++i)
     {
         if (rows->access_role_for_widget_row(i) == Role::None)
+        {
             continue;
+        }
 
         AccessNode node;
-        node.widget        = w;
-        node.role          = rows->access_role_for_widget_row(i);
-        node.name          = rows->access_name_for_widget_row(i);
-        node.state         = rows->access_state_for_widget_row(i);
-        node.row_index     = static_cast<int>(i);
-        node.rect          = rows->access_rect_for_widget_row(i);
-        node.description   = rows->access_description_for_widget_row(i);
+        node.widget = w;
+        node.role = rows->access_role_for_widget_row(i);
+        node.name = rows->access_name_for_widget_row(i);
+        node.state = rows->access_state_for_widget_row(i);
+        node.row_index = static_cast<int>(i);
+        node.rect = rows->access_rect_for_widget_row(i);
+        node.description = rows->access_description_for_widget_row(i);
         const auto [gr, gc] = rows->access_grid_cell_for_widget_row(i);
-        node.grid_row      = gr;
-        node.grid_col      = gc;
+        node.grid_row = gr;
+        node.grid_col = gc;
         out.push_back(std::move(node));
     }
     number_set(out, first);
@@ -180,21 +189,21 @@ void append_child_node(Widget* ch, std::vector<AccessNode>& out);
 AccessNode widget_node(Widget* w)
 {
     AccessNode node;
-    node.widget      = w;
-    node.role        = w->access_role();
-    node.name        = w->access_name();
+    node.widget = w;
+    node.role = w->access_role();
+    node.name = w->access_name();
     node.description = w->access_description();
-    node.language    = w->access_language();
-    node.state       = w->access_state();
-    node.value       = w->access_value();
-    node.modal       = w->access_modal();
-    node.rect        = w->bounds();
+    node.language = w->access_language();
+    node.state = w->access_state();
+    node.value = w->access_value();
+    node.modal = w->access_modal();
+    node.rect = w->bounds();
     if (auto* grid = dynamic_cast<GridView*>(w))
     {
         if (grid->adapter())
         {
-            const int cols      = std::max(1, grid->column_count());
-            const int n         = static_cast<int>(grid->adapter()->count());
+            const int cols = std::max(1, grid->column_count());
+            const int n = static_cast<int>(grid->adapter()->count());
             node.grid_col_count = cols;
             node.grid_row_count = (n + cols - 1) / cols;
         }
@@ -216,19 +225,33 @@ AccessNode widget_node(Widget* w)
 Widget* find_modal(Widget* w)
 {
     if (!w->visible())
+    {
         return nullptr;
+    }
     std::vector<Widget*> detached;
     w->access_detached_children(detached);
     for (auto it = detached.rbegin(); it != detached.rend(); ++it)
+    {
         if (*it)
+        {
             if (Widget* m = find_modal(*it))
+            {
                 return m;
+            }
+        }
+    }
     const auto& kids = w->children();
     for (auto it = kids.rbegin(); it != kids.rend(); ++it)
+    {
         if (Widget* m = find_modal(it->get()))
+        {
             return m;
+        }
+    }
     if (w->access_modal())
+    {
         return w;
+    }
     return nullptr;
 }
 
@@ -238,7 +261,9 @@ Widget* find_modal(Widget* w)
 void collect_access_children(Widget* w, std::vector<AccessNode>& out)
 {
     if (!w->visible())
+    {
         return;
+    }
 
     if (auto* list = dynamic_cast<ListView*>(w))
     {
@@ -265,17 +290,25 @@ void collect_access_children(Widget* w, std::vector<AccessNode>& out)
     std::vector<Widget*> kids;
     kids.reserve(w->children().size());
     for (auto& ch : w->children())
+    {
         kids.push_back(ch.get());
+    }
     // Same reading-order sort as collect_focus_order in widget.cpp, reused
     // via reading_order_less so the two traversals can't silently diverge.
     std::stable_sort(kids.begin(), kids.end(),
                      [](Widget* a, Widget* b)
-                     { return reading_order_less(a->bounds(), b->bounds()); });
+                     {
+                         return reading_order_less(a->bounds(), b->bounds());
+                     });
 
     for (Widget* ch : kids)
+    {
         append_child_node(ch, out);
+    }
     if (rows && rows->access_rows_after_children())
+    {
         collect_widget_rows(w, rows, out);
+    }
 
     // Owned-but-not-parented popups (see Widget::access_detached_children)
     // read after the real children: they float above them visually and are
@@ -283,14 +316,20 @@ void collect_access_children(Widget* w, std::vector<AccessNode>& out)
     std::vector<Widget*> detached;
     w->access_detached_children(detached);
     for (Widget* d : detached)
+    {
         if (d)
+        {
             append_child_node(d, out);
+        }
+    }
 }
 
 void append_child_node(Widget* ch, std::vector<AccessNode>& out)
 {
     if (!ch->visible())
+    {
         return;
+    }
     if (ch->access_role() != Role::None)
     {
         AccessNode node = widget_node(ch);
@@ -310,9 +349,13 @@ void append_child_node(Widget* ch, std::vector<AccessNode>& out)
 void inherit_language(AccessNode& node, const std::string& inherited)
 {
     if (node.language.empty())
+    {
         node.language = inherited;
+    }
     for (auto& child : node.children)
+    {
         inherit_language(child, node.language);
+    }
 }
 
 } // namespace
@@ -321,7 +364,9 @@ AccessNode build_access_tree(Widget* root)
 {
     AccessNode top;
     if (!root || !root->visible())
+    {
         return top;
+    }
 
     top = widget_node(root);
     // While a modal is open, everything behind it is inert for pointer and
@@ -329,9 +374,13 @@ AccessNode build_access_tree(Widget* root)
     // either.
     Widget* modal = root->access_modal() ? nullptr : find_topmost_modal(root);
     if (modal)
+    {
         append_child_node(modal, top.children);
+    }
     else
+    {
         collect_access_children(root, top.children);
+    }
     inherit_language(top, {});
     return top;
 }
@@ -339,7 +388,9 @@ AccessNode build_access_tree(Widget* root)
 bool set_node_value(const AccessNode& node, double value)
 {
     if (!node.widget || node.row_index != -1)
+    {
         return false;
+    }
     return node.widget->access_set_value(value);
 }
 
@@ -348,18 +399,26 @@ bool invoke_default_action(const AccessNode& node)
     // A subtree node (reaction toggle, row action button, …) carries its own
     // closure — it maps to no widget and no plain row index.
     if (node.activate)
+    {
         return node.activate();
+    }
 
     if (!node.widget)
+    {
         return false;
+    }
 
     // Real widget node (not a synthesized row/cell) — dispatch directly.
     if (node.row_index == -1)
+    {
         return node.widget->access_default_action();
+    }
     // A subtree node with no closure (a group, a text node — see
     // key_subtree): nothing to invoke.
     if (node.row_index < -1)
+    {
         return false;
+    }
 
     // Synthesized node: node.widget is the owning ListView/GridView (or,
     // for WidgetRowAccessibility, the widget itself), never a per-item
@@ -369,24 +428,32 @@ bool invoke_default_action(const AccessNode& node)
     if (auto* list = dynamic_cast<ListView*>(node.widget))
     {
         if (auto* accessible = dynamic_cast<ListAdapterAccessibility*>(list->adapter()))
+        {
             return accessible->access_activate_row(index);
+        }
         return false;
     }
     if (auto* grid = dynamic_cast<GridView*>(node.widget))
     {
         if (auto* accessible = dynamic_cast<GridAdapterAccessibility*>(grid->adapter()))
+        {
             return accessible->access_activate_cell(index);
+        }
         return false;
     }
     if (auto* rows = dynamic_cast<WidgetRowAccessibility*>(node.widget))
+    {
         return rows->access_activate_widget_row(index);
+    }
     return false;
 }
 
 Widget* find_topmost_modal(Widget* root)
 {
     if (!root)
+    {
         return nullptr;
+    }
     Widget* m = find_modal(root);
     return m == root ? nullptr : m;
 }

@@ -32,35 +32,49 @@ struct ProfileShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
     }
     std::vector<std::function<void()>> delayed;
 
-    void on_rooms_updated_() override { ++rooms_updated; }
+    void on_rooms_updated_() override
+    {
+        ++rooms_updated;
+    }
     int rooms_updated = 0;
 
-    void on_dock_badge_changed_(uint64_t c) override { dock.push_back(c); }
-    void on_account_badges_changed_(bool o) override { others.push_back(o); }
+    void on_dock_badge_changed_(uint64_t c) override
+    {
+        dock.push_back(c);
+    }
+    void on_account_badges_changed_(bool o) override
+    {
+        others.push_back(o);
+    }
     void on_tray_unread_changed_(bool u, bool h) override
     {
         tray.emplace_back(u, h);
     }
-    void on_profile_field_result_ui_(const std::string& k, bool ok,
-                                     const std::string&) override
+    void on_profile_field_result_ui_(const std::string& k, bool ok, const std::string&) override
     {
         field_results.emplace_back(k, ok);
     }
-    void refresh_user_strip_() override { ++strip_refreshes; }
+    void refresh_user_strip_() override
+    {
+        ++strip_refreshes;
+    }
 
     std::vector<uint64_t> dock;
     std::vector<bool> others;
@@ -201,8 +215,7 @@ TEST_CASE("notify_tray_unread_ fires each hook only when its value changes",
     CHECK(s.tray.size() == 1);
 }
 
-TEST_CASE("best_unread_room_ prefers highlights, then recency",
-          "[shell][profile][unread]")
+TEST_CASE("best_unread_room_ prefers highlights, then recency", "[shell][profile][unread]")
 {
     ProfileShell s;
     CHECK(s.best_unread_room_() == nullptr);
@@ -227,8 +240,7 @@ TEST_CASE("find_existing_dm_ looks in the active room list", "[shell][profile]")
     CHECK(s.find_existing_dm_("@stranger:x").empty());
 }
 
-TEST_CASE("presence updates only repaint on a real change",
-          "[shell][profile][presence]")
+TEST_CASE("presence updates only repaint on a real change", "[shell][profile][presence]")
 {
     ProfileShell s;
     CHECK(s.presence_for_("@a:x") == tesseract::PresenceState::Offline);
@@ -242,8 +254,7 @@ TEST_CASE("presence updates only repaint on a real change",
     CHECK(s.presence_for_("@a:x") == tesseract::PresenceState::Unavailable);
 }
 
-TEST_CASE("profile field writes are tracked and applied on success",
-          "[shell][profile][fields]")
+TEST_CASE("profile field writes are tracked and applied on success", "[shell][profile][fields]")
 {
     tesseract::Client client;
     ProfileShell s;
@@ -273,13 +284,12 @@ TEST_CASE("profile field writes are tracked and applied on success",
     CHECK(s.field_results.size() == 3);
 }
 
-TEST_CASE("own extended profile is replaced only by a valid fetch",
-          "[shell][profile][fields]")
+TEST_CASE("own extended profile is replaced only by a valid fetch", "[shell][profile][fields]")
 {
     ProfileShell s;
     s.own_extended_profile_.pronouns = {{"en", "she/her", "feminine"}};
-    s.handle_extended_profile_ready_ui_(
-        1, R"({"exists":false})"); // stale-keeping: pronouns non-empty
+    s.handle_extended_profile_ready_ui_(1,
+                                        R"({"exists":false})"); // stale-keeping: pronouns non-empty
     CHECK(s.own_extended_profile_.pronouns.size() == 1);
 
     s.handle_extended_profile_ready_ui_(
@@ -309,7 +319,8 @@ TEST_CASE("member pronoun lookups are deduplicated and resolve to a word",
     const auto id = s.pending_member_gender_requests_.begin()->first;
 
     s.handle_extended_profile_ready_ui_(
-        id, R"({"exists":true,"pronouns":[{"language":"en","summary":"she/her","grammatical_gender":"feminine"}]})");
+        id,
+        R"({"exists":true,"pronouns":[{"language":"en","summary":"she/her","grammatical_gender":"feminine"}]})");
     CHECK(s.member_gender_cache_["@a:x"] == "her");
     CHECK(s.pending_member_gender_requests_.empty());
     CHECK(s.member_gender_inflight_.empty());
@@ -325,8 +336,7 @@ TEST_CASE("member pronoun lookups are deduplicated and resolve to a word",
     CHECK(s.member_gender_cache_["@b:x"] == "their");
 }
 
-TEST_CASE("own profile changes update the strip only for the active account",
-          "[shell][profile]")
+TEST_CASE("own profile changes update the strip only for the active account", "[shell][profile]")
 {
     ProfileShell s;
     auto sess = profile_account("@me:x");
@@ -377,8 +387,7 @@ TEST_CASE("account prefs from another device seed recents and open rooms",
     CHECK(s.pending_restore_rooms_ == std::vector<std::string>{"!b:x", "!a:x"});
 }
 
-TEST_CASE("local recents and restore state win over a later sync",
-          "[shell][profile][prefs]")
+TEST_CASE("local recents and restore state win over a later sync", "[shell][profile][prefs]")
 {
     tesseract::test::SettingsGuard guard;
     ProfileShell s;
@@ -387,14 +396,13 @@ TEST_CASE("local recents and restore state win over a later sync",
     s.my_user_id_ = "@me:x";
     s.recent_room_ids_ = {"!local:x"};
     s.current_room_id_ = "!open:x";
-    s.handle_account_prefs_updated_ui_(
-        "@me:x", R"({"open_rooms":["!a:x"],"recent_rooms":["!remote:x"]})");
+    s.handle_account_prefs_updated_ui_("@me:x",
+                                       R"({"open_rooms":["!a:x"],"recent_rooms":["!remote:x"]})");
     CHECK(s.recent_room_ids_ == std::vector<std::string>{"!local:x"});
     CHECK(s.pending_restore_rooms_.empty());
 }
 
-TEST_CASE("synced bridge overrides are applied to cached rooms",
-          "[shell][profile][prefs]")
+TEST_CASE("synced bridge overrides are applied to cached rooms", "[shell][profile][prefs]")
 {
     tesseract::test::SettingsGuard guard;
     ProfileShell s;
@@ -403,10 +411,8 @@ TEST_CASE("synced bridge overrides are applied to cached rooms",
     s.my_user_id_ = "@me:x";
     s.rooms_ = {profile_room("!a:x"), profile_room("!b:x")};
     s.per_account_rooms_["@me:x"] = s.rooms_;
-    s.handle_account_prefs_updated_ui_(
-        "@me:x", R"({"bridge_overrides":["!b:x"]})");
-    CHECK(sess->bridge_not_bridged_overrides ==
-          std::vector<std::string>{"!b:x"});
+    s.handle_account_prefs_updated_ui_("@me:x", R"({"bridge_overrides":["!b:x"]})");
+    CHECK(sess->bridge_not_bridged_overrides == std::vector<std::string>{"!b:x"});
     CHECK_FALSE(s.rooms_[0].bridge_overridden);
     CHECK(s.rooms_[1].bridge_overridden);
     CHECK(s.per_account_rooms_["@me:x"][1].bridge_overridden);
@@ -457,15 +463,19 @@ TEST_CASE("a live-resolved user overwrites the roster entry; invalidation clears
     CHECK_FALSE(s.known_users_built_);
 }
 
-TEST_CASE("the user context menu lists the canonical items in order",
-          "[shell][profile][menu]")
+TEST_CASE("the user context menu lists the canonical items in order", "[shell][profile][menu]")
 {
     ProfileShell s;
     s.my_user_id_ = "@me:x";
     int quit = 0;
     auto noop = [] {};
-    auto items = s.build_user_menu_items_(noop, noop, nullptr, noop,
-                                          [&] { ++quit; }, nullptr);
+    auto items = s.build_user_menu_items_(
+        noop, noop, nullptr, noop,
+        [&]
+        {
+            ++quit;
+        },
+        nullptr);
     // Settings, Add Account, Log Out, separator, Quit (no QR, no verify, no
     // main_app_ so no keyboard shortcuts entry).
     REQUIRE(items.size() == 5);

@@ -88,9 +88,11 @@
 // MainWindow can hand the controller out as a delegate) and the designated
 // init for spawned (secondary) windows that share an existing AccountManager
 // instead of owning their own.
-namespace tesseract::macos { class MainWindow; }
-@interface MainWindowController () <
-    UNUserNotificationCenterDelegate, NSWindowDelegate>
+namespace tesseract::macos
+{
+class MainWindow;
+}
+@interface MainWindowController () <UNUserNotificationCenterDelegate, NSWindowDelegate>
 - (instancetype)_initWithSharedAccountManager:(tesseract::AccountManager*)mgr;
 // The C++ window this controller forwards to (used when spawning a window).
 - (tesseract::macos::MainWindow*)mainWindow;
@@ -114,8 +116,7 @@ class MainWindow final : public tesseract::ShellBase
 public:
     // ctrl_ is a weak back-pointer: MainWindow is owned by its
     // MainWindowController (via _window).
-    explicit MainWindow(tesseract::AccountManager& account_manager,
-                        MainWindowController* ctrl)
+    explicit MainWindow(tesseract::AccountManager& account_manager, MainWindowController* ctrl)
         : ShellBase(account_manager), ctrl_(ctrl)
     {
         account_manager_.register_window(this);
@@ -154,19 +155,20 @@ public:
     void begin_login();
 
     // UNUserNotificationCenterDelegate.
-    void will_present_notification(
-        UNNotification* notification,
-        void (^completionHandler)(UNNotificationPresentationOptions));
+    void will_present_notification(UNNotification* notification,
+                                   void (^completionHandler)(UNNotificationPresentationOptions));
     void did_receive_notification_response(UNNotificationResponse* response,
                                            void (^completionHandler)(void));
 
     // AppDelegate API.
-    void dispatch_launch_action(tesseract::LaunchAction action,
-                                std::string room_id)
+    void dispatch_launch_action(tesseract::LaunchAction action, std::string room_id)
     {
         dispatch_launch_action_(action, std::move(room_id));
     }
-    void navigate_to_unread() { navigate_tray_unread_(); }
+    void navigate_to_unread()
+    {
+        navigate_tray_unread_();
+    }
     void activate_spotlight_result(NSString* identifier);
     void show_emoji_picker();
 
@@ -190,8 +192,7 @@ public:
     // Unhides the main view with the fixture seeded; false if assets are missing.
     bool prepare_screenshot_view();
     void refresh_for_screenshot();
-    void start_screenshot_director(tesseract::screenshot::ScreenshotHost& host,
-                                   std::string prefix)
+    void start_screenshot_director(tesseract::screenshot::ScreenshotHost& host, std::string prefix)
     {
         start_screenshot_director_(host, std::move(prefix));
     }
@@ -206,23 +207,22 @@ protected:
     void apply_window_title_ui_(const std::string& title) override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_tray_unread_changed_(bool has_unread,
-                                 bool has_highlight) override;
+    void on_tray_unread_changed_(bool has_unread, bool has_highlight) override;
     void on_dock_badge_changed_(uint64_t count) override;
-    void ingest_tile_media_(const tk::CacheKey& key,
-                            std::vector<std::uint8_t> bytes) override;
-    void decode_video_first_frame_(
-        std::vector<std::uint8_t> bytes,
-        std::function<void(std::vector<std::uint8_t>)> done) override;
+    void ingest_tile_media_(const tk::CacheKey& key, std::vector<std::uint8_t> bytes) override;
+    void decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                   std::function<void(std::vector<std::uint8_t>)> done) override;
     void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
 
     bool is_main_window_visible_() const override
     {
-        if (!ctrl_) return false;
+        if (!ctrl_)
+        {
+            return false;
+        }
         NSWindow* w = ctrl_.window;
-        return w && !w.isMiniaturized &&
-               (w.occlusionState & NSWindowOcclusionStateVisible);
+        return w && !w.isMiniaturized && (w.occlusionState & NSWindowOcclusionStateVisible);
     }
 
     std::int64_t monotonic_ms_() override;
@@ -239,8 +239,7 @@ protected:
     // and dispatch to secondary windows. They also carry guards this shell used
     // to drop (in-thread reply exclusion, scroll/focus restore on reset), so the
     // base path is strictly more correct.
-    void handle_sync_error_ui_(std::string context, std::string user_id,
-                               std::string description,
+    void handle_sync_error_ui_(std::string context, std::string user_id, std::string description,
                                bool soft_logout) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
@@ -250,7 +249,10 @@ protected:
     void close_app_settings_ui_() override;
     void rebind_login_client_ui_() override;
     // makeKeyAndOrderFront: also brings back a window orderOut:'d to the tray.
-    void raise_main_window_ui_() override { raise_and_activate_(); }
+    void raise_main_window_ui_() override
+    {
+        raise_and_activate_();
+    }
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
     void on_startup_restore_progress_ui_(const std::string& status) override;
@@ -259,27 +261,25 @@ protected:
     std::optional<tk::Color> os_accent_color_() const override;
     void apply_native_theme_(const tk::Theme& t) override;
     void after_theme_applied_(const tk::Theme& t) override;
-    void for_each_shell_surface_(
-        const std::function<void(tk::SurfaceBase&)>& fn) override;
-    tesseract::RoomWindowBase*
-    create_secondary_room_window_(const std::string& room_id) override;
+    void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn) override;
+    tesseract::RoomWindowBase* create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
     void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
     bool spawn_relaunch_(const std::vector<std::string>& args) override;
     void quit_app_() override;
     bool is_ctrl_held_() const override;
-    bool ui_ready_() const override { return ctrl_ != nil; }
+    bool ui_ready_() const override
+    {
+        return ctrl_ != nil;
+    }
     void focus_forward_picker_field_() override;
     void hide_forward_picker_field_() override;
-    void spawn_main_window_(
-        std::shared_ptr<tesseract::AccountSession> account) override;
-    std::unique_ptr<tesseract::IEventHandler>
-    make_account_bridge_(const std::string& uid) override;
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account) override;
+    std::unique_ptr<tesseract::IEventHandler> make_account_bridge_(const std::string& uid) override;
     // macOS has no in-app per-account notifier; the restore loop's call is a
     // no-op (install_account_up_connector_ likewise relies on the base no-op).
-    void install_account_notifier_(
-        tesseract::AccountSession& /*session*/) override
+    void install_account_notifier_(tesseract::AccountSession& /*session*/) override
     {
     }
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override
@@ -288,8 +288,8 @@ protected:
     }
     tesseract::CallWindowBase* create_call_window_() override;
     tesseract::AuxWindowBase* create_aux_window_(std::string title,
-                                                 std::unique_ptr<tk::Widget> root,
-                                                 int width, int height) override
+                                                 std::unique_ptr<tk::Widget> root, int width,
+                                                 int height) override
     {
         return tesseract::make_mac_aux_window(title, std::move(root), width, height,
                                               current_theme_);
@@ -305,33 +305,31 @@ protected:
     }
 
     // Image decoding and native pickers.
-    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                               int max_h) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w, int max_h) override;
     bool decode_image_streamed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
     bool decode_image_streamed_windowed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int,
-                                 std::shared_ptr<tk::AnimDecodeSession>,
-                                 std::size_t)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)> cb) override;
+                                 std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>&
+            on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) override;
 
     std::vector<tk::Rect> get_screen_work_areas_() const override
     {
         std::vector<tk::Rect> result;
         NSArray<NSScreen*>* screens = [NSScreen screens];
-        if (!screens.count) return result;
+        if (!screens.count)
+        {
+            return result;
+        }
         // y-flip reference: top of screen 0 in Cocoa coords = origin.y + height.
         // We store geometry in top-left-origin coords (y=0 at top of primary).
         const CGFloat primaryTop =
-            [[screens firstObject] frame].origin.y +
-            [[screens firstObject] frame].size.height;
+            [[screens firstObject] frame].origin.y + [[screens firstObject] frame].size.height;
         for (NSScreen* s in screens)
         {
             NSRect vf = s.visibleFrame; // excludes menu bar + dock
@@ -350,15 +348,12 @@ protected:
     // posts the result back via post_to_ui_. When `target` is non-null the
     // result is posted to that compose bar (a pop-out window's), guarded by
     // `target_alive`; otherwise to the main compose bar.
-    void probe_drop_video_(std::uint32_t pending_gen,
-                           std::vector<std::uint8_t> bytes,
+    void probe_drop_video_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                            tesseract::views::ComposeBar* target,
                            std::shared_ptr<bool> target_alive) override;
-    void probe_drop_audio_(std::uint32_t pending_gen,
-                           std::vector<std::uint8_t> bytes,
+    void probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                            tesseract::views::ComposeBar* target,
                            std::shared_ptr<bool> target_alive) override;
-
 
     // Overlays opened from menu items / shortcuts: the open/close pairs live
     // in ShellBase.
@@ -388,7 +383,10 @@ private:
     {
         return ctrl_ && ctrl_.window.isKeyWindow;
     }
-    void request_notification_attention_() override { request_user_attention(); }
+    void request_notification_attention_() override
+    {
+        request_user_attention();
+    }
     void deliver_notification_(const std::string& user_id,
                                const tesseract::Notification& n) override;
     void cancel_user_attention();
@@ -409,16 +407,12 @@ private:
     // Native dialogs behind the settings controller's key export/import and the
     // history export (see ShellBase).
     bool has_save_file_dialog_() const override;
-    void prompt_passphrase_(std::string title,
-                            std::function<void(std::string)> cb) override;
+    void prompt_passphrase_(std::string title, std::function<void(std::string)> cb) override;
     void pick_save_file_(std::string title, std::string suggested_name,
                          std::function<void(std::string)> cb) override;
-    void pick_open_file_(std::string title,
-                         std::function<void(std::string)> cb) override;
-    void pick_folder_(std::string title,
-                      std::function<void(std::string)> cb) override;
-    void show_message_dialog_(std::string title, std::string text,
-                              bool is_error) override;
+    void pick_open_file_(std::string title, std::function<void(std::string)> cb) override;
+    void pick_folder_(std::string title, std::function<void(std::string)> cb) override;
+    void show_message_dialog_(std::string title, std::string text, bool is_error) override;
 
     // Right-click on the main surface: user-strip menu.
     void handle_main_right_click(tk::Point p);
@@ -427,7 +421,10 @@ private:
     // 30 s repeating tick for the presence idle-decay check.
     void start_presence_tick_timer();
     // The composer's text area (self-owned by ComposeBar; borrowed).
-    tk::TextArea* room_text_area() const { return room_text_area_; }
+    tk::TextArea* room_text_area() const
+    {
+        return room_text_area_;
+    }
 
     // The window's backing scale factor changed (moved between displays).
     void on_backing_scale_changed_();
@@ -448,13 +445,12 @@ private:
     // The login page's native view.
     NSView* login_native_view_() const
     {
-        return (__bridge NSView*)static_cast<tk::macos::Surface*>(
-            login_surface_.get())->view_handle();
+        return (__bridge NSView*)static_cast<tk::macos::Surface*>(login_surface_.get())
+            ->view_handle();
     }
     void start_platform_services_ui_() override;
     bool main_window_foreground_for_tray_() const override;
-    std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* bgra,
-                                                  std::uint32_t w,
+    std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
                                                   std::uint32_t h) override;
     std::unique_ptr<tk::SurfaceBase> create_settings_surface_ui_() override;
     void unmount_settings_surface_ui_() override;
@@ -463,8 +459,8 @@ private:
     // The settings page's native view.
     NSView* settings_native_view_() const
     {
-        return (__bridge NSView*)static_cast<tk::macos::Surface*>(
-            settings_surface_.get())->view_handle();
+        return (__bridge NSView*)static_cast<tk::macos::Surface*>(settings_surface_.get())
+            ->view_handle();
     }
     void hide_main_window_for_tray_() override;
     void show_main_window_for_tray_(const std::string& token) override;
@@ -496,10 +492,12 @@ private:
     // Compose text area (self-owned by ComposeBar; borrowed here).
     tk::TextArea* room_text_area_ = nullptr;
     // Wrap a decoded GIF-strip frame in the CoreGraphics image type.
-    std::unique_ptr<tk::Image> make_image_from_bgra_(
-        int w, int h, const std::uint8_t* bgra) override;
-    bool make_image_from_bgra_on_worker_() const override { return true; }
-
+    std::unique_ptr<tk::Image> make_image_from_bgra_(int w, int h,
+                                                     const std::uint8_t* bgra) override;
+    bool make_image_from_bgra_on_worker_() const override
+    {
+        return true;
+    }
 
     // Settings surface — full-window sibling of the main app view and the login
     // view. The view itself is borrowed from the surface's root and tracked by

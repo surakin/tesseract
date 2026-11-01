@@ -21,20 +21,19 @@ ActivityEntry make_entry(const std::string& name, const std::string& group,
                          const std::string& kind = "periodic")
 {
     ActivityEntry e;
-    e.name             = name;
-    e.group            = group;
-    e.kind             = kind;
-    e.state            = state;
-    e.run_count        = 3;
-    e.last_started_ms  = 1'000;
+    e.name = name;
+    e.group = group;
+    e.kind = kind;
+    e.state = state;
+    e.run_count = 3;
+    e.last_started_ms = 1'000;
     e.last_finished_ms = 4'000;
     return e;
 }
 
 } // namespace
 
-TEST_CASE("ActivityMonitorView::format_duration picks the coarsest unit",
-          "[activity_monitor]")
+TEST_CASE("ActivityMonitorView::format_duration picks the coarsest unit", "[activity_monitor]")
 {
     CHECK(ActivityMonitorView::format_duration(-5) == "0s");
     CHECK(ActivityMonitorView::format_duration(999) == "0s");
@@ -44,8 +43,7 @@ TEST_CASE("ActivityMonitorView::format_duration picks the coarsest unit",
     CHECK(ActivityMonitorView::format_duration(2 * 86'400'000LL) == "2d");
 }
 
-TEST_CASE("ActivityMonitorView lays out summary, group headers and job rows",
-          "[activity_monitor]")
+TEST_CASE("ActivityMonitorView lays out summary, group headers and job rows", "[activity_monitor]")
 {
     ActivityMonitorView v;
     CHECK(v.count() == 0);
@@ -58,24 +56,23 @@ TEST_CASE("ActivityMonitorView lays out summary, group headers and job rows",
     CHECK(v.job_count() == 3);
 }
 
-TEST_CASE("ActivityMonitorView rows are unselectable and keyed by group/name",
-          "[activity_monitor]")
+TEST_CASE("ActivityMonitorView rows are unselectable and keyed by group/name", "[activity_monitor]")
 {
     ActivityMonitorView v;
     v.set_snapshot({make_entry("a", "Sync")}, 10'000);
     for (std::size_t i = 0; i < v.count(); ++i)
+    {
         CHECK_FALSE(v.is_selectable(i));
+    }
     CHECK(v.row_key(0) == "summary");
     CHECK(v.row_key(1) == "group:Sync");
     CHECK(v.row_key(2) == "job:Sync/a");
 }
 
-TEST_CASE("ActivityMonitorView accessibility exposes only job rows",
-          "[activity_monitor]")
+TEST_CASE("ActivityMonitorView accessibility exposes only job rows", "[activity_monitor]")
 {
     ActivityMonitorView v;
-    v.set_snapshot({make_entry("presence-poll", "Sync", ActivityState::Running, "loop")},
-                   10'000);
+    v.set_snapshot({make_entry("presence-poll", "Sync", ActivityState::Running, "loop")}, 10'000);
     CHECK(v.access_role_for_row(0) == tk::Role::None);
     CHECK(v.access_role_for_row(1) == tk::Role::None);
     CHECK(v.access_role_for_row(2) == tk::Role::ListItem);
@@ -83,8 +80,7 @@ TEST_CASE("ActivityMonitorView accessibility exposes only job rows",
     CHECK(v.access_name_for_row(99).empty());
 }
 
-TEST_CASE("ActivityMonitorView paints every row kind without crashing",
-          "[activity_monitor]")
+TEST_CASE("ActivityMonitorView paints every row kind without crashing", "[activity_monitor]")
 {
     auto surface = TestSurface::create(640, 400);
     ActivityMonitorView v;
@@ -100,6 +96,8 @@ TEST_CASE("ActivityMonitorView paints every row kind without crashing",
     tk::PaintCtx pc{surface->canvas(), surface->factory(), theme};
     v.paint(pc);
     for (std::size_t i = 0; i < v.count(); ++i)
+    {
         v.paint_row(i, pc, {0, static_cast<float>(i) * 52.0f, 640, 52.0f}, false, i % 2 == 0);
+    }
     SUCCEED();
 }

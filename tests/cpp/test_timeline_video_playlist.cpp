@@ -38,8 +38,7 @@ struct PlaylistStage
                 return p;
             });
         playlist.set_fetch_provider(
-            [](const std::string&,
-               std::function<void(std::vector<std::uint8_t>)> on_ready)
+            [](const std::string&, std::function<void(std::vector<std::uint8_t>)> on_ready)
             {
                 on_ready({1, 2, 3});
             });
@@ -56,8 +55,7 @@ struct PlaylistStage
 
 } // namespace
 
-TEST_CASE("TimelineVideoPlaylist pause_all pauses every live playing player",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist pause_all pauses every live playing player", "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$a");
@@ -74,16 +72,15 @@ TEST_CASE("TimelineVideoPlaylist pause_all pauses every live playing player",
     CHECK(stage.players[1]->pause_count == 1);
 }
 
-TEST_CASE(
-    "TimelineVideoPlaylist pause_all does not re-pause an already-paused "
-    "(non-autoplay) player, and resume_all leaves it paused",
-    "[views][video]")
+TEST_CASE("TimelineVideoPlaylist pause_all does not re-pause an already-paused "
+          "(non-autoplay) player, and resume_all leaves it paused",
+          "[views][video]")
 {
     PlaylistStage stage;
     VideoSourceInfo info;
     info.event_id = "$c";
     info.autoplay = false; // ensure_playing's fetch callback pauses it right
-                            // after play(), so it's already paused.
+                           // after play(), so it's already paused.
     stage.playlist.ensure_playing(info);
     REQUIRE(stage.players.size() == 1);
     CHECK_FALSE(stage.players[0]->playing_);
@@ -94,15 +91,18 @@ TEST_CASE(
 
     // It wasn't actually playing when "suspended", so resume_all() — even
     // with a predicate that accepts everything — must not start it.
-    stage.playlist.resume_all([](const std::string&) { return true; });
+    stage.playlist.resume_all(
+        [](const std::string&)
+        {
+            return true;
+        });
     CHECK_FALSE(stage.players[0]->playing_);
     CHECK(stage.players[0]->resume_count == 0);
 }
 
-TEST_CASE(
-    "TimelineVideoPlaylist resume_all only resumes players whose row is "
-    "visible",
-    "[views][video]")
+TEST_CASE("TimelineVideoPlaylist resume_all only resumes players whose row is "
+          "visible",
+          "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$a");
@@ -110,7 +110,10 @@ TEST_CASE(
     stage.playlist.pause_all();
 
     stage.playlist.resume_all(
-        [](const std::string& event_id) { return event_id == "$a"; });
+        [](const std::string& event_id)
+        {
+            return event_id == "$a";
+        });
 
     CHECK(stage.players[0]->playing_);
     CHECK(stage.players[0]->resume_count == 1);
@@ -118,20 +121,21 @@ TEST_CASE(
     CHECK(stage.players[1]->resume_count == 0);
 }
 
-TEST_CASE(
-    "TimelineVideoPlaylist resume_all is a no-op without a prior pause_all",
-    "[views][video]")
+TEST_CASE("TimelineVideoPlaylist resume_all is a no-op without a prior pause_all", "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$a");
 
-    stage.playlist.resume_all([](const std::string&) { return true; });
+    stage.playlist.resume_all(
+        [](const std::string&)
+        {
+            return true;
+        });
 
     CHECK(stage.players[0]->resume_count == 0);
 }
 
-TEST_CASE("TimelineVideoPlaylist pause_all does not touch the retired pool",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist pause_all does not touch the retired pool", "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$a");
@@ -146,8 +150,7 @@ TEST_CASE("TimelineVideoPlaylist pause_all does not touch the retired pool",
     CHECK(stage.players[0]->pause_count == pause_count_before);
 }
 
-TEST_CASE("TimelineVideoPlaylist GC retires players no painted row touched",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist GC retires players no painted row touched", "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$seen");
@@ -167,8 +170,7 @@ TEST_CASE("TimelineVideoPlaylist GC retires players no painted row touched",
     CHECK_FALSE(stage.players[1]->playing_); // retired players are paused
 }
 
-TEST_CASE("TimelineVideoPlaylist touch wakes a GC-retired player",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist touch wakes a GC-retired player", "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$a");
@@ -180,19 +182,22 @@ TEST_CASE("TimelineVideoPlaylist touch wakes a GC-retired player",
     stage.playlist.touch("$a"); // row scrolled back into view
 
     CHECK(stage.playlist.has("$a"));
-    CHECK(stage.players.size() == 1);        // reclaimed from the pool,
+    CHECK(stage.players.size() == 1);           // reclaimed from the pool,
     CHECK(stage.players[0]->resume_count == 1); // not re-created or re-fetched
     CHECK(stage.players[0]->play_count == 1);
     CHECK(stage.playlist.retired_count() == 0);
 }
 
-TEST_CASE("TimelineVideoPlaylist release_idle_retired frees only aged entries",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist release_idle_retired frees only aged entries", "[views][video]")
 {
     using namespace std::chrono;
     PlaylistStage stage;
     steady_clock::time_point now{};
-    stage.playlist.set_clock_for_testing([&] { return now; });
+    stage.playlist.set_clock_for_testing(
+        [&]
+        {
+            return now;
+        });
 
     stage.add_playing("$old");
     stage.add_playing("$new"); // both live, so neither reuses a pooled player
@@ -206,8 +211,7 @@ TEST_CASE("TimelineVideoPlaylist release_idle_retired frees only aged entries",
     CHECK(stage.playlist.retired_count() == 1);
 }
 
-TEST_CASE("TimelineVideoPlaylist drop forgets a GC-retired row",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist drop forgets a GC-retired row", "[views][video]")
 {
     PlaylistStage stage;
     stage.add_playing("$a");
@@ -220,13 +224,16 @@ TEST_CASE("TimelineVideoPlaylist drop forgets a GC-retired row",
     CHECK_FALSE(stage.playlist.has("$a"));
 }
 
-TEST_CASE("TimelineVideoPlaylist memory_bytes counts live and retired players",
-          "[views][video]")
+TEST_CASE("TimelineVideoPlaylist memory_bytes counts live and retired players", "[views][video]")
 {
     using namespace std::chrono;
     PlaylistStage stage;
     steady_clock::time_point now{};
-    stage.playlist.set_clock_for_testing([&] { return now; });
+    stage.playlist.set_clock_for_testing(
+        [&]
+        {
+            return now;
+        });
 
     stage.add_playing("$a");
     stage.add_playing("$b");

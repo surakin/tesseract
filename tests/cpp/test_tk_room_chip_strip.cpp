@@ -30,7 +30,9 @@ tesseract::RoomInfo chip_room(const std::string& id, const std::string& name,
 
 struct ChipStage : vt::Stage
 {
-    ChipStage() : vt::Stage(600, 300) {}
+    ChipStage() : vt::Stage(600, 300)
+    {
+    }
 };
 
 } // namespace
@@ -42,7 +44,9 @@ TEST_CASE("paint_room_chips lays out as many chips as fit, with hit rects",
     auto pc = s.pc();
     std::vector<tesseract::RoomInfo> rooms;
     for (int i = 0; i < 20; ++i)
+    {
         rooms.push_back(chip_room("!r" + std::to_string(i), "Room " + std::to_string(i)));
+    }
     RoomChipStripStyle style;
     std::vector<std::pair<tk::Rect, std::string>> chips;
     paint_room_chips(pc, {0, 0, 300, 100}, rooms, nullptr, nullptr, style, chips);
@@ -88,8 +92,16 @@ TEST_CASE("paint_room_chips highlights one chip and requests missing avatars",
     std::vector<std::pair<tk::Rect, std::string>> chips;
     paint_room_chips(
         pc, {0, 0, 300, 100}, rooms,
-        [&](const std::string& mxc) -> const tk::Image* { provided.push_back(mxc); return nullptr; },
-        [&](const tesseract::RoomInfo& r) { asked.push_back(r.id); }, style, chips);
+        [&](const std::string& mxc) -> const tk::Image*
+        {
+            provided.push_back(mxc);
+            return nullptr;
+        },
+        [&](const tesseract::RoomInfo& r)
+        {
+            asked.push_back(r.id);
+        },
+        style, chips);
     CHECK(chips.size() == 2);
     CHECK(provided == std::vector<std::string>{"mxc://x/a"});
     CHECK(asked == std::vector<std::string>{"!a"});
@@ -120,8 +132,7 @@ TEST_CASE("LocationMapPanner pan converts drag to a viewport shift and "
     CHECK(p.end_pan({52, 51})); // tiny move: a click
 }
 
-TEST_CASE("LocationMapPanner wheel accumulates and clamps zoom",
-          "[tk][view][map_panner]")
+TEST_CASE("LocationMapPanner wheel accumulates and clamps zoom", "[tk][view][map_panner]")
 {
     LocationMapPanner p;
     MapViewport vp;
@@ -145,8 +156,16 @@ TEST_CASE("LocationMapPanner tooltip show/hide is edge-triggered and geometry "
     LocationMapPanner p;
     int shows = 0, hides = 0;
     std::string text;
-    p.set_tooltip_callbacks([&](std::string t, tk::Rect) { ++shows; text = t; },
-                            [&] { ++hides; });
+    p.set_tooltip_callbacks(
+        [&](std::string t, tk::Rect)
+        {
+            ++shows;
+            text = t;
+        },
+        [&]
+        {
+            ++hides;
+        });
     p.hide_tooltip(); // not showing: no-op
     CHECK(hides == 0);
     p.show_tooltip("here", {0, 0, 1, 1});
@@ -183,15 +202,24 @@ TEST_CASE("LocationMapPanner paint requests tiles, falls back to parent/child "
     LocationMapPanner p;
     std::vector<std::string> requested;
     // No provider: tiles requested only when a request callback is set.
-    p.set_tile_request([&](int z, int x, int y)
-                       { requested.push_back(std::to_string(z) + "/" + std::to_string(x) + "/" + std::to_string(y)); });
+    p.set_tile_request(
+        [&](int z, int x, int y)
+        {
+            requested.push_back(std::to_string(z) + "/" + std::to_string(x) + "/" +
+                                std::to_string(y));
+        });
     p.paint(m, pc, {10, 10, 300, 200});
     CHECK(requested.size() >= 1);
     REQUIRE(p.geom_at("$loc") != nullptr);
 
     // Provider returns nothing: "Loading map" placeholder path + fallbacks.
     int provider_calls = 0;
-    p.set_tile_image_provider([&](const std::string&) -> const tk::Image* { ++provider_calls; return nullptr; });
+    p.set_tile_image_provider(
+        [&](const std::string&) -> const tk::Image*
+        {
+            ++provider_calls;
+            return nullptr;
+        });
     requested.clear();
     p.paint(m, pc, {10, 10, 300, 200});
     CHECK(provider_calls > 0);
@@ -201,14 +229,22 @@ TEST_CASE("LocationMapPanner paint requests tiles, falls back to parent/child "
     std::vector<std::uint8_t> px(4 * 4 * 4, 200);
     auto img = s.surface->factory().create_image_rgba(px.data(), 4, 4);
     REQUIRE(img != nullptr);
-    p.set_tile_image_provider([&](const std::string&) -> const tk::Image* { return img.get(); });
+    p.set_tile_image_provider(
+        [&](const std::string&) -> const tk::Image*
+        {
+            return img.get();
+        });
     requested.clear();
     p.paint(m, pc, {10, 10, 300, 200});
     CHECK(requested.empty());
 
     // Zoom 0 / 19 edges exercise the no-parent / no-child branches.
     m.map_viewport.zoom = 1;
-    p.set_tile_image_provider([&](const std::string&) -> const tk::Image* { return nullptr; });
+    p.set_tile_image_provider(
+        [&](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
     p.paint(m, pc, {10, 10, 300, 200});
     m.map_viewport.zoom = 19;
     p.paint(m, pc, {10, 10, 300, 200});

@@ -46,11 +46,10 @@ public:
         std::string resume_from_event_id;
     };
 
-    HistoryExportController(
-        tesseract::Client* client,
-        std::function<void(std::function<void()>)> post_to_ui,
-        std::function<void(std::function<void()>)> run_async,
-        std::shared_ptr<void> client_owner = {});
+    HistoryExportController(tesseract::Client* client,
+                            std::function<void(std::function<void()>)> post_to_ui,
+                            std::function<void(std::function<void()>)> run_async,
+                            std::shared_ptr<void> client_owner = {});
     ~HistoryExportController();
 
     /// Rebind to another account's client (or nullptr on logout).
@@ -65,8 +64,7 @@ public:
     // Native folder-picker, installed by ShellBase::ensure_history_export_controller_
     // (via pick_folder_). Invoked with a suggested folder name; the callback
     // receives the chosen path, or empty on cancel.
-    std::function<void(std::string suggested_name,
-                       std::function<void(std::string)> cb)>
+    std::function<void(std::string suggested_name, std::function<void(std::string)> cb)>
         show_save_folder_dialog;
 
     // Full flow: `show_save_folder_dialog` → build options (labels via
@@ -85,9 +83,18 @@ public:
     // gathered so far, unlike `cancel()`.
     void stop();
 
-    bool active() const { return active_; }
-    const std::string& active_room_id() const { return active_room_id_; }
-    const tesseract::RoomExportProgress& last_progress() const { return last_progress_; }
+    bool active() const
+    {
+        return active_;
+    }
+    const std::string& active_room_id() const
+    {
+        return active_room_id_;
+    }
+    const tesseract::RoomExportProgress& last_progress() const
+    {
+        return last_progress_;
+    }
 
     // Async checkpoint probe for `room_id`; result delivered via
     // `on_resume_available` on the UI thread. `on_resume_available` fires
@@ -98,17 +105,17 @@ public:
     // UI-thread outputs.
     std::function<void(std::string room_id, std::string out_path)> on_started;
     std::function<void(const tesseract::RoomExportProgress&)> on_progress;
-    std::function<void(bool ok, bool cancelled, std::string out_path,
-                       std::uint64_t events_written, std::string error)> on_finished;
+    std::function<void(bool ok, bool cancelled, std::string out_path, std::uint64_t events_written,
+                       std::string error)>
+        on_finished;
     std::function<void(tesseract::RoomExportCheckpoint)> on_resume_available;
 
     // Called by `ShellBase`'s marshalled `IEventHandler` overrides (already
     // on the UI thread).
     void handle_progress(const tesseract::RoomExportProgress& progress);
-    void handle_complete(std::uint64_t request_id, bool ok, bool cancelled,
-                         bool reached_start, std::string out_path,
-                         std::uint64_t events_written, std::uint64_t bytes_written,
-                         std::string message);
+    void handle_complete(std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
+                         std::string out_path, std::uint64_t events_written,
+                         std::uint64_t bytes_written, std::string message);
 
     // Pure: no Client, no UI calls — safe to unit-test directly (see
     // ThreadPanelController::compute_transition for the same pattern).

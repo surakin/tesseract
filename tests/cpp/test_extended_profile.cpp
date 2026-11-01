@@ -8,8 +8,7 @@
 using tesseract::ExtendedProfile;
 using tesseract::UserProfile;
 
-TEST_CASE("UserProfile::from_json parses MSC4426 status + call fields",
-          "[profile][msc4426]")
+TEST_CASE("UserProfile::from_json parses MSC4426 status + call fields", "[profile][msc4426]")
 {
     const std::string json = R"({
         "exists": true,
@@ -32,24 +31,20 @@ TEST_CASE("UserProfile::from_json parses MSC4426 status + call fields",
     CHECK(p.call_joined_ts == 1770140640ull);
 }
 
-TEST_CASE("UserProfile::from_json defaults MSC4426 fields when absent",
-          "[profile][msc4426]")
+TEST_CASE("UserProfile::from_json defaults MSC4426 fields when absent", "[profile][msc4426]")
 {
-    auto p = UserProfile::from_json(
-        R"({"exists":true,"user_id":"@a:b","display_name":"a"})");
+    auto p = UserProfile::from_json(R"({"exists":true,"user_id":"@a:b","display_name":"a"})");
 
     CHECK(p.status_text.empty());
     CHECK(p.status_emoji.empty());
     CHECK(p.call_joined_ts == 0ull);
 }
 
-TEST_CASE("ExtendedProfile::apply_field sets then clears m.status",
-          "[profile][msc4426]")
+TEST_CASE("ExtendedProfile::apply_field sets then clears m.status", "[profile][msc4426]")
 {
     ExtendedProfile ep;
 
-    ep.apply_field("org.matrix.msc4426.status",
-                   R"({"text":"Deep work","emoji":"X"})");
+    ep.apply_field("org.matrix.msc4426.status", R"({"text":"Deep work","emoji":"X"})");
     CHECK(ep.status_text == "Deep work");
     CHECK(ep.status_emoji == "X");
 
@@ -58,8 +53,7 @@ TEST_CASE("ExtendedProfile::apply_field sets then clears m.status",
     CHECK(ep.status_emoji.empty());
 }
 
-TEST_CASE("ExtendedProfile::apply_field accepts both timezone keys",
-          "[profile][msc4175]")
+TEST_CASE("ExtendedProfile::apply_field accepts both timezone keys", "[profile][msc4175]")
 {
     ExtendedProfile ep;
 

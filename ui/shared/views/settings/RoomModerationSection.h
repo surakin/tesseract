@@ -53,10 +53,22 @@ public:
     std::function<void(std::string user_id, std::string display_name)> on_unban_requested;
 
     // Test accessors.
-    const std::vector<tesseract::BannedMember>& banned_members() const { return members_; }
-    bool showing_empty_label() const { return empty_label_ != nullptr; }
-    bool showing_loading_label() const { return loading_label_ != nullptr; }
-    bool showing_incomplete_note() const { return incomplete_note_ != nullptr; }
+    const std::vector<tesseract::BannedMember>& banned_members() const
+    {
+        return members_;
+    }
+    bool showing_empty_label() const
+    {
+        return empty_label_ != nullptr;
+    }
+    bool showing_loading_label() const
+    {
+        return loading_label_ != nullptr;
+    }
+    bool showing_incomplete_note() const
+    {
+        return incomplete_note_ != nullptr;
+    }
     // Clicks row i's Unban button (as the user would). False if no such
     // row or the button is disabled.
     bool click_unban_for_test(int i);
@@ -70,10 +82,10 @@ private:
     std::vector<tesseract::BannedMember> members_;
     std::vector<std::string> pending_; // user_ids with an unban in flight
 
-    SettingsGroup*         group_         = nullptr;
-    tk::Label*             loading_label_ = nullptr;
-    tk::Label*             empty_label_   = nullptr;
-    tk::Label*             incomplete_note_ = nullptr;
+    SettingsGroup* group_ = nullptr;
+    tk::Label* loading_label_ = nullptr;
+    tk::Label* empty_label_ = nullptr;
+    tk::Label* incomplete_note_ = nullptr;
     std::vector<BannedRow*> rows_; // borrowed; owned by group_
 };
 

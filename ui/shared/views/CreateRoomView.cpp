@@ -59,15 +59,21 @@ std::vector<std::string> split_invitees(const std::string& text)
     auto flush = [&]
     {
         if (!cur.empty())
+        {
             out.push_back(std::move(cur));
+        }
         cur.clear();
     };
     for (char c : text)
     {
         if (c == ',' || c == ';' || c == ' ' || c == '\t' || c == '\r' || c == '\n')
+        {
             flush();
+        }
         else
+        {
             cur.push_back(c);
+        }
     }
     flush();
     return out;
@@ -99,7 +105,11 @@ CreateRoomView::CreateRoomView()
         // Grows with content; capped in arrange(). tk::TextArea requests its
         // own relayout internally on height changes — this only needs to
         // track the natural height for that clamp.
-        topic->set_on_height_changed([this](float h) { topic_natural_h_ = h; });
+        topic->set_on_height_changed(
+            [this](float h)
+            {
+                topic_natural_h_ = h;
+            });
         topic_field_ = add_child(std::move(topic));
         topic_natural_h_ = kCRTopicH;
         topic_h_ = kCRTopicH;
@@ -109,13 +119,18 @@ CreateRoomView::CreateRoomView()
         alias_field_ = add_child(std::move(alias));
 
         auto invite = tk::create_widget<tk::TextArea>(this, kCRInviteH);
-        invite->set_placeholder(tk::tr("Invite people (optional) — Matrix IDs, one per line or comma-separated"));
+        invite->set_placeholder(
+            tk::tr("Invite people (optional) — Matrix IDs, one per line or comma-separated"));
         // Grows with content like RoomGeneralSection's topic field; capped in
         // arrange() so it can never push the fixed-size card's buttons out
         // the bottom. tk::TextArea requests its own relayout internally on
         // height changes — this only needs to track the natural height for
         // that clamp.
-        invite->set_on_height_changed([this](float h) { invite_natural_h_ = h; });
+        invite->set_on_height_changed(
+            [this](float h)
+            {
+                invite_natural_h_ = h;
+            });
         invite_field_ = add_child(std::move(invite));
         invite_natural_h_ = kCRInviteH;
         invite_h_ = kCRInviteH;
@@ -135,11 +150,10 @@ CreateRoomView::CreateRoomView()
         {tk::tr("Public"), "public"},
     });
     combo->set_selected_value("private");
-    combo->set_tooltip(tk::tr(
-        "Sets the initial join rule, history visibility, and directory "
-        "listing. Private: invite-only, unlisted. Public: anyone can join, "
-        "listed. Fine-grained options (Knock, Restricted) can be set "
-        "afterward in Room Settings \xE2\x86\x92 Security & Privacy."));
+    combo->set_tooltip(tk::tr("Sets the initial join rule, history visibility, and directory "
+                              "listing. Private: invite-only, unlisted. Public: anyone can join, "
+                              "listed. Fine-grained options (Knock, Restricted) can be set "
+                              "afterward in Room Settings \xE2\x86\x92 Security & Privacy."));
     visibility_combo_ = add_child(std::move(combo));
 
     auto enc = tk::create_widget<tk::CheckButton>(this, tk::tr("Encrypt this room"));
@@ -153,21 +167,22 @@ CreateRoomView::CreateRoomView()
     });
     create->set_selected_value("room");
     create->set_variant(tk::Button::Variant::Primary);
-    create->on_selection_changed =
-        [this](std::string value) { set_kind_(kind_from_value_(value)); };
-    create->on_activate =
-        [this](std::string value)
+    create->on_selection_changed = [this](std::string value)
+    {
+        set_kind_(kind_from_value_(value));
+    };
+    create->on_activate = [this](std::string value)
+    {
+        kind_ = kind_from_value_(value);
+        if (on_create_requested)
         {
-            kind_ = kind_from_value_(value);
-            if (on_create_requested)
-            {
-                on_create_requested(build_options_());
-            }
-        };
+            on_create_requested(build_options_());
+        }
+    };
     create_combo_btn_ = add_child(std::move(create));
 
-    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"),
-        std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                                tk::Button::Variant::Subtle);
     cancel->set_on_click(
         [this]
         {
@@ -189,9 +204,13 @@ CreateRoomView::CreateRoomView()
 CreateRoomView::Kind CreateRoomView::kind_from_value_(const std::string& value)
 {
     if (value == "space")
+    {
         return Kind::Space;
+    }
     if (value == "call")
+    {
         return Kind::CallRoom;
+    }
     return Kind::Room;
 }
 
@@ -203,7 +222,10 @@ void CreateRoomView::set_kind_(Kind k)
     // RoomSettingsView hiding the same field for an existing space.
     if (encryption_check_ && state_ != State::Creating)
     {
-        if (is_space) encryption_check_->set_checked(false);
+        if (is_space)
+        {
+            encryption_check_->set_checked(false);
+        }
         encryption_check_->set_enabled(!is_space);
     }
     apply_type_placeholders_();
@@ -214,7 +236,7 @@ void CreateRoomView::apply_type_placeholders_()
     const bool is_space = (kind_ == Kind::Space);
     if (name_field_)
     {
-        name_field_->set_placeholder(is_space                   ? tk::tr("Space name")
+        name_field_->set_placeholder(is_space                  ? tk::tr("Space name")
                                      : kind_ == Kind::CallRoom ? tk::tr("Call room name")
                                                                : tk::tr("Room name"));
     }
@@ -226,8 +248,8 @@ void CreateRoomView::apply_type_placeholders_()
     if (reason_hint_lbl_)
     {
         reason_hint_lbl_->set_text(is_space
-                                        ? tk::tr("Sent as plain text, even in encrypted spaces")
-                                        : tk::tr("Sent as plain text, even in encrypted rooms"));
+                                       ? tk::tr("Sent as plain text, even in encrypted spaces")
+                                       : tk::tr("Sent as plain text, even in encrypted rooms"));
     }
 }
 
@@ -251,7 +273,9 @@ tesseract::RoomCreateOptions CreateRoomView::build_options_() const
 void CreateRoomView::set_state(State s)
 {
     if (s == State::Creating)
+    {
         creating_spinner_start_ = std::chrono::steady_clock::now();
+    }
     state_ = s;
     if (s != State::Error)
     {
@@ -269,23 +293,44 @@ void CreateRoomView::set_error(std::string msg)
 
 void CreateRoomView::reset()
 {
-    if (name_field_) name_field_->set_text("");
-    if (topic_field_) topic_field_->set_text("");
+    if (name_field_)
+    {
+        name_field_->set_text("");
+    }
+    if (topic_field_)
+    {
+        topic_field_->set_text("");
+    }
     topic_natural_h_ = kCRTopicH;
     topic_h_ = kCRTopicH;
-    if (alias_field_) alias_field_->set_text("");
-    if (invite_field_) invite_field_->set_text("");
+    if (alias_field_)
+    {
+        alias_field_->set_text("");
+    }
+    if (invite_field_)
+    {
+        invite_field_->set_text("");
+    }
     invite_natural_h_ = kCRInviteH;
     invite_h_ = kCRInviteH;
-    if (reason_field_) reason_field_->set_text("");
-    if (visibility_combo_) visibility_combo_->set_selected_value("private");
+    if (reason_field_)
+    {
+        reason_field_->set_text("");
+    }
+    if (visibility_combo_)
+    {
+        visibility_combo_->set_selected_value("private");
+    }
     if (encryption_check_)
     {
         encryption_check_->set_checked(false);
         encryption_check_->set_enabled(true);
     }
     kind_ = Kind::Room;
-    if (create_combo_btn_) create_combo_btn_->set_selected_value("room");
+    if (create_combo_btn_)
+    {
+        create_combo_btn_->set_selected_value("room");
+    }
     apply_type_placeholders_();
     set_state(State::Idle);
 }
@@ -293,27 +338,62 @@ void CreateRoomView::reset()
 void CreateRoomView::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
-    if (name_field_) name_field_->set_visible(v);
-    if (topic_field_) topic_field_->set_visible(v);
-    if (alias_field_) alias_field_->set_visible(v);
-    if (invite_field_) invite_field_->set_visible(v);
-    if (reason_field_) reason_field_->set_visible(v);
+    if (name_field_)
+    {
+        name_field_->set_visible(v);
+    }
+    if (topic_field_)
+    {
+        topic_field_->set_visible(v);
+    }
+    if (alias_field_)
+    {
+        alias_field_->set_visible(v);
+    }
+    if (invite_field_)
+    {
+        invite_field_->set_visible(v);
+    }
+    if (reason_field_)
+    {
+        reason_field_->set_visible(v);
+    }
 }
 
 void CreateRoomView::focus_name_field()
 {
     if (name_field_)
+    {
         name_field_->set_focused(true);
+    }
 }
 
 void CreateRoomView::on_theme_changed(const tk::Theme& t)
 {
-    if (name_field_) name_field_->set_text_color(t.palette.text_primary);
-    if (topic_field_) topic_field_->set_text_color(t.palette.text_primary);
-    if (alias_field_) alias_field_->set_text_color(t.palette.text_primary);
-    if (invite_field_) invite_field_->set_text_color(t.palette.text_primary);
-    if (reason_field_) reason_field_->set_text_color(t.palette.text_primary);
-    if (reason_hint_lbl_) reason_hint_lbl_->set_colour(t.palette.text_muted);
+    if (name_field_)
+    {
+        name_field_->set_text_color(t.palette.text_primary);
+    }
+    if (topic_field_)
+    {
+        topic_field_->set_text_color(t.palette.text_primary);
+    }
+    if (alias_field_)
+    {
+        alias_field_->set_text_color(t.palette.text_primary);
+    }
+    if (invite_field_)
+    {
+        invite_field_->set_text_color(t.palette.text_primary);
+    }
+    if (reason_field_)
+    {
+        reason_field_->set_text_color(t.palette.text_primary);
+    }
+    if (reason_hint_lbl_)
+    {
+        reason_hint_lbl_->set_colour(t.palette.text_muted);
+    }
 }
 
 void CreateRoomView::apply_state()
@@ -325,41 +405,97 @@ void CreateRoomView::apply_state()
     // can fix and retry.
     const bool show_status = (state_ == State::Error);
 
-    if (name_field_) name_field_->set_enabled(!creating);
-    if (topic_field_) topic_field_->set_enabled(!creating);
-    if (alias_field_) alias_field_->set_enabled(!creating);
-    if (invite_field_) invite_field_->set_enabled(!creating);
-    if (reason_field_) reason_field_->set_enabled(!creating);
-    if (visibility_combo_) visibility_combo_->set_enabled(!creating);
-    if (encryption_check_) encryption_check_->set_enabled(!creating && kind_ != Kind::Space);
-    if (create_combo_btn_) create_combo_btn_->set_enabled(!creating);
+    if (name_field_)
+    {
+        name_field_->set_enabled(!creating);
+    }
+    if (topic_field_)
+    {
+        topic_field_->set_enabled(!creating);
+    }
+    if (alias_field_)
+    {
+        alias_field_->set_enabled(!creating);
+    }
+    if (invite_field_)
+    {
+        invite_field_->set_enabled(!creating);
+    }
+    if (reason_field_)
+    {
+        reason_field_->set_enabled(!creating);
+    }
+    if (visibility_combo_)
+    {
+        visibility_combo_->set_enabled(!creating);
+    }
+    if (encryption_check_)
+    {
+        encryption_check_->set_enabled(!creating && kind_ != Kind::Space);
+    }
+    if (create_combo_btn_)
+    {
+        create_combo_btn_->set_enabled(!creating);
+    }
 
     // Hide the entire form while creating — replaced by the centered
     // spinner + message (see paint()). The view's own size never changes:
     // arrange() always receives the same fixed bounds from AddRoomView
     // regardless of what's shown inside it.
-    if (name_field_) name_field_->set_visible(!creating);
-    if (topic_field_) topic_field_->set_visible(!creating);
-    if (alias_field_) alias_field_->set_visible(!creating);
-    if (invite_field_) invite_field_->set_visible(!creating);
-    if (reason_field_) reason_field_->set_visible(!creating);
-    if (reason_hint_lbl_) reason_hint_lbl_->set_visible(!creating);
-    if (invite_group_) invite_group_->set_visible(!creating);
-    if (visibility_combo_) visibility_combo_->set_visible(!creating);
-    if (encryption_check_) encryption_check_->set_visible(!creating);
-    if (create_combo_btn_) create_combo_btn_->set_visible(!creating);
-    if (cancel_btn_) cancel_btn_->set_visible(!creating);
+    if (name_field_)
+    {
+        name_field_->set_visible(!creating);
+    }
+    if (topic_field_)
+    {
+        topic_field_->set_visible(!creating);
+    }
+    if (alias_field_)
+    {
+        alias_field_->set_visible(!creating);
+    }
+    if (invite_field_)
+    {
+        invite_field_->set_visible(!creating);
+    }
+    if (reason_field_)
+    {
+        reason_field_->set_visible(!creating);
+    }
+    if (reason_hint_lbl_)
+    {
+        reason_hint_lbl_->set_visible(!creating);
+    }
+    if (invite_group_)
+    {
+        invite_group_->set_visible(!creating);
+    }
+    if (visibility_combo_)
+    {
+        visibility_combo_->set_visible(!creating);
+    }
+    if (encryption_check_)
+    {
+        encryption_check_->set_visible(!creating);
+    }
+    if (create_combo_btn_)
+    {
+        create_combo_btn_->set_visible(!creating);
+    }
+    if (cancel_btn_)
+    {
+        cancel_btn_->set_visible(!creating);
+    }
 
     if (status_lbl_)
     {
         status_lbl_->set_visible(show_status);
         if (state_ == State::Error)
         {
-            status_lbl_->set_text(
-                !error_msg_.empty()        ? error_msg_
-                : kind_ == Kind::Space    ? tk::tr("Couldn't create space.")
-                : kind_ == Kind::CallRoom ? tk::tr("Couldn't create call room.")
-                                          : tk::tr("Couldn't create room."));
+            status_lbl_->set_text(!error_msg_.empty()       ? error_msg_
+                                  : kind_ == Kind::Space    ? tk::tr("Couldn't create space.")
+                                  : kind_ == Kind::CallRoom ? tk::tr("Couldn't create call room.")
+                                                            : tk::tr("Couldn't create room."));
         }
         else
         {
@@ -382,7 +518,9 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float inner_w = bounds.w - kCRPadX * 2.0f;
 
     if (title_visible_)
+    {
         y += kCRTitleH + kCRGap;
+    }
 
     if (name_field_)
     {
@@ -393,17 +531,18 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Fixed rows below both auto-grow fields, shared by both caps below:
     // reason field, hint, invite_group_'s bottom inset, visibility/
     // encryption row, status (if shown), button row, bottom padding.
-    const float reserved_below_fixed = kCRGap                  // invite -> reason gap
-        + kCRFieldH + kCRSmallGap                               // reason field -> hint gap
-        + kCRHintH                                              // reason hint
-        + kCRGroupPadY                                          // invite_group_'s bottom inset
-        + kCRGap                                                // gap below invite_group_
-        + kCRFieldH + kCRGap                                    // visibility/encryption row
+    const float reserved_below_fixed =
+        kCRGap                    // invite -> reason gap
+        + kCRFieldH + kCRSmallGap // reason field -> hint gap
+        + kCRHintH                // reason hint
+        + kCRGroupPadY            // invite_group_'s bottom inset
+        + kCRGap                  // gap below invite_group_
+        + kCRFieldH +
+        kCRGap // visibility/encryption row
         // Always reserved, whether or not status_lbl_ is currently showing
         // an error — otherwise the button row jumps down the moment an
         // error appears (and back up when it clears).
-        + kCRStatusH + kCRSmallGap
-        + kCRBtnH + kCRPadY;                                    // button row + bottom padding
+        + kCRStatusH + kCRSmallGap + kCRBtnH + kCRPadY; // button row + bottom padding
 
     if (topic_field_)
     {
@@ -415,11 +554,12 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         // since this view still does its own arrange() math. invite_field_
         // gets first claim on any further slack below, once its own real
         // position is known.
-        const float topic_reserved_below = kCRFieldH + kCRGap  // alias field
-            + kCRGroupPadY                                      // invite_group_'s top inset
-            + kCRInviteH                                        // invite field floor
-            + reserved_below_fixed;
-        const float topic_h_cap = std::max(kCRTopicH, bounds.y + bounds.h - topic_reserved_below - y);
+        const float topic_reserved_below = kCRFieldH + kCRGap // alias field
+                                           + kCRGroupPadY     // invite_group_'s top inset
+                                           + kCRInviteH       // invite field floor
+                                           + reserved_below_fixed;
+        const float topic_h_cap =
+            std::max(kCRTopicH, bounds.y + bounds.h - topic_reserved_below - y);
         topic_h_ = std::min(std::max(topic_natural_h_, kCRTopicH), topic_h_cap);
         topic_field_->arrange(ctx, {x, y, inner_w, topic_h_});
     }
@@ -448,7 +588,8 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         // Grows up to whatever space is left before the fixed rows below it
         // — see reserved_below_fixed above.
-        const float invite_h_cap = std::max(kCRInviteH, bounds.y + bounds.h - reserved_below_fixed - y);
+        const float invite_h_cap =
+            std::max(kCRInviteH, bounds.y + bounds.h - reserved_below_fixed - y);
         invite_h_ = std::min(std::max(invite_natural_h_, kCRInviteH), invite_h_cap);
         invite_field_->arrange(ctx, {group_x, y, group_inner_w, invite_h_});
     }
@@ -537,7 +678,9 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
     auto draw_field_bg = [&](tk::Rect r)
     {
         if (r.empty())
+        {
             return;
+        }
         ctx.canvas.fill_rounded_rect(r, kCRRadius, pal.bg);
         ctx.canvas.stroke_rounded_rect(r, kCRRadius, pal.border, kCRBorderW);
     };
@@ -593,48 +736,58 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
 
     if (status_lbl_ && status_lbl_->visible())
     {
-        status_lbl_->set_colour(state_ == State::Error
-                                     ? std::optional<tk::Color>(pal.destructive)
-                                     : std::nullopt);
+        status_lbl_->set_colour(state_ == State::Error ? std::optional<tk::Color>(pal.destructive)
+                                                       : std::nullopt);
         status_lbl_->paint(ctx);
         y += kCRStatusH + kCRSmallGap;
     }
 
     if (visibility_combo_ && visibility_combo_->visible())
+    {
         visibility_combo_->paint(ctx);
+    }
     if (encryption_check_ && encryption_check_->visible())
+    {
         encryption_check_->paint(ctx);
+    }
     if (create_combo_btn_ && create_combo_btn_->visible())
+    {
         create_combo_btn_->paint(ctx);
+    }
     if (cancel_btn_ && cancel_btn_->visible())
+    {
         cancel_btn_->paint(ctx);
+    }
 
     if (state_ == State::Creating)
     {
         const float scx = bounds_.x + bounds_.w * 0.5f;
         const float scy = bounds_.y + bounds_.h * 0.5f;
         const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                     std::chrono::steady_clock::now() - creating_spinner_start_)
-                                     .count();
+                                    std::chrono::steady_clock::now() - creating_spinner_start_)
+                                    .count();
         const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-        tk::draw_spinner_dots(ctx.canvas, {scx, scy}, phase, kCRSpinnerRadius,
-                              kCRSpinnerDotR, pal.accent);
+        tk::draw_spinner_dots(ctx.canvas, {scx, scy}, phase, kCRSpinnerRadius, kCRSpinnerDotR,
+                              pal.accent);
 
         tk::TextStyle st;
         st.role = tk::FontRole::Body;
-        auto lo = ctx.factory.build_text(kind_ == Kind::Space    ? tk::tr("Creating space\xe2\x80\xa6")
-                                         : kind_ == Kind::CallRoom ? tk::tr("Creating call room\xe2\x80\xa6")
-                                                                   : tk::tr("Creating room\xe2\x80\xa6"),
+        auto lo = ctx.factory.build_text(kind_ == Kind::Space ? tk::tr("Creating space\xe2\x80\xa6")
+                                         : kind_ == Kind::CallRoom
+                                             ? tk::tr("Creating call room\xe2\x80\xa6")
+                                             : tk::tr("Creating room\xe2\x80\xa6"),
                                          st);
         if (lo)
         {
             tk::Size sz = lo->measure();
-            ctx.canvas.draw_text(
-                *lo, {scx - sz.w * 0.5f, scy + kCRSpinnerRadius + kCRSpinnerLabelGap},
-                pal.text_secondary);
+            ctx.canvas.draw_text(*lo,
+                                 {scx - sz.w * 0.5f, scy + kCRSpinnerRadius + kCRSpinnerLabelGap},
+                                 pal.text_secondary);
         }
         if (auto* h = host())
+        {
             h->request_repaint(); // self-drive the spinner
+        }
     }
 }
 

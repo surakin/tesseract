@@ -11,7 +11,9 @@ namespace tesseract
 std::vector<UrlSpan> find_url_spans(std::string_view text)
 {
     if (text.empty())
+    {
         return {};
+    }
 
     auto rust_spans = tesseract_ffi::find_url_spans(std::string(text));
     std::vector<UrlSpan> out;
@@ -26,7 +28,9 @@ std::vector<UrlSpan> find_url_spans(std::string_view text)
 std::vector<UrlSpan> find_preview_url_spans(std::string_view text)
 {
     if (text.empty())
+    {
         return {};
+    }
 
     auto rust_spans = tesseract_ffi::find_preview_url_spans(std::string(text));
     std::vector<UrlSpan> out;

@@ -26,10 +26,8 @@ namespace
 constexpr int kMaxFrames = 300;
 } // namespace
 
-DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
-                                       std::size_t size,
-                                       int max_w, int max_h,
-                                       int max_frames)
+DecodedVideoFrames decode_video_frames(const std::uint8_t* data, std::size_t size, int max_w,
+                                       int max_h, int max_frames)
 {
     const int frame_cap = max_frames > 0 ? max_frames : kMaxFrames;
     DecodedVideoFrames result;
@@ -39,12 +37,10 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     }
 
     // AVFoundation cannot decode from a memory buffer — write to a temp file.
-    NSString* tmp_path = [NSTemporaryDirectory() stringByAppendingPathComponent:
-        [NSString stringWithFormat:@"tesseract_gifdec_%@.mp4",
-            [[NSUUID UUID] UUIDString]]];
-    NSData* nsdata = [NSData dataWithBytesNoCopy:(void*)data
-                                          length:size
-                                    freeWhenDone:NO];
+    NSString* tmp_path = [NSTemporaryDirectory()
+        stringByAppendingPathComponent:[NSString stringWithFormat:@"tesseract_gifdec_%@.mp4",
+                                                                  [[NSUUID UUID] UUIDString]]];
+    NSData* nsdata = [NSData dataWithBytesNoCopy:(void*)data length:size freeWhenDone:NO];
     if (![nsdata writeToFile:tmp_path atomically:NO])
     {
         return result;
@@ -56,8 +52,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
     // Locate the first video track.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    NSArray<AVAssetTrack*>* vtracks =
-        [asset tracksWithMediaType:AVMediaTypeVideo];
+    NSArray<AVAssetTrack*>* vtracks = [asset tracksWithMediaType:AVMediaTypeVideo];
 #pragma clang diagnostic pop
 
     if (vtracks.count == 0)
@@ -81,22 +76,17 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
 
     // Set up AVAssetReader with BGRA output.
     NSError* err = nil;
-    AVAssetReader* reader = [AVAssetReader assetReaderWithAsset:asset
-                                                          error:&err];
+    AVAssetReader* reader = [AVAssetReader assetReaderWithAsset:asset error:&err];
     if (!reader || err)
     {
         [[NSFileManager defaultManager] removeItemAtPath:tmp_path error:nil];
         return result;
     }
 
-    NSDictionary* settings = @{
-        (NSString*)kCVPixelBufferPixelFormatTypeKey :
-            @(kCVPixelFormatType_32BGRA)
-    };
+    NSDictionary* settings =
+        @{(NSString*)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA)};
     AVAssetReaderTrackOutput* track_output =
-        [AVAssetReaderTrackOutput
-            assetReaderTrackOutputWithTrack:track
-                             outputSettings:settings];
+        [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:settings];
     // Keep the default (YES): each sample buffer must be an independent copy
     // rather than possibly aliasing reader-owned/pooled storage, or the
     // pixel-format/byte-order metadata we read per frame below can go stale
@@ -140,19 +130,19 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
         if (pbuf)
         {
             CVPixelBufferLockBaseAddress(pbuf, kCVPixelBufferLock_ReadOnly);
-            const OSType      fmt    = CVPixelBufferGetPixelFormatType(pbuf);
-            const std::size_t w      = CVPixelBufferGetWidth(pbuf);
-            const std::size_t h      = CVPixelBufferGetHeight(pbuf);
+            const OSType fmt = CVPixelBufferGetPixelFormatType(pbuf);
+            const std::size_t w = CVPixelBufferGetWidth(pbuf);
+            const std::size_t h = CVPixelBufferGetHeight(pbuf);
             const std::size_t stride = CVPixelBufferGetBytesPerRow(pbuf);
-            const void*       base   = CVPixelBufferGetBaseAddress(pbuf);
+            const void* base = CVPixelBufferGetBaseAddress(pbuf);
             const bool is_bgra = (fmt == kCVPixelFormatType_32BGRA);
             const bool is_rgba = (fmt == kCVPixelFormatType_32RGBA);
 
             if (base && w > 0 && h > 0 && (is_bgra || is_rgba))
             {
                 VideoFrame f;
-                f.w        = static_cast<int>(w);
-                f.h        = static_cast<int>(h);
+                f.w = static_cast<int>(w);
+                f.h = static_cast<int>(h);
                 f.delay_ms = delay_ms;
                 const std::size_t row_bytes = w * 4u;
                 f.bgra.resize(row_bytes * h);
@@ -160,8 +150,9 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                 if (is_bgra)
                 {
                     for (std::size_t row = 0; row < h; ++row)
-                        std::memcpy(f.bgra.data() + row * row_bytes,
-                                    src + row * stride, row_bytes);
+                    {
+                        std::memcpy(f.bgra.data() + row * row_bytes, src + row * stride, row_bytes);
+                    }
                 }
                 else // RGBA → BGRA: swap byte 0 (R) and byte 2 (B) per pixel
                 {
@@ -179,8 +170,7 @@ DecodedVideoFrames decode_video_frames(const std::uint8_t* data,
                     }
                 }
                 // Scale to the preview cell size so cached frames stay small.
-                result.frames.push_back(
-                    downscale_bgra(std::move(f), max_w, max_h));
+                result.frames.push_back(downscale_bgra(std::move(f), max_w, max_h));
             }
 
             CVPixelBufferUnlockBaseAddress(pbuf, kCVPixelBufferLock_ReadOnly);

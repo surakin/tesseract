@@ -10,15 +10,20 @@
 namespace tesseract::views
 {
 
-SlashCommandController::SlashCommandController(tk::TextArea* text_area,
-                                              SlashCommandPopup* popup,
-                                              Hooks hooks)
+SlashCommandController::SlashCommandController(tk::TextArea* text_area, SlashCommandPopup* popup,
+                                               Hooks hooks)
     : text_area_(text_area), popup_(popup), hooks_(std::move(hooks))
 {
     if (popup_)
     {
-        popup_->on_accepted = [this](SlashCommandSuggestion s) { accept(s); };
-        popup_->on_dismissed = [this] { hide(); };
+        popup_->on_accepted = [this](SlashCommandSuggestion s)
+        {
+            accept(s);
+        };
+        popup_->on_dismissed = [this]
+        {
+            hide();
+        };
     }
 }
 
@@ -51,7 +56,7 @@ std::size_t completed_token_count(const std::string& s)
     return count;
 }
 
-}  // namespace
+} // namespace
 
 bool SlashCommandController::on_text_changed(const std::string& text, int cursor)
 {
@@ -82,8 +87,8 @@ bool SlashCommandController::on_text_changed(const std::string& text, int cursor
         }
         return false;
     }
-    auto bot_cmds = hooks_.bot_commands ? hooks_.bot_commands()
-                                        : std::vector<tesseract::CommandDescription>{};
+    auto bot_cmds =
+        hooks_.bot_commands ? hooks_.bot_commands() : std::vector<tesseract::CommandDescription>{};
     auto items = engine_.lookup(m->prefix, bot_cmds);
     if (items.empty())
     {
@@ -200,8 +205,7 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
         // arg-collection mode; never dispatched arg-less even when it
         // declares zero parameters (one code path for every bot command).
         std::string body = "/" + s.name + " ";
-        text_area_->replace_range(
-            0, static_cast<int>(text_area_->text().size()), body);
+        text_area_->replace_range(0, static_cast<int>(text_area_->text().size()), body);
         active_bot_command_ = s;
         update_arg_hint(std::string{});
         return;
@@ -215,9 +219,13 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
         {
             text_area_->set_text("");
             if (hooks_.clear_composer)
+            {
                 hooks_.clear_composer();
+            }
             if (hooks_.on_selfie)
+            {
                 hooks_.on_selfie();
+            }
             return;
         }
 
@@ -227,9 +235,13 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
         {
             text_area_->set_text("");
             if (hooks_.clear_composer)
+            {
                 hooks_.clear_composer();
+            }
             if (hooks_.on_location)
+            {
                 hooks_.on_location();
+            }
             return;
         }
 
@@ -241,7 +253,9 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
             // typed-and-sent command.
             const tesseract::Result r = hooks_.send_command(body);
             if (!r && hooks_.on_command_failed)
+            {
                 hooks_.on_command_failed(r.message);
+            }
         }
         else
         {
@@ -255,7 +269,9 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
             const tesseract::Result r =
                 tesseract::dispatch_compose_send(*c, rid, body, std::string{});
             if (!r && hooks_.on_command_failed)
+            {
                 hooks_.on_command_failed(r.message);
+            }
         }
         text_area_->set_text("");
         if (hooks_.clear_composer)
@@ -269,13 +285,11 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
         // the user to type arguments. replace_range (not set_text) keeps the
         // caret after the trailing space and the shared composer state in sync.
         std::string body = "/" + s.name + " ";
-        text_area_->replace_range(
-            0, static_cast<int>(text_area_->text().size()), body);
+        text_area_->replace_range(0, static_cast<int>(text_area_->text().size()), body);
     }
 }
 
-void SlashCommandController::update_arg_hint(const std::string& args_text,
-                                             const std::string& error)
+void SlashCommandController::update_arg_hint(const std::string& args_text, const std::string& error)
 {
     if (!active_bot_command_ || !popup_)
     {
@@ -286,10 +300,9 @@ void SlashCommandController::update_arg_hint(const std::string& args_text,
     desc.parameters = active_bot_command_->bot_parameters;
 
     bool is_error = !error.empty();
-    std::string text = is_error
-                           ? error
-                           : tesseract::next_bot_command_arg_hint(
-                                 desc, completed_token_count(args_text));
+    std::string text =
+        is_error ? error
+                 : tesseract::next_bot_command_arg_hint(desc, completed_token_count(args_text));
     popup_->show_hint(text, is_error);
     if (hooks_.show)
     {
@@ -319,8 +332,7 @@ bool SlashCommandController::submit_bot_command()
 
     std::string prefix = "/" + active_bot_command_->name + " ";
     std::string text = text_area_->text();
-    std::string args_text =
-        text.rfind(prefix, 0) == 0 ? text.substr(prefix.size()) : std::string{};
+    std::string args_text = text.rfind(prefix, 0) == 0 ? text.substr(prefix.size()) : std::string{};
 
     tesseract::CommandDescription desc;
     desc.command = active_bot_command_->name;

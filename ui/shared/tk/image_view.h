@@ -24,8 +24,7 @@ public:
     };
 
 protected:
-    explicit ImageView(const Image* image = nullptr,
-                       ContentMode mode = ContentMode::Cover)
+    explicit ImageView(const Image* image = nullptr, ContentMode mode = ContentMode::Cover)
         : image_(image), mode_(mode)
     {
     }
@@ -60,8 +59,7 @@ private:
 class Avatar : public Widget
 {
 protected:
-    explicit Avatar(std::string display_name = {})
-        : display_name_(std::move(display_name))
+    explicit Avatar(std::string display_name = {}) : display_name_(std::move(display_name))
     {
     }
     TK_WIDGET_FACTORY_FRIEND(Avatar)

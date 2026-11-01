@@ -108,7 +108,7 @@ class RoomView;
 class SettingsView;
 class UserPackEditor;
 class UserProfilePanel;
-}
+} // namespace views
 
 struct UploadDraft;
 
@@ -118,23 +118,21 @@ struct UploadDraft;
 // (RoomListView.h) role for RoomListView.
 enum class CallRoomAction
 {
-    None,        // no active call; new room isn't a call room either.
-    AutoJoin,    // no active call; new room is a call room -> start_call().
-    AutoRestore, // active call's room == new room, was auto-floated ->
-                 // restore the user's saved (non-floating) overlay mode.
-    LeaveAndJoin,// active call's room != new room, new room is a call room ->
-                 // end_call() then start_call() for the new room.
-    AutoFloat,   // active call's room != new room, new room isn't a call
-                 // room, overlay is currently Docked/DockedExpanded ->
-                 // force Floating so it doesn't stay docked to a hidden room.
-    NoOp,        // active call's room != new room, new room isn't a call
-                 // room, overlay is already Floating/Popout -> nothing to do.
+    None,         // no active call; new room isn't a call room either.
+    AutoJoin,     // no active call; new room is a call room -> start_call().
+    AutoRestore,  // active call's room == new room, was auto-floated ->
+                  // restore the user's saved (non-floating) overlay mode.
+    LeaveAndJoin, // active call's room != new room, new room is a call room ->
+                  // end_call() then start_call() for the new room.
+    AutoFloat,    // active call's room != new room, new room isn't a call
+                  // room, overlay is currently Docked/DockedExpanded ->
+                  // force Floating so it doesn't stay docked to a hidden room.
+    NoOp,         // active call's room != new room, new room isn't a call
+                  // room, overlay is already Floating/Popout -> nothing to do.
 };
 
-CallRoomAction decide_call_room_action(bool has_active_call,
-                                       bool active_call_room_is_new_room,
-                                       bool new_room_is_call_room,
-                                       bool call_auto_floated,
+CallRoomAction decide_call_room_action(bool has_active_call, bool active_call_room_is_new_room,
+                                       bool new_room_is_call_room, bool call_auto_floated,
                                        bool overlay_is_docked);
 
 // Whether the user may enter a call in a room: joining a running call needs
@@ -187,13 +185,17 @@ public:
     // Qt6 = showFullScreen()/showNormal(), GTK4 = gtk_window_(un)fullscreen(),
     // Win32 = borderless-to-monitor, macOS = -toggleFullScreen:. Default no-op
     // for shells with no window (tests).
-    virtual void set_window_fullscreen_(bool /*on*/) {}
+    virtual void set_window_fullscreen_(bool /*on*/)
+    {
+    }
 
     // Rebuild the system-tray context menu so it lists one item per
     // logged-in account before the Quit action. Called whenever the account
     // or window registry changes. Default is a no-op (e.g. a shell with no
     // tray).
-    virtual void rebuild_tray_() {}
+    virtual void rebuild_tray_()
+    {
+    }
 
     // Start a new instance of this app with `args` (argv[1..], UTF-8),
     // detached from this process. Returns false if it couldn't be started.
@@ -206,7 +208,9 @@ public:
 
     // Quit the whole app (every window), bypassing hide-to-tray — the same
     // path as the explicit "Quit" menu item. Default no-op.
-    virtual void quit_app_() {}
+    virtual void quit_app_()
+    {
+    }
 
     // Broadcast rebuild_tray_() to every window currently in the
     // AccountManager registry. Call this (on a real ShellBase pointer) after
@@ -221,25 +225,22 @@ public:
     // raises the account's dedicated popout window if it has one, otherwise
     // switches it into this window. Each shell's rebuild_tray_() calls this,
     // then pushes the result to its native OS tray.
-    std::vector<std::pair<std::string, std::function<void()>>>
-    build_tray_items_();
+    std::vector<std::pair<std::string, std::function<void()>>> build_tray_items_();
 
     // A single item in the user-strip context menu. An entry whose label is
     // empty is a separator; its callback will be null.
     struct UserMenuItem
     {
-        std::string           label;
+        std::string label;
         std::function<void()> callback;
     };
 
     // Build the canonical user-strip context-menu item list.
-    std::vector<UserMenuItem> build_user_menu_items_(
-        std::function<void()> open_settings,
-        std::function<void()> add_account,
-        std::function<void()> show_qr_grant,
-        std::function<void()> logout,
-        std::function<void()> quit,
-        std::function<void()> verify_session = nullptr) const;
+    std::vector<UserMenuItem>
+    build_user_menu_items_(std::function<void()> open_settings, std::function<void()> add_account,
+                           std::function<void()> show_qr_grant, std::function<void()> logout,
+                           std::function<void()> quit,
+                           std::function<void()> verify_session = nullptr) const;
 
     // Callback for build_user_menu_items_'s verify_session parameter above:
     // null when the active account is already verified (the item is then
@@ -252,7 +253,10 @@ public:
     void arm_pending_login_();
 
     // Returns the active account for this window.
-    std::shared_ptr<tesseract::AccountSession> active_account() const { return active_account_; }
+    std::shared_ptr<tesseract::AccountSession> active_account() const
+    {
+        return active_account_;
+    }
 
     // Pre-set active_account_ for a newly-spawned window before any
     // account-dependent initialization runs. Called by spawn_main_window_()
@@ -264,25 +268,25 @@ public:
     // must override create_secondary_room_window_() for this to have effect.
     // `on_behalf_of`: the account the new window acts for (a pop-out opening
     // a room for its own account); null means the active account.
-    void open_room_in_new_window(
-        const std::string& room_id,
-        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void open_room_in_new_window(const std::string& room_id,
+                                 const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // ── MatrixRTC call control (Layer 4) ─────────────────────────────────────
     // start_call creates a CallSession, wires audio (and video if a camera is
     // available) capture routing, and calls rtc_start_call on the client.
-    void start_call(const std::string& room_id,
-                    const std::string& slot_id        = "call#default",
-                    bool               audio_only      = false,
-                    bool               start_audio_muted = false,
-                    bool               start_video_muted = false);
+    void start_call(const std::string& room_id, const std::string& slot_id = "call#default",
+                    bool audio_only = false, bool start_audio_muted = false,
+                    bool start_video_muted = false);
     // End the active call and tear down all call resources. No-op when idle.
     // The leave goes out in the background, so the UI thread is not held up by
     // the network; pass `wait_for_leave` where the client goes away right after
     // (sign-out, quit) so the leave is not lost with it.
     void end_call(bool wait_for_leave = false);
     // Returns the active CallSession, or nullptr when not in a call.
-    CallSession* active_call() const { return call_session_.get(); }
+    CallSession* active_call() const
+    {
+        return call_session_.get();
+    }
     // Resolve whichever window (main window or a pop-out) is currently
     // displaying room_id, or nullptr if none — used to target the incoming-
     // call banner (and its dismissal) at the right window instead of
@@ -350,8 +354,7 @@ public:
     // message's origin): a listed room is navigated to with the event
     // highlighted; otherwise the room is opened in place (upgraded rooms) or
     // offered in the Join dialog using `via`, with the event remembered.
-    void open_room_event_(const std::string& room_id,
-                          const std::string& event_id,
+    void open_room_event_(const std::string& room_id, const std::string& event_id,
                           const std::vector<std::string>& via);
 
     // ── Debounce ──────────────────────────────────────────────────────────────
@@ -399,19 +402,20 @@ public:
     // ShellBase.cpp call sites that build a ThreadTransition to hand to
     // main_room_pane_->apply_thread_transition_(), and for the thread-
     // transition / thread-panel tests.
-    using ThreadPanel     = ThreadPanelController::ThreadPanel;
-    using ThreadTrigger   = ThreadPanelController::ThreadTrigger;
+    using ThreadPanel = ThreadPanelController::ThreadPanel;
+    using ThreadTrigger = ThreadPanelController::ThreadTrigger;
     using ThreadTransition = ThreadPanelController::ThreadTransition;
 
     // Pure: returns the next state + the subscription side-effects to apply.
     // No Client calls, no UI calls — safe to call from tests. Thin forwarder to
     // ThreadPanelController::compute_transition.
-    static ThreadTransition compute_thread_transition_(
-        ThreadPanel cur, ThreadPanel prev, const std::string& current_root,
-        ThreadTrigger trigger, const std::string& trigger_root)
+    static ThreadTransition compute_thread_transition_(ThreadPanel cur, ThreadPanel prev,
+                                                       const std::string& current_root,
+                                                       ThreadTrigger trigger,
+                                                       const std::string& trigger_root)
     {
-        return ThreadPanelController::compute_transition(cur, prev, current_root,
-                                                         trigger, trigger_root);
+        return ThreadPanelController::compute_transition(cur, prev, current_root, trigger,
+                                                         trigger_root);
     }
 
     // ── Pinned events public entry points (wired from RoomView callbacks) ──
@@ -423,7 +427,8 @@ public:
 
     // Saved room-list state for one level of space navigation.
     // Declared public so all shells (including ObjC++) can name the type.
-    struct SpaceNavFrame {
+    struct SpaceNavFrame
+    {
         std::array<bool, views::RoomListView::kNumSections> collapsed = {};
         float scroll_fraction = 0.f;
 
@@ -437,11 +442,11 @@ protected:
     // static_cast<int>(DebounceSlot).
     struct DebounceState
     {
-        std::uint64_t gen   = 0;     // bumped by every call and cancel
-        bool          armed = false; // a delayed post is pending
-        int           ms    = 0;
+        std::uint64_t gen = 0; // bumped by every call and cancel
+        bool armed = false;    // a delayed post is pending
+        int ms = 0;
         std::chrono::steady_clock::time_point last_call;
-        std::function<void()> fn;    // the latest call's action; empty when cancelled
+        std::function<void()> fn; // the latest call's action; empty when cancelled
     };
     std::unordered_map<int, DebounceState> debounce_state_;
     void arm_debounce_(int key, int delay_ms, std::uint64_t gen);
@@ -505,8 +510,7 @@ protected:
     void on_directory_server_validated_(const std::string& server);
 
     // Drive the SDK subscription for a room switch.
-    void start_room_subscription_(const std::string&        room_id,
-                                  std::vector<std::string>  visible_ids);
+    void start_room_subscription_(const std::string& room_id, std::vector<std::string> visible_ids);
 
     // ── Multi-account ─────────────────────────────────────────────────────────
     AccountManager& account_manager_;
@@ -534,7 +538,9 @@ protected:
     const std::vector<RoomInfo>& rooms_for_(const std::string& user_id) const
     {
         if (active_account_ && active_account_->user_id == user_id)
+        {
             return rooms_;
+        }
         static const std::vector<RoomInfo> kNone;
         auto it = per_account_rooms_.find(user_id);
         return it != per_account_rooms_.end() ? it->second : kNone;
@@ -545,7 +551,7 @@ protected:
     // Last tray indicator state pushed to on_tray_unread_changed_().  Used to
     // suppress redundant hook calls (and the per-shell icon repaint they
     // trigger) when a sync tick produces no net change to the aggregate.
-    bool last_tray_unread_    = false;
+    bool last_tray_unread_ = false;
     bool last_tray_highlight_ = false;
 
     // Last value pushed to on_account_badges_changed_(). Same dedup purpose
@@ -654,7 +660,10 @@ protected:
     mutable std::unordered_map<std::string, std::size_t> room_index_by_id_;
     mutable bool room_index_dirty_ = true;
     void rebuild_room_index_() const;
-    void mark_room_index_dirty_() { room_index_dirty_ = true; }
+    void mark_room_index_dirty_()
+    {
+        room_index_dirty_ = true;
+    }
     // O(1) room lookup by id; nullptr when not present. The returned pointer is
     // valid until rooms_ is next replaced/cleared.
     const RoomInfo* room_by_id_(const std::string& room_id) const;
@@ -670,10 +679,8 @@ protected:
     // looked up in the SDK first; a room the user isn't in is joined using `via`
     // (`join_if_missing`) or offered in the Join dialog instead, as for any other
     // permalink. `highlight_event` is jumped to once the room is open.
-    void open_room_version_(const std::string& room_id,
-                            const std::vector<std::string>& via,
-                            const std::string& highlight_event = {},
-                            bool join_if_missing = true);
+    void open_room_version_(const std::string& room_id, const std::vector<std::string>& via,
+                            const std::string& highlight_event = {}, bool join_if_missing = true);
     // ── Invites ───────────────────────────────────────────────────────────────
     std::vector<InviteInfo> invites_;
     // ── Room knocking (MSC2403) ──────────────────────────────────────────────
@@ -699,14 +706,12 @@ protected:
 
     // space_id → child room IDs that are NOT in rooms_ (unjoined children).
     // Built alongside space_children_cache_ inside update_space_children_cache_().
-    std::unordered_map<std::string, std::vector<std::string>>
-        unjoined_space_children_cache_;
+    std::unordered_map<std::string, std::vector<std::string>> unjoined_space_children_cache_;
 
     // space_id → per-room summaries for unjoined children.
     // Entries are initially placeholder (room_id only, name empty); real data
     // is filled in per-room as rows are painted via fetch_single_room_summary_.
-    std::unordered_map<std::string, std::vector<tesseract::RoomSummary>>
-        unjoined_summaries_cache_;
+    std::unordered_map<std::string, std::vector<tesseract::RoomSummary>> unjoined_summaries_cache_;
     // Per-room exponential backoff for rooms that returned an error (403/404/…).
     // Keyed by room, not space: a room's failure is a property of the room, so
     // it survives space switches (and is seeded from the persisted backoff).
@@ -769,12 +774,16 @@ protected:
     // Navigation history for Alt+Left / Alt+Right back-forward traversal.
     // Separate from recent_room_ids_ (MRU). In-memory only.
     std::vector<std::string> room_nav_history_;
-    std::size_t              room_nav_history_cursor_ = 0;
-    bool                     room_nav_in_progress_    = false;
+    std::size_t room_nav_history_cursor_ = 0;
+    bool room_nav_in_progress_ = false;
     static constexpr std::size_t kNavHistoryMax = 100;
     // Tracks the invite currently shown in the InviteCard so the action
     // callbacks (on_accept / on_decline / on_block) can target the right room.
-    struct InviteContext { std::string room_id; std::string inviter_id; };
+    struct InviteContext
+    {
+        std::string room_id;
+        std::string inviter_id;
+    };
     std::optional<InviteContext> current_invite_;
     // Tracks the knock currently shown in the KnockStatusCard so on_cancel
     // targets the right room. Empty when no card is shown.
@@ -845,8 +854,7 @@ protected:
     // providers can consult it first. Bounded by a simple insertion-order FIFO
     // cap; the lightbox shows one image at a time and recently-viewed ones are
     // cheap to re-decode from the namespaced ("fullres:") disk cache.
-    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
-        viewer_fullres_;
+    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash> viewer_fullres_;
     std::vector<tk::CacheKey> viewer_fullres_order_; // FIFO eviction order
     std::unordered_set<std::string> viewer_fullres_in_flight_;
     static constexpr std::size_t kViewerFullresCacheMax_ = 6;
@@ -907,8 +915,7 @@ protected:
     // Entries are reply_details_key_(account, event_id): another account's
     // pop-out of the same room fetches through its own client.
     std::unordered_set<std::string> reply_details_requested_;
-    static std::string reply_details_key_(const std::string& user_id,
-                                          const std::string& event_id)
+    static std::string reply_details_key_(const std::string& user_id, const std::string& event_id)
     {
         return user_id + '\n' + event_id;
     }
@@ -985,11 +992,15 @@ protected:
     bool media_dep_known_failed_(const std::string& key) const
     {
         if (media_decode_failed_.count(key) || media_fetch_backed_off_(key))
+        {
             return true;
+        }
         if (key.starts_with("http://") || key.starts_with("https://"))
         {
             if (!server_info_.preview_url_enabled)
+            {
                 return true;
+            }
             auto it = url_previews_.find(key);
             return it != url_previews_.end() && it->second.failed;
         }
@@ -999,8 +1010,7 @@ protected:
     // that account's cache, not in whichever account is active when it lands.
     void note_media_fetch_failed_(const std::string& key,
                                   const std::shared_ptr<AccountSession>& sess);
-    void note_media_fetch_ok_(const std::string& key,
-                              const std::shared_ptr<AccountSession>& sess);
+    void note_media_fetch_ok_(const std::string& key, const std::shared_ptr<AccountSession>& sess);
 
     // ── Async media request registry ──────────────────────────────────────────
     // Correlates an outstanding fetch_media_async / get_url_preview_async call
@@ -1066,30 +1076,30 @@ protected:
     // Allocate a request_id and register a bytes-completion. Returns the id to
     // pass to client_->fetch_media_async. `on_cancel` clears the caller's dedup
     // key if the request is cancelled before completing.
-    std::uint64_t begin_media_req_(
-        std::uint64_t group_id,
-        std::function<void(std::vector<std::uint8_t>&&)> on_bytes,
-        std::function<void()> on_cancel = {},
-        std::string priority_key = {})
+    std::uint64_t begin_media_req_(std::uint64_t group_id,
+                                   std::function<void(std::vector<std::uint8_t>&&)> on_bytes,
+                                   std::function<void()> on_cancel = {},
+                                   std::string priority_key = {})
     {
-        std::uint64_t id   = next_media_req_id_++;
+        std::uint64_t id = next_media_req_id_++;
         if (!priority_key.empty())
+        {
             media_key_to_req_[priority_key] = id;
+        }
         pending_media_[id] = PendingMediaReq{
-            group_id, std::move(on_bytes), {}, std::move(on_cancel),
-            std::move(priority_key)};
+            group_id, std::move(on_bytes), {}, std::move(on_cancel), std::move(priority_key)};
         on_inflight_ui_();
         return id;
     }
 
     // Allocate a request_id and register a URL-preview completion.
-    std::uint64_t begin_url_preview_req_(
-        std::uint64_t group_id, std::function<void(std::string&&)> on_preview,
-        std::function<void()> on_cancel = {})
+    std::uint64_t begin_url_preview_req_(std::uint64_t group_id,
+                                         std::function<void(std::string&&)> on_preview,
+                                         std::function<void()> on_cancel = {})
     {
-        std::uint64_t id   = next_media_req_id_++;
-        pending_media_[id] = PendingMediaReq{
-            group_id, {}, std::move(on_preview), std::move(on_cancel)};
+        std::uint64_t id = next_media_req_id_++;
+        pending_media_[id] =
+            PendingMediaReq{group_id, {}, std::move(on_preview), std::move(on_cancel)};
         on_inflight_ui_();
         return id;
     }
@@ -1115,13 +1125,11 @@ protected:
     std::uint64_t begin_media_stream_req_(
         std::uint64_t group_id,
         std::function<void(std::vector<std::uint8_t>&&, std::uint64_t)> on_chunk,
-        std::function<void()> on_done,
-        std::function<void(std::uint8_t)> on_failed)
+        std::function<void()> on_done, std::function<void(std::uint8_t)> on_failed)
     {
         std::uint64_t id = next_media_req_id_++;
-        pending_media_streams_[id] = PendingMediaStream{
-            group_id, std::move(on_chunk), std::move(on_done),
-            std::move(on_failed)};
+        pending_media_streams_[id] = PendingMediaStream{group_id, std::move(on_chunk),
+                                                        std::move(on_done), std::move(on_failed)};
         on_inflight_ui_();
         return id;
     }
@@ -1137,28 +1145,39 @@ protected:
     void cancel_media_group_(std::uint64_t group_id)
     {
         if (group_id == 0 || !client_)
+        {
             return;
+        }
         client_->cancel_media_group(group_id);
         for (auto it = pending_media_.begin(); it != pending_media_.end();)
         {
             if (it->second.group_id == group_id)
             {
                 if (!it->second.priority_key.empty())
+                {
                     media_key_to_req_.erase(it->second.priority_key);
+                }
                 if (it->second.on_cancel)
+                {
                     it->second.on_cancel();
+                }
                 it = pending_media_.erase(it);
             }
             else
+            {
                 ++it;
+            }
         }
-        for (auto it = pending_media_streams_.begin();
-             it != pending_media_streams_.end();)
+        for (auto it = pending_media_streams_.begin(); it != pending_media_streams_.end();)
         {
             if (it->second.group_id == group_id)
+            {
                 it = pending_media_streams_.erase(it);
+            }
             else
+            {
                 ++it;
+            }
         }
         on_inflight_ui_();
     }
@@ -1173,7 +1192,7 @@ protected:
     // room set changes. Live-resolved unseen users are inserted here too.
     // UI-thread access only.
     std::unordered_map<std::string, tesseract::RoomMember> known_users_;
-    bool known_users_built_    = false;
+    bool known_users_built_ = false;
     bool known_users_building_ = false;
     // Order-independent fingerprint (XOR of per-id hashes) of the active
     // account's joined-room-id set, so the roster is invalidated when the set
@@ -1185,8 +1204,8 @@ protected:
     // new unread room enters the top-N, or an existing one's unread_count grows).
     // Avoids a redundant FFI call on every sync tick. UI-thread access only;
     // reset to 0 on account switch so the incoming account re-fires.
-    std::size_t unread_prefetch_fingerprint_  = 0;
-    std::size_t bridge_check_fingerprint_     = 0;
+    std::size_t unread_prefetch_fingerprint_ = 0;
+    std::size_t bridge_check_fingerprint_ = 0;
     // Accounts whose room list has reached RoomListState::Running this sync
     // session, i.e. delivered its first sync response. Background warming
     // (bridge check, inactive-room backfill, unread prefetch) waits for the
@@ -1195,8 +1214,7 @@ protected:
     std::unordered_set<std::string> room_list_running_accounts_;
     bool warmup_allowed_() const
     {
-        return active_account_ &&
-               room_list_running_accounts_.count(active_account_->user_id) != 0;
+        return active_account_ && room_list_running_accounts_.count(active_account_->user_id) != 0;
     }
     void handle_room_list_running_ui_();
     void start_background_warming_();
@@ -1228,8 +1246,7 @@ protected:
     // Per-room media_previews override + join_rule, keyed by room_id. Populated
     // by ensure_room_preview_override_ (async) on room switch. Absent → use the
     // global Settings value with an unknown (public-treated) join rule.
-    std::unordered_map<std::string, tesseract::MediaPreviewOverride>
-        room_preview_overrides_;
+    std::unordered_map<std::string, tesseract::MediaPreviewOverride> room_preview_overrides_;
     std::unordered_set<std::string> room_preview_override_in_flight_;
     // request_id → room_id for in-flight room_media_preview_override_async calls.
     std::unordered_map<std::uint64_t, std::string> pending_preview_overrides_;
@@ -1240,8 +1257,7 @@ protected:
     std::unordered_map<std::uint64_t, std::string> pending_security_state_requests_;
     // request_id → UserProfilePanel* for in-flight get_extended_profile_async
     // (user panel case). Absence = own-profile fetch.
-    std::unordered_map<std::uint64_t, views::UserProfilePanel*>
-        pending_user_profiles_;
+    std::unordered_map<std::uint64_t, views::UserProfilePanel*> pending_user_profiles_;
     // request_id → {panel, user} for in-flight get_mutual_rooms_async (MSC2666).
     struct MutualRoomsRequest
     {
@@ -1282,8 +1298,7 @@ protected:
     // (clear_all_caches_) — otherwise keyed by URL rather than room/account,
     // so nothing else would ever prune these and they'd grow for the life of
     // the process.
-    std::unordered_map<std::string, tesseract::Client::UrlPreview>
-        url_previews_;
+    std::unordered_map<std::string, tesseract::Client::UrlPreview> url_previews_;
     std::unordered_set<std::string> url_preview_in_flight_;
 
     // Decoded UrlPreviewData (title/description/image source + dims) cached for
@@ -1293,16 +1308,15 @@ protected:
     // on_url_preview_ready_ and looked up by RoomWindowBase::preview_lookup_
     // for both main-window and pop-out room views. Cleared at the same three
     // checkpoints as url_previews_ above.
-    std::unordered_map<std::string, tesseract::views::UrlPreviewData>
-        url_preview_data_;
+    std::unordered_map<std::string, tesseract::views::UrlPreviewData> url_preview_data_;
 
     // ── BlurHash decode dedup ────────────────────────────────────────────────
     // Cleared at the same three checkpoints as url_previews_ above.
     std::unordered_set<std::string> blurhash_attempted_;
 
     // ── Server capabilities ───────────────────────────────────────────────────
-    tesseract::ServerInfo server_info_;        ///< populated after first sync
-    bool server_info_fetch_started_ = false;  ///< guards begin_server_info_fetch_
+    tesseract::ServerInfo server_info_;      ///< populated after first sync
+    bool server_info_fetch_started_ = false; ///< guards begin_server_info_fetch_
     /// Last fetched own extended profile (MSC4133). Populated by
     /// fetch_own_extended_profile_async_() after server_info_ confirms support,
     /// and kept in sync thereafter by handle_profile_field_result_ui_ applying
@@ -1349,7 +1363,7 @@ protected:
     bool sync_progress_shown_ = false;
     // The 300 ms "Syncing rooms…" wait is scheduled and not yet fired.
     bool sync_status_debounce_pending_ = false;
-    bool offline_             = false;
+    bool offline_ = false;
     /// Extra in-flight HTTP request count (excludes the sync long-poll).
     std::uint32_t last_inflight_ = 0;
 #ifndef NDEBUG
@@ -1359,8 +1373,8 @@ protected:
     std::string last_inflight_urls_;
 #endif
     /// Accumulated rotation phase [0,1) for the inflight ring animation.
-    float         spin_accum_phase_  = 0.0f;
-    std::int64_t  spin_last_tick_ms_ = 0;
+    float spin_accum_phase_ = 0.0f;
+    std::int64_t spin_last_tick_ms_ = 0;
     /// Generation counter for show_status_message_ auto-clear: a late-firing
     /// callback only calls on_restore_status_ui_() if the gen still matches.
     std::atomic<std::uint32_t> status_msg_gen_{0};
@@ -1383,7 +1397,7 @@ protected:
     // ── Encryption setup overlay ──────────────────────────────────────────────
     // True once show_encryption_setup_overlay_() has been called this session;
     // guards against raising the overlay a second time on subsequent sync ticks.
-    bool encryption_setup_shown_     = false;
+    bool encryption_setup_shown_ = false;
     // Set when the user dismisses the overlay (Skip or Done). Prevents it from
     // re-appearing if recovery_state() returns Disabled again.
     bool encryption_setup_dismissed_ = false;
@@ -1400,18 +1414,18 @@ protected:
     // (views::EncryptionSetupOverlay); see the "Encryption flow" helpers.
     EncryptionFlowController encryption_flow_;
     bool foreign_identity_known_true_ = false; // see foreign_identity_cached_()
-    std::optional<bool> last_device_verified_;  // to notice verification changes
+    std::optional<bool> last_device_verified_; // to notice verification changes
 
     // ── Pagination ────────────────────────────────────────────────────────────
     struct PaginationState
     {
         bool in_flight = false;
         bool reached_start = false;
-        bool fwd_in_flight = false;    // forward paginate guard
+        bool fwd_in_flight = false; // forward paginate guard
         bool reached_end = false;
-        bool is_focused = false;       // true = using with_focus timeline
+        bool is_focused = false;        // true = using with_focus timeline
         bool returning_to_live = false; // snap to bottom on next timeline reset
-        std::string focus_event_id;    // scroll target after timeline reset
+        std::string focus_event_id;     // scroll target after timeline reset
         // Set once the one-time post-subscribe initial-history fill (see
         // start_room_subscription_) has run for this room's current warm
         // subscription — regardless of whether it reached reached_start.
@@ -1432,11 +1446,12 @@ protected:
     std::unordered_map<std::string, std::unordered_map<std::string, PaginationState>>
         other_account_pagination_;
     // State for room_id as shown by account user_id (empty: the active one).
-    PaginationState& pagination_for_(const std::string& user_id,
-                                     const std::string& room_id)
+    PaginationState& pagination_for_(const std::string& user_id, const std::string& room_id)
     {
         if (user_id.empty() || (active_account_ && active_account_->user_id == user_id))
+        {
             return pagination_[room_id];
+        }
         return other_account_pagination_[user_id][room_id];
     }
     const PaginationState* find_pagination_(const std::string& user_id,
@@ -1447,7 +1462,9 @@ protected:
         {
             auto acct = other_account_pagination_.find(user_id);
             if (acct == other_account_pagination_.end())
+            {
                 return nullptr;
+            }
             map = &acct->second;
         }
         auto it = map->find(room_id);
@@ -1457,8 +1474,7 @@ protected:
     // Correlation map for in-flight async paginations.
     // request_id → room_id; cleared in handle_paginate_result_ui_.
     // true = backward paginate, false = forward paginate.
-    std::unordered_map<std::uint64_t, std::pair<std::string, bool>>
-        pending_paginates_;
+    std::unordered_map<std::uint64_t, std::pair<std::string, bool>> pending_paginates_;
     std::uint64_t next_paginate_id_ = 1;
 
     // request_id -> the RoomPane that issued a paginate_media_view_back_async
@@ -1478,8 +1494,18 @@ protected:
     // MSVC does not honor a derived-class `using` re-export of a protected nested
     // enum the way GCC/Clang do.
 public:
-    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock, LeaveSpace,
-                               AddSpaceChild, RemoveSpaceChild };
+    enum class RoomActionKind
+    {
+        Accept,
+        Join,
+        Leave,
+        Create,
+        Knock,
+        AcceptKnock,
+        LeaveSpace,
+        AddSpaceChild,
+        RemoveSpaceChild
+    };
     struct PendingRoomAction
     {
         std::string room_id;
@@ -1511,7 +1537,12 @@ protected:
     // completion path as pending_invites_. Failures surface on the status
     // line; success shows up through sync as the membership event. `done`
     // (optional) fires either way, after the status message.
-    enum class ModerationAction { Kick, Ban, Unban };
+    enum class ModerationAction
+    {
+        Kick,
+        Ban,
+        Unban
+    };
     struct PendingModeration
     {
         std::string user_id;
@@ -1595,9 +1626,8 @@ protected:
     // Pure selection: given the always-keep set and the warm cap, return the
     // rooms to unsubscribe and drop them from visited_lru_. Keeps protected
     // rooms regardless of position; keeps the newest `warm_cap` non-protected.
-    std::vector<std::string>
-    select_warm_evictions_(const std::unordered_set<std::string>& keep,
-                           std::size_t warm_cap);
+    std::vector<std::string> select_warm_evictions_(const std::unordered_set<std::string>& keep,
+                                                    std::size_t warm_cap);
     // Build the keep-set (active + open tabs + pop-out-pinned) and unsubscribe
     // every room select_warm_evictions_ returns. Cheap; runs on each switch.
     void prune_warm_subscriptions_();
@@ -1620,26 +1650,22 @@ protected:
     // that's only ever shown via a pop-out (never the main window's active
     // room) still get a real timestamp, so it starts its idle countdown from
     // the moment it's no longer visible rather than being permanently exempt.
-    std::unordered_map<std::string, std::chrono::steady_clock::time_point>
-        room_last_active_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> room_last_active_;
     // (room_id, thread_root_event_id) -> same, for thread_timelines.
     std::map<std::pair<std::string, std::string>, std::chrono::steady_clock::time_point>
         thread_last_active_;
     // Pure selection: rooms in last_active but not in currently_visible whose
     // last-active timestamp is older than `now - ttl`.
     std::vector<std::string> select_idle_room_evictions_(
-        const std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
-            last_active,
+        const std::unordered_map<std::string, std::chrono::steady_clock::time_point>& last_active,
         const std::unordered_set<std::string>& currently_visible,
-        std::chrono::steady_clock::time_point now,
-        std::chrono::minutes ttl);
+        std::chrono::steady_clock::time_point now, std::chrono::minutes ttl);
     // Same shape as select_idle_room_evictions_, keyed by (room_id, thread_root).
     std::vector<std::pair<std::string, std::string>> select_idle_thread_evictions_(
-        const std::map<std::pair<std::string, std::string>,
-                       std::chrono::steady_clock::time_point>& last_active,
+        const std::map<std::pair<std::string, std::string>, std::chrono::steady_clock::time_point>&
+            last_active,
         const std::set<std::pair<std::string, std::string>>& currently_visible,
-        std::chrono::steady_clock::time_point now,
-        std::chrono::minutes ttl);
+        std::chrono::steady_clock::time_point now, std::chrono::minutes ttl);
     // Builds the currently-visible room/thread sets, calls the two selection
     // functions above, unsubscribes every evicted room/thread, and erases
     // their bookkeeping state (pagination_, last_sent_receipt_,
@@ -1684,11 +1710,26 @@ protected:
     // button's spinner. Declared after the pools so it is destroyed first;
     // its worker closures only use copies plus liveness-guarded UI posts.
     SendPipeline send_pipeline_{SendPipeline::Hooks{
-        [this](std::function<void()> fn) { run_async_("send/prepare", std::move(fn)); },
-        [this](std::function<void()> fn) { run_async_mut_(std::move(fn)); },
-        [this](std::function<void()> fn) { post_to_ui_alive_(std::move(fn)); },
-        [this](int ms, std::function<void()> fn) { post_to_ui_after_(ms, guarded(std::move(fn))); },
-        [this](const std::string&, bool) { refresh_send_busy_ui_(); },
+        [this](std::function<void()> fn)
+        {
+            run_async_("send/prepare", std::move(fn));
+        },
+        [this](std::function<void()> fn)
+        {
+            run_async_mut_(std::move(fn));
+        },
+        [this](std::function<void()> fn)
+        {
+            post_to_ui_alive_(std::move(fn));
+        },
+        [this](int ms, std::function<void()> fn)
+        {
+            post_to_ui_after_(ms, guarded(std::move(fn)));
+        },
+        [this](const std::string&, bool)
+        {
+            refresh_send_busy_ui_();
+        },
     }};
 
     // MediaKind and MediaPrefetchKey are public (stateless descriptors) so
@@ -1784,8 +1825,7 @@ protected:
     // duplicate disk-only tasks just starves its decode step on the shared
     // pool_.
     void run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& keys,
-                                   std::chrono::steady_clock::time_point deadline,
-                                   int max_items);
+                                  std::chrono::steady_clock::time_point deadline, int max_items);
 
     // Shared, platform-agnostic store step for the kinds
     // run_media_prefetch_impl_ handles (see scope note above) — picks
@@ -1797,7 +1837,7 @@ protected:
     // `cache_key` now has a decoded entry (freshly stored, or already
     // present); false only on a genuine decode failure.
     bool store_decoded_media_(const tk::CacheKey& cache_key, MediaKind kind,
-                               DecodedImage&& decoded);
+                              DecodedImage&& decoded);
 
     // (max_w, max_h) decode clamp for the kinds run_media_prefetch_impl_
     // handles — mirrors on_media_bytes_ready_'s MediaImage/
@@ -1809,8 +1849,7 @@ protected:
     // Decode clamp for bytes delivered to on_media_bytes_ready_ under
     // `cache_key`: a picker-sticker key carries its own size, every other key
     // falls back to media_prefetch_decode_clamp_(kind). The shells use this.
-    static std::pair<int, int> media_decode_clamp_(MediaKind kind,
-                                                   const tk::CacheKey& cache_key);
+    static std::pair<int, int> media_decode_clamp_(MediaKind kind, const tk::CacheKey& cache_key);
 
     // Only these kinds decode via the thread-safe decode_image_() virtual
     // with a uniform size clamp — see the scope note above
@@ -1850,16 +1889,19 @@ protected:
     virtual void apply_theme_ui_(const tk::Theme& t);
     // OS window chrome that follows the theme (dark title bar, link colour).
     // Runs before the surfaces. Default: nothing.
-    virtual void apply_native_theme_(const tk::Theme&) {}
+    virtual void apply_native_theme_(const tk::Theme&)
+    {
+    }
     // Calls `fn` for each surface the shell owns itself (branding, main,
     // account picker). Default: none.
-    virtual void for_each_shell_surface_(
-        const std::function<void(tk::SurfaceBase&)>&)
+    virtual void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>&)
     {
     }
     // What needs the surfaces themed first (status-bar palette and glyph, the
     // OS appearance). Default: nothing.
-    virtual void after_theme_applied_(const tk::Theme&) {}
+    virtual void after_theme_applied_(const tk::Theme&)
+    {
+    }
 
     // Called by apply_fonts_() after the toolkit has been told about
     // the new fonts and every RootWidget re-measured. A shell overrides this
@@ -1905,10 +1947,9 @@ protected:
     std::unique_ptr<tk::AudioCapture> capture_;
 
     // Wire voice-capture callbacks onto rv.
-    void wire_voice_capture_(views::RoomView*             rv,
-                             std::function<void()>        request_repaint,
+    void wire_voice_capture_(views::RoomView* rv, std::function<void()> request_repaint,
                              std::function<std::string()> get_room_id,
-                             std::function<void()>        clear_text_fn);
+                             std::function<void()> clear_text_fn);
 
     // Core handler: fast path (existing DM), in-flight dedup, loading state,
     // async get_or_create_dm, navigate on success. Always called on UI thread.
@@ -1943,16 +1984,16 @@ protected:
     // open InviteDialog via set_resolved_user(). `debounce` coalesces the
     // keystrokes of a still-being-typed mxid (only the latest fires).
     void resolve_invite_user_(const std::string& user_id, bool debounce,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                              const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     // Run fn on the InviteDialog of the main room view and of every pop-out.
     void for_each_invite_dialog_(const std::function<void(views::InviteDialog&)>& fn);
     // Invite each of user_ids to room_id; per_user fires on the UI thread
     // once per user with that invite's outcome.
-    void invite_users_(const std::string& room_id,
-                       const std::vector<std::string>& user_ids,
-                       std::function<void(const std::string& user_id, bool ok,
-                                          const std::string& message)> per_user,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void invite_users_(
+        const std::string& room_id, const std::vector<std::string>& user_ids,
+        std::function<void(const std::string& user_id, bool ok, const std::string& message)>
+            per_user,
+        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // ── GNOME Shell / KRunner search-provider registration ─────────────────
     // Registers this shell's rooms/known_users providers + activation
@@ -1966,15 +2007,13 @@ protected:
     // Platform screen-lock probe for the notification-image privacy gate.
     // Defaults to the fail-safe Null impl until the concrete shell installs
     // a real one via set_screen_lock_().
-    std::unique_ptr<IScreenLock> screen_lock_ =
-        std::make_unique<NullScreenLock>();
+    std::unique_ptr<IScreenLock> screen_lock_ = std::make_unique<NullScreenLock>();
 
     // ── Low power mode ────────────────────────────────────────────────────
     // Platform battery / energy-saver probe. Defaults to the Null impl (both
     // signals false → Auto behaves as "not low power") until the concrete
     // shell installs a real one via set_power_monitor_().
-    std::unique_ptr<IPowerMonitor> power_monitor_ =
-        std::make_unique<NullPowerMonitor>();
+    std::unique_ptr<IPowerMonitor> power_monitor_ = std::make_unique<NullPowerMonitor>();
     // Resolves Settings::low_power_pref + the two monitor signals into the
     // effective "low power mode is active" boolean, with debounce. Must exist
     // from startup so a persisted `On` takes effect on the first sync.
@@ -1988,7 +2027,10 @@ protected:
     // seeds the policy with the current signals.
     void set_power_monitor_(std::unique_ptr<IPowerMonitor> pm);
 
-    bool low_power_active() const { return power_policy_.active(); }
+    bool low_power_active() const
+    {
+        return power_policy_.active();
+    }
 
     // Whether this machine has a battery — gates whether the Low Power Mode
     // setting is shown at all. False on a desktop / mini PC.
@@ -2019,7 +2061,9 @@ protected:
 
     // Each shell overrides to show / hide its subtle status-bar indicator;
     // default no-op covers headless / test builds.
-    virtual void on_low_power_mode_ui_(bool /*active*/) {}
+    virtual void on_low_power_mode_ui_(bool /*active*/)
+    {
+    }
 
     // Sum Image::memory_bytes() over a CacheKey -> unique_ptr<Image> map.
     template <class Map>
@@ -2027,8 +2071,12 @@ protected:
     {
         std::uint64_t total = 0;
         for (const auto& kv : m)
+        {
             if (kv.second)
+            {
                 total += kv.second->memory_bytes();
+            }
+        }
         return total;
     }
 
@@ -2081,7 +2129,9 @@ protected:
     virtual void detach_login_view_client_ui_()
     {
         if (login_view_)
+        {
             login_view_->set_client(nullptr);
+        }
     }
 
     // The login page. Its surface is owned here and created on first use
@@ -2122,8 +2172,8 @@ protected:
     void teardown_login_view_();
     // One attempt of teardown_login_view_()'s deferred destroy; schedules
     // another when the pools are still busy.
-    void destroy_login_page_when_idle_(tk::SurfaceBase* doomed,
-                                       views::LoginView* view, int delay_ms);
+    void destroy_login_page_when_idle_(tk::SurfaceBase* doomed, views::LoginView* view,
+                                       int delay_ms);
     // Free every login surface and close their post-to-UI gates.
     void destroy_login_surfaces_();
     // Destroy the login page now. For the shell's destructor, before its own
@@ -2134,8 +2184,7 @@ protected:
     void apply_scale_to_login_surface_(float scale);
     // The startup restore found no usable account: show the sign-in screen,
     // with the reason when a restore failed (`retry` runs the startup again).
-    void show_login_after_restore_(const RestoreResult& restore,
-                                   std::function<void()> retry);
+    void show_login_after_restore_(const RestoreResult& restore, std::function<void()> retry);
     // Make the main content (room list and timeline) the visible page and tear
     // down the login view. Default no-op.
     virtual void show_main_content_()
@@ -2173,14 +2222,13 @@ protected:
     // for the uid yet. Each shell creates its native window, calls
     // set_initial_account, then hand_account_to_spawned_window_() (shared) to take
     // ownership of the account, and shows it.
-    virtual void spawn_main_window_(
-        std::shared_ptr<tesseract::AccountSession> account) = 0;
+    virtual void spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account) = 0;
 
     // Shared spawn wiring: hand ownership of `session`'s account to a freshly
     // constructed window `win` (whose set_initial_account() has already run, but
     // whose deferred doLogin() has NOT).
-    void hand_account_to_spawned_window_(
-        ShellBase* win, const std::shared_ptr<tesseract::AccountSession>& session);
+    void hand_account_to_spawned_window_(ShellBase* win,
+                                         const std::shared_ptr<tesseract::AccountSession>& session);
 
     // Copy this window's cached rooms/invites for `uid` into `*this` from `src`.
     // Used to seed a newly-spawned window for instant paint.
@@ -2206,8 +2254,7 @@ protected:
     // When another window holds `uid`: raises it, opens `room_id` there (and the
     // thread of `event_id`, if any) when it shows the account, and returns true.
     // False when no other window holds it, so the caller may switch and open it.
-    bool open_room_in_holder_window_(const std::string& uid,
-                                     const std::string& room_id,
+    bool open_room_in_holder_window_(const std::string& uid, const std::string& room_id,
                                      const std::string& event_id = {});
     // Consumes add_account_return_uid_: that account, or null when none was
     // recorded, it was removed, or another window holds it.
@@ -2232,14 +2279,19 @@ protected:
     // Re-point an account's sole event bridge at `win`. The bridge is stored
     // type-erased as IEventHandler* but is always an EventHandlerBase, so the
     // downcast is safe. Static so close/spawn paths share one definition.
-    static void rebind_account_bridge_(tesseract::AccountSession& session,
-                                       ShellBase* win);
+    static void rebind_account_bridge_(tesseract::AccountSession& session, ShellBase* win);
 
     // True for windows spawned via spawn_main_window_ (pinned to one account,
     // cannot switch the active account in place). The startup window is false.
     bool is_pinned_window_ = false;
-    void mark_pinned_window_() { is_pinned_window_ = true; }
-    bool is_pinned_window() const { return is_pinned_window_; }
+    void mark_pinned_window_()
+    {
+        is_pinned_window_ = true;
+    }
+    bool is_pinned_window() const
+    {
+        return is_pinned_window_;
+    }
 
     // Central picker routing. Each platform's on_select lambda delegates here.
     // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.
@@ -2298,7 +2350,9 @@ protected:
     // text (and drive a spinner) on their BrandView, the only surface
     // visible during restore. Not to be confused with the unrelated
     // on_restore_status_ui_() below (a status-bar-override-timer clear).
-    virtual void on_startup_restore_progress_ui_(const std::string& /*status_text*/) {}
+    virtual void on_startup_restore_progress_ui_(const std::string& /*status_text*/)
+    {
+    }
 
     // ── Add-account login finalize ────────────────────────────────────────────
     // Outcome of finalize_login_async_(); see AccountLifecycleTypes.h.
@@ -2322,9 +2376,8 @@ protected:
     // account_manager_ — the UI half finishes that. On failure, io.session
     // is null and io.result carries the reason.
     using FinalizeLoginIO = tesseract::FinalizeLoginIO;
-    FinalizeLoginIO finalize_login_blocking_(
-        std::unique_ptr<Client> pending_client,
-        std::filesystem::path   pending_temp_dir);
+    FinalizeLoginIO finalize_login_blocking_(std::unique_ptr<Client> pending_client,
+                                             std::filesystem::path pending_temp_dir);
 
     // Async core of on_login_succeeded_(), run after OAuth completes for a
     // newly added account on pending_login_client_.
@@ -2391,8 +2444,7 @@ protected:
     // already called. The bridge TYPE is native: EventBridge (Qt6, a QObject so
     // the marshalling QMetaObject::invokeMethod has a receiver), EventHandlerBase
     // (GTK4 / Win32 / macOS). restore_all_accounts_ then calls start_sync on it.
-    virtual std::unique_ptr<IEventHandler>
-    make_account_bridge_(const std::string& uid) = 0;
+    virtual std::unique_ptr<IEventHandler> make_account_bridge_(const std::string& uid) = 0;
 
     // Build and store the native per-account notifier on session.notifier. The
     // notifier's on-click closure must capture session.user_id and, when fired,
@@ -2405,7 +2457,9 @@ protected:
     // Build, start, and store the native per-account UnifiedPush connector on
     // session.up_connector. Linux-only (registers with the D-Bus distributor);
     // Win32 / macOS have no UnifiedPush, so the default is a no-op.
-    virtual void install_account_up_connector_(AccountSession& /*session*/) {}
+    virtual void install_account_up_connector_(AccountSession& /*session*/)
+    {
+    }
 
     // True when this window's startup should reuse the already-restored,
     // already-syncing accounts from the shared AccountManager instead of
@@ -2456,7 +2510,10 @@ protected:
     // Drives refresh_room_list_()'s suppression of space-child filtering during
     // search (all rooms are shown unfiltered). Backed by room_search_text_,
     // which is owned by the shared search-field wiring in wire_main_app_widget_().
-    bool is_room_search_active_() const { return !room_search_text_.empty(); }
+    bool is_room_search_active_() const
+    {
+        return !room_search_text_.empty();
+    }
 
     // Compute the filtered room list and push it to the shared RoomListView.
     // Shells call this directly; it holds the space-child filter and
@@ -2501,10 +2558,8 @@ protected:
     // failure, handle_room_action_complete_ui_ reverts the cache and
     // refreshes again. See client.h's add_room_to_space_async/
     // remove_room_from_space_async for the underlying API contract.
-    void request_add_room_to_space_(const std::string& space_id,
-                                    const std::string& room_id);
-    void request_remove_room_from_space_(const std::string& space_id,
-                                         const std::string& room_id);
+    void request_add_room_to_space_(const std::string& space_id, const std::string& room_id);
+    void request_remove_room_from_space_(const std::string& space_id, const std::string& room_id);
 
     // Called after rooms_ is updated: refresh the room list and the open room,
     // restore the previous tabs once their rooms are known, and refresh the
@@ -2513,17 +2568,21 @@ protected:
     // The tail of on_rooms_updated_, for work only one platform has (the
     // Windows taskbar's next-unread state, the macOS Spotlight reindex).
     // Default: nothing.
-    virtual void after_rooms_updated_ui_() {}
+    virtual void after_rooms_updated_ui_()
+    {
+    }
 
     // Called after the active room is inserted into the shared shell's MRU.
     // Platform integrations may mirror that list into an OS-native surface.
-    virtual void on_recent_room_visited_(const RoomInfo&) {}
+    virtual void on_recent_room_visited_(const RoomInfo&)
+    {
+    }
 
     // Raise the encryption dialog in `mode`: reset it, wire it
     // (wire_encryption_setup_callbacks_), show it, relayout. Virtual only so
     // tests can observe it without a MainAppWidget.
-    virtual void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode mode);
+    virtual void
+    show_encryption_setup_overlay_(tesseract::views::EncryptionSetupOverlay::Mode mode);
 
     // ── Encryption flow (the dialog + its reminder strip) ────────────────────
     // Show / hide / re-kind the reminder strip from the live recovery and
@@ -2566,16 +2625,19 @@ protected:
 
     // Called when the forward picker opens: shell focuses its native text field.
     // Called when the forward picker closes: shell hides its native text field.
-    virtual void focus_forward_picker_field_() {}
-    virtual void hide_forward_picker_field_() {}
+    virtual void focus_forward_picker_field_()
+    {
+    }
+    virtual void hide_forward_picker_field_()
+    {
+    }
 
     // Wires every platform-agnostic callback on the encryption-setup overlay
     // (recovery/verify actions, clipboard, layout/dismiss) — EncryptionSetupOverlay
     // owns its passphrase/key tk::TextFields directly and reads them itself,
     // so this only needs a Host for the clipboard callback. `host` must
     // outlive the overlay.
-    void wire_encryption_setup_callbacks_(views::EncryptionSetupOverlay& ov,
-                                          tk::Host&                      host);
+    void wire_encryption_setup_callbacks_(views::EncryptionSetupOverlay& ov, tk::Host& host);
 
     // User-initiated "Reset cryptographic identity" (from Settings → Privacy).
     // Shows the encryption-setup overlay in its reset-approval wait state,
@@ -2624,8 +2686,7 @@ protected:
     // all signed-in accounts changes. Each shell overrides to forward to its
     // tray icon. Default no-op so shells without a tray (or with a tray that
     // failed to register) silently skip the update.
-    virtual void on_tray_unread_changed_(bool /*has_unread*/,
-                                         bool /*has_highlight*/)
+    virtual void on_tray_unread_changed_(bool /*has_unread*/, bool /*has_highlight*/)
     {
     }
 
@@ -2637,7 +2698,9 @@ protected:
     // Called on the UI thread when the total notification_count across all
     // signed-in accounts changes. Shells that expose a dock/taskbar badge
     // override this; others leave the default no-op.
-    virtual void on_dock_badge_changed_(uint64_t /*count*/) {}
+    virtual void on_dock_badge_changed_(uint64_t /*count*/)
+    {
+    }
 
     // Navigate to the highest-priority unread room in the active account,
     // or no-op if none. Call on the UI thread from tray-click handlers.
@@ -2659,13 +2722,11 @@ protected:
     // Called on the UI thread when async media bytes arrive. Decodes them into
     // the avatar, image, thumbnail or animation cache and triggers a repaint.
     // Shells customise it through the hooks below, not by overriding it.
-    virtual void on_media_bytes_ready_(const tk::CacheKey& cache_key,
-                                       MediaKind kind,
+    virtual void on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
                                        std::vector<uint8_t> bytes);
     /// First look at arriving bytes, before any decode. Return false to drop
     /// them. Default: accept.
-    virtual bool accept_media_bytes_(const tk::CacheKey& /*key*/,
-                                     MediaKind /*kind*/,
+    virtual bool accept_media_bytes_(const tk::CacheKey& /*key*/, MediaKind /*kind*/,
                                      const std::vector<std::uint8_t>& /*bytes*/)
     {
         return true;
@@ -2673,8 +2734,7 @@ protected:
     /// Decode an avatar to its cache size (kAvatarCacheSize square at most),
     /// first frame only. Called on a worker thread. Null on failure.
     /// Default: decode_image_ and take the still, or the first frame.
-    virtual std::unique_ptr<tk::Image>
-    decode_avatar_(const std::vector<std::uint8_t>& bytes);
+    virtual std::unique_ptr<tk::Image> decode_avatar_(const std::vector<std::uint8_t>& bytes);
     /// Decode and store a map tile in image_cache(), then repaint and
     /// notify_secondary_media_ready_. Platform-specific (thread and decoder
     /// differ per backend). Default: ignore the tile.
@@ -2702,23 +2762,20 @@ protected:
     // generated in a prior session never re-triggers a video download/decode),
     // and on a miss delegates the platform-specific work to
     // extract_video_first_frame_jpeg_. See ShellBase.cpp for the flow.
-    void generate_video_thumbnail_(const std::string& event_id,
-                                   const std::string& source_token);
+    void generate_video_thumbnail_(const std::string& event_id, const std::string& source_token);
 
     // Dedup wrapper around generate_video_thumbnail_: inserts into
     // video_thumb_in_flight_ and only calls through on a fresh insert. Every
     // caller wanting a video thumbnail generated (initial prefetch, lazy
     // scroll fetch, user reveal, and paint-time cache-miss self-heal) should
     // go through this rather than touching video_thumb_in_flight_ directly.
-    void request_video_thumbnail_(const std::string& event_id,
-                                  const std::string& source_token);
+    void request_video_thumbnail_(const std::string& event_id, const std::string& source_token);
 
     // Worker-thread helper for generate_video_thumbnail_: persists `bytes`
     // (an encoded still image, JPEG or PNG) to media_disk_cache_ when
     // `persist` is true, decodes it via decode_image_, and stores the result
     // in image_cache_ — both under CacheKey::video_thumbnail(event_id).
-    void decode_and_cache_video_thumbnail_(std::string event_id,
-                                           std::vector<std::uint8_t> bytes,
+    void decode_and_cache_video_thumbnail_(std::string event_id, std::vector<std::uint8_t> bytes,
                                            bool persist);
 
     // Client-side first-frame extraction behind generate_video_thumbnail_:
@@ -2730,9 +2787,8 @@ protected:
     // runs wherever the shell's decode hook completes); generate_video_
     // thumbnail_ re-marshals as needed. Concrete; shells only override
     // decode_video_first_frame_.
-    void extract_video_first_frame_jpeg_(
-        const std::string& source_token,
-        std::function<void(std::vector<std::uint8_t>)> cb);
+    void extract_video_first_frame_jpeg_(const std::string& source_token,
+                                         std::function<void(std::vector<std::uint8_t>)> cb);
 
     // Platform-specific leaf of extract_video_first_frame_jpeg_: decode frame
     // zero of the container `bytes` (a prefix or the whole file) with the
@@ -2742,9 +2798,8 @@ protected:
     // its container's sample table). Called on the UI thread; `done` may be
     // invoked from any thread. Default invokes done({}) for shells without a
     // video-decode pipeline (test doubles).
-    virtual void decode_video_first_frame_(
-        std::vector<std::uint8_t> /*bytes*/,
-        std::function<void(std::vector<std::uint8_t>)> done)
+    virtual void decode_video_first_frame_(std::vector<std::uint8_t> /*bytes*/,
+                                           std::function<void(std::vector<std::uint8_t>)> done)
     {
         done({});
     }
@@ -2758,38 +2813,32 @@ protected:
     // which invokes it for video/audio (images carry their animation flag from
     // the drop itself). Other mimes do nothing; the work is in the platform
     // hooks below.
-    void extract_drop_media_(std::uint32_t pending_gen,
-                                     std::vector<std::uint8_t> bytes,
-                                     std::string mime,
-                                     views::ComposeBar* target = nullptr,
-                                     std::shared_ptr<bool> alive = nullptr);
+    void extract_drop_media_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                             std::string mime, views::ComposeBar* target = nullptr,
+                             std::shared_ptr<bool> alive = nullptr);
     // Platform probes: read the first frame (JPEG), size and duration of a
     // dropped video, or the duration of an audio file, and finish with
     // post_pending_attachment_(info, target, alive) on any thread. Default: no
     // probe (the attachment keeps its placeholder metadata).
     virtual void probe_drop_video_(std::uint32_t /*pending_gen*/,
                                    std::vector<std::uint8_t> /*bytes*/,
-                                   views::ComposeBar* /*target*/,
-                                   std::shared_ptr<bool> /*alive*/)
+                                   views::ComposeBar* /*target*/, std::shared_ptr<bool> /*alive*/)
     {
     }
     virtual void probe_drop_audio_(std::uint32_t /*pending_gen*/,
                                    std::vector<std::uint8_t> /*bytes*/,
-                                   views::ComposeBar* /*target*/,
-                                   std::shared_ptr<bool> /*alive*/)
+                                   views::ComposeBar* /*target*/, std::shared_ptr<bool> /*alive*/)
     {
     }
 
     // Deliver a dropped file's extracted MediaInfo to the right compose bar.
-    void post_pending_attachment_(views::MediaInfo info,
-                                  views::ComposeBar* target,
+    void post_pending_attachment_(views::MediaInfo info, views::ComposeBar* target,
                                   std::shared_ptr<bool> alive);
 
     // Called on the UI thread when a URL preview fetch completes successfully.
     // Concrete: cache the preview, kick the image fetch, ping the message list
     // (main + secondary windows) and relayout. Identical for every shell.
-    virtual void on_url_preview_ready_(const std::string& url,
-                                       const Client::UrlPreview& preview);
+    virtual void on_url_preview_ready_(const std::string& url, const Client::UrlPreview& preview);
 
     // Called on the UI thread when a URL preview fetch finished but produced
     // no usable card (failed / no metadata). Concrete: ping the message list
@@ -2799,8 +2848,8 @@ protected:
 
     // MSC2448: store a decoded RGBA8888 buffer as a tk::Image in tk_images_.
     // Default is a no-op; each platform shell overrides with native image creation.
-    virtual void cache_rgba_image_(const tk::CacheKey& /*key*/, int /*w*/,
-                                   int /*h*/, std::vector<uint8_t> /*rgba*/)
+    virtual void cache_rgba_image_(const tk::CacheKey& /*key*/, int /*w*/, int /*h*/,
+                                   std::vector<uint8_t> /*rgba*/)
     {
     }
 
@@ -2809,8 +2858,7 @@ protected:
     // worker thread (no UI/device context): every backend's decoder is
     // thread-safe; Win32 wraps a device-independent IWICBitmap. Used by
     // ensure_picker_image_ (worker) and on_media_bytes_ready_ (UI).
-    virtual DecodedImage decode_image_(const std::vector<uint8_t>& bytes,
-                                       int max_w, int max_h) = 0;
+    virtual DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w, int max_h) = 0;
 
     // Attempts a streamed decode of an animated image: frame 0 is delivered
     // via `on_first_frame` as soon as it's ready, and each remaining frame
@@ -2872,18 +2920,15 @@ protected:
     virtual bool decode_image_streamed_windowed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int,
-                                 std::shared_ptr<tk::AnimDecodeSession>,
-                                 std::size_t)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame)
+                                 std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>&
+            on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
     {
-        auto adapted_first = [&on_first_frame](std::unique_ptr<tk::Image> img,
-                                               int delay_ms)
+        auto adapted_first = [&on_first_frame](std::unique_ptr<tk::Image> img, int delay_ms)
         {
             on_first_frame(std::move(img), delay_ms, nullptr, 0);
         };
-        return decode_image_streamed_(bytes, max_w, max_h, adapted_first,
-                                      on_frame);
+        return decode_image_streamed_(bytes, max_w, max_h, adapted_first, on_frame);
     }
 
     using WindowedStreamedDecodeCallbacks = tesseract::WindowedStreamedDecodeCallbacks;
@@ -2911,32 +2956,28 @@ protected:
     // actual cause of an animated sticker's playback getting corrupted
     // (confirmed — see the TEMP debug logging in this file and
     // anim_image_cache.cpp left in from finding it).
-    WindowedStreamedDecodeCallbacks make_streamed_decode_callbacks_windowed_(
-        tk::CacheKey cache_key, bool is_thumb,
-        std::function<void()> finish_first_frame)
+    WindowedStreamedDecodeCallbacks
+    make_streamed_decode_callbacks_windowed_(tk::CacheKey cache_key, bool is_thumb,
+                                             std::function<void()> finish_first_frame)
     {
-        auto session_box =
-            std::make_shared<std::shared_ptr<tk::AnimDecodeSession>>();
+        auto session_box = std::make_shared<std::shared_ptr<tk::AnimDecodeSession>>();
         auto total_box = std::make_shared<std::size_t>(0);
         WindowedStreamedDecodeCallbacks cb;
-        cb.on_first =
-            [this, cache_key, is_thumb, finish_first_frame, session_box,
-             total_box](std::unique_ptr<tk::Image> frame0, int delay0,
-                        std::shared_ptr<tk::AnimDecodeSession> session,
-                        std::size_t total_frames) mutable
+        cb.on_first = [this, cache_key, is_thumb, finish_first_frame, session_box,
+                       total_box](std::unique_ptr<tk::Image> frame0, int delay0,
+                                  std::shared_ptr<tk::AnimDecodeSession> session,
+                                  std::size_t total_frames) mutable
         {
             *session_box = std::move(session);
             *total_box = total_frames;
 
-            auto boxed =
-                std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame0));
+            auto boxed = std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame0));
             post_to_ui_alive_(
-                [this, cache_key, is_thumb, delay0, boxed, finish_first_frame,
-                 session_box, total_box]() mutable
+                [this, cache_key, is_thumb, delay0, boxed, finish_first_frame, session_box,
+                 total_box]() mutable
                 {
-                    tk::PixmapCache& still_cache =
-                        is_thumb ? account_manager_.thumbnail_cache()
-                                 : account_manager_.image_cache();
+                    tk::PixmapCache& still_cache = is_thumb ? account_manager_.thumbnail_cache()
+                                                            : account_manager_.image_cache();
                     if (still_cache.contains(cache_key) ||
                         account_manager_.anim_cache().has(cache_key))
                     {
@@ -2944,20 +2985,18 @@ protected:
                     }
                     std::vector<std::unique_ptr<tk::Image>> frames;
                     frames.push_back(std::move(*boxed));
-                    account_manager_.anim_cache().store(
-                        cache_key, std::move(frames), {delay0},
-                        monotonic_ms_(), *session_box, *total_box);
+                    account_manager_.anim_cache().store(cache_key, std::move(frames), {delay0},
+                                                        monotonic_ms_(), *session_box, *total_box);
                     start_anim_tick_();
                     account_manager_.image_cache().evict(cache_key);
                     finish_first_frame();
                 });
         };
-        cb.on_extra = [this, cache_key, session_box](
-                          int /*frame_index*/, std::unique_ptr<tk::Image> frame,
-                          int delay_ms) mutable
+        cb.on_extra = [this, cache_key, session_box](int /*frame_index*/,
+                                                     std::unique_ptr<tk::Image> frame,
+                                                     int delay_ms) mutable
         {
-            auto boxed =
-                std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame));
+            auto boxed = std::make_shared<std::unique_ptr<tk::Image>>(std::move(frame));
             post_to_ui_alive_(
                 [this, cache_key, delay_ms, boxed, session_box]() mutable
                 {
@@ -2977,8 +3016,7 @@ protected:
     // Open a platform image file picker (png/jpg/gif/webp filter) and deliver
     // (bytes, mime) to `cb` on the UI thread. Empty bytes signal cancellation.
     // Called from pick_and_set_room_avatar_ and SettingsController.
-    virtual void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)> cb) = 0;
+    virtual void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) = 0;
 
     // Native dialogs behind the settings controller's message-key export/import
     // and the history export. `cb` runs on the UI thread and is never called on
@@ -2987,9 +3025,11 @@ protected:
     // Save-file dialog suggesting `suggested_name`; `title` is its translated
     // title. has_save_file_dialog_ says whether the shell has one (the
     // recovery-key "save" offer is only shown if so).
-    virtual bool has_save_file_dialog_() const { return false; }
-    virtual void pick_save_file_(std::string /*title*/,
-                                 std::string /*suggested_name*/,
+    virtual bool has_save_file_dialog_() const
+    {
+        return false;
+    }
+    virtual void pick_save_file_(std::string /*title*/, std::string /*suggested_name*/,
                                  std::function<void(std::string)> /*cb*/)
     {
     }
@@ -3000,22 +3040,19 @@ protected:
     {
         pick_save_file_(spec.title, spec.suggested_name, std::move(cb));
     }
-    virtual void pick_open_file_(std::string /*title*/,
-                                 std::function<void(std::string)> /*cb*/)
+    virtual void pick_open_file_(std::string /*title*/, std::function<void(std::string)> /*cb*/)
     {
     }
-    virtual void pick_folder_(std::string /*title*/,
-                              std::function<void(std::string)> /*cb*/)
+    virtual void pick_folder_(std::string /*title*/, std::function<void(std::string)> /*cb*/)
     {
     }
     // Modal password prompt; `cb` gets the passphrase (never empty).
-    virtual void prompt_passphrase_(std::string /*title*/,
-                                    std::function<void(std::string)> /*cb*/)
+    virtual void prompt_passphrase_(std::string /*title*/, std::function<void(std::string)> /*cb*/)
     {
     }
     // Informational (or, with `is_error`, warning) message box.
-    virtual void show_message_dialog_(std::string /*title*/,
-                                      std::string /*text*/, bool /*is_error*/)
+    virtual void show_message_dialog_(std::string /*title*/, std::string /*text*/,
+                                      bool /*is_error*/)
     {
     }
 
@@ -3039,7 +3076,7 @@ protected:
     // as the current user's avatar in `room_id`. No-op if not logged in.
     // Call from the UI thread (e.g. when /myroomavatar is sent with no args).
     void pick_and_set_room_avatar_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                                   const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Open the shared "Create poll" form for `room_id` (the /poll command).
     // The create callback is bound here, at open time, so every shell gets
@@ -3052,9 +3089,9 @@ protected:
     // Open a file picker, upload the selected image as raw media (never
     // committing it to any room/profile state), and stage the resulting
     // mxc:// URI into `target` via set_staged_avatar().
-    void stage_room_settings_avatar_upload_(const std::string& room_id,
-                                            views::RoomSettingsView* target,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void stage_room_settings_avatar_upload_(
+        const std::string& room_id, views::RoomSettingsView* target,
+        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Outcome of a RoomSettingsView Accept commit.
     struct RoomSettingsCommitOutcome
@@ -3066,9 +3103,9 @@ protected:
     // Send a state event for each populated optional field in `changes`,
     // attempting every one even if an earlier call fails so a partial
     // success (e.g. topic saved, avatar denied) isn't silently lost.
-    static RoomSettingsCommitOutcome apply_room_settings_(
-        tesseract::Client* client, const std::string& room_id,
-        const views::RoomSettingsChanges& changes);
+    static RoomSettingsCommitOutcome
+    apply_room_settings_(tesseract::Client* client, const std::string& room_id,
+                         const views::RoomSettingsChanges& changes);
 
     // Persist the Emojis & Stickers tab's staged changes (see
     // apply_room_settings_'s `changes.image_packs` branch, which calls
@@ -3082,8 +3119,9 @@ protected:
     // prefixed `"image_packs.<what>: "`, for the caller to join into the
     // same aggregate error `apply_room_settings_` already builds for every
     // other field. Blocks — call from a worker thread.
-    static std::vector<std::string> apply_image_pack_changes_(
-        tesseract::Client* client, const views::ImagePackEditorResult& result);
+    static std::vector<std::string>
+    apply_image_pack_changes_(tesseract::Client* client,
+                              const views::ImagePackEditorResult& result);
 
     // Monotonic clock in ms from the SAME epoch the shell's animation
     // timer / anim_cache_.advance() uses (Qt: QDateTime msecs; GTK:
@@ -3111,24 +3149,35 @@ protected:
     // The shell's own surfaces for repaint_anim_frame_: a call to
     // update_anim_regions() on the main surface, and on the settings surface
     // when it is showing. Default: nothing.
-    virtual void update_main_anim_regions_() {}
+    virtual void update_main_anim_regions_()
+    {
+    }
     virtual void update_settings_anim_regions_();
 
     // Start the shell's inflight-spinner tick timer if not already running.
     // Separate from the GIF animation timer so the two concerns are independent.
-    virtual void start_inflight_tick_() {}
+    virtual void start_inflight_tick_()
+    {
+    }
 
     // Stop the inflight-spinner tick timer.
-    virtual void stop_inflight_tick_() {}
+    virtual void stop_inflight_tick_()
+    {
+    }
 
     // Repaint only the spinning inflight-dot widget/region. Called by
     // inflight_tick_() each tick. Default no-op; overridden in each shell.
-    virtual void repaint_inflight_spinner_() {}
+    virtual void repaint_inflight_spinner_()
+    {
+    }
 
     // Returns true if the main application window is currently visible and not
     // minimized/iconified. Default: true — conservative, so shells that do not
     // override never accidentally prevent the timer from running.
-    virtual bool is_main_window_visible_() const { return true; }
+    virtual bool is_main_window_visible_() const
+    {
+        return true;
+    }
 
     // True if any shell-owned window (main or any secondary/pop-out window) is
     // currently visible. Used by tick_anim_() to gate the animation timer.
@@ -3191,7 +3240,9 @@ protected:
     void hide_compose_popups_()
     {
         if (compose_popups_)
+        {
             compose_popups_->hide_all();
+        }
     }
     // (Re)arm the one-shot "mark current room read" timer to fire
     // mark_room_read_(current_room_id_) after `delay_ms`, cancelling any
@@ -3210,28 +3261,23 @@ protected:
     // thread_list_view() when present; shells (Qt6/GTK4/Win32) inherit
     // unchanged. macOS / tests may override to redirect into their own
     // view tree.
-    virtual void apply_thread_messages_(
-        const std::string& thread_root,
-        std::vector<views::MessageRowData> rows, bool room_switch);
-    virtual void apply_thread_message_insert_(
-        const std::string& thread_root, std::size_t index,
-        views::MessageRowData row);
-    virtual void apply_thread_message_update_(
-        const std::string& thread_root, std::size_t index,
-        views::MessageRowData row);
-    virtual void apply_thread_message_remove_(
-        const std::string& thread_root, std::size_t index);
+    virtual void apply_thread_messages_(const std::string& thread_root,
+                                        std::vector<views::MessageRowData> rows, bool room_switch);
+    virtual void apply_thread_message_insert_(const std::string& thread_root, std::size_t index,
+                                              views::MessageRowData row);
+    virtual void apply_thread_message_update_(const std::string& thread_root, std::size_t index,
+                                              views::MessageRowData row);
+    virtual void apply_thread_message_remove_(const std::string& thread_root, std::size_t index);
     // `subs_supported` is Client::thread_subscriptions_enabled(), which can
     // block on the network; callers fetch it off the UI thread (see
     // fetch_threads_async_) and pass it in.
-    virtual void apply_threads_list_(std::vector<ThreadInfo> threads,
-                                     bool subs_supported = false);
+    virtual void apply_threads_list_(std::vector<ThreadInfo> threads, bool subs_supported = false);
 
     // A room's thread list plus the MSC4306 support flag.
     struct ThreadsSnapshot
     {
         std::vector<ThreadInfo> threads;
-        bool                    subs_supported = false;
+        bool subs_supported = false;
     };
     using ThreadsDone = std::function<void(ThreadsSnapshot)>;
 
@@ -3245,12 +3291,12 @@ protected:
     // fetch_threads_async_ for the active account, applied to the main window's
     // room view if `room_id` is still the current room when the result lands.
     void refresh_threads_list_async_(const std::string& room_id);
-    void run_threads_fetch_(const std::shared_ptr<AccountSession>& sess,
-                            const std::string& key, const std::string& room_id);
+    void run_threads_fetch_(const std::shared_ptr<AccountSession>& sess, const std::string& key,
+                            const std::string& room_id);
 
     struct ThreadsFetch
     {
-        bool                     running = false;
+        bool running = false;
         std::vector<ThreadsDone> queued;
     };
     std::unordered_map<std::string, ThreadsFetch> threads_fetch_; // UI thread only
@@ -3264,42 +3310,28 @@ protected:
     // request_relayout_, so shells that own their RoomView directly (Qt6, GTK4)
     // inherit this. Win32 (message-pump payloads) and macOS (ObjC view) keep
     // their own overrides because they marshal through a platform layer.
-    virtual void handle_timeline_reset_ui_(std::string room_id,
-                                           EventList snapshot);
-    virtual void handle_message_inserted_ui_(std::string room_id,
-                                             std::size_t index,
+    virtual void handle_timeline_reset_ui_(std::string room_id, EventList snapshot);
+    virtual void handle_message_inserted_ui_(std::string room_id, std::size_t index,
                                              std::unique_ptr<Event> ev);
-    virtual void handle_message_updated_ui_(std::string room_id,
-                                            std::size_t index,
+    virtual void handle_message_updated_ui_(std::string room_id, std::size_t index,
                                             std::unique_ptr<Event> ev);
-    virtual void handle_message_removed_ui_(std::string room_id,
-                                            std::size_t index);
-    virtual void handle_messages_prepended_ui_(std::string room_id,
-                                               EventList events);
-    virtual void handle_messages_appended_ui_(std::string room_id,
-                                              EventList events);
+    virtual void handle_message_removed_ui_(std::string room_id, std::size_t index);
+    virtual void handle_messages_prepended_ui_(std::string room_id, EventList events);
+    virtual void handle_messages_appended_ui_(std::string room_id, EventList events);
     virtual void handle_messages_updated_batch_ui_(std::string room_id,
                                                    std::vector<std::size_t> indices,
                                                    EventList events);
-    virtual void handle_thread_reset_ui_(std::string room_id,
-                                         std::string thread_root,
+    virtual void handle_thread_reset_ui_(std::string room_id, std::string thread_root,
                                          EventList snapshot);
-    virtual void handle_thread_inserted_ui_(std::string room_id,
-                                            std::string thread_root,
-                                            std::size_t index,
-                                            std::unique_ptr<Event> ev);
-    virtual void handle_thread_updated_ui_(std::string room_id,
-                                           std::string thread_root,
-                                           std::size_t index,
-                                           std::unique_ptr<Event> ev);
-    virtual void handle_thread_removed_ui_(std::string room_id,
-                                           std::string thread_root,
+    virtual void handle_thread_inserted_ui_(std::string room_id, std::string thread_root,
+                                            std::size_t index, std::unique_ptr<Event> ev);
+    virtual void handle_thread_updated_ui_(std::string room_id, std::string thread_root,
+                                           std::size_t index, std::unique_ptr<Event> ev);
+    virtual void handle_thread_removed_ui_(std::string room_id, std::string thread_root,
                                            std::size_t index);
-    virtual void handle_thread_messages_prepended_ui_(std::string room_id,
-                                                      std::string thread_root,
+    virtual void handle_thread_messages_prepended_ui_(std::string room_id, std::string thread_root,
                                                       EventList events);
-    virtual void handle_thread_messages_appended_ui_(std::string room_id,
-                                                     std::string thread_root,
+    virtual void handle_thread_messages_appended_ui_(std::string room_id, std::string thread_root,
                                                      EventList events);
     virtual void handle_threads_updated_ui_(std::string room_id);
     // Called when the knock-request watcher for `room_id` reports a change.
@@ -3310,44 +3342,36 @@ protected:
     // Completion for an async fetch_media_async download. Looks up the pending
     // request by id (ignoring late callbacks for cancelled/superseded requests)
     // and runs its registered bytes-completion. Concrete shared logic.
-    void handle_media_ready_ui_(std::uint64_t request_id,
-                                std::vector<std::uint8_t> bytes);
+    void handle_media_ready_ui_(std::uint64_t request_id, std::vector<std::uint8_t> bytes);
     // Delivery for an async fetch_source_stream_async download. Looks up the
     // pending stream by id (ignoring late callbacks for cancelled requests)
     // and runs on_chunk (status 0), or on_done/on_failed and erases the
     // entry on a terminal status (1/2/3). See PendingMediaStream's doc
     // comment.
-    void handle_media_chunk_ui_(std::uint64_t request_id,
-                                std::vector<std::uint8_t> chunk,
-                                std::uint8_t status,
-                                std::uint64_t total_size);
+    void handle_media_chunk_ui_(std::uint64_t request_id, std::vector<std::uint8_t> chunk,
+                                std::uint8_t status, std::uint64_t total_size);
     // Completion for an async get_space_child_summary_async fetch. Applies the
     // result (or failure) to unjoined_summaries_cache_ and notifies the view.
-    void handle_space_child_summary_ready_ui_(std::uint64_t request_id,
-                                              std::string summary_json);
+    void handle_space_child_summary_ready_ui_(std::uint64_t request_id, std::string summary_json);
     // Completion for an async get_server_info_async fetch. Populates
     // server_info_ and drives the same post-processing as the sync path.
-    void handle_server_info_async_ready_ui_(std::uint64_t request_id,
-                                            tesseract::ServerInfo info);
+    void handle_server_info_async_ready_ui_(std::uint64_t request_id, tesseract::ServerInfo info);
     // Completion for an async get_url_preview_async fetch.
-    void handle_url_preview_ready_ui_(std::uint64_t request_id,
-                                      std::string preview_json);
+    void handle_url_preview_ready_ui_(std::uint64_t request_id, std::string preview_json);
     // Completion for an async gif_search: forwarded to the main composer's
     // ComposerPopups, whose controller drops superseded request_ids. Virtual
     // so test doubles can observe it.
-    virtual void handle_gif_results_ui_(std::uint64_t request_id,
-                                        std::vector<GifResult> results);
-    virtual void handle_gif_search_failed_ui_(std::uint64_t request_id,
-                                              std::string message);
+    virtual void handle_gif_results_ui_(std::uint64_t request_id, std::vector<GifResult> results);
+    virtual void handle_gif_search_failed_ui_(std::uint64_t request_id, std::string message);
     // Forward an async GIF search result/failure to every open pop-out window
     // (in addition to the main window's own handle_gif_results_ui_). request_ids
     // are process-global, so only the pop-out whose GifController issued the
     // search consumes it; the rest drop it. Called by EventHandlerBase on the
     // UI thread.
-    void dispatch_gif_to_secondary_windows_(
-        std::uint64_t request_id, const std::vector<GifResult>& results);
+    void dispatch_gif_to_secondary_windows_(std::uint64_t request_id,
+                                            const std::vector<GifResult>& results);
     void dispatch_gif_failed_to_secondary_windows_(std::uint64_t request_id,
-                                                    const std::string& message);
+                                                   const std::string& message);
 
     // Render one GIF strip cell: the static preview shows at once and is
     // replaced by the animation once it has been fetched and decoded.
@@ -3355,9 +3379,8 @@ protected:
     // surface refreshes. Shared by the shell's own GIF strip and every pop-out's
     // strip (a pop-out passes a repaint targeting its own popup surface).
     // Needs make_image_from_bgra_ for MP4 results.
-    virtual const tk::Image*
-    gif_strip_image_(const GifResult& result,
-                     const std::function<void()>& repaint);
+    virtual const tk::Image* gif_strip_image_(const GifResult& result,
+                                              const std::function<void()>& repaint);
     // ── Composer popups (@mention, /command, :shortcode:, /gif) ──────────────
     // The main composer's popups, built by create_compose_popups_() once the
     // shell has its main surface, room view and main room pane (the same
@@ -3397,9 +3420,8 @@ protected:
     bool handle_account_picker_key_(const tk::KeyEvent& e);
     // Encode a captured selfie (BGRA, stride w*4) as a JPEG. Empty on failure
     // or when the backend cannot. Default: empty.
-    virtual std::vector<std::uint8_t>
-    encode_selfie_jpeg_(const std::uint8_t* /*bgra*/, std::uint32_t /*w*/,
-                        std::uint32_t /*h*/)
+    virtual std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* /*bgra*/,
+                                                          std::uint32_t /*w*/, std::uint32_t /*h*/)
     {
         return {};
     }
@@ -3408,21 +3430,24 @@ protected:
     /// Wrap a decoded, pre-multiplied BGRA frame (stride w*4) in the backend's
     /// image type. Called on the UI thread; null if the backend cannot (the
     /// frame is skipped). Default: null.
-    virtual std::unique_ptr<tk::Image>
-    make_image_from_bgra_(int /*w*/, int /*h*/, const std::uint8_t* /*bgra*/)
+    virtual std::unique_ptr<tk::Image> make_image_from_bgra_(int /*w*/, int /*h*/,
+                                                             const std::uint8_t* /*bgra*/)
     {
         return nullptr;
     }
     /// True when make_image_from_bgra_ may run on a worker thread (Qt, GTK,
     /// macOS); the strip then wraps its frames there instead of on the UI
     /// thread. Win32 (D2D bitmaps are made on the UI thread) leaves it false.
-    virtual bool make_image_from_bgra_on_worker_() const { return false; }
+    virtual bool make_image_from_bgra_on_worker_() const
+    {
+        return false;
+    }
     /// Decode for an inline image the windowed streamed decoder declined (a
     /// still, or an animation it cannot window). Default: decode_image_. GTK
     /// overrides it with a still-only decode, since its decode_image_ repeats
     /// the animation probe that already ran.
-    virtual DecodedImage decode_inline_fallback_(
-        const std::vector<std::uint8_t>& bytes, int max_w, int max_h)
+    virtual DecodedImage decode_inline_fallback_(const std::vector<std::uint8_t>& bytes, int max_w,
+                                                 int max_h)
     {
         return decode_image_(bytes, max_w, max_h);
     }
@@ -3432,8 +3457,7 @@ protected:
     void fetch_gif_source_(const std::string& url,
                            std::function<void(std::vector<std::uint8_t>)> on_bytes);
     /// Static GIF strip thumbnails, and the URLs currently being fetched.
-    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
-        gif_previews_;
+    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash> gif_previews_;
     std::unordered_set<std::string> gif_preview_inflight_;
     std::unordered_set<std::string> gif_anim_inflight_;
     /// Strip animations that finished without frames (undecodable, a still, or
@@ -3451,50 +3475,40 @@ protected:
     // Source bytes the GIF strip persisted to the media disk cache on fetch,
     // reused by a pop-out's GifController so a selected GIF sends without a
     // second download. Forwards to media_disk_cache_ via gif_src_disk_key_.
-    std::vector<std::uint8_t>
-    cached_gif_source_bytes_(const std::string& url) const;
+    std::vector<std::uint8_t> cached_gif_source_bytes_(const std::string& url) const;
     // Completion for paginate_back_async / paginate_forward_async.
-    void handle_paginate_result_ui_(std::uint64_t request_id, bool ok,
-                                    bool reached_start, bool reached_end,
-                                    std::string message);
+    void handle_paginate_result_ui_(std::uint64_t request_id, bool ok, bool reached_start,
+                                    bool reached_end, std::string message);
     // Progress/completion for Client::start_room_export_async, forwarded to
     // history_export_controller_ when present. Non-empty default bodies
     // (not pure virtual) so all four shells keep compiling untouched until
     // they wire the export trigger — see ensure_history_export_controller_().
     void handle_room_export_progress_ui_(const tesseract::RoomExportProgress& progress);
-    void handle_room_export_complete_ui_(std::uint64_t request_id, bool ok,
-                                         bool cancelled, bool reached_start,
-                                         std::string out_path,
-                                         std::uint64_t events_written,
-                                         std::uint64_t bytes_written,
+    void handle_room_export_complete_ui_(std::uint64_t request_id, bool ok, bool cancelled,
+                                         bool reached_start, std::string out_path,
+                                         std::uint64_t events_written, std::uint64_t bytes_written,
                                          std::string message);
     void handle_room_action_complete_ui_(std::uint64_t request_id, bool ok,
-                                         std::string joined_room_id,
-                                         std::string message);
-    void handle_upload_complete_ui_(std::uint64_t request_id, bool ok,
-                                    std::string message);
-    void handle_upload_progress_ui_(std::uint64_t request_id,
-                                    std::uint64_t current_bytes,
+                                         std::string joined_room_id, std::string message);
+    void handle_upload_complete_ui_(std::uint64_t request_id, bool ok, std::string message);
+    void handle_upload_progress_ui_(std::uint64_t request_id, std::uint64_t current_bytes,
                                     std::uint64_t total_bytes);
     virtual void on_upload_progress_ui_(std::uint64_t /*request_id*/,
                                         std::uint64_t /*current_bytes*/,
                                         std::uint64_t /*total_bytes*/)
     {
     }
-    virtual void on_upload_finished_ui_(std::uint64_t /*request_id*/,
-                                        bool /*ok*/)
+    virtual void on_upload_finished_ui_(std::uint64_t /*request_id*/, bool /*ok*/)
     {
     }
-    virtual void handle_sync_error_ui_(std::string /*context*/,
-                                       std::string /*user_id*/,
-                                       std::string /*description*/,
-                                       bool /*soft_logout*/)
+    virtual void handle_sync_error_ui_(std::string /*context*/, std::string /*user_id*/,
+                                       std::string /*description*/, bool /*soft_logout*/)
     {
     }
 
     // Agnostic sync-error state machine, shared by every shell.
-    void handle_sync_error_impl_(std::string context, std::string user_id,
-                                 std::string description, bool soft_logout);
+    void handle_sync_error_impl_(std::string context, std::string user_id, std::string description,
+                                 bool soft_logout);
 
     // Restart the named account's sync if it is registered and not already
     // syncing. Called by schedule_sync_restart_'s timer body. Concrete and
@@ -3506,8 +3520,7 @@ protected:
     // (each shell's native one-shot timer) and then restart_account_sync_().
     // A shell may override to use a different native timer, but should not need
     // to. delay_ms is the reconnect backoff (~5s).
-    virtual void schedule_sync_restart_(const std::string& user_id,
-                                        int delay_ms);
+    virtual void schedule_sync_restart_(const std::string& user_id, int delay_ms);
 
     // Re-bind this window's identity strip (user-info widget) from the active
     // account after its profile was re-fetched on a soft-logout recovery.
@@ -3540,7 +3553,9 @@ protected:
     }
     // A sign-out finished (called before the above, in both cases). Default:
     // nothing. macOS reindexes Spotlight and refreshes the invite list.
-    virtual void on_signed_out_ui_(const LogoutResult& /*result*/) {}
+    virtual void on_signed_out_ui_(const LogoutResult& /*result*/)
+    {
+    }
 
     // Show the offline connectivity banner in the main app widget and schedule
     // a relayout. Called when the sync service signals a network outage.
@@ -3554,10 +3569,8 @@ protected:
     virtual void handle_backup_progress_ui_(BackupProgress progress);
     // Forwards encryption-setup progress to the overlay. Identical across all
     // shells, so it lives here (concrete) rather than being re-overridden.
-    virtual void handle_enable_recovery_progress_ui_(uint8_t  step,
-                                                     std::string recovery_key,
-                                                     uint32_t backed_up,
-                                                     uint32_t total);
+    virtual void handle_enable_recovery_progress_ui_(uint8_t step, std::string recovery_key,
+                                                     uint32_t backed_up, uint32_t total);
     // Pack-dependent picker state: parent spaces of the open room, the sticker
     // and emoticon lists, and the picker image caches.
     virtual void refresh_pickers_packs_();
@@ -3573,7 +3586,9 @@ protected:
     virtual void on_active_room_bot_commands_changed_ui_()
     {
         if (compose_popups_)
+        {
             compose_popups_->on_bot_commands_changed();
+        }
     }
 
     // Tray icon clicks, shared by every shell. "Show" raises the window (or the
@@ -3584,9 +3599,16 @@ protected:
     void tray_toggle_(const std::string& token = {});
     // The window state behind those clicks. Defaults: not in the foreground,
     // nothing to do (test shells).
-    virtual bool main_window_foreground_for_tray_() const { return false; }
-    virtual void hide_main_window_for_tray_() {}
-    virtual void show_main_window_for_tray_(const std::string& /*token*/) {}
+    virtual bool main_window_foreground_for_tray_() const
+    {
+        return false;
+    }
+    virtual void hide_main_window_for_tray_()
+    {
+    }
+    virtual void show_main_window_for_tray_(const std::string& /*token*/)
+    {
+    }
 
     // Look up the bare shortcode (no surrounding colons) for an mxc:// URI
     // by scanning cached_emoticons_. Used by the MSC4027 reaction path so
@@ -3605,8 +3627,7 @@ protected:
     // open composers — main window vs. each pop-out — may be showing
     // different rooms; RoomWindowBase::shell_emoticons_() calls this with
     // its own persistent room_id_, not the main window's current_room_id_.
-    std::vector<tesseract::ImagePackImage>
-    emoticons_for_room_(const std::string& room_id) const;
+    std::vector<tesseract::ImagePackImage> emoticons_for_room_(const std::string& room_id) const;
 
     // Per-shell media-prefetch for one row. Default = ensure_row_media_.
     // Qt6 overrides to also record decode-size hints (mediaImageSizes_).
@@ -3618,12 +3639,10 @@ protected:
         ensure_row_media_(ev, fetch_avatars);
     }
     // Concrete: only the active account's prefs set the pending restore room.
-    virtual void handle_account_prefs_updated_ui_(std::string user_id,
-                                                  std::string json);
+    virtual void handle_account_prefs_updated_ui_(std::string user_id, std::string json);
     // MSC4278: re-read the global media-preview config into the Settings
     // mirror (active account only) and refresh gating + room list.
-    virtual void handle_media_preview_config_updated_ui_(std::string user_id,
-                                                         std::string json);
+    virtual void handle_media_preview_config_updated_ui_(std::string user_id, std::string json);
     // MSC4262: own global profile changed during sync (e.g. edited on another
     // device). Active account only: applies name/avatar when delivered and
     // re-fetches the extended profile (tz, status, pronouns, bio).
@@ -3631,8 +3650,7 @@ protected:
                                         std::optional<std::string> display_name,
                                         std::optional<std::string> avatar_url);
     // Callback from media_preview_config_async: parse config_json and apply.
-    void handle_media_preview_config_fetched_ui_(std::uint64_t request_id,
-                                                 std::string config_json);
+    void handle_media_preview_config_fetched_ui_(std::uint64_t request_id, std::string config_json);
     // Callback from room_media_preview_override_async: store override, fetch media.
     void handle_room_preview_override_ready_ui_(std::uint64_t request_id,
                                                 std::string override_json);
@@ -3642,47 +3660,49 @@ protected:
     // already returned via handle_room_preview_override_ready_ui_ — pushes
     // the corrected value here, moments after the initial (possibly stale)
     // one.
-    virtual void handle_room_media_preview_override_updated_ui_(
-        std::string user_id, std::string room_id, std::string override_json);
+    virtual void handle_room_media_preview_override_updated_ui_(std::string user_id,
+                                                                std::string room_id,
+                                                                std::string override_json);
     // Callback from fetch_room_security_state_async: push the already-typed
     // state into room_view_'s RoomSettingsView via set_security_state, if
     // that view is still open and showing the room this request was for.
     void handle_room_security_state_ready_ui_(std::uint64_t request_id,
                                               tesseract::RoomSecurityState state);
     // Callback from set_or_delete_profile_field_async.
-    void handle_profile_field_result_ui_(std::uint64_t request_id,
-                                         std::string key, bool ok,
+    void handle_profile_field_result_ui_(std::uint64_t request_id, std::string key, bool ok,
                                          std::string message);
     // Fetch the first (or, with `next_page`, the next) page of rooms shared with
     // `user_id` into `panel`. Hides the section for our own user and when the
     // server lacks MSC2666.
-    void fetch_mutual_rooms_async_(const std::string& user_id,
-                                   views::UserProfilePanel* panel, bool next_page);
+    void fetch_mutual_rooms_async_(const std::string& user_id, views::UserProfilePanel* panel,
+                                   bool next_page);
     // Callback from get_mutual_rooms_async: resolve the room ids against rooms_
     // (unknown ones are skipped) and hand the list to the requesting panel.
     void handle_mutual_rooms_ready_ui_(std::uint64_t request_id, std::string json);
     // Callback from get_extended_profile_async / resolve_user_profile_async.
     // Dispatches to panel (user panel), resolve map (quick-switcher), or own
     // profile based on which pending map contains request_id.
-    void handle_extended_profile_ready_ui_(std::uint64_t request_id,
-                                           std::string profile_json);
+    void handle_extended_profile_ready_ui_(std::uint64_t request_id, std::string profile_json);
     // A message worth a notification arrived. Nothing is shown when the user
     // is already looking at that room (the main window on screen, focused,
     // showing that room of that account). Otherwise the OS is asked for
     // attention if the window isn't focused, and the notification is delivered.
-    virtual void
-    handle_notification_ui_(std::string user_id, std::string room_id,
-                            std::string room_name, std::string sender,
-                            std::string body, bool is_mention,
-                            std::vector<uint8_t> avatar_bytes,
-                            std::vector<uint8_t> image_bytes,
-                            std::string event_id);
+    virtual void handle_notification_ui_(std::string user_id, std::string room_id,
+                                         std::string room_name, std::string sender,
+                                         std::string body, bool is_mention,
+                                         std::vector<uint8_t> avatar_bytes,
+                                         std::vector<uint8_t> image_bytes, std::string event_id);
     // True while the main window is the active window. Default: false (so a
     // shell that does not say never suppresses a notification).
-    virtual bool is_main_window_focused_() const { return false; }
+    virtual bool is_main_window_focused_() const
+    {
+        return false;
+    }
     // A notification arrived while the main window is not focused: flash the
     // taskbar, bounce the dock icon, and so on. Default: nothing.
-    virtual void request_notification_attention_() {}
+    virtual void request_notification_attention_()
+    {
+    }
     // Show `n` for `user_id`. Default: that account's notifier, if it has one.
     virtual void deliver_notification_(const std::string& user_id,
                                        const tesseract::Notification& n);
@@ -3692,8 +3712,7 @@ protected:
     // overrides to call room_view_->message_list()->update_voice_waveform().
     // Concrete: if the waveform is for the displayed room, push it to the
     // message list. Same for every shell, so implemented in the base.
-    virtual void handle_voice_waveform_ready_ui_(std::string room_id,
-                                                 std::string event_id,
+    virtual void handle_voice_waveform_ready_ui_(std::string room_id, std::string event_id,
                                                  std::vector<std::uint16_t> waveform);
 
     // ── MatrixRTC call event hooks ────────────────────────────────────────────
@@ -3703,10 +3722,8 @@ protected:
 
     // A call-member event arrived. The call banner is driven by room state, so
     // this only re-evaluates it (see refresh_call_banners_()).
-    virtual void handle_rtc_invitation_ui_(std::string room_id,
-                                           std::string slot_id,
-                                           std::string caller_user_id,
-                                           std::string call_intent,
+    virtual void handle_rtc_invitation_ui_(std::string room_id, std::string slot_id,
+                                           std::string caller_user_id, std::string call_intent,
                                            std::uint64_t lifetime_ms,
                                            std::string notification_event_id);
     virtual void handle_rtc_participant_joined_ui_(std::uint64_t session_id,
@@ -3715,29 +3732,24 @@ protected:
                                                  std::string participant_id);
     virtual void handle_rtc_participant_updated_ui_(std::uint64_t session_id,
                                                     RtcParticipantInfo info);
-    virtual void handle_rtc_session_ended_ui_(std::uint64_t session_id,
-                                              std::string reason);
+    virtual void handle_rtc_session_ended_ui_(std::uint64_t session_id, std::string reason);
     // Whether an SDK call event (id, and account when tagged) belongs to the
     // call we are in now, not to an earlier one or another account's.
     bool is_current_call_event_(std::uint64_t session_id) const;
     // Decoded, pre-multiplied BGRA video frame from a remote participant.
     // bgra was pre-converted from RGBA on the worker thread in EventHandlerBase;
     // the shared_ptr allows zero-copy handoff to ParticipantTile.
-    virtual void handle_rtc_video_frame_ui_(
-        std::uint64_t session_id,
-        const std::string& participant_id,
-        std::uint32_t width,
-        std::uint32_t height,
-        std::shared_ptr<std::vector<std::uint8_t>> bgra);
+    virtual void handle_rtc_video_frame_ui_(std::uint64_t session_id,
+                                            const std::string& participant_id, std::uint32_t width,
+                                            std::uint32_t height,
+                                            std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
     // Screen share frame from a remote participant. Routed to the call overlay
     // using participant_id + ":screen" as the tile key.
-    virtual void handle_rtc_screen_frame_ui_(
-        std::uint64_t session_id,
-        const std::string& participant_id,
-        std::uint32_t width,
-        std::uint32_t height,
-        std::shared_ptr<std::vector<std::uint8_t>> bgra);
+    virtual void handle_rtc_screen_frame_ui_(std::uint64_t session_id,
+                                             const std::string& participant_id, std::uint32_t width,
+                                             std::uint32_t height,
+                                             std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
     // Start/stop local screen capture and the LiveKit screen track.
     void start_screen_share_();
@@ -3762,13 +3774,13 @@ protected:
     // on_location hook when the user accepts /location. Reports failure via
     // show_status_message_; sends immediately on success, no confirmation.
     void send_current_location_(std::string room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                                const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Final step of start_screen_share_(): configures and starts the capture
     // object with the chosen source, then wires it to the live session.
     // Called either directly (single source) or from the picker callback.
     void do_start_screen_share_(const std::string& source_id,
-                                 std::unique_ptr<tk::ScreenCapture> cap);
+                                std::unique_ptr<tk::ScreenCapture> cap);
 
     // Thread-safe entry point for incoming PCM audio from the worker thread.
     // AudioPlayback::push_frame() is documented thread-safe; the mutex protects
@@ -3776,11 +3788,9 @@ protected:
     // Audio of any session but the current call's is dropped: the previous
     // call's room stays connected for a few seconds after a hang-up and must
     // not play into the call that replaced it.
-    void push_call_audio_bgnd_(std::uint64_t session_id,
-                                const std::int16_t* samples,
-                                std::size_t sample_count,
-                                std::uint32_t sample_rate,
-                                std::uint32_t num_channels);
+    void push_call_audio_bgnd_(std::uint64_t session_id, const std::int16_t* samples,
+                               std::size_t sample_count, std::uint32_t sample_rate,
+                               std::uint32_t num_channels);
     // Factory hook: each concrete shell returns its platform audio output sink.
     // Returns nullptr on platforms where playback is not yet implemented.
     virtual std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() = 0;
@@ -3788,8 +3798,8 @@ protected:
     // Factory hook: each concrete shell creates a plain secondary top-level
     // window hosting `root`. Default: null (feature unavailable on that shell).
     virtual AuxWindowBase* create_aux_window_(std::string /*title*/,
-                                              std::unique_ptr<tk::Widget> /*root*/,
-                                              int /*width*/, int /*height*/)
+                                              std::unique_ptr<tk::Widget> /*root*/, int /*width*/,
+                                              int /*height*/)
     {
         return nullptr;
     }
@@ -3803,8 +3813,7 @@ protected:
 
     // Tear down the current overlay, switch to the requested mode, remount,
     // rewire all callbacks, and persist the new mode to Settings.
-    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m,
-                                         bool persist = true);
+    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m, bool persist = true);
 
     // Persist the new float position to Settings and request relayout.
     void on_call_float_position_changed_(float x, float y);
@@ -3826,9 +3835,8 @@ protected:
     // Join/Cancel) instead of joining directly — the single seam every
     // "start a call" entry point (auto-join, the call banner, the header
     // call button, LeaveAndJoin) now goes through.
-    void request_call_(const std::string& room_id,
-                       const std::string& slot_id   = "call#default",
-                       bool               audio_only = false);
+    void request_call_(const std::string& room_id, const std::string& slot_id = "call#default",
+                       bool audio_only = false);
 
     // Overlay configuration that must survive mode switches (docked ↔ floating ↔
     // popout). Initialised at call start; each remount reads from this struct
@@ -3836,46 +3844,46 @@ protected:
     using CallOverlayState = views::CallOverlayWidget::OverlayState;
 
 protected:
-    std::unique_ptr<CallSession>                call_session_;
+    std::unique_ptr<CallSession> call_session_;
     // The account the live call runs on. Capture threads push frames through
     // this, not through client_, which the UI thread re-points on switch and
     // clears on sign-out. It expires with the account, so frames stop then.
-    std::weak_ptr<AccountSession>               call_account_;
-    std::unique_ptr<tk::VideoCapture>           call_video_capture_;
+    std::weak_ptr<AccountSession> call_account_;
+    std::unique_ptr<tk::VideoCapture> call_video_capture_;
     // Bumped per start_call_video_capture_(); error callbacks posted by an
     // older capture compare against it and drop themselves.
-    std::uint64_t                               call_video_capture_gen_ = 0;
-    std::unique_ptr<tk::ScreenCapture>          screen_capture_;
+    std::uint64_t call_video_capture_gen_ = 0;
+    std::unique_ptr<tk::ScreenCapture> screen_capture_;
     // Bumped for each share started, so a failure from an earlier capture
     // cannot stop the one that replaced it.
-    std::uint64_t                               screen_share_serial_ = 0;
-    std::unique_ptr<tk::LocationProvider>       location_provider_;
+    std::uint64_t screen_share_serial_ = 0;
+    std::unique_ptr<tk::LocationProvider> location_provider_;
     // Background worker that fills in screen-picker tile thumbnails (see
     // start_screen_share_()). Joined before starting a new one and in
     // ~ShellBase() — it captures `this` (for post_to_ui_alive_), so it must
     // not be allowed to outlive the object the way a detached thread could.
-    std::thread                                 screen_thumb_worker_;
+    std::thread screen_thumb_worker_;
     // Guarded by call_audio_mutex_: accessed by worker threads via
     // push_call_audio_bgnd_() and reset on the UI thread at call teardown.
-    std::mutex                                  call_audio_mutex_;
-    std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
+    std::mutex call_audio_mutex_;
+    std::unique_ptr<tk::AudioPlayback> call_audio_output_;
     // The session id of the call whose audio may be played (0: none). Set when
     // the call's session is created and cleared when it ends; read by the
     // audio worker thread, so atomic.
-    std::atomic<std::uint64_t>                  call_audio_session_id_{0};
-    std::unique_ptr<CallWindowBase>             call_window_;
-    CallOverlayState                            call_overlay_state_;
+    std::atomic<std::uint64_t> call_audio_session_id_{0};
+    std::unique_ptr<CallWindowBase> call_window_;
+    CallOverlayState call_overlay_state_;
     // True iff Tesseract (not the user) forced Floating mode because the
     // user navigated away from the active call's room. Lets
     // handle_call_room_navigation_() tell "returning to a room we auto-
     // floated away from" apart from "the user deliberately chose Floating,"
     // so only the former auto-restores Docked/DockedExpanded.
-    bool                                         call_auto_floated_ = false;
+    bool call_auto_floated_ = false;
     // Room id handle_call_room_navigation_() was called for before rooms_
     // knew about it (e.g. a call room just created via CreateRoomView), so
     // its is_call_room was unknown. The next rooms update that does know it
     // re-runs the navigation once and clears this. Empty = nothing pending.
-    std::string                                  pending_call_room_nav_id_;
+    std::string pending_call_room_nav_id_;
     // The "call in progress" banner is a state of the room: shown while the
     // room has live call members and this client is not in that call. Applies
     // the rule to the main window's room view and every pop-out.
@@ -3885,8 +3893,8 @@ protected:
     // member list changes (get_room_members can be large).
     struct CallBannerRoster
     {
-        std::vector<std::string>                     ids;
-        std::vector<std::pair<std::string, std::string>> names; // user id, display name
+        std::vector<std::string> ids;
+        std::vector<std::pair<std::string, std::string>> names;   // user id, display name
         std::unordered_map<std::string, std::string> avatar_urls; // user id -> mxc
     };
     std::unordered_map<std::string, CallBannerRoster> call_banner_rosters_;
@@ -3911,17 +3919,17 @@ protected:
     static constexpr std::size_t kMaxPendingCallInvites = 32;
     void decline_pending_call_invite_(const std::string& room_id);
     // The event ids a Decline answers: every given invite, MatrixRTC ones first.
-    static std::vector<std::string> call_invite_decline_targets_(
-        const std::vector<PendingCallInvite>& invites);
+    static std::vector<std::string>
+    call_invite_decline_targets_(const std::vector<PendingCallInvite>& invites);
     // The users the call banner lists for a room: its call members, or else
     // the callers of its pending invites.
     static std::vector<std::string> call_banner_ids_(const RoomInfo* room,
                                                      const std::vector<PendingCallInvite>& invites);
     // The invites the banner stands for: those whose caller it lists. Only
     // these show Decline and are answered by it.
-    static std::vector<PendingCallInvite> call_invites_shown_by_banner_(
-        const std::vector<std::string>& banner_ids,
-        const std::vector<PendingCallInvite>& invites);
+    static std::vector<PendingCallInvite>
+    call_invites_shown_by_banner_(const std::vector<std::string>& banner_ids,
+                                  const std::vector<PendingCallInvite>& invites);
     // Drop expired invites everywhere, then the soonest-to-expire ones beyond
     // kMaxPendingCallInvites (never `keep_event_id`).
     void trim_pending_call_invites_(const std::string& keep_event_id);
@@ -3936,9 +3944,10 @@ protected:
     // room changes; a joiner's name or avatar appears within that window.
     struct CallOverlayRoster
     {
-        std::string                                                    room_id;
-        std::chrono::steady_clock::time_point                          built_at{};
-        std::unordered_map<std::string, std::pair<std::string, std::string>> people; // user id -> (name, avatar mxc)
+        std::string room_id;
+        std::chrono::steady_clock::time_point built_at{};
+        std::unordered_map<std::string, std::pair<std::string, std::string>>
+            people; // user id -> (name, avatar mxc)
     };
     CallOverlayRoster call_overlay_roster_;
     const CallOverlayRoster& call_overlay_roster_for_(const std::string& room_id);
@@ -4000,8 +4009,11 @@ protected:
             [this]
             {
                 const bool enabled = autostart_->is_enabled();
-                post_to_ui_alive_([this, enabled]
-                                  { on_launch_at_login_pref_ui_(enabled); });
+                post_to_ui_alive_(
+                    [this, enabled]
+                    {
+                        on_launch_at_login_pref_ui_(enabled);
+                    });
             });
     }
 
@@ -4012,7 +4024,10 @@ protected:
     // Whether a system tray icon currently exists. Each shell overrides this
     // to report its own ITrayIcon::is_available(); the default says no, which
     // matches a headless/test build with no tray.
-    virtual bool tray_available_() const { return false; }
+    virtual bool tray_available_() const
+    {
+        return false;
+    }
 
     // Called by push_tray_available_ui_() to forward into the Settings view.
     void on_tray_available_ui_(bool available);
@@ -4051,10 +4066,8 @@ protected:
     //   - image-preview gate (clears image_bytes when disabled / locked)
     //   - hide-content toggle (replaces sender/room/body with generic
     //     strings and clears both avatar_bytes and image_bytes)
-    void apply_notification_redaction_(std::string& sender,
-                                       std::string& room_name,
-                                       std::string& body,
-                                       std::vector<uint8_t>& avatar_bytes,
+    void apply_notification_redaction_(std::string& sender, std::string& room_name,
+                                       std::string& body, std::vector<uint8_t>& avatar_bytes,
                                        std::vector<uint8_t>& image_bytes) const
     {
         if (!notification_image_allowed_())
@@ -4072,17 +4085,15 @@ protected:
     }
     // Called by a platform notifier's activation/response callback when the
     // user submitted inline reply text from an OS notification.
-    void submit_room_send_(const std::shared_ptr<AccountSession>& sess,
-                           const std::string& room_id,
-                           const std::string& preview_body,
-                           SendPipeline::Send send);
+    void submit_room_send_(const std::shared_ptr<AccountSession>& sess, const std::string& room_id,
+                           const std::string& preview_body, SendPipeline::Send send);
 
     // Push send_pipeline_'s per-room busy state to every visible composer
     // (main pane + pop-outs), keyed by the room each one currently shows.
     void refresh_send_busy_ui_();
 
-    void send_notification_reply_(std::string user_id, std::string room_id,
-                                  std::string event_id, std::string text);
+    void send_notification_reply_(std::string user_id, std::string room_id, std::string event_id,
+                                  std::string text);
 
     // The window an OS-notification click for `user_id` belongs to: the window
     // that owns the account (dedicated), else any window already showing it,
@@ -4095,55 +4106,59 @@ protected:
     // needed, hands it the platform activation token, and navigates it to the
     // room. When `event_id` (the message the notification was for) is a thread
     // reply, the thread is then opened in whichever pane shows the room.
-    void on_notification_clicked_(const std::string& user_id,
-                                  std::string room_id, std::string event_id,
-                                  std::string token);
+    void on_notification_clicked_(const std::string& user_id, std::string room_id,
+                                  std::string event_id, std::string token);
 
     // Resolve `event_id`'s thread root off the UI thread (event cache, then the
     // homeserver) and, if it is a thread reply, open that thread in the
     // room's pane.
-    void open_notification_thread_(const std::string& room_id,
-                                   const std::string& event_id);
+    void open_notification_thread_(const std::string& room_id, const std::string& event_id);
     // UI-thread step: open `thread_root` in the pop-out showing `room_id`, else
     // in the main pane if it is the current room. No-op if neither shows it.
-    void open_thread_in_visible_pane_(const std::string& room_id,
-                                      const std::string& thread_root);
+    void open_thread_in_visible_pane_(const std::string& room_id, const std::string& thread_root);
 
     // Platform hook run on the click's target window before navigation:
     // stash the focus token (Wayland xdg-activation) or restore/raise the
     // window. Default does nothing.
-    virtual void activate_for_notification_(const std::string& /*token*/) {}
+    virtual void activate_for_notification_(const std::string& /*token*/)
+    {
+    }
 
     // Builds a synthetic failure Notification (reusing the account's
     // existing INotifier::notify(), same as any other notification) to tell
     // the user a quick reply didn't go out. `reason` is the already-
     // localized detail shown as the notification body.
-    void notify_reply_failed_(const std::string& user_id,
-                              const std::string& room_id, std::string reason);
+    void notify_reply_failed_(const std::string& user_id, const std::string& room_id,
+                              std::string reason);
 
     // Show `msg` in the platform status bar for `auto_clear_ms` milliseconds,
     // then restore the sync-status text.
-    void show_status_message_(std::string msg, int auto_clear_ms = 4000,
-                              bool allow_links = false);
+    void show_status_message_(std::string msg, int auto_clear_ms = 4000, bool allow_links = false);
 
     // Segment a status message for the shells' status-bar renderers: links only
     // when the current message opted in (status_message_allows_links_), else a
     // single plain segment. Shells call this instead of parse_status_links so
     // the opt-in gate lives in one place.
-    std::vector<tesseract::StatusSegment>
-    parse_status_message_(const std::string& msg) const;
+    std::vector<tesseract::StatusSegment> parse_status_message_(const std::string& msg) const;
     // Set on the UI thread by show_status_message_ immediately before
     // on_show_status_message_ui_ runs (its only caller), so reading it there is
     // race-free.
     bool status_message_allows_links_ = false;
 
     // Called by show_status_message_ on the UI thread to display the message.
-    virtual void on_show_status_message_ui_(const std::string& /*msg*/) {}
+    virtual void on_show_status_message_ui_(const std::string& /*msg*/)
+    {
+    }
     // Called when the auto-clear timer fires to restore normal sync status.
-    virtual void on_restore_status_ui_() {}
+    virtual void on_restore_status_ui_()
+    {
+    }
     // True while a persistent status override is showing; shells check this
     // in refresh_sync_status_() to avoid overwriting it with "Connected".
-    bool has_status_override_() const { return status_override_active_; }
+    bool has_status_override_() const
+    {
+        return status_override_active_;
+    }
 
     // Called after push_room_list_state_() — shell refreshes its sync-status display.
     virtual void on_room_list_state_ui_()
@@ -4160,10 +4175,16 @@ protected:
     }
 
     // True when the inflight ring animation should be running (count >= 2).
-    bool inflight_needs_anim_() const { return inflight_total_() >= 2u; }
+    bool inflight_needs_anim_() const
+    {
+        return inflight_total_() >= 2u;
+    }
 
     // Current rotation phase in [0,1) for the inflight ring.
-    float inflight_spin_phase_() const { return spin_accum_phase_; }
+    float inflight_spin_phase_() const
+    {
+        return spin_accum_phase_;
+    }
 
     // Advance the ring phase accumulator. Call on every animation tick and
     // whenever the inflight count changes so the phase stays continuous.
@@ -4172,10 +4193,8 @@ protected:
         if (spin_last_tick_ms_ > 0 && inflight_needs_anim_())
         {
             const float dt = static_cast<float>(now_ms - spin_last_tick_ms_);
-            spin_accum_phase_ =
-                std::fmod(spin_accum_phase_ +
-                              dt * tk::inflight_revs_per_ms(inflight_total_()),
-                          1.0f);
+            spin_accum_phase_ = std::fmod(
+                spin_accum_phase_ + dt * tk::inflight_revs_per_ms(inflight_total_()), 1.0f);
         }
         spin_last_tick_ms_ = now_ms;
     }
@@ -4184,9 +4203,8 @@ protected:
     // when it is running. Used by both the color helper and tooltip text.
     std::uint32_t inflight_total_() const
     {
-        const bool sync_on =
-            last_room_list_state_ == RoomListState::Running ||
-            last_room_list_state_ == RoomListState::Recovering;
+        const bool sync_on = last_room_list_state_ == RoomListState::Running ||
+                             last_room_list_state_ == RoomListState::Recovering;
         return last_inflight_ + (sync_on ? 1u : 0u);
     }
 
@@ -4202,19 +4220,40 @@ protected:
         if (current_theme_.high_contrast)
         {
             const auto& pal = current_theme_.palette;
-            if (total <= 1u) return pal.presence_online;
-            if (total <= 10u) return pal.presence_unavailable;
+            if (total <= 1u)
+            {
+                return pal.presence_online;
+            }
+            if (total <= 10u)
+            {
+                return pal.presence_unavailable;
+            }
             return pal.destructive;
         }
-        if (total <= 1u) return tk::Color::rgb(0x40BF4D); // green
-        if (total <= 10u) return tk::Color::rgb(0xF2B21A); // amber
-        return tk::Color::rgb(0xE03838);                   // red
+        if (total <= 1u)
+        {
+            return tk::Color::rgb(0x40BF4D); // green
+        }
+        if (total <= 10u)
+        {
+            return tk::Color::rgb(0xF2B21A); // amber
+        }
+        return tk::Color::rgb(0xE03838); // red
     }
 
     // Queue depth helpers for the in-flight tooltip.
-    size_t pool_pending_count_()     const { return pool_.pending_count(); }
-    size_t mut_pool_pending_count_() const { return mut_pool_.pending_count(); }
-    size_t pending_media_count_()    const { return pending_media_.size(); }
+    size_t pool_pending_count_() const
+    {
+        return pool_.pending_count();
+    }
+    size_t mut_pool_pending_count_() const
+    {
+        return mut_pool_.pending_count();
+    }
+    size_t pending_media_count_() const
+    {
+        return pending_media_.size();
+    }
 
     // Wire both worker pools to re-fire on_inflight_ui_() on every queue-depth
     // change. Call once from each shell's setup, after the UI is constructed.
@@ -4247,18 +4286,24 @@ protected:
     /// Open the platform settings UI. Overridden by each shell to forward to
     /// its own open-settings method; default no-op (mirrors
     /// `refresh_user_strip_()`).
-    virtual void open_app_settings_ui_() {}
+    virtual void open_app_settings_ui_()
+    {
+    }
     /// Return from the settings UI to the main content. Counterpart of
     /// `open_app_settings_ui_()`; shells forward to their existing
     /// "show main content" path. Default no-op.
-    virtual void close_app_settings_ui_() {}
+    virtual void close_app_settings_ui_()
+    {
+    }
     /// Give the login view a freshly built pending-login `Client`
     /// (`reset_pending_login_client_()`), so a proxy change made from the login
     /// screen reaches the HTTP client its sign-in will use. Must only swap the
     /// client: Settings is open on top of the login view, so it must not
     /// refocus or re-run anything there (the homeserver check is re-run by
     /// `take_login_recheck_()` once the login view is shown again). Default no-op.
-    virtual void rebind_login_client_ui_() {}
+    virtual void rebind_login_client_ui_()
+    {
+    }
     /// Open settings and land on the Account tab — wired to the sidebar
     /// status line's `on_status_clicked`.
     void open_settings_to_account_tab_();
@@ -4268,7 +4313,10 @@ protected:
     void open_settings_from_login_();
     /// True while settings was opened from the login screen. Shells pass it
     /// to `SettingsView::set_signed_out_mode` when showing settings.
-    bool settings_from_login_() const { return settings_opened_from_login_; }
+    bool settings_from_login_() const
+    {
+        return settings_opened_from_login_;
+    }
     /// True once (then cleared) if the login view's client was replaced while
     /// Settings was open, i.e. its homeserver check should be re-run now that
     /// the login view is back on screen.
@@ -4285,7 +4333,7 @@ protected:
     {
         const bool v = settings_opened_from_login_;
         settings_opened_from_login_ = false;
-        settings_closed_to_login_   = v;
+        settings_closed_to_login_ = v;
         return v;
     }
 
@@ -4296,8 +4344,8 @@ protected:
     bool seed_screenshot_fixture_(tk::CanvasFactory& factory);
     /// Screenshot mode: build the scene table and start capturing through
     /// `host`, which must outlive the run.
-    void start_screenshot_director_(screenshot::ScreenshotHost& host,
-                                    std::string prefix, int settle_ms = 300);
+    void start_screenshot_director_(screenshot::ScreenshotHost& host, std::string prefix,
+                                    int settle_ms = 300);
 
 private:
     std::vector<screenshot::Scene> make_screenshot_scenes_();
@@ -4331,7 +4379,9 @@ protected:
     void retry_pending_launch_room_();
 
     /// Bring the main window to the front, un-hiding it from the tray.
-    virtual void raise_main_window_ui_() {}
+    virtual void raise_main_window_ui_()
+    {
+    }
 
     // ── Sync status line ──────────────────────────────────────────────────────
     // Recompute the status line from the room-list and key-download state
@@ -4347,13 +4397,20 @@ protected:
     // still syncing; later room-list and key-download events correct the line.
     void show_connected_status_();
     // Put `text` in the status line (the shell's native label). Default: nothing.
-    virtual void show_sync_status_text_(const std::string& /*text*/) {}
+    virtual void show_sync_status_text_(const std::string& /*text*/)
+    {
+    }
     // refresh_sync_status_ kept a persistent status override on screen instead
     // of writing "Connected". Default: nothing. Qt re-shows its link label.
-    virtual void on_sync_status_override_kept_() {}
+    virtual void on_sync_status_override_kept_()
+    {
+    }
     /// False once the native window behind this shell is gone (macOS: the
     /// controller was released). Shared UI-thread handlers return early then.
-    virtual bool ui_ready_() const { return true; }
+    virtual bool ui_ready_() const
+    {
+        return true;
+    }
     /// Open the quick switcher / message search (launch actions, shortcuts and
     /// menus). Virtual so a test double can count the calls; the defaults are
     /// open_quick_switch_ / open_message_search_.
@@ -4381,15 +4438,22 @@ protected:
     /// True while the "open in a new tab / pop out" click modifier is held
     /// (Ctrl, Cmd on macOS). Defaults to is_ctrl_held_(); GTK reads the
     /// modifier its host captured from the click gesture instead.
-    virtual bool click_modifier_held_() const { return is_ctrl_held_(); }
+    virtual bool click_modifier_held_() const
+    {
+        return is_ctrl_held_();
+    }
 
     /// An application-scoped shortcut can fire while a pop-out room window has
     /// focus, but the overlays live in the main window: bring it forward (no-op
     /// when it already is). Default: do nothing.
-    virtual void bring_main_window_forward_for_overlay_() {}
+    virtual void bring_main_window_forward_for_overlay_()
+    {
+    }
     /// An overlay closed: give keyboard focus back to the compose field (or
     /// the window). Default: nothing to restore.
-    virtual void restore_focus_after_overlay_() {}
+    virtual void restore_focus_after_overlay_()
+    {
+    }
 
     bool main_content_ready_ = false;
     LaunchAction pending_launch_action_ = LaunchAction::None;
@@ -4403,12 +4467,15 @@ protected:
 
     // Called on the UI thread after space_children_cache_ has been refreshed.
     // Each shell overrides to call refresh_room_list_().
-    virtual void on_space_children_cache_ready_ui_() {}
+    virtual void on_space_children_cache_ready_ui_()
+    {
+    }
 
     // Called on the UI thread after unjoined summaries for space_id arrive.
     // Each shell overrides to call refresh_room_list_().
-    virtual void on_space_unjoined_summaries_ready_ui_(
-        const std::string& /*space_id*/) {}
+    virtual void on_space_unjoined_summaries_ready_ui_(const std::string& /*space_id*/)
+    {
+    }
 
     // Called after handle_room_action_complete_ui_() processes a Join action.
     virtual void on_join_room_outcome_ui_(bool ok, const std::string& room_id,
@@ -4436,25 +4503,21 @@ protected:
     // Fetch MSC3266 summaries for unjoined children of space_id via the
     // worker pool. Stores in unjoined_summaries_cache_ and fires
     // on_space_unjoined_summaries_ready_ui_().
-    void fetch_single_room_summary_(const std::string& space_id,
-                                    const std::string& room_id);
+    void fetch_single_room_summary_(const std::string& space_id, const std::string& room_id);
 
     // Cancel in-flight unjoined-room summary fetches and drop their per-space
     // state, except for the (up to two) spaces named in `keep_a`/`keep_b` —
     // the ones the sidebar and the space-root panel are still showing. With no
     // arguments every space is cancelled.
-    void cancel_unjoined_summaries_(const std::string& keep_a = {},
-                                    const std::string& keep_b = {});
+    void cancel_unjoined_summaries_(const std::string& keep_a = {}, const std::string& keep_b = {});
     // True while `gen` is still the live generation of `space_id`'s fetches.
-    bool fetch_gen_current_(const std::string& space_id,
-                            std::uint64_t gen) const;
+    bool fetch_gen_current_(const std::string& space_id, std::uint64_t gen) const;
     // Forgets all fetch state (account switch / teardown). Does not touch the
     // room-keyed retry backoff.
     void reset_unjoined_fetch_state_();
     // Starts a summary fetch for (space, room) unless one is already in
     // flight or the room is still backing off.
-    void request_summary_fetch_(const std::string& space_id,
-                                const std::string& room_id);
+    void request_summary_fetch_(const std::string& space_id, const std::string& room_id);
 
     // ── Extended profile (MSC4133) helpers ────────────────────────────────────
 
@@ -4465,14 +4528,13 @@ protected:
 
     /// Write (or delete when value_json == "null") a single profile field on
     /// a worker thread. Fires on_profile_field_result_ui_() on the UI thread.
-    void handle_profile_field_change_(const std::string& key,
-                                       const std::string& value_json);
+    void handle_profile_field_change_(const std::string& key, const std::string& value_json);
 
     /// Fetch another user's extended profile on a worker thread and push the
     /// result into panel via set_extended_profile(). panel must outlive the
     /// async call (guaranteed because it is owned by the main widget tree).
     void fetch_user_extended_profile_async_(const std::string& user_id,
-                                             views::UserProfilePanel* panel);
+                                            views::UserProfilePanel* panel);
 
     /// Resolve user_id's grammatical-gender pronoun word for gendered
     /// membership-narration text (see the member_gender_cache_ comment
@@ -4514,7 +4576,9 @@ protected:
     void begin_server_info_fetch_()
     {
         if (server_info_fetch_started_ || !client_)
+        {
             return;
+        }
         server_info_fetch_started_ = true;
         client_->get_server_info_async(next_request_id_++);
     }
@@ -4525,8 +4589,7 @@ protected:
     // `account_uid` is the account whose client received the event (it need
     // not be the active one); `user_id` / `device_id` are the other party.
     void handle_verification_request_ui_(std::string account_uid, std::string flow_id,
-                                         std::string user_id, std::string device_id,
-                                         bool incoming);
+                                         std::string user_id, std::string device_id, bool incoming);
     void handle_sas_ready_ui_(std::string flow_id, VerificationSas sas);
     void handle_verification_done_ui_(std::string flow_id);
     void handle_verification_cancelled_ui_(std::string flow_id, std::string cancel_code);
@@ -4540,8 +4603,7 @@ protected:
 
     // Called on the UI thread by EventHandlerBase. Updates user_presence_ and
     // triggers a room-list repaint when the changed user is a DM counterpart.
-    void handle_presence_changed_ui_(const std::string& user_id,
-                                     PresenceState state);
+    void handle_presence_changed_ui_(const std::string& user_id, PresenceState state);
 
     // Look up the presence state for user_id. Returns Offline when unknown.
     PresenceState presence_for_(const std::string& user_id) const;
@@ -4556,10 +4618,15 @@ protected:
     // Drives run_image_gc_() every ~2 s (built on post_to_ui_after_, so no
     // per-shell timer wiring). start()ed at the end of wire_main_app_widget_;
     // its dtor (and ~ShellBase) stop it. See tk::IntervalTimer.
-    tk::IntervalTimer media_sweep_timer_{
-        [this](int ms, std::function<void()> fn)
-        { post_to_ui_after_(ms, std::move(fn)); },
-        2000, [this] { run_image_gc_(); }};
+    tk::IntervalTimer media_sweep_timer_{[this](int ms, std::function<void()> fn)
+                                         {
+                                             post_to_ui_after_(ms, std::move(fn));
+                                         },
+                                         2000,
+                                         [this]
+                                         {
+                                             run_image_gc_();
+                                         }};
 
     // Owned update checker. Created and triggered once when sync first reaches
     // RoomListState::Running; destroyed (and not recreated) on logout.
@@ -4705,9 +4772,8 @@ protected:
     tesseract::views::SettingsView* stats_settings_view_ = nullptr;
     // Hand cache sizes to the open settings view, if any. For callbacks that
     // run after the user may have closed Settings.
-    void show_cache_sizes_(uint64_t local, uint64_t sdk, uint64_t memory,
-                           uint64_t mem_hits, uint64_t mem_misses,
-                           uint64_t disk_hits, uint64_t disk_misses);
+    void show_cache_sizes_(uint64_t local, uint64_t sdk, uint64_t memory, uint64_t mem_hits,
+                           uint64_t mem_misses, uint64_t disk_hits, uint64_t disk_misses);
 
     // The settings page's surface, owned here and created on first use through
     // create_settings_surface_ui_(). stats_settings_view_ is its widget tree
@@ -4726,14 +4792,19 @@ protected:
     }
     // Last step of ensure_settings_view_(): per-backend look tweaks on the
     // freshly configured view (e.g. GTK's compact entries). Default: nothing.
-    virtual void settings_view_created_ui_(views::SettingsView&) {}
+    virtual void settings_view_created_ui_(views::SettingsView&)
+    {
+    }
     // Bumped whenever the settings view is created or torn down, so a deferred
     // teardown can tell its own surface from a newer one at the same address.
     std::uint64_t settings_gen_ = 0;
     // The shell's main surface (the room list and timeline). Popups anchor to
     // it and the deferred teardowns run on its host, which outlives the pages
     // being torn down. Default: none.
-    virtual tk::SurfaceBase* main_surface_() { return nullptr; }
+    virtual tk::SurfaceBase* main_surface_()
+    {
+        return nullptr;
+    }
     virtual tk::Host* main_host_()
     {
         auto* surface = main_surface_();
@@ -4741,7 +4812,9 @@ protected:
     }
     // Give the main surface keyboard focus (after the lightbox opens). Default:
     // nothing.
-    virtual void grab_main_surface_focus_() {}
+    virtual void grab_main_surface_focus_()
+    {
+    }
     // Build main_room_pane_ and attach it to main_app_'s views. Call once the
     // main surface and main_app_ exist, before wire_main_app_widget_().
     void create_main_room_pane_();
@@ -4753,7 +4826,9 @@ protected:
     // after the surface exists; `initial_scale` is its native scale factor.
     void wire_main_surface_(float initial_scale);
     // After the media prefetch, before every main-surface paint. Default: nothing.
-    virtual void on_pre_paint_() {}
+    virtual void on_pre_paint_()
+    {
+    }
     // The main room view's playback and capture services (audio, voice notes,
     // video fetch/player) and its repaint and delayed-post hooks. Needs
     // main_surface_() and main_app_; call once after create_main_room_pane_().
@@ -4789,13 +4864,12 @@ protected:
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
     // formats the display text, and calls update_typing_bar_.
-    void handle_typing_changed_ui_(std::string room_id,
-                                   std::vector<std::string> names);
+    void handle_typing_changed_ui_(std::string room_id, std::vector<std::string> names);
 
     // Routes a room's identity-change warnings (MSC4153 pinning) to every
     // pane showing that room. UI thread, called by EventHandlerBase.
-    void handle_identity_status_changed_ui_(
-        std::string room_id, std::vector<tesseract::IdentityWarning> warnings);
+    void handle_identity_status_changed_ui_(std::string room_id,
+                                            std::vector<tesseract::IdentityWarning> warnings);
 
     // Re-reads the open profile's trust row when its user's identity changed
     // (e.g. the signature from a just-finished verification arrived). UI
@@ -4834,8 +4908,7 @@ protected:
         return on_behalf_of ? on_behalf_of->client.get() : client_;
     }
     // The pop-out showing room_id for account user_id, or nullptr.
-    RoomWindowBase* find_secondary_(const std::string& room_id,
-                                    const std::string& user_id) const;
+    RoomWindowBase* find_secondary_(const std::string& room_id, const std::string& user_id) const;
     // The pop-out showing room_id for the account whose event is being
     // dispatched (event_account_, or the active account when untagged).
     RoomWindowBase* find_event_secondary_(const std::string& room_id) const;
@@ -4851,12 +4924,13 @@ protected:
     std::string dispatch_account_() const
     {
         if (!event_account_.empty())
+        {
             return event_account_;
+        }
         return active_account_ ? active_account_->user_id : std::string{};
     }
     // room_subscription_refs_ key.
-    static std::string subscription_key_(const std::string& user_id,
-                                         const std::string& room_id)
+    static std::string subscription_key_(const std::string& user_id, const std::string& room_id)
     {
         return user_id + '\n' + room_id;
     }
@@ -4897,7 +4971,10 @@ protected:
         {
             shell.event_account_ = std::move(uid);
         }
-        ~EventAccountScope() { shell.event_account_ = std::move(prev); }
+        ~EventAccountScope()
+        {
+            shell.event_account_ = std::move(prev);
+        }
         EventAccountScope(const EventAccountScope&) = delete;
         EventAccountScope& operator=(const EventAccountScope&) = delete;
         ShellBase& shell;
@@ -4921,23 +4998,20 @@ protected:
 
     // Call fn on the secondary window showing room_id, if one is open (and,
     // during an account-tagged dispatch, owned by that account).
-    void dispatch_to_secondary_windows_(
-        const std::string& room_id,
-        const std::function<void(RoomWindowBase*)>& fn);
+    void dispatch_to_secondary_windows_(const std::string& room_id,
+                                        const std::function<void(RoomWindowBase*)>& fn);
 
     // Notify every open pop-out window that media for cache_key has arrived, so
     // it can invalidate row heights and repaint. Mirrors on_url_preview_ready_'s
     // secondary-window fan-out. cache_key is not room-scoped (the same mxc can
     // appear in several rooms), so notify all secondary windows.
-    void notify_secondary_media_ready_(const std::string& cache_key,
-                                       MediaKind kind);
+    void notify_secondary_media_ready_(const std::string& cache_key, MediaKind kind);
 
     // Override in a platform shell to instantiate the concrete RoomWindow
     // subclass. The subclass constructor must call finish_init_() before
     // returning. Default: no-op (secondary windows are inert until a shell
     // overrides this).
-    virtual RoomWindowBase*
-    create_secondary_room_window_(const std::string& /*room_id*/)
+    virtual RoomWindowBase* create_secondary_room_window_(const std::string& /*room_id*/)
     {
         return nullptr;
     }
@@ -4957,10 +5031,9 @@ protected:
     // the window is re-centred on screens[0] with the saved (or default) size
     // clamped to 90% of the screen. Returns a geometry with valid=false when
     // saved.valid is false (caller uses its own platform default).
-    static Settings::WindowGeometry clamp_to_screens_(
-        const Settings::WindowGeometry& saved,
-        int default_w, int default_h,
-        const std::vector<tk::Rect>& screens);
+    static Settings::WindowGeometry clamp_to_screens_(const Settings::WindowGeometry& saved,
+                                                      int default_w, int default_h,
+                                                      const std::vector<tk::Rect>& screens);
 
     // Debounce a Settings::save_to_disk() call by 500 ms so rapid window
     // resize/move events don't flood the file with tiny writes.
@@ -5023,22 +5096,20 @@ protected:
     void evict_avatar_caches_();
 
     // Non-blocking voice/audio byte provider for the playback path.
-    std::vector<std::uint8_t>
-    voice_bytes_or_fetch_(const std::string& token,
-                          std::function<void()> on_ready);
+    std::vector<std::uint8_t> voice_bytes_or_fetch_(const std::string& token,
+                                                    std::function<void()> on_ready);
     // `group_id` is the cancellation group for the download (room switch drops
     // a room's pending media). Defaults to 0 (never cancelled) for non-timeline
     // callers (avatar/preview prefetch); timeline callers pass the room group.
     void ensure_media_image_(const std::string& url, int max_w, int max_h,
-                             std::uint64_t group_id = 0,
-                             MediaKind kind = MediaKind::MediaImage);
+                             std::uint64_t group_id = 0, MediaKind kind = MediaKind::MediaImage);
 
     // Sticker picker cell decode edge in device pixels (cell size × display
     // scale).
     int picker_sticker_px_() const
     {
-        return std::max(1, static_cast<int>(std::lround(
-                               visual::kStickerPickerCell * current_scale_)));
+        return std::max(1,
+                        static_cast<int>(std::lround(visual::kStickerPickerCell * current_scale_)));
     }
     tk::CacheKey picker_sticker_key_(const std::string& url) const
     {
@@ -5071,17 +5142,14 @@ protected:
     // Shared async media pipeline used by the ensure_* helpers.
     void fetch_media_pipeline_(std::string cache_key, tk::CacheKey disk_key,
                                std::string inflight_key, std::uint64_t group_id,
-                               tesseract::Client::MediaReqKind kind,
-                               std::string source, std::uint32_t w,
-                               std::uint32_t h, bool animated,
-                               MediaKind out_kind,
+                               tesseract::Client::MediaReqKind kind, std::string source,
+                               std::uint32_t w, std::uint32_t h, bool animated, MediaKind out_kind,
                                std::optional<tk::CacheKey> out_key = std::nullopt);
 
     // Compressed-bytes cache (L1) in front of media_disk_cache_ (L2), keyed by
     // the same disk-cache key.
     std::vector<std::uint8_t> load_media_bytes_(const tk::CacheKey& key) const;
-    void store_media_bytes_(const tk::CacheKey& key,
-                            const std::vector<std::uint8_t>& bytes) const;
+    void store_media_bytes_(const tk::CacheKey& key, const std::vector<std::uint8_t>& bytes) const;
     void evict_media_bytes_(const tk::CacheKey& key) const;
 
     // Fetch a server-scaled thumbnail (w×h) for an inline media preview into
@@ -5090,8 +5158,8 @@ protected:
     // media_disk_cache_ keys are size-namespaced via thumb_key() so a thumbnail
     // and a full-size fetch of the same mxc never collide. `animated` requests
     // an animated thumbnail where the server supports it (MSC2705).
-    void ensure_media_thumbnail_(const std::string& url, int w, int h,
-                                 bool animated, std::uint64_t group_id = 0);
+    void ensure_media_thumbnail_(const std::string& url, int w, int h, bool animated,
+                                 std::uint64_t group_id = 0);
 
     // Size-namespaced cache key for thumbnail fetches (disk + in-flight set).
     // Canonical format lives in tesseract::visual::thumb_key (also used by
@@ -5133,19 +5201,21 @@ protected:
 
     // Avatar lookup: tk_avatars_ only (used by account picker, join-room
     // dialog, mention popup, settings view).
-    std::function<const tk::Image*(const std::string&)>
-    make_avatar_image_provider_()
+    std::function<const tk::Image*(const std::string&)> make_avatar_image_provider_()
     {
         return [this](const std::string& mxc) -> const tk::Image*
-        { return avatar_image_(mxc); };
+        {
+            return avatar_image_(mxc);
+        };
     }
 
     // Static-image lookup: image_cache_ only (used by the shortcode popup).
-    std::function<const tk::Image*(const std::string&)>
-    make_static_image_provider_()
+    std::function<const tk::Image*(const std::string&)> make_static_image_provider_()
     {
         return [this](const std::string& url) -> const tk::Image*
-        { return account_manager_.image_cache().peek(tk::CacheKey::media(url)); };
+        {
+            return account_manager_.image_cache().peek(tk::CacheKey::media(url));
+        };
     }
 
     // Animated-frame → static-image lookup + fetch-on-miss: like
@@ -5203,8 +5273,7 @@ protected:
     // path (prefetch, picker, room-list preview) already uses; racing those
     // two sizes against each other for the same plain-keyed cache entry is
     // what caused the sticker size to visibly flicker in the timeline.
-    std::function<const tk::Image*(const std::string&, bool)>
-    make_sticker_image_provider_()
+    std::function<const tk::Image*(const std::string&, bool)> make_sticker_image_provider_()
     {
         return [this](const std::string& mxc, bool hovered) -> const tk::Image*
         {
@@ -5224,12 +5293,15 @@ protected:
                 return f;
             }
             if (const auto* img = account_manager_.image_cache().peek(key))
+            {
                 return img;
+            }
             if (const auto* img = account_manager_.thumbnail_cache().peek(key))
+            {
                 return img;
+            }
             ensure_media_image_(mxc, visual::kStickerSize, visual::kStickerSize,
-                                media_group_for_room_(current_room_id_),
-                                MediaKind::Sticker);
+                                media_group_for_room_(current_room_id_), MediaKind::Sticker);
             return nullptr;
         };
     }
@@ -5240,12 +5312,11 @@ protected:
     std::function<const tk::Image*(const std::string&, const std::string&, bool)>
     make_picker_image_provider_(bool is_sticker)
     {
-        return [this, is_sticker](const std::string& cache_key,
-                                  const std::string&,
+        return [this, is_sticker](const std::string& cache_key, const std::string&,
                                   bool hovered) -> const tk::Image*
         {
-            const tk::CacheKey key = is_sticker ? picker_sticker_key_(cache_key)
-                                                : tk::CacheKey::media(cache_key);
+            const tk::CacheKey key =
+                is_sticker ? picker_sticker_key_(cache_key) : tk::CacheKey::media(cache_key);
             gate_anim_playback_(key, hovered);
             if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
@@ -5292,15 +5363,13 @@ protected:
     // thread. Shared by the disk-hit and network-completion branches of
     // ensure_picker_image_.
     void decode_and_finalize_picker_(std::string url, bool is_sticker,
-                                     std::vector<std::uint8_t> bytes,
-                                     bool persist);
+                                     std::vector<std::uint8_t> bytes, bool persist);
 
     // UI-thread tail of ensure_picker_image_. Erases the in-flight key,
     // routes `d` into anim_cache_ (animated) or tk_images_ (still),
     // calls start_anim_tick_() / repaint_pickers_(). Public-testable
     // logic (see test_picker_image_cache.cpp). Safe if `d.empty()`.
-    void finalize_picker_image_(std::string url, bool is_sticker,
-                                DecodedImage d);
+    void finalize_picker_image_(std::string url, bool is_sticker, DecodedImage d);
 
     /// Fetch an OSM tile (z/x/y) asynchronously. Idempotent — no-op if already
     /// in tk_images_, in-flight, or previously failed. On success: stores bytes
@@ -5314,8 +5383,7 @@ protected:
 
     // Decode the BlurHash for `event_id` and store the result via cache_rgba_image_.
     // Idempotent — skips events already attempted or already cached.
-    void ensure_blurhash_image_(const std::string& event_id,
-                                const std::string& hash, int media_w,
+    void ensure_blurhash_image_(const std::string& event_id, const std::string& hash, int media_w,
                                 int media_h);
 
     // Walk all media references in ev and call ensure_*_ for each.
@@ -5323,8 +5391,7 @@ protected:
     void ensure_row_media_(const Event& ev, bool fetch_avatars = true);
     // Overload for rows that have already been converted to MessageRowData
     // (used by the lazy visible-range callback for off-screen events).
-    void ensure_row_media_(const views::MessageRowData& row,
-                           bool fetch_avatars = true);
+    void ensure_row_media_(const views::MessageRowData& row, bool fetch_avatars = true);
 
     // The timeline's visible rows changed (scroll / room enter / data update):
     // raise the priority of the still-pending media fetches backing the now-
@@ -5348,14 +5415,13 @@ protected:
     bool media_allowed_(const std::string& room_id, bool is_own) const;
     // Resolve the effective preview mode for `room_id` (global config overlaid
     // with the per-room override) and report its cached join_rule.
-    tesseract::Settings::MediaPreviews
-    effective_preview_mode_(const std::string& room_id,
-                            std::string& join_rule_out) const;
+    tesseract::Settings::MediaPreviews effective_preview_mode_(const std::string& room_id,
+                                                               std::string& join_rule_out) const;
     // True when `event_id` in `room_id` should be rendered as a click-to-load
     // placeholder (preview suppressed AND not individually revealed). `is_own`
     // carries the exemption for the user's own media.
-    bool media_preview_hidden_(const std::string& room_id,
-                               const std::string& event_id, bool is_own) const;
+    bool media_preview_hidden_(const std::string& room_id, const std::string& event_id,
+                               bool is_own) const;
     // Ensure the per-room override + join_rule for `room_id` is cached; kicks an
     // async fetch on a cache miss. Call on room switch.
     void ensure_room_preview_override_(const std::string& room_id);
@@ -5373,9 +5439,8 @@ protected:
     // RoomSettingsChanges.media_override was populated (see
     // apply_room_settings_, which performs the actual server write on the
     // worker thread).
-    void commit_room_media_preview_override_(
-        const std::string& room_id, bool has_override,
-        tesseract::MediaPreviewConfig::Mode mode);
+    void commit_room_media_preview_override_(const std::string& room_id, bool has_override,
+                                             tesseract::MediaPreviewConfig::Mode mode);
     // Push the effective per-room override (from room_preview_overrides_,
     // defaulting to "no override" on a cache miss) into RoomSettingsView's
     // Media tab, if that view is currently open and showing `room_id`.
@@ -5385,13 +5450,12 @@ protected:
     // async) for the four Security & Privacy tab fields and track its
     // request_id in pending_security_state_requests_.
     void fetch_room_security_state_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                                    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // ── Emojis & Stickers tab (ImagePackEditorView), initial-testing
     // placement — see RoomSettingsView::set_image_pack_*.
-    void seed_image_pack_tab_(const std::string& room_id,
-                             views::RoomSettingsView* target,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void seed_image_pack_tab_(const std::string& room_id, views::RoomSettingsView* target,
+                              const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     // Wired (alongside on_accept) to each RoomSettingsView instance's
     // on_image_pack_images_needed — fired once per pack (every pack is
     // shown at once now, not just a single "selected" one) — pushes that
@@ -5402,18 +5466,14 @@ protected:
     // decodes a dropped/pasted image off-thread (decode_image_ is safe to
     // call from a worker) and pushes the local preview back into `target`
     // once ready.
-    void handle_image_pack_pending_image_added_(std::uint64_t local_id,
-                                                std::vector<uint8_t> bytes,
-                                                std::string mime,
-                                                views::RoomSettingsView* target);
+    void handle_image_pack_pending_image_added_(std::uint64_t local_id, std::vector<uint8_t> bytes,
+                                                std::string mime, views::RoomSettingsView* target);
     // Same decode-off-thread-then-post-back shape as
     // handle_image_pack_pending_image_added_ above, targeting the global
     // Settings "Emojis & Stickers" tab's personal-pack editor instead of a
     // per-room tab.
-    void handle_user_pack_pending_image_added_(std::uint64_t local_id,
-                                               std::vector<uint8_t> bytes,
-                                               std::string mime,
-                                               views::UserPackEditor* target);
+    void handle_user_pack_pending_image_added_(std::uint64_t local_id, std::vector<uint8_t> bytes,
+                                               std::string mime, views::UserPackEditor* target);
 
     // Estimate how many trailing rows of a freshly-loaded snapshot could
     // plausibly be on screen, for build_rows_()'s synchronous media-prefetch
@@ -5429,33 +5489,26 @@ protected:
     // whichever room a pop-out displays) — so reply-detail resolution is
     // routed through main_room_pane_'s general (room_id-explicit) overload
     // rather than assuming the current room.
-    std::vector<views::MessageRowData>
-    build_rows_(const EventList& snapshot, const std::string& room_id);
+    std::vector<views::MessageRowData> build_rows_(const EventList& snapshot,
+                                                   const std::string& room_id);
     // macOS hands primary-path events across the ObjC boundary as raw
     // pointers; this overload serves that path.
-    std::vector<views::MessageRowData>
-    build_rows_(const std::vector<Event*>& snapshot, const std::string& room_id);
+    std::vector<views::MessageRowData> build_rows_(const std::vector<Event*>& snapshot,
+                                                   const std::string& room_id);
 
     // Secondary-window fan-out (primary-window mutation stays per-shell).
-    void dispatch_timeline_reset_secondary_(
-        const std::string& room_id,
-        const EventList& snapshot);
-    void dispatch_message_inserted_secondary_(const std::string& room_id,
-                                              std::size_t index,
+    void dispatch_timeline_reset_secondary_(const std::string& room_id, const EventList& snapshot);
+    void dispatch_message_inserted_secondary_(const std::string& room_id, std::size_t index,
                                               const Event& ev);
     // For a backward-pagination batch (prepend) / live tail-append batch —
     // unlike dispatch_message_inserted_secondary_ above, these carry no SDK
     // index at all (position is always "front"/"back" of what's currently
     // displayed), so there's no index parameter to plumb through.
-    void dispatch_message_prepended_secondary_(const std::string& room_id,
-                                               const Event& ev);
-    void dispatch_message_appended_secondary_(const std::string& room_id,
-                                              const Event& ev);
-    void dispatch_message_updated_secondary_(const std::string& room_id,
-                                             std::size_t index,
+    void dispatch_message_prepended_secondary_(const std::string& room_id, const Event& ev);
+    void dispatch_message_appended_secondary_(const std::string& room_id, const Event& ev);
+    void dispatch_message_updated_secondary_(const std::string& room_id, std::size_t index,
                                              const Event& ev);
-    void dispatch_message_removed_secondary_(const std::string& room_id,
-                                             std::size_t index);
+    void dispatch_message_removed_secondary_(const std::string& room_id, std::size_t index);
     // Refresh open pop-out windows' room metadata from rooms_.
     void update_secondary_room_infos_();
 
@@ -5467,7 +5520,7 @@ protected:
     // Called once per push_rooms_ tick so every downstream consumer
     // (call button, threads button, RoomInfoPanel via RoomView::set_room)
     // sees a consistent view without each needing its own override lookup.
-    void apply_bridge_overrides_(std::vector<RoomInfo>&          rooms,
+    void apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
                                  const std::vector<std::string>& overrides) const;
 
     // Toggles the local "not actually bridged" override for `room_id`,
@@ -5504,8 +5557,7 @@ protected:
     // decline and block remove the invite from the local list immediately.
     void accept_invite_async_(const std::string& room_id);
     void decline_invite_async_(const std::string& room_id);
-    void block_invite_async_(const std::string& room_id,
-                             const std::string& inviter_id);
+    void block_invite_async_(const std::string& room_id, const std::string& inviter_id);
 
     // Update the my_knocks_ cache and call on_my_knocks_updated_() for the
     // active account. Mirrors push_invites_.
@@ -5521,10 +5573,9 @@ protected:
     // `via` supplies extra routing server names (a permalink's `?via=`); when
     // empty, join_room_command_ / knock_room_command_ fall back to any hints
     // stashed by open_matrix_link() for this room id/alias.
-    void knock_room_command_(const std::string& room_id_or_alias,
-                             const std::string& reason,
+    void knock_room_command_(const std::string& room_id_or_alias, const std::string& reason,
                              std::vector<std::string> via = {},
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                             const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Retract a pending knock — just leave_room_command_ under the hood,
     // since Room::leave() already handles the Knocked membership state.
@@ -5533,9 +5584,9 @@ protected:
     // Subscribe/unsubscribe the admin-side KnockRequestsPanel to room_id's
     // live knock-request watcher. Called on panel open/close and room
     // switch; safe to call unsubscribe when nothing is subscribed.
-    void subscribe_knock_requests_panel_(
-        const std::string& room_id,
-        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void
+    subscribe_knock_requests_panel_(const std::string& room_id,
+                                    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     void unsubscribe_knock_requests_panel_();
 
     // Accept / decline / decline-and-ban a pending knock request
@@ -5543,22 +5594,20 @@ protected:
     // accept has no navigation (the admin isn't joining anything); decline
     // and decline-and-ban remove the request from
     // current_room_knock_requests_ immediately (optimistic UI).
-    void accept_knock_request_async_(const std::string& room_id,
-                                     const std::string& user_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
-    void decline_knock_request_async_(const std::string& room_id,
-                                      const std::string& user_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
-    void decline_and_ban_knock_request_async_(const std::string& room_id,
-                                              const std::string& user_id,
-                                              const std::string& reason,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void accept_knock_request_async_(const std::string& room_id, const std::string& user_id,
+                                     const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void
+    decline_knock_request_async_(const std::string& room_id, const std::string& user_id,
+                                 const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void decline_and_ban_knock_request_async_(
+        const std::string& room_id, const std::string& user_id, const std::string& reason,
+        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Slash-command async handlers — called from dispatch_room_send_ after the
     // command prefix is identified. Each enqueues async SDK work, so they must
     // run on the UI thread.
     void leave_room_command_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                             const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     // Shared "step back out" navigation once a Leave completes for a room
     // that was a space: pops space_stack_/space_nav_frames_ and hides the
     // space-root/room-preview panels exactly like the room list's own back
@@ -5595,8 +5644,7 @@ protected:
     void unpin_space_(const std::string& space_id);
     // Drag-reorder from the picker: moves `space_id` in the pinned list to sit
     // in front of `before_space_id` (empty = last) and saves.
-    void reorder_pinned_space_(const std::string& space_id,
-                               const std::string& before_space_id);
+    void reorder_pinned_space_(const std::string& space_id, const std::string& before_space_id);
     // Picker tab click: drill the sidebar into `space_id` (clicking the tab
     // that is already active opens that space's root panel instead).
     void select_picker_space_(const std::string& space_id);
@@ -5611,21 +5659,17 @@ protected:
     // been popped: re-filters the room list, then restores and pops the
     // matching SpaceNavFrame.
     void finish_space_pop_();
-    void join_room_command_(const std::string& room_id_or_alias,
-                            std::vector<std::string> via = {},
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
-    void invite_user_command_(const std::string& room_id,
-                              const std::string& user_id,
+    void join_room_command_(const std::string& room_id_or_alias, std::vector<std::string> via = {},
+                            const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void invite_user_command_(const std::string& room_id, const std::string& user_id,
                               const std::string& reason = "",
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                              const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     // Kick / ban / unban user_id in room_id; failures go to the status line
     // (see pending_moderations_). `reason` empty = none.
     void moderate_member_(ModerationAction action, const std::string& room_id,
-                          const std::string& user_id,
-                          const std::string& display_name,
-                          const std::string& reason,
-                          std::function<void(bool ok)> done = {},
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                          const std::string& user_id, const std::string& display_name,
+                          const std::string& reason, std::function<void(bool ok)> done = {},
+                          const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // AddRoomView's Join tab: async MSC3266 room summary lookup (no async
     // get_room_summary exists, so this dispatches the blocking call on a
@@ -5650,14 +5694,12 @@ protected:
 
     // Unified slash-command dispatch ladder shared by every composer send path
     // (the four shells' on_send handlers and RoomWindowBase::send_message_).
-    void report_unsent_message_(const std::string& user_id,
-                                const std::string& room_id,
-                                const std::string& body,
-                                const tesseract::Result& result);
-    RoomSendOutcome dispatch_room_send_(const std::string& room_id,
-                                        const std::string& body,
-                                        const std::string& formatted_body,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void report_unsent_message_(const std::string& user_id, const std::string& room_id,
+                                const std::string& body, const tesseract::Result& result);
+    RoomSendOutcome
+    dispatch_room_send_(const std::string& room_id, const std::string& body,
+                        const std::string& formatted_body,
+                        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Recompute the aggregate from per_account_rooms_ and fire
     // on_tray_unread_changed_ / on_dock_badge_changed_ only when the values
@@ -5674,9 +5716,8 @@ protected:
     // callback(local, sdk, memory, mem_hits, mem_misses, disk_hits,
     // disk_misses) on the UI thread. No-op when not signed in.
     void compute_cache_sizes_(
-        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
-                           uint64_t mem_hits, uint64_t mem_misses,
-                           uint64_t disk_hits, uint64_t disk_misses)>
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory, uint64_t mem_hits,
+                           uint64_t mem_misses, uint64_t disk_hits, uint64_t disk_misses)>
             callback);
 
     // Async: delete all on-disk caches best-effort (media files, waveform DB),
@@ -5684,9 +5725,8 @@ protected:
     // restart_sdk_begin_() for the full SDK wipe + in-place re-restore and UI
     // rebuild, which calls recompute_callback with fresh sizes when it lands.
     void clear_all_caches_(
-        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
-                           uint64_t mem_hits, uint64_t mem_misses,
-                           uint64_t disk_hits, uint64_t disk_misses)>
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory, uint64_t mem_hits,
+                           uint64_t mem_misses, uint64_t disk_hits, uint64_t disk_misses)>
             recompute_callback);
 
     // "Restart now" (e.g. after a language change): start a replacement
@@ -5703,9 +5743,8 @@ protected:
     // called on the UI thread. No-op when not signed in or the session JSON is
     // missing.
     void restart_sdk_begin_(
-        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory,
-                           uint64_t mem_hits, uint64_t mem_misses,
-                           uint64_t disk_hits, uint64_t disk_misses)>
+        std::function<void(uint64_t local, uint64_t sdk, uint64_t memory, uint64_t mem_hits,
+                           uint64_t mem_misses, uint64_t disk_hits, uint64_t disk_misses)>
             recompute_callback);
 
     // The per-account preference pushes a started client needs; shared by the
@@ -5731,8 +5770,8 @@ public:
     // notification_count > 0; has_highlight is true iff some room has
     // highlight_count > 0. Exposed as a public static so the unit test can
     // exercise it without standing up a real shell.
-    static std::pair<bool, bool> compute_tray_unread(
-        const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account);
+    static std::pair<bool, bool>
+    compute_tray_unread(const std::unordered_map<std::string, std::vector<RoomInfo>>& by_account);
 
     // Pure function: true iff some room in `rooms` has notification_count > 0.
     // Same predicate compute_tray_unread uses per-account, exposed standalone
@@ -5763,7 +5802,7 @@ public:
     // instead of waiting on the async get_or_create_dm round-trip. Exposed as a
     // public static so the lookup can be unit-tested without a live shell.
     static std::string find_existing_dm(const std::vector<RoomInfo>& rooms,
-                                        const std::string&           user_id);
+                                        const std::string& user_id);
 
     // Invoked by each shell's native status-bar click handling when a click
     // lands on the bar but not on a hyperlink segment. Public (unlike
@@ -5781,18 +5820,16 @@ public:
     }
 
 protected:
-
     // Fire-and-forget: write per-room notification mode push rules to the server.
-    void set_room_notification_mode_(const std::string& room_id,
-                                      const std::string& mode,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void set_room_notification_mode_(const std::string& room_id, const std::string& mode,
+                                     const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Fire-and-forget: toggle the room's m.favourite / m.lowpriority tag.
     // The two are mutually exclusive server-side.
     void set_room_favourite_(const std::string& room_id, bool value,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                             const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     void set_room_low_priority_(const std::string& room_id, bool value,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                                const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Mark pagination as complete for room_id, as shown by account user_id
     // (empty: the active account — the platform shells' main-window path).
@@ -5810,21 +5847,19 @@ protected:
     void handle_search_query_(const std::string& query);
     void handle_search_results_ui_(std::uint64_t request_id,
                                    std::vector<tesseract::SearchHit> results);
-    void handle_search_failed_ui_(std::uint64_t request_id,
-                                  const std::string& message);
+    void handle_search_failed_ui_(std::uint64_t request_id, const std::string& message);
 
     // ── Room directory browsing (AddRoomView's Browse tab) ────────────────
-    void handle_room_directory_search_results_ui_(
-        std::uint64_t request_id,
-        std::vector<tesseract::RoomDirectoryEntry> entries, bool reached_end);
+    void
+    handle_room_directory_search_results_ui_(std::uint64_t request_id,
+                                             std::vector<tesseract::RoomDirectoryEntry> entries,
+                                             bool reached_end);
     void handle_room_directory_search_failed_ui_(std::uint64_t request_id,
-                                                  const std::string& message);
+                                                 const std::string& message);
     // Open the result's room and scroll/highlight the matching event.
     void handle_forward_done_ui_(std::uint64_t request_id);
-    void handle_forward_failed_ui_(std::uint64_t      request_id,
-                                   const std::string& message);
-    void handle_search_result_activated_(const std::string& room_id,
-                                         const std::string& event_id);
+    void handle_forward_failed_ui_(std::uint64_t request_id, const std::string& message);
+    void handle_search_result_activated_(const std::string& room_id, const std::string& event_id);
 
     // Monotonic id for the latest issued search; stale responses are dropped.
     std::uint64_t search_request_id_ = 0;
@@ -5833,12 +5868,12 @@ protected:
     std::unordered_map<std::uint64_t, std::string> search_pending_queries_;
 
     // ── Per-room "find in conversation" search (Ctrl+F / Cmd+F) ──────────
-    void handle_in_room_search_query_(const std::string& query,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void
+    handle_in_room_search_query_(const std::string& query,
+                                 const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
     void handle_in_room_search_results_ui_(std::uint64_t request_id,
                                            std::vector<tesseract::SearchHit> results);
-    void handle_in_room_search_failed_ui_(std::uint64_t request_id,
-                                          const std::string& message);
+    void handle_in_room_search_failed_ui_(std::uint64_t request_id, const std::string& message);
     void in_room_search_navigate_(int delta);
     void set_in_room_search_paginate_(bool enabled);
     void in_room_search_focus_current_();
@@ -5850,24 +5885,24 @@ protected:
 
     std::uint64_t in_room_search_request_id_ = 0;
     std::unordered_map<std::uint64_t, std::string> in_room_search_pending_;
-    std::string   in_room_search_room_id_;
+    std::string in_room_search_room_id_;
     // Non-null while a popout window's search is active; nullptr means the
     // main window's room_view_ is the search target.
-    views::RoomView*  in_room_search_active_rv_  = nullptr;
-    RoomWindowBase*   in_room_search_active_win_ = nullptr;
+    views::RoomView* in_room_search_active_rv_ = nullptr;
+    RoomWindowBase* in_room_search_active_win_ = nullptr;
     std::vector<tesseract::SearchHit> in_room_search_matches_;
-    int           in_room_search_current_           = -1;
-    bool          in_room_search_paginate_          = false;
+    int in_room_search_current_ = -1;
+    bool in_room_search_paginate_ = false;
     // Set when pagination was triggered by the in-room search; cleared when
     // handle_paginate_result_ui_ re-runs the query.
-    bool          in_room_search_rerun_on_paginate_ = false;
+    bool in_room_search_rerun_on_paginate_ = false;
     // When true, the next results delivery should focus the oldest match (index 0).
     // Set when UP-at-oldest triggers back-pagination.
-    bool          in_room_search_goto_oldest_       = false;
+    bool in_room_search_goto_oldest_ = false;
     // Set alongside in_room_search_rerun_on_paginate_ so the results handler
     // can detect a paginate-triggered re-run and continue if no new matches.
-    bool          in_room_search_paginate_rerun_    = false;
-    int           in_room_search_prev_match_count_  = 0;
+    bool in_room_search_paginate_rerun_ = false;
+    int in_room_search_prev_match_count_ = 0;
 
     // ── Find-in-thread search (ThreadView's own search bar) ──────────────
     // Deliberately not a generalization of the in-room search machinery
@@ -5880,8 +5915,7 @@ protected:
     void handle_thread_search_query_(const std::string& query);
     void handle_thread_search_results_ui_(std::uint64_t request_id,
                                           std::vector<tesseract::SearchHit> results);
-    void handle_thread_search_failed_ui_(std::uint64_t request_id,
-                                         const std::string& message);
+    void handle_thread_search_failed_ui_(std::uint64_t request_id, const std::string& message);
     void thread_search_navigate_(int delta);
     void thread_search_focus_current_();
     void thread_search_apply_highlights_();
@@ -5922,9 +5956,8 @@ protected:
     // (no dedicated Rust/FFI surface) and filters raw pagination batches to
     // Image/Video client-side, so a single scroll-to-top gesture may need
     // several backend round-trips in a media-sparse room.
-    void handle_media_view_paginate_result_ui_(std::uint64_t request_id,
-                                               bool ok, bool reached_start,
-                                               std::uint64_t media_count,
+    void handle_media_view_paginate_result_ui_(std::uint64_t request_id, bool ok,
+                                               bool reached_start, std::uint64_t media_count,
                                                std::string message);
 
     // Completion callback for load_room_media_page_async. Shares the
@@ -5933,8 +5966,8 @@ protected:
     // pending_paginates_ — the two completion paths stay strictly separate so
     // a DB request id can't be misrouted into the network retry loop.
     void handle_room_media_page_ui_(std::uint64_t request_id,
-                                    std::vector<tesseract::MediaIndexRow> rows,
-                                    bool reached_db_end, std::uint64_t total);
+                                    std::vector<tesseract::MediaIndexRow> rows, bool reached_db_end,
+                                    std::uint64_t total);
 
     // Per-gesture safety cap, not the primary stop condition — that's
     // reached_start / kMediaViewMinTotal (see RoomPane::
@@ -5993,15 +6026,13 @@ protected:
     // room_id if it differs from the last one sent this session, and schedule
     // the deferred m.fully_read move (see pending_fully_read_). No-op when
     // either arg is empty.
-    void maybe_send_read_receipt_(const std::string& room_id,
-                                  const std::string& event_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void maybe_send_read_receipt_(const std::string& room_id, const std::string& event_id,
+                                  const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Send the pending m.fully_read for `key` (see pending_fully_read_) now.
     void flush_fully_read_(const std::string& key);
     // Tell every pane showing room_id that its m.fully_read has moved.
-    void notify_fully_read_moved_(const std::string& user_id,
-                                  const std::string& room_id);
+    void notify_fully_read_moved_(const std::string& user_id, const std::string& room_id);
 
     // True when user_id's room_id is on screen (main window or a pop-out).
     bool room_is_shown_(const std::string& user_id, const std::string& room_id) const;
@@ -6014,16 +6045,15 @@ public:
     void flush_pending_fully_read_now_(const std::string& user_id = {});
 
 protected:
-
     // Send MSC3771 threaded read receipts for the thread rooted at
     // `thread_root` in `room_id` (targeting the thread's latest reply),
     // deduped on `event_id` — the newest reply currently visible in the
     // open thread panel. Clears that thread's unread dot. No-op on empty
     // args.
-    void maybe_send_thread_read_receipt_(const std::string& room_id,
-                                         const std::string& thread_root,
-                                         const std::string& event_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    void
+    maybe_send_thread_read_receipt_(const std::string& room_id, const std::string& thread_root,
+                                    const std::string& event_id,
+                                    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Drop all last_sent_thread_receipt_ dedup entries for `room_id` (called
     // when the room is evicted from the warm/idle LRU, mirroring the
@@ -6034,13 +6064,13 @@ protected:
     // thread-list panel's "mark all as read" button. Wraps the batched
     // Client::mark_all_threads_read FFI on the worker pool.
     void mark_all_threads_read_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                                const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Follow / unfollow a thread (MSC4306) via Client::set_thread_followed on
     // the worker pool. The Rust side fires on_threads_updated on success, so
     // the list re-queries without local bookkeeping.
-    void set_thread_followed_(const std::string& room_id,
-                              const std::string& thread_root_id, bool follow,
+    void set_thread_followed_(const std::string& room_id, const std::string& thread_root_id,
+                              bool follow,
                               const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // Optimistically zero the unread count for room_id in the local room list
@@ -6141,12 +6171,12 @@ protected:
     // one and stays for the next sign-in.
     void settle_recovery_key_on_sign_out_(const std::string& uid);
     std::function<void()> pending_sign_out_;
-    std::string           pending_sign_out_uid_;
-    std::string           sign_out_confirmed_uid_;
+    std::string pending_sign_out_uid_;
+    std::string sign_out_confirmed_uid_;
     // The account being signed out with "Sign out and delete the key".
-    std::string           sign_out_remove_key_uid_;
+    std::string sign_out_remove_key_uid_;
     // The account the SaveKey dialog was opened for: its buttons act on it.
-    std::string           save_key_dialog_uid_;
+    std::string save_key_dialog_uid_;
 
     // The SDK calls behind the silent paths, and the secure-storage entry
     // (on a worker: the OS keyring can block; results come back on the UI
@@ -6154,9 +6184,9 @@ protected:
     virtual void run_silent_enable_recovery_(std::shared_ptr<AccountSession> sess);
     virtual void run_silent_recover_(std::shared_ptr<AccountSession> sess, std::string key,
                                      std::function<void(bool ok)> done);
-    virtual void load_stored_recovery_key_(
-        const std::string& uid,
-        std::function<void(tesseract::SecretStore::RecoveryKeyLookup)> done);
+    virtual void
+    load_stored_recovery_key_(const std::string& uid,
+                              std::function<void(tesseract::SecretStore::RecoveryKeyLookup)> done);
     virtual void store_recovery_key_(const std::string& uid, const std::string& key,
                                      std::function<void(bool stored)> done);
     virtual void forget_stored_recovery_key_(const std::string& uid);
@@ -6168,7 +6198,7 @@ protected:
     // AutoSetupNotice explaining what happened.
     std::set<std::string> silent_recovery_new_account_;
     // Per account: failed silent attempts, and when the next may start.
-    std::map<std::string, int>          silent_recovery_failures_;
+    std::map<std::string, int> silent_recovery_failures_;
     std::map<std::string, std::int64_t> silent_recovery_retry_after_;
     // Accounts a silent unlock was already tried for this session.
     std::set<std::string> silent_unlock_tried_;
@@ -6178,7 +6208,7 @@ protected:
     std::set<std::string> dialog_recovery_setup_users_;
     // A generated key the keychain refused, held for this session only.
     std::map<std::string, std::string> unstored_recovery_keys_;
-    static constexpr int          kSilentRecoveryMaxFailures = 3;
+    static constexpr int kSilentRecoveryMaxFailures = 3;
     static constexpr std::int64_t kSilentRecoveryRetrySeconds = 10 * 60;
 
 private:

@@ -49,7 +49,9 @@ std::vector<std::string> variant_to_strv(GVariant* v)
     g_variant_iter_init(&iter, v);
     const char* s = nullptr;
     while (g_variant_iter_next(&iter, "&s", &s))
+    {
         out.emplace_back(s);
+    }
     return out;
 }
 
@@ -59,7 +61,9 @@ std::string join_terms(const std::vector<std::string>& terms)
     for (const auto& t : terms)
     {
         if (!out.empty())
+        {
             out += ' ';
+        }
         out += t;
     }
     return out;
@@ -82,18 +86,21 @@ struct GtkSearchProviderGtk::Impl
     ~Impl()
     {
         if (conn && reg_id)
+        {
             g_dbus_connection_unregister_object(conn, reg_id);
+        }
         if (conn)
+        {
             g_object_unref(conn);
+        }
     }
 };
 
 namespace
 {
 
-void search_provider_method(GDBusConnection*, const char*, const char*,
-                            const char*, const char* method, GVariant* params,
-                            GDBusMethodInvocation* invocation,
+void search_provider_method(GDBusConnection*, const char*, const char*, const char*,
+                            const char* method, GVariant* params, GDBusMethodInvocation* invocation,
                             gpointer user_data)
 {
     auto* impl = static_cast<GtkSearchProviderGtk::Impl*>(user_data);
@@ -115,8 +122,7 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
             g_variant_builder_add(&ids, "s", r.id.c_str());
             impl->last_results.emplace(r.id, r);
         }
-        g_dbus_method_invocation_return_value(invocation,
-                                              g_variant_new("(as)", &ids));
+        g_dbus_method_invocation_return_value(invocation, g_variant_new("(as)", &ids));
         return;
     }
     if (g_strcmp0(method, "GetSubsearchResultSet") == 0)
@@ -141,8 +147,7 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
             g_variant_builder_add(&ids, "s", r.id.c_str());
             impl->last_results.emplace(r.id, r);
         }
-        g_dbus_method_invocation_return_value(invocation,
-                                              g_variant_new("(as)", &ids));
+        g_dbus_method_invocation_return_value(invocation, g_variant_new("(as)", &ids));
         return;
     }
     if (g_strcmp0(method, "GetResultMetas") == 0)
@@ -158,42 +163,44 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
         {
             auto it = impl->last_results.find(id);
             if (it == impl->last_results.end())
+            {
                 continue;
+            }
             GVariantBuilder meta;
             g_variant_builder_init(&meta, G_VARIANT_TYPE("a{sv}"));
-            g_variant_builder_add(&meta, "{sv}", "id",
-                                  g_variant_new_string(it->second.id.c_str()));
-            g_variant_builder_add(
-                &meta, "{sv}", "name",
-                g_variant_new_string(it->second.title.c_str()));
+            g_variant_builder_add(&meta, "{sv}", "id", g_variant_new_string(it->second.id.c_str()));
+            g_variant_builder_add(&meta, "{sv}", "name",
+                                  g_variant_new_string(it->second.title.c_str()));
             if (!it->second.subtitle.empty())
-                g_variant_builder_add(
-                    &meta, "{sv}", "description",
-                    g_variant_new_string(it->second.subtitle.c_str()));
+            {
+                g_variant_builder_add(&meta, "{sv}", "description",
+                                      g_variant_new_string(it->second.subtitle.c_str()));
+            }
             if (!it->second.avatar_url.empty())
             {
                 // Disk-cache lookup only — GetResultMetas must answer
                 // synchronously, so a miss (avatar never rendered yet
                 // elsewhere in the app) just omits the icon rather than
                 // blocking on a network fetch.
-                const auto bytes = impl->account_manager->media_disk_cache().load(
-                    tk::CacheKey::thumbnail(it->second.avatar_url,
-                                            tesseract::visual::kAvatarCacheSize,
-                                            tesseract::visual::kAvatarCacheSize));
+                const auto bytes =
+                    impl->account_manager->media_disk_cache().load(tk::CacheKey::thumbnail(
+                        it->second.avatar_url, tesseract::visual::kAvatarCacheSize,
+                        tesseract::visual::kAvatarCacheSize));
                 if (!bytes.empty())
                 {
                     GBytes* gb = g_bytes_new(bytes.data(), bytes.size());
-                    GIcon*  ic = g_bytes_icon_new(gb);
+                    GIcon* ic = g_bytes_icon_new(gb);
                     if (GVariant* icon_v = g_icon_serialize(ic))
+                    {
                         g_variant_builder_add(&meta, "{sv}", "icon", icon_v);
+                    }
                     g_object_unref(ic);
                     g_bytes_unref(gb);
                 }
             }
             g_variant_builder_add(&metas, "a{sv}", &meta);
         }
-        g_dbus_method_invocation_return_value(invocation,
-                                              g_variant_new("(aa{sv})", &metas));
+        g_dbus_method_invocation_return_value(invocation, g_variant_new("(aa{sv})", &metas));
         return;
     }
     if (g_strcmp0(method, "ActivateResult") == 0)
@@ -205,7 +212,9 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
         g_variant_unref(terms_v);
         auto it = impl->last_results.find(id);
         if (it != impl->last_results.end())
+        {
             sb.activate(id, it->second.kind);
+        }
         g_dbus_method_invocation_return_value(invocation, nullptr);
         return;
     }
@@ -222,8 +231,7 @@ void search_provider_method(GDBusConnection*, const char*, const char*,
 
 } // namespace
 
-GtkSearchProviderGtk::GtkSearchProviderGtk(
-    tesseract::AccountManager& account_manager)
+GtkSearchProviderGtk::GtkSearchProviderGtk(tesseract::AccountManager& account_manager)
     : impl_(std::make_unique<Impl>())
 {
     impl_->account_manager = &account_manager;
@@ -243,15 +251,15 @@ GtkSearchProviderGtk::GtkSearchProviderGtk(
         return;
     }
 
-    static const GDBusInterfaceVTable kVtable = {search_provider_method,
-                                                 nullptr, nullptr, {nullptr}};
+    static const GDBusInterfaceVTable kVtable = {
+        search_provider_method, nullptr, nullptr, {nullptr}};
     // Exported on the app's own GApplication-owned bus name
     // ("org.tesseract.gtk", see main.cpp) — this connection is the process's
     // shared session-bus connection, so no separate g_bus_own_name call is
     // needed the way GtkSniTrayIcon needs one for its SNI-spec-mandated name.
     impl_->reg_id = g_dbus_connection_register_object(
-        impl_->conn, "/org/tesseract/gtk/SearchProvider", node->interfaces[0],
-        &kVtable, impl_.get(), nullptr, &err);
+        impl_->conn, "/org/tesseract/gtk/SearchProvider", node->interfaces[0], &kVtable,
+        impl_.get(), nullptr, &err);
     g_dbus_node_info_unref(node);
     if (!impl_->reg_id)
     {

@@ -50,34 +50,42 @@ static std::string next_token()
 // ── portal request helper ────────────────────────────────────────────────────
 
 // One Response signal, kept until the request that owns it is matched.
-struct PortalResponse {
-    std::string path;     // object path of the Request the signal answers
-    guint32     code{0};
-    GVariant*   results{nullptr}; // owned until taken or the reply is destroyed
+struct PortalResponse
+{
+    std::string path; // object path of the Request the signal answers
+    guint32 code{0};
+    GVariant* results{nullptr}; // owned until taken or the reply is destroyed
 };
 
 // Responses seen while the portal request is in progress. The subscription is
 // made before the method call, so a Response that arrives before the call
 // returns is kept rather than missed.
-struct PortalReply {
+struct PortalReply
+{
     std::vector<PortalResponse> received;
 
     ~PortalReply()
     {
         for (auto& r : received)
-            if (r.results) g_variant_unref(r.results);
+        {
+            if (r.results)
+            {
+                g_variant_unref(r.results);
+            }
+        }
     }
 };
 
 static void on_portal_response(GDBusConnection*, const gchar*, const gchar* object_path,
-                                const gchar*, const gchar*,
-                                GVariant* params, gpointer user_data)
+                               const gchar*, const gchar*, GVariant* params, gpointer user_data)
 {
     constexpr std::size_t kMaxKept = 64; // unrelated requests on the bus are dropped
     auto* r = static_cast<PortalReply*>(user_data);
     if (r->received.size() >= kMaxKept)
+    {
         return;
-    guint32   code    = 0;
+    }
+    guint32 code = 0;
     GVariant* results = nullptr;
     g_variant_get(params, "(u@a{sv})", &code, &results);
     r->received.push_back({object_path ? object_path : "", code, results});
@@ -89,27 +97,24 @@ static void on_portal_response(GDBusConnection*, const gchar*, const gchar* obje
 // a portal that can answer at once (a remembered grant) would otherwise emit
 // the Response before the subscription existed, and the wait would never end.
 // Returns the results GVariant (caller unrefs) or nullptr on failure/cancel.
-static GVariant* portal_request(GMainContext*    ctx,
-                                 GCancellable*    cancel,
-                                 GDBusProxy*      proxy,
-                                 GDBusConnection* conn,
-                                 const char*      method,
-                                 GVariant*        params) // consumed (floating ok)
+static GVariant* portal_request(GMainContext* ctx, GCancellable* cancel, GDBusProxy* proxy,
+                                GDBusConnection* conn, const char* method,
+                                GVariant* params) // consumed (floating ok)
 {
     PortalReply reply;
     guint sub = g_dbus_connection_signal_subscribe(
-        conn, "org.freedesktop.portal.Desktop",
-        "org.freedesktop.portal.Request", "Response",
-        nullptr, nullptr,
-        G_DBUS_SIGNAL_FLAGS_NONE,
-        on_portal_response, &reply, nullptr);
+        conn, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request", "Response",
+        nullptr, nullptr, G_DBUS_SIGNAL_FLAGS_NONE, on_portal_response, &reply, nullptr);
 
-    GError*   err = nullptr;
-    GVariant* ret = g_dbus_proxy_call_sync(
-        proxy, method, params,
-        G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
-    if (!ret) {
-        if (err) g_error_free(err);
+    GError* err = nullptr;
+    GVariant* ret =
+        g_dbus_proxy_call_sync(proxy, method, params, G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
+    if (!ret)
+    {
+        if (err)
+        {
+            g_error_free(err);
+        }
         g_dbus_connection_signal_unsubscribe(conn, sub);
         return nullptr;
     }
@@ -118,7 +123,8 @@ static GVariant* portal_request(GMainContext*    ctx,
     // Response on that exact path — computing it from the token is fragile.
     const gchar* handle_c = nullptr;
     g_variant_get(ret, "(&o)", &handle_c);
-    if (!handle_c) {
+    if (!handle_c)
+    {
         g_variant_unref(ret);
         g_dbus_connection_signal_unsubscribe(conn, sub);
         return nullptr;
@@ -126,19 +132,29 @@ static GVariant* portal_request(GMainContext*    ctx,
     const std::string handle(handle_c);
     g_variant_unref(ret);
 
-    auto find = [&]() -> PortalResponse* {
+    auto find = [&]() -> PortalResponse*
+    {
         for (auto& r : reply.received)
-            if (r.path == handle) return &r;
+        {
+            if (r.path == handle)
+            {
+                return &r;
+            }
+        }
         return nullptr;
     };
     while (!find() && !g_cancellable_is_cancelled(cancel))
+    {
         g_main_context_iteration(ctx, TRUE);
+    }
 
     g_dbus_connection_signal_unsubscribe(conn, sub);
 
     PortalResponse* got = find();
     if (!got || got->code != 0)
+    {
         return nullptr; // reply's destructor releases what was kept
+    }
     GVariant* results = got->results;
     got->results = nullptr;
     return results;
@@ -150,29 +166,39 @@ static GVariant* portal_request(GMainContext*    ctx,
 // std::shared_ptr copy of this, so it can safely keep running (and this
 // struct stays alive) even after the owning ScreenCapturePortal has been
 // destroyed — see ScreenCapturePortal::stop() for why that can happen.
-struct PortalCtx {
+struct PortalCtx
+{
     std::atomic<bool> running{true};
-    GCancellable*      cancel{nullptr};
+    GCancellable* cancel{nullptr};
 
-    std::mutex                        mu; // guards callback only
-    tk::ScreenCapture::FrameCallback  callback;
+    std::mutex mu; // guards callback only
+    tk::ScreenCapture::FrameCallback callback;
 
-    std::mutex              stop_mu;
+    std::mutex stop_mu;
     std::condition_variable stop_cv; // wakes the pipeline-phase wait
 
-    std::mutex              done_mu;
+    std::mutex done_mu;
     std::condition_variable done_cv;
-    bool                    done{false}; // set right before run_() returns
+    bool done{false}; // set right before run_() returns
 
     tk::ScreenCapture::FailureCallback on_failure; // see ScreenCapture::set_failure_callback
 
-    ~PortalCtx() { if (cancel) g_object_unref(cancel); }
+    ~PortalCtx()
+    {
+        if (cancel)
+        {
+            g_object_unref(cancel);
+        }
+    }
 };
 
 class ScreenCapturePortal : public tk::ScreenCapture
 {
 public:
-    ~ScreenCapturePortal() override { stop(); }
+    ~ScreenCapturePortal() override
+    {
+        stop();
+    }
 
     std::vector<tk::ScreenSource> enumerate_sources() override
     {
@@ -182,7 +208,9 @@ public:
         return {{"portal:0", std::string(tk::tr("Share Screen")), false}};
     }
 
-    void set_source(const std::string&) override {}
+    void set_source(const std::string&) override
+    {
+    }
 
     void set_callback(FrameCallback cb) override
     {
@@ -193,7 +221,9 @@ public:
     void start() override
     {
         if (started_.exchange(true))
+        {
             return;
+        }
         // A fresh PortalCtx per start()/stop() cycle: if a *previous* stop()
         // timed out and detached its thread (see stop() below), that old
         // thread still owns the *old* ctx_ and may still be running —
@@ -218,7 +248,9 @@ public:
     void stop() override
     {
         if (!started_.exchange(false))
+        {
             return;
+        }
 
         // Keep alive for this whole call, independent of ctx_ possibly being
         // reassigned by a future start() once this function returns.
@@ -236,7 +268,9 @@ public:
         ctx->running = false;
         ctx->stop_cv.notify_one();
         if (ctx->cancel)
+        {
             g_cancellable_cancel(ctx->cancel);
+        }
 
         // Bound how long we wait for the capture thread to exit. In the
         // worst case it can be stuck forever inside a synchronous GStreamer/
@@ -247,14 +281,20 @@ public:
         // bounded, contained leak.
         constexpr auto kStopJoinTimeout = std::chrono::milliseconds(1500);
         std::unique_lock<std::mutex> lk(ctx->done_mu);
-        const bool finished = ctx->done_cv.wait_for(
-            lk, kStopJoinTimeout, [&] { return ctx->done; });
+        const bool finished = ctx->done_cv.wait_for(lk, kStopJoinTimeout,
+                                                    [&]
+                                                    {
+                                                        return ctx->done;
+                                                    });
         lk.unlock();
 
-        if (finished) {
+        if (finished)
+        {
             thread_.join(); // returns immediately: run_() already finished,
-                             // or is about to (done was just set true).
-        } else {
+                            // or is about to (done was just set true).
+        }
+        else
+        {
             // detach() is mandatory here: a joinable std::thread's
             // destructor calls std::terminate(), so once we've decided not
             // to wait for it, we must detach. The thread keeps `ctx` alive
@@ -274,10 +314,11 @@ public:
     }
 
 private:
-    struct PortalResult {
-        bool        ok{false};
-        int         pw_fd{-1};
-        guint32     node_id{0};
+    struct PortalResult
+    {
+        bool ok{false};
+        int pw_fd{-1};
+        guint32 node_id{0};
         // Set as soon as CreateSession succeeds, independent of |ok| — every
         // path out of portal_dance_ (including later steps failing) must
         // still explicitly close this session, or xdg-desktop-portal/KWin
@@ -293,10 +334,8 @@ private:
     // D-Bus portal dance: CreateSession → SelectSources → Start →
     // OpenPipeWireRemote.  Runs on the background thread with |glib_ctx| as
     // the thread-default context so signal callbacks are dispatched there.
-    static PortalResult portal_dance_(PortalCtx&       ctx,
-                                       GMainContext*    glib_ctx,
-                                       GDBusConnection* conn,
-                                       GDBusProxy*      proxy)
+    static PortalResult portal_dance_(PortalCtx& ctx, GMainContext* glib_ctx, GDBusConnection* conn,
+                                      GDBusProxy* proxy)
     {
         PortalResult result;
 
@@ -311,21 +350,26 @@ private:
             g_variant_builder_add(&opts, "{sv}", "session_handle_token",
                                   g_variant_new_string(ses_tok.c_str()));
 
-            GVariant* res = portal_request(glib_ctx, ctx.cancel, proxy, conn,
-                                           "CreateSession",
+            GVariant* res = portal_request(glib_ctx, ctx.cancel, proxy, conn, "CreateSession",
                                            g_variant_new("(a{sv})", &opts));
             if (!res)
+            {
                 return result;
+            }
 
             // xdg-desktop-portal spec declares session_handle as type 'o'
             // (object path), but KDE returns it as plain string 's'.  Try
             // both so we work on any compositor.
             gchar* sh = nullptr;
             if (!g_variant_lookup(res, "session_handle", "o", &sh))
+            {
                 g_variant_lookup(res, "session_handle", "s", &sh);
+            }
             g_variant_unref(res);
             if (!sh)
+            {
                 return result;
+            }
             result.session_handle = sh;
             g_free(sh);
         }
@@ -336,17 +380,16 @@ private:
             g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
             g_variant_builder_add(&opts, "{sv}", "handle_token",
                                   g_variant_new_string(next_token().c_str()));
-            g_variant_builder_add(&opts, "{sv}", "types",
-                                  g_variant_new_uint32(7u));
-            g_variant_builder_add(&opts, "{sv}", "multiple",
-                                  g_variant_new_boolean(FALSE));
+            g_variant_builder_add(&opts, "{sv}", "types", g_variant_new_uint32(7u));
+            g_variant_builder_add(&opts, "{sv}", "multiple", g_variant_new_boolean(FALSE));
 
-            GVariant* res = portal_request(glib_ctx, ctx.cancel, proxy, conn,
-                                           "SelectSources",
-                                           g_variant_new("(oa{sv})",
-                                               result.session_handle.c_str(), &opts));
+            GVariant* res =
+                portal_request(glib_ctx, ctx.cancel, proxy, conn, "SelectSources",
+                               g_variant_new("(oa{sv})", result.session_handle.c_str(), &opts));
             if (!res)
+            {
                 return result;
+            }
             g_variant_unref(res);
         }
 
@@ -358,21 +401,25 @@ private:
             g_variant_builder_add(&opts, "{sv}", "handle_token",
                                   g_variant_new_string(next_token().c_str()));
 
-            GVariant* res = portal_request(glib_ctx, ctx.cancel, proxy, conn,
-                                           "Start",
-                                           g_variant_new("(osa{sv})",
-                                               result.session_handle.c_str(), "", &opts));
+            GVariant* res = portal_request(
+                glib_ctx, ctx.cancel, proxy, conn, "Start",
+                g_variant_new("(osa{sv})", result.session_handle.c_str(), "", &opts));
             if (!res)
+            {
                 return result;
+            }
 
-            GVariant* streams = g_variant_lookup_value(
-                res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
-            if (streams && g_variant_n_children(streams) > 0) {
+            GVariant* streams = g_variant_lookup_value(res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
+            if (streams && g_variant_n_children(streams) > 0)
+            {
                 GVariant* first = g_variant_get_child_value(streams, 0);
                 g_variant_get(first, "(u@a{sv})", &node_id, nullptr);
                 g_variant_unref(first);
             }
-            if (streams) g_variant_unref(streams);
+            if (streams)
+            {
+                g_variant_unref(streams);
+            }
             g_variant_unref(res);
         }
 
@@ -382,17 +429,26 @@ private:
             g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
 
             GUnixFDList* out_fds = nullptr;
-            GError*      err     = nullptr;
-            GVariant*    pw_ret  = g_dbus_proxy_call_with_unix_fd_list_sync(
+            GError* err = nullptr;
+            GVariant* pw_ret = g_dbus_proxy_call_with_unix_fd_list_sync(
                 proxy, "OpenPipeWireRemote",
                 g_variant_new("(oa{sv})", result.session_handle.c_str(), &opts),
-                G_DBUS_CALL_FLAGS_NONE, -1,
-                nullptr, &out_fds, ctx.cancel, &err);
+                G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &out_fds, ctx.cancel, &err);
 
-            if (!pw_ret || err) {
-                if (err)    g_error_free(err);
-                if (pw_ret) g_variant_unref(pw_ret);
-                if (out_fds) g_object_unref(out_fds);
+            if (!pw_ret || err)
+            {
+                if (err)
+                {
+                    g_error_free(err);
+                }
+                if (pw_ret)
+                {
+                    g_variant_unref(pw_ret);
+                }
+                if (out_fds)
+                {
+                    g_object_unref(out_fds);
+                }
                 return result;
             }
 
@@ -404,10 +460,12 @@ private:
             g_object_unref(out_fds);
 
             if (pw_fd < 0)
+            {
                 return result;
+            }
 
-            result.ok      = true;
-            result.pw_fd   = pw_fd;
+            result.ok = true;
+            result.pw_fd = pw_fd;
             result.node_id = node_id;
             return result;
         }
@@ -423,17 +481,23 @@ private:
         // several early returns), so stop()'s bounded wait always
         // eventually wakes up instead of relying on hand-editing each
         // return site. Declared first so it's destroyed last.
-        struct DoneSignal {
+        struct DoneSignal
+        {
             std::shared_ptr<PortalCtx>& ctx;
             ~DoneSignal()
             {
-                { std::lock_guard<std::mutex> lk(ctx->done_mu); ctx->done = true; }
+                {
+                    std::lock_guard<std::mutex> lk(ctx->done_mu);
+                    ctx->done = true;
+                }
                 ctx->done_cv.notify_one();
                 // A run that ends without a stop() failed: the picker was
                 // declined, a D-Bus or pipeline step failed, or the stream
                 // ended. stop() cancels the context before it returns.
                 if (ctx->on_failure && ctx->cancel && !g_cancellable_is_cancelled(ctx->cancel))
+                {
                     ctx->on_failure();
+                }
             }
         } done_signal{ctx};
 
@@ -446,12 +510,13 @@ private:
         // would receive the GCancellable* in p, not glib_ctx.  Use
         // g_cancellable_connect instead: its callback IS called as
         // void(GCancellable*, gpointer).
-        gulong wake_conn = g_cancellable_connect(
-            ctx->cancel,
-            G_CALLBACK(+[](GCancellable*, gpointer p) {
-                g_main_context_wakeup(static_cast<GMainContext*>(p));
-            }),
-            glib_ctx, nullptr);
+        gulong wake_conn = g_cancellable_connect(ctx->cancel,
+                                                 G_CALLBACK(+[](GCancellable*, gpointer p)
+                                                            {
+                                                                g_main_context_wakeup(
+                                                                    static_cast<GMainContext*>(p));
+                                                            }),
+                                                 glib_ctx, nullptr);
 
         // Split in two: pop_thread_default runs early (before the pipeline
         // starts — nothing pumps glib_ctx once the D-Bus dance is done, so
@@ -465,10 +530,12 @@ private:
         // function used to do here) can leave conn in a broken internal
         // state for its later use in close_portal_session_ below, even
         // though nothing here calls g_main_context_iteration on it again.
-        auto pop_thread_default = [&] {
+        auto pop_thread_default = [&]
+        {
             g_main_context_pop_thread_default(glib_ctx);
         };
-        auto cleanup = [&] {
+        auto cleanup = [&]
+        {
             g_cancellable_disconnect(ctx->cancel, wake_conn);
             g_main_context_unref(glib_ctx);
         };
@@ -480,23 +547,29 @@ private:
         // thread-default — binds to glib_ctx, so our g_main_context_iteration()
         // loop below will actually receive the portal Response signals.
         GError* err = nullptr;
-        gchar* bus_addr =
-            g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SESSION, ctx->cancel, &err);
-        if (!bus_addr) {
-            if (err) g_error_free(err);
+        gchar* bus_addr = g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SESSION, ctx->cancel, &err);
+        if (!bus_addr)
+        {
+            if (err)
+            {
+                g_error_free(err);
+            }
             pop_thread_default();
             cleanup();
             return;
         }
         GDBusConnection* conn = g_dbus_connection_new_for_address_sync(
             bus_addr,
-            static_cast<GDBusConnectionFlags>(
-                G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
-                G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
+            static_cast<GDBusConnectionFlags>(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
+                                              G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
             nullptr, ctx->cancel, &err);
         g_free(bus_addr);
-        if (!conn) {
-            if (err) g_error_free(err);
+        if (!conn)
+        {
+            if (err)
+            {
+                g_error_free(err);
+            }
             pop_thread_default();
             cleanup();
             return;
@@ -504,16 +577,16 @@ private:
 
         GDBusProxy* proxy = g_dbus_proxy_new_sync(
             conn,
-            static_cast<GDBusProxyFlags>(
-                G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
-                G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
-            nullptr,
-            "org.freedesktop.portal.Desktop",
-            "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.ScreenCast",
-            ctx->cancel, &err);
-        if (!proxy) {
-            if (err) g_error_free(err);
+            static_cast<GDBusProxyFlags>(G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
+                                         G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
+            nullptr, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.ScreenCast", ctx->cancel, &err);
+        if (!proxy)
+        {
+            if (err)
+            {
+                g_error_free(err);
+            }
             g_object_unref(conn);
             pop_thread_default();
             cleanup();
@@ -549,9 +622,13 @@ private:
         // which blocks for the whole sharing duration — they're needed again
         // right after, to explicitly close the portal session below.
         if (pr.ok && !g_cancellable_is_cancelled(ctx->cancel))
+        {
             start_pipeline_(ctx, pr.pw_fd, pr.node_id);
+        }
         else if (pr.pw_fd >= 0)
+        {
             ::close(pr.pw_fd);
+        }
 
         // Always explicitly close the portal session, on every path (success,
         // early D-Bus failure, or cancellation) — see the PortalResult
@@ -560,7 +637,9 @@ private:
         // which can make a later, unrelated capture attempt fail with EBUSY
         // against a resource a leaked session is still holding.
         if (!pr.session_handle.empty())
+        {
             close_portal_session_(conn, pr.session_handle);
+        }
 
         g_object_unref(proxy);
         g_object_unref(conn);
@@ -575,21 +654,22 @@ private:
     // calls do.
     static void close_portal_session_(GDBusConnection* conn, const std::string& session_handle)
     {
-        GError*   err = nullptr;
+        GError* err = nullptr;
         GVariant* ret = g_dbus_connection_call_sync(
-            conn,
-            "org.freedesktop.portal.Desktop",
-            session_handle.c_str(),
-            "org.freedesktop.portal.Session",
-            "Close",
-            nullptr, nullptr,
-            G_DBUS_CALL_FLAGS_NONE, -1,
+            conn, "org.freedesktop.portal.Desktop", session_handle.c_str(),
+            "org.freedesktop.portal.Session", "Close", nullptr, nullptr, G_DBUS_CALL_FLAGS_NONE, -1,
             nullptr, &err);
-        if (!ret) {
+        if (!ret)
+        {
             fprintf(stderr, "[portal] Session.Close failed: %s\n",
                     err ? err->message : "(unknown)");
-            if (err) g_error_free(err);
-        } else {
+            if (err)
+            {
+                g_error_free(err);
+            }
+        }
+        else
+        {
             g_variant_unref(ret);
         }
     }
@@ -598,22 +678,31 @@ private:
     static void log_bus_error_(GstElement* pipeline)
     {
         GstBus* bus = gst_element_get_bus(pipeline);
-        for (;;) {
+        for (;;)
+        {
             GstMessage* msg = gst_bus_timed_pop_filtered(
-                bus, 0,
-                static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_WARNING));
+                bus, 0, static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_WARNING));
             if (!msg)
+            {
                 break;
+            }
             GError* gerr = nullptr;
-            gchar*  dbg  = nullptr;
+            gchar* dbg = nullptr;
             if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
+            {
                 gst_message_parse_error(msg, &gerr, &dbg);
+            }
             else
+            {
                 gst_message_parse_warning(msg, &gerr, &dbg);
+            }
             fprintf(stderr, "[portal] gst bus %s: %s (%s)\n",
                     GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR ? "ERROR" : "WARNING",
                     gerr ? gerr->message : "(?)", dbg ? dbg : "");
-            if (gerr) g_error_free(gerr);
+            if (gerr)
+            {
+                g_error_free(gerr);
+            }
             g_free(dbg);
             gst_message_unref(msg);
         }
@@ -672,29 +761,37 @@ private:
         // and does so differently for this GUI app than for a headless
         // script — see project notes for the current best theory (GPU/EGL
         // context presence) and open investigation.
-        gchar* desc = g_strdup_printf(
-            "pipewiresrc fd=%d path=%u min-buffers=1 max-buffers=4 ! "
-            "video/x-raw(memory:SystemMemory) ! "
-            "videoconvert ! "
-            "video/x-raw,format=I420 ! "
-            "appsink name=ssink emit-signals=true max-buffers=2 drop=true",
-            pw_fd, node_id);
+        gchar* desc =
+            g_strdup_printf("pipewiresrc fd=%d path=%u min-buffers=1 max-buffers=4 ! "
+                            "video/x-raw(memory:SystemMemory) ! "
+                            "videoconvert ! "
+                            "video/x-raw,format=I420 ! "
+                            "appsink name=ssink emit-signals=true max-buffers=2 drop=true",
+                            pw_fd, node_id);
 
-        GError*     gst_err  = nullptr;
+        GError* gst_err = nullptr;
         GstElement* pipeline = gst_parse_launch(desc, &gst_err);
         g_free(desc);
 
-        if (!pipeline || gst_err) {
+        if (!pipeline || gst_err)
+        {
             fprintf(stderr, "[portal] gst_parse_launch failed: %s\n",
                     gst_err ? gst_err->message : "(null)");
-            if (gst_err) g_error_free(gst_err);
-            if (pipeline) gst_object_unref(pipeline);
+            if (gst_err)
+            {
+                g_error_free(gst_err);
+            }
+            if (pipeline)
+            {
+                gst_object_unref(pipeline);
+            }
             ::close(pw_fd);
             return;
         }
 
         GstElement* sink = gst_bin_get_by_name(GST_BIN(pipeline), "ssink");
-        if (!sink) {
+        if (!sink)
+        {
             fprintf(stderr, "[portal] appsink not found in pipeline\n");
             gst_object_unref(pipeline);
             ::close(pw_fd);
@@ -703,8 +800,7 @@ private:
 
         g_signal_connect(sink, "new-sample", G_CALLBACK(on_new_sample_), ctx.get());
 
-        GstStateChangeReturn sc =
-            gst_element_set_state(pipeline, GST_STATE_PLAYING);
+        GstStateChangeReturn sc = gst_element_set_state(pipeline, GST_STATE_PLAYING);
         if (sc == GST_STATE_CHANGE_FAILURE)
         {
             log_bus_error_(pipeline);
@@ -718,8 +814,8 @@ private:
             // Don't just trust ASYNC: bound how long we wait for the
             // transition to actually finish, and surface why if it doesn't.
             GstState state = GST_STATE_VOID_PENDING, pending = GST_STATE_VOID_PENDING;
-            GstStateChangeReturn wait_ret = gst_element_get_state(
-                pipeline, &state, &pending, 3 * GST_SECOND);
+            GstStateChangeReturn wait_ret =
+                gst_element_get_state(pipeline, &state, &pending, 3 * GST_SECOND);
             if (wait_ret == GST_STATE_CHANGE_FAILURE)
             {
                 log_bus_error_(pipeline);
@@ -730,13 +826,12 @@ private:
             }
             if (wait_ret == GST_STATE_CHANGE_ASYNC)
             {
-                fprintf(stderr,
-                        "[portal] WARNING: pipeline still negotiating >3s "
-                        "after requesting PLAYING; the screen-share preview "
-                        "will stay blank until/unless this resolves. This "
-                        "usually means pipewiresrc failed to negotiate a "
-                        "system-memory video/x-raw format with the "
-                        "compositor.\n");
+                fprintf(stderr, "[portal] WARNING: pipeline still negotiating >3s "
+                                "after requesting PLAYING; the screen-share preview "
+                                "will stay blank until/unless this resolves. This "
+                                "usually means pipewiresrc failed to negotiate a "
+                                "system-memory video/x-raw format with the "
+                                "compositor.\n");
             }
         }
 
@@ -745,7 +840,11 @@ private:
         // D-Bus connection is gone by this point.
         {
             std::unique_lock<std::mutex> lk(ctx->stop_mu);
-            ctx->stop_cv.wait(lk, [&] { return !ctx->running.load(); });
+            ctx->stop_cv.wait(lk,
+                              [&]
+                              {
+                                  return !ctx->running.load();
+                              });
         }
 
         // Tear down on this thread — never on stop()'s caller (the UI
@@ -766,34 +865,39 @@ private:
 
         GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
         if (!sample)
+        {
             return GST_FLOW_OK;
+        }
 
         GstCaps* caps = gst_sample_get_caps(sample);
         GstVideoInfo info;
-        if (!caps || !gst_video_info_from_caps(&info, caps)) {
+        if (!caps || !gst_video_info_from_caps(&info, caps))
+        {
             gst_sample_unref(sample);
             return GST_FLOW_OK;
         }
 
-        GstBuffer*    buf = gst_sample_get_buffer(sample);
+        GstBuffer* buf = gst_sample_get_buffer(sample);
         GstVideoFrame frame;
         // gst_video_frame_map reads the buffer's actual GstVideoMeta (real
         // negotiated per-plane stride/offset from hardware-influenced
         // allocators) when present, falling back to GstVideoInfo's standard
         // layout otherwise — either way this is the real stride, not a guess.
-        if (gst_video_frame_map(&frame, &info, buf, GST_MAP_READ)) {
+        if (gst_video_frame_map(&frame, &info, buf, GST_MAP_READ))
+        {
             FrameCallback cb;
             {
                 std::lock_guard<std::mutex> lk(ctx->mu);
                 cb = ctx->callback;
             }
-            if (cb) {
+            if (cb)
+            {
                 Frame f;
-                f.y        = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0));
-                f.u        = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 1));
-                f.v        = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 2));
-                f.width    = static_cast<std::uint32_t>(GST_VIDEO_FRAME_WIDTH(&frame));
-                f.height   = static_cast<std::uint32_t>(GST_VIDEO_FRAME_HEIGHT(&frame));
+                f.y = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0));
+                f.u = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 1));
+                f.v = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 2));
+                f.width = static_cast<std::uint32_t>(GST_VIDEO_FRAME_WIDTH(&frame));
+                f.height = static_cast<std::uint32_t>(GST_VIDEO_FRAME_HEIGHT(&frame));
                 f.stride_y = static_cast<std::uint32_t>(GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0));
                 f.stride_u = static_cast<std::uint32_t>(GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 1));
                 f.stride_v = static_cast<std::uint32_t>(GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 2));
@@ -805,9 +909,9 @@ private:
         return GST_FLOW_OK;
     }
 
-    std::atomic<bool>          started_{false};
+    std::atomic<bool> started_{false};
     std::shared_ptr<PortalCtx> ctx_ = std::make_shared<PortalCtx>();
-    std::thread                thread_;
+    std::thread thread_;
 };
 
 } // namespace
@@ -820,17 +924,15 @@ std::unique_ptr<ScreenCapture> make_screen_capture_portal()
     // Probe portal availability without auto-starting the service.
     GDBusProxy* test = g_dbus_proxy_new_for_bus_sync(
         G_BUS_TYPE_SESSION,
-        static_cast<GDBusProxyFlags>(
-            G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START_AT_CONSTRUCTION |
-            G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
-            G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
-        nullptr,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.ScreenCast",
-        nullptr, nullptr);
+        static_cast<GDBusProxyFlags>(G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START_AT_CONSTRUCTION |
+                                     G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
+                                     G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
+        nullptr, "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.ScreenCast", nullptr, nullptr);
     if (!test)
+    {
         return nullptr;
+    }
     g_object_unref(test);
     return std::make_unique<ScreenCapturePortal>();
 }

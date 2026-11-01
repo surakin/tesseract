@@ -38,8 +38,7 @@ protected:
 public:
     ~RoomGeneralSection() override;
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_avatar_provider(ImageProvider p);
 
     // Display copies kept in sync by RoomSettingsView whenever its own
@@ -69,7 +68,10 @@ public:
     // Borrowed — owned via add_child(). Null when constructed without a
     // Host. Shown only while can_name_ && !committing_ (a static Label
     // takes its place otherwise).
-    tk::TextField* name_field() const { return name_field_; }
+    tk::TextField* name_field() const
+    {
+        return name_field_;
+    }
 
     // Borrowed — owned via add_child(). Null when constructed without a
     // Host. Shown only while can_topic_ && !committing_. Auto-grows like
@@ -111,13 +113,13 @@ private:
 
     AvatarCell* avatar_cell_ = nullptr;
 
-    tk::Label*     name_label_  = nullptr; // caption, always muted
-    tk::TextField* name_field_  = nullptr; // editable
-    tk::Label*     name_static_ = nullptr; // read-only display
+    tk::Label* name_label_ = nullptr;     // caption, always muted
+    tk::TextField* name_field_ = nullptr; // editable
+    tk::Label* name_static_ = nullptr;    // read-only display
 
-    tk::Label*      topic_label_  = nullptr; // caption, always muted
-    TopicAreaCell*  topic_cell_   = nullptr; // editable, auto-grows
-    tk::Label*      topic_static_ = nullptr; // read-only display, wraps
+    tk::Label* topic_label_ = nullptr;    // caption, always muted
+    TopicAreaCell* topic_cell_ = nullptr; // editable, auto-grows
+    tk::Label* topic_static_ = nullptr;   // read-only display, wraps
 
     tk::Label* address_label_ = nullptr; // caption, always muted
     tk::Label* address_value_ = nullptr; // muted when empty, else primary
@@ -128,8 +130,8 @@ private:
     std::string staged_topic_;
     std::string canonical_alias_;
 
-    bool can_name_   = false;
-    bool can_topic_  = false;
+    bool can_name_ = false;
+    bool can_topic_ = false;
     bool can_avatar_ = false;
     bool committing_ = false;
 

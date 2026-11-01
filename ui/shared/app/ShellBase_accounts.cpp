@@ -34,12 +34,10 @@ void ShellBase::arm_pending_login_()
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::system_clock::now().time_since_epoch())
                         .count();
-    pending_login_temp_dir_ =
-        tesseract::SessionStore::account_dir("pending-" + std::to_string(ms));
+    pending_login_temp_dir_ = tesseract::SessionStore::account_dir("pending-" + std::to_string(ms));
     std::error_code ec;
     std::filesystem::create_directories(pending_login_temp_dir_, ec);
-    pending_login_client_->set_data_dir(
-        (pending_login_temp_dir_ / "matrix-store").string());
+    pending_login_client_->set_data_dir((pending_login_temp_dir_ / "matrix-store").string());
 }
 
 // Blocking half of restore: legacy-layout migration, index load, and per-
@@ -90,7 +88,7 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
     {
         if (!network_available)
         {
-            io.any_restore_failed  = true;
+            io.any_restore_failed = true;
             io.network_unavailable = true;
             continue;
         }
@@ -103,8 +101,7 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
 
         RestoredAccountIO acc;
         acc.client = std::make_unique<tesseract::Client>();
-        acc.client->set_data_dir(
-            tesseract::SessionStore::sdk_store_dir(uid).string());
+        acc.client->set_data_dir(tesseract::SessionStore::sdk_store_dir(uid).string());
         // Empty store_key is a permanent, valid state for any account that
         // predates store encryption — the store just opens unencrypted, same
         // as before this existed. See SessionStore::LoadedAccount.
@@ -116,18 +113,18 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
         auto res = acc.client->restore_session(loaded->session_json);
         if (!res)
         {
-            io.restore_error      = res.message;
+            io.restore_error = res.message;
             io.any_restore_failed = true;
             continue;
         }
 
-        acc.user_id      = acc.client->get_user_id();
+        acc.user_id = acc.client->get_user_id();
         acc.display_name = acc.client->get_display_name();
-        acc.avatar_url   = acc.client->get_avatar_url();
+        acc.avatar_url = acc.client->get_avatar_url();
         {
             acc.prefs_json = acc.client->load_prefs_json();
             auto prefs = tesseract::Prefs::parse(acc.prefs_json);
-            acc.last_room  = prefs.last_room;
+            acc.last_room = prefs.last_room;
             acc.open_rooms = prefs.open_rooms;
             acc.recent_rooms = prefs.recent_rooms;
             acc.bridge_not_bridged_overrides = prefs.bridge_not_bridged_overrides;
@@ -161,23 +158,22 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
 // already happened in restore_all_accounts_blocking_(), off the UI
 // thread.) Mutates account_manager_ and other shell state; UI-thread
 // only.
-ShellBase::RestoreResult
-ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
+ShellBase::RestoreResult ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
 {
     RestoreResult result;
-    result.any_restore_failed  = io.any_restore_failed;
-    result.restore_error       = io.restore_error;
+    result.any_restore_failed = io.any_restore_failed;
+    result.restore_error = io.restore_error;
     result.network_unavailable = io.network_unavailable;
 
     for (auto& acc : io.accounts)
     {
-        auto session         = std::make_unique<tesseract::AccountSession>();
-        session->client      = std::move(acc.client);
-        session->user_id     = acc.user_id;
+        auto session = std::make_unique<tesseract::AccountSession>();
+        session->client = std::move(acc.client);
+        session->user_id = acc.user_id;
         session->display_name = acc.display_name;
-        session->avatar_url  = acc.avatar_url;
-        session->last_room   = acc.last_room;
-        session->open_rooms  = std::move(acc.open_rooms);
+        session->avatar_url = acc.avatar_url;
+        session->last_room = acc.last_room;
+        session->open_rooms = std::move(acc.open_rooms);
         session->recent_rooms = std::move(acc.recent_rooms);
         session->bridge_not_bridged_overrides = std::move(acc.bridge_not_bridged_overrides);
         session->emoji_skin_tone = acc.emoji_skin_tone;
@@ -185,7 +181,7 @@ ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
         {
             const auto parsed = tesseract::Prefs::parse(session->prefs_json);
             session->directory_servers = parsed.directory_servers;
-            session->pinned_spaces     = parsed.pinned_spaces;
+            session->pinned_spaces = parsed.pinned_spaces;
         }
 
         // Bridge already built + sync already started on the worker thread
@@ -234,8 +230,8 @@ ShellBase::RestoreResult ShellBase::restore_all_accounts_()
     return finish_restore_accounts_ui_(restore_all_accounts_blocking_());
 }
 
-void ShellBase::restore_all_accounts_async_(
-    std::function<void(RestoreResult)> done, bool network_available)
+void ShellBase::restore_all_accounts_async_(std::function<void(RestoreResult)> done,
+                                            bool network_available)
 {
     on_startup_restore_progress_ui_(tk::tr("Restoring session\xe2\x80\xa6"));
     show_sync_status_text_(tk::tr("Restoring session\xe2\x80\xa6"));
@@ -257,7 +253,9 @@ void ShellBase::restore_all_accounts_async_(
                     // Signed in by now (switch_active_account set "Connected")
                     // or not; if not, the line goes back to "Not logged in".
                     if (!active_account_ && my_user_id_.empty())
+                    {
                         refresh_sync_status_();
+                    }
                 });
         });
 }
@@ -275,23 +273,26 @@ static void sign_out_abandoned_login(const std::string& session_json,
     // Under the private data dir, not the shared temp dir: the scratch store
     // holds this login's keys.
     const fs::path scratch = tesseract::SessionStore::account_dir(
-        "signout-" +
-        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        "signout-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     fs::create_directories(scratch, ec);
     {
         tesseract::Client client;
         client.set_data_dir(scratch.string());
         if (!store_key.empty())
+        {
             client.set_store_key(store_key);
+        }
         if (client.restore_session(session_json))
+        {
             (void)client.logout();
+        }
     }
     fs::remove_all(scratch, ec);
 }
 
-ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
-    std::unique_ptr<tesseract::Client> pending_client,
-    std::filesystem::path pending_temp_dir)
+ShellBase::FinalizeLoginIO
+ShellBase::finalize_login_blocking_(std::unique_ptr<tesseract::Client> pending_client,
+                                    std::filesystem::path pending_temp_dir)
 {
     FinalizeLoginIO io;
     FinalizeLoginResult& out = io.result;
@@ -300,7 +301,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // the temp data dir (pending_temp_dir/matrix-store). The caller already
     // validated get_user_id() is non-empty before handing the client off.
     const std::string user_id = pending_client->get_user_id();
-    out.user_id                = user_id;
+    out.user_id = user_id;
 
     // Snapshot the session blob before dropping the in-flight Client — re-opening
     // it below restores from this JSON.
@@ -336,8 +337,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // rename is atomic on the same filesystem; on a cross-filesystem move
     // it fails with EXDEV, so fall back to a recursive copy + remove for
     // that unrelated case.
-    const std::filesystem::path final_dir =
-        tesseract::SessionStore::allocate_account_dir(user_id);
+    const std::filesystem::path final_dir = tesseract::SessionStore::allocate_account_dir(user_id);
     {
         std::error_code ec;
         std::filesystem::create_directories(final_dir.parent_path(), ec);
@@ -345,11 +345,10 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         if (ec)
         {
             std::error_code ec2;
-            std::filesystem::copy(
-                pending_temp_dir, final_dir,
-                std::filesystem::copy_options::recursive |
-                    std::filesystem::copy_options::overwrite_existing,
-                ec2);
+            std::filesystem::copy(pending_temp_dir, final_dir,
+                                  std::filesystem::copy_options::recursive |
+                                      std::filesystem::copy_options::overwrite_existing,
+                                  ec2);
             if (ec2)
             {
                 std::error_code ec3;
@@ -366,8 +365,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // per-account dir. A fresh login ends any logout refusal on this account's
     // queued writes, so its token refreshes persist again.
     tesseract::SessionStore::allow_session_updates(user_id);
-    if (!tesseract::SessionStore::save_account_with_key(user_id, session_json,
-                                                        store_key))
+    if (!tesseract::SessionStore::save_account_with_key(user_id, session_json, store_key))
     {
         sign_out_abandoned_login(session_json, store_key);
         out.error = tk::tr("couldn't persist session");
@@ -378,11 +376,10 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // just-exported session JSON (matrix-sdk reuses the moved SQLite store
     // transparently — no resync). Must set the same store_key before
     // restoring, or (when one was generated) the store fails to open.
-    auto session    = std::make_unique<tesseract::AccountSession>();
+    auto session = std::make_unique<tesseract::AccountSession>();
     session->user_id = user_id;
     session->client = std::make_unique<tesseract::Client>();
-    session->client->set_data_dir(
-        tesseract::SessionStore::sdk_store_dir(user_id).string());
+    session->client->set_data_dir(tesseract::SessionStore::sdk_store_dir(user_id).string());
     if (!store_key.empty())
     {
         session->client->set_store_key(store_key);
@@ -397,11 +394,11 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         return io;
     }
     session->display_name = session->client->get_display_name();
-    session->avatar_url   = session->client->get_avatar_url();
+    session->avatar_url = session->client->get_avatar_url();
     {
         session->prefs_json = session->client->load_prefs_json();
         auto prefs = tesseract::Prefs::parse(session->prefs_json);
-        session->last_room  = prefs.last_room;
+        session->last_room = prefs.last_room;
         session->open_rooms = prefs.open_rooms;
         session->recent_rooms = prefs.recent_rooms;
         session->directory_servers = prefs.directory_servers;
@@ -429,10 +426,9 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     uint8_t recovery_state = session->client->recovery_state();
     {
         constexpr auto kPollInterval = std::chrono::milliseconds(50);
-        constexpr auto kPollTimeout  = std::chrono::milliseconds(2000);
-        const auto      deadline     = std::chrono::steady_clock::now() + kPollTimeout;
-        while (recovery_state == 0 /* Unknown */ &&
-               std::chrono::steady_clock::now() < deadline)
+        constexpr auto kPollTimeout = std::chrono::milliseconds(2000);
+        const auto deadline = std::chrono::steady_clock::now() + kPollTimeout;
+        while (recovery_state == 0 /* Unknown */ && std::chrono::steady_clock::now() < deadline)
         {
             std::this_thread::sleep_for(kPollInterval);
             recovery_state = session->client->recovery_state();
@@ -447,11 +443,10 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         // — same distinction check_encryption_setup_() makes; see
         // foreign_cross_signing_identity_()'s doc comment.
         const bool foreign_identity =
-            session->client->own_identity_exists() &&
-            !session->client->have_cross_signing_keys();
-        out.needs_encryption_setup        = true;
+            session->client->own_identity_exists() && !session->client->have_cross_signing_keys();
+        out.needs_encryption_setup = true;
         out.encryption_setup_recover_mode = recovery_state == 3 || foreign_identity;
-        session->sync_started              = false;
+        session->sync_started = false;
         // Attach the handler (without starting the sync loop) so the
         // encryption-setup overlay's enable_recovery/recover progress
         // callbacks — routed through this same handler — actually reach the
@@ -476,7 +471,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     apply_msc2545_legacy_compat_pref_(*session->client);
     apply_low_power_pref_(*session->client);
 
-    out.ok    = true;
+    out.ok = true;
     io.session = std::move(session);
     return io;
 }
@@ -494,7 +489,9 @@ void ShellBase::finish_login_ui_(const std::string& uid)
 {
     close_settings_if_open_();
     if (!switch_and_show_main_(uid))
+    {
         start_platform_services_ui_();
+    }
 }
 
 bool ShellBase::switch_and_show_main_(const std::string& uid)
@@ -507,20 +504,26 @@ bool ShellBase::switch_and_show_main_(const std::string& uid)
     // switch's own show step did not run; running it twice would undo whatever
     // the first one replayed (a held --settings).
     if (!main_shown_by_switch_)
+    {
         show_main_content_();
+    }
     return main_shown_by_switch_;
 }
 
 void ShellBase::close_settings_if_open_()
 {
     if (app_settings_open_)
+    {
         close_app_settings_ui_();
+    }
 }
 
 void ShellBase::clear_messages_()
 {
     if (!room_view_)
+    {
         return;
+    }
     room_view_->clear_room();
     room_view_->set_messages({});
     request_relayout_();
@@ -535,7 +538,9 @@ void ShellBase::refresh_account_ui_after_switch_()
     call_banner_rosters_.clear();
     clear_messages_();
     if (room_view_)
+    {
         room_view_->set_client(client_);
+    }
     if (main_app_)
     {
         main_app_->show_room();
@@ -546,9 +551,10 @@ void ShellBase::refresh_account_ui_after_switch_()
     // Cached rooms are already in rooms_, so the tab session can be restored now
     // instead of waiting for the next rooms push.
     if (!rooms_.empty() && !pending_restore_rooms_.empty() &&
-        try_restore_tab_session_(pending_restore_rooms_,
-                                 pending_restore_rooms_[0]))
+        try_restore_tab_session_(pending_restore_rooms_, pending_restore_rooms_[0]))
+    {
         pending_restore_rooms_.clear();
+    }
     request_relayout_();
     rebuild_account_picker_();
     handle_verification_state_ui_(active_account_ && !active_account_->unverified);
@@ -565,8 +571,7 @@ void ShellBase::refresh_account_ui_after_switch_()
 void ShellBase::begin_add_account()
 {
     // The active account, so Cancel can return to it; empty means none.
-    add_account_return_uid_ = active_account_ ? active_account_->user_id
-                                              : std::string{};
+    add_account_return_uid_ = active_account_ ? active_account_->user_id : std::string{};
     pending_login_is_add_account_ = true;
     reset_pending_login_client_();
     show_login_ui_(views::LoginView::Mode::AddAccount);
@@ -578,7 +583,9 @@ std::shared_ptr<tesseract::AccountSession> ShellBase::take_add_account_return_()
     const std::string uid = std::move(add_account_return_uid_);
     add_account_return_uid_.clear();
     if (uid.empty())
+    {
         return nullptr;
+    }
     // Another window may have removed or taken the account meanwhile.
     auto sess = account_manager_.find(uid);
     return sess && !account_owned_elsewhere_(uid) ? sess : nullptr;
@@ -591,8 +598,11 @@ void ShellBase::on_login_succeeded_()
         return;
     }
     detach_login_view_client_ui_();
-    finalize_login_async_([this](FinalizeLoginResult fin)
-                          { on_login_finalized_(fin); });
+    finalize_login_async_(
+        [this](FinalizeLoginResult fin)
+        {
+            on_login_finalized_(fin);
+        });
 }
 
 void ShellBase::on_login_finalized_(const FinalizeLoginResult& fin)
@@ -611,8 +621,7 @@ void ShellBase::on_login_finalized_(const FinalizeLoginResult& fin)
         // Nowhere to return to: finalize moved the client away, so the login
         // view needs a fresh one to be usable again.
         reset_pending_login_client_();
-        show_login_ui_(pending_login_is_add_account_ ? Mode::AddAccount
-                                                     : Mode::Initial);
+        show_login_ui_(pending_login_is_add_account_ ? Mode::AddAccount : Mode::Initial);
         return;
     }
 
@@ -628,8 +637,7 @@ void ShellBase::on_login_finalized_(const FinalizeLoginResult& fin)
             show_main_content_();
             return;
         }
-        show_login_ui_(pending_login_is_add_account_ ? Mode::AddAccount
-                                                     : Mode::Initial);
+        show_login_ui_(pending_login_is_add_account_ ? Mode::AddAccount : Mode::Initial);
         return;
     }
 
@@ -639,7 +647,9 @@ void ShellBase::on_login_finalized_(const FinalizeLoginResult& fin)
     pending_login_is_add_account_ = false;
     add_account_return_uid_.clear();
     if (!services_started)
+    {
         start_platform_services_ui_();
+    }
 }
 
 void ShellBase::show_login_ui_(views::LoginView::Mode mode)
@@ -647,10 +657,14 @@ void ShellBase::show_login_ui_(views::LoginView::Mode mode)
     // Settings opened from the login screen stays on top of it; any other
     // Settings page belongs to the content this replaces.
     if (!settings_from_login_())
+    {
         close_settings_if_open_();
+    }
     ensure_login_view_();
     if (!login_view_)
+    {
         return;
+    }
     login_view_->set_client(pending_login_client_.get());
     login_view_->set_mode(mode);
     login_view_->reset();
@@ -662,32 +676,36 @@ bool ShellBase::open_login_url_ui_(const std::string& url)
     return tesseract::Client::open_in_browser(url);
 }
 
-void ShellBase::open_login_url_or_show_(views::LoginView& view,
-                                        const std::string& url)
+void ShellBase::open_login_url_or_show_(views::LoginView& view, const std::string& url)
 {
     if (!open_login_url_ui_(url))
     {
-        view.set_status_message(tk::tr("Open this URL in your browser:") + "\n" +
-                                url);
+        view.set_status_message(tk::tr("Open this URL in your browser:") + "\n" + url);
     }
 }
 
 void ShellBase::ensure_login_view_()
 {
     if (login_view_)
+    {
         return;
+    }
     if (login_surface_)
     {
         // Its deferred teardown no longer matches the current surface and
         // never runs: stop the old view's worker and take its page out now.
         if (auto* old = dynamic_cast<views::LoginView*>(login_surface_->root()))
+        {
             old->shutdown();
+        }
         unmount_login_surface_ui_();
         retired_login_surfaces_.push_back(std::move(login_surface_));
     }
     login_surface_ = create_login_surface_ui_();
     if (!login_surface_)
+    {
         return;
+    }
     tk::SurfaceBase* surface = login_surface_.get();
     auto view = tk::create_root_widget<views::LoginView>(&surface->host());
     views::LoginView* v = view.get();
@@ -697,24 +715,59 @@ void ShellBase::ensure_login_view_()
     auto gate = std::make_shared<std::atomic<tk::Host*>>(&surface->host());
     login_host_gates_.push_back(gate);
     v->set_post_to_ui(
-        [gate, alive = v->guarded([](std::function<void()> f) { f(); })](
-            std::function<void()> fn)
+        [gate, alive = v->guarded(
+                   [](std::function<void()> f)
+                   {
+                       f();
+                   })](std::function<void()> fn)
         {
             if (tk::Host* host = gate->load())
-                host->post_to_ui([alive, fn = std::move(fn)]() mutable
-                                 { alive(std::move(fn)); });
+            {
+                host->post_to_ui(
+                    [alive, fn = std::move(fn)]() mutable
+                    {
+                        alive(std::move(fn));
+                    });
+            }
         });
-    v->set_relayout([surface] { surface->relayout(); });
-    v->set_open_browser([this, v](const std::string& url)
-                        { open_login_url_or_show_(*v, url); });
-    v->set_on_success([this] { on_login_succeeded_(); });
-    v->set_on_cancel_done([this] { on_login_cancelled_(); });
-    v->set_on_open_settings([this] { open_settings_from_login_(); });
-    v->set_on_begin_oauth([this] { arm_pending_login_(); });
+    v->set_relayout(
+        [surface]
+        {
+            surface->relayout();
+        });
+    v->set_open_browser(
+        [this, v](const std::string& url)
+        {
+            open_login_url_or_show_(*v, url);
+        });
+    v->set_on_success(
+        [this]
+        {
+            on_login_succeeded_();
+        });
+    v->set_on_cancel_done(
+        [this]
+        {
+            on_login_cancelled_();
+        });
+    v->set_on_open_settings(
+        [this]
+        {
+            open_settings_from_login_();
+        });
+    v->set_on_begin_oauth(
+        [this]
+        {
+            arm_pending_login_();
+        });
     // Route the homeserver-discovery debounce through the shell's worker drain
     // so a blocked discover_homeserver call can't outlive the view and corrupt
     // the heap.
-    v->set_run_async([this](std::function<void()> fn) { run_async_(std::move(fn)); });
+    v->set_run_async(
+        [this](std::function<void()> fn)
+        {
+            run_async_(std::move(fn));
+        });
     surface->set_root(std::move(view));
     v->finish_init();
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -726,7 +779,9 @@ void ShellBase::ensure_login_view_()
 void ShellBase::teardown_login_view_()
 {
     if (!login_view_)
+    {
         return;
+    }
     views::LoginView* view = login_view_;
     view->set_client(nullptr);
     login_view_ = nullptr;
@@ -741,18 +796,21 @@ void ShellBase::teardown_login_view_()
     destroy_login_surfaces_();
 }
 
-void ShellBase::destroy_login_page_when_idle_(tk::SurfaceBase* doomed,
-                                              views::LoginView* view,
+void ShellBase::destroy_login_page_when_idle_(tk::SurfaceBase* doomed, views::LoginView* view,
                                               int delay_ms)
 {
     tk::Host* host = main_host_();
     if (!host)
+    {
         return;
+    }
     std::weak_ptr<bool> alive = weak_flag();
     auto destroy = [this, alive, doomed, view]
     {
         if (alive.expired())
+        {
             return;
+        }
         // Cancels the sign-in and joins its worker; also makes the pooled
         // discovery tasks drop their results.
         view->shutdown();
@@ -767,15 +825,18 @@ void ShellBase::destroy_login_page_when_idle_(tk::SurfaceBase* doomed,
         destroy_login_surfaces_();
     };
     auto is_current = [this, alive, doomed]
-    { return !alive.expired() && login_surface_.get() == doomed; };
-    schedule_deferred_teardown(*host, std::move(is_current), std::move(destroy),
-                               delay_ms);
+    {
+        return !alive.expired() && login_surface_.get() == doomed;
+    };
+    schedule_deferred_teardown(*host, std::move(is_current), std::move(destroy), delay_ms);
 }
 
 void ShellBase::destroy_login_surfaces_()
 {
     for (auto& gate : login_host_gates_)
+    {
         gate->store(nullptr);
+    }
     login_host_gates_.clear();
     login_surface_.reset();
     retired_login_surfaces_.clear();
@@ -784,7 +845,9 @@ void ShellBase::destroy_login_surfaces_()
 void ShellBase::release_login_surface_()
 {
     if (login_view_)
+    {
         login_view_->shutdown();
+    }
     login_view_ = nullptr;
     destroy_login_surfaces_();
 }
@@ -792,11 +855,12 @@ void ShellBase::release_login_surface_()
 void ShellBase::apply_scale_to_login_surface_(float scale)
 {
     if (login_surface_)
+    {
         login_surface_->apply_scale_change(scale);
+    }
 }
 
-void ShellBase::show_login_after_restore_(const RestoreResult& restore,
-                                          std::function<void()> retry)
+void ShellBase::show_login_after_restore_(const RestoreResult& restore, std::function<void()> retry)
 {
     pending_login_is_add_account_ = false;
     pending_login_temp_dir_.clear();
@@ -805,9 +869,13 @@ void ShellBase::show_login_after_restore_(const RestoreResult& restore,
     if (restore.any_restore_failed && login_view_)
     {
         if (restore.network_unavailable)
+        {
             login_view_->show_offline_error(std::move(retry));
+        }
         else
+        {
             login_view_->show_restore_error(restore.restore_error, std::move(retry));
+        }
     }
 }
 
@@ -817,7 +885,9 @@ void ShellBase::on_login_cancelled_()
     // Retired, not destroyed: the login view's workers may still be inside a call
     // on it (see reset_pending_login_client_).
     if (pending_login_client_)
+    {
         retired_login_clients_.push_back(std::move(pending_login_client_));
+    }
     // The dir is removed with the retired client, not now: its SQLite files may
     // still be open (Windows cannot delete them).
     retired_login_dirs_.add(std::move(pending_login_temp_dir_));
@@ -874,23 +944,26 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
     {
         FinalizeLoginResult out;
         out.rejected_duplicate = true;
-        out.user_id            = user_id;
+        out.user_id = user_id;
         // OAuth has already created a device for this login. Sign it out, so it
         // does not stay in the user's session list, then remove the temp
         // directory. Off the UI thread: logout is a network call.
-        auto abandoned = std::make_shared<std::unique_ptr<tesseract::Client>>(
-            std::move(pending_login_client_));
+        auto abandoned =
+            std::make_shared<std::unique_ptr<tesseract::Client>>(std::move(pending_login_client_));
         pending_login_client_.reset();
         auto temp_dir = pending_login_temp_dir_;
         pending_login_temp_dir_.clear();
-        run_async_("login/abandon", [abandoned, temp_dir]
-        {
-            if (*abandoned)
-                (void)(*abandoned)->logout(); // best effort
-            *abandoned = nullptr;
-            std::error_code ec;
-            std::filesystem::remove_all(temp_dir, ec);
-        });
+        run_async_("login/abandon",
+                   [abandoned, temp_dir]
+                   {
+                       if (*abandoned)
+                       {
+                           (void)(*abandoned)->logout(); // best effort
+                       }
+                       *abandoned = nullptr;
+                       std::error_code ec;
+                       std::filesystem::remove_all(temp_dir, ec);
+                   });
         done(std::move(out));
         return;
     }
@@ -910,18 +983,17 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
     // to be copy-constructible even though it's only ever invoked once here)
     // — a shared_ptr wrapper sidesteps that, mirroring the io-result trick in
     // restore_all_accounts_async_ above.
-    auto pending_client = std::make_shared<std::unique_ptr<tesseract::Client>>(
-        std::move(pending_login_client_));
+    auto pending_client =
+        std::make_shared<std::unique_ptr<tesseract::Client>>(std::move(pending_login_client_));
     auto pending_temp_dir = pending_login_temp_dir_;
     pending_login_temp_dir_.clear();
 
     run_async_mut_(
-        [this, pending_client, pending_temp_dir,
-         done = std::move(done)]() mutable
+        [this, pending_client, pending_temp_dir, done = std::move(done)]() mutable
         {
             auto io = std::make_shared<FinalizeLoginIO>(
                 finalize_login_blocking_(std::move(*pending_client),
-                                          std::move(pending_temp_dir))); // worker thread
+                                         std::move(pending_temp_dir))); // worker thread
             post_to_ui_alive_(
                 [this, io, done = std::move(done)]() mutable
                 {
@@ -938,8 +1010,8 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
 
                         // Update the on-disk index. Active = the account we just added.
                         auto index = tesseract::SessionStore::load_index();
-                        if (std::find(index.user_ids.begin(), index.user_ids.end(),
-                                       added_uid) == index.user_ids.end())
+                        if (std::find(index.user_ids.begin(), index.user_ids.end(), added_uid) ==
+                            index.user_ids.end())
                         {
                             index.user_ids.push_back(added_uid);
                         }
@@ -959,15 +1031,19 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
 void ShellBase::begin_gated_encryption_setup_if_needed_(const FinalizeLoginResult& fin)
 {
     if (!fin.needs_encryption_setup)
+    {
         return;
+    }
 
     auto sess = account_manager_.find(fin.user_id);
     if (!sess)
+    {
         return;
+    }
 
-    pending_sync_session_       = sess;
+    pending_sync_session_ = sess;
     encryption_setup_dismissed_ = false;
-    encryption_setup_shown_     = true;
+    encryption_setup_shown_ = true;
     using Mode = tesseract::views::EncryptionSetupOverlay::Mode;
     if (!fin.encryption_setup_recover_mode)
     {
@@ -981,7 +1057,9 @@ void ShellBase::begin_gated_encryption_setup_if_needed_(const FinalizeLoginResul
         }
     }
     if (!main_app_)
+    {
         return;
+    }
     if (fin.encryption_setup_recover_mode)
     {
         // The gate is released by a successful silent unlock, or by closing
@@ -998,11 +1076,15 @@ void ShellBase::release_pending_sync_gate_()
     auto sess = std::move(pending_sync_session_);
     pending_sync_session_.reset();
     if (!sess || !sess->client || sess->sync_started)
+    {
         return;
-    run_async_mut_([sess]() {
-        sess->client->start_sync(sess->bridge.get());
-        sess->sync_started = true;
-    });
+    }
+    run_async_mut_(
+        [sess]()
+        {
+            sess->client->start_sync(sess->bridge.get());
+            sess->sync_started = true;
+        });
 }
 
 // Platform-agnostic account-switch bookkeeping behind switch_active_account_().
@@ -1053,7 +1135,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     {
         active_account_->open_rooms.clear();
         for (const auto& t : tabs_)
+        {
             active_account_->open_rooms.push_back(t.room_id);
+        }
         active_account_->last_room = current_room_id_;
         persist_room_layout_pref_();
     }
@@ -1069,15 +1153,23 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     if (client_)
     {
         auto pinned = [this](const std::string& rid)
-        { return room_pinned_by_popout_(rid); };
+        {
+            return room_pinned_by_popout_(rid);
+        };
         std::unordered_set<std::string> rooms;
         if (!current_room_id_.empty())
+        {
             rooms.insert(current_room_id_);
+        }
         for (const auto& t : tabs_)
+        {
             rooms.insert(t.room_id);
+        }
         rooms.insert(visited_lru_.begin(), visited_lru_.end());
         for (const auto& kv : room_last_active_)
+        {
             rooms.insert(kv.first);
+        }
         // The thread releases are queued on the mutable pool, behind any thread
         // subscribe a panel transition queued there (RoomPane::apply_thread_
         // transition_), so a release cannot overtake the subscribe it follows.
@@ -1093,17 +1185,26 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
             it = thread_last_active_.erase(it);
         }
         if (!thread_drops.empty())
-            run_async_mut_([sess = active_account_, drops = std::move(thread_drops)]
-            {
-                if (!sess || !sess->client)
-                    return;
-                for (const auto& [rid, root] : drops)
-                    sess->client->unsubscribe_thread(rid, root);
-            });
+        {
+            run_async_mut_(
+                [sess = active_account_, drops = std::move(thread_drops)]
+                {
+                    if (!sess || !sess->client)
+                    {
+                        return;
+                    }
+                    for (const auto& [rid, root] : drops)
+                    {
+                        sess->client->unsubscribe_thread(rid, root);
+                    }
+                });
+        }
         for (const auto& rid : rooms)
         {
             if (rid.empty() || pinned(rid))
+            {
                 continue;
+            }
             client_->unsubscribe_room(rid);
             room_last_active_.erase(rid);
         }
@@ -1116,7 +1217,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     tabs_.clear();
     active_tab_idx_ = 0;
     if (main_room_pane_)
+    {
         main_room_pane_->clear_compose_drafts_();
+    }
     space_stack_.clear();
     space_nav_frames_.clear();
     reset_unjoined_fetch_state_();
@@ -1126,8 +1229,12 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     {
         auto& parked = other_account_pagination_[active_account_->user_id];
         for (auto& [rid, st] : pagination_)
+        {
             if (room_pinned_by_popout_(rid))
+            {
                 parked[rid] = st;
+            }
+        }
     }
     pagination_.clear();
     visited_lru_.clear(); // warm-subscription LRU is per-account
@@ -1171,7 +1278,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
          o->mode() == views::EncryptionSetupOverlay::Mode::Verify ||
          o->mode() == views::EncryptionSetupOverlay::Mode::SaveKey ||
          o->mode() == views::EncryptionSetupOverlay::Mode::AutoSetupNotice))
+    {
         main_app_->show_encryption_setup(false);
+    }
     cancel_sign_out_();
     cancel_active_verification_();
     foreign_identity_known_true_ = false;
@@ -1179,8 +1288,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
 
     // Multi-window: release the outgoing account's dedicated mapping if it points
     // at this window; the incoming account is claimed at the tail of the switch.
-    if (active_account_ &&
-        account_manager_.dedicated_window(active_account_->user_id) == this)
+    if (active_account_ && account_manager_.dedicated_window(active_account_->user_id) == this)
     {
         account_manager_.clear_dedicated(active_account_->user_id);
     }
@@ -1193,7 +1301,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     // Keep the outgoing account's MRU on its session so switching back (or the
     // next save of that account's prefs) sees its latest visits.
     if (active_account_)
+    {
         active_account_->recent_rooms = recent_room_ids_;
+    }
     active_account_ = new_session;
     auto& sess = *active_account_;
     // ...and bring back the incoming account's own pop-out rooms' state.
@@ -1217,29 +1327,31 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     {
         begin_server_info_fetch_();
         if (tesseract::Settings::instance().check_for_updates)
+        {
             trigger_update_check_();
+        }
     }
 
     // Restore persisted backoff state for the incoming account (DB is open by
     // the time start_sync returns, which happens before activate_account_).
     for (const auto& entry : client_->load_media_backoff())
     {
-        using SC     = std::chrono::system_clock;
+        using SC = std::chrono::system_clock;
         using Steady = std::chrono::steady_clock;
-        const auto stored    = SC::time_point{std::chrono::seconds{entry.deadline_secs}};
+        const auto stored = SC::time_point{std::chrono::seconds{entry.deadline_secs}};
         const auto remaining = stored - SC::now();
         MediaFetchBackoff b;
-        b.attempts   = entry.attempts;
-        b.retry_after = Steady::now()
-                      + std::max(std::chrono::seconds::zero(),
-                                 std::chrono::duration_cast<std::chrono::seconds>(remaining));
+        b.attempts = entry.attempts;
+        b.retry_after =
+            Steady::now() + std::max(std::chrono::seconds::zero(),
+                                     std::chrono::duration_cast<std::chrono::seconds>(remaining));
         media_fetch_failed_[entry.url] = b;
     }
     for (const auto& entry : client_->load_room_summary_backoff())
     {
-        using SC     = std::chrono::system_clock;
+        using SC = std::chrono::system_clock;
         using Steady = std::chrono::steady_clock;
-        const auto stored    = SC::time_point{std::chrono::seconds{entry.deadline_secs}};
+        const auto stored = SC::time_point{std::chrono::seconds{entry.deadline_secs}};
         const auto remaining = stored - SC::now();
         if (remaining <= std::chrono::seconds::zero())
         {
@@ -1247,16 +1359,17 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
             continue;
         }
         UnjoinedRetryState rs;
-        rs.attempts  = static_cast<int>(entry.attempts);
-        rs.next_retry = Steady::now()
-                      + std::chrono::duration_cast<Steady::duration>(remaining);
+        rs.attempts = static_cast<int>(entry.attempts);
+        rs.next_retry = Steady::now() + std::chrono::duration_cast<Steady::duration>(remaining);
         unjoined_fetch_retry_[entry.room_id] = rs;
     }
 
     my_user_id_ = sess.user_id;
     recent_room_ids_ = sess.recent_rooms;
     if (recent_room_ids_.size() > kRecentRoomsMax)
+    {
         recent_room_ids_.resize(kRecentRoomsMax);
+    }
     my_display_name_ = sess.display_name;
     my_avatar_url_ = sess.avatar_url;
     own_room_avatar_.clear();
@@ -1264,18 +1377,21 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     own_room_avatar_dirty_.clear();
     strip_avatar_room_.clear();
     restore_gate_ticks_ = 0;
-    pending_restore_rooms_ = sess.open_rooms.empty()
-        ? (sess.last_room.empty() ? std::vector<std::string>{}
-                                  : std::vector<std::string>{sess.last_room})
-        : sess.open_rooms;
+    pending_restore_rooms_ =
+        sess.open_rooms.empty()
+            ? (sess.last_room.empty() ? std::vector<std::string>{}
+                                      : std::vector<std::string>{sess.last_room})
+            : sess.open_rooms;
     // Rotate last_room to [0] so it opens as the active tab.
     if (!sess.last_room.empty() && !pending_restore_rooms_.empty() &&
         pending_restore_rooms_[0] != sess.last_room)
     {
-        auto it = std::find(pending_restore_rooms_.begin(),
-                            pending_restore_rooms_.end(), sess.last_room);
+        auto it =
+            std::find(pending_restore_rooms_.begin(), pending_restore_rooms_.end(), sess.last_room);
         if (it != pending_restore_rooms_.end())
+        {
             std::rotate(pending_restore_rooms_.begin(), it, it + 1);
+        }
     }
     pending_restore_popouts_.clear();
     populate_pending_restore_popouts_();
@@ -1288,14 +1404,15 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     // Same for history export: an export started on the outgoing account is
     // cancelled there, and new requests go through the incoming client.
     if (history_export_controller_)
+    {
         history_export_controller_->set_client(client_, active_account_);
+    }
 
     // Use this account's last-known rooms snapshot if cached; otherwise leave
     // rooms_ empty and wait for the next on_rooms_updated_ callback. The native
     // room-list refresh happens in refresh_account_ui_after_switch_().
     auto it = per_account_rooms_.find(my_user_id_);
-    rooms_ = (it != per_account_rooms_.end()) ? it->second
-                                              : std::vector<tesseract::RoomInfo>{};
+    rooms_ = (it != per_account_rooms_.end()) ? it->second : std::vector<tesseract::RoomInfo>{};
     // A cached snapshot counts as a received list; otherwise wait for the push.
     room_list_received_ = it != per_account_rooms_.end();
     mark_room_index_dirty_();
@@ -1306,19 +1423,20 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     unjoined_space_children_cache_.clear();
     unjoined_summaries_cache_.clear();
     if (room_list_received_)
+    {
         update_space_children_cache_();
+    }
     // The known-user roster belongs to the previous account — drop it.
     invalidate_known_users_();
     // The unread-prefetch and bridge-check fingerprints are per-account; reset
     // so the incoming account re-fires on the first push_rooms_ after the switch.
     unread_prefetch_fingerprint_ = 0;
-    bridge_check_fingerprint_    = 0;
+    bridge_check_fingerprint_ = 0;
 
     // Restore the invite snapshot for the incoming account (parallel to rooms_).
     auto inv_it = per_account_invites_.find(my_user_id_);
-    invites_ = (inv_it != per_account_invites_.end())
-                   ? inv_it->second
-                   : std::vector<tesseract::InviteInfo>{};
+    invites_ = (inv_it != per_account_invites_.end()) ? inv_it->second
+                                                      : std::vector<tesseract::InviteInfo>{};
     on_invites_updated_();
 
     // Dismiss any stale InviteCard from the previous account.
@@ -1364,25 +1482,32 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     return true;
 }
 
-void ShellBase::rebind_account_bridge_(tesseract::AccountSession& session,
-                                       ShellBase* win)
+void ShellBase::rebind_account_bridge_(tesseract::AccountSession& session, ShellBase* win)
 {
     // The bridge is stored type-erased as IEventHandler* but is always an
     // EventHandlerBase (every shell's bridge derives it); safe downcast.
     if (session.bridge)
+    {
         static_cast<EventHandlerBase*>(session.bridge.get())->set_shell(win);
+    }
 }
 
 void ShellBase::seed_account_caches_from_(ShellBase* src, const std::string& uid)
 {
     if (!src || src == this)
+    {
         return;
+    }
     auto r = src->per_account_rooms_.find(uid);
     if (r != src->per_account_rooms_.end())
+    {
         per_account_rooms_[uid] = r->second;
+    }
     auto i = src->per_account_invites_.find(uid);
     if (i != src->per_account_invites_.end())
+    {
         per_account_invites_[uid] = i->second;
+    }
 }
 
 // Shared spawn wiring: hand ownership of `session`'s account to a freshly
@@ -1397,7 +1522,9 @@ void ShellBase::hand_account_to_spawned_window_(
     ShellBase* win, const std::shared_ptr<tesseract::AccountSession>& session)
 {
     if (!win || !session)
+    {
         return;
+    }
     // Re-point the account's sole bridge so its SDK callbacks now reach the new
     // owner window instead of this (the spawning) window.
     rebind_account_bridge_(*session, win);
@@ -1411,7 +1538,9 @@ void ShellBase::hand_account_to_spawned_window_(
 void ShellBase::claim_dedicated_for_active_()
 {
     if (!active_account_)
+    {
         return;
+    }
     const std::string& uid = active_account_->user_id;
     // Don't steal the mapping from another live window already showing this
     // account (e.g. a pinned pop-out). A switch can target an owned account via
@@ -1421,20 +1550,26 @@ void ShellBase::claim_dedicated_for_active_()
     // account). Only claim when the account is unowned or already ours.
     ShellBase* cur = account_manager_.dedicated_window(uid);
     if (cur && cur != this)
+    {
         return;
+    }
     account_manager_.set_dedicated(uid, this);
 }
 
 void ShellBase::release_dedicated_for_active_()
 {
     if (active_account_)
+    {
         release_dedicated_(active_account_->user_id);
+    }
 }
 
 void ShellBase::release_dedicated_(const std::string& uid)
 {
     if (account_manager_.dedicated_window(uid) != this)
+    {
         return;
+    }
     account_manager_.clear_dedicated(uid);
     // Re-point the mapping to another live window still showing this account
     // (prefer a non-pinned / primary window so the picker raises the long-lived
@@ -1443,32 +1578,46 @@ void ShellBase::release_dedicated_(const std::string& uid)
     for (ShellBase* w : account_manager_.all_windows())
     {
         if (w == this)
+        {
             continue;
+        }
         auto a = w->active_account_;
         if (a && a->user_id == uid)
         {
             fallback = w;
             if (!w->is_pinned_window())
+            {
                 break;
+            }
         }
     }
     if (fallback)
+    {
         account_manager_.set_dedicated(uid, fallback);
+    }
 }
 
 ShellBase* ShellBase::account_owner_window_(const std::string& uid) const
 {
     if (auto* w = account_manager_.dedicated_window(uid); w && w != this)
+    {
         return w;
+    }
     ShellBase* popout_holder = nullptr;
     for (ShellBase* w : account_manager_.all_windows())
     {
         if (w == this)
+        {
             continue;
+        }
         if (w->active_account_ && w->active_account_->user_id == uid)
+        {
             return w;
+        }
         if (!popout_holder && w->has_popout_for_account_(uid))
+        {
             popout_holder = w;
+        }
     }
     return popout_holder;
 }
@@ -1478,19 +1627,22 @@ bool ShellBase::account_owned_elsewhere_(const std::string& uid) const
     return account_owner_window_(uid) != nullptr;
 }
 
-bool ShellBase::open_room_in_holder_window_(const std::string& uid,
-                                            const std::string& room_id,
+bool ShellBase::open_room_in_holder_window_(const std::string& uid, const std::string& room_id,
                                             const std::string& event_id)
 {
     ShellBase* owner = account_owner_window_(uid);
     if (!owner)
+    {
         return false;
+    }
     owner->raise_and_activate_();
     if (owner->active_account_ && owner->active_account_->user_id == uid)
     {
         owner->navigate_to_room_(room_id);
         if (!event_id.empty())
+        {
             owner->open_notification_thread_(room_id, event_id);
+        }
     }
     return true;
 }
@@ -1500,7 +1652,9 @@ std::shared_ptr<tesseract::AccountSession> ShellBase::pick_unowned_survivor_() c
     for (const auto& sess : account_manager_.accounts())
     {
         if (!account_owned_elsewhere_(sess->user_id))
+        {
             return sess;
+        }
     }
     return nullptr;
 }
@@ -1566,8 +1720,7 @@ bool ShellBase::is_account_bridge_target_() const
 {
     for (const auto& sess : account_manager_.accounts())
     {
-        if (sess->bridge &&
-            static_cast<EventHandlerBase*>(sess->bridge.get())->shell() == this)
+        if (sess->bridge && static_cast<EventHandlerBase*>(sess->bridge.get())->shell() == this)
         {
             return true;
         }
@@ -1590,7 +1743,9 @@ void ShellBase::forget_account_(const std::string& uid)
     account_manager_.remove_account(uid);
     sync_error_restarts_.erase(uid);
     for (auto it = upload_drafts_.begin(); it != upload_drafts_.end();)
+    {
         it = (it->second && it->second->user_id == uid) ? upload_drafts_.erase(it) : std::next(it);
+    }
     close_popouts_for_account_(uid);
     // Recompute the tray aggregate so the dot clears (or rolls over to the
     // surviving accounts) immediately; without this the indicator can stick
@@ -1640,10 +1795,8 @@ void ShellBase::drain_and_destroy_session_(const std::string& uid,
         // to polling draining_sess's own refcount — the same bounded,
         // proceed-anyway-on-timeout philosophy as everything else here, just
         // without the ordering trick mut_pool_ gets for free.
-        const auto deadline =
-            std::chrono::steady_clock::now() + kAccountDrainTimeout;
-        while (draining_sess.use_count() > 1 &&
-               std::chrono::steady_clock::now() < deadline)
+        const auto deadline = std::chrono::steady_clock::now() + kAccountDrainTimeout;
+        while (draining_sess.use_count() > 1 && std::chrono::steady_clock::now() < deadline)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
@@ -1732,11 +1885,13 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // threads use the shell's client. Hang up before the client is destroyed,
     // and wait for the leave: it would be lost with the client.
     if (call_session_)
+    {
         end_call(true);
+    }
 
     const std::string uid = active_account_->user_id;
     auto& sess = *active_account_;
-    out.logged_out     = true;
+    out.logged_out = true;
     out.logged_out_uid = uid;
 
     settle_recovery_key_on_sign_out_(uid);
@@ -1758,8 +1913,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // Unsubscribe the current open room unless it's pinned by a pop-out — the
     // same guard switch_active_account_impl_ uses. Folded in so Qt/Win get it
     // too (they previously skipped this, leaking a streaming timeline sub).
-    if (client_ && !current_room_id_.empty() &&
-        !room_pinned_by_popout_(current_room_id_))
+    if (client_ && !current_room_id_.empty() && !room_pinned_by_popout_(current_room_id_))
     {
         client_->unsubscribe_room(current_room_id_);
     }
@@ -1821,15 +1975,19 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     // pointer before the Client is handed off for destruction; the
     // remaining-account branch rebinds it in switch_active_account_impl_.
     if (history_export_controller_)
+    {
         history_export_controller_->set_client(nullptr);
+    }
     // Same for the settings controller: its jobs hold the session while they
     // run, and the drain below waits for exactly those references.
     if (settings_controller_)
+    {
         settings_controller_->set_client(nullptr);
+    }
     // Move (not reset) so the barrier task posted below — not this function
     // — drops the session's last ShellBase-held reference, off the UI thread.
     auto draining_sess = std::move(active_account_);
-    client_        = nullptr;
+    client_ = nullptr;
     event_handler_ = nullptr;
 
     // Reset the agnostic visible state (native widget clearing stays in the
@@ -1877,9 +2035,8 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
 
     // Update the on-disk index: drop the logged-out uid.
     auto index = tesseract::SessionStore::load_index();
-    index.user_ids.erase(
-        std::remove(index.user_ids.begin(), index.user_ids.end(), uid),
-        index.user_ids.end());
+    index.user_ids.erase(std::remove(index.user_ids.begin(), index.user_ids.end(), uid),
+                         index.user_ids.end());
 
     // The survivor must be an account no other window holds; with none, this
     // window ends up like one with no accounts (the shell shows the login page).
@@ -1887,9 +2044,13 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     if (!survivor)
     {
         if (account_manager_.accounts().empty())
+        {
             index.active_user_id.clear();
+        }
         else if (index.active_user_id == uid)
+        {
             index.active_user_id = account_manager_.accounts().front()->user_id;
+        }
         tesseract::SessionStore::save_index(index);
         // Unlike the has_remaining branch below, there's no incoming account
         // to re-point this at via switch_active_account_impl_, so it must be
@@ -1920,7 +2081,7 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
         refresh_account_ui_after_switch_();
     }
     out.has_remaining = true;
-    out.next_uid      = next_uid;
+    out.next_uid = next_uid;
     return out;
 }
 
@@ -1932,13 +2093,15 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
 // `on_signed_out` then runs only when an account was actually signed out and
 // carries the shell's native follow-up (room-list refresh, relayout, status
 // text, login-view swap). The login view is not touched here. UI-thread only.
-void ShellBase::sign_out_active_account_(std::function<void()> retry,
-                                         const std::function<void(const LogoutResult&)>& on_signed_out)
+void ShellBase::sign_out_active_account_(
+    std::function<void()> retry, const std::function<void(const LogoutResult&)>& on_signed_out)
 {
     // An unsaved recovery key is offered for saving first; this re-enters
     // (via `retry`) once the user has saved it or chosen to sign out anyway.
     if (intercept_sign_out_for_unsaved_key_(std::move(retry)))
+    {
         return;
+    }
 
     // Platform-agnostic teardown (unsubscribe the room, up_connector/presence
     // logout, client_->logout() + failure surface, stop_sync, clear account
@@ -1968,9 +2131,15 @@ void ShellBase::logout_active_account_ui_()
     close_settings_if_open_();
     // `retry` re-enters once the user has dealt with the unsaved-key prompt,
     // possibly after this window is gone.
-    sign_out_active_account_(
-        guarded([this] { logout_active_account_ui_(); }),
-        [this](const LogoutResult& result) { finish_sign_out_ui_(result); });
+    sign_out_active_account_(guarded(
+                                 [this]
+                                 {
+                                     logout_active_account_ui_();
+                                 }),
+                             [this](const LogoutResult& result)
+                             {
+                                 finish_sign_out_ui_(result);
+                             });
 }
 
 void ShellBase::finish_sign_out_ui_(const LogoutResult& result)
@@ -1987,8 +2156,7 @@ void ShellBase::finish_sign_out_ui_(const LogoutResult& result)
         show_status_message_(tk::tr("Signed out"), 3000);
         return;
     }
-    show_status_message_(
-        tk::trf(tk::tr("Signed out of {0}"), {result.logged_out_uid}), 3000);
+    show_status_message_(tk::trf(tk::tr("Signed out of {0}"), {result.logged_out_uid}), 3000);
 }
 
 void ShellBase::request_relogin_(const std::string& user_id)
@@ -2012,9 +2180,13 @@ void ShellBase::request_relogin_(const std::string& user_id)
     {
         const std::string uid = user_id; // may alias sess->user_id
         if (sess->client)
+        {
             sess->client->request_stop();
+        }
         if (sess->up_connector)
+        {
             sess->up_connector->logout();
+        }
         sess->sync_started = false;
         forget_account_(uid);
         drain_and_destroy_session_(uid, std::move(sess));
@@ -2022,9 +2194,8 @@ void ShellBase::request_relogin_(const std::string& user_id)
         broadcast_rebuild_tray_();
     }
     auto index = tesseract::SessionStore::load_index();
-    index.user_ids.erase(
-        std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
-        index.user_ids.end());
+    index.user_ids.erase(std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
+                         index.user_ids.end());
     if (index.active_user_id == user_id && active_account_)
     {
         index.active_user_id = active_account_->user_id;
@@ -2067,17 +2238,21 @@ Client* ShellBase::reset_pending_login_client_()
     retired_login_dirs_.add(std::move(pending_login_temp_dir_));
     pending_login_temp_dir_.clear();
     if (pending_login_client_)
+    {
         retired_login_clients_.push_back(std::move(pending_login_client_));
+    }
     pending_login_client_ = std::make_unique<Client>();
     return pending_login_client_.get();
 }
 
 void ShellBase::restart_sdk_begin_(
-    std::function<void(uint64_t, uint64_t, uint64_t,
-                       uint64_t, uint64_t, uint64_t, uint64_t)> recompute_callback)
+    std::function<void(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t)>
+        recompute_callback)
 {
     if (!client_ || my_user_id_.empty())
+    {
         return;
+    }
     // load_account_with_key(), not load_account(): the latter returns the raw
     // SecretStore blob, which for a store-key account is the wrapper
     // {"tesseract_store_key_wrapper":…,"session":…,"store_key":…} — restore_session
@@ -2106,10 +2281,8 @@ void ShellBase::restart_sdk_begin_(
         if (main_room_pane_)
         {
             auto _tt = compute_thread_transition_(
-                main_room_pane_->thread_panel(),
-                main_room_pane_->thread_panel_prev(),
-                main_room_pane_->thread_root(),
-                ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
             main_room_pane_->apply_thread_transition_(_tt);
         }
     }
@@ -2120,8 +2293,7 @@ void ShellBase::restart_sdk_begin_(
     // Only the layout (and the recent-rooms history) is forgotten — every
     // other synced preference (carried_prefs_()) and any keys this build
     // doesn't write are carried over.
-    const auto empty_layout_data =
-        tesseract::Prefs::without_layout(carried_prefs_());
+    const auto empty_layout_data = tesseract::Prefs::without_layout(carried_prefs_());
     const std::string empty_layout = tesseract::Prefs::serialize(
         empty_layout_data, active_account_ ? active_account_->prefs_json : std::string{});
     current_room_id_.clear();
@@ -2143,7 +2315,9 @@ void ShellBase::restart_sdk_begin_(
     // Drop every per-account, room-keyed cache (superset of the account-switch
     // reset in switch_active_account_impl_).
     if (main_room_pane_)
+    {
         main_room_pane_->clear_compose_drafts_();
+    }
     space_stack_.clear();
     space_nav_frames_.clear();
     reset_unjoined_fetch_state_();
@@ -2201,7 +2375,9 @@ void ShellBase::restart_sdk_begin_(
             // defensively so a fresh encrypted store opens with the right key
             // (mirrors the startup restore path).
             if (!store_key.empty())
+            {
                 sess->client->set_store_key(store_key);
+            }
 
             auto res = sess->client->restore_session(session_json);
             if (!res.ok)
@@ -2224,8 +2400,7 @@ void ShellBase::restart_sdk_begin_(
 
             // ── Phase C (UI thread): rebuild the UI ──────────────────────────
             post_to_ui_alive_(
-                [this, sess, ok, err = res.message,
-                 recalc = std::move(recalc)]() mutable
+                [this, sess, ok, err = res.message, recalc = std::move(recalc)]() mutable
                 {
                     sess->sync_started = ok;
                     if (ok)
@@ -2234,15 +2409,16 @@ void ShellBase::restart_sdk_begin_(
                     }
                     else
                     {
-                        show_status_message_(
-                            tk::trf(tk::tr("Cache cleared, but reloading failed: "
-                                           "{0}"),
-                                    {err}),
-                            /*auto_clear_ms=*/0);
+                        show_status_message_(tk::trf(tk::tr("Cache cleared, but reloading failed: "
+                                                            "{0}"),
+                                                     {err}),
+                                             /*auto_clear_ms=*/0);
                     }
                     refresh_account_ui_after_switch_();
                     if (recalc)
+                    {
                         compute_cache_sizes_(std::move(recalc));
+                    }
                 });
         });
 }
@@ -2262,8 +2438,7 @@ void ShellBase::apply_account_prefs_(tesseract::Client& client)
 bool ShellBase::encryption_flags_pending_() const
 {
     const auto& s = tesseract::Settings::instance();
-    return s.exclude_insecure_devices !=
-               tesseract::Client::exclude_insecure_devices_applied() ||
+    return s.exclude_insecure_devices != tesseract::Client::exclude_insecure_devices_applied() ||
            s.block_sends_on_unverified_devices !=
                tesseract::Client::block_sends_on_unverified_devices_applied();
 }
@@ -2309,24 +2484,23 @@ void ShellBase::reload_clients_for_encryption_change_()
 
     if (active_call())
     {
-        show_status_message_(
-            tk::tr("Encryption settings will apply once the call ends."));
+        show_status_message_(tk::tr("Encryption settings will apply once the call ends."));
         return;
     }
     if (encryption_flow_.has_flow())
     {
-        show_status_message_(tk::tr(
-            "Encryption settings will apply once you finish confirming your device."));
+        show_status_message_(
+            tk::tr("Encryption settings will apply once you finish confirming your device."));
         return;
     }
 
     struct Job
     {
         std::shared_ptr<AccountSession> sess;
-        std::string                     session_json;
-        std::vector<std::uint8_t>       store_key;
-        bool                            ok = true;
-        std::string                     error;
+        std::string session_json;
+        std::vector<std::uint8_t> store_key;
+        bool ok = true;
+        std::string error;
     };
     std::vector<Job> jobs;
     for (const auto& sess : account_manager_.accounts())
@@ -2340,8 +2514,7 @@ void ShellBase::reload_clients_for_encryption_change_()
         {
             continue;
         }
-        jobs.push_back({sess, std::move(loaded->session_json),
-                        std::move(loaded->store_key)});
+        jobs.push_back({sess, std::move(loaded->session_json), std::move(loaded->store_key)});
     }
 
     // The flags must be set before any client is rebuilt (this also keeps the
@@ -2382,10 +2555,8 @@ void ShellBase::reload_clients_for_encryption_change_()
     if (main_room_pane_)
     {
         auto _tt = compute_thread_transition_(
-            main_room_pane_->thread_panel(),
-            main_room_pane_->thread_panel_prev(),
-            main_room_pane_->thread_root(),
-            ThreadTrigger::RoomSwitch, {});
+            main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+            main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
         main_room_pane_->apply_thread_transition_(_tt);
     }
     visited_lru_.clear();
@@ -2427,7 +2598,7 @@ void ShellBase::reload_clients_for_encryption_change_()
                     std::this_thread::sleep_for(std::chrono::milliseconds(250));
                     res = client.restore_session(j.session_json); // retry once
                 }
-                j.ok    = res.ok;
+                j.ok = res.ok;
                 j.error = res.message;
                 if (j.ok)
                 {
@@ -2471,11 +2642,10 @@ void ShellBase::reload_clients_for_encryption_change_()
                     }
                     else
                     {
-                        show_status_message_(
-                            tk::trf(tk::tr("Encryption settings applied, but "
-                                           "reloading failed: {0}"),
-                                    {first_error}),
-                            /*auto_clear_ms=*/0);
+                        show_status_message_(tk::trf(tk::tr("Encryption settings applied, but "
+                                                            "reloading failed: {0}"),
+                                                     {first_error}),
+                                             /*auto_clear_ms=*/0);
                     }
                     if (active_account_ && client_)
                     {
@@ -2510,7 +2680,9 @@ bool ShellBase::is_secondary_window_startup_() const
 void ShellBase::on_account_picker_select_(const std::string& uid)
 {
     if (account_manager_.dedicated_window(uid) == this)
+    {
         return; // already shown here
+    }
     // Held by another window (shown there, or kept alive by its pop-outs):
     // raise it rather than take the account away from it.
     if (auto* owner = account_owner_window_(uid))
@@ -2522,12 +2694,16 @@ void ShellBase::on_account_picker_select_(const std::string& uid)
     // client while the session lives on the old one. Hang up first; the old
     // account's client stays alive, so its leave can finish in the background.
     if (call_session_ && !(active_account_ && active_account_->user_id == uid))
+    {
         end_call();
+    }
     if (is_ctrl_held_())
     {
         auto session = account_manager_.find(uid);
         if (session)
+        {
             spawn_main_window_(session);
+        }
         return;
     }
     if (is_pinned_window_)
@@ -2535,7 +2711,9 @@ void ShellBase::on_account_picker_select_(const std::string& uid)
         // A popped-out window is bound to one account; open the chosen account in
         // its own window rather than hijacking this one.
         if (auto session = account_manager_.find(uid))
+        {
             spawn_main_window_(session);
+        }
         return;
     }
     switch_active_account_(uid);
@@ -2551,11 +2729,14 @@ void ShellBase::restart_account_sync_(const std::string& user_id)
     if (sess && !sess->sync_started && sess->client)
     {
         sess->sync_started = true;
-        run_async_mut_([sess]()
-        {
-            if (sess && sess->client)
-                sess->client->start_sync(sess->bridge.get());
-        });
+        run_async_mut_(
+            [sess]()
+            {
+                if (sess && sess->client)
+                {
+                    sess->client->start_sync(sess->bridge.get());
+                }
+            });
     }
 }
 
@@ -2566,8 +2747,7 @@ void ShellBase::schedule_sync_restart_(const std::string& user_id, int delay_ms)
     post_to_ui_after_(delay_ms,
                       [this, user_id]()
                       {
-                          auto activity_scope =
-                              activity_.begin("sync-restart", "Sync", "one-shot");
+                          auto activity_scope = activity_.begin("sync-restart", "Sync", "one-shot");
                           restart_account_sync_(user_id);
                       });
 }
@@ -2596,10 +2776,8 @@ static int sync_restart_delay_ms(int attempts)
 //   - else: surface `description` in the status bar.
 // Centralizing this fixes prior per-shell drift (notably macOS, which
 // skipped the post-refresh display-name/avatar re-fetch + strip re-bind).
-void ShellBase::handle_sync_error_impl_(std::string context,
-                                        std::string user_id,
-                                        std::string description,
-                                        bool soft_logout)
+void ShellBase::handle_sync_error_impl_(std::string context, std::string user_id,
+                                        std::string description, bool soft_logout)
 {
     auto affected = account_manager_.find(user_id);
 
@@ -2612,13 +2790,18 @@ void ShellBase::handle_sync_error_impl_(std::string context,
             // The restart is queued on the same pool afterwards, so it runs
             // after the stop.
             auto sess = affected;
-            run_async_mut_([sess]() {
-                if (sess && sess->client)
-                    sess->client->stop_sync();
-            });
+            run_async_mut_(
+                [sess]()
+                {
+                    if (sess && sess->client)
+                    {
+                        sess->client->stop_sync();
+                    }
+                });
             affected->sync_started = false;
-            schedule_sync_restart_(affected->user_id,
-                                   sync_restart_delay_ms(++sync_error_restarts_[affected->user_id]));
+            schedule_sync_restart_(
+                affected->user_id,
+                sync_restart_delay_ms(++sync_error_restarts_[affected->user_id]));
         }
         return;
     }
@@ -2630,13 +2813,13 @@ void ShellBase::handle_sync_error_impl_(std::string context,
         // retries. Say why until it works, and try again on the same bounded
         // backoff as a terminal sync error. No stop_sync: nothing was started.
         show_status_message_(
-            tk::trf(tk::tr("Couldn't start syncing: {0}. Retrying\xe2\x80\xa6"), {description}),
-            0);
+            tk::trf(tk::tr("Couldn't start syncing: {0}. Retrying\xe2\x80\xa6"), {description}), 0);
         if (affected && affected->client)
         {
             affected->sync_started = false;
-            schedule_sync_restart_(affected->user_id,
-                                   sync_restart_delay_ms(++sync_error_restarts_[affected->user_id]));
+            schedule_sync_restart_(
+                affected->user_id,
+                sync_restart_delay_ms(++sync_error_restarts_[affected->user_id]));
         }
         return;
     }
@@ -2660,9 +2843,11 @@ void ShellBase::handle_sync_error_impl_(std::string context,
                     [this, sess = affected, loaded = std::move(*loaded)]() mutable
                     {
                         if (!loaded.store_key.empty())
+                        {
                             sess->client->set_store_key(loaded.store_key);
-                        const bool restored = static_cast<bool>(
-                            sess->client->restore_session(loaded.session_json));
+                        }
+                        const bool restored =
+                            static_cast<bool>(sess->client->restore_session(loaded.session_json));
                         post_to_ui_alive_(
                             [this, sess, restored]
                             {

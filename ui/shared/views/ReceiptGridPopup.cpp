@@ -16,8 +16,7 @@ namespace tesseract::views
 //  Grid adapter — paints one avatar cell per hidden receipt.
 // ─────────────────────────────────────────────────────────────────────────
 
-class ReceiptGridPopup::GridAdapter : public tk::GridAdapter,
-                                      public tk::GridAdapterAccessibility
+class ReceiptGridPopup::GridAdapter : public tk::GridAdapter, public tk::GridAdapterAccessibility
 {
 public:
     explicit GridAdapter(ReceiptGridPopup& owner) : owner_(owner)
@@ -32,16 +31,19 @@ public:
     std::string access_name_for_cell(std::size_t index) const override
     {
         if (index >= owner_.entries_.size())
+        {
             return {};
+        }
         const auto& rr = owner_.entries_[index];
         return rr.display_name.empty() ? rr.user_id : rr.display_name;
     }
     std::string access_description_for_cell(std::size_t index) const override
     {
         if (index >= owner_.entries_.size() || owner_.entries_[index].timestamp_ms == 0)
+        {
             return {};
-        return tk::trf(tk::tr("Read at {0}"),
-                       {format_hhmm(owner_.entries_[index].timestamp_ms)});
+        }
+        return tk::trf(tk::tr("Read at {0}"), {format_hhmm(owner_.entries_[index].timestamp_ms)});
     }
 
     std::size_t count() const override
@@ -49,18 +51,17 @@ public:
         return owner_.entries_.size();
     }
 
-    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                    bool /*selected*/, bool /*hovered*/) override
+    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool /*selected*/,
+                    bool /*hovered*/) override
     {
         const auto& rr = owner_.entries_[index];
         const tk::Image* img = (owner_.provider_ && !rr.avatar_url.empty())
-                                    ? owner_.provider_(rr.avatar_url)
-                                    : nullptr;
+                                   ? owner_.provider_(rr.avatar_url)
+                                   : nullptr;
         tk::Point centre{bounds.x + bounds.w * 0.5f, bounds.y + bounds.h * 0.5f};
         draw_avatar(ctx.canvas, img, centre, std::min(bounds.w, bounds.h),
                     rr.display_name.empty() ? rr.user_id : rr.display_name,
-                    ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+                    ctx.theme.palette.avatar_initials_bg, ctx.theme.palette.avatar_initials_text);
     }
 
 private:
@@ -73,13 +74,12 @@ private:
 
 std::string ReceiptGridPopup::access_name() const
 {
-    return tk::trf(tk::trn("Read by {0} person", "Read by {0} people",
-                           static_cast<long>(entries_.size())),
-                   {std::to_string(entries_.size())});
+    return tk::trf(
+        tk::trn("Read by {0} person", "Read by {0} people", static_cast<long>(entries_.size())),
+        {std::to_string(entries_.size())});
 }
 
-ReceiptGridPopup::ReceiptGridPopup()
-    : grid_adapter_(std::make_unique<GridAdapter>(*this))
+ReceiptGridPopup::ReceiptGridPopup() : grid_adapter_(std::make_unique<GridAdapter>(*this))
 {
     auto grid = tk::create_widget<tk::GridView>(this);
     grid->set_adapter(grid_adapter_.get());
@@ -107,8 +107,7 @@ void ReceiptGridPopup::set_entries(std::vector<tesseract::ReadReceipt> entries)
 {
     entries_ = std::move(entries);
 
-    const int rows_needed =
-        static_cast<int>((entries_.size() + kCols - 1) / kCols);
+    const int rows_needed = static_cast<int>((entries_.size() + kCols - 1) / kCols);
     const int visible_rows = std::max(1, std::min(rows_needed, kMaxVisibleRows));
     natural_size_ = {
         kCols * kCellSize + (kCols - 1) * kCellGap + 2 * kPadding,
@@ -171,8 +170,7 @@ void ReceiptGridPopup::paint(tk::PaintCtx& ctx)
         if (grid_ && grid_->hovered_index() >= 0 &&
             static_cast<std::size_t>(grid_->hovered_index()) < entries_.size())
         {
-            const auto& rr =
-                entries_[static_cast<std::size_t>(grid_->hovered_index())];
+            const auto& rr = entries_[static_cast<std::size_t>(grid_->hovered_index())];
             tip = rr.display_name.empty() ? rr.user_id : rr.display_name;
             const std::string ts = format_hhmm(rr.timestamp_ms);
             if (!ts.empty())
@@ -182,8 +180,7 @@ void ReceiptGridPopup::paint(tk::PaintCtx& ctx)
         }
         if (!tip.empty())
         {
-            host()->show_tooltip(grid_, tip,
-                                 grid_->rect_at(grid_->hovered_index()),
+            host()->show_tooltip(grid_, tip, grid_->rect_at(grid_->hovered_index()),
                                  /*from_popup=*/true);
         }
         else
@@ -192,8 +189,7 @@ void ReceiptGridPopup::paint(tk::PaintCtx& ctx)
         }
     }
 
-    ctx.canvas.stroke_rounded_rect(bounds_, kCardRadius,
-                                   ctx.theme.palette.popup_border, 1.0f);
+    ctx.canvas.stroke_rounded_rect(bounds_, kCardRadius, ctx.theme.palette.popup_border, 1.0f);
 }
 
 void ReceiptGridPopup::paint_overlay(tk::PaintCtx& ctx)

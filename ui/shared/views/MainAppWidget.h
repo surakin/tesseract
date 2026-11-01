@@ -101,8 +101,7 @@ public:
 
     // Supply the image cache lookup function used to paint the space avatar.
     // The signature matches the one used by RoomListView / RoomView.
-    void set_avatar_provider(
-        std::function<const tk::Image*(const std::string& mxc_url)> provider);
+    void set_avatar_provider(std::function<const tk::Image*(const std::string& mxc_url)> provider);
 
     // ── Banner visibility ─────────────────────────────────────────────────
 
@@ -114,8 +113,7 @@ public:
     // ── Chat panel content switching ──────────────────────────────────────
 
     // Show the invite card for a pending invitation, hiding RoomView.
-    void show_invite(const tesseract::InviteInfo& invite,
-                     InviteCard::ImageProvider provider);
+    void show_invite(const tesseract::InviteInfo& invite, InviteCard::ImageProvider provider);
 
     // Show the knock status card for one of the current user's pending
     // knock requests (MSC2403), hiding RoomView.
@@ -132,10 +130,8 @@ public:
     void hide_room_preview();
 
     // Show the joined-space root panel, hiding RoomView.
-    void show_space_root(const tesseract::RoomInfo& space,
-                         std::size_t joined_children,
-                         std::size_t unjoined_children,
-                         SpaceRootView::AvatarProvider provider);
+    void show_space_root(const tesseract::RoomInfo& space, std::size_t joined_children,
+                         std::size_t unjoined_children, SpaceRootView::AvatarProvider provider);
     void hide_space_root();
 
     // Hide both RoomView and the invite card (nothing selected state).
@@ -155,15 +151,17 @@ public:
 
     // Set by the shell before calling open_camera_overlay(). Receives the raw
     // BGRA8888 frame; the shell encodes it to JPEG and calls add_pending_image.
-    std::function<void(std::vector<std::uint8_t> bgra,
-                       std::uint32_t w, std::uint32_t h)>
+    std::function<void(std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)>
         on_selfie_captured;
 
     // Set by the shell. open_camera_overlay() is a no-op while this returns true.
     std::function<bool()> is_call_active;
     void show_encryption_setup(bool show);
     void show_qr_grant(bool show);
-    QRGrantView* qr_grant_view() const { return qr_grant_view_; }
+    QRGrantView* qr_grant_view() const
+    {
+        return qr_grant_view_;
+    }
 
     // ── Quick switcher (Ctrl+K) ───────────────────────────────────────────
 
@@ -172,7 +170,10 @@ public:
     // ShellBase::wire_main_app_widget_().
     std::function<void()> on_settings_shortcut;
     void show_quick_switch(bool show);
-    QuickSwitcher* quick_switcher() const { return quick_switcher_; }
+    QuickSwitcher* quick_switcher() const
+    {
+        return quick_switcher_;
+    }
 
     // ── MRU room switcher (Ctrl+Tab / Ctrl+Shift+Tab) ───────────────────────
     // A shell only needs to forward a raw Ctrl+Tab / Ctrl+Shift+Tab key
@@ -188,7 +189,10 @@ public:
     void commit_mru_cycle();
     void cancel_mru_cycle();
     bool mru_cycle_active() const;
-    MruSwitcher* mru_switcher() const { return mru_switcher_; }
+    MruSwitcher* mru_switcher() const
+    {
+        return mru_switcher_;
+    }
 
     // ── Keyboard shortcuts overlay (Ctrl+/ / F1) ─────────────────────────
 
@@ -204,7 +208,10 @@ public:
 
     std::function<void()> on_message_search_shortcut;
     void show_message_search(bool show);
-    MessageSearchView* message_search() const { return message_search_; }
+    MessageSearchView* message_search() const
+    {
+        return message_search_;
+    }
 
     // ── Room media gallery ────────────────────────────────────────────────
 
@@ -220,14 +227,23 @@ public:
 
     // ── Forward room picker ───────────────────────────────────────────────
 
-    ForwardRoomPicker* forward_picker() const { return forward_picker_; }
+    ForwardRoomPicker* forward_picker() const
+    {
+        return forward_picker_;
+    }
 
     // Combined Join/Create "Add Room" dialog — opened by RoomListView's "+"
     // button (Join tab) or via ShellBase::open_matrix_link() for an
     // unjoined alias (Join tab, prefilled).
-    AddRoomView* add_room_view() const { return add_room_view_; }
+    AddRoomView* add_room_view() const
+    {
+        return add_room_view_;
+    }
 
-    EncryptionSetupOverlay* encryption_setup() const { return encryption_setup_; }
+    EncryptionSetupOverlay* encryption_setup() const
+    {
+        return encryption_setup_;
+    }
 
     // Configure and show the call overlay for an active session. Routes to
     // RoomView::mount_call_panel() for Docked/DockedExpanded modes, or creates
@@ -235,12 +251,11 @@ public:
     // post_delayed wires the timer, repaint_requester requests video-frame
     // repaints, avatar_provider and display_name_provider supply participant
     // metadata. Does not call start_timer() — the caller owns that.
-    void mount_call_overlay(
-        views::CallOverlayWidget::Mode                  initial_mode,
-        std::function<void(int, std::function<void()>)> post_delayed,
-        std::function<void()>                           repaint_requester,
-        std::function<const tk::Image*(const std::string&)> avatar_provider,
-        std::function<std::string(const std::string&)>  display_name_provider);
+    void mount_call_overlay(views::CallOverlayWidget::Mode initial_mode,
+                            std::function<void(int, std::function<void()>)> post_delayed,
+                            std::function<void()> repaint_requester,
+                            std::function<const tk::Image*(const std::string&)> avatar_provider,
+                            std::function<std::string(const std::string&)> display_name_provider);
 
     // Tear down the overlay: stops the timer and removes/hides it.
     // Cleans up both the docked panel (via room_view_->unmount_call_panel())
@@ -256,16 +271,18 @@ public:
     // user dismisses without choosing. Both callbacks remove the picker.
     // Returns the mounted widget so the caller can push thumbnails into it as
     // they're captured; the pointer is invalidated once either callback fires.
-    views::ScreenPickerWidget* mount_screen_picker(
-        std::vector<tk::ScreenSource> sources,
-        std::function<void(std::string)> on_selected,
-        std::function<void()>            on_cancelled);
+    views::ScreenPickerWidget* mount_screen_picker(std::vector<tk::ScreenSource> sources,
+                                                   std::function<void(std::string)> on_selected,
+                                                   std::function<void()> on_cancelled);
 
     // Remove the screen picker if currently shown.
     void unmount_screen_picker();
 
     // True while the screen picker modal is visible.
-    bool screen_picker_open() const { return screen_picker_ != nullptr; }
+    bool screen_picker_open() const
+    {
+        return screen_picker_ != nullptr;
+    }
 
     // ── Sub-view accessors ────────────────────────────────────────────────
 
@@ -386,15 +403,20 @@ public:
     // Fires as the pointer moves over / off the sidebar separator so the shell
     // can set its native cursor: Resize (↔) over the draggable band and during
     // a drag, Toggle (hand) over the collapse grip button, None elsewhere.
-    enum class SidebarCursor : std::uint8_t { None, Resize, Toggle };
+    enum class SidebarCursor : std::uint8_t
+    {
+        None,
+        Resize,
+        Toggle
+    };
     std::function<void(SidebarCursor)> on_sidebar_cursor;
 
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    void     paint_after_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
     bool on_key_down(const tk::KeyEvent& event) override;
 
 private:
@@ -433,8 +455,7 @@ private:
     // touched here).
     tk::Widget* active_transient_overlay_() const;
 
-    static constexpr float kSidebarW =
-        static_cast<float>(tesseract::visual::kSidebarWidth);
+    static constexpr float kSidebarW = static_cast<float>(tesseract::visual::kSidebarWidth);
     static constexpr float kSidebarCollapsedW =
         static_cast<float>(tesseract::visual::kSidebarCollapsedWidth);
     static constexpr float kSidebarMinExpandedW =
@@ -460,11 +481,11 @@ private:
     ChatPanelWidget* chat_panel_ = nullptr;
     EncryptionReminderBanner* reminder_banner_ = nullptr;
     tk::TabBar* tab_bar_ = nullptr;
-    RoomView*        room_view_    = nullptr;
-    InviteCard*      invite_card_  = nullptr;
+    RoomView* room_view_ = nullptr;
+    InviteCard* invite_card_ = nullptr;
     KnockStatusCard* knock_status_card_ = nullptr;
     RoomPreviewView* room_preview_ = nullptr;
-    SpaceRootView*   space_root_   = nullptr;
+    SpaceRootView* space_root_ = nullptr;
 
     bool modal_was_open_ = false;
 
@@ -511,7 +532,6 @@ private:
     ForwardRoomPicker* forward_picker_ = nullptr;
     AddRoomView* add_room_view_ = nullptr;
 
-
     FloatingCallLayerWidget* floating_call_layer_ = nullptr;
     // Floating-mode CallOverlayWidget — lazily created by mount_call_overlay()
     // when initial_mode == Floating, removed by unmount_call_overlay().
@@ -521,7 +541,6 @@ private:
     // Screen source picker — shown modally over the full app area while the
     // user selects what to share. Removed immediately on selection or cancel.
     views::ScreenPickerWidget* screen_picker_ = nullptr;
-
 
     static constexpr float kOfflineBannerH = 32.0f;
 };

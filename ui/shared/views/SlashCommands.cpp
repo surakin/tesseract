@@ -21,8 +21,14 @@ namespace
 const char* strip_prefix(const std::string& s, const char* prefix)
 {
     const std::size_t n = std::char_traits<char>::length(prefix);
-    if (s.size() < n) return nullptr;
-    if (s.compare(0, n, prefix) != 0) return nullptr;
+    if (s.size() < n)
+    {
+        return nullptr;
+    }
+    if (s.compare(0, n, prefix) != 0)
+    {
+        return nullptr;
+    }
     return s.c_str() + n;
 }
 
@@ -35,58 +41,76 @@ std::string attr_escape(std::string_view s)
     {
         switch (c)
         {
-        case '&': out += "&amp;"; break;
-        case '<': out += "&lt;"; break;
-        case '"': out += "&quot;"; break;
-        default:  out += c; break;
+        case '&':
+            out += "&amp;";
+            break;
+        case '<':
+            out += "&lt;";
+            break;
+        case '"':
+            out += "&quot;";
+            break;
+        default:
+            out += c;
+            break;
         }
     }
     return out;
 }
 
-}  // namespace
+} // namespace
 
 bool is_slash_command_no_arg(const std::string& body, const char* cmd)
 {
-    const std::size_t cmd_len    = std::char_traits<char>::length(cmd);
+    const std::size_t cmd_len = std::char_traits<char>::length(cmd);
     const std::size_t prefix_len = cmd_len + 1; // +1 for '/'
     if (body.size() < prefix_len || body[0] != '/')
+    {
         return false;
+    }
     if (body.compare(1, cmd_len, cmd) != 0)
+    {
         return false;
+    }
     // Everything after the command name must be absent or whitespace-only.
     return body.size() == prefix_len ||
            body.find_first_not_of(" \t", prefix_len) == std::string::npos;
 }
 
-std::optional<std::string> parse_slash_arg(const std::string& body,
-                                            const char* cmd)
+std::optional<std::string> parse_slash_arg(const std::string& body, const char* cmd)
 {
     // Build the required prefix: "/<cmd> "
     std::string prefix = std::string("/") + cmd + " ";
     if (body.size() <= prefix.size())
+    {
         return std::nullopt;
+    }
     if (body.compare(0, prefix.size(), prefix) != 0)
+    {
         return std::nullopt;
-    std::string_view arg(body.c_str() + prefix.size(),
-                         body.size() - prefix.size());
+    }
+    std::string_view arg(body.c_str() + prefix.size(), body.size() - prefix.size());
     const auto start = arg.find_first_not_of(" \t");
     if (start == std::string_view::npos)
+    {
         return std::nullopt;
+    }
     const auto end = arg.find_last_not_of(" \t");
     return std::string(arg.substr(start, end - start + 1));
 }
 
-std::optional<std::vector<std::string>> parse_slash_args(
-    const std::string& body, const char* cmd)
+std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd)
 {
     std::string prefix = std::string("/") + cmd + " ";
     if (body.size() <= prefix.size())
+    {
         return std::nullopt;
+    }
     if (body.compare(0, prefix.size(), prefix) != 0)
+    {
         return std::nullopt;
-    std::string_view rest(body.c_str() + prefix.size(),
-                          body.size() - prefix.size());
+    }
+    std::string_view rest(body.c_str() + prefix.size(), body.size() - prefix.size());
 
     std::vector<std::string> args;
     std::string cur;
@@ -97,9 +121,13 @@ std::optional<std::vector<std::string>> parse_slash_args(
         if (quote != '\0')
         {
             if (c == quote)
+            {
                 quote = '\0';
+            }
             else
+            {
                 cur.push_back(c);
+            }
             continue;
         }
         if (c == '"' || c == '\'')
@@ -122,7 +150,9 @@ std::optional<std::vector<std::string>> parse_slash_args(
         in_token = true;
     }
     if (in_token)
+    {
         args.push_back(std::move(cur));
+    }
     return args;
 }
 
@@ -130,7 +160,10 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 {
     // Trim leading whitespace.
     std::size_t i = 0;
-    while (i < args.size() && (args[i] == ' ' || args[i] == '\t')) ++i;
+    while (i < args.size() && (args[i] == ' ' || args[i] == '\t'))
+    {
+        ++i;
+    }
     args.remove_prefix(i);
 
     // Optional leading "(reason)" — only when the parens are balanced.
@@ -144,21 +177,33 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
             std::string_view r = args.substr(1, close - 1);
             // Trim the reason.
             std::size_t rs = 0, re = r.size();
-            while (rs < re && (r[rs] == ' ' || r[rs] == '\t')) ++rs;
-            while (re > rs && (r[re - 1] == ' ' || r[re - 1] == '\t')) --re;
+            while (rs < re && (r[rs] == ' ' || r[rs] == '\t'))
+            {
+                ++rs;
+            }
+            while (re > rs && (r[re - 1] == ' ' || r[re - 1] == '\t'))
+            {
+                --re;
+            }
             reason.assign(r.substr(rs, re - rs));
             has_reason = true;
             args.remove_prefix(close + 1);
             // Trim whitespace between ")" and the content.
             std::size_t j = 0;
-            while (j < args.size() && (args[j] == ' ' || args[j] == '\t')) ++j;
+            while (j < args.size() && (args[j] == ' ' || args[j] == '\t'))
+            {
+                ++j;
+            }
             args.remove_prefix(j);
         }
     }
 
     // Trim trailing whitespace from the content.
     std::size_t end = args.size();
-    while (end > 0 && (args[end - 1] == ' ' || args[end - 1] == '\t')) --end;
+    while (end > 0 && (args[end - 1] == ' ' || args[end - 1] == '\t'))
+    {
+        --end;
+    }
     args = args.substr(0, end);
 
     if (args.empty())
@@ -172,8 +217,7 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
     {
         msg.body = tk::trf(tk::tr("(Spoiler: {0})"), {reason}) + " " + std::string(args);
         msg.formatted_body =
-            "<span data-mx-spoiler=\"" + attr_escape(reason) + "\">" + inner +
-            "</span>";
+            "<span data-mx-spoiler=\"" + attr_escape(reason) + "\">" + inner + "</span>";
     }
     else
     {
@@ -186,19 +230,19 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
 const std::vector<SlashCommandDescriptor>& available_commands()
 {
     static const std::vector<SlashCommandDescriptor> kCommands = {
-        {"me",           "<action>",          tk::tr("Send an action message")},
-        {"shrug",        "",                  tk::tr("Append \xC2\xAF\\_(ツ)_/\xC2\xAF")},
-        {"slap",         "<target>",          tk::tr("Slap someone with a large trout")},
-        {"spoiler",      "[(reason)] <text>", tk::tr("Send a hidden spoiler message")},
-        {"myroomnick",   "<name>",            tk::tr("Set your display name in this room")},
+        {"me", "<action>", tk::tr("Send an action message")},
+        {"shrug", "", tk::tr("Append \xC2\xAF\\_(ツ)_/\xC2\xAF")},
+        {"slap", "<target>", tk::tr("Slap someone with a large trout")},
+        {"spoiler", "[(reason)] <text>", tk::tr("Send a hidden spoiler message")},
+        {"myroomnick", "<name>", tk::tr("Set your display name in this room")},
         {"myroomavatar", "[mxc_uri|url|reset]", tk::tr("Set or reset your avatar in this room")},
-        {"join",         "<#room:server>",    tk::tr("Join a room by alias or ID")},
-        {"leave",        "",                  tk::tr("Leave the current room")},
-        {"invite",       "<@user:server> [reason]", tk::tr("Invite a user to the current room")},
-        {"gif",          "<search>",          tk::tr("Search for a GIF to send")},
-        {"selfie",       "",                  tk::tr("Take a selfie and attach it")},
-        {"location",     "",                  tk::tr("Share your current location")},
-        {"poll",         "",                  tk::tr("Create a poll")},
+        {"join", "<#room:server>", tk::tr("Join a room by alias or ID")},
+        {"leave", "", tk::tr("Leave the current room")},
+        {"invite", "<@user:server> [reason]", tk::tr("Invite a user to the current room")},
+        {"gif", "<search>", tk::tr("Search for a GIF to send")},
+        {"selfie", "", tk::tr("Take a selfie and attach it")},
+        {"location", "", tk::tr("Share your current location")},
+        {"poll", "", tk::tr("Create a poll")},
     };
     return kCommands;
 }
@@ -207,11 +251,17 @@ std::optional<std::string> slash_success_message(const std::string& body)
 {
     const auto arg = parse_slash_arg(body, "myroomavatar");
     if (!arg)
+    {
         return std::nullopt;
+    }
     std::string lower = *arg;
     std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return lower == "reset" ? tk::tr("Avatar reset for this room") : tk::tr("Avatar updated for this room");
+                   [](unsigned char c)
+                   {
+                       return static_cast<char>(std::tolower(c));
+                   });
+    return lower == "reset" ? tk::tr("Avatar reset for this room")
+                            : tk::tr("Avatar updated for this room");
 }
 
 std::string strip_command_from_html(const std::string& html, std::string_view command)
@@ -225,10 +275,14 @@ std::string strip_command_from_html(const std::string& html, std::string_view co
     }
     const std::string literal = "/" + std::string(command);
     if (h.substr(0, literal.size()) != literal)
+    {
         return {};
+    }
     h.remove_prefix(literal.size());
     if (!h.empty() && h.front() == ' ')
+    {
         h.remove_prefix(1);
+    }
     return prefix + std::string(h);
 }
 
@@ -237,13 +291,13 @@ std::string append_to_html(const std::string& html, const std::string& tail)
     constexpr std::string_view kClose = "</p>";
     if (html.size() >= kClose.size() &&
         html.compare(html.size() - kClose.size(), kClose.size(), kClose) == 0)
+    {
         return html.substr(0, html.size() - kClose.size()) + tail + std::string(kClose);
+    }
     return html + tail;
 }
 
-Result dispatch_compose_send(Client& client,
-                             const std::string& room_id,
-                             const std::string& body,
+Result dispatch_compose_send(Client& client, const std::string& room_id, const std::string& body,
                              const std::string& formatted_body,
                              const std::string& url_previews_json)
 {
@@ -274,7 +328,9 @@ Result dispatch_compose_send(Client& client,
             {
                 const std::string typed = strip_command_from_html(formatted_body, "shrug");
                 if (!typed.empty())
+                {
                     html = append_to_html(typed, " \xC2\xAF\\_(\xE3\x83\x84)_/\xC2\xAF");
+                }
             }
             return client.send_message(room_id, text, html);
         }
@@ -294,7 +350,9 @@ Result dispatch_compose_send(Client& client,
         // looks through, so "/me *waves*" keeps its emphasis.)
         std::string emote_formatted;
         if (!formatted_body.empty())
+        {
             emote_formatted = strip_command_from_html(formatted_body, "me");
+        }
         if (emote_body.empty())
         {
             // An empty `/me ` does nothing; report success so the composer
@@ -345,11 +403,17 @@ Result dispatch_compose_send(Client& client,
         // A blank name must not reach the client: an empty display name clears it.
         std::string nick = name;
         while (!nick.empty() && (nick.front() == ' ' || nick.front() == '\t'))
+        {
             nick.erase(nick.begin());
+        }
         while (!nick.empty() && (nick.back() == ' ' || nick.back() == '\t'))
+        {
             nick.pop_back();
+        }
         if (nick.empty())
+        {
             return Result{false, tk::tr("no display name given; use /myroomnick <name>")};
+        }
         return client.set_user_room_display_name(room_id, nick);
     }
 
@@ -364,13 +428,20 @@ Result dispatch_compose_send(Client& client,
         // "/myroomavatarabc" is not misidentified as this command.
         if (*sfx == '\0' || *sfx == ' ' || *sfx == '\t')
         {
-            while (*sfx == ' ' || *sfx == '\t') ++sfx; // skip separator
+            while (*sfx == ' ' || *sfx == '\t')
+            {
+                ++sfx; // skip separator
+            }
             std::string arg = sfx;
             while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t'))
+            {
                 arg.pop_back();
+            }
             if (arg.empty())
+            {
                 return Result{false, tk::tr("no image URL provided; use /myroomavatar "
                                             "alone to open the image picker")};
+            }
             auto starts_with_ci = [&](std::string_view prefix)
             {
                 return arg.size() >= prefix.size() &&
@@ -382,11 +453,17 @@ Result dispatch_compose_send(Client& client,
                                   });
             };
             if (arg.size() == 5 && starts_with_ci("reset"))
+            {
                 return client.reset_user_room_avatar(room_id);
+            }
             if (starts_with_ci("mxc://"))
+            {
                 return client.set_user_room_avatar(room_id, arg);
+            }
             if (starts_with_ci("http://") || starts_with_ci("https://"))
+            {
                 return client.set_user_room_avatar_from_url(room_id, arg);
+            }
             return Result{false, tk::tr("expected an mxc:// or http(s) image URL, or \"reset\"")};
         }
     }
@@ -407,10 +484,19 @@ std::vector<std::string> split_whitespace(const std::string& s)
     std::size_t i = 0;
     while (i < s.size())
     {
-        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
-        if (i >= s.size()) break;
+        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i])))
+        {
+            ++i;
+        }
+        if (i >= s.size())
+        {
+            break;
+        }
         std::size_t start = i;
-        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i])))
+        {
+            ++i;
+        }
         out.push_back(s.substr(start, i - start));
     }
     return out;
@@ -438,9 +524,20 @@ bool parse_bool_token(const std::string& t, bool& out)
 {
     std::string lower;
     lower.reserve(t.size());
-    for (char c : t) lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (lower == "true" || lower == "yes" || lower == "1") { out = true; return true; }
-    if (lower == "false" || lower == "no" || lower == "0") { out = false; return true; }
+    for (char c : t)
+    {
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (lower == "true" || lower == "yes" || lower == "1")
+    {
+        out = true;
+        return true;
+    }
+    if (lower == "false" || lower == "no" || lower == "0")
+    {
+        out = false;
+        return true;
+    }
     return false;
 }
 
@@ -449,7 +546,10 @@ bool parse_bool_token(const std::string& t, bool& out)
 // rejected outright rather than truncated.
 bool parse_integer_token(const std::string& t, long long& out)
 {
-    if (t.empty()) return false;
+    if (t.empty())
+    {
+        return false;
+    }
     std::size_t idx = 0;
     try
     {
@@ -459,7 +559,10 @@ bool parse_integer_token(const std::string& t, long long& out)
     {
         return false;
     }
-    if (idx != t.size()) return false;
+    if (idx != t.size())
+    {
+        return false;
+    }
     // Canonical JSON only carries integers up to 2^53-1 exactly.
     constexpr long long kMaxSafe = (1LL << 53) - 1;
     return out >= -kMaxSafe && out <= kMaxSafe;
@@ -470,11 +573,15 @@ bool parse_integer_token(const std::string& t, long long& out)
 bool looks_like_sigil_id(const std::string& t, char sigil)
 {
     if (t.size() < 4 || t.front() != sigil)
+    {
         return false;
+    }
     for (unsigned char c : t)
     {
         if (c <= ' ' || c == 0x7f)
+        {
             return false;
+        }
     }
     const auto colon = t.find(':');
     return colon != std::string::npos && colon > 1 && colon + 1 < t.size();
@@ -500,7 +607,10 @@ bool looks_like_event_id(const std::string& t)
 // literal IP, without pulling in a full grammar checker for v1.
 bool looks_like_server_name(const std::string& t)
 {
-    if (t.empty() || t.find_first_of(" \t") != std::string::npos) return false;
+    if (t.empty() || t.find_first_of(" \t") != std::string::npos)
+    {
+        return false;
+    }
     return t.find('.') != std::string::npos || t.find(':') != std::string::npos;
 }
 
@@ -513,13 +623,19 @@ std::optional<nlohmann::json> coerce_primitive(const std::string& t, ParamPrimit
     case ParamPrimitiveType::Integer:
     {
         long long v;
-        if (!parse_integer_token(t, v)) return std::nullopt;
+        if (!parse_integer_token(t, v))
+        {
+            return std::nullopt;
+        }
         return nlohmann::json(v);
     }
     case ParamPrimitiveType::Boolean:
     {
         bool v;
-        if (!parse_bool_token(t, v)) return std::nullopt;
+        if (!parse_bool_token(t, v))
+        {
+            return std::nullopt;
+        }
         return nlohmann::json(v);
     }
     case ParamPrimitiveType::UserId:
@@ -539,12 +655,18 @@ std::optional<nlohmann::json> coerce_object(const std::string& t, ParamObjectTyp
 {
     if (ty == ParamObjectType::RoomId)
     {
-        if (!looks_like_room_id(t) && !looks_like_room_alias(t)) return std::nullopt;
+        if (!looks_like_room_id(t) && !looks_like_room_alias(t))
+        {
+            return std::nullopt;
+        }
         nlohmann::json obj;
         obj["id"] = t;
         return obj;
     }
-    if (!looks_like_event_id(t)) return std::nullopt;
+    if (!looks_like_event_id(t))
+    {
+        return std::nullopt;
+    }
     nlohmann::json obj;
     obj["id"] = t;
     obj["event_id"] = t;
@@ -553,17 +675,22 @@ std::optional<nlohmann::json> coerce_object(const std::string& t, ParamObjectTyp
 
 std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema);
 
-std::optional<nlohmann::json> coerce_literal(const std::string& t,
-                                             const std::string& literal_value_json,
-                                             ParamLiteralType lt)
+std::optional<nlohmann::json>
+coerce_literal(const std::string& t, const std::string& literal_value_json, ParamLiteralType lt)
 {
-    ParamPrimitiveType prim = lt == ParamLiteralType::String   ? ParamPrimitiveType::String
-                             : lt == ParamLiteralType::Integer ? ParamPrimitiveType::Integer
+    ParamPrimitiveType prim = lt == ParamLiteralType::String    ? ParamPrimitiveType::String
+                              : lt == ParamLiteralType::Integer ? ParamPrimitiveType::Integer
                                                                 : ParamPrimitiveType::Boolean;
     auto coerced = coerce_primitive(t, prim);
-    if (!coerced) return std::nullopt;
+    if (!coerced)
+    {
+        return std::nullopt;
+    }
     auto expected = nlohmann::json::parse(literal_value_json, nullptr, false);
-    if (expected.is_discarded() || *coerced != expected) return std::nullopt;
+    if (expected.is_discarded() || *coerced != expected)
+    {
+        return std::nullopt;
+    }
     return coerced;
 }
 
@@ -580,7 +707,10 @@ std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSch
     case ParamSchemaKind::Union:
         for (const auto& variant : schema.union_variants)
         {
-            if (auto v = coerce_scalar(t, variant)) return v;
+            if (auto v = coerce_scalar(t, variant))
+            {
+                return v;
+            }
         }
         return std::nullopt;
     case ParamSchemaKind::Array:
@@ -596,12 +726,18 @@ std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSche
 {
     if (schema.kind == ParamSchemaKind::Array)
     {
-        if (!schema.array_item) return std::nullopt;
+        if (!schema.array_item)
+        {
+            return std::nullopt;
+        }
         nlohmann::json arr = nlohmann::json::array();
         for (const auto& piece : split_comma(t))
         {
             auto v = coerce_scalar(piece, *schema.array_item);
-            if (!v) return std::nullopt;
+            if (!v)
+            {
+                return std::nullopt;
+            }
             arr.push_back(*v);
         }
         return arr;
@@ -609,7 +745,7 @@ std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSche
     return coerce_scalar(t, schema);
 }
 
-}  // namespace
+} // namespace
 
 std::string describe_param_type(const ParamSchema& schema)
 {
@@ -618,28 +754,35 @@ std::string describe_param_type(const ParamSchema& schema)
     case ParamSchemaKind::Primitive:
         switch (schema.primitive_type)
         {
-        case ParamPrimitiveType::String:     return tk::tr("text");
-        case ParamPrimitiveType::Integer:    return tk::tr("number");
-        case ParamPrimitiveType::Boolean:    return tk::tr("yes/no");
-        case ParamPrimitiveType::UserId:     return tk::tr("user");
-        case ParamPrimitiveType::ServerName: return tk::tr("server");
-        case ParamPrimitiveType::RoomAlias:  return tk::tr("room");
+        case ParamPrimitiveType::String:
+            return tk::tr("text");
+        case ParamPrimitiveType::Integer:
+            return tk::tr("number");
+        case ParamPrimitiveType::Boolean:
+            return tk::tr("yes/no");
+        case ParamPrimitiveType::UserId:
+            return tk::tr("user");
+        case ParamPrimitiveType::ServerName:
+            return tk::tr("server");
+        case ParamPrimitiveType::RoomAlias:
+            return tk::tr("room");
         }
         return tk::tr("text");
     case ParamSchemaKind::Object:
-        return schema.object_type == ParamObjectType::RoomId ? tk::tr("room")
-                                                              : tk::tr("event");
+        return schema.object_type == ParamObjectType::RoomId ? tk::tr("room") : tk::tr("event");
     case ParamSchemaKind::Array:
-        return schema.array_item
-                   ? tk::trf(tk::tr("{0} (comma-separated)"),
-                            {describe_param_type(*schema.array_item)})
-                   : tk::tr("list");
+        return schema.array_item ? tk::trf(tk::tr("{0} (comma-separated)"),
+                                           {describe_param_type(*schema.array_item)})
+                                 : tk::tr("list");
     case ParamSchemaKind::Union:
     {
         std::string joined;
         for (const auto& v : schema.union_variants)
         {
-            if (!joined.empty()) joined += "/";
+            if (!joined.empty())
+            {
+                joined += "/";
+            }
             joined += describe_param_type(v);
         }
         return joined.empty() ? tk::tr("text") : joined;
@@ -652,8 +795,7 @@ std::string describe_param_type(const ParamSchema& schema)
     return tk::tr("text");
 }
 
-std::string next_bot_command_arg_hint(const CommandDescription& desc,
-                                      std::size_t tokens_typed)
+std::string next_bot_command_arg_hint(const CommandDescription& desc, std::size_t tokens_typed)
 {
     if (tokens_typed >= desc.parameters.size())
     {
@@ -668,8 +810,7 @@ std::string next_bot_command_arg_hint(const CommandDescription& desc,
     return label;
 }
 
-BotCommandSendResult dispatch_bot_command_send(Client& client,
-                                               const std::string& room_id,
+BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string& room_id,
                                                const CommandDescription& desc,
                                                const std::string& args_text)
 {
@@ -679,8 +820,8 @@ BotCommandSendResult dispatch_bot_command_send(Client& client,
     {
         if (!match.error_parameter_key.empty())
         {
-            return {false, tk::trf(tk::tr("Missing required argument: {0}"),
-                                   {match.error_parameter_key})};
+            return {false,
+                    tk::trf(tk::tr("Missing required argument: {0}"), {match.error_parameter_key})};
         }
         return {false, tk::tr("Too many arguments")};
     }
@@ -691,7 +832,7 @@ BotCommandSendResult dispatch_bot_command_send(Client& client,
         const auto& p = desc.parameters[i];
         if (!match.tokens_by_parameter[i])
         {
-            continue;  // omitted trailing optional parameter
+            continue; // omitted trailing optional parameter
         }
         auto coerced = coerce_token(*match.tokens_by_parameter[i], p.schema);
         if (!coerced)
@@ -710,8 +851,7 @@ BotCommandSendResult dispatch_bot_command_send(Client& client,
         body += " " + t;
     }
     std::vector<std::string> mentions = {desc.sender};
-    Result r = client.send_bot_command(room_id, body, "", mentions, desc.command,
-                                       args_obj.dump());
+    Result r = client.send_bot_command(room_id, body, "", mentions, desc.command, args_obj.dump());
     if (!r.ok)
     {
         return {false, r.message};
@@ -719,4 +859,4 @@ BotCommandSendResult dispatch_bot_command_send(Client& client,
     return {true, ""};
 }
 
-}  // namespace tesseract
+} // namespace tesseract

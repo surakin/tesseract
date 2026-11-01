@@ -26,22 +26,20 @@ namespace
 bool is_private_dir(const std::string& path)
 {
     struct stat st{};
-    return lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) &&
-           st.st_uid == getuid() && (st.st_mode & 077) == 0;
+    return lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid() &&
+           (st.st_mode & 077) == 0;
 }
 
 std::string lock_path()
 {
     const std::string dir = private_runtime_dir();
-    return dir.empty() ? std::string{}
-                       : dir + "/tesseract" + tesseract::profile_suffix() + ".lock";
+    return dir.empty() ? std::string{} : dir + "/tesseract" + tesseract::profile_suffix() + ".lock";
 }
 
 std::string socket_path()
 {
     const std::string dir = private_runtime_dir();
-    return dir.empty() ? std::string{}
-                       : dir + "/tesseract-activate" + tesseract::profile_suffix();
+    return dir.empty() ? std::string{} : dir + "/tesseract-activate" + tesseract::profile_suffix();
 }
 
 // Transitional: builds before 2026-10 used fixed /tmp paths. Remove after the next release.
@@ -164,8 +162,8 @@ std::string private_runtime_dir()
 
 std::string format_activation_payload(const ActivationRequest& req)
 {
-    return one_line(req.token) + "\n" + one_line(req.uri) + "\n" +
-           one_line(req.action) + "\n" + one_line(req.room_id) + "\n";
+    return one_line(req.token) + "\n" + one_line(req.uri) + "\n" + one_line(req.action) + "\n" +
+           one_line(req.room_id) + "\n";
 }
 
 ActivationRequest parse_activation_payload(const std::string& payload)
@@ -180,8 +178,7 @@ ActivationRequest parse_activation_payload(const std::string& payload)
             break;
         }
         const auto nl = payload.find('\n', start);
-        *field = payload.substr(start, nl == std::string::npos ? std::string::npos
-                                                               : nl - start);
+        *field = payload.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
         if (nl == std::string::npos)
         {
             break;
@@ -286,8 +283,7 @@ bool send_activation_to(const std::string& path, const ActivationRequest& reques
         return false;
     }
 
-    bool connected = connect(sock, reinterpret_cast<sockaddr*>(&addr),
-                             sizeof(addr)) == 0;
+    bool connected = connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
     if (!connected && errno == EINPROGRESS)
     {
         pollfd pfd{sock, POLLOUT, 0};
@@ -295,8 +291,7 @@ bool send_activation_to(const std::string& path, const ActivationRequest& reques
         {
             int err = 0;
             socklen_t len = sizeof(err);
-            connected = getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) == 0 &&
-                       err == 0;
+            connected = getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) == 0 && err == 0;
         }
     }
 
@@ -340,8 +335,7 @@ bool forward_activation_request(const ActivationRequest& request)
     return false;
 }
 
-ActivationListener::ActivationListener(Callback on_activate)
-    : on_activate_(std::move(on_activate))
+ActivationListener::ActivationListener(Callback on_activate) : on_activate_(std::move(on_activate))
 {
     const std::string path = socket_path();
     if (path.empty())
@@ -366,8 +360,7 @@ ActivationListener::ActivationListener(Callback on_activate)
     // single-instance flock, so no other live process can be using it.
     unlink(path.c_str());
 
-    if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
-        listen(fd, 4) != 0)
+    if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 || listen(fd, 4) != 0)
     {
         close(fd);
         return;

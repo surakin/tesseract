@@ -32,56 +32,82 @@ void ShellBase::remember_join_via_(std::string key, std::vector<std::string> via
     {
         std::deque<std::string> live;
         for (auto& k : pending_join_via_order_)
+        {
             if (pending_join_via_.contains(k) &&
                 std::find(live.begin(), live.end(), k) == live.end())
+            {
                 live.push_back(std::move(k));
+            }
+        }
         pending_join_via_order_ = std::move(live);
     }
     pending_join_via_[std::move(key)] = std::move(via);
 }
 
-
-void ShellBase::set_room_notification_mode_(const std::string& room_id,
-                                             const std::string& mode,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::set_room_notification_mode_(const std::string& room_id, const std::string& mode,
+                                            const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
-    if (!acting_client) return;
+    if (!acting_client)
+    {
+        return;
+    }
     auto sess = acting;
-    run_async_mut_([sess, room_id, mode]() {
-        if (!sess || !sess->client) return;
-        sess->client->set_room_notification_mode(room_id, mode);
-    });
+    run_async_mut_(
+        [sess, room_id, mode]()
+        {
+            if (!sess || !sess->client)
+            {
+                return;
+            }
+            sess->client->set_room_notification_mode(room_id, mode);
+        });
 }
 
 void ShellBase::set_room_favourite_(const std::string& room_id, bool value,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                    const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
-    if (!acting_client) return;
+    if (!acting_client)
+    {
+        return;
+    }
     auto sess = acting;
-    run_async_mut_([sess, room_id, value]() {
-        if (!sess || !sess->client) return;
-        sess->client->set_room_favourite(room_id, value);
-    });
+    run_async_mut_(
+        [sess, room_id, value]()
+        {
+            if (!sess || !sess->client)
+            {
+                return;
+            }
+            sess->client->set_room_favourite(room_id, value);
+        });
 }
 
 void ShellBase::set_room_low_priority_(const std::string& room_id, bool value,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                       const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
-    if (!acting_client) return;
+    if (!acting_client)
+    {
+        return;
+    }
     auto sess = acting;
-    run_async_mut_([sess, room_id, value]() {
-        if (!sess || !sess->client) return;
-        sess->client->set_room_low_priority(room_id, value);
-    });
+    run_async_mut_(
+        [sess, room_id, value]()
+        {
+            if (!sess || !sess->client)
+            {
+                return;
+            }
+            sess->client->set_room_low_priority(room_id, value);
+        });
 }
 
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
@@ -108,7 +134,9 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         for (const auto& [rid, w] : secondary_windows_)
         {
             if (!w || w->owner_user_id() != user_id)
+            {
                 continue;
+            }
             for (const auto& r : per_account_rooms_[user_id])
             {
                 if (r.id == rid)
@@ -126,7 +154,9 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // A hidden upgraded room that is listed again (its successor was left) is
     // now served by rooms_ itself.
     for (const auto& r : rooms_)
+    {
         hidden_rooms_.erase(r.id);
+    }
     // A change in the active account's room set may add/remove people; drop the
     // cached roster so the next user-mode query rebuilds it. Member-only changes
     // within existing rooms aren't tracked here — live-resolve covers anyone the
@@ -159,9 +189,13 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // ever revisits that once shown. show_space_root_ no-ops harmlessly
     // when nothing is currently shown (room_by_id_("") is null).
     if (!space_root_shown_id_.empty())
+    {
         show_space_root_(space_root_shown_id_);
+    }
     else
+    {
         refresh_space_root_children_(space_root_shown_id_);
+    }
     on_rooms_updated_();
     // Re-evaluate call-button and threads-button visibility for the current
     // room: bridge status (is_bridged) can change via on_rooms_updated without
@@ -170,15 +204,23 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     if (!current_room_id_.empty())
     {
         if (room_view_ && room_view_->header())
+        {
             update_call_btn_visibility_(room_view_->header(), current_room_id_);
+        }
         for (auto& [rid, w] : active_account_popouts_())
         {
             if (auto* rv = w->room_view())
+            {
                 if (auto* h = rv->header())
+                {
                     update_call_btn_visibility_(h, rid);
+                }
+            }
         }
         if (client_ && room_view_)
+        {
             refresh_threads_list_async_(current_room_id_);
+        }
         // A just-created room can turn out to be a space only once sync
         // actually delivers its creation_content — e.g. CreateRoomView's
         // "Create Space" navigates here before this room exists in rooms_
@@ -195,7 +237,9 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         // handle_call_room_navigation_() couldn't see is_call_room yet, so
         // the lobby never opened. Retry once now that the room is known.
         if (pending_call_room_nav_id_ == current_room_id_ && room_by_id_(current_room_id_))
+        {
             handle_call_room_navigation_();
+        }
     }
     // Call members / bridge status may have changed with this update.
     refresh_call_banners_();
@@ -247,8 +291,7 @@ void ShellBase::ensure_invite_avatars_()
     }
     for (const auto& inv : invites_)
     {
-        const std::string& mxc =
-            inv.is_direct ? inv.inviter_avatar_url : inv.room_avatar_url;
+        const std::string& mxc = inv.is_direct ? inv.inviter_avatar_url : inv.room_avatar_url;
         ensure_user_avatar_(mxc);
     }
 }
@@ -268,7 +311,9 @@ const InviteInfo* ShellBase::find_invite_(const std::string& room_id) const
 void ShellBase::accept_invite_async_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
+    {
         return;
+    }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id, RoomActionKind::Accept};
     client_->accept_invite_async(req_id, room_id);
@@ -277,30 +322,35 @@ void ShellBase::accept_invite_async_(const std::string& room_id)
 void ShellBase::decline_invite_async_(const std::string& room_id)
 {
     if (room_id.empty() || !client_)
+    {
         return;
+    }
     // Optimistically remove from the local list for immediate UX; the next
     // on_invites_updated callback from sync will confirm or restore it.
-    invites_.erase(
-        std::remove_if(invites_.begin(), invites_.end(),
-                       [&room_id](const InviteInfo& inv)
-                       { return inv.room_id == room_id; }),
-        invites_.end());
+    invites_.erase(std::remove_if(invites_.begin(), invites_.end(),
+                                  [&room_id](const InviteInfo& inv)
+                                  {
+                                      return inv.room_id == room_id;
+                                  }),
+                   invites_.end());
     on_invites_updated_();
     client_->decline_invite_async(room_id);
 }
 
-void ShellBase::block_invite_async_(const std::string& room_id,
-                                    const std::string& inviter_id)
+void ShellBase::block_invite_async_(const std::string& room_id, const std::string& inviter_id)
 {
     if (room_id.empty() || !client_)
+    {
         return;
+    }
     // Optimistically remove from the local list for immediate UX; the next
     // on_invites_updated callback from sync will confirm or restore it.
-    invites_.erase(
-        std::remove_if(invites_.begin(), invites_.end(),
-                       [&room_id](const InviteInfo& inv)
-                       { return inv.room_id == room_id; }),
-        invites_.end());
+    invites_.erase(std::remove_if(invites_.begin(), invites_.end(),
+                                  [&room_id](const InviteInfo& inv)
+                                  {
+                                      return inv.room_id == room_id;
+                                  }),
+                   invites_.end());
     on_invites_updated_();
     client_->block_invite_async(room_id, inviter_id);
 }
@@ -328,21 +378,23 @@ const KnockedRoomInfo* ShellBase::find_my_knock_(const std::string& room_id) con
     return nullptr;
 }
 
-void ShellBase::knock_room_command_(const std::string& room_id_or_alias,
-                                    const std::string& reason,
+void ShellBase::knock_room_command_(const std::string& room_id_or_alias, const std::string& reason,
                                     std::vector<std::string> via,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                    const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id_or_alias.empty() || !acting_client)
+    {
         return;
+    }
     if (via.empty())
     {
-        if (auto it = pending_join_via_.find(room_id_or_alias);
-            it != pending_join_via_.end())
+        if (auto it = pending_join_via_.find(room_id_or_alias); it != pending_join_via_.end())
+        {
             via = it->second;
+        }
     }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id_or_alias, RoomActionKind::Knock};
@@ -356,15 +408,18 @@ void ShellBase::retract_knock_command_(const std::string& room_id)
     leave_room_command_(room_id);
 }
 
-void ShellBase::subscribe_knock_requests_panel_(
-    const std::string& room_id, const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::subscribe_knock_requests_panel_(const std::string& room_id,
+                                                const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     if (room_id.empty() || !acting || !acting->client)
+    {
         return;
-    if (knock_requests_panel_room_id_ == room_id &&
-        knock_requests_panel_account_.lock() == acting)
+    }
+    if (knock_requests_panel_room_id_ == room_id && knock_requests_panel_account_.lock() == acting)
+    {
         return; // already subscribed
+    }
     unsubscribe_knock_requests_panel_();
     knock_requests_panel_room_id_ = room_id;
     knock_requests_panel_account_ = acting;
@@ -375,84 +430,94 @@ void ShellBase::subscribe_knock_requests_panel_(
 void ShellBase::unsubscribe_knock_requests_panel_()
 {
     if (knock_requests_panel_room_id_.empty())
+    {
         return;
+    }
     // On the client that subscribed, which may not be the active one.
     if (auto sess = knock_requests_panel_account_.lock(); sess && sess->client)
+    {
         sess->client->unsubscribe_room_knock_requests(knock_requests_panel_room_id_);
+    }
     knock_requests_panel_room_id_.clear();
     knock_requests_panel_account_.reset();
     current_room_knock_requests_.clear();
 }
 
-void ShellBase::accept_knock_request_async_(const std::string& room_id,
-                                            const std::string& user_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::accept_knock_request_async_(const std::string& room_id, const std::string& user_id,
+                                            const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || user_id.empty() || !acting_client)
+    {
         return;
+    }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {room_id, RoomActionKind::AcceptKnock};
     acting_client->accept_knock_request_async(req_id, room_id, user_id);
 }
 
-void ShellBase::decline_knock_request_async_(const std::string& room_id,
-                                             const std::string& user_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::decline_knock_request_async_(const std::string& room_id, const std::string& user_id,
+                                             const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || user_id.empty() || !acting_client)
+    {
         return;
+    }
     // Optimistically remove from the local list for immediate UX; the next
     // on_knock_requests_updated poke from the SDK will confirm or restore it.
-    current_room_knock_requests_.erase(
-        std::remove_if(current_room_knock_requests_.begin(),
-                       current_room_knock_requests_.end(),
-                       [&user_id](const KnockRequestInfo& r)
-                       { return r.user_id == user_id; }),
-        current_room_knock_requests_.end());
+    current_room_knock_requests_.erase(std::remove_if(current_room_knock_requests_.begin(),
+                                                      current_room_knock_requests_.end(),
+                                                      [&user_id](const KnockRequestInfo& r)
+                                                      {
+                                                          return r.user_id == user_id;
+                                                      }),
+                                       current_room_knock_requests_.end());
     on_knock_requests_panel_updated_();
     acting_client->decline_knock_request_async(room_id, user_id, "");
 }
 
-void ShellBase::decline_and_ban_knock_request_async_(const std::string& room_id,
-                                                     const std::string& user_id,
-                                                     const std::string& reason,
+void ShellBase::decline_and_ban_knock_request_async_(
+    const std::string& room_id, const std::string& user_id, const std::string& reason,
     const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || user_id.empty() || !acting_client)
+    {
         return;
+    }
     // Optimistically remove from the local list for immediate UX; the next
     // on_knock_requests_updated poke from the SDK will confirm or restore it.
-    current_room_knock_requests_.erase(
-        std::remove_if(current_room_knock_requests_.begin(),
-                       current_room_knock_requests_.end(),
-                       [&user_id](const KnockRequestInfo& r)
-                       { return r.user_id == user_id; }),
-        current_room_knock_requests_.end());
+    current_room_knock_requests_.erase(std::remove_if(current_room_knock_requests_.begin(),
+                                                      current_room_knock_requests_.end(),
+                                                      [&user_id](const KnockRequestInfo& r)
+                                                      {
+                                                          return r.user_id == user_id;
+                                                      }),
+                                       current_room_knock_requests_.end());
     on_knock_requests_panel_updated_();
     acting_client->decline_and_ban_knock_request_async(room_id, user_id, reason);
 }
 
 void ShellBase::leave_room_command_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                    const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || !acting_client)
+    {
         return;
+    }
     auto req_id = next_room_action_id_++;
     const RoomInfo* ri = room_by_id_(room_id);
-    const auto kind = (ri && ri->is_space) ? RoomActionKind::LeaveSpace
-                                           : RoomActionKind::Leave;
+    const auto kind = (ri && ri->is_space) ? RoomActionKind::LeaveSpace : RoomActionKind::Leave;
     pending_room_actions_[req_id] = {room_id, kind};
     acting_client->leave_room_async(req_id, room_id);
 }
@@ -473,9 +538,13 @@ void ShellBase::leave_space_navigate_back_(const std::string& space_id)
         schedule_account_data_save_();
     }
     if (!space_stack_.empty() && space_stack_.back() == space_id)
+    {
         space_stack_.pop_back();
+    }
     if (main_app_)
+    {
         main_app_->hide_room_preview();
+    }
     hide_space_root_();
     finish_space_pop_();
     if (current_room_id_ == space_id)
@@ -496,9 +565,13 @@ void ShellBase::leave_space_navigate_back_(const std::string& space_id)
 void ShellBase::space_back_command_()
 {
     if (!space_stack_.empty())
+    {
         space_stack_.pop_back();
+    }
     if (main_app_)
+    {
         main_app_->hide_room_preview();
+    }
 
     if (const auto* cur = room_by_id_(current_room_id_); cur && cur->is_space)
     {
@@ -520,7 +593,9 @@ void ShellBase::space_back_command_()
 void ShellBase::hide_space_root_()
 {
     if (main_app_)
+    {
         main_app_->hide_space_root();
+    }
     space_root_shown_id_.clear();
 }
 
@@ -530,7 +605,9 @@ void ShellBase::finish_space_pop_()
     if (!space_nav_frames_.empty())
     {
         if (main_app_ && main_app_->room_list_view())
+        {
             space_nav_frames_.back().restore(main_app_->room_list_view());
+        }
         space_nav_frames_.pop_back();
     }
 }
@@ -539,45 +616,51 @@ void ShellBase::confirm_leave_room_(const std::string& room_id,
                                     const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     if (room_id.empty() || !main_app_ || !main_app_->confirm_dialog())
+    {
         return;
+    }
     // room_by_id_ only knows the active account's rooms; another account's
     // room falls back to the generic wording.
     const bool other_account = on_behalf_of && on_behalf_of != active_account_;
     const RoomInfo* ri = other_account ? nullptr : room_by_id_(room_id);
-    const std::string display =
-        (ri && !ri->name.empty()) ? ri->name : tk::tr("this room");
+    const std::string display = (ri && !ri->name.empty()) ? ri->name : tk::tr("this room");
 
     views::ConfirmDialog::Options opts;
-    opts.title          = tk::trf(tk::tr("Leave {0}?"), {display});
-    opts.body           = tk::tr("You will stop receiving messages and need "
-                                 "to be re-invited to rejoin.");
-    opts.confirm_label  = tk::tr("Leave");
-    opts.cancel_label   = tk::tr("Cancel");
-    opts.destructive    = true;
+    opts.title = tk::trf(tk::tr("Leave {0}?"), {display});
+    opts.body = tk::tr("You will stop receiving messages and need "
+                       "to be re-invited to rejoin.");
+    opts.confirm_label = tk::tr("Leave");
+    opts.cancel_label = tk::tr("Cancel");
+    opts.destructive = true;
 
-    main_app_->confirm_dialog()->open(
-        std::move(opts),
-        [this, room_id, on_behalf_of] { leave_room_command_(room_id, on_behalf_of); });
+    main_app_->confirm_dialog()->open(std::move(opts),
+                                      [this, room_id, on_behalf_of]
+                                      {
+                                          leave_room_command_(room_id, on_behalf_of);
+                                      });
 }
 
 void ShellBase::join_room_command_(const std::string& room_id_or_alias,
                                    std::vector<std::string> via,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                   const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id_or_alias.empty() || !acting_client)
+    {
         return;
+    }
     // No caller-supplied `via`? Fall back to any `?via=` hints open_matrix_link()
     // stashed for this id/alias (a matrix.to / matrix: permalink the user
     // followed). The SDK also derives hints from joined spaces + the domain, so
     // an empty list here is still fine for the common cases.
     if (via.empty())
     {
-        if (auto it = pending_join_via_.find(room_id_or_alias);
-            it != pending_join_via_.end())
+        if (auto it = pending_join_via_.find(room_id_or_alias); it != pending_join_via_.end())
+        {
             via = it->second;
+        }
     }
     // Callers that only know how to "join" a room (RoomPreviewView's
     // space-browsing "Available to Join" panel, /join, unjoined space-child
@@ -607,7 +690,9 @@ void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
     auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
     auto* jr = ar ? ar->join_view() : nullptr;
     if (!jr)
+    {
         return;
+    }
     jr->set_state(views::JoinRoomView::State::Loading);
     request_relayout_();
 
@@ -616,36 +701,46 @@ void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
     // Route the preview through any `?via=` hints a followed permalink left for
     // this id/alias, so a federated room can be previewed before it's joined.
     std::vector<std::string> via;
-    if (auto it = pending_join_via_.find(room_id_or_alias);
-        it != pending_join_via_.end())
+    if (auto it = pending_join_via_.find(room_id_or_alias); it != pending_join_via_.end())
+    {
         via = it->second;
+    }
     // An alias resolves to a room id the Join button then joins by; the alias's
     // server is the one route we know to it, so carry it over below.
     if (via.empty())
+    {
         via = shell_helpers::alias_server_via(room_id_or_alias);
+    }
     run_async_(
         [this, sess, room_id_or_alias, via, gen]()
         {
             tesseract::RoomSummary summary;
             if (sess && sess->client)
+            {
                 summary = sess->client->get_room_summary(room_id_or_alias, via);
+            }
             post_to_ui_alive_(
                 [this, gen, room_id_or_alias, via, summary = std::move(summary)]()
                 {
                     if (gen != join_room_lookup_gen_)
+                    {
                         return;
+                    }
                     // The Join button joins by the resolved room id, which
                     // differs from an alias permalink's target — carry the
                     // `?via=` hints over so the join still routes correctly.
-                    if (summary.ok() && !via.empty() &&
-                        !summary.room_id.empty() &&
+                    if (summary.ok() && !via.empty() && !summary.room_id.empty() &&
                         summary.room_id != room_id_or_alias)
+                    {
                         remember_join_via_(summary.room_id, via);
+                    }
                     auto* ar2 = main_app_ ? main_app_->add_room_view() : nullptr;
                     auto* jr2 = ar2 ? ar2->join_view() : nullptr;
                     if (!jr2 || !ar2->is_open() ||
                         ar2->active_tab() != views::AddRoomView::Tab::Join)
+                    {
                         return;
+                    }
                     if (summary.ok())
                     {
                         jr2->set_preview(summary);
@@ -656,10 +751,14 @@ void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
                         // card's avatar_provider_ callback has something to
                         // return once it lands.
                         if (!summary.avatar_url.empty())
+                        {
                             ensure_media_thumbnail_(summary.avatar_url, 64, 64, false);
+                        }
                     }
                     else
+                    {
                         jr2->set_error({});
+                    }
                     request_relayout_();
                 });
         });
@@ -668,42 +767,47 @@ void ShellBase::lookup_room_command_(const std::string& room_id_or_alias)
 void ShellBase::create_room_command_(const RoomCreateOptions& options)
 {
     if (!client_)
+    {
         return;
+    }
     auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
     if (auto* cr = ar ? ar->create_view() : nullptr)
+    {
         cr->set_state(views::CreateRoomView::State::Creating);
+    }
     auto req_id = next_room_action_id_++;
     pending_room_actions_[req_id] = {"", RoomActionKind::Create};
     client_->create_room_async(req_id, options);
 }
 
-void ShellBase::invite_user_command_(const std::string& room_id,
-                                     const std::string& user_id,
+void ShellBase::invite_user_command_(const std::string& room_id, const std::string& user_id,
                                      const std::string& reason,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                     const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || user_id.empty() || !acting_client)
+    {
         return;
+    }
     auto req_id = next_room_action_id_++;
     pending_invites_[req_id] = {room_id, user_id, nullptr};
     acting_client->invite_user_async(req_id, room_id, user_id, reason);
 }
 
 void ShellBase::moderate_member_(ModerationAction action, const std::string& room_id,
-                                 const std::string& user_id,
-                                 const std::string& display_name,
-                                 const std::string& reason,
-                                 std::function<void(bool ok)> done,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                 const std::string& user_id, const std::string& display_name,
+                                 const std::string& reason, std::function<void(bool ok)> done,
+                                 const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || user_id.empty() || !acting_client)
+    {
         return;
+    }
     auto req_id = next_room_action_id_++;
     pending_moderations_[req_id] = {user_id, display_name, action, std::move(done)};
     switch (action)
@@ -722,27 +826,29 @@ void ShellBase::moderate_member_(ModerationAction action, const std::string& roo
 
 void ShellBase::invite_users_(
     const std::string& room_id, const std::vector<std::string>& user_ids,
-    std::function<void(const std::string& user_id, bool ok,
-                       const std::string& message)> per_user,
+    std::function<void(const std::string& user_id, bool ok, const std::string& message)> per_user,
     const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || !acting_client)
+    {
         return;
+    }
     // One shared copy of the per-user callback across every request.
     auto cb = std::make_shared<decltype(per_user)>(std::move(per_user));
     for (const auto& user_id : user_ids)
     {
         auto req_id = next_room_action_id_++;
-        pending_invites_[req_id] = {
-            room_id, user_id,
-            [cb, user_id](bool ok, const std::string& message)
-            {
-                if (*cb)
-                    (*cb)(user_id, ok, message);
-            }};
+        pending_invites_[req_id] = {room_id, user_id,
+                                    [cb, user_id](bool ok, const std::string& message)
+                                    {
+                                        if (*cb)
+                                        {
+                                            (*cb)(user_id, ok, message);
+                                        }
+                                    }};
         acting_client->invite_user_async(req_id, room_id, user_id);
     }
 }
@@ -753,33 +859,48 @@ void ShellBase::open_create_poll_dialog_(const std::string& room_id,
     auto* dlg = main_app_ ? main_app_->create_poll_dialog() : nullptr;
     const auto acting = acting_session_(on_behalf_of);
     if (!dlg || !acting || !acting->client)
+    {
         return;
+    }
     // Bound here at open time, not at shell construction, so every shell gets
     // the wiring from this one call site.
     // The poll may target a room other than the one the main window shows
     // (pop-out / thread composer), so name it in the dialog title.
     std::string room_name = room_id;
     if (const auto* r = room_by_id_(room_id); r && !r->name.empty())
+    {
         room_name = r->name;
-    dlg->open([this, room_id, acting](views::PollDraft d) {
-        run_async_mut_([this, acting, room_id, d = std::move(d)]() {
-            if (!acting->client)
-                return;
-            const auto r = acting->client->send_poll(
-                room_id, d.question, d.options, views::poll_draft_max_selections(d),
-                !d.hide_results);
-            if (!r.ok && r.message != "cancelled")
-                post_to_ui_alive_([this]() {
-                    show_status_message_(tk::tr("Couldn't send the poll"), 6000);
+    }
+    dlg->open(
+        [this, room_id, acting](views::PollDraft d)
+        {
+            run_async_mut_(
+                [this, acting, room_id, d = std::move(d)]()
+                {
+                    if (!acting->client)
+                    {
+                        return;
+                    }
+                    const auto r = acting->client->send_poll(room_id, d.question, d.options,
+                                                             views::poll_draft_max_selections(d),
+                                                             !d.hide_results);
+                    if (!r.ok && r.message != "cancelled")
+                    {
+                        post_to_ui_alive_(
+                            [this]()
+                            {
+                                show_status_message_(tk::tr("Couldn't send the poll"), 6000);
+                            });
+                    }
                 });
-        });
-    }, std::move(room_name));
+        },
+        std::move(room_name));
 }
 
-ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
-    const std::string& room_id, const std::string& body,
-    const std::string& formatted_body,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+ShellBase::RoomSendOutcome
+ShellBase::dispatch_room_send_(const std::string& room_id, const std::string& body,
+                               const std::string& formatted_body,
+                               const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
@@ -811,9 +932,13 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
         // Leaving is one keystroke here, so ask first, as the room header's
         // Leave does. Without a dialog host the leave runs directly.
         if (main_app_ && main_app_->confirm_dialog())
+        {
             confirm_leave_room_(room_id, acting);
+        }
         else
+        {
             leave_room_command_(room_id, acting);
+        }
         out.handled_as_command = true;
         return out;
     }
@@ -830,7 +955,9 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
         for (std::size_t i = 1; i < args->size(); ++i)
         {
             if (i > 1)
+            {
                 reason += ' ';
+            }
             reason += (*args)[i];
         }
         invite_user_command_(room_id, user_id, reason, acting);
@@ -865,26 +992,35 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
             // among this room's sends and a slow shortlink resolve shows the
             // send-button spinner.
             submit_room_send_(sess, rid, std::string{},
-                              [this, sess, rid, needs_resolve, lat, lon, shortlink,
-                               body_copy, fmt_copy, trimmed_copy](const std::string&) mutable {
-                if (!sess || !sess->client) return;
-                tesseract::Result r;
-                if (needs_resolve)
-                {
-                    auto resolved = sess->client->resolve_maps_shortlink(shortlink);
-                    if (resolved.matched)
-                        r = sess->client->send_location(rid, resolved.lat,
-                                                         resolved.lon, trimmed_copy);
-                    else
-                        r = tesseract::dispatch_compose_send(*sess->client, rid,
-                                                             body_copy, fmt_copy);
-                }
-                else
-                {
-                    r = sess->client->send_location(rid, lat, lon, trimmed_copy);
-                }
-                report_unsent_message_(sess->user_id, rid, body_copy, r);
-            });
+                              [this, sess, rid, needs_resolve, lat, lon, shortlink, body_copy,
+                               fmt_copy, trimmed_copy](const std::string&) mutable
+                              {
+                                  if (!sess || !sess->client)
+                                  {
+                                      return;
+                                  }
+                                  tesseract::Result r;
+                                  if (needs_resolve)
+                                  {
+                                      auto resolved =
+                                          sess->client->resolve_maps_shortlink(shortlink);
+                                      if (resolved.matched)
+                                      {
+                                          r = sess->client->send_location(
+                                              rid, resolved.lat, resolved.lon, trimmed_copy);
+                                      }
+                                      else
+                                      {
+                                          r = tesseract::dispatch_compose_send(*sess->client, rid,
+                                                                               body_copy, fmt_copy);
+                                      }
+                                  }
+                                  else
+                                  {
+                                      r = sess->client->send_location(rid, lat, lon, trimmed_copy);
+                                  }
+                                  report_unsent_message_(sess->user_id, rid, body_copy, r);
+                              });
             out.send_result = tesseract::Result{true, ""};
             return out;
         }
@@ -911,19 +1047,28 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
     auto body_copy = body;
     auto fmt_copy = formatted_body;
     submit_room_send_(sess, rid, body,
-                      [this, sess, rid, body_copy, fmt_copy](const std::string& previews) mutable {
-        if (!sess || !sess->client) return;
-        const auto result = tesseract::dispatch_compose_send(
-            *sess->client, rid, body_copy, fmt_copy, previews);
-        report_unsent_message_(sess->user_id, rid, body_copy, result);
-        // Commands with no visible echo of their own confirm success here.
-        if (result.ok)
-        {
-            if (auto msg = tesseract::slash_success_message(body_copy))
-                post_to_ui_alive_([this, m = std::move(*msg)]
-                                  { show_status_message_(m, 4000); });
-        }
-    });
+                      [this, sess, rid, body_copy, fmt_copy](const std::string& previews) mutable
+                      {
+                          if (!sess || !sess->client)
+                          {
+                              return;
+                          }
+                          const auto result = tesseract::dispatch_compose_send(
+                              *sess->client, rid, body_copy, fmt_copy, previews);
+                          report_unsent_message_(sess->user_id, rid, body_copy, result);
+                          // Commands with no visible echo of their own confirm success here.
+                          if (result.ok)
+                          {
+                              if (auto msg = tesseract::slash_success_message(body_copy))
+                              {
+                                  post_to_ui_alive_(
+                                      [this, m = std::move(*msg)]
+                                      {
+                                          show_status_message_(m, 4000);
+                                      });
+                              }
+                          }
+                      });
     out.send_result = tesseract::Result{true, ""};
     return out;
 }
@@ -942,35 +1087,41 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
 // into its saved draft when the composer isn't on screen or already has
 // new text. The SDK's retry row only exists for messages that reached
 // the send queue, so without this an early failure lost the text.
-void ShellBase::report_unsent_message_(const std::string& user_id,
-                                       const std::string& room_id,
-                                       const std::string& body,
-                                       const tesseract::Result& result)
+void ShellBase::report_unsent_message_(const std::string& user_id, const std::string& room_id,
+                                       const std::string& body, const tesseract::Result& result)
 {
     // "cancelled": the account is being torn down (logout / shutdown), so
     // there is no composer left to restore into.
     if (result.ok || result.message == "cancelled")
+    {
         return;
+    }
     post_to_ui_(
         [this, uid = user_id, rid = room_id, text = body, err = result.message]
         {
-            show_status_message_(
-                tk::trf(tk::tr("Message not sent: {0}"), {err}), 8000);
+            show_status_message_(tk::trf(tk::tr("Message not sent: {0}"), {err}), 8000);
             // Only the account that sent it gets its text back: its own
             // pop-out of the room first (whether or not it is active), then
             // the main window if that account is the active one.
-            if (auto* w = find_secondary_(rid, uid);
-                w && w->pane()->restore_unsent_text_(text))
+            if (auto* w = find_secondary_(rid, uid); w && w->pane()->restore_unsent_text_(text))
+            {
                 return;
+            }
             if (!active_account_ || active_account_->user_id != uid)
+            {
                 return;
+            }
             if (current_room_id_ == rid && main_room_pane_ &&
                 main_room_pane_->restore_unsent_text_(text))
+            {
                 return;
+            }
             // Room not on screen (or its composer has new text): keep the
             // message as that room's draft, restored when the user returns.
             if (main_room_pane_ && current_room_id_ != rid)
+            {
                 main_room_pane_->stash_unsent_draft_(rid, text);
+            }
         });
 }
 
@@ -991,8 +1142,7 @@ void ShellBase::report_unsent_message_(const std::string& user_id,
 // JSON; otherwise `send` gets an empty string. Sends for one room keep
 // their submission order either way. UI thread only.
 void ShellBase::submit_room_send_(const std::shared_ptr<AccountSession>& sess,
-                                  const std::string& room_id,
-                                  const std::string& preview_body,
+                                  const std::string& room_id, const std::string& preview_body,
                                   SendPipeline::Send send)
 {
     // Cheap UI-thread pre-filter so plain sends skip the read-pool hop; the
@@ -1007,7 +1157,9 @@ void ShellBase::submit_room_send_(const std::shared_ptr<AccountSession>& sess,
         prepare = [sess, room_id, preview_body]() -> std::string
         {
             if (!sess || !sess->client)
+            {
                 return {};
+            }
             return sess->client->generate_url_previews(room_id, preview_body);
         };
     }
@@ -1019,26 +1171,35 @@ void ShellBase::refresh_send_busy_ui_()
     auto apply = [this](const std::string& room_id, views::RoomView* rv)
     {
         if (!rv || !rv->compose_bar())
+        {
             return;
-        rv->compose_bar()->set_send_busy(!room_id.empty() &&
-                                         send_pipeline_.is_busy(room_id));
+        }
+        rv->compose_bar()->set_send_busy(!room_id.empty() && send_pipeline_.is_busy(room_id));
     };
     if (main_room_pane_)
+    {
         apply(main_room_pane_->room_id(), main_room_pane_->room_view());
+    }
     for (const auto& [rid, w] : secondary_windows_)
     {
         if (w)
+        {
             apply(rid, w->room_view());
+        }
     }
 }
 
 void ShellBase::refresh_room_list_()
 {
     if (!main_app_)
+    {
         return;
+    }
     auto* rlv = main_app_->room_list_view();
     if (!rlv)
+    {
         return;
+    }
 
     refresh_space_picker_();
 
@@ -1049,18 +1210,18 @@ void ShellBase::refresh_room_list_()
         // no unjoined-room subscriptions to cancel and no space section to clear.
         rlv->set_rooms(rooms_);
         if (!current_room_id_.empty())
+        {
             rlv->set_selected_room(current_room_id_);
+        }
         request_relayout_();
         return;
     }
 
     if (space_stack_.empty())
     {
-        const bool group_unread =
-            tesseract::Settings::instance().group_unread_rooms;
+        const bool group_unread = tesseract::Settings::instance().group_unread_rooms;
 
-        auto filtered = views::filter_root_rooms(
-            rooms_, space_children_cache_, group_unread);
+        auto filtered = views::filter_root_rooms(rooms_, space_children_cache_, group_unread);
 
         apply_space_child_counts_(filtered);
         hide_pinned_spaces_(filtered);
@@ -1079,17 +1240,17 @@ void ShellBase::refresh_room_list_()
         cancel_unjoined_summaries_(space_id, space_root_shown_id_);
         static const std::vector<std::string> kNoChildren;
         const auto sc_it = space_children_cache_.find(space_id);
-        const auto& child_ids =
-            sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
+        const auto& child_ids = sc_it != space_children_cache_.end() ? sc_it->second : kNoChildren;
 
-        const std::unordered_set<std::string> child_set(child_ids.begin(),
-                                                        child_ids.end());
+        const std::unordered_set<std::string> child_set(child_ids.begin(), child_ids.end());
         std::vector<tesseract::RoomInfo> filtered;
         filtered.reserve(child_ids.size());
         for (const auto& r : rooms_)
         {
             if (child_set.count(r.id))
+            {
                 filtered.push_back(r);
+            }
         }
         hide_pinned_spaces_(filtered);
 
@@ -1119,15 +1280,15 @@ void ShellBase::refresh_room_list_()
     }
 
     if (!current_room_id_.empty())
+    {
         rlv->set_selected_room(current_room_id_);
+    }
 
     request_relayout_();
 }
 
-void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
-                                                 bool ok,
-                                                 std::string joined_room_id,
-                                                 std::string message)
+void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id, bool ok,
+                                                std::string joined_room_id, std::string message)
 {
     if (auto iit = pending_invites_.find(request_id); iit != pending_invites_.end())
     {
@@ -1141,21 +1302,21 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         {
             std::string status = tk::trf(tk::tr("Couldn't invite {0}"), {inv.user_id});
             if (!message.empty())
+            {
                 status += ": " + message;
+            }
             show_status_message_(std::move(status));
         }
         return;
     }
 
-    if (auto mit = pending_moderations_.find(request_id);
-        mit != pending_moderations_.end())
+    if (auto mit = pending_moderations_.find(request_id); mit != pending_moderations_.end())
     {
         PendingModeration mod = std::move(mit->second);
         pending_moderations_.erase(mit);
         if (!ok)
         {
-            const std::string& who =
-                mod.display_name.empty() ? mod.user_id : mod.display_name;
+            const std::string& who = mod.display_name.empty() ? mod.user_id : mod.display_name;
             std::string status;
             switch (mod.action)
             {
@@ -1170,29 +1331,36 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 break;
             }
             if (!message.empty())
+            {
                 status += ": " + message;
+            }
             show_status_message_(std::move(status));
         }
         if (mod.done)
+        {
             mod.done(ok);
+        }
         return;
     }
 
     auto it = pending_room_actions_.find(request_id);
     if (it == pending_room_actions_.end())
+    {
         return;
+    }
     auto [room_id, kind, action_space_id] = std::move(it->second);
     pending_room_actions_.erase(it);
 
     if (!ok)
     {
-        std::fprintf(stderr, "[room-action] failed for %s: %s\n",
-                     room_id.c_str(), message.c_str());
+        std::fprintf(stderr, "[room-action] failed for %s: %s\n", room_id.c_str(), message.c_str());
         // A failed join must not leave a permalink's pending event-scroll
         // resident — otherwise it would fire on some later, unrelated join of
         // the same room and yank the timeline to a stale event.
         if (kind == RoomActionKind::Join)
+        {
             pending_event_scroll_after_join_.erase(room_id);
+        }
         std::string verb = tk::tr("complete room action");
         switch (kind)
         {
@@ -1226,14 +1394,19 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         }
         std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
+        {
             status += ": " + message;
+        }
         show_status_message_(std::move(status));
         if (kind == RoomActionKind::Join || kind == RoomActionKind::Knock)
+        {
             on_join_room_outcome_ui_(false, room_id, message);
+        }
         else if (kind == RoomActionKind::Create)
+        {
             on_create_room_outcome_ui_(false, room_id, message);
-        else if (kind == RoomActionKind::AddSpaceChild ||
-                 kind == RoomActionKind::RemoveSpaceChild)
+        }
+        else if (kind == RoomActionKind::AddSpaceChild || kind == RoomActionKind::RemoveSpaceChild)
         {
             // Undo the optimistic cache mutation request_add/remove_room_to/from_space_
             // applied. The request does not record which child list the room was in,
@@ -1244,10 +1417,11 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
             if (was_add)
             {
                 auto& joined = space_children_cache_[action_space_id];
-                joined.erase(std::remove(joined.begin(), joined.end(), room_id),
-                            joined.end());
+                joined.erase(std::remove(joined.begin(), joined.end(), room_id), joined.end());
                 if (client_)
+                {
                     update_space_children_cache_();
+                }
             }
             else
             {
@@ -1268,8 +1442,7 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         break;
     case RoomActionKind::Join:
     {
-        const std::string& effective_id =
-            joined_room_id.empty() ? room_id : joined_room_id;
+        const std::string& effective_id = joined_room_id.empty() ? room_id : joined_room_id;
         if (!joined_room_id.empty())
         {
             tab_navigate_room(joined_room_id);
@@ -1281,7 +1454,9 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 const std::string ev = std::move(pit->second);
                 pending_event_scroll_after_join_.erase(pit);
                 if (room_view_ && room_view_->message_list())
+                {
                     room_view_->message_list()->set_highlighted_event(ev);
+                }
                 try_scroll_to_room_event_(ev);
             }
         }
@@ -1290,10 +1465,11 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
     }
     case RoomActionKind::Create:
     {
-        const std::string& effective_id =
-            joined_room_id.empty() ? room_id : joined_room_id;
+        const std::string& effective_id = joined_room_id.empty() ? room_id : joined_room_id;
         if (!joined_room_id.empty())
+        {
             tab_navigate_room(joined_room_id);
+        }
         on_create_room_outcome_ui_(true, effective_id, "");
         break;
     }
@@ -1310,16 +1486,16 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
             if (main_room_pane_)
             {
                 auto _tt = compute_thread_transition_(
-                    main_room_pane_->thread_panel(),
-                    main_room_pane_->thread_panel_prev(),
-                    main_room_pane_->thread_root(),
-                    ThreadTrigger::RoomSwitch, {});
+                    main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
                 main_room_pane_->apply_thread_transition_(_tt);
             }
             current_room_id_.clear();
             after_active_room_changed_();
             if (room_view_)
+            {
                 room_view_->clear_room();
+            }
             request_relayout_();
         }
         break;
@@ -1362,20 +1538,28 @@ void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& room_id,
                                          const std::string& message)
 {
     if (!ok && main_app_ && main_app_->room_preview())
+    {
         main_app_->room_preview()->set_state(views::RoomPreviewView::State::Idle);
+    }
 
     auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
     if (!ar || !ar->is_open())
+    {
         return;
+    }
 
     if (ar->active_tab() == views::AddRoomView::Tab::Directory)
     {
         if (auto* dv = ar->directory_view())
         {
             if (ok)
+            {
                 ar->close();
+            }
             else
+            {
                 dv->set_join_failed(message.empty() ? std::string() : message);
+            }
             request_relayout_();
         }
         return;
@@ -1383,7 +1567,9 @@ void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& room_id,
 
     auto* jr = ar->join_view();
     if (!jr || ar->active_tab() != views::AddRoomView::Tab::Join)
+    {
         return;
+    }
 
     if (ok)
     {
@@ -1403,7 +1589,9 @@ void ShellBase::on_create_room_outcome_ui_(bool ok, const std::string& room_id,
     auto* ar = main_app_ ? main_app_->add_room_view() : nullptr;
     auto* cr = ar ? ar->create_view() : nullptr;
     if (!cr || !ar->is_open() || ar->active_tab() != views::AddRoomView::Tab::Create)
+    {
         return;
+    }
 
     if (ok)
     {
@@ -1416,8 +1604,7 @@ void ShellBase::on_create_room_outcome_ui_(bool ok, const std::string& room_id,
     request_relayout_();
 }
 
-void ShellBase::remember_upload_draft_(std::uint64_t request_id,
-                                       std::shared_ptr<UploadDraft> draft)
+void ShellBase::remember_upload_draft_(std::uint64_t request_id, std::shared_ptr<UploadDraft> draft)
 {
     upload_drafts_[request_id] = std::move(draft);
 }
@@ -1425,26 +1612,32 @@ void ShellBase::remember_upload_draft_(std::uint64_t request_id,
 void ShellBase::restore_failed_upload_(const std::shared_ptr<UploadDraft>& draft)
 {
     if (!draft)
+    {
         return;
+    }
     const auto& uid = draft->user_id;
     const auto& rid = draft->room_id;
     // Only the account that sent it gets its content back: its own pop-out of
     // the room first (active or not), then the main window if that account is
     // the active one.
     if (auto* w = find_secondary_(rid, uid); w && w->pane()->restore_upload_draft_(*draft))
+    {
         return;
+    }
     if (!active_account_ || active_account_->user_id != uid || !main_room_pane_)
+    {
         return;
+    }
     if (current_room_id_ == rid && main_room_pane_->restore_upload_draft_(*draft))
+    {
         return;
+    }
     // Room not on screen (or its composer is in use): keep it as that room's
     // draft, restored when the user returns.
     main_room_pane_->stash_upload_draft_(*draft);
 }
 
-void ShellBase::handle_upload_complete_ui_(std::uint64_t request_id,
-                                            bool ok,
-                                            std::string message)
+void ShellBase::handle_upload_complete_ui_(std::uint64_t request_id, bool ok, std::string message)
 {
     on_upload_finished_ui_(request_id, ok);
     if (auto it = upload_drafts_.find(request_id); it != upload_drafts_.end())
@@ -1453,21 +1646,21 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t request_id,
         upload_drafts_.erase(it);
         // "cancelled": the account is being torn down, nothing to restore into.
         if (!ok && message != "cancelled")
+        {
             restore_failed_upload_(draft);
+        }
     }
     if (!ok)
     {
         std::fprintf(stderr, "[upload] failed: %s\n", message.c_str());
-        std::string status = message.empty()
-                                 ? tk::tr("Upload failed")
-                                 : tk::trf(tk::tr("Upload failed: {0}"), {message});
+        std::string status = message.empty() ? tk::tr("Upload failed")
+                                             : tk::trf(tk::tr("Upload failed: {0}"), {message});
         show_status_message_(std::move(status));
     }
 }
 
-void ShellBase::handle_upload_progress_ui_(std::uint64_t request_id,
-                                            std::uint64_t current_bytes,
-                                            std::uint64_t total_bytes)
+void ShellBase::handle_upload_progress_ui_(std::uint64_t request_id, std::uint64_t current_bytes,
+                                           std::uint64_t total_bytes)
 {
     on_upload_progress_ui_(request_id, current_bytes, total_bytes);
 }
@@ -1501,12 +1694,16 @@ void ShellBase::start_background_warming_()
     // connection with the 100-rooms-per-request room-list sync and slow it.
     // handle_room_list_running_ui_ re-runs this once the room list is running.
     if (!warmup_allowed_())
+    {
         return;
+    }
     bool restore_pending = !pending_restore_rooms_.empty();
     if (restore_pending)
     {
         if (++restore_gate_ticks_ >= kRestoreGateMaxTicks)
+        {
             restore_pending = false;
+        }
     }
 
     // When inactive grouping is enabled, ensure every room (not just the
@@ -1520,10 +1717,14 @@ void ShellBase::start_background_warming_()
         tesseract::Settings::instance().group_inactive_rooms)
     {
         auto sess = active_account_;
-        run_async_mut_("backfill-uncached-rooms", [sess]() {
-            if (sess && sess->client)
-                sess->client->start_background_backfill_all_uncached();
-        });
+        run_async_mut_("backfill-uncached-rooms",
+                       [sess]()
+                       {
+                           if (sess && sess->client)
+                           {
+                               sess->client->start_background_backfill_all_uncached();
+                           }
+                       });
     }
 
     // Check bridge status (MSC2346) for visible rooms. Fires only when the
@@ -1531,7 +1732,9 @@ void ShellBase::start_background_warming_()
     // already cached in SQLite and is idempotent while a check is in flight.
     // Every room, visible ones first (see start_bridge_check_).
     if (client_ && !restore_pending && !low_power_active() && !rooms_.empty())
+    {
         start_bridge_check_();
+    }
 
     // Proactively warm the event cache for favorite and (if enabled)
     // quiet-unread rooms so opening them is instant. Favorites are always
@@ -1544,9 +1747,9 @@ void ShellBase::start_background_warming_()
     // timelines and is idempotent while a prefetch is in flight.
     if (client_ && !restore_pending && !low_power_active())
     {
-        auto sel = compute_unread_prefetch_set(
-            rooms_, current_room_id_, kUnreadPrefetchCap,
-            tesseract::Settings::instance().prefetch_unread_rooms);
+        auto sel =
+            compute_unread_prefetch_set(rooms_, current_room_id_, kUnreadPrefetchCap,
+                                        tesseract::Settings::instance().prefetch_unread_rooms);
         if (sel.fingerprint != unread_prefetch_fingerprint_)
         {
             unread_prefetch_fingerprint_ = sel.fingerprint;
@@ -1557,13 +1760,14 @@ void ShellBase::start_background_warming_()
                 // reassign or free the raw client_ pointer. Holding `sess` keeps
                 // the Client alive for the call — same pattern as subscribe_room.
                 auto sess = active_account_;
-                run_async_mut_(
-                    "unread-prefetch",
-                    [sess, ids = std::move(sel.ids)]() mutable
-                    {
-                        if (sess && sess->client)
-                            sess->client->start_unread_prefetch(ids);
-                    });
+                run_async_mut_("unread-prefetch",
+                               [sess, ids = std::move(sel.ids)]() mutable
+                               {
+                                   if (sess && sess->client)
+                                   {
+                                       sess->client->start_unread_prefetch(ids);
+                                   }
+                               });
             }
         }
     }
@@ -1577,44 +1781,66 @@ void ShellBase::start_background_warming_()
 void ShellBase::start_bridge_check_()
 {
     if (!client_ || !warmup_allowed_())
+    {
         return;
+    }
     std::vector<std::string> ids;
     if (main_app_ && main_app_->room_list_view())
+    {
         ids = main_app_->room_list_view()->visible_room_ids();
+    }
     std::unordered_set<std::string> seen(ids.begin(), ids.end());
     for (const auto& r : rooms_)
     {
         if (seen.insert(r.id).second)
+        {
             ids.push_back(r.id);
+        }
     }
     if (ids.empty())
+    {
         return;
+    }
     std::size_t fp = 0;
     for (const auto& id : ids)
+    {
         fp = fp * 1315423911u + std::hash<std::string>{}(id);
+    }
     if (fp == bridge_check_fingerprint_)
+    {
         return;
+    }
     bridge_check_fingerprint_ = fp;
     auto sess = active_account_;
-    run_async_mut_("bridge-status-check", [sess, ids = std::move(ids)]() mutable {
-        if (sess && sess->client)
-            sess->client->start_bridge_status_check(ids);
-    });
+    run_async_mut_("bridge-status-check",
+                   [sess, ids = std::move(ids)]() mutable
+                   {
+                       if (sess && sess->client)
+                       {
+                           sess->client->start_bridge_status_check(ids);
+                       }
+                   });
 }
 
 void ShellBase::handle_room_list_running_ui_()
 {
     if (event_account_.empty())
+    {
         return;
+    }
     // Running is re-entered after a reconnect; only the first time this sync
     // session releases the held-back warming.
     if (!room_list_running_accounts_.insert(event_account_).second)
+    {
         return;
+    }
     if (!active_account_ || active_account_->user_id != event_account_)
+    {
         return; // the account switch re-runs warming for the incoming account
+    }
     // Warming was held back until now: let it fire for the room list.
     unread_prefetch_fingerprint_ = 0;
-    bridge_check_fingerprint_    = 0;
+    bridge_check_fingerprint_ = 0;
     start_background_warming_();
 }
 
@@ -1622,7 +1848,9 @@ void ShellBase::push_room_list_state_(RoomListState state)
 {
     last_room_list_state_ = state;
     if (state == RoomListState::Init && !event_account_.empty())
+    {
         room_list_running_accounts_.erase(event_account_);
+    }
     // client_ (the active account's alias) may still be null here during
     // startup: bridge construction + start_sync now run on a worker thread
     // ahead of switch_active_account_impl_, so a fast-restoring account's
@@ -1634,7 +1862,9 @@ void ShellBase::push_room_list_state_(RoomListState state)
     // one-shot Running transition already happened before client_ was set).
     if (state == RoomListState::Running && client_ &&
         tesseract::Settings::instance().check_for_updates)
+    {
         trigger_update_check_();
+    }
 }
 
 void ShellBase::handle_knock_requests_updated_ui_(std::string room_id)
@@ -1642,7 +1872,9 @@ void ShellBase::handle_knock_requests_updated_ui_(std::string room_id)
     auto sess = knock_requests_panel_account_.lock();
     if (!sess || !sess->client || room_id != knock_requests_panel_room_id_ ||
         dispatch_account_() != sess->user_id)
+    {
         return; // stale poke from a room whose panel isn't (or is no longer) open
+    }
     current_room_knock_requests_ = sess->client->list_knock_requests(room_id);
     on_knock_requests_panel_updated_();
 }
@@ -1656,7 +1888,9 @@ void ShellBase::handle_knock_requests_updated_ui_(std::string room_id)
 void ShellBase::on_knock_requests_panel_updated_()
 {
     if (!main_app_)
+    {
         return;
+    }
     if (auto* rv = main_app_->room_view())
     {
         if (auto* panel = rv->knock_requests_panel())
@@ -1667,23 +1901,27 @@ void ShellBase::on_knock_requests_panel_updated_()
 }
 
 void ShellBase::send_current_location_(std::string room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                       const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || !acting || !acting->client)
+    {
         return;
+    }
 
     if (!location_provider_)
     {
         location_provider_ = tk::create_location_provider(
-            [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); });
+            [this](std::function<void()> fn)
+            {
+                post_to_ui_(std::move(fn));
+            });
     }
     if (!location_provider_)
     {
-        show_status_message_(
-            tk::tr("Location services aren't available on this device."));
+        show_status_message_(tk::tr("Location services aren't available on this device."));
         return;
     }
 
@@ -1695,8 +1933,7 @@ void ShellBase::send_current_location_(std::string room_id,
 
     auto sess = acting;
     location_provider_->request_current_location(
-        [this, sess, room_id](bool success, const tk::LocationFix& fix,
-                              tk::LocationError error)
+        [this, sess, room_id](bool success, const tk::LocationFix& fix, tk::LocationError error)
         {
             if (!success)
             {
@@ -1720,64 +1957,80 @@ void ShellBase::send_current_location_(std::string room_id,
                 return;
             }
             if (!sess || !sess->client)
+            {
                 return; // account torn down / switched while awaiting the fix
-            std::string body = tesseract::views::osm_view_url(
-                fix.latitude, fix.longitude, 15);
+            }
+            std::string body = tesseract::views::osm_view_url(fix.latitude, fix.longitude, 15);
             // Supersede the persistent "Fetching…" message now that we have
             // a fix — send_location() itself is fire-and-forget (no
             // completion callback), so this is shown optimistically.
             show_status_message_(tk::tr("Location sent."));
-            run_async_mut_([sess, room_id, lat = fix.latitude,
-                            lon = fix.longitude, body]() mutable {
-                if (!sess || !sess->client) return;
-                sess->client->send_location(room_id, lat, lon, body);
-            });
+            run_async_mut_(
+                [sess, room_id, lat = fix.latitude, lon = fix.longitude, body]() mutable
+                {
+                    if (!sess || !sess->client)
+                    {
+                        return;
+                    }
+                    sess->client->send_location(room_id, lat, lon, body);
+                });
         });
 }
 
 ShellBase* ShellBase::notification_target_window_(const std::string& user_id)
 {
     if (auto* w = account_manager_.dedicated_window(user_id))
+    {
         return w;
+    }
     for (ShellBase* w : account_manager_.all_windows())
     {
         if (w->active_account_ && w->active_account_->user_id == user_id)
+        {
             return w;
+        }
     }
     // Pop-outs of the account in a window that has moved on to another one.
     if (auto* w = account_owner_window_(user_id))
+    {
         return w;
+    }
     return this;
 }
 
-void ShellBase::on_notification_clicked_(const std::string& user_id,
-                                         std::string room_id,
-                                         std::string event_id,
-                                         std::string token)
+void ShellBase::on_notification_clicked_(const std::string& user_id, std::string room_id,
+                                         std::string event_id, std::string token)
 {
     ShellBase* target = notification_target_window_(user_id);
     target->switch_active_account_(user_id);
     target->activate_for_notification_(token);
     target->navigate_to_room_(room_id);
     if (!event_id.empty())
+    {
         target->open_notification_thread_(room_id, event_id);
+    }
 }
 
-void ShellBase::open_notification_thread_(const std::string& room_id,
-                                          const std::string& event_id)
+void ShellBase::open_notification_thread_(const std::string& room_id, const std::string& event_id)
 {
     auto sess = active_account_;
     if (!sess || !sess->client)
+    {
         return;
+    }
     run_async_mut_(
         [this, sess, room_id, event_id]()
         {
-            const std::string root =
-                sess->client->thread_root_for_event(room_id, event_id);
+            const std::string root = sess->client->thread_root_for_event(room_id, event_id);
             if (root.empty())
+            {
                 return; // not a thread reply, or the event could not be loaded
-            post_to_ui_([this, room_id, root]()
-                        { open_thread_in_visible_pane_(room_id, root); });
+            }
+            post_to_ui_(
+                [this, room_id, root]()
+                {
+                    open_thread_in_visible_pane_(room_id, root);
+                });
         });
 }
 
@@ -1790,71 +2043,86 @@ void ShellBase::open_thread_in_visible_pane_(const std::string& room_id,
         // navigate_to_room_ focuses a pop-out already showing the room, so
         // prefer it over the main pane.
         if (auto* w = find_secondary_(room_id, active_account_->user_id))
+        {
             pane = w->pane();
+        }
     }
     if (!pane && main_room_pane_ && current_room_id_ == room_id)
+    {
         pane = main_room_pane_.get();
+    }
     if (!pane)
+    {
         return;
-    const auto t = compute_thread_transition_(
-        pane->thread_panel(), pane->thread_panel_prev(), pane->thread_root(),
-        ThreadTrigger::OpenFromMain, thread_root);
+    }
+    const auto t =
+        compute_thread_transition_(pane->thread_panel(), pane->thread_panel_prev(),
+                                   pane->thread_root(), ThreadTrigger::OpenFromMain, thread_root);
     pane->apply_thread_transition_(t);
 }
 
-void ShellBase::send_notification_reply_(std::string user_id,
-                                         std::string room_id,
-                                         std::string event_id,
-                                         std::string text)
+void ShellBase::send_notification_reply_(std::string user_id, std::string room_id,
+                                         std::string event_id, std::string text)
 {
     text = tesseract::text::trim(text);
     if (text.empty())
+    {
         return;
+    }
 
     auto sess = account_manager_.find(user_id);
     if (!sess || !sess->client)
     {
-        notify_reply_failed_(user_id, room_id,
-                             tk::tr("You're signed out of this account"));
+        notify_reply_failed_(user_id, room_id, tk::tr("You're signed out of this account"));
         return;
     }
 
     // Through the pipeline so a quick-reply keeps its order among this
     // room's sends and gets bundled URL previews like a composer send.
-    submit_room_send_(sess, room_id, text,
-                      [this, sess, room_id, event_id, text](const std::string& previews) mutable {
-        auto res = event_id.empty()
-            ? sess->client->send_message(room_id, text, "", previews)
-            : sess->client->send_reply(room_id, event_id, text, "", previews);
-        if (res)
-            return;
-        post_to_ui_(guarded([this, uid = sess->user_id, room_id]() mutable {
-            notify_reply_failed_(
-                uid, room_id,
-                tk::tr("Couldn't send your reply. Try again from the app."));
-        }));
-    });
+    submit_room_send_(
+        sess, room_id, text,
+        [this, sess, room_id, event_id, text](const std::string& previews) mutable
+        {
+            auto res = event_id.empty()
+                           ? sess->client->send_message(room_id, text, "", previews)
+                           : sess->client->send_reply(room_id, event_id, text, "", previews);
+            if (res)
+            {
+                return;
+            }
+            post_to_ui_(guarded(
+                [this, uid = sess->user_id, room_id]() mutable
+                {
+                    notify_reply_failed_(
+                        uid, room_id, tk::tr("Couldn't send your reply. Try again from the app."));
+                }));
+        });
 }
 
 void ShellBase::refresh_directory_server_choices_()
 {
     if (!main_app_ || !active_account_)
+    {
         return;
+    }
     auto* dr = main_app_->add_room_view() ? main_app_->add_room_view()->directory_view() : nullptr;
     if (!dr)
+    {
         return;
+    }
     const auto colon = my_user_id_.find(':');
     const std::string home =
         colon == std::string::npos ? std::string{} : my_user_id_.substr(colon + 1);
     dr->set_server_choices(
-        tesseract::Prefs::directory_server_choices(active_account_->directory_servers, home),
-        home);
+        tesseract::Prefs::directory_server_choices(active_account_->directory_servers, home), home);
 }
 
 void ShellBase::on_directory_server_validated_(const std::string& server)
 {
     if (!active_account_)
+    {
         return;
+    }
     active_account_->directory_servers =
         tesseract::Prefs::add_directory_server(active_account_->directory_servers, server);
     schedule_account_data_save_();
@@ -1928,8 +2196,7 @@ void ShellBase::on_rooms_updated_()
     }
     else if (!pending_restore_rooms_.empty())
     {
-        if (try_restore_tab_session_(pending_restore_rooms_,
-                                     pending_restore_rooms_[0]))
+        if (try_restore_tab_session_(pending_restore_rooms_, pending_restore_rooms_[0]))
         {
             pending_restore_rooms_.clear();
         }
@@ -1938,6 +2205,5 @@ void ShellBase::on_rooms_updated_()
     update_secondary_room_infos_();
     after_rooms_updated_ui_();
 }
-
 
 } // namespace tesseract

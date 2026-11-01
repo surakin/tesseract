@@ -46,14 +46,17 @@ struct VfShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_(std::function<void()> fn) override
     {
         std::lock_guard<std::mutex> lk(mu);
@@ -69,16 +72,33 @@ struct VfShell : tesseract::test::TestShellBase
     {
         ShellBase::show_encryption_setup_overlay_(m);
     }
-    void request_relayout_() override { ++relayouts; }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
     void on_show_status_message_ui_(const std::string& m) override
     {
         statuses.push_back(m);
     }
-    uint8_t read_recovery_state_() const override { return recovery_state; }
-    bool read_device_verified_() const override { return device_verified; }
-    bool read_own_identity_exists_() const override { return true; }
-    bool read_have_cross_signing_keys_() const override { return have_keys; }
-    void forget_stored_recovery_key_(const std::string&) override {}
+    uint8_t read_recovery_state_() const override
+    {
+        return recovery_state;
+    }
+    bool read_device_verified_() const override
+    {
+        return device_verified;
+    }
+    bool read_own_identity_exists_() const override
+    {
+        return true;
+    }
+    bool read_have_cross_signing_keys_() const override
+    {
+        return have_keys;
+    }
+    void forget_stored_recovery_key_(const std::string&) override
+    {
+    }
     void pump()
     {
         for (int i = 0; i < 50; ++i)
@@ -92,9 +112,13 @@ struct VfShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
 
@@ -165,7 +189,10 @@ struct VfFx
         s.active_account_->client = std::make_unique<tesseract::Client>();
         s.my_user_id_ = "@me:x";
     }
-    EncryptionSetupOverlay* ov() { return app->encryption_setup(); }
+    EncryptionSetupOverlay* ov()
+    {
+        return app->encryption_setup();
+    }
     void open(OMode m = OMode::Recover)
     {
         s.show_encryption_setup_overlay_(m);
@@ -184,8 +211,7 @@ struct VfFx
 
 } // namespace
 
-TEST_CASE("starting self verification asks the SDK and reports a refusal",
-          "[shell][verification]")
+TEST_CASE("starting self verification asks the SDK and reports a refusal", "[shell][verification]")
 {
     VfFx f;
     f.open();
@@ -235,8 +261,7 @@ TEST_CASE("an accepted outgoing request is adopted only while still wanted",
     g.s.pump();
 }
 
-TEST_CASE("incoming requests show the prompt unless the dialog is busy",
-          "[shell][verification]")
+TEST_CASE("incoming requests show the prompt unless the dialog is busy", "[shell][verification]")
 {
     VfFx f;
     f.s.handle_verification_request_ui_("@me:x", "$f1", "@me:x", "DEV", true);
@@ -264,8 +289,7 @@ TEST_CASE("incoming requests show the prompt unless the dialog is busy",
     CHECK_FALSE(s2.encryption_flow_.has_flow());
 }
 
-TEST_CASE("SAS codes, completion and cancellation follow the tracked flow",
-          "[shell][verification]")
+TEST_CASE("SAS codes, completion and cancellation follow the tracked flow", "[shell][verification]")
 {
     VfFx f;
     f.open(OMode::Verify);
@@ -301,8 +325,7 @@ TEST_CASE("SAS codes, completion and cancellation follow the tracked flow",
     CHECK(f.ov()->step() == Step::VerifyFailed);
 }
 
-TEST_CASE("verification state drives the warning dot and reminder",
-          "[shell][verification]")
+TEST_CASE("verification state drives the warning dot and reminder", "[shell][verification]")
 {
     VfFx f;
     f.s.handle_verification_state_ui_(false);
@@ -327,8 +350,7 @@ TEST_CASE("dialog callbacks: enable recovery and recover mark and clear state",
     SUCCEED();
 }
 
-TEST_CASE("dialog callbacks: accept / decline / mismatch / cancel",
-          "[shell][verification][dialog]")
+TEST_CASE("dialog callbacks: accept / decline / mismatch / cancel", "[shell][verification][dialog]")
 {
     VfFx f;
     f.open(OMode::Verify);
@@ -373,8 +395,7 @@ TEST_CASE("'they match' without a live flow fails the confirming step",
     CHECK_FALSE(g.s.encryption_flow_.has_flow());
 }
 
-TEST_CASE("dialog callbacks: use-another-device, retry and layout",
-          "[shell][verification][dialog]")
+TEST_CASE("dialog callbacks: use-another-device, retry and layout", "[shell][verification][dialog]")
 {
     VfFx f;
     f.open(OMode::Recover);

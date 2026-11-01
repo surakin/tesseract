@@ -56,12 +56,9 @@ TEST_CASE("set_profile suffixes every app folder", "[paths][profile]")
     tesseract::set_profile("work");
     CHECK(tesseract::profile() == "work");
     CHECK(tesseract::profile_suffix() == "-work");
-    CHECK(tesseract::config_dir() ==
-          cfg.parent_path() / (cfg.filename().string() + "-work"));
-    CHECK(tesseract::data_dir() ==
-          data.parent_path() / (data.filename().string() + "-work"));
-    CHECK(tesseract::cache_dir() ==
-          cache.parent_path() / (cache.filename().string() + "-work"));
+    CHECK(tesseract::config_dir() == cfg.parent_path() / (cfg.filename().string() + "-work"));
+    CHECK(tesseract::data_dir() == data.parent_path() / (data.filename().string() + "-work"));
+    CHECK(tesseract::cache_dir() == cache.parent_path() / (cache.filename().string() + "-work"));
 
     // Invalid names are ignored, empty restores the default.
     tesseract::set_profile("../evil");

@@ -5,12 +5,10 @@ namespace tesseract
 {
 
 HistoryExportController::HistoryExportController(
-    tesseract::Client* client,
-    std::function<void(std::function<void()>)> post_to_ui,
-    std::function<void(std::function<void()>)> run_async,
-    std::shared_ptr<void> client_owner)
-    : client_(client), client_owner_(std::move(client_owner)),
-      post_to_ui_(std::move(post_to_ui)), run_async_(std::move(run_async))
+    tesseract::Client* client, std::function<void(std::function<void()>)> post_to_ui,
+    std::function<void(std::function<void()>)> run_async, std::shared_ptr<void> client_owner)
+    : client_(client), client_owner_(std::move(client_owner)), post_to_ui_(std::move(post_to_ui)),
+      run_async_(std::move(run_async))
 {
 }
 
@@ -28,14 +26,18 @@ void HistoryExportController::set_client(tesseract::Client* client,
         // forget it, so its late progress/completion (still routed here by
         // request id) can't be attributed to the new account.
         if (client_)
+        {
             client_->cancel_room_export(active_request_id_);
+        }
         std::string out_path = std::move(active_out_path_);
         active_ = false;
         active_request_id_ = 0;
         active_room_id_.clear();
         active_out_path_.clear();
         if (on_finished)
+        {
             on_finished(false, true, std::move(out_path), 0, std::string{});
+        }
     }
     client_ = client;
     client_owner_ = std::move(client_owner);
@@ -48,8 +50,7 @@ std::string HistoryExportController::extension_for(Format format)
 
 std::string HistoryExportController::suggested_folder_name(const Request& req)
 {
-    std::string base = req.room_display_name.empty() ? std::string("room")
-                                                      : req.room_display_name;
+    std::string base = req.room_display_name.empty() ? std::string("room") : req.room_display_name;
     std::string sanitized;
     sanitized.reserve(base.size());
     for (char c : base)
@@ -69,9 +70,13 @@ std::string HistoryExportController::suggested_folder_name(const Request& req)
             break;
         default:
             if (static_cast<unsigned char>(c) < 0x20)
+            {
                 sanitized.push_back('_');
+            }
             else
+            {
                 sanitized.push_back(c);
+            }
         }
     }
     return sanitized + "-history";
@@ -133,7 +138,9 @@ std::vector<std::string> HistoryExportController::build_labels()
 void HistoryExportController::begin(Request req)
 {
     if (!show_save_folder_dialog || active_)
+    {
         return;
+    }
 
     show_save_folder_dialog(
         suggested_folder_name(req),
@@ -141,26 +148,30 @@ void HistoryExportController::begin(Request req)
             [this, req = std::move(req)](std::string path) mutable
             {
                 if (path.empty())
+                {
                     return;
+                }
 
                 tesseract::RoomExportOptions options;
-                options.out_path              = path;
-                options.format                = extension_for(req.format);
-                options.include_images        = req.include_images && req.format == Format::Html;
-                options.zip_output            = req.zip_output;
-                options.stop_at_ts_ms          = req.stop_at_ts_ms;
-                options.labels                = build_labels();
-                options.resume_from_event_id  = req.resume_from_event_id;
+                options.out_path = path;
+                options.format = extension_for(req.format);
+                options.include_images = req.include_images && req.format == Format::Html;
+                options.zip_output = req.zip_output;
+                options.stop_at_ts_ms = req.stop_at_ts_ms;
+                options.labels = build_labels();
+                options.resume_from_event_id = req.resume_from_event_id;
 
                 const std::uint64_t request_id = ++next_request_id_;
-                active_          = true;
+                active_ = true;
                 active_request_id_ = request_id;
-                active_room_id_   = req.room_id;
-                active_out_path_  = path;
-                last_progress_    = tesseract::RoomExportProgress{};
+                active_room_id_ = req.room_id;
+                active_out_path_ = path;
+                last_progress_ = tesseract::RoomExportProgress{};
 
                 if (on_started)
+                {
                     on_started(req.room_id, path);
+                }
 
                 auto* c = client_;
                 auto owner = client_owner_;
@@ -184,9 +195,13 @@ void HistoryExportController::begin(Request req)
                         // Controller gone before the job started (e.g. its
                         // account logged out): nothing would receive progress.
                         if (!c || alive.expired())
+                        {
                             return;
+                        }
                         if (is_fresh_request)
+                        {
                             c->clear_room_export_checkpoint(room_id);
+                        }
                         c->start_room_export_async(request_id, room_id, options);
                     });
             }));
@@ -195,14 +210,18 @@ void HistoryExportController::begin(Request req)
 void HistoryExportController::cancel()
 {
     if (!active_ || !client_)
+    {
         return;
+    }
     client_->cancel_room_export(active_request_id_);
 }
 
 void HistoryExportController::stop()
 {
     if (!active_ || !client_)
+    {
         return;
+    }
     client_->stop_room_export(active_request_id_);
 }
 
@@ -212,20 +231,27 @@ void HistoryExportController::query_resume(std::string room_id)
     if (!c)
     {
         if (on_resume_available)
+        {
             on_resume_available(tesseract::RoomExportCheckpoint{});
+        }
         return;
     }
     run_async_(
-        [this, c, owner = client_owner_, room_id = std::move(room_id), ui = ui_poster(post_to_ui_)]() mutable
+        [this, c, owner = client_owner_, room_id = std::move(room_id),
+         ui = ui_poster(post_to_ui_)]() mutable
         {
             if (!ui.owner_alive()) // owner gone before the job started
+            {
                 return;
+            }
             auto cp = c->room_export_checkpoint(room_id);
             ui(
                 [this, cp = std::move(cp)]() mutable
                 {
                     if (on_resume_available)
+                    {
                         on_resume_available(std::move(cp));
+                    }
                 });
         });
 }
@@ -233,10 +259,14 @@ void HistoryExportController::query_resume(std::string room_id)
 void HistoryExportController::handle_progress(const tesseract::RoomExportProgress& progress)
 {
     if (!active_ || progress.request_id != active_request_id_)
+    {
         return;
+    }
     last_progress_ = progress;
     if (on_progress)
+    {
         on_progress(progress);
+    }
 }
 
 void HistoryExportController::handle_complete(std::uint64_t request_id, bool ok, bool cancelled,
@@ -247,12 +277,16 @@ void HistoryExportController::handle_complete(std::uint64_t request_id, bool ok,
     (void)reached_start;
     (void)bytes_written;
     if (request_id != active_request_id_)
+    {
         return;
+    }
     active_ = false;
     active_room_id_.clear();
     active_out_path_.clear();
     if (on_finished)
+    {
         on_finished(ok, cancelled, std::move(out_path), events_written, std::move(message));
+    }
 }
 
 } // namespace tesseract

@@ -53,24 +53,31 @@ struct UrlPreviewData;
 class UrlPreviewCardDisplay
 {
 public:
-    using PreviewProvider =
-        std::function<const UrlPreviewData*(const std::string& url)>;
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    using PreviewProvider = std::function<const UrlPreviewData*(const std::string& url)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc_or_url)>;
 
     // One painted card's clickable region (world coords, rebuilt every paint
     // pass) plus the URL it opens.
     struct PreviewCardHit
     {
         std::string url;
-        tk::Rect    rect;
+        tk::Rect rect;
     };
 
     // --- wiring (forwarded from MessageListView's public API) ---
-    void set_provider(PreviewProvider p) { provider_ = std::move(p); }
-    void set_image_provider(ImageProvider p) { image_provider_ = std::move(p); }
+    void set_provider(PreviewProvider p)
+    {
+        provider_ = std::move(p);
+    }
+    void set_image_provider(ImageProvider p)
+    {
+        image_provider_ = std::move(p);
+    }
 
-    bool has_provider() const { return static_cast<bool>(provider_); }
+    bool has_provider() const
+    {
+        return static_cast<bool>(provider_);
+    }
 
     // Raw provider lookup by URL. Returns nullptr when no provider is set or the
     // URL has no (yet-cached) preview. Used by the room-switch gate keeper.
@@ -97,8 +104,7 @@ public:
     // min(col_w, kMaxInlineImageWidth), which can also affect its fitted
     // height for a wide/panoramic image. Neither affects the legacy layout,
     // whose per-card height is always the constant kUrlPreviewCardH.
-    float stack_height(const MessageRowData& row, tk::CanvasFactory& factory,
-                       float col_w) const;
+    float stack_height(const MessageRowData& row, tk::CanvasFactory& factory, float col_w) const;
 
     // Widest card in the stack within `col_w` (0 when there is no card). Used
     // by the bubble layout to hug the bubble to the cards instead of filling
@@ -109,40 +115,42 @@ public:
     // Draws every card_for(row) card starting at (x, y) within `col_w`,
     // advancing downward, and records each card's world-space rect for the
     // click hit-test.
-    void paint_cards(const MessageRowData& row, tk::PaintCtx& ctx, float x,
-                     float y, float col_w);
+    void paint_cards(const MessageRowData& row, tk::PaintCtx& ctx, float x, float y, float col_w);
 
     // --- geometry: written by paint, read by the pointer hit-test ---
-    void clear_geometry() { card_geom_.clear(); }
-    const std::vector<PreviewCardHit>& geometry() const { return card_geom_; }
+    void clear_geometry()
+    {
+        card_geom_.clear();
+    }
+    const std::vector<PreviewCardHit>& geometry() const
+    {
+        return card_geom_;
+    }
 
 private:
     // Legacy homeserver-fetched card: fixed kUrlPreviewCardH-tall row, small
     // aspect-fitted thumbnail on the left, text on the right. Returns the
     // (constant) height painted.
-    float paint_one_legacy_(const std::string& target_url,
-                            const std::string& fallback_url,
-                            const UrlPreviewData& p, tk::PaintCtx& ctx, float x,
-                            float y, float col_w);
+    float paint_one_legacy_(const std::string& target_url, const std::string& fallback_url,
+                            const UrlPreviewData& p, tk::PaintCtx& ctx, float x, float y,
+                            float col_w);
 
     // Sender-bundled (MSC4095) card: image on top sized like an inline
     // timeline image (min(col_w, kMaxInlineImageWidth) x kMaxInlineImageHeight,
     // aspect-fitted), text below. Returns the actual height painted, which
     // varies per card.
-    float paint_one_bundled_(const std::string& target_url,
-                             const std::string& fallback_url,
-                             const UrlPreviewData& p, tk::PaintCtx& ctx, float x,
-                             float y, float col_w);
+    float paint_one_bundled_(const std::string& target_url, const std::string& fallback_url,
+                             const UrlPreviewData& p, tk::PaintCtx& ctx, float x, float y,
+                             float col_w);
 
     // {max_w, total_height} for a bundled card, shared between stack_height()
     // (measure) and paint_one_bundled_() (paint) so the space reserved always
     // matches what's drawn. `max_w` is min(col_w, kMaxInlineImageWidth).
-    tk::Size bundled_card_size_(const UrlPreviewData& p,
-                                const std::string& third_line,
+    tk::Size bundled_card_size_(const UrlPreviewData& p, const std::string& third_line,
                                 tk::CanvasFactory& factory, float max_w) const;
 
     PreviewProvider provider_;
-    ImageProvider   image_provider_;
+    ImageProvider image_provider_;
     mutable std::vector<PreviewCardHit> card_geom_;
 };
 

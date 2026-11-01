@@ -40,35 +40,36 @@ struct CountingFactory : tk::CanvasFactory
     // chrome string doesn't inflate a "the body was re-shaped once" check.
     int rich = 0;
     std::set<std::pair<int, std::string>> shapes;
-    int distinct_shapes() const { return static_cast<int>(shapes.size()); }
+    int distinct_shapes() const
+    {
+        return static_cast<int>(shapes.size());
+    }
     bool saw_image_span = false;
     bool saw_bold_span = false;
     std::string last_image_span_text; // the actual text fed to the backend
-    explicit CountingFactory(tk::CanvasFactory& f) : inner(f) {}
+    explicit CountingFactory(tk::CanvasFactory& f) : inner(f)
+    {
+    }
 
-    std::unique_ptr<tk::Image>
-    decode_image(std::span<const std::uint8_t> b) override
+    std::unique_ptr<tk::Image> decode_image(std::span<const std::uint8_t> b) override
     {
         return inner.decode_image(b);
     }
-    std::unique_ptr<tk::Image>
-    create_image_rgba(const std::uint8_t* p, int w, int h) override
+    std::unique_ptr<tk::Image> create_image_rgba(const std::uint8_t* p, int w, int h) override
     {
         return inner.create_image_rgba(p, w, h);
     }
-    std::unique_ptr<tk::Image>
-    scale_image(const tk::Image& s, int mw, int mh) override
+    std::unique_ptr<tk::Image> scale_image(const tk::Image& s, int mw, int mh) override
     {
         return inner.scale_image(s, mw, mh);
     }
-    std::unique_ptr<tk::AnimatedImage>
-    decode_animated_image(std::span<const std::uint8_t> b, int mp) override
+    std::unique_ptr<tk::AnimatedImage> decode_animated_image(std::span<const std::uint8_t> b,
+                                                             int mp) override
     {
         return inner.decode_animated_image(b, mp);
     }
-    std::unique_ptr<tk::TextLayout>
-    build_rich_text(std::span<const tk::TextSpan> sp,
-                    const tk::TextStyle& s) override
+    std::unique_ptr<tk::TextLayout> build_rich_text(std::span<const tk::TextSpan> sp,
+                                                    const tk::TextStyle& s) override
     {
         ++rich;
         std::string flat;
@@ -81,7 +82,9 @@ struct CountingFactory : tk::CanvasFactory
                 last_image_span_text = span.text;
             }
             if (span.bold)
+            {
                 saw_bold_span = true;
+            }
         }
         shapes.emplace(static_cast<int>(s.role), std::move(flat));
         return inner.build_rich_text(sp, s);
@@ -170,10 +173,9 @@ TEST_CASE("MessageListView paints a real Element-sent MSC2545 emoticon "
     m.sender = "@surak:gnomos.org";
     m.sender_name = "surak";
     m.body = ":cacodemon: oh";
-    m.formatted_body =
-        "<img data-mx-emoticon "
-        "src=\"mxc://gnomos.org/7237e619d21c4054078c8bf4c915574705d69081\" "
-        "alt=\":cacodemon:\" title=\":cacodemon:\" height=\"32\"/> oh";
+    m.formatted_body = "<img data-mx-emoticon "
+                       "src=\"mxc://gnomos.org/7237e619d21c4054078c8bf4c915574705d69081\" "
+                       "alt=\":cacodemon:\" title=\":cacodemon:\" height=\"32\"/> oh";
     v.set_messages({m}, false);
 
     st.run(v, {0, 0, 600, 400});
@@ -205,8 +207,7 @@ TEST_CASE("MessageListView renders a literal @room in a plain m.text body "
     CHECK(st.cf.saw_image_span);
 }
 
-TEST_CASE("inserting a message keeps an existing read marker",
-          "[message_list][layout_cache]")
+TEST_CASE("inserting a message keeps an existing read marker", "[message_list][layout_cache]")
 {
     // m.fully_read is deferred, so a divider already on screen must stay put
     // while new messages arrive below it rather than collapse.
@@ -283,16 +284,14 @@ TEST_CASE("MessageListView retains the body layout across a room switch and back
     CHECK(st.cf.distinct_shapes() == before_return);
 }
 
-TEST_CASE("MessageListView body layout cache is memory-bounded",
-          "[message_list][layout_cache]")
+TEST_CASE("MessageListView body layout cache is memory-bounded", "[message_list][layout_cache]")
 {
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::vector<MessageRowData> many;
     for (int i = 0; i < 400; ++i)
     {
-        many.push_back(
-            make_rich("$m" + std::to_string(i), "body number " + std::to_string(i)));
+        many.push_back(make_rich("$m" + std::to_string(i), "body number " + std::to_string(i)));
     }
     v.set_messages(std::move(many), false);
     st.run(v, {0, 0, 600, 400});
@@ -303,23 +302,21 @@ TEST_CASE("MessageListView body layout cache is memory-bounded",
 
 namespace
 {
-MessageRowData make_table_row(const std::string& id,
-                              const std::string& formatted)
+MessageRowData make_table_row(const std::string& id, const std::string& formatted)
 {
     MessageRowData r;
-    r.kind           = MessageRowData::Kind::Text;
-    r.event_id       = id;
-    r.sender         = "@alice:example.org";
-    r.sender_name    = "Alice";
-    r.body           = "table";
+    r.kind = MessageRowData::Kind::Text;
+    r.event_id = id;
+    r.sender = "@alice:example.org";
+    r.sender_name = "Alice";
+    r.body = "table";
     r.formatted_body = formatted;
     return r;
 }
 
-constexpr const char* kTableHtml =
-    "<table><thead><tr><th>Name</th><th>Role</th></tr></thead>"
-    "<tbody><tr><td>Alice</td><td>Admin</td></tr>"
-    "<tr><td>Bob</td><td>Moderator</td></tr></tbody></table>";
+constexpr const char* kTableHtml = "<table><thead><tr><th>Name</th><th>Role</th></tr></thead>"
+                                   "<tbody><tr><td>Alice</td><td>Admin</td></tr>"
+                                   "<tr><td>Bob</td><td>Moderator</td></tr></tbody></table>";
 } // namespace
 
 TEST_CASE("MessageListView renders a Markdown table without crashing",
@@ -366,10 +363,7 @@ TEST_CASE("MessageListView re-shapes a table when its content changes",
     st.run(v, {0, 0, 600, 400});
     const int base = st.cf.distinct_shapes();
 
-    v.update_message(
-        0, make_table_row(
-               "$t",
-               "<table><tr><td>only</td><td>one</td></tr></table>"));
+    v.update_message(0, make_table_row("$t", "<table><tr><td>only</td><td>one</td></tr></table>"));
     st.run(v, {0, 0, 600, 400});
 
     CHECK(st.cf.distinct_shapes() > base); // rebuilt
@@ -383,11 +377,13 @@ TEST_CASE("MessageListView copy_selection spanning a table does not crash",
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::string clip;
-    v.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
-    v.set_messages({make_rich("$a", "alpha"),
-                    make_table_row("$t", kTableHtml),
-                    make_rich("$z", "omega")},
-                   false);
+    v.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
+    v.set_messages(
+        {make_rich("$a", "alpha"), make_table_row("$t", kTableHtml), make_rich("$z", "omega")},
+        false);
     st.run(v, {0, 0, 600, 400});
 
     const tk::Rect r0 = v.row_world_rect(0);
@@ -425,28 +421,40 @@ TEST_CASE("MessageListView double-click selects a word inside a table cell",
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::string clip;
-    v.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    v.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     v.set_messages({make_table_row("$t", kTableHtml)}, false);
     st.run(v, {0, 0, 600, 400});
 
     const tk::Rect rr = v.row_world_rect(0);
-    static const std::string words[] = {"Name", "Role",  "Alice",
-                                        "Admin", "Bob",   "Moderator"};
+    static const std::string words[] = {"Name", "Role", "Alice", "Admin", "Bob", "Moderator"};
     bool ok = false;
     for (float dy = 4.0f; dy < rr.h && !ok; dy += 2.0f)
+    {
         for (float dx = 40.0f; dx < rr.x + rr.w * 0.5f && !ok; dx += 3.0f)
         {
             v.on_pointer_down({rr.x + dx, rr.y + dy});
             if (!v.on_pointer_down({rr.x + dx, rr.y + dy})) // 2nd click
+            {
                 continue;
+            }
             if (!v.has_selection())
+            {
                 continue;
+            }
             clip.clear();
             v.copy_selection();
             for (const auto& w : words)
+            {
                 if (clip == w)
+                {
                     ok = true;
+                }
+            }
         }
+    }
     CHECK(ok);
 }
 
@@ -456,7 +464,10 @@ TEST_CASE("MessageListView selects a rectangular block across table cells",
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::string clip;
-    v.on_set_clipboard = [&](std::string_view s) { clip = std::string(s); };
+    v.on_set_clipboard = [&](std::string_view s)
+    {
+        clip = std::string(s);
+    };
     v.set_messages({make_table_row("$t", kTableHtml)}, false);
     st.run(v, {0, 0, 600, 400});
 
@@ -465,10 +476,13 @@ TEST_CASE("MessageListView selects a rectangular block across table cells",
     // the block covers more than one cell.
     bool ok = false;
     for (float dy = 4.0f; dy < rr.h * 0.5f && !ok; dy += 3.0f)
+    {
         for (float dx = 40.0f; dx < rr.w * 0.4f && !ok; dx += 3.0f)
         {
             if (!v.on_pointer_down({rr.x + dx, rr.y + dy}))
+            {
                 continue;
+            }
             v.on_pointer_drag({rr.x + rr.w - 6.0f, rr.y + rr.h - 4.0f});
             if (!v.has_selection())
             {
@@ -478,12 +492,11 @@ TEST_CASE("MessageListView selects a rectangular block across table cells",
             clip.clear();
             v.copy_selection();
             // TSV: tab between columns, newline between rows, no GFM pipes.
-            ok = clip.find('|') == std::string::npos &&
-                 clip.find('\t') != std::string::npos &&
-                 clip.find('\n') != std::string::npos &&
-                 clip.find("Name") != std::string::npos &&
+            ok = clip.find('|') == std::string::npos && clip.find('\t') != std::string::npos &&
+                 clip.find('\n') != std::string::npos && clip.find("Name") != std::string::npos &&
                  clip.find("Moderator") != std::string::npos;
         }
+    }
     CHECK(ok);
 }
 
@@ -493,13 +506,13 @@ TEST_CASE("MessageListView renders the reply-quote body with inline formatting",
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     MessageRowData m;
-    m.kind                       = MessageRowData::Kind::Text;
-    m.event_id                   = "$r";
-    m.sender                     = "@alice:example.org";
-    m.sender_name                = "Alice";
-    m.body                       = "sure"; // plain main body — no rich build
-    m.in_reply_to_id             = "$orig";
-    m.in_reply_to_sender_name    = "Bob";
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$r";
+    m.sender = "@alice:example.org";
+    m.sender_name = "Alice";
+    m.body = "sure"; // plain main body — no rich build
+    m.in_reply_to_id = "$orig";
+    m.in_reply_to_sender_name = "Bob";
     m.in_reply_to_formatted_body = "<strong>Ship it</strong> by <code>fri</code>";
     v.set_messages({m}, false);
     st.run(v, {0, 0, 600, 400});
@@ -513,14 +526,14 @@ TEST_CASE("MessageListView reply-quote falls back to plain body without HTML",
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     MessageRowData m;
-    m.kind                    = MessageRowData::Kind::Text;
-    m.event_id                = "$r";
-    m.sender                  = "@alice:example.org";
-    m.sender_name             = "Alice";
-    m.body                    = "sure";
-    m.in_reply_to_id          = "$orig";
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$r";
+    m.sender = "@alice:example.org";
+    m.sender_name = "Alice";
+    m.body = "sure";
+    m.in_reply_to_id = "$orig";
     m.in_reply_to_sender_name = "Bob";
-    m.in_reply_to_body        = "**Ship it** by `fri`";
+    m.in_reply_to_body = "**Ship it** by `fri`";
     v.set_messages({m}, false);
     st.run(v, {0, 0, 600, 400});
 
@@ -533,13 +546,14 @@ TEST_CASE("MessageListView hit-tests a hyperlink inside a table cell",
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::string hovered;
-    v.on_link_hovered = [&](const std::string& u) { hovered = u; };
-    v.set_messages(
-        {make_table_row("$t",
-                        "<table><tr>"
-                        "<td><a href=\"https://example.com\">site</a></td>"
-                        "<td>plain</td></tr></table>")},
-        false);
+    v.on_link_hovered = [&](const std::string& u)
+    {
+        hovered = u;
+    };
+    v.set_messages({make_table_row("$t", "<table><tr>"
+                                         "<td><a href=\"https://example.com\">site</a></td>"
+                                         "<td>plain</td></tr></table>")},
+                   false);
     st.run(v, {0, 0, 600, 400});
 
     const tk::Rect rr = v.row_world_rect(0);
@@ -550,12 +564,16 @@ TEST_CASE("MessageListView hit-tests a hyperlink inside a table cell",
 
     bool saw = false;
     for (float dy = 2.0f; dy < rr.h && !saw; dy += 2.0f)
+    {
         for (float dx = 2.0f; dx < rr.w && !saw; dx += 2.0f)
         {
             v.on_pointer_move({rr.x + dx, rr.y + dy});
             if (hovered == "https://example.com")
+            {
                 saw = true;
+            }
         }
+    }
     CHECK(saw);
 }
 
@@ -564,20 +582,22 @@ TEST_CASE("MessageListView reports a text hover token over selectable body text"
 {
     using HC = MessageListView::HoverCursor;
     CHECK(MessageListView::hover_cursor_for("") == HC::Default);
-    CHECK(MessageListView::hover_cursor_for("https://example.com") ==
-          HC::Pointer);
+    CHECK(MessageListView::hover_cursor_for("https://example.com") == HC::Pointer);
     CHECK(MessageListView::hover_cursor_for("text://") == HC::Text);
 
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::string hovered;
-    v.on_link_hovered = [&](const std::string& u) { hovered = u; };
+    v.on_link_hovered = [&](const std::string& u)
+    {
+        hovered = u;
+    };
     MessageRowData m;
-    m.kind        = MessageRowData::Kind::Text;
-    m.event_id    = "$t";
-    m.sender      = "@alice:example.org";
+    m.kind = MessageRowData::Kind::Text;
+    m.event_id = "$t";
+    m.sender = "@alice:example.org";
     m.sender_name = "Alice";
-    m.body        = "hello selectable world";
+    m.body = "hello selectable world";
     v.set_messages({m}, false);
     st.run(v, {0, 0, 600, 400});
 
@@ -587,12 +607,16 @@ TEST_CASE("MessageListView reports a text hover token over selectable body text"
 
     bool saw_text = false;
     for (float dy = 2.0f; dy < rr.h && !saw_text; dy += 2.0f)
+    {
         for (float dx = 2.0f; dx < rr.w && !saw_text; dx += 2.0f)
         {
             v.on_pointer_move({rr.x + dx, rr.y + dy});
             if (hovered == "text://")
+            {
                 saw_text = true;
+            }
         }
+    }
     CHECK(saw_text);
 
     // The empty right-hand side of the row is not selectable text.
@@ -611,8 +635,7 @@ struct BubbleModeGuard
     ML prev = tesseract::Settings::instance().message_layout;
     explicit BubbleModeGuard(bool bubbles)
     {
-        tesseract::Settings::instance().message_layout =
-            bubbles ? ML::Bubbles : ML::Classic;
+        tesseract::Settings::instance().message_layout = bubbles ? ML::Bubbles : ML::Classic;
     }
     ~BubbleModeGuard()
     {
@@ -638,8 +661,7 @@ struct LayoutGuard
 // A reply row: `body` from a made-up sender, replying to `parent_sender`'s
 // `parent_body`.
 inline MessageRowData make_reply(const std::string& id, const std::string& body,
-                                 const std::string& parent_sender,
-                                 const std::string& parent_body)
+                                 const std::string& parent_sender, const std::string& parent_body)
 {
     MessageRowData r = make_rich(id, body);
     r.in_reply_to_id = "$parent";
@@ -685,10 +707,10 @@ MessageRowData make_own_mention(const std::string& id, const std::string& plain,
 }
 } // namespace
 
-TEST_CASE("bubble mode renders own + other rows without crashing",
-          "[message_list][bubble]")
+TEST_CASE("bubble mode renders own + other rows without crashing", "[message_list][bubble]")
 {
-    const auto rows = [] {
+    const auto rows = []
+    {
         return std::vector<MessageRowData>{make_rich("$a", "from alice"),
                                            make_own("$b", "from me")};
     };
@@ -697,8 +719,14 @@ TEST_CASE("bubble mode renders own + other rows without crashing",
     struct OwnAvatarOff
     {
         bool v = tesseract::Settings::instance().bubbles_show_own_avatar;
-        OwnAvatarOff() { tesseract::Settings::instance().bubbles_show_own_avatar = false; }
-        ~OwnAvatarOff() { tesseract::Settings::instance().bubbles_show_own_avatar = v; }
+        OwnAvatarOff()
+        {
+            tesseract::Settings::instance().bubbles_show_own_avatar = false;
+        }
+        ~OwnAvatarOff()
+        {
+            tesseract::Settings::instance().bubbles_show_own_avatar = v;
+        }
     } own_avatar_off;
     BubbleModeGuard g{true};
     TkMessageListLayoutCacheStage bub;
@@ -746,19 +774,16 @@ TEST_CASE("on_display_prefs_changed re-measures the timeline for bubble mode",
     CHECK(v.row_world_rect(0).h > classic_h);
 }
 
-TEST_CASE("bubble hugs a short own message that contains a mention",
-          "[message_list][bubble]")
+TEST_CASE("bubble hugs a short own message that contains a mention", "[message_list][bubble]")
 {
     BubbleModeGuard g{true};
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     // Same short visible text: one plain, one with a mention pill.
-    v.set_messages(
-        {make_own("$plain", "ok ta"),
-         make_own_mention(
-             "$ment", "ok X",
-             "ok <a href=\"https://matrix.to/#/@x:example.org\">X</a>")},
-        false);
+    v.set_messages({make_own("$plain", "ok ta"),
+                    make_own_mention("$ment", "ok X",
+                                     "ok <a href=\"https://matrix.to/#/@x:example.org\">X</a>")},
+                   false);
     st.run(v, {0, 0, 600, 400});
     st.run(v, {0, 0, 600, 400});
 
@@ -806,12 +831,10 @@ TEST_CASE("bubble hugs a video row to fit a long caption, not just the thumbnail
     MessageListView v;
     v.set_messages(
         {make_own_video("$short", "ok"),
-         make_own_video(
-             "$long",
-             "This caption is deliberately long so its wrapped width at the "
-             "full bubble shaping width clearly exceeds the fixed video "
-             "thumbnail width, which used to be all body_block_natural_width_ "
-             "considered for Kind::Video.")},
+         make_own_video("$long", "This caption is deliberately long so its wrapped width at the "
+                                 "full bubble shaping width clearly exceeds the fixed video "
+                                 "thumbnail width, which used to be all body_block_natural_width_ "
+                                 "considered for Kind::Video.")},
         false);
     st.run(v, {0, 0, 600, 400});
     st.run(v, {0, 0, 600, 400}); // second paint must be cache-clean
@@ -848,8 +871,7 @@ std::vector<MessageRowData> grouped_pair()
 }
 } // namespace
 
-TEST_CASE("hover pill sits flush above the row's own top edge",
-          "[message_list][layout_cache]")
+TEST_CASE("hover pill sits flush above the row's own top edge", "[message_list][layout_cache]")
 {
     TkMessageListLayoutCacheStage st;
     MessageListView v;
@@ -875,8 +897,7 @@ TEST_CASE("hover pill sits flush above the row's own top edge",
     CHECK(g.reply_button.y < row1.y);
 }
 
-TEST_CASE("pointer move reports dirty only when hover state changes",
-          "[message_list][hover]")
+TEST_CASE("pointer move reports dirty only when hover state changes", "[message_list][hover]")
 {
     // Returning true on every move repaints the window per mouse event, which
     // starves the Win32 WM_TIMER animation clock.
@@ -917,14 +938,16 @@ TEST_CASE("pointer move over the action pill reports dirty only on a cell change
     REQUIRE(g.react_button.w > 0.0f);
     REQUIRE(g.reply_button.w > 0.0f);
     const auto centre = [](const tk::Rect& r)
-    { return tk::Point{r.x + r.w * 0.5f, r.y + r.h * 0.5f}; };
+    {
+        return tk::Point{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+    };
     const tk::Point on_react = centre(g.react_button);
     const tk::Point on_reply = centre(g.reply_button);
 
-    CHECK(v.on_pointer_move(on_react));  // onto the first cell
+    CHECK(v.on_pointer_move(on_react)); // onto the first cell
     st.run(v, {0, 0, 600, 400});
     CHECK_FALSE(v.on_pointer_move({on_react.x + 1.0f, on_react.y}));
-    CHECK(v.on_pointer_move(on_reply));  // across to the next cell
+    CHECK(v.on_pointer_move(on_reply)); // across to the next cell
     st.run(v, {0, 0, 600, 400});
     CHECK_FALSE(v.on_pointer_move({on_reply.x + 1.0f, on_reply.y}));
 }
@@ -1091,9 +1114,8 @@ TEST_CASE("hover pill is opaque, so the row above's read receipts never show "
     v.on_pointer_move({row1.x + row1.w * 0.5f, row1.y + row1.h * 0.5f});
     st.run(v, {0, 0, 600, 400}); // last paint: read_pixel below ends the painter
 
-    const auto px = st.surface->read_pixel(
-        static_cast<int>(disc.x + disc.w * 0.5f),
-        static_cast<int>(disc.y + disc.h * 0.5f));
+    const auto px = st.surface->read_pixel(static_cast<int>(disc.x + disc.w * 0.5f),
+                                           static_cast<int>(disc.y + disc.h * 0.5f));
     const tk::Color chrome_bg = tk::Theme::light().palette.chrome_bg;
     CHECK(px.r == chrome_bg.r);
     CHECK(px.g == chrome_bg.g);
@@ -1118,24 +1140,20 @@ TEST_CASE("hover pill right edge is fixed for an own bubble regardless of "
     v_short.set_messages({make_own("$a", "ok")}, false);
     st_short.run(v_short, bounds);
     const tk::Rect row_short = v_short.row_world_rect(0);
-    v_short.on_pointer_move(
-        {row_short.x + row_short.w * 0.5f, row_short.y + row_short.h * 0.5f});
+    v_short.on_pointer_move({row_short.x + row_short.w * 0.5f, row_short.y + row_short.h * 0.5f});
     st_short.run(v_short, bounds);
     const tk::Rect pill_short = v_short.hovered_row_geom().action_pill_bounds;
     REQUIRE(pill_short.w > 0.0f);
 
     TkMessageListLayoutCacheStage st_long;
     MessageListView v_long;
-    v_long.set_messages(
-        {make_own("$b",
-                  "This own message is deliberately long so its bubble hugs "
-                  "the full available width of a narrow panel, leaving no "
-                  "room for the hover pill in the gap to its left.")},
-        false);
+    v_long.set_messages({make_own("$b", "This own message is deliberately long so its bubble hugs "
+                                        "the full available width of a narrow panel, leaving no "
+                                        "room for the hover pill in the gap to its left.")},
+                        false);
     st_long.run(v_long, bounds);
     const tk::Rect row_long = v_long.row_world_rect(0);
-    v_long.on_pointer_move(
-        {row_long.x + row_long.w * 0.5f, row_long.y + row_long.h * 0.5f});
+    v_long.on_pointer_move({row_long.x + row_long.w * 0.5f, row_long.y + row_long.h * 0.5f});
     st_long.run(v_long, bounds);
     const tk::Rect pill_long = v_long.hovered_row_geom().action_pill_bounds;
     REQUIRE(pill_long.w > 0.0f);
@@ -1159,8 +1177,7 @@ TEST_CASE("hover pill right edge matches between own and other messages in "
     v_own.set_messages({make_own("$a", "hello")}, false);
     st_own.run(v_own, bounds);
     const tk::Rect row_own = v_own.row_world_rect(0);
-    v_own.on_pointer_move(
-        {row_own.x + row_own.w * 0.5f, row_own.y + row_own.h * 0.5f});
+    v_own.on_pointer_move({row_own.x + row_own.w * 0.5f, row_own.y + row_own.h * 0.5f});
     st_own.run(v_own, bounds);
     const tk::Rect pill_own = v_own.hovered_row_geom().action_pill_bounds;
     REQUIRE(pill_own.w > 0.0f);
@@ -1170,8 +1187,7 @@ TEST_CASE("hover pill right edge matches between own and other messages in "
     v_other.set_messages({make_rich("$b", "hello")}, false);
     st_other.run(v_other, bounds);
     const tk::Rect row_other = v_other.row_world_rect(0);
-    v_other.on_pointer_move(
-        {row_other.x + row_other.w * 0.5f, row_other.y + row_other.h * 0.5f});
+    v_other.on_pointer_move({row_other.x + row_other.w * 0.5f, row_other.y + row_other.h * 0.5f});
     st_other.run(v_other, bounds);
     const tk::Rect pill_other = v_other.hovered_row_geom().action_pill_bounds;
     REQUIRE(pill_other.w > 0.0f);
@@ -1183,8 +1199,7 @@ TEST_CASE("hover pill right edge matches between own and other messages in "
 
 namespace
 {
-float row0_height_for_layout(tesseract::Settings::MessageLayout layout,
-                             const MessageRowData& row)
+float row0_height_for_layout(tesseract::Settings::MessageLayout layout, const MessageRowData& row)
 {
     LayoutGuard g{layout};
     TkMessageListLayoutCacheStage st;
@@ -1201,13 +1216,12 @@ TEST_CASE("IRC renders a reply as a scrollback line, not the quote card",
 {
     using ML = tesseract::Settings::MessageLayout;
     const auto plain = make_rich("$a", "hello");
-    const auto reply =
-        make_reply("$a", "hello", "Bob", "the original message text");
+    const auto reply = make_reply("$a", "hello", "Bob", "the original message text");
 
-    const float irc_delta = row0_height_for_layout(ML::Irc, reply) -
-                            row0_height_for_layout(ML::Irc, plain);
-    const float classic_delta = row0_height_for_layout(ML::Classic, reply) -
-                                row0_height_for_layout(ML::Classic, plain);
+    const float irc_delta =
+        row0_height_for_layout(ML::Irc, reply) - row0_height_for_layout(ML::Irc, plain);
+    const float classic_delta =
+        row0_height_for_layout(ML::Classic, reply) - row0_height_for_layout(ML::Classic, plain);
 
     // Both layouts grow to show the reply context...
     CHECK(irc_delta > 0.0f);
@@ -1218,17 +1232,18 @@ TEST_CASE("IRC renders a reply as a scrollback line, not the quote card",
     CHECK(irc_delta < classic_delta);
 }
 
-TEST_CASE("IRC reply context line is click-to-jump",
-          "[message_list][layout_cache][irc]")
+TEST_CASE("IRC reply context line is click-to-jump", "[message_list][layout_cache][irc]")
 {
     LayoutGuard g{tesseract::Settings::MessageLayout::Irc};
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::string hovered;
-    v.on_link_hovered = [&](const std::string& u) { hovered = u; };
+    v.on_link_hovered = [&](const std::string& u)
+    {
+        hovered = u;
+    };
     v.on_display_prefs_changed();
-    v.set_messages({make_reply("$a", "my reply", "Bob",
-                               "the quoted original message text here")},
+    v.set_messages({make_reply("$a", "my reply", "Bob", "the quoted original message text here")},
                    false);
     st.run(v, {0, 0, 600, 400});
 
@@ -1242,7 +1257,9 @@ TEST_CASE("IRC reply context line is click-to-jump",
     {
         v.on_pointer_move({rr.x + 24.0f, rr.y + dy});
         if (hovered == "quote://")
+        {
             saw_quote = true;
+        }
     }
     CHECK(saw_quote);
 }
@@ -1256,12 +1273,17 @@ TEST_CASE("a hovered message row exposes reaction + action subtree nodes",
     MessageListView v;
 
     int reacted = 0, replied = 0;
-    v.on_reaction_toggled = [&](const std::string&, const std::string& key,
-                                const std::string&) {
-        if (key == "\xF0\x9F\x91\x8D") ++reacted;
+    v.on_reaction_toggled = [&](const std::string&, const std::string& key, const std::string&)
+    {
+        if (key == "\xF0\x9F\x91\x8D")
+        {
+            ++reacted;
+        }
     };
-    v.on_reply_requested = [&](const std::string&, const std::string&,
-                               const std::string&) { ++replied; };
+    v.on_reply_requested = [&](const std::string&, const std::string&, const std::string&)
+    {
+        ++replied;
+    };
 
     auto m = make_rich("$a", "hello");
     tesseract::Reaction rx;
@@ -1278,9 +1300,13 @@ TEST_CASE("a hovered message row exposes reaction + action subtree nodes",
     std::function<void(const tk::AccessNode&)> find = [&](const tk::AccessNode& n)
     {
         if (n.role == tk::Role::ListItem && !n.children.empty())
+        {
             row = &n;
+        }
         for (const auto& c : n.children)
+        {
             find(c);
+        }
     };
     find(tree);
     REQUIRE(row != nullptr);
@@ -1292,9 +1318,13 @@ TEST_CASE("a hovered message row exposes reaction + action subtree nodes",
     {
         if (g.role == tk::Role::Group && !g.children.empty() &&
             g.children[0].role == tk::Role::Switch)
+        {
             reactions = &g;
+        }
         else if (g.role == tk::Role::Group)
+        {
             actions = &g;
+        }
     }
     REQUIRE(reactions != nullptr);
     REQUIRE(actions != nullptr);
@@ -1305,8 +1335,12 @@ TEST_CASE("a hovered message row exposes reaction + action subtree nodes",
 
     const tk::AccessNode* reply = nullptr;
     for (const auto& a : actions->children)
+    {
         if (a.name == "Reply")
+        {
             reply = &a;
+        }
+    }
     REQUIRE(reply != nullptr);
     CHECK(tk::invoke_default_action(*reply));
     CHECK(replied == 1);
@@ -1321,36 +1355,46 @@ TEST_CASE("bubble layout draws a portrait sticker at full height with no slack",
     struct Restore
     {
         tesseract::Settings::MessageLayout v;
-        ~Restore() { tesseract::Settings::instance().message_layout = v; }
+        ~Restore()
+        {
+            tesseract::Settings::instance().message_layout = v;
+        }
     } restore{saved};
     const bool saved_av = settings.bubbles_show_own_avatar;
     settings.bubbles_show_own_avatar = false; // measures the avatar-less own bubble
     struct RestoreAv
     {
         bool v;
-        ~RestoreAv() { tesseract::Settings::instance().bubbles_show_own_avatar = v; }
+        ~RestoreAv()
+        {
+            tesseract::Settings::instance().bubbles_show_own_avatar = v;
+        }
     } restore_av{saved_av};
 
     TkMessageListLayoutCacheStage st;
     MessageListView v;
 
     MessageRowData m;
-    m.kind        = MessageRowData::Kind::Sticker;
-    m.event_id    = "$s";
-    m.sender      = "@me:example.org";
+    m.kind = MessageRowData::Kind::Sticker;
+    m.event_id = "$s";
+    m.sender = "@me:example.org";
     m.sender_name = "Me";
-    m.is_own      = true; // right-aligned bubble, no avatar band
-    m.body        = "wave";
-    m.media_w     = 512; // portrait: the aspect fit is height-bound (→ 256)
-    m.media_h     = 900;
+    m.is_own = true; // right-aligned bubble, no avatar band
+    m.body = "wave";
+    m.media_w = 512; // portrait: the aspect fit is height-bound (→ 256)
+    m.media_h = 900;
     v.set_messages({m}, false);
     st.run(v, {0, 0, 600, 400});
 
     const tk::Rect row = v.row_world_rect(0);
     std::optional<MessageListView::StickerHit> hit;
     for (float dy = 4.0f; dy < row.h && !hit; dy += 6.0f)
+    {
         for (float dx = 4.0f; dx < row.w && !hit; dx += 6.0f)
+        {
             hit = v.sticker_hit_at({row.x + dx, row.y + dy});
+        }
+    }
     REQUIRE(hit.has_value());
 
     // Drawn as tall as the aspect fit into the 256px sticker box — not the
@@ -1398,7 +1442,9 @@ tk::Rect status_rect_for(tesseract::Settings::MessageLayout layout, bool setting
     v.on_pointer_move({row0.x + row0.w * 0.5f, row0.y + row0.h * 0.5f});
     st.run(v, {0, 0, 600, 400});
     if (name_max_w)
+    {
         *name_max_w = v.sender_name_max_w_for_test(0);
+    }
     return v.hovered_row_geom().status_emoji;
 }
 } // namespace
@@ -1452,8 +1498,7 @@ MessageRowData make_forward(const std::string& id, const std::string& body,
     return r;
 }
 
-float content_height_in(tesseract::Settings::MessageLayout layout,
-                        const MessageRowData& row)
+float content_height_in(tesseract::Settings::MessageLayout layout, const MessageRowData& row)
 {
     LayoutGuard g{layout};
     TkMessageListLayoutCacheStage st;
@@ -1512,15 +1557,13 @@ TEST_CASE("a bubble is at least as wide as the forward attribution",
     using ML = tesseract::Settings::MessageLayout;
     auto own_forward = [](const std::string& id)
     {
-        MessageRowData r =
-            make_forward(id, "ok", "A Rather Long Display Name Indeed");
+        MessageRowData r = make_forward(id, "ok", "A Rather Long Display Name Indeed");
         r.sender = "@me:example.org";
         r.sender_name = "Me";
         r.is_own = true;
         return r;
     };
-    auto run = [&](ML layout, const MessageRowData& row, tk::Rect* rect,
-                   float* origin_x)
+    auto run = [&](ML layout, const MessageRowData& row, tk::Rect* rect, float* origin_x)
     {
         LayoutGuard g{layout};
         TkMessageListLayoutCacheStage st;
@@ -1565,7 +1608,10 @@ TEST_CASE("clicking the forward attribution reports the origin room and event",
             room = r;
             event = e;
         };
-        v.on_link_hovered = [&](const std::string& u) { hovered = u; };
+        v.on_link_hovered = [&](const std::string& u)
+        {
+            hovered = u;
+        };
         v.set_messages({make_forward("$a", "hello world")}, false);
         st.run(v, {0, 0, 600, 400});
 
@@ -1594,7 +1640,9 @@ TEST_CASE("a forward without origin ids has no clickable attribution",
     MessageListView v;
     bool fired = false;
     v.on_forward_origin_clicked = [&](const std::string&, const std::string&)
-    { fired = true; };
+    {
+        fired = true;
+    };
     MessageRowData row = make_forward("$a", "hello world");
     row.forwarded_event_id.clear();
     v.set_messages({row}, false);
@@ -1617,15 +1665,21 @@ TEST_CASE("a forwarded emote names the original sender, never the forwarder",
         st.run(v, {0, 0, 600, 400});
         std::vector<std::string> out;
         for (const auto& s : st.cf.shapes)
+        {
             out.push_back(s.second);
+        }
         return out;
     };
-    auto any_with = [](const std::vector<std::string>& v, const std::string& a,
-                       const std::string& b)
+    auto any_with =
+        [](const std::vector<std::string>& v, const std::string& a, const std::string& b)
     {
         for (const auto& s : v)
+        {
             if (s.find(a) != std::string::npos && s.find(b) != std::string::npos)
+            {
                 return true;
+            }
+        }
         return false;
     };
 

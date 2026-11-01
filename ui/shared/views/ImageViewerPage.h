@@ -34,8 +34,7 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint_content(tk::PaintCtx&) override;
     bool on_content_pointer_down(tk::Point world, tk::Point local) override;
-    bool on_content_pointer_up(tk::Point world, tk::Point local,
-                               bool inside_self) override;
+    bool on_content_pointer_up(tk::Point world, tk::Point local, bool inside_self) override;
     void on_pointer_drag(tk::Point local) override;
     bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad) override;
     // + / - zoom around the centre, 0 back to fit, arrows pan while zoomed.

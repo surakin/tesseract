@@ -62,12 +62,10 @@ TEST_CASE("tile_cache_key format", "[map_tiles]")
 
 TEST_CASE("tile_url format", "[map_tiles]")
 {
-    CHECK(tile_url({15, 123, 456}) ==
-          "https://tile.openstreetmap.org/15/123/456.png");
+    CHECK(tile_url({15, 123, 456}) == "https://tile.openstreetmap.org/15/123/456.png");
 }
 
-TEST_CASE("tile_pixel_origin places viewport-centre tile near map centre",
-          "[map_tiles]")
+TEST_CASE("tile_pixel_origin places viewport-centre tile near map centre", "[map_tiles]")
 {
     MapViewport vp{51.5074, -0.1278, 15};
     tk::Rect map_rect{0, 0, 256, 256};
@@ -82,18 +80,19 @@ TEST_CASE("tile_pixel_origin places viewport-centre tile near map centre",
     CHECK(std::abs(origin.y - map_cy) <= 256.0f);
 }
 
-TEST_CASE("osm_view_url uses '.' decimals under a comma-decimal locale",
-          "[map_tiles]")
+TEST_CASE("osm_view_url uses '.' decimals under a comma-decimal locale", "[map_tiles]")
 {
     // std::to_string follows the C locale (LC_NUMERIC). Switch to a real
     // comma-decimal one when the machine has it; otherwise this only pins the
     // exact output.
     const char* applied = nullptr;
-    for (const char* name : {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8",
-                             "fr_FR.utf8", "es_ES.UTF-8", "es_ES.utf8"})
+    for (const char* name :
+         {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8", "es_ES.UTF-8", "es_ES.utf8"})
     {
         if ((applied = std::setlocale(LC_NUMERIC, name)))
+        {
             break;
+        }
     }
     const std::string url = osm_view_url(51.5008, -0.1247, 15);
     std::setlocale(LC_NUMERIC, "C");
@@ -104,8 +103,7 @@ TEST_CASE("osm_view_url uses '.' decimals under a comma-decimal locale",
     INFO("comma locale applied: " << (applied ? applied : "none installed"));
 }
 
-TEST_CASE("location_click_url repairs comma-decimal OSM bodies only",
-          "[map_tiles]")
+TEST_CASE("location_click_url repairs comma-decimal OSM bodies only", "[map_tiles]")
 {
     const std::string fixed = "https://www.openstreetmap.org/?mlat=51.500800"
                               "&mlon=-0.124700#map=15/51.500800/-0.124700";
@@ -118,37 +116,35 @@ TEST_CASE("location_click_url repairs comma-decimal OSM bodies only",
     const std::string g = "https://www.google.com/maps/@41.4,-2.1,15z";
     CHECK(location_click_url(g, 1, 2, 3) == g);
     // Non-URL body: synthesized link.
-    CHECK(location_click_url("Alice shared her location", 51.5008, -0.1247,
-                             15) == fixed);
+    CHECK(location_click_url("Alice shared her location", 51.5008, -0.1247, 15) == fixed);
 }
 
-TEST_CASE("location_click_url opens only a known map host from the body",
-          "[map_tiles]")
+TEST_CASE("location_click_url opens only a known map host from the body", "[map_tiles]")
 {
     // The body is sender-supplied: any other host is replaced by the link built
     // from the coordinates.
     const std::string local = tesseract::views::osm_view_url(51.5, -0.1, 15);
-    CHECK(tesseract::views::location_click_url("https://evil.example/login",
-                                               51.5, -0.1, 15) == local);
-    CHECK(tesseract::views::location_click_url("https://maps.google.evil.example/maps",
-                                               51.5, -0.1, 15) == local);
-    CHECK(tesseract::views::location_click_url("https://google.com.evil.example/maps/x",
-                                               51.5, -0.1, 15) == local);
-    CHECK(tesseract::views::location_click_url("https://google.com/search?q=x",
-                                               51.5, -0.1, 15) == local);
-    CHECK(tesseract::views::location_click_url("https://openstreetmap.org@evil.example/",
-                                               51.5, -0.1, 15) == local);
+    CHECK(tesseract::views::location_click_url("https://evil.example/login", 51.5, -0.1, 15) ==
+          local);
+    CHECK(tesseract::views::location_click_url("https://maps.google.evil.example/maps", 51.5, -0.1,
+                                               15) == local);
+    CHECK(tesseract::views::location_click_url("https://google.com.evil.example/maps/x", 51.5, -0.1,
+                                               15) == local);
+    CHECK(tesseract::views::location_click_url("https://google.com/search?q=x", 51.5, -0.1, 15) ==
+          local);
+    CHECK(tesseract::views::location_click_url("https://openstreetmap.org@evil.example/", 51.5,
+                                               -0.1, 15) == local);
     // Known map services: opened as sent.
     const std::string apple = "https://maps.apple.com/?ll=51.5,-0.1";
     CHECK(tesseract::views::location_click_url(apple, 51.5, -0.1, 15) == apple);
 }
 
-TEST_CASE("lat_lon_to_tile stays in range for out-of-range coordinates",
-          "[map_tiles]")
+TEST_CASE("lat_lon_to_tile stays in range for out-of-range coordinates", "[map_tiles]")
 {
     // Remote coordinates reach these functions; a pole or a bad zoom must not
     // produce a non-finite or out-of-range tile.
-    for (double lat : {90.0, -90.0, 1000.0, -1000.0}) {
+    for (double lat : {90.0, -90.0, 1000.0, -1000.0})
+    {
         const auto t = tesseract::views::lat_lon_to_tile(lat, 0.0, 10);
         CHECK(t.x >= 0);
         CHECK(t.x < (1 << 10));

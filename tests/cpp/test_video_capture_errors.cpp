@@ -23,7 +23,7 @@ class FakeVideoCapture : public tk::VideoCapture
 {
 public:
     Error start_error = Error::None;
-    bool  running     = false;
+    bool running = false;
 
     void start() override
     {
@@ -35,9 +35,17 @@ public:
         }
         running = true;
     }
-    void stop() override { running = false; }
-    void set_callback(FrameCallback) override {}
-    void fail(Error e) { report_error_(e); }
+    void stop() override
+    {
+        running = false;
+    }
+    void set_callback(FrameCallback) override
+    {
+    }
+    void fail(Error e)
+    {
+        report_error_(e);
+    }
 };
 
 // Installs a factory handing out FakeVideoCaptures (or nullptr when
@@ -47,7 +55,7 @@ struct FakeFactory
 {
     std::vector<FakeVideoCapture*> created;
     Error next_start_error = Error::None;
-    bool  no_device        = false;
+    bool no_device = false;
 
     FakeFactory()
     {
@@ -55,14 +63,19 @@ struct FakeFactory
             [this]() -> std::unique_ptr<tk::VideoCapture>
             {
                 if (no_device)
+                {
                     return nullptr;
+                }
                 auto c = std::make_unique<FakeVideoCapture>();
                 c->start_error = next_start_error;
                 created.push_back(c.get());
                 return c;
             });
     }
-    ~FakeFactory() { tk::VideoCapture::set_factory_for_testing({}); }
+    ~FakeFactory()
+    {
+        tk::VideoCapture::set_factory_for_testing({});
+    }
 };
 
 struct Stage
@@ -85,7 +98,11 @@ TEST_CASE("VideoCapture reports only the first error after start", "[video_captu
 {
     FakeVideoCapture cap;
     std::vector<Error> seen;
-    cap.set_error_callback([&](Error e) { seen.push_back(e); });
+    cap.set_error_callback(
+        [&](Error e)
+        {
+            seen.push_back(e);
+        });
 
     cap.start();
     REQUIRE(cap.error() == Error::None);
@@ -106,9 +123,10 @@ TEST_CASE("VideoCapture::describe has a message for every failure", "[video_capt
 {
     REQUIRE(tk::VideoCapture::describe(Error::None).empty());
     for (Error e : {Error::NoDevice, Error::Busy, Error::PermissionDenied, Error::Failed})
+    {
         REQUIRE_FALSE(tk::VideoCapture::describe(e).empty());
-    REQUIRE(tk::VideoCapture::describe(Error::Busy) !=
-            tk::VideoCapture::describe(Error::NoDevice));
+    }
+    REQUIRE(tk::VideoCapture::describe(Error::Busy) != tk::VideoCapture::describe(Error::NoDevice));
 }
 
 TEST_CASE("call lobby turns the camera off and explains a busy camera", "[call_lobby]")
@@ -129,8 +147,7 @@ TEST_CASE("call lobby turns the camera off and explains a busy camera", "[call_l
     REQUIRE(lobby.camera_error() == Error::Busy);
 }
 
-TEST_CASE("call lobby retries with a fresh capture when the camera is re-enabled",
-          "[call_lobby]")
+TEST_CASE("call lobby retries with a fresh capture when the camera is re-enabled", "[call_lobby]")
 {
     FakeFactory factory;
     factory.next_start_error = Error::Busy;
@@ -149,8 +166,12 @@ TEST_CASE("call lobby retries with a fresh capture when the camera is re-enabled
     tk::Button* cam_btn = nullptr;
     int buttons = 0;
     for (const auto& ch : lobby.children())
+    {
         if (auto* b = dynamic_cast<tk::Button*>(ch.get()); b && ++buttons == 2)
+        {
             cam_btn = b;
+        }
+    }
     REQUIRE(cam_btn);
     cam_btn->click();
 
@@ -160,18 +181,16 @@ TEST_CASE("call lobby retries with a fresh capture when the camera is re-enabled
     REQUIRE(lobby.camera_error() == Error::None);
 }
 
-TEST_CASE("call lobby with a failed camera joins with video muted, not audio-only",
-          "[call_lobby]")
+TEST_CASE("call lobby with a failed camera joins with video muted, not audio-only", "[call_lobby]")
 {
     FakeFactory factory;
     factory.no_device = true;
     CallLobbyView lobby;
-    bool audio_only  = true;
+    bool audio_only = true;
     bool video_muted = false;
-    lobby.on_join = [&](const std::string&, const std::string&, bool ao, bool,
-                        bool vm)
+    lobby.on_join = [&](const std::string&, const std::string&, bool ao, bool, bool vm)
     {
-        audio_only  = ao;
+        audio_only = ao;
         video_muted = vm;
     };
 
@@ -182,8 +201,12 @@ TEST_CASE("call lobby with a failed camera joins with video muted, not audio-onl
     // Join button is the third Button child.
     int buttons = 0;
     for (const auto& ch : lobby.children())
+    {
         if (auto* b = dynamic_cast<tk::Button*>(ch.get()); b && ++buttons == 3)
+        {
             b->click();
+        }
+    }
     // Video stays available so the user can retry once the camera is free.
     REQUIRE_FALSE(audio_only);
     REQUIRE(video_muted);
@@ -209,8 +232,12 @@ TEST_CASE("call lobby releases the camera before the call starts", "[call_lobby]
 
     int buttons = 0;
     for (const auto& ch : lobby.children())
+    {
         if (auto* b = dynamic_cast<tk::Button*>(ch.get()); b && ++buttons == 3)
+        {
             b->click();
+        }
+    }
 
     REQUIRE(joined);
     REQUIRE_FALSE(camera_running_during_join);
@@ -226,7 +253,10 @@ TEST_CASE("selfie overlay shows camera errors instead of vanishing", "[camera_wi
         factory.no_device = true;
         CameraWidget w;
         int dismissed = 0;
-        w.on_dismissed = [&] { ++dismissed; };
+        w.on_dismissed = [&]
+        {
+            ++dismissed;
+        };
         w.open();
         stage.layout_and_paint(w);
         REQUIRE(w.error() == Error::NoDevice);

@@ -28,9 +28,9 @@ namespace tesseract::views
 namespace about_detail
 {
 
-constexpr float kAboutSectionRowH     = 22.0f;
-constexpr float kAboutSectionLabelW   = 160.0f;
-constexpr float kAboutSectionLabelGap =   8.0f;
+constexpr float kAboutSectionRowH = 22.0f;
+constexpr float kAboutSectionLabelW = 160.0f;
+constexpr float kAboutSectionLabelGap = 8.0f;
 // Natural width of a CacheSizeRow: label + gap + value column.
 // Caps the Storage group so it doesn't stretch to fill the page.
 constexpr float kNaturalW = kAboutSectionLabelW + kAboutSectionLabelGap + 140.0f;
@@ -38,14 +38,19 @@ constexpr float kNaturalW = kAboutSectionLabelW + kAboutSectionLabelGap + 140.0f
 std::string format_bytes(uint64_t n)
 {
     if (n < 1024ULL)
+    {
         return tk::trf(tk::tr("{0} B"), {std::to_string(n)});
+    }
     if (n < 1024ULL * 1024)
+    {
         return tk::trf(tk::tr("{0} KB"), {std::to_string(n / 1024)});
+    }
     if (n < 1024ULL * 1024 * 1024)
+    {
         return tk::trf(tk::tr("{0} MB"), {std::to_string(n / (1024 * 1024))});
+    }
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1f",
-                  static_cast<double>(n) / (1024.0 * 1024.0 * 1024.0));
+    std::snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(n) / (1024.0 * 1024.0 * 1024.0));
     return tk::trf(tk::tr("{0} GB"), {buf});
 }
 
@@ -53,9 +58,10 @@ std::string format_hit_miss(uint64_t hits, uint64_t misses)
 {
     const uint64_t total = hits + misses;
     if (total == 0)
+    {
         return tk::trf(tk::tr("Hits: {0}  ·  Misses: {1}"), {"0", "0"});
-    const double rate = 100.0 * static_cast<double>(hits) /
-                        static_cast<double>(total);
+    }
+    const double rate = 100.0 * static_cast<double>(hits) / static_cast<double>(total);
     char rate_buf[16];
     std::snprintf(rate_buf, sizeof(rate_buf), "%.1f", rate);
     return tk::trf(tk::tr("Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"),
@@ -69,7 +75,9 @@ std::string format_hit_miss(uint64_t hits, uint64_t misses)
 class CacheNameCell : public tk::Widget
 {
 public:
-    explicit CacheNameCell(std::string label) : label_text_(std::move(label)) {}
+    explicit CacheNameCell(std::string label) : label_text_(std::move(label))
+    {
+    }
 
     std::function<void()> on_hover_enter;
     std::function<void()> on_hover_leave;
@@ -82,7 +90,9 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override
     {
         if (bounds.w != bounds_.w)
+        {
             label_layout_.reset();
+        }
         bounds_ = bounds;
     }
 
@@ -91,36 +101,42 @@ public:
         if (!label_layout_)
         {
             tk::TextStyle ls;
-            ls.role      = tk::FontRole::Body;
-            ls.halign    = tk::TextHAlign::Leading;
-            ls.valign    = tk::TextVAlign::Top;
-            ls.trim      = tk::TextTrim::Ellipsis;
+            ls.role = tk::FontRole::Body;
+            ls.halign = tk::TextHAlign::Leading;
+            ls.valign = tk::TextVAlign::Top;
+            ls.trim = tk::TextTrim::Ellipsis;
             ls.max_width = bounds_.w;
             label_layout_ = ctx.factory.build_text(label_text_, ls);
         }
-        const float cy =
-            bounds_.y + (kAboutSectionRowH - label_layout_->measure().h) * 0.5f;
-        ctx.canvas.draw_text(*label_layout_, {bounds_.x, cy},
-                             ctx.theme.palette.text_secondary);
+        const float cy = bounds_.y + (kAboutSectionRowH - label_layout_->measure().h) * 0.5f;
+        ctx.canvas.draw_text(*label_layout_, {bounds_.x, cy}, ctx.theme.palette.text_secondary);
     }
 
     bool on_pointer_move(tk::Point) override
     {
         if (cell_hovered_)
+        {
             return false;
+        }
         cell_hovered_ = true;
         if (on_hover_enter)
+        {
             on_hover_enter();
+        }
         return true;
     }
 
     void on_pointer_leave() override
     {
         if (!cell_hovered_)
+        {
             return;
+        }
         cell_hovered_ = false;
         if (on_hover_leave)
+        {
             on_hover_leave();
+        }
     }
 
 private:
@@ -156,7 +172,9 @@ public:
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override
     {
         if (bounds.w != bounds_.w)
+        {
             value_layout_.reset();
+        }
         bounds_ = bounds;
     }
 
@@ -165,36 +183,43 @@ public:
         if (!value_layout_)
         {
             tk::TextStyle vs;
-            vs.role      = tk::FontRole::Body;
-            vs.halign    = tk::TextHAlign::Trailing;
-            vs.valign    = tk::TextVAlign::Top;
-            vs.trim      = tk::TextTrim::Ellipsis;
+            vs.role = tk::FontRole::Body;
+            vs.halign = tk::TextHAlign::Trailing;
+            vs.valign = tk::TextVAlign::Top;
+            vs.trim = tk::TextTrim::Ellipsis;
             vs.max_width = bounds_.w;
             value_layout_ = ctx.factory.build_text(value_text_, vs);
         }
-        const auto sz  = value_layout_->measure();
+        const auto sz = value_layout_->measure();
         const float cy = bounds_.y + (kAboutSectionRowH - sz.h) * 0.5f;
-        ctx.canvas.draw_text(*value_layout_, {bounds_.x, cy},
-                             ctx.theme.palette.text_muted);
+        ctx.canvas.draw_text(*value_layout_, {bounds_.x, cy}, ctx.theme.palette.text_muted);
     }
 
     bool on_pointer_move(tk::Point) override
     {
         if (cell_hovered_)
+        {
             return false;
+        }
         cell_hovered_ = true;
         if (on_hover_enter)
+        {
             on_hover_enter();
+        }
         return true;
     }
 
     void on_pointer_leave() override
     {
         if (!cell_hovered_)
+        {
             return;
+        }
         cell_hovered_ = false;
         if (on_hover_leave)
+        {
             on_hover_leave();
+        }
     }
 
 private:
@@ -219,13 +244,25 @@ public:
         set_spacing(kAboutSectionLabelGap);
 
         auto name = std::make_unique<CacheNameCell>(std::move(label));
-        auto val  = std::make_unique<CacheValueCell>();
+        auto val = std::make_unique<CacheValueCell>();
         val->set_layout_hints({.fill_main = true});
 
-        name->on_hover_enter = [this] { enter_hover_(); };
-        name->on_hover_leave = [this] { leave_hover_(); };
-        val->on_hover_enter  = [this] { enter_hover_(); };
-        val->on_hover_leave  = [this] { leave_hover_(); };
+        name->on_hover_enter = [this]
+        {
+            enter_hover_();
+        };
+        name->on_hover_leave = [this]
+        {
+            leave_hover_();
+        };
+        val->on_hover_enter = [this]
+        {
+            enter_hover_();
+        };
+        val->on_hover_leave = [this]
+        {
+            leave_hover_();
+        };
 
         add_child(std::move(name));
         value_cell_ = add_child(std::move(val));
@@ -238,13 +275,15 @@ public:
 
     void set_stats(uint64_t hits, uint64_t misses)
     {
-        hits_      = hits;
-        misses_    = misses;
+        hits_ = hits;
+        misses_ = misses;
         has_stats_ = true;
         // Stats may arrive after the initial hover-enter (async load).
         // Update the tooltip now so the user doesn't have to re-hover.
         if (hover_count_ > 0 && host_)
+        {
             host_->update_tooltip_text(this, format_hit_miss(hits_, misses_));
+        }
     }
 
     // Override measure so the SettingsGroup reports kNaturalW as its natural
@@ -265,9 +304,9 @@ public:
 
 private:
     CacheValueCell* value_cell_ = nullptr;
-    uint64_t hits_      = 0;
-    uint64_t misses_    = 0;
-    bool     has_stats_ = false;
+    uint64_t hits_ = 0;
+    uint64_t misses_ = 0;
+    bool has_stats_ = false;
     // Counter rather than bool: when the pointer crosses from CacheNameCell
     // to CacheValueCell, dispatch_pointer_move fires the new cell's
     // on_pointer_move (enter) before the host calls on_pointer_leave on the
@@ -282,7 +321,9 @@ private:
     void enter_hover_()
     {
         if (hover_count_++ == 0 && has_stats_ && host_)
+        {
             host_->show_tooltip(this, format_hit_miss(hits_, misses_), bounds_);
+        }
     }
 
     void leave_hover_()
@@ -290,7 +331,9 @@ private:
         if (hover_count_ > 0 && --hover_count_ == 0)
         {
             if (host_)
+            {
                 host_->hide_tooltip(this);
+            }
         }
     }
 };
@@ -310,11 +353,17 @@ AboutSection::AboutSection()
     // sits at the bottom-left rather than stretching to fill the page.
     auto sg = std::make_unique<SettingsGroup>(tk::tr("Storage"));
     memory_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("In-memory cache")));
-    local_row_  = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("Local cache")));
-    sdk_row_    = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("SDK store")));
-    sg->add_widget(tk::create_widget<tk::Button>(this,
-        tk::tr("Clear all caches"),
-        [this] { if (on_clear_caches) on_clear_caches(); },
+    local_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("Local cache")));
+    sdk_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("SDK store")));
+    sg->add_widget(tk::create_widget<tk::Button>(
+        this, tk::tr("Clear all caches"),
+        [this]
+        {
+            if (on_clear_caches)
+            {
+                on_clear_caches();
+            }
+        },
         tk::Button::Variant::Destructive));
 
     auto hbox = tk::create_widget<tk::HBox>(this);
@@ -327,9 +376,15 @@ AboutSection::AboutSection()
     // stacks under the Storage group.
     auto btn_row = tk::create_widget<tk::HBox>(this);
     btn_row->set_main(tk::Main::End);
-    btn_row->add_child(tk::create_widget<tk::Button>(this,
-        tk::tr("Advanced"),
-        [this] { if (on_advanced_clicked) on_advanced_clicked(); },
+    btn_row->add_child(tk::create_widget<tk::Button>(
+        this, tk::tr("Advanced"),
+        [this]
+        {
+            if (on_advanced_clicked)
+            {
+                on_advanced_clicked();
+            }
+        },
         tk::Button::Variant::Subtle));
     advanced_row_ = add_widget(std::move(btn_row));
 }
@@ -337,9 +392,13 @@ AboutSection::AboutSection()
 void AboutSection::set_account_actions_visible(bool visible)
 {
     if (storage_row_)
+    {
         storage_row_->set_visible(visible);
+    }
     if (advanced_row_)
+    {
         advanced_row_->set_visible(visible);
+    }
 }
 
 void AboutSection::set_memory_cache_size(uint64_t bytes)

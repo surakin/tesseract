@@ -69,7 +69,7 @@ MediaTransportBar::MediaTransportBar(MediaViewerPageHost& host, bool with_speed)
     play_btn_->set_visible(false);
 
     scrub_ = host.host_add_slider();
-    scrub_->set_keyboard_focusable(false); // page-level shortcuts own the keyboard
+    scrub_->set_keyboard_focusable(false);             // page-level shortcuts own the keyboard
     scrub_->set_hoverable(true, tk::HoverStyle::None); // tracked for hovered()
     scrub_->set_colors(tk::Slider::Colors{tk::Color::rgba(255, 255, 255, 60), kTbBufferedFill,
                                           tk::Color::rgba(255, 255, 255, 200), kTbGlyphColor});
@@ -103,16 +103,16 @@ MediaTransportBar::MediaTransportBar(MediaViewerPageHost& host, bool with_speed)
 void MediaTransportBar::arrange(tk::LayoutCtx& lc, tk::Rect bar, bool shown)
 {
     bar_ = bar;
-    const tk::Rect play_rect{bar.x + kTbPadX, bar.y + (kHeight - kTbPlayBtnD) * 0.5f,
-                             kTbPlayBtnD, kTbPlayBtnD};
+    const tk::Rect play_rect{bar.x + kTbPadX, bar.y + (kHeight - kTbPlayBtnD) * 0.5f, kTbPlayBtnD,
+                             kTbPlayBtnD};
     play_btn_->arrange(lc, play_rect);
 
     float scrub_xe = bar.x + bar.w - kTbPadX;
     if (speed_btn_)
     {
         const tk::Rect speed_rect{bar.x + bar.w - kTbPadX - kTbSpeedPillW,
-                                  bar.y + (kHeight - kTbSpeedPillH) * 0.5f,
-                                  kTbSpeedPillW, kTbSpeedPillH};
+                                  bar.y + (kHeight - kTbSpeedPillH) * 0.5f, kTbSpeedPillW,
+                                  kTbSpeedPillH};
         speed_btn_->arrange(lc, speed_rect);
         scrub_xe = speed_rect.x - kTbPadX;
     }
@@ -123,7 +123,9 @@ void MediaTransportBar::arrange(tk::LayoutCtx& lc, tk::Rect bar, bool shown)
 
     play_btn_->set_visible(shown);
     if (!shown)
+    {
         scrub_->cancel_drag(); // a hidden slider never sees the pointer-up
+    }
     scrub_->set_visible(shown);
     if (speed_btn_)
     {
@@ -169,8 +171,7 @@ void MediaTransportBar::paint(tk::PaintCtx& ctx, const State& s)
     // it into a circle. The play glyph is Button's own icon; while playing it
     // is hidden (empty span) and the pause bars are drawn here instead.
     const tk::Rect play_bounds = play_btn_->bounds();
-    play_btn_->set_icon(s.playing ? std::span<const std::uint8_t>{} : kPlaySvg,
-                        kTbPlayBtnD * 0.5f);
+    play_btn_->set_icon(s.playing ? std::span<const std::uint8_t>{} : kPlaySvg, kTbPlayBtnD * 0.5f);
     {
         tk::ClipScope clip(cv, play_bounds, kTbPlayBtnD * 0.5f);
         play_btn_->paint(ctx);
@@ -234,11 +235,10 @@ void MediaTransportBar::paint(tk::PaintCtx& ctx, const State& s)
     scrub_->set_buffered(s.buffered_frac > 0.0f ? std::min(1.0f, s.buffered_frac) : -1.0f);
     if (!scrub_->dragging())
     {
-        scrub_->set_value(s.duration_ms > 0
-                              ? std::clamp(static_cast<double>(s.position_ms) /
-                                               static_cast<double>(s.duration_ms),
-                                           0.0, 1.0)
-                              : 0.0);
+        scrub_->set_value(s.duration_ms > 0 ? std::clamp(static_cast<double>(s.position_ms) /
+                                                             static_cast<double>(s.duration_ms),
+                                                         0.0, 1.0)
+                                            : 0.0);
     }
     scrub_->paint(ctx);
 }

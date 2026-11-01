@@ -58,8 +58,8 @@ ActivationRequest activation_request_for(const tesseract::LaunchArgs& args);
 //
 // A non-zero `wait` keeps retrying until the lock frees up or the wait runs
 // out — for a --relaunch, whose predecessor is still shutting down.
-SingleInstanceLock acquire_single_instance_lock(
-    std::chrono::milliseconds wait = std::chrono::milliseconds(0));
+SingleInstanceLock
+acquire_single_instance_lock(std::chrono::milliseconds wait = std::chrono::milliseconds(0));
 
 // PID of the process holding this profile's lock (it writes it into the lock
 // file on acquiring), or 0 when unknown. Used by the macOS shell to activate

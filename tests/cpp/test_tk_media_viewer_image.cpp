@@ -70,8 +70,7 @@ TEST_CASE("MediaViewerOverlay image: open sets is_open true", "[tk][imageviewer]
     REQUIRE(overlay.is_open());
 }
 
-TEST_CASE("MediaViewerOverlay image: close fires on_close and resets is_open",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: close fires on_close and resets is_open", "[tk][imageviewer]")
 {
     MediaViewerOverlay overlay;
     open_image(overlay, "mxc://example.org/img", "", "", 320, 240);
@@ -88,9 +87,8 @@ TEST_CASE("MediaViewerOverlay image: close fires on_close and resets is_open",
     CHECK(closed);
 }
 
-TEST_CASE(
-    "MediaViewerOverlay image: paint does not crash when open without image provider",
-    "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: paint does not crash when open without image provider",
+          "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
@@ -98,8 +96,7 @@ TEST_CASE(
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
-TEST_CASE("MediaViewerOverlay image: paint does not crash with no dimensions",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: paint does not crash with no dimensions", "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
@@ -107,8 +104,7 @@ TEST_CASE("MediaViewerOverlay image: paint does not crash with no dimensions",
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
-TEST_CASE("MediaViewerOverlay image: paint is no-op when not open",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: paint is no-op when not open", "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
@@ -121,13 +117,12 @@ TEST_CASE("MediaViewerOverlay image: paint is no-op when not open",
 // Surface is 600×400; the overlay reserves kMarginX=64 / kMarginY=96, so
 // the fit box is 536×304.
 
-TEST_CASE("MediaViewerOverlay image: opens an oversized image zoomed to fit",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: opens an oversized image zoomed to fit", "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
     open_image(overlay, "mxc://example.org/big", "", "", 3200,
-                 1800); // far larger than 536×304
+               1800); // far larger than 536×304
     st.run(overlay, {0, 0, 600, 400});
 
     const Rect r = overlay.image_rect();
@@ -167,8 +162,7 @@ TEST_CASE("MediaViewerOverlay image: opens a small image at 1:1 (no upscaling)",
 
 namespace
 {
-std::unique_ptr<tk::Image> make_test_image(tk::CanvasFactory& factory, int w,
-                                           int h)
+std::unique_ptr<tk::Image> make_test_image(tk::CanvasFactory& factory, int w, int h)
 {
     std::vector<std::uint8_t> pixels(static_cast<size_t>(w) * h * 4, 255);
     return factory.create_image_rgba(pixels.data(), w, h);
@@ -187,7 +181,9 @@ TEST_CASE("MediaViewerOverlay image: with unknown dims covers ~75% of the "
         [&](const std::string& key) -> const tk::Image*
         {
             if (key == "thumb-key")
+            {
                 return thumb.get();
+            }
             return nullptr; // full-res ("mxc://example.org/av") not ready
         });
 
@@ -212,15 +208,19 @@ TEST_CASE("MediaViewerOverlay image: with unknown dims keeps on-screen size stab
     MediaViewerOverlay overlay;
 
     auto thumb = make_test_image(st.surface->factory(), 96, 96);
-    auto full  = make_test_image(st.surface->factory(), 1200, 1200); // same aspect
+    auto full = make_test_image(st.surface->factory(), 1200, 1200); // same aspect
     bool fullres_ready = false;
     overlay.set_image_provider(
         [&](const std::string& key) -> const tk::Image*
         {
             if (key == "mxc://example.org/av")
+            {
                 return fullres_ready ? full.get() : nullptr;
+            }
             if (key == "thumb-key")
+            {
                 return thumb.get();
+            }
             return nullptr;
         });
 
@@ -305,15 +305,19 @@ TEST_CASE("MediaViewerOverlay image: with unknown dims discards a stale zoom whe
     MediaViewerOverlay overlay;
 
     auto thumb = make_test_image(st.surface->factory(), 96, 96);
-    auto full  = make_test_image(st.surface->factory(), 3000, 3000); // same aspect, huge
+    auto full = make_test_image(st.surface->factory(), 3000, 3000); // same aspect, huge
     bool fullres_ready = false;
     overlay.set_image_provider(
         [&](const std::string& key) -> const tk::Image*
         {
             if (key == "mxc://example.org/av")
+            {
                 return fullres_ready ? full.get() : nullptr;
+            }
             if (key == "thumb-key")
+            {
                 return thumb.get();
+            }
             return nullptr;
         });
 
@@ -322,7 +326,9 @@ TEST_CASE("MediaViewerOverlay image: with unknown dims discards a stale zoom whe
     // Zoom in on the thumbnail — simulates a user scrolling before the
     // full-res image has loaded.
     for (int i = 0; i < 10; ++i)
+    {
         overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f);
+    }
     st.run(overlay, {0, 0, 600, 400});
     const Rect zoomed_thumb_rect = overlay.image_rect();
     CHECK(zoomed_thumb_rect.w > 300.0f); // did actually zoom in past the fit
@@ -339,9 +345,8 @@ TEST_CASE("MediaViewerOverlay image: with unknown dims discards a stale zoom whe
 
 // ── Pointer interactions ──────────────────────────────────────────────────
 
-TEST_CASE(
-    "MediaViewerOverlay image: pointer-down outside fires on_close via pointer-up",
-    "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: pointer-down outside fires on_close via pointer-up",
+          "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
@@ -457,8 +462,7 @@ TEST_CASE("MediaViewerOverlay image: on_pointer_down returns false when closed",
 
 // ── Wheel zoom ────────────────────────────────────────────────────────────
 
-TEST_CASE("MediaViewerOverlay image: on_wheel returns true when open",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: on_wheel returns true when open", "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
@@ -468,15 +472,13 @@ TEST_CASE("MediaViewerOverlay image: on_wheel returns true when open",
     CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f)); // zoom in
 }
 
-TEST_CASE("MediaViewerOverlay image: on_wheel returns false when closed",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: on_wheel returns false when closed", "[tk][imageviewer]")
 {
     MediaViewerOverlay overlay;
     CHECK_FALSE(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
 }
 
-TEST_CASE("MediaViewerOverlay image: zoom-in then drag moves image rect",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: zoom-in then drag moves image rect", "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;
@@ -513,7 +515,10 @@ TEST_CASE("MediaViewerOverlay image: full-screen button toggles on_request_fulls
     st.run(overlay, {0, 0, 600, 400});
 
     std::vector<bool> states;
-    overlay.on_request_fullscreen = [&](bool on) { states.push_back(on); };
+    overlay.on_request_fullscreen = [&](bool on)
+    {
+        states.push_back(on);
+    };
 
     // Buttons, right→left: close={556,8}, save={516,8}, copy={476,8},
     // fullscreen={436,8,36,36}, centre (454, 26).
@@ -568,7 +573,10 @@ TEST_CASE("MediaViewerOverlay image: full-screen re-opens back in windowed mode"
     st.run(overlay, {0, 0, 600, 400});
 
     std::vector<bool> requests;
-    overlay.on_request_fullscreen = [&](bool on) { requests.push_back(on); };
+    overlay.on_request_fullscreen = [&](bool on)
+    {
+        requests.push_back(on);
+    };
     tk::Point fs_centre{454.0f, 26.0f};
     tk::Widget* claimed = overlay.dispatch_pointer_down(fs_centre);
     REQUIRE(claimed != nullptr);
@@ -586,8 +594,7 @@ TEST_CASE("MediaViewerOverlay image: full-screen re-opens back in windowed mode"
     CHECK(requests == std::vector<bool>{true, false, true}); // first toggle after re-open enters
 }
 
-TEST_CASE("MediaViewerOverlay image: paint does not crash in full-screen",
-          "[tk][imageviewer]")
+TEST_CASE("MediaViewerOverlay image: paint does not crash in full-screen", "[tk][imageviewer]")
 {
     TkImageViewerStage st;
     MediaViewerOverlay overlay;

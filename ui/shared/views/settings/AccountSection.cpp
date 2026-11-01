@@ -24,25 +24,25 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kAvatarDiameter   = 64.0f;
+constexpr float kAvatarDiameter = 64.0f;
 
 // ExtendedFields layout constants
-constexpr float kFieldPadX  = 24.0f;
-constexpr float kFieldPadY  = 12.0f;
-constexpr float kAccountSectionLabelW     = 80.0f;
-constexpr float kAccountSectionFieldGap   = 8.0f;
-constexpr float kAccountSectionRowH       = 28.0f;
-constexpr float kBioH       = 44.0f;
+constexpr float kFieldPadX = 24.0f;
+constexpr float kFieldPadY = 12.0f;
+constexpr float kAccountSectionLabelW = 80.0f;
+constexpr float kAccountSectionFieldGap = 8.0f;
+constexpr float kAccountSectionRowH = 28.0f;
+constexpr float kBioH = 44.0f;
 constexpr float kAccountSectionRowSpacing = 8.0f;
-constexpr float kAvatarRadius     = kAvatarDiameter * 0.5f;
-constexpr float kAccountSectionPadX             = 24.0f;
-constexpr float kAccountSectionPadY             = 24.0f;
-constexpr float kAccountSectionAvatarTextGap    = 16.0f;
-constexpr float kAccountSectionLineGap          = 4.0f;
-constexpr float kAccountSectionNameH            = 20.0f;
-constexpr float kIdH              = 17.0f;
-constexpr float kAccountSectionErrorGap         = 4.0f;
-constexpr float kErrorH           = 14.0f;
+constexpr float kAvatarRadius = kAvatarDiameter * 0.5f;
+constexpr float kAccountSectionPadX = 24.0f;
+constexpr float kAccountSectionPadY = 24.0f;
+constexpr float kAccountSectionAvatarTextGap = 16.0f;
+constexpr float kAccountSectionLineGap = 4.0f;
+constexpr float kAccountSectionNameH = 20.0f;
+constexpr float kIdH = 17.0f;
+constexpr float kAccountSectionErrorGap = 4.0f;
+constexpr float kErrorH = 14.0f;
 
 } // namespace
 
@@ -98,12 +98,20 @@ public:
     AVATAR_ACCESS_ROWS_KEYBOARD
 
 protected:
-    const AvatarEditControl& avatar_control_() const override { return avatar_; }
-    tk::Point avatar_world_origin_() const override { return {bounds_.x, bounds_.y}; }
+    const AvatarEditControl& avatar_control_() const override
+    {
+        return avatar_;
+    }
+    tk::Point avatar_world_origin_() const override
+    {
+        return {bounds_.x, bounds_.y};
+    }
     void avatar_activate_(bool remove) override
     {
         if (remove ? on_avatar_remove_clicked : on_avatar_upload_clicked)
+        {
             (remove ? on_avatar_remove_clicked : on_avatar_upload_clicked)();
+        }
     }
 
 private:
@@ -114,8 +122,8 @@ private:
     std::string display_name_;
     std::string user_id_;
 
-    bool name_editable_  = false;
-    bool name_busy_      = false;
+    bool name_editable_ = false;
+    bool name_busy_ = false;
     std::string name_error_;
 
     AvatarEditControl avatar_;
@@ -139,19 +147,28 @@ AccountSection::Content::Content()
 
 void AccountSection::Content::set_display_name(std::string name)
 {
-    if (display_name_ == name) return;
+    if (display_name_ == name)
+    {
+        return;
+    }
     // The field shows the saved name until the user edits it. Replace its text
     // only while it still holds that name, so an echo of an earlier save or a
     // change from another device never overwrites what the user is typing.
     const bool field_untouched = !name_field_ || name_field_->text() == display_name_;
     display_name_ = name;
     invalidate_text();
-    if (field_untouched && name_field_) name_field_->set_text(std::move(name));
+    if (field_untouched && name_field_)
+    {
+        name_field_->set_text(std::move(name));
+    }
 }
 
 void AccountSection::Content::set_user_id(std::string uid)
 {
-    if (user_id_ == uid) return;
+    if (user_id_ == uid)
+    {
+        return;
+    }
     user_id_ = std::move(uid);
     invalidate_text();
 }
@@ -185,7 +202,10 @@ void AccountSection::Content::set_avatar_editable(bool editable)
 void AccountSection::Content::set_name_busy(bool busy)
 {
     name_busy_ = busy;
-    if (busy) name_error_.clear();
+    if (busy)
+    {
+        name_error_.clear();
+    }
     invalidate_text();
 }
 
@@ -220,13 +240,14 @@ tk::Point AccountSection::Content::disc_centre_local() const
 tk::Rect AccountSection::Content::name_field_rect() const
 {
     if (!name_editable_ || name_busy_)
+    {
         return {};
-    const float text_x = bounds_.x + kAccountSectionPadX + kAvatarDiameter + kAccountSectionAvatarTextGap;
-    const float text_w =
-        std::max(0.0f, bounds_.x + bounds_.w - kAccountSectionPadX - text_x);
-    const float col_h   = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
-    const float col_top =
-        bounds_.y + kAccountSectionPadY + (kAvatarDiameter - col_h) * 0.5f;
+    }
+    const float text_x =
+        bounds_.x + kAccountSectionPadX + kAvatarDiameter + kAccountSectionAvatarTextGap;
+    const float text_w = std::max(0.0f, bounds_.x + bounds_.w - kAccountSectionPadX - text_x);
+    const float col_h = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
+    const float col_top = bounds_.y + kAccountSectionPadY + (kAvatarDiameter - col_h) * 0.5f;
     return {text_x, col_top - 2.0f, text_w, kAccountSectionNameH + 4.0f};
 }
 
@@ -234,11 +255,9 @@ tk::Size AccountSection::Content::measure(tk::LayoutCtx&, tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
     const float text_col_h = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
-    const float extra_h =
-        (!name_error_.empty() ? kAccountSectionErrorGap + kErrorH : 0.0f) +
-        (avatar_.has_error() ? kAccountSectionErrorGap + kErrorH : 0.0f);
-    const float h =
-        std::max(kAvatarDiameter, text_col_h) + 2.0f * kAccountSectionPadY + extra_h;
+    const float extra_h = (!name_error_.empty() ? kAccountSectionErrorGap + kErrorH : 0.0f) +
+                          (avatar_.has_error() ? kAccountSectionErrorGap + kErrorH : 0.0f);
+    const float h = std::max(kAvatarDiameter, text_col_h) + 2.0f * kAccountSectionPadY + extra_h;
     return {w, h};
 }
 
@@ -257,14 +276,18 @@ void AccountSection::Content::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         const bool show = !r.empty() && visible_in_tree();
         name_field_->set_visible(show);
         if (show)
+        {
             name_field_->arrange(ctx, r);
+        }
     }
 }
 
 void AccountSection::Content::on_theme_changed(const tk::Theme& t)
 {
     if (name_field_)
+    {
         name_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 bool AccountSection::Content::on_pointer_down(tk::Point local)
@@ -272,10 +295,16 @@ bool AccountSection::Content::on_pointer_down(tk::Point local)
     switch (avatar_.hit_test(local))
     {
     case AvatarEditControl::HitZone::RemoveChip:
-        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
+        if (on_avatar_remove_clicked)
+        {
+            on_avatar_remove_clicked();
+        }
         return true;
     case AvatarEditControl::HitZone::Disc:
-        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
+        if (on_avatar_upload_clicked)
+        {
+            on_avatar_upload_clicked();
+        }
         return true;
     case AvatarEditControl::HitZone::None:
         return false;
@@ -298,57 +327,59 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
 
     {
-        std::string_view name_source = display_name_.empty()
-            ? (user_id_.empty() ? ""
-                                : std::string_view{user_id_}.substr(
-                                      user_id_.front() == '@' ? 1 : 0))
-            : std::string_view{display_name_};
+        std::string_view name_source =
+            display_name_.empty()
+                ? (user_id_.empty()
+                       ? ""
+                       : std::string_view{user_id_}.substr(user_id_.front() == '@' ? 1 : 0))
+                : std::string_view{display_name_};
         avatar_.paint(ctx, {bounds_.x, bounds_.y}, name_source);
     }
 
-    const float text_x = bounds_.x + kAccountSectionPadX + kAvatarDiameter + kAccountSectionAvatarTextGap;
+    const float text_x =
+        bounds_.x + kAccountSectionPadX + kAvatarDiameter + kAccountSectionAvatarTextGap;
     const float text_w = std::max(0.0f, bounds_.x + bounds_.w - kAccountSectionPadX - text_x);
 
-    const float col_h   = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
-    const float col_top =
-        bounds_.y + kAccountSectionPadY + (kAvatarDiameter - col_h) * 0.5f;
+    const float col_h = kAccountSectionNameH + kAccountSectionLineGap + kIdH;
+    const float col_top = bounds_.y + kAccountSectionPadY + (kAvatarDiameter - col_h) * 0.5f;
 
     if (!name_editable_)
     {
         if (!name_layout_ && !display_name_.empty())
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Title;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
-            st.trim      = tk::TextTrim::Ellipsis;
+            st.role = tk::FontRole::Title;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
+            st.trim = tk::TextTrim::Ellipsis;
             st.max_width = text_w;
             name_layout_ = ctx.factory.build_text(display_name_, st);
         }
         if (name_layout_)
         {
-            ctx.canvas.draw_text(*name_layout_, {text_x, col_top},
-                                 pal.text_primary);
+            ctx.canvas.draw_text(*name_layout_, {text_x, col_top}, pal.text_primary);
         }
         else if (display_name_.empty() && !user_id_.empty())
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Title;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
-            st.trim      = tk::TextTrim::Ellipsis;
+            st.role = tk::FontRole::Title;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
+            st.trim = tk::TextTrim::Ellipsis;
             st.max_width = text_w;
             auto lay = ctx.factory.build_text(user_id_, st);
             if (lay)
+            {
                 ctx.canvas.draw_text(*lay, {text_x, col_top}, pal.text_primary);
+            }
         }
     }
     else
     {
         const float uly = col_top + kAccountSectionNameH + 2.0f;
-        ctx.canvas.fill_rect({text_x, uly, text_w, 1.0f},
-                             ctx.theme.high_contrast ? pal.text_secondary
-                                                     : pal.text_secondary.with_alpha(80));
+        ctx.canvas.fill_rect({text_x, uly, text_w, 1.0f}, ctx.theme.high_contrast
+                                                              ? pal.text_secondary
+                                                              : pal.text_secondary.with_alpha(80));
 
         // name_field_ paints itself here rather than through the normal
         // paint_children() traversal (this is a full paint() override, same
@@ -370,25 +401,25 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
             if (!name_layout_ && !display_name_.empty())
             {
                 tk::TextStyle st;
-                st.role      = tk::FontRole::Title;
-                st.halign    = tk::TextHAlign::Leading;
-                st.valign    = tk::TextVAlign::Top;
-                st.trim      = tk::TextTrim::Ellipsis;
+                st.role = tk::FontRole::Title;
+                st.halign = tk::TextHAlign::Leading;
+                st.valign = tk::TextVAlign::Top;
+                st.trim = tk::TextTrim::Ellipsis;
                 st.max_width = std::max(0.0f, text_w - 20.0f);
                 name_layout_ = ctx.factory.build_text(display_name_, st);
             }
             if (name_layout_)
             {
-                ctx.canvas.draw_text(*name_layout_, {text_x, col_top},
-                                     pal.text_primary);
+                ctx.canvas.draw_text(*name_layout_, {text_x, col_top}, pal.text_primary);
                 const tk::Size nsz = name_layout_->measure();
                 tk::TextStyle ss;
                 ss.role = tk::FontRole::Body;
                 auto slay = ctx.factory.build_text("…", ss);
                 if (slay)
-                    ctx.canvas.draw_text(*slay,
-                                         {text_x + nsz.w + 4.0f, col_top},
+                {
+                    ctx.canvas.draw_text(*slay, {text_x + nsz.w + 4.0f, col_top},
                                          pal.text_secondary);
+                }
             }
         }
     }
@@ -398,24 +429,25 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
         if (!name_error_layout_)
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Small;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
+            st.role = tk::FontRole::Small;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
             st.max_width = text_w;
             name_error_layout_ = ctx.factory.build_text(name_error_, st);
         }
         ctx.canvas.draw_text(*name_error_layout_,
-                             {text_x, col_top + kAccountSectionNameH + kAccountSectionLineGap + kIdH + kAccountSectionErrorGap},
+                             {text_x, col_top + kAccountSectionNameH + kAccountSectionLineGap +
+                                          kIdH + kAccountSectionErrorGap},
                              ctx.theme.palette.text_error);
     }
 
     if (!uid_layout_ && !user_id_.empty())
     {
         tk::TextStyle st;
-        st.role      = tk::FontRole::Body;
-        st.halign    = tk::TextHAlign::Leading;
-        st.valign    = tk::TextVAlign::Top;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Body;
+        st.halign = tk::TextHAlign::Leading;
+        st.valign = tk::TextVAlign::Top;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         uid_layout_ = ctx.factory.build_text(user_id_, st);
     }
@@ -475,9 +507,9 @@ public:
     }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     on_theme_changed(const tk::Theme& t) override;
-    void     paint_after_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void on_theme_changed(const tk::Theme& t) override;
+    void paint_after_children(tk::PaintCtx&) override;
 
 private:
     // Y offset (relative to bounds_.y) for the pronouns row and for the
@@ -496,13 +528,13 @@ private:
     // Current pronouns- / status-block heights, recomputed each arrange()
     // since they depend on staged content / error text.
     float pronouns_h_ = 0.0f;
-    float status_h_   = StatusEditor::kRowH;
+    float status_h_ = StatusEditor::kRowH;
 
     std::string tz_;
     std::string biography_;
 
     bool fields_editable_ = false;
-    bool busy_[2]         = {};
+    bool busy_[2] = {};
     std::string error_[2];
 
     PronounsEditor* pronouns_editor_ = nullptr; // owned via add_child
@@ -538,7 +570,9 @@ AccountSection::ExtendedFields::ExtendedFields()
     set_visible(false);
 
     if (!host())
+    {
         return;
+    }
 
     auto pronouns = tk::create_widget<PronounsEditor>(this);
     pronouns_editor_ = add_child(std::move(pronouns));
@@ -561,7 +595,10 @@ AccountSection::ExtendedFields::ExtendedFields()
 
 float AccountSection::ExtendedFields::error_extra(int idx) const
 {
-    if (error_[idx].empty()) return 0.0f;
+    if (error_[idx].empty())
+    {
+        return 0.0f;
+    }
     return kAccountSectionErrorGap + kErrorH;
 }
 
@@ -573,7 +610,10 @@ float AccountSection::ExtendedFields::pronouns_row_y() const
 float AccountSection::ExtendedFields::row_y(int idx) const
 {
     float y = pronouns_row_y() + pronouns_h_ + kAccountSectionRowSpacing;
-    if (idx >= 1) y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(0);
+    if (idx >= 1)
+    {
+        y += kAccountSectionRowH + kAccountSectionRowSpacing + error_extra(0);
+    }
     return y;
 }
 
@@ -584,7 +624,10 @@ float AccountSection::ExtendedFields::status_row_y() const
 
 tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
 {
-    if (!fields_editable_ || busy_[idx]) return {};
+    if (!fields_editable_ || busy_[idx])
+    {
+        return {};
+    }
     const float row_h = (idx == 1) ? kBioH : kAccountSectionRowH;
     const float x = bounds_.x + kFieldPadX + kAccountSectionLabelW + kAccountSectionFieldGap;
     const float w = std::max(0.0f, bounds_.x + bounds_.w - kFieldPadX - x);
@@ -594,38 +637,61 @@ tk::Rect AccountSection::ExtendedFields::field_rect_for(int idx) const
 
 // ---- setters ---------------------------------------------------------------
 
-void AccountSection::ExtendedFields::set_pronouns(
-    std::vector<tesseract::PronounEntry> entries)
+void AccountSection::ExtendedFields::set_pronouns(std::vector<tesseract::PronounEntry> entries)
 {
-    if (pronouns_editor_) pronouns_editor_->set_pronouns(std::move(entries));
+    if (pronouns_editor_)
+    {
+        pronouns_editor_->set_pronouns(std::move(entries));
+    }
 }
 
 void AccountSection::ExtendedFields::set_tz(std::string v)
 {
-    if (tz_ == v) return;
+    if (tz_ == v)
+    {
+        return;
+    }
     tz_ = v;
     value_layout_[0].reset();
-    if (tz_picker_) tz_picker_->set_value(std::move(v));
+    if (tz_picker_)
+    {
+        tz_picker_->set_value(std::move(v));
+    }
 }
 
 void AccountSection::ExtendedFields::set_biography(std::string v)
 {
-    if (biography_ == v) return;
+    if (biography_ == v)
+    {
+        return;
+    }
     biography_ = v;
     value_layout_[1].reset();
-    if (bio_field_) bio_field_->set_text(std::move(v));
+    if (bio_field_)
+    {
+        bio_field_->set_text(std::move(v));
+    }
 }
 
 void AccountSection::ExtendedFields::set_status(std::string emoji, std::string text)
 {
-    if (status_editor_) status_editor_->set_status(std::move(emoji), std::move(text));
+    if (status_editor_)
+    {
+        status_editor_->set_status(std::move(emoji), std::move(text));
+    }
 }
 
 void AccountSection::ExtendedFields::set_fields_editable(bool editable)
 {
     fields_editable_ = editable;
-    if (pronouns_editor_) pronouns_editor_->set_editable(editable);
-    if (status_editor_) status_editor_->set_editable(editable);
+    if (pronouns_editor_)
+    {
+        pronouns_editor_->set_editable(editable);
+    }
+    if (status_editor_)
+    {
+        status_editor_->set_editable(editable);
+    }
     // Unsupported/disabled servers hide the whole block (labels included)
     // rather than showing inert rows with no way to fill them in.
     set_visible(editable);
@@ -635,18 +701,30 @@ void AccountSection::ExtendedFields::set_field_busy(int idx, bool busy)
 {
     if (idx == 0)
     {
-        if (pronouns_editor_) pronouns_editor_->set_busy(busy);
+        if (pronouns_editor_)
+        {
+            pronouns_editor_->set_busy(busy);
+        }
         return;
     }
     if (idx == 3)
     {
-        if (status_editor_) status_editor_->set_busy(busy);
+        if (status_editor_)
+        {
+            status_editor_->set_busy(busy);
+        }
         return;
     }
     const int i = idx - 1;
-    if (i < 0 || i > 1) return;
+    if (i < 0 || i > 1)
+    {
+        return;
+    }
     busy_[i] = busy;
-    if (busy) error_[i].clear();
+    if (busy)
+    {
+        error_[i].clear();
+    }
     value_layout_[i].reset();
     error_layout_[i].reset();
 }
@@ -655,43 +733,41 @@ void AccountSection::ExtendedFields::set_field_error(int idx, std::string error)
 {
     if (idx == 0)
     {
-        if (pronouns_editor_) pronouns_editor_->set_error(std::move(error));
+        if (pronouns_editor_)
+        {
+            pronouns_editor_->set_error(std::move(error));
+        }
         return;
     }
     if (idx == 3)
     {
-        if (status_editor_) status_editor_->set_error(std::move(error));
+        if (status_editor_)
+        {
+            status_editor_->set_error(std::move(error));
+        }
         return;
     }
     const int i = idx - 1;
-    if (i < 0 || i > 1) return;
+    if (i < 0 || i > 1)
+    {
+        return;
+    }
     error_[i] = std::move(error);
     error_layout_[i].reset();
 }
 
 // ---- layout ----------------------------------------------------------------
 
-tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx& ctx,
-                                                  tk::Size constraints)
+tk::Size AccountSection::ExtendedFields::measure(tk::LayoutCtx& ctx, tk::Size constraints)
 {
     const float w = constraints.w > 0 ? constraints.w : 0;
-    const float field_w = std::max(0.0f,
-        w - kFieldPadX - kAccountSectionLabelW - kAccountSectionFieldGap - kFieldPadX);
-    pronouns_h_ = pronouns_editor_
-                      ? pronouns_editor_->measure(ctx, {field_w, 0}).h
-                      : 0.0f;
-    status_h_ = status_editor_
-                    ? status_editor_->measure(ctx, {field_w, 0}).h
-                    : StatusEditor::kRowH;
-    const float h = kFieldPadY
-                    + pronouns_h_
-                    + kAccountSectionRowSpacing
-                    + kAccountSectionRowH + error_extra(0)
-                    + kAccountSectionRowSpacing
-                    + kBioH + error_extra(1)
-                    + kAccountSectionRowSpacing
-                    + status_h_
-                    + kFieldPadY;
+    const float field_w = std::max(0.0f, w - kFieldPadX - kAccountSectionLabelW -
+                                             kAccountSectionFieldGap - kFieldPadX);
+    pronouns_h_ = pronouns_editor_ ? pronouns_editor_->measure(ctx, {field_w, 0}).h : 0.0f;
+    status_h_ = status_editor_ ? status_editor_->measure(ctx, {field_w, 0}).h : StatusEditor::kRowH;
+    const float h = kFieldPadY + pronouns_h_ + kAccountSectionRowSpacing + kAccountSectionRowH +
+                    error_extra(0) + kAccountSectionRowSpacing + kBioH + error_extra(1) +
+                    kAccountSectionRowSpacing + status_h_ + kFieldPadY;
     return {w, h};
 }
 
@@ -709,7 +785,9 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
         const bool show = fields_editable_ && visible_in_tree();
         pronouns_editor_->set_visible(show);
         if (show)
+        {
             pronouns_editor_->arrange(ctx, {field_x, pronouns_row_y(), field_w, pronouns_h_});
+        }
     }
     pronouns_label_layout_.reset();
 
@@ -730,7 +808,9 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
         const bool show = !r.empty() && visible_in_tree();
         tz_picker_->set_visible(show);
         if (tz_auto_cb_)
+        {
             tz_auto_cb_->set_visible(show);
+        }
         if (show)
         {
             // The picker keeps its natural width so the checkbox fits beside
@@ -747,7 +827,8 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
                 cb_sz.w += 8.0f;
             }
             const float cb_total = tz_auto_cb_ ? cb_sz.w + kAccountSectionFieldGap : 0.0f;
-            const float picker_w = std::clamp(r.w - cb_total, std::min(kMinPickerW, picker_nat), picker_nat);
+            const float picker_w =
+                std::clamp(r.w - cb_total, std::min(kMinPickerW, picker_nat), picker_nat);
             tz_picker_->arrange(ctx, {r.x, r.y, picker_w, r.h});
             if (tz_auto_cb_)
             {
@@ -762,7 +843,9 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
         const bool show = !r.empty() && visible_in_tree();
         bio_field_->set_visible(show);
         if (show)
+        {
             bio_field_->arrange(ctx, r);
+        }
     }
 
     status_label_layout_.reset();
@@ -772,8 +855,9 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
         const bool show = fields_editable_ && visible_in_tree();
         status_editor_->set_visible(show);
         if (show)
-            status_editor_->arrange(
-                ctx, {field_x, status_row_y(), field_w, status_h_});
+        {
+            status_editor_->arrange(ctx, {field_x, status_row_y(), field_w, status_h_});
+        }
     }
 }
 
@@ -782,9 +866,18 @@ void AccountSection::ExtendedFields::on_theme_changed(const tk::Theme& t)
     // TimezonePicker doesn't expose set_text_color directly (it owns its
     // internal field itself) — its own on_theme_changed forwards to it, same
     // as PronounsEditor's rows do for their own LanguagePickers.
-    if (tz_picker_) tz_picker_->on_theme_changed(t);
-    if (bio_field_) bio_field_->set_text_color(t.palette.text_primary);
-    if (status_editor_) status_editor_->on_theme_changed(t);
+    if (tz_picker_)
+    {
+        tz_picker_->on_theme_changed(t);
+    }
+    if (bio_field_)
+    {
+        bio_field_->set_text_color(t.palette.text_primary);
+    }
+    if (status_editor_)
+    {
+        status_editor_->on_theme_changed(t);
+    }
 }
 
 // ---- paint -----------------------------------------------------------------
@@ -797,40 +890,38 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
     // drawn once regardless of how many language rows it currently holds.
     {
         const float label_x = bounds_.x + kFieldPadX;
-        const float ry      = pronouns_row_y();
+        const float ry = pronouns_row_y();
         if (!pronouns_label_layout_)
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
+            st.role = tk::FontRole::Body;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
             st.max_width = kAccountSectionLabelW;
             pronouns_label_layout_ = ctx.factory.build_text(tk::tr("Pronouns"), st);
         }
         if (pronouns_label_layout_)
         {
-            ctx.canvas.draw_text(*pronouns_label_layout_, {label_x, ry},
-                                 pal.text_secondary);
+            ctx.canvas.draw_text(*pronouns_label_layout_, {label_x, ry}, pal.text_secondary);
         }
     }
 
     // MSC4426 status label — top-aligned with the StatusEditor block below bio.
     {
         const float label_x = bounds_.x + kFieldPadX;
-        const float ry      = status_row_y();
+        const float ry = status_row_y();
         if (!status_label_layout_)
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
+            st.role = tk::FontRole::Body;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
             st.max_width = kAccountSectionLabelW;
             status_label_layout_ = ctx.factory.build_text(tk::tr("Status"), st);
         }
         if (status_label_layout_)
         {
-            ctx.canvas.draw_text(*status_label_layout_, {label_x, ry},
-                                 pal.text_secondary);
+            ctx.canvas.draw_text(*status_label_layout_, {label_x, ry}, pal.text_secondary);
         }
     }
 
@@ -838,28 +929,26 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
 
     for (int i = 0; i < 2; ++i)
     {
-        const float row_h  = (i == 1) ? kBioH : kAccountSectionRowH;
-        const float ry     = row_y(i);
+        const float row_h = (i == 1) ? kBioH : kAccountSectionRowH;
+        const float ry = row_y(i);
         const float label_x = bounds_.x + kFieldPadX;
         const float field_x = label_x + kAccountSectionLabelW + kAccountSectionFieldGap;
-        const float field_w = std::max(0.0f,
-            bounds_.x + bounds_.w - kFieldPadX - field_x);
+        const float field_w = std::max(0.0f, bounds_.x + bounds_.w - kFieldPadX - field_x);
 
         // Label
         if (!label_layout_[i])
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Body;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
+            st.role = tk::FontRole::Body;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
             st.max_width = kAccountSectionLabelW;
             label_layout_[i] = ctx.factory.build_text(tk::tr(kLabels[i]), st);
         }
         if (label_layout_[i])
         {
             const tk::Size lsz = label_layout_[i]->measure();
-            ctx.canvas.draw_text(*label_layout_[i],
-                                 {label_x, ry + (row_h - lsz.h) * 0.5f},
+            ctx.canvas.draw_text(*label_layout_[i], {label_x, ry + (row_h - lsz.h) * 0.5f},
                                  pal.text_secondary);
         }
 
@@ -879,21 +968,17 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
             if (!value_layout_[i])
             {
                 tk::TextStyle st;
-                st.role      = tk::FontRole::Body;
-                st.halign    = tk::TextHAlign::Leading;
-                st.valign    = tk::TextVAlign::Top;
-                st.trim      = tk::TextTrim::Ellipsis;
-                st.max_width = busy_[i]
-                    ? std::max(0.0f, field_w - 20.0f)
-                    : field_w;
+                st.role = tk::FontRole::Body;
+                st.halign = tk::TextHAlign::Leading;
+                st.valign = tk::TextVAlign::Top;
+                st.trim = tk::TextTrim::Ellipsis;
+                st.max_width = busy_[i] ? std::max(0.0f, field_w - 20.0f) : field_w;
                 value_layout_[i] = ctx.factory.build_text(val, st);
             }
             if (value_layout_[i])
             {
                 const float vy = ry + (row_h - value_layout_[i]->measure().h) * 0.5f;
-                ctx.canvas.draw_text(*value_layout_[i],
-                                     {field_x, vy},
-                                     pal.text_primary);
+                ctx.canvas.draw_text(*value_layout_[i], {field_x, vy}, pal.text_primary);
 
                 if (busy_[i])
                 {
@@ -902,9 +987,10 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
                     ss.role = tk::FontRole::Body;
                     auto slay = ctx.factory.build_text("\xe2\x80\xa6", ss);
                     if (slay)
-                        ctx.canvas.draw_text(*slay,
-                                             {field_x + vsz.w + 4.0f, vy},
+                    {
+                        ctx.canvas.draw_text(*slay, {field_x + vsz.w + 4.0f, vy},
                                              pal.text_secondary);
+                    }
                 }
             }
         }
@@ -915,9 +1001,9 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
             if (!error_layout_[i])
             {
                 tk::TextStyle st;
-                st.role      = tk::FontRole::Small;
-                st.halign    = tk::TextHAlign::Leading;
-                st.valign    = tk::TextVAlign::Top;
+                st.role = tk::FontRole::Small;
+                st.halign = tk::TextHAlign::Leading;
+                st.valign = tk::TextVAlign::Top;
                 st.max_width = field_w;
                 error_layout_[i] = ctx.factory.build_text(error_[i], st);
             }
@@ -947,11 +1033,17 @@ AccountSection::AccountSection()
     content_ = add_widget(tk::create_widget<Content>(this));
     content_->on_avatar_upload_clicked = [this]
     {
-        if (on_avatar_upload_clicked) on_avatar_upload_clicked();
+        if (on_avatar_upload_clicked)
+        {
+            on_avatar_upload_clicked();
+        }
     };
     content_->on_avatar_remove_clicked = [this]
     {
-        if (on_avatar_remove_clicked) on_avatar_remove_clicked();
+        if (on_avatar_remove_clicked)
+        {
+            on_avatar_remove_clicked();
+        }
     };
 
     ext_fields_ = add_widget(tk::create_widget<ExtendedFields>(this));
@@ -962,10 +1054,17 @@ AccountSection::AccountSection()
 
     auto row = tk::create_widget<tk::HBox>(this);
     row->set_main(tk::Main::End);
-    row->set_padding(tk::Edges{0.0f, kAccountSectionPadX, kAccountSectionPadY, kAccountSectionPadX});
-    row->add_child(tk::create_widget<tk::Button>(this,
-        tk::tr("Log Out"),
-        [this] { if (on_logout) on_logout(); },
+    row->set_padding(
+        tk::Edges{0.0f, kAccountSectionPadX, kAccountSectionPadY, kAccountSectionPadX});
+    row->add_child(tk::create_widget<tk::Button>(
+        this, tk::tr("Log Out"),
+        [this]
+        {
+            if (on_logout)
+            {
+                on_logout();
+            }
+        },
         tk::Button::Variant::Destructive));
     add_widget(std::move(row));
 }
@@ -1045,10 +1144,22 @@ namespace
 // Returns -1 for unknown keys.
 int key_to_index(const std::string& key)
 {
-    if (key == "io.fsky.nyx.pronouns")       return 0;
-    if (key == "us.cloke.msc4175.tz")        return 1;
-    if (key == "gay.fomx.biography")         return 2;
-    if (key == "org.matrix.msc4426.status")  return 3;
+    if (key == "io.fsky.nyx.pronouns")
+    {
+        return 0;
+    }
+    if (key == "us.cloke.msc4175.tz")
+    {
+        return 1;
+    }
+    if (key == "gay.fomx.biography")
+    {
+        return 2;
+    }
+    if (key == "org.matrix.msc4426.status")
+    {
+        return 3;
+    }
     return -1;
 }
 } // namespace
@@ -1069,14 +1180,19 @@ void AccountSection::set_profile_fields_editable(bool editable)
 void AccountSection::set_profile_field_busy(const std::string& key, bool busy)
 {
     const int idx = key_to_index(key);
-    if (idx >= 0) ext_fields_->set_field_busy(idx, busy);
+    if (idx >= 0)
+    {
+        ext_fields_->set_field_busy(idx, busy);
+    }
 }
 
-void AccountSection::set_profile_field_error(const std::string& key,
-                                              std::string error)
+void AccountSection::set_profile_field_error(const std::string& key, std::string error)
 {
     const int idx = key_to_index(key);
-    if (idx >= 0) ext_fields_->set_field_error(idx, std::move(error));
+    if (idx >= 0)
+    {
+        ext_fields_->set_field_error(idx, std::move(error));
+    }
 }
 
 PronounsEditor* AccountSection::pronouns_editor() const

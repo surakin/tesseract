@@ -23,17 +23,17 @@ namespace tesseract
 // `is_current` lets the deferred callback detect a same-tick reconstruction
 // (the view was recreated before this callback got to run) and skip
 // destroying the wrong instance.
-inline void schedule_deferred_teardown(tk::Host& host,
-                                        std::function<bool()> is_current,
-                                        std::function<void()> destroy,
-                                        int delay_ms = 0)
+inline void schedule_deferred_teardown(tk::Host& host, std::function<bool()> is_current,
+                                       std::function<void()> destroy, int delay_ms = 0)
 {
-    host.post_delayed(delay_ms, [is_current = std::move(is_current),
-                           destroy = std::move(destroy)]
-    {
-        if (is_current())
-            destroy();
-    });
+    host.post_delayed(delay_ms,
+                      [is_current = std::move(is_current), destroy = std::move(destroy)]
+                      {
+                          if (is_current())
+                          {
+                              destroy();
+                          }
+                      });
 }
 
 } // namespace tesseract

@@ -1,8 +1,10 @@
 #pragma once
 
-namespace tesseract {
+namespace tesseract
+{
 
-namespace detail {
+namespace detail
+{
 inline bool update_checks_disabled = false;
 } // namespace detail
 

@@ -9,14 +9,14 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kRemoveChipR    = 9.0f;
+constexpr float kRemoveChipR = 9.0f;
 constexpr float kXChipTolerance = kRemoveChipR + 4.0f;
-constexpr float kAvatarEditErrorGap       = 4.0f;
+constexpr float kAvatarEditErrorGap = 4.0f;
 } // namespace
 
 void AvatarEditControl::set_geometry(tk::Point centre, float diameter)
 {
-    centre_   = centre;
+    centre_ = centre;
     diameter_ = diameter;
 }
 
@@ -24,7 +24,9 @@ void AvatarEditControl::set_avatar_url(std::string mxc_url)
 {
     avatar_url_ = std::move(mxc_url);
     if (avatar_url_.empty())
+    {
         local_preview_.reset();
+    }
 }
 
 void AvatarEditControl::set_image_provider(ImageProvider provider)
@@ -61,22 +63,28 @@ void AvatarEditControl::set_error(std::string error)
 AvatarEditControl::HitZone AvatarEditControl::hit_test(tk::Point local) const
 {
     if (!editable_ || busy_)
+    {
         return HitZone::None;
+    }
     if (!avatar_url_.empty() || local_preview_)
     {
         const float radius = diameter_ * 0.5f;
-        const float cx     = centre_.x + radius - kRemoveChipR;
-        const float cy     = centre_.y - radius + kRemoveChipR;
-        const float dx     = local.x - cx;
-        const float dy     = local.y - cy;
+        const float cx = centre_.x + radius - kRemoveChipR;
+        const float cy = centre_.y - radius + kRemoveChipR;
+        const float dx = local.x - cx;
+        const float dy = local.y - cy;
         if ((dx * dx + dy * dy) <= (kXChipTolerance * kXChipTolerance))
+        {
             return HitZone::RemoveChip;
+        }
     }
     const float dx = local.x - centre_.x;
     const float dy = local.y - centre_.y;
     const float radius = diameter_ * 0.5f;
     if ((dx * dx + dy * dy) <= (radius * radius))
+    {
         return HitZone::Disc;
+    }
     return HitZone::None;
 }
 
@@ -91,21 +99,27 @@ AvatarEditControl::access_items(tk::Point world_origin) const
     {
         out.push_back({AccessItem::Kind::Change, tk::tr("Change avatar"), disc});
         if (has_avatar())
-            out.push_back({AccessItem::Kind::Remove, tk::tr("Remove avatar"),
-                           {world_origin.x + centre_.x + radius - 2.0f * kRemoveChipR,
-                            world_origin.y + centre_.y - radius, 2.0f * kRemoveChipR,
-                            2.0f * kRemoveChipR}});
+        {
+            out.push_back(
+                {AccessItem::Kind::Remove,
+                 tk::tr("Remove avatar"),
+                 {world_origin.x + centre_.x + radius - 2.0f * kRemoveChipR,
+                  world_origin.y + centre_.y - radius, 2.0f * kRemoveChipR, 2.0f * kRemoveChipR}});
+        }
     }
     if (!error_.empty())
-        out.push_back({AccessItem::Kind::Error, error_,
-                       {disc.x, disc.y + disc.h, disc.w, 16.0f}});
+    {
+        out.push_back({AccessItem::Kind::Error, error_, {disc.x, disc.y + disc.h, disc.w, 16.0f}});
+    }
     return out;
 }
 
 bool AvatarEditControl::on_pointer_move(tk::Point local)
 {
     if (!editable_)
+    {
         return false;
+    }
     const bool was = hovered_;
     const float dx = local.x - centre_.x;
     const float dy = local.y - centre_.y;
@@ -126,19 +140,19 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
     const float radius = diameter_ * 0.5f;
     const tk::Point centre{world_origin.x + centre_.x, world_origin.y + centre_.y};
 
-    const tk::Image* img = local_preview_
-                              ? local_preview_.get()
-                              : (image_provider_ && !avatar_url_.empty())
-                                  ? image_provider_(avatar_url_)
-                                  : nullptr;
-    draw_avatar(ctx.canvas, img, centre, diameter_, initials_source,
-               pal.avatar_initials_bg, pal.avatar_initials_text);
+    const tk::Image* img = local_preview_ ? local_preview_.get()
+                           : (image_provider_ && !avatar_url_.empty())
+                               ? image_provider_(avatar_url_)
+                               : nullptr;
+    draw_avatar(ctx.canvas, img, centre, diameter_, initials_source, pal.avatar_initials_bg,
+                pal.avatar_initials_text);
 
     if (!editable_)
+    {
         return;
+    }
 
-    const tk::Rect disc_rect{centre.x - radius, centre.y - radius, diameter_,
-                             diameter_};
+    const tk::Rect disc_rect{centre.x - radius, centre.y - radius, diameter_, diameter_};
 
     if (busy_)
     {
@@ -152,8 +166,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
         if (lay)
         {
             const tk::Size sz = lay->measure();
-            ctx.canvas.draw_text(*lay,
-                                 {centre.x - sz.w * 0.5f, centre.y - sz.h * 0.5f},
+            ctx.canvas.draw_text(*lay, {centre.x - sz.w * 0.5f, centre.y - sz.h * 0.5f},
                                  tk::Color::rgb(0xffffff));
         }
     }
@@ -169,8 +182,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
         if (lay)
         {
             const tk::Size sz = lay->measure();
-            ctx.canvas.draw_text(*lay,
-                                 {centre.x - sz.w * 0.5f, centre.y - sz.h * 0.5f},
+            ctx.canvas.draw_text(*lay, {centre.x - sz.w * 0.5f, centre.y - sz.h * 0.5f},
                                  tk::Color::rgb(0xffffff));
         }
 
@@ -179,8 +191,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
             const float cx = centre.x + radius - kRemoveChipR;
             const float cy = centre.y - radius + kRemoveChipR;
             ctx.canvas.fill_rounded_rect(
-                {cx - kRemoveChipR, cy - kRemoveChipR, kRemoveChipR * 2.0f,
-                 kRemoveChipR * 2.0f},
+                {cx - kRemoveChipR, cy - kRemoveChipR, kRemoveChipR * 2.0f, kRemoveChipR * 2.0f},
                 kRemoveChipR, tk::Color::rgba(40, 40, 40, 220));
             tk::TextStyle xs;
             xs.role = tk::FontRole::Small;
@@ -188,8 +199,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
             if (xlay)
             {
                 const tk::Size xsz = xlay->measure();
-                ctx.canvas.draw_text(*xlay,
-                                     {cx - xsz.w * 0.5f, cy - xsz.h * 0.5f},
+                ctx.canvas.draw_text(*xlay, {cx - xsz.w * 0.5f, cy - xsz.h * 0.5f},
                                      tk::Color::rgb(0xffffff));
             }
         }
@@ -200,9 +210,9 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
         if (!error_layout_)
         {
             tk::TextStyle st;
-            st.role      = tk::FontRole::Small;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
+            st.role = tk::FontRole::Small;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
             st.max_width = diameter_;
             error_layout_ = ctx.factory.build_text(error_, st);
         }

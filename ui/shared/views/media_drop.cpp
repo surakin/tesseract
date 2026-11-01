@@ -6,18 +6,23 @@
 namespace tesseract::views
 {
 
-FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb,
-                                               std::vector<std::uint8_t> bytes,
+FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb, std::vector<std::uint8_t> bytes,
                                                std::string mime, std::string filename,
                                                std::uint64_t upload_limit,
                                                const MediaInfoExtractor& extract)
 {
     if (upload_limit > 0 && bytes.size() > upload_limit)
+    {
         return FileDropOutcome::TooLarge;
+    }
     if (bytes.empty())
+    {
         return FileDropOutcome::Empty;
+    }
     if (cb.pending_count() >= ComposeBar::kMaxAttachments)
+    {
         return FileDropOutcome::TooMany;
+    }
 
     // For video/audio: queue the attachment first (so add_pending_*
     // bumps pending_gen()), then hand the bytes to the per-shell probe keyed by
@@ -27,7 +32,9 @@ FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb,
     const auto probe = [&](std::vector<std::uint8_t> b, std::string m)
     {
         if (extract)
+        {
             extract(cb.pending_gen(), std::move(b), std::move(m));
+        }
     };
 
     // Appends rather than replaces: dropping N files calls this once per
@@ -54,8 +61,7 @@ FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb,
     }
     else
     {
-        cb.add_pending_file(std::move(bytes), std::move(mime),
-                            std::move(filename));
+        cb.add_pending_file(std::move(bytes), std::move(mime), std::move(filename));
     }
     return FileDropOutcome::Accepted;
 }

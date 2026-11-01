@@ -29,13 +29,15 @@ tesseract::InviteInfo ic_invite(bool direct)
 struct IcStage : vt::Stage
 {
     std::unique_ptr<InviteCard> card = tk::create_root_widget<InviteCard>(&host);
-    void run() { mount(*card, {0, 0, 500, 500}); }
+    void run()
+    {
+        mount(*card, {0, 0, 500, 500});
+    }
 };
 
 } // namespace
 
-TEST_CASE("InviteCard starts hidden and empty; clear hides again",
-          "[tk][view][invite_card]")
+TEST_CASE("InviteCard starts hidden and empty; clear hides again", "[tk][view][invite_card]")
 {
     IcStage s;
     CHECK_FALSE(s.card->visible());
@@ -52,8 +54,7 @@ TEST_CASE("InviteCard starts hidden and empty; clear hides again",
     CHECK_FALSE(s.card->visible());
 }
 
-TEST_CASE("InviteCard group invite: name, Accept/Decline, no Block",
-          "[tk][view][invite_card]")
+TEST_CASE("InviteCard group invite: name, Accept/Decline, no Block", "[tk][view][invite_card]")
 {
     IcStage s;
     s.card->set_invite(ic_invite(false), nullptr);
@@ -62,9 +63,18 @@ TEST_CASE("InviteCard group invite: name, Accept/Decline, no Block",
     CHECK(s.card->access_name() == "Bob invited you to Cool Room");
 
     int accepted = 0, declined = 0, blocked = 0;
-    s.card->on_accept = [&] { ++accepted; };
-    s.card->on_decline = [&] { ++declined; };
-    s.card->on_block = [&] { ++blocked; };
+    s.card->on_accept = [&]
+    {
+        ++accepted;
+    };
+    s.card->on_decline = [&]
+    {
+        ++declined;
+    };
+    s.card->on_block = [&]
+    {
+        ++blocked;
+    };
 
     REQUIRE(vt::press(*s.card, "Accept"));
     CHECK(accepted == 1);
@@ -83,15 +93,17 @@ TEST_CASE("InviteCard group invite: name, Accept/Decline, no Block",
     CHECK(accepted == 2);
 }
 
-TEST_CASE("InviteCard direct-message invite shows Block and a DM name",
-          "[tk][view][invite_card]")
+TEST_CASE("InviteCard direct-message invite shows Block and a DM name", "[tk][view][invite_card]")
 {
     IcStage s;
     s.card->set_invite(ic_invite(true), nullptr);
     s.run();
     CHECK(s.card->access_name() == "@bob:x invited you to a direct message");
     int blocked = 0;
-    s.card->on_block = [&] { ++blocked; };
+    s.card->on_block = [&]
+    {
+        ++blocked;
+    };
     REQUIRE(vt::press(*s.card, "Block"));
     CHECK(blocked == 1);
 }
@@ -103,8 +115,12 @@ TEST_CASE("InviteCard fetches avatars via the provider and shows a reason",
     std::vector<std::string> asked;
     auto info = ic_invite(false);
     info.reason = "come join";
-    s.card->set_invite(info, [&](const std::string& mxc) -> const tk::Image*
-                       { asked.push_back(mxc); return nullptr; });
+    s.card->set_invite(info,
+                       [&](const std::string& mxc) -> const tk::Image*
+                       {
+                           asked.push_back(mxc);
+                           return nullptr;
+                       });
     s.run();
     CHECK_FALSE(asked.empty());
 

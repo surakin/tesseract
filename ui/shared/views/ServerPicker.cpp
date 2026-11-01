@@ -15,7 +15,10 @@ std::string server_lower(std::string_view s)
 {
     std::string out(s);
     std::transform(out.begin(), out.end(), out.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                   [](unsigned char c)
+                   {
+                       return static_cast<char>(std::tolower(c));
+                   });
     return out;
 }
 } // namespace
@@ -23,7 +26,9 @@ std::string server_lower(std::string_view s)
 ServerPicker::ServerPicker()
 {
     if (!host())
+    {
         return;
+    }
     init_(kFieldH, kRowH, kWidth, kMaxRows, tk::tr("Homeserver"));
 }
 
@@ -41,13 +46,19 @@ std::size_t ServerPicker::entry_count_() const
 int ServerPicker::match_rank_(std::size_t index, std::string_view query) const
 {
     if (query.empty())
+    {
         return 2;
+    }
     const std::string s = server_lower(servers_[index]);
     const std::string q = server_lower(query);
     if (s == q)
+    {
         return 0;
+    }
     if (s.compare(0, q.size(), q) == 0)
+    {
         return 1;
+    }
     return s.find(q) != std::string::npos ? 2 : -1;
 }
 

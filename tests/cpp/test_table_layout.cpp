@@ -35,17 +35,21 @@ TableCell cell(const std::string& text)
     sp.text = text;
     TableCell c;
     if (!text.empty())
+    {
         c.spans.push_back(sp);
+    }
     return c;
 }
 
-BodyTable make_table(std::vector<std::vector<std::string>> rows,
-                     std::vector<TableAlign> align = {}, int header_rows = 0)
+BodyTable make_table(std::vector<std::vector<std::string>> rows, std::vector<TableAlign> align = {},
+                     int header_rows = 0)
 {
     BodyTable t;
     std::size_t ncols = 0;
     for (auto& r : rows)
+    {
         ncols = std::max(ncols, r.size());
+    }
     t.col_align = align;
     t.col_align.resize(ncols, TableAlign::Default);
     t.header_rows = header_rows;
@@ -53,7 +57,9 @@ BodyTable make_table(std::vector<std::vector<std::string>> rows,
     {
         std::vector<TableCell> row;
         for (std::size_t c = 0; c < ncols; ++c)
+        {
             row.push_back(cell(c < r.size() ? r[c] : std::string{}));
+        }
         t.rows.push_back(std::move(row));
     }
     return t;
@@ -64,13 +70,14 @@ float total_border_span(const TableGrid& g)
     // Sum of column widths + the (ncols + 1) one-pixel borders.
     float w = tesseract::views::kTableBorder;
     for (float cw : g.col_w)
+    {
         w += cw + tesseract::views::kTableBorder;
+    }
     return w;
 }
 } // namespace
 
-TEST_CASE("table_layout: a small table uses natural column widths",
-          "[table_layout]")
+TEST_CASE("table_layout: a small table uses natural column widths", "[table_layout]")
 {
     auto s = surface();
     auto t = make_table({{"a", "bb"}, {"cccc", "d"}});
@@ -89,36 +96,32 @@ TEST_CASE("table_layout: a small table uses natural column widths",
 TEST_CASE("table_layout: wider content produces a wider column", "[table_layout]")
 {
     auto s = surface();
-    auto narrow = compute_table_layout(make_table({{"x"}}), 900.0f, s->factory(),
-                                       base_style());
-    auto wide = compute_table_layout(
-        make_table({{"a much longer piece of cell text"}}), 900.0f,
-        s->factory(), base_style());
+    auto narrow = compute_table_layout(make_table({{"x"}}), 900.0f, s->factory(), base_style());
+    auto wide = compute_table_layout(make_table({{"a much longer piece of cell text"}}), 900.0f,
+                                     s->factory(), base_style());
     CHECK(wide.col_w[0] > narrow.col_w[0]);
 }
 
 TEST_CASE("table_layout: an over-wide table is shrunk to fit", "[table_layout]")
 {
     auto s = surface();
-    auto t = make_table({{"the quick brown fox jumps over the lazy dog",
-                          "pack my box with five dozen liquor jugs",
-                          "how vexingly quick daft zebras jump"}});
+    auto t = make_table(
+        {{"the quick brown fox jumps over the lazy dog", "pack my box with five dozen liquor jugs",
+          "how vexingly quick daft zebras jump"}});
     // Natural width is far more than 120px.
     TableGrid g = compute_table_layout(t, 120.0f, s->factory(), base_style());
     CHECK(g.size.w <= 120.0f + 1.0f);
     // Cells wrapped → the single row is taller than one text line.
-    auto one_line = compute_table_layout(make_table({{"x", "y", "z"}}), 900.0f,
-                                         s->factory(), base_style());
+    auto one_line =
+        compute_table_layout(make_table({{"x", "y", "z"}}), 900.0f, s->factory(), base_style());
     CHECK(g.row_h[0] > one_line.row_h[0]);
 }
 
-TEST_CASE("table_layout: a long unbreakable token stays within the column",
-          "[table_layout]")
+TEST_CASE("table_layout: a long unbreakable token stays within the column", "[table_layout]")
 {
     auto s = surface();
-    auto t = make_table(
-        {{"https://example.com/a/very/long/path/that/cannot/be/broken/nicely",
-          "b"}});
+    auto t =
+        make_table({{"https://example.com/a/very/long/path/that/cannot/be/broken/nicely", "b"}});
     TableGrid g = compute_table_layout(t, 100.0f, s->factory(), base_style());
     CHECK(g.size.w <= 100.0f + 1.0f);
 }
@@ -138,8 +141,8 @@ TEST_CASE("table_layout: ragged rows still produce a full grid", "[table_layout]
 TEST_CASE("table_layout: a single-column table lays out", "[table_layout]")
 {
     auto s = surface();
-    TableGrid g = compute_table_layout(make_table({{"only"}, {"one"}}), 900.0f,
-                                       s->factory(), base_style());
+    TableGrid g =
+        compute_table_layout(make_table({{"only"}, {"one"}}), 900.0f, s->factory(), base_style());
     REQUIRE(g.col_w.size() == 1);
     REQUIRE(g.row_y.size() == 2);
     CHECK(g.row_y[1] > g.row_y[0]);
@@ -183,17 +186,14 @@ TEST_CASE("table_layout: an empty table yields an empty grid", "[table_layout]")
     CHECK(g.size.h == 0.0f);
 }
 
-TEST_CASE("table_to_gfm: emits a header, delimiter and body rows",
-          "[table_layout]")
+TEST_CASE("table_to_gfm: emits a header, delimiter and body rows", "[table_layout]")
 {
-    auto t = make_table({{"Name", "Age"}, {"Bob", "42"}},
-                        {TableAlign::Default, TableAlign::Right},
+    auto t = make_table({{"Name", "Age"}, {"Bob", "42"}}, {TableAlign::Default, TableAlign::Right},
                         /*header_rows=*/1);
     std::string md = table_to_gfm(t);
-    CHECK(md ==
-          "| Name | Age |\n"
-          "| --- | ---: |\n"
-          "| Bob | 42 |\n");
+    CHECK(md == "| Name | Age |\n"
+                "| --- | ---: |\n"
+                "| Bob | 42 |\n");
 }
 
 TEST_CASE("table_to_gfm: escapes pipes in cell text", "[table_layout]")

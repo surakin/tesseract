@@ -9,12 +9,18 @@ namespace tesseract
 // Shared across all four platform tray implementations (Win32, Qt6, GTK4, macOS).
 // Colors mirror the light palette in ui/shared/tk/theme.cpp.
 inline constexpr unsigned int kBadgeColorMention = 0xD93636u; // destructive/red
-inline constexpr unsigned int kBadgeColorUnread  = 0x0084FFu; // accent/blue
+inline constexpr unsigned int kBadgeColorUnread = 0x0084FFu;  // accent/blue
 
 // Dot diameter in pixels: ~38% of the shorter icon edge, minimum 6px.
-inline int badge_dot_px(int side) { return std::max(6, side * 38 / 100); }
+inline int badge_dot_px(int side)
+{
+    return std::max(6, side * 38 / 100);
+}
 // Inset from the bottom-right edge so the outline isn't clipped: 1/32 of side, min 1px.
-inline int badge_inset_px(int side) { return std::max(1, side / 32); }
+inline int badge_inset_px(int side)
+{
+    return std::max(1, side / 32);
+}
 
 class ITrayIcon
 {
@@ -37,7 +43,9 @@ public:
     // preferring the highlight color when both are true. With both false the
     // shell must restore the plain base icon. Default no-op so test fakes and
     // shells without an implementation yet keep working.
-    virtual void set_unread(bool /*has_unread*/, bool /*has_highlight*/) {}
+    virtual void set_unread(bool /*has_unread*/, bool /*has_highlight*/)
+    {
+    }
 };
 
 } // namespace tesseract

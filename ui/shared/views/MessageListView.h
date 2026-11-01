@@ -103,14 +103,14 @@ struct MessageRowData
         DaySeparator,
         ReadMarker,
         TimelineStart,
-        PinnedEvent,        // m.room.pinned_events state-event row
-        CallNotification,  // org.matrix.msc4075.rtc.notification
+        PinnedEvent,      // m.room.pinned_events state-event row
+        CallNotification, // org.matrix.msc4075.rtc.notification
         Location,
-        Membership,         // m.room.member state-event row
-        RoomName,           // m.room.name state-event row
-        RoomTombstone,      // m.room.tombstone state-event row ("X upgraded this room")
-        Poll,               // m.poll.start (MSC3381)
-        Gallery,            // m.gallery, MSC4274 inline media gallery
+        Membership,    // m.room.member state-event row
+        RoomName,      // m.room.name state-event row
+        RoomTombstone, // m.room.tombstone state-event row ("X upgraded this room")
+        Poll,          // m.poll.start (MSC3381)
+        Gallery,       // m.gallery, MSC4274 inline media gallery
     };
 
     /// One item inside a Kind::Gallery row. Field vocabulary deliberately
@@ -135,10 +135,10 @@ struct MessageRowData
         std::string mime_type;
         std::string filename;
         std::uint64_t file_size = 0;
-        std::uint64_t duration_ms = 0; // video/audio only
+        std::uint64_t duration_ms = 0;       // video/audio only
         std::vector<std::uint16_t> waveform; // audio only
-        std::string blurhash; // image/video only
-        bool animated = false; // image only
+        std::string blurhash;                // image/video only
+        bool animated = false;               // image only
     };
 
     Kind kind = Kind::Text;
@@ -224,7 +224,10 @@ struct MessageRowData
     std::string in_reply_to_formatted_body;
     // Non-null when the replied-to message is an m.image event in the local cache.
     tesseract::MediaSourceRef in_reply_to_image_source;
-    bool has_reply() const { return !in_reply_to_id.empty(); }
+    bool has_reply() const
+    {
+        return !in_reply_to_id.empty();
+    }
     bool has_reply_image() const
     {
         return has_reply() && bool(in_reply_to_image_source);
@@ -242,14 +245,12 @@ struct MessageRowData
     // empty (unknown).
     const std::string& forwarded_author() const
     {
-        return forwarded_sender_name.empty() ? forwarded_sender
-                                             : forwarded_sender_name;
+        return forwarded_sender_name.empty() ? forwarded_sender : forwarded_sender_name;
     }
     // True when the attribution can jump to the original event.
     bool has_forward_link() const
     {
-        return forwarded && !forwarded_room_id.empty() &&
-               !forwarded_event_id.empty();
+        return forwarded && !forwarded_room_id.empty() && !forwarded_event_id.empty();
     }
 
     // Set when the message has been superseded by an m.replace edit.
@@ -323,7 +324,7 @@ struct MessageRowData
     std::string membership_target_user_id;
     std::string membership_target_name;
     std::string membership_target_avatar_url; // mxc
-    std::string membership_reason; // free-text kick/ban/… reason; may be empty
+    std::string membership_reason;            // free-text kick/ban/… reason; may be empty
 
     // Room upgrade (Kind::RoomTombstone only): `body` carries the optional
     // reason; this is the replacement room's id.
@@ -366,8 +367,7 @@ struct MessageRowData
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
 // consumes. `my_user_id` is used to set `is_own` on the returned row.
-MessageRowData make_row_data(const tesseract::Event& ev,
-                             const std::string& my_user_id);
+MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_user_id);
 
 // Live location share lifecycle (MSC3489). NotLive = static m.location.
 // Waiting = active share with no fix yet (no map). Live = active with a fix and
@@ -397,15 +397,12 @@ MapViewport next_map_viewport(const MessageRowData& old_row, const MessageRowDat
 // arbitrarily distant rows still group as long as nothing else is
 // interleaved. Collapsed, a group shows one summary line per distinct
 // action (see membership_group_actions).
-bool is_membership_group_start(const std::vector<MessageRowData>& msgs,
-                               std::size_t index);
+bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::size_t index);
 // Exclusive end index of the group starting at `start` (which must satisfy
 // is_membership_group_start(msgs, start)).
-std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
-                                 std::size_t start);
+std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::size_t start);
 // Walk backward from any Membership row to the start of its group.
-std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
-                                      std::size_t index);
+std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs, std::size_t index);
 // One collapsed-summary line: an action and the rows (indices into msgs)
 // that carry it.
 struct MembershipActionRun
@@ -414,14 +411,12 @@ struct MembershipActionRun
     std::vector<std::size_t> rows;
 };
 // The distinct actions of rows [start, end), in first-appearance order.
-std::vector<MembershipActionRun>
-membership_group_actions(const std::vector<MessageRowData>& msgs,
-                         std::size_t start, std::size_t end);
+std::vector<MembershipActionRun> membership_group_actions(const std::vector<MessageRowData>& msgs,
+                                                          std::size_t start, std::size_t end);
 // Whether the group starting at `start` can be expanded: only when some
 // action has more than one row. If every action has a single row, the
 // collapsed summary already shows each event on its own line.
-bool membership_group_expandable(const std::vector<MessageRowData>& msgs,
-                                 std::size_t start);
+bool membership_group_expandable(const std::vector<MessageRowData>& msgs, std::size_t start);
 // Appends the state event's free-text reason to a removal phrase (kick /
 // ban / kick-and-ban), e.g. "Bob was removed by Alice. Reason: spam". Other
 // actions, and rows without a reason, pass through unchanged.
@@ -441,25 +436,21 @@ std::string message_access_body(const MessageRowData& m);
 class MessageListView : public tk::ListView
 {
 public:
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc_or_url)>;
     // Like ImageProvider, but for the two providers backing actual inline
     // media (image_provider_ / sticker_image_provider_) rather than avatars:
     // the trailing `hovered` flag lets the host gate low-power-mode
     // animation playback (see hovered_media_event_id_'s doc comment) without
     // affecting avatar_provider_, which keeps the plain ImageProvider type.
     using MediaImageProvider =
-        std::function<const tk::Image*(const std::string& mxc_or_url,
-                                       bool hovered)>;
-    using PreviewProvider =
-        std::function<const UrlPreviewData*(const std::string& url)>;
+        std::function<const tk::Image*(const std::string& mxc_or_url, bool hovered)>;
+    using PreviewProvider = std::function<const UrlPreviewData*(const std::string& url)>;
     // Resolves the bare shortcode (no surrounding colons) for an mxc://
     // URI from the user's MSC2545 image packs. Returns an empty string
     // when the mxc isn't in any of the user's emoticon packs. Used to
     // render `:shortcode:` instead of the raw mxc URI in the MSC4027
     // image-reaction chip tooltip.
-    using ShortcodeProvider =
-        std::function<std::string(const std::string& mxc)>;
+    using ShortcodeProvider = std::function<std::string(const std::string& mxc)>;
 
     // Diameter of a read-receipt avatar disc in the inline cluster. Shared
     // with ReceiptGridPopup so the overflow popup's cells render receipts
@@ -476,8 +467,7 @@ public:
     // loaded and final heights measured, or a short timeout elapses — so
     // a freshly-entered room appears once, already correct, instead of
     // flashing and reflowing as async media arrives.
-    void set_messages(std::vector<MessageRowData> msgs,
-                      bool room_switch = false);
+    void set_messages(std::vector<MessageRowData> msgs, bool room_switch = false);
 
     // Tell a live room-switch gate that the timeline opened in
     // jump-to-event (focused) mode so the gate evaluates around the
@@ -550,8 +540,7 @@ public:
     // (rendered as a click-to-load placeholder instead of the image). Set by
     // the shell from the media-preview config + per-message reveal state.
     // When unset, no media is ever hidden.
-    using MediaHiddenPredicate =
-        std::function<bool(const std::string& event_id, bool is_own)>;
+    using MediaHiddenPredicate = std::function<bool(const std::string& event_id, bool is_own)>;
     void set_media_hidden_predicate(MediaHiddenPredicate p)
     {
         media_hidden_ = std::move(p);
@@ -605,8 +594,7 @@ public:
     // Update the waveform of the first voice row matching `event_id` and
     // repaint. Called after local waveform generation completes for a voice
     // message that arrived without MSC1767 waveform data.
-    void update_voice_waveform(const std::string&              event_id,
-                               std::vector<std::uint16_t>      waveform);
+    void update_voice_waveform(const std::string& event_id, std::vector<std::uint16_t> waveform);
 
     // Called by the host shell once ShellBase::request_member_pronoun_ui_
     // (fired via on_member_pronoun_needed) resolves for `user_id`. Updates
@@ -633,15 +621,14 @@ public:
     // of them is missing — Win32 currently lacks an audio backend, so
     // `make_audio_player()` returns nullptr there and the player handle
     // is never set.
-    using VoiceBytesProvider = std::function<std::vector<std::uint8_t>(
-        const std::string& source_json)>;
+    using VoiceBytesProvider =
+        std::function<std::vector<std::uint8_t>(const std::string& source_json)>;
     void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
     void set_voice_bytes_provider(VoiceBytesProvider provider);
     void set_repaint_requester(std::function<void()> request_repaint);
     // Forwards to media_.set_playback_observer — see
     // TimelineMediaController::PlaybackSnapshot for the shape.
-    void set_playback_observer(
-        TimelineMediaController::PlaybackObserver observer)
+    void set_playback_observer(TimelineMediaController::PlaybackObserver observer)
     {
         media_.set_playback_observer(std::move(observer));
     }
@@ -662,11 +649,9 @@ public:
     // Inline video playback for fi.mau.autoplay / fi.mau.gif rows.
     // Both must be set for inline playback to activate; if either is missing
     // the view falls back to the static thumbnail (clicks still open the overlay).
-    using VideoPlayerFactory =
-        std::function<std::unique_ptr<tk::VideoPlayer>()>;
+    using VideoPlayerFactory = std::function<std::unique_ptr<tk::VideoPlayer>()>;
     using VideoFetchProvider = std::function<void(
-        const std::string& source_json,
-        std::function<void(std::vector<std::uint8_t>)> on_ready)>;
+        const std::string& source_json, std::function<void(std::vector<std::uint8_t>)> on_ready)>;
     void set_video_player_factory(VideoPlayerFactory f);
     void set_video_fetch_provider(VideoFetchProvider f);
 
@@ -681,9 +666,11 @@ public:
     // new generation before the forced full repaint (whose paint touch()es
     // every visible video row); sweep then retires inline players no painted
     // row claimed and destroys long-idle retired ones. See TimelineVideoPlaylist.
-    void advance_video_generation() { video_playlist_.advance_generation(); }
-    void sweep_video_players(unsigned keep_generations,
-                             std::chrono::milliseconds retired_ttl)
+    void advance_video_generation()
+    {
+        video_playlist_.advance_generation();
+    }
+    void sweep_video_players(unsigned keep_generations, std::chrono::milliseconds retired_ttl)
     {
         video_playlist_.retire_unseen(keep_generations);
         video_playlist_.release_idle_retired(retired_ttl);
@@ -705,8 +692,8 @@ public:
     std::function<void(const std::string& event_id)> on_message_clicked;
 
     // Fired when the user clicks a message sender's avatar or display name.
-    std::function<void(std::string user_id, std::string display_name,
-                       std::string avatar_url)> on_sender_clicked;
+    std::function<void(std::string user_id, std::string display_name, std::string avatar_url)>
+        on_sender_clicked;
 
     // Reaction-chip clicks. `key` is the emoji (or `:shortcode:`) the
     // user tapped. `source_mxc` is the mxc:// URI for MSC4027 custom-image
@@ -715,8 +702,7 @@ public:
     // semantics handle add/remove); for non-empty `source_mxc`, route to
     // `Client::send_reaction_custom(room, ev, source_mxc, key)` so the
     // outgoing event carries the MSC4027 mxc:// key and shortcode.
-    std::function<void(const std::string& event_id,
-                       const std::string& key,
+    std::function<void(const std::string& event_id, const std::string& key,
                        const std::string& source_mxc)>
         on_reaction_toggled;
 
@@ -731,8 +717,7 @@ public:
     // Add-reaction button (the trailing "+" pseudo-chip that appears on
     // row hover). The host should open the emoji picker anchored near
     // `anchor`, then call `send_reaction` with the chosen glyph.
-    std::function<void(const std::string& event_id, tk::Rect anchor)>
-        on_add_reaction_requested;
+    std::function<void(const std::string& event_id, tk::Rect anchor)> on_add_reaction_requested;
 
     // Read-receipt overflow "+N" pill. `anchor` is the pill's world rect;
     // `hidden` is the row's receipts beyond the visible disc cluster
@@ -745,8 +730,7 @@ public:
     // Reply affordance — fires when the user clicks the "↩" reply button
     // that appears on hover. The host should call
     // `compose_bar_->set_reply_to(event_id, sender_name, body_preview)`.
-    std::function<void(const std::string& event_id,
-                       const std::string& sender_name,
+    std::function<void(const std::string& event_id, const std::string& sender_name,
                        const std::string& body_preview)>
         on_reply_requested;
 
@@ -762,8 +746,7 @@ public:
     // a small avatar inside the mention pill. Returns nullptr when unknown
     // (the pill then renders without an avatar). May trigger an async fetch;
     // the view repaints when bytes arrive.
-    using MentionAvatarProvider =
-        std::function<const tk::Image*(const std::string& user_id)>;
+    using MentionAvatarProvider = std::function<const tk::Image*(const std::string& user_id)>;
     void set_mention_avatar_provider(MentionAvatarProvider p)
     {
         mention_avatar_provider_ = std::move(p);
@@ -822,10 +805,18 @@ public:
     // selectable body text (never a real URL). Shells map the hover string
     // to a cursor via hover_cursor_for() rather than comparing it directly.
     static constexpr std::string_view kTextHoverToken = "text://";
-    enum class HoverCursor { Default, Pointer, Text };
+    enum class HoverCursor
+    {
+        Default,
+        Pointer,
+        Text
+    };
     static HoverCursor hover_cursor_for(const std::string& url)
     {
-        if (url.empty()) return HoverCursor::Default;
+        if (url.empty())
+        {
+            return HoverCursor::Default;
+        }
         return url == kTextHoverToken ? HoverCursor::Text : HoverCursor::Pointer;
     }
 
@@ -833,8 +824,7 @@ public:
     // the original message. If the event is currently loaded the view scrolls
     // to it internally; this callback fires only when the original is not found
     // in the current message list (host should back-paginate + scroll).
-    std::function<void(const std::string& original_event_id)>
-        on_scroll_to_original;
+    std::function<void(const std::string& original_event_id)> on_scroll_to_original;
 
     // Fires when the user clicks the "Forwarded from …" attribution of a
     // forwarded message (MSC4553) that carries its origin room and event id.
@@ -848,8 +838,8 @@ public:
     // `Client::send_caption_edit` instead of `Client::send_edit`. The host
     // should call `compose_bar_->set_editing(event_id, is_caption)`, then
     // pre-fill the text area.
-    std::function<void(const std::string& event_id,
-                       const std::string& current_body, bool is_caption)>
+    std::function<void(const std::string& event_id, const std::string& current_body,
+                       bool is_caption)>
         on_edit_requested;
 
     // A popup of message actions is wanted: from the pill's "⋯" cell (only
@@ -875,23 +865,20 @@ public:
         on_save_sticker_requested;
     // True when the sticker is already in the Saved Stickers pack, so the
     // action is not offered. Unset means "not saved".
-    std::function<bool(const std::string& mxc_url,
-                       const std::string& info_json)>
-        is_sticker_saved;
+    std::function<bool(const std::string& mxc_url, const std::string& info_json)> is_sticker_saved;
 
     // Overflow actions (forward, delete, pin/unpin, copy event source) are
     // carried out by the host; the pill actions are handled by the callbacks
     // above.
-    std::function<void(tesseract::views::MessageActionId,
-                       const std::string& event_id)>
+    std::function<void(tesseract::views::MessageActionId, const std::string& event_id)>
         on_overflow_action_requested;
 
     // Run one action from the shared list for `event_id`; the single entry
     // point behind the pill, the popup menu and the accessibility tree.
     // `anchor` positions the reaction picker. False when the row is gone or
     // the matching callback is unset.
-    bool invoke_message_action(tesseract::views::MessageActionId id,
-                               const std::string& event_id, tk::Rect anchor);
+    bool invoke_message_action(tesseract::views::MessageActionId id, const std::string& event_id,
+                               tk::Rect anchor);
 
     // Pin / Unpin affordance — kept for backward-compat wiring; now fired
     // indirectly via the overflow popup rather than a direct pill button.
@@ -942,7 +929,7 @@ public:
         std::string event_id;
         tesseract::MediaSourceRef source;    // full-res
         tesseract::MediaSourceRef thumbnail; // nullptr when absent
-        std::string body;  // MSC2530 caption, may be empty
+        std::string body;                    // MSC2530 caption, may be empty
         int natural_w = 0;
         int natural_h = 0;
         tk::Rect world_rect;
@@ -986,8 +973,7 @@ public:
     {
         std::string event_id;
         std::size_t item_index = 0;
-        MessageRowData::GalleryItemRow::Kind kind =
-            MessageRowData::GalleryItemRow::Kind::Image;
+        MessageRowData::GalleryItemRow::Kind kind = MessageRowData::GalleryItemRow::Kind::Image;
         tesseract::MediaSourceRef source;
         tesseract::MediaSourceRef thumbnail;
         std::uint64_t file_size = 0;
@@ -1017,9 +1003,9 @@ public:
     {
         std::string event_id;
         tesseract::MediaSourceRef source; // file source
-        std::string file_name; // suggested save filename
-        uint64_t    file_size = 0;
-        tk::Rect    world_rect;
+        std::string file_name;            // suggested save filename
+        uint64_t file_size = 0;
+        tk::Rect world_rect;
         std::string mime_type; // sender-declared mime; empty when unknown
     };
     std::optional<FileHit> file_hit_at(tk::Point world) const;
@@ -1081,8 +1067,7 @@ public:
     // re-decoding the video, so redisplay is usually near-instant. Never
     // fired for a row with a real server thumbnail — the generic
     // image_provider_ handles that case.
-    std::function<void(const std::string& event_id,
-                       const std::string& source_token)>
+    std::function<void(const std::string& event_id, const std::string& source_token)>
         on_video_thumbnail_needed;
 
     // Clipboard write. Wire to Host::set_clipboard_text via RoomView.
@@ -1110,7 +1095,10 @@ public:
     // A right-click with no selection on an inline link remembers its URL so
     // the shell's Copy menu can offer "Copy link". Cleared by the next
     // right-click, a left press, or once copied.
-    bool has_context_link() const { return !context_link_url_.empty(); }
+    bool has_context_link() const
+    {
+        return !context_link_url_.empty();
+    }
     bool copy_context_link();
 
     // Drop the current selection, if any, without firing
@@ -1188,19 +1176,18 @@ public:
     struct RowChipGeom
     {
         std::size_t row_index = static_cast<std::size_t>(-1);
-        std::vector<tk::Rect> chips; // one per Reaction in row
-        std::vector<tk::Rect>
-            receipt_discs;     // one per visible read-receipt disc
-        tk::Rect add_button{}; // 0-area when not painted
+        std::vector<tk::Rect> chips;         // one per Reaction in row
+        std::vector<tk::Rect> receipt_discs; // one per visible read-receipt disc
+        tk::Rect add_button{};               // 0-area when not painted
         bool add_visible = false;
-        tk::Rect react_button{};  // 0-area when not painted
-        tk::Rect reply_button{};  // 0-area when not painted
-        tk::Rect thread_button{}; // 0-area when not painted
-        tk::Rect edit_button{};   // 0-area when not painted
-        tk::Rect more_button{};   // 0-area when not painted
-        tk::Rect retry_button{};  // 0-area when not painted
-        tk::Rect abort_button{};  // 0-area when not painted
-        tk::Rect failed_marker{}; // 0-area when not painted — the red ⚠ of a failed send
+        tk::Rect react_button{};     // 0-area when not painted
+        tk::Rect reply_button{};     // 0-area when not painted
+        tk::Rect thread_button{};    // 0-area when not painted
+        tk::Rect edit_button{};      // 0-area when not painted
+        tk::Rect more_button{};      // 0-area when not painted
+        tk::Rect retry_button{};     // 0-area when not painted
+        tk::Rect abort_button{};     // 0-area when not painted
+        tk::Rect failed_marker{};    // 0-area when not painted — the red ⚠ of a failed send
         tk::Rect receipt_overflow{}; // 0-area when not painted — the "+N" pill
         tk::Rect status_emoji{};     // 0-area when not painted — sender status emoji
         // Full bounds of the hover action pill (react/reply/…), world coords,
@@ -1329,9 +1316,15 @@ public:
     // a surface repaint for the change to take effect immediately.
     void set_historical_mode(bool historical);
     // Test seam: whether historical mode is currently on.
-    bool historical_mode_for_test() const { return historical_mode_; }
+    bool historical_mode_for_test() const
+    {
+        return historical_mode_;
+    }
     // Test seam: the typing indicator text last set.
-    const std::string& typing_text_for_test() const { return typing_text_; }
+    const std::string& typing_text_for_test() const
+    {
+        return typing_text_;
+    }
 
     // Re-read display preferences that affect row layout (currently
     // Settings::message_layout) and force a full re-measure. The row
@@ -1344,10 +1337,16 @@ public:
     // Off by default: only the room timeline opts in; thread panels and the
     // Settings preview stay full width. The IRC layout never uses the column.
     void set_content_column_enabled(bool enabled);
-    bool content_column_enabled() const { return content_column_enabled_; }
+    bool content_column_enabled() const
+    {
+        return content_column_enabled_;
+    }
 
     // A font change reshapes every row: same flush as a layout change.
-    void on_fonts_changed() override { on_display_prefs_changed(); }
+    void on_fonts_changed() override
+    {
+        on_display_prefs_changed();
+    }
 
     /// Bulk-insert events at the front of the timeline (oldest-first in `rows`).
     void prepend_messages(std::vector<MessageRowData> rows);
@@ -1358,7 +1357,10 @@ public:
     // Show/hide the back-pagination spinner. Pass true when a back-paginate
     // request is in flight, false when it completes.
     void set_paginating(bool paginating);
-    bool paginating() const { return paginating_; }
+    bool paginating() const
+    {
+        return paginating_;
+    }
 
     // Enter the room-switch "loading" state: clear the previous room's rows at
     // once (so they never show under the new room's header) and hold a clean
@@ -1374,7 +1376,10 @@ public:
     void end_switch_loading();
     // True while the room-switch loading state is active (rows held empty,
     // awaiting the new room's snapshot).
-    bool is_switch_loading() const { return switch_loading_; }
+    bool is_switch_loading() const
+    {
+        return switch_loading_;
+    }
     // Test seam: whether the delayed spinner is currently due to paint.
     bool switch_spinner_visible_for_test() const
     {
@@ -1383,8 +1388,14 @@ public:
 
     void begin_nav_loading();
     void end_nav_loading();
-    bool is_nav_loading() const { return nav_loading_; }
-    bool nav_spinner_visible_for_test() const { return nav_loading_ && nav_spinner_due_; }
+    bool is_nav_loading() const
+    {
+        return nav_loading_;
+    }
+    bool nav_spinner_visible_for_test() const
+    {
+        return nav_loading_ && nav_spinner_due_;
+    }
 
     // Fired when the user clicks the scroll-to-bottom pill while in
     // historical mode.
@@ -1393,22 +1404,30 @@ public:
     // Fired when the user clicks the "N replies" preview chip drawn under
     // a thread-root row. `thread_root_id` is the root event id (i.e. the
     // event_id of the row the chip belongs to).
-    std::function<void(const std::string& thread_root_id)>
-        on_thread_preview_clicked;
+    std::function<void(const std::string& thread_root_id)> on_thread_preview_clicked;
 
     // Paint a semi-transparent dark overlay over the list bounds. The
     // highlight outline (see below) is painted after this overlay so it
     // remains visible above the dim.
     void set_dimmed(bool dimmed);
-    bool dimmed() const { return dimmed_; }
+    bool dimmed() const
+    {
+        return dimmed_;
+    }
 
     // True while a side panel (thread list/view, room info) is open next to
     // the timeline. Layout-neutral view state; only the Bubbles renderer
     // reacts to it (own rows stop right-aligning).
     void set_side_panel_open(bool open);
-    bool side_panel_open() const { return side_panel_open_; }
+    bool side_panel_open() const
+    {
+        return side_panel_open_;
+    }
 
-    void set_thread_button_visible(bool v) { thread_button_visible_ = v; }
+    void set_thread_button_visible(bool v)
+    {
+        thread_button_visible_ = v;
+    }
 
     // When true, on_pointer_leave() is suppressed so the hover-action pill
     // stays visible while an associated popup is open over this widget.
@@ -1416,7 +1435,9 @@ public:
     {
         hover_locked_ = v;
         if (!v)
+        {
             pill_menu_event_id_.clear();
+        }
     }
     // Fired when the pointer moves onto a different message than the one whose
     // pill "more" menu is open; the host closes that menu.
@@ -1443,7 +1464,10 @@ public:
     /// when the search bar closes or the query changes.
     void set_search_matches(std::unordered_set<std::string> ids);
     void clear_search_matches();
-    bool has_search_matches() const { return !search_match_ids_.empty(); }
+    bool has_search_matches() const
+    {
+        return !search_match_ids_.empty();
+    }
     const std::unordered_set<std::string>& search_match_ids() const
     {
         return search_match_ids_;
@@ -1463,7 +1487,10 @@ public:
     /// When false, the button is hidden entirely (not greyed out). Driven
     /// by ShellBase from Client::can_pin_in_room. Cleared on room switch.
     void set_can_pin(bool can_pin);
-    bool can_pin() const { return can_pin_; }
+    bool can_pin() const
+    {
+        return can_pin_;
+    }
 
     /// Toggle whether the Delete-message overflow item is offered for
     /// messages sent by users OTHER than the current one (own messages
@@ -1472,7 +1499,10 @@ public:
     /// room switch (ShellBase pushes the correct value synchronously first —
     /// same reasoning as can_pin_, see set_messages(room_switch=true)).
     void set_can_redact_others(bool can_redact_others);
-    bool can_redact_others() const { return can_redact_others_; }
+    bool can_redact_others() const
+    {
+        return can_redact_others_;
+    }
 
     // Per-chip geometry recorded by the most recent paint pass. Each entry
     // is the world-coords hit rect of a thread-preview chip and the
@@ -1488,8 +1518,7 @@ public:
     }
     // Per-card geometry from the most recent paint pass: the world-coords hit
     // rect of each URL-preview card and the URL its click opens. Public for tests.
-    const std::vector<UrlPreviewCardDisplay::PreviewCardHit>&
-    preview_card_hits_for_test() const
+    const std::vector<UrlPreviewCardDisplay::PreviewCardHit>& preview_card_hits_for_test() const
     {
         return previews_.geometry();
     }
@@ -1641,9 +1670,9 @@ private:
     // Only a genuinely slow load — uncached history, slow/offline network —
     // outlasts it and surfaces the spinner, which is exactly when it's wanted.
     static constexpr int kSwitchSpinnerDelayMs = 500;
-    bool          switch_loading_     = false;
-    bool          switch_spinner_due_ = false;
-    std::uint64_t switch_epoch_       = 0;
+    bool switch_loading_ = false;
+    bool switch_spinner_due_ = false;
+    std::uint64_t switch_epoch_ = 0;
     std::chrono::steady_clock::time_point switch_spinner_start_;
     void draw_switch_spinner_(tk::PaintCtx& ctx);
     // Historical-event nav loading. Active from the moment subscribe_room_at is
@@ -1651,15 +1680,14 @@ private:
     // Scroll/pointer input is blocked immediately; the scrim + spinner paint only
     // after kNavSpinnerDelayMs so fast resolutions show nothing transient.
     static constexpr int kNavSpinnerDelayMs = 400;
-    bool          nav_loading_     = false;
-    bool          nav_spinner_due_ = false;
-    std::uint64_t nav_epoch_       = 0;
+    bool nav_loading_ = false;
+    bool nav_spinner_due_ = false;
+    std::uint64_t nav_epoch_ = 0;
     std::chrono::steady_clock::time_point nav_spinner_start_;
     void draw_nav_spinner_(tk::PaintCtx& ctx);
     // Shared 8-dot rotating indicator (back-pagination + room-switch loading).
     void draw_spinner_dots_(tk::PaintCtx& ctx, float cx, float cy,
-                            std::chrono::steady_clock::time_point start,
-                            float radius, float dot_r);
+                            std::chrono::steady_clock::time_point start, float radius, float dot_r);
 
     // Room-switch display gate. Armed by set_messages(.., room_switch=true);
     // evaluated on the first paint (heights are guaranteed measured there);
@@ -1678,7 +1706,10 @@ private:
     // True while a room-switch gate still holds the list invisible. Pointer
     // and wheel input is swallowed in that window so the user can't click /
     // scroll rows that aren't painted yet.
-    bool gate_blocks_input_() const { return room_switch_gate_.active(); }
+    bool gate_blocks_input_() const
+    {
+        return room_switch_gate_.active();
+    }
 
     // Non-empty → render a synthetic trailing typing row (see Adapter).
     std::string typing_text_;
@@ -1722,8 +1753,7 @@ private:
     // renders). One per MessageListView (one per open room): a mention
     // repeated many times in that room's history rasterizes once. See
     // tk::render_pill_bitmap_cached, used from paint_span_images.
-    tk::PixmapCache pill_bitmap_cache_{4u * 1024u * 1024u,
-                                       std::chrono::seconds{30}};
+    tk::PixmapCache pill_bitmap_cache_{4u * 1024u * 1024u, std::chrono::seconds{30}};
     ShortcodeProvider shortcode_provider_;
     std::unique_ptr<Adapter> adapter_;
 
@@ -1760,12 +1790,11 @@ private:
     bool content_column_enabled_ = false;
     bool kbd_open_more_();
     // Availability facts for one row, then the shared action list over them.
-    std::vector<tesseract::views::MessageAction>
-    actions_for_row_(const MessageRowData& m) const;
+    std::vector<tesseract::views::MessageAction> actions_for_row_(const MessageRowData& m) const;
     // Fire on_actions_menu_requested for row `idx`. `full` lists every
     // action (right-click) rather than just the overflow ones (⋯ cell).
-    bool open_actions_menu_(int idx, tk::Rect anchor, bool full,
-                            bool copy_selection, bool copy_link);
+    bool open_actions_menu_(int idx, tk::Rect anchor, bool full, bool copy_selection,
+                            bool copy_link);
     void kbd_toggle_membership_group_(int idx);
     std::string pending_scroll_event_id_;
     // See set_relayout_suppressed().
@@ -1805,7 +1834,16 @@ private:
     HoverTarget hover_target_ = HoverTarget::None;
     int hover_chip_idx_ = -1;
 
-    enum class ActionTooltip { None, React, Reply, Thread, Edit, More, SendFailed };
+    enum class ActionTooltip
+    {
+        None,
+        React,
+        Reply,
+        Thread,
+        Edit,
+        More,
+        SendFailed
+    };
     ActionTooltip action_tooltip_ = ActionTooltip::None;
 
     // True while an inline custom-emoji shortcode tooltip (hovering an
@@ -1849,7 +1887,7 @@ private:
     std::string press_edit_event_id_;
 
     // More (⋯) button press state.
-    bool press_more_btn_         = false;
+    bool press_more_btn_ = false;
     std::string press_more_event_id_;
 
     bool hover_locked_ = false;
@@ -1991,13 +2029,16 @@ private:
     // id must call unread_scan_dirty_().
     struct UnreadScan
     {
-        int marker_row = -1;          // ReadMarker row, or -1
-        bool content_after = false;   // a real row follows marker_row
+        int marker_row = -1;        // ReadMarker row, or -1
+        bool content_after = false; // a real row follows marker_row
         bool fully_read_unloaded = false;
     };
     mutable UnreadScan unread_scan_cache_{};
     mutable bool unread_scan_valid_ = false;
-    void unread_scan_dirty_() { unread_scan_valid_ = false; }
+    void unread_scan_dirty_()
+    {
+        unread_scan_valid_ = false;
+    }
     const UnreadScan& unread_scan_() const;
     // Index of the "New messages" divider when it is actually painted (not
     // suppressed, with real content after it), else -1.
@@ -2024,9 +2065,9 @@ private:
     // (non-interactive, so a plain struct rather than a child Widget).
     struct DateBadge
     {
-        bool        show = false;
-        std::string label;         // format_day_label() result
-        float       world_y = 0.f; // world-space top of the pill
+        bool show = false;
+        std::string label;   // format_day_label() result
+        float world_y = 0.f; // world-space top of the pill
     };
     DateBadge date_badge_() const;
 
@@ -2128,20 +2169,20 @@ private:
     struct Selection
     {
         std::string anchor_event_id;
-        int         anchor_byte = 0; // UTF-8 byte offset at pointer_down
+        int anchor_byte = 0; // UTF-8 byte offset at pointer_down
         std::string head_event_id;
-        int         head_byte   = 0; // UTF-8 byte offset during drag
+        int head_byte = 0; // UTF-8 byte offset during drag
         // Markdown-table selection. anchor_byte / head_byte are offsets into
         // the anchor / head cell layouts. When the anchor and head cells
         // differ the selection is a rectangular block of whole cells
         // (columns anchor_col..head_col × rows anchor_row..head_row); when
         // they're the same cell it's a byte range within it.
-        bool        in_table      = false;
-        int         table_section = -1;
-        int         anchor_row    = -1;
-        int         anchor_col    = -1;
-        int         head_row      = -1;
-        int         head_col      = -1;
+        bool in_table = false;
+        int table_section = -1;
+        int anchor_row = -1;
+        int anchor_col = -1;
+        int head_row = -1;
+        int head_col = -1;
     };
     std::optional<Selection> sel_;
     bool sel_is_dragging_ = false; // true once head has moved from anchor
@@ -2152,7 +2193,10 @@ private:
     // Fires on_selection_started (once) if has_selection() is newly true.
     void notify_selection_started_if_active_();
 
-    struct OrderedSel { int lo_idx = 0, lo_byte = 0, hi_idx = 0, hi_byte = 0; };
+    struct OrderedSel
+    {
+        int lo_idx = 0, lo_byte = 0, hi_idx = 0, hi_byte = 0;
+    };
     int message_index_of(const std::string& event_id) const;
     std::optional<OrderedSel> selection_ordered() const;
 
@@ -2161,9 +2205,9 @@ private:
     tk::Point last_pointer_local_{};
 
     // Multi-click tracking: double = word, triple = line.
-    int       click_count_      = 0;
-    tk::Point last_down_pt_     = {};
-    int64_t   last_down_time_ms_ = 0; // ms from steady_clock
+    int click_count_ = 0;
+    tk::Point last_down_pt_ = {};
+    int64_t last_down_time_ms_ = 0; // ms from steady_clock
 };
 
 } // namespace tesseract::views

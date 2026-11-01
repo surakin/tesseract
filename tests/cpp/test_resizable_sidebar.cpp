@@ -21,8 +21,9 @@ using namespace tesseract::views;
 namespace
 {
 constexpr float kDefault = static_cast<float>(tesseract::visual::kSidebarWidth);            // 260
-constexpr float kCollapsed = static_cast<float>(tesseract::visual::kSidebarCollapsedWidth);  // 68
-constexpr float kMinExpanded = static_cast<float>(tesseract::visual::kSidebarMinExpandedWidth); // 180
+constexpr float kCollapsed = static_cast<float>(tesseract::visual::kSidebarCollapsedWidth); // 68
+constexpr float kMinExpanded =
+    static_cast<float>(tesseract::visual::kSidebarMinExpandedWidth); // 180
 constexpr float kHuge = 100000.0f;
 } // namespace
 
@@ -132,8 +133,8 @@ TEST_CASE("longest_visible_row_width: grows with a longer room name", "[sidebar]
     view->set_rooms({sidebar_test_room("$a", "Hi")});
     const float narrow = measured_width(*view, *surface);
 
-    view->set_rooms({sidebar_test_room(
-        "$a", "A really quite extraordinarily long room display name here")});
+    view->set_rooms(
+        {sidebar_test_room("$a", "A really quite extraordinarily long room display name here")});
     const float wide = measured_width(*view, *surface);
 
     CHECK(wide > narrow);
@@ -141,8 +142,7 @@ TEST_CASE("longest_visible_row_width: grows with a longer room name", "[sidebar]
     CHECK(narrow > tesseract::visual::kRoomAvatarSize);
 }
 
-TEST_CASE("longest_visible_row_width: ignores rows in a collapsed section",
-          "[sidebar]")
+TEST_CASE("longest_visible_row_width: ignores rows in a collapsed section", "[sidebar]")
 {
     auto surface = TestSurface::create(320, 640);
     auto view = tk::create_root_widget<RoomListView>(nullptr);
@@ -163,8 +163,7 @@ TEST_CASE("set_icon_only toggles cleanly", "[sidebar]")
 {
     auto surface = TestSurface::create(320, 640);
     auto view = tk::create_root_widget<RoomListView>(nullptr);
-    view->set_rooms({sidebar_test_room("$a", "Room A"),
-                     sidebar_test_room("$b", "Room B")});
+    view->set_rooms({sidebar_test_room("$a", "Room A"), sidebar_test_room("$b", "Room B")});
     (void)measured_width(*view, *surface);
 
     view->set_icon_only(true);
@@ -194,16 +193,18 @@ struct AppStage
 };
 } // namespace
 
-TEST_CASE("sidebar separator drag widens the list and reports the new width",
-          "[sidebar]")
+TEST_CASE("sidebar separator drag widens the list and reports the new width", "[sidebar]")
 {
     AppStage st;
     st.layout();
 
     float last_w = -1.0f;
-    bool  last_collapsed = true;
+    bool last_collapsed = true;
     st.app->on_sidebar_layout_changed = [&](float w, bool c)
-    { last_w = w; last_collapsed = c; };
+    {
+        last_w = w;
+        last_collapsed = c;
+    };
 
     // Press on the separator (default sidebar width = 260), drag right to 420.
     tk::Widget* grip = st.app->dispatch_pointer_down({kDefault, 300.0f});
@@ -224,7 +225,10 @@ TEST_CASE("sidebar grip click (no drag) toggles collapsed", "[sidebar]")
     int calls = 0;
     bool last_collapsed = false;
     st.app->on_sidebar_layout_changed = [&](float, bool c)
-    { ++calls; last_collapsed = c; };
+    {
+        ++calls;
+        last_collapsed = c;
+    };
 
     // The grip sits on the separator at the top of the 64 px account strip:
     // y = 700 - 64 = 636, x = expanded sidebar width (260).
@@ -251,7 +255,10 @@ TEST_CASE("sidebar band click away from the grip does not toggle", "[sidebar]")
     st.layout();
 
     bool last_collapsed = true; // seed opposite of the expected result
-    st.app->on_sidebar_layout_changed = [&](float, bool c) { last_collapsed = c; };
+    st.app->on_sidebar_layout_changed = [&](float, bool c)
+    {
+        last_collapsed = c;
+    };
 
     // Press on the separator band well above the grip, release without moving.
     tk::Widget* w = st.app->dispatch_pointer_down({kDefault, 200.0f});

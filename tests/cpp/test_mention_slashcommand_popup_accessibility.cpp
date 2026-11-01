@@ -15,8 +15,8 @@ using namespace tk;
 // ShortcodePopup, applied to the other two ListPopupBase subclasses.
 
 TEST_CASE("MentionPopup names a regular candidate \"{display_name} "
-         "({user_id})\" and the @room candidate with its hint text",
-         "[mention_popup][accessibility]")
+          "({user_id})\" and the @room candidate with its hint text",
+          "[mention_popup][accessibility]")
 {
     MentionPopup popup;
     MentionCandidate alice;
@@ -34,8 +34,8 @@ TEST_CASE("MentionPopup names a regular candidate \"{display_name} "
 }
 
 TEST_CASE("SlashCommandPopup names a suggestion \"/name args_hint: "
-         "description\", with a bot-disambiguation suffix when not builtin",
-         "[slash_command_popup][accessibility]")
+          "description\", with a bot-disambiguation suffix when not builtin",
+          "[slash_command_popup][accessibility]")
 {
     SlashCommandPopup popup;
     SlashCommandSuggestion cmd;
@@ -47,13 +47,12 @@ TEST_CASE("SlashCommandPopup names a suggestion \"/name args_hint: "
     AccessNode tree = build_access_tree(&popup);
     REQUIRE(tree.children.size() == 1);
     CHECK(tree.children[0].role == Role::ListItem);
-    CHECK(tree.children[0].name ==
-         "/ban <user> [reason]: Ban a user from the room");
+    CHECK(tree.children[0].name == "/ban <user> [reason]: Ban a user from the room");
 }
 
 TEST_CASE("SlashCommandPopup's hint row is StaticText, not a selectable "
-         "ListItem, matching on_row_activated's own hint-mode no-op",
-         "[slash_command_popup][accessibility]")
+          "ListItem, matching on_row_activated's own hint-mode no-op",
+          "[slash_command_popup][accessibility]")
 {
     SlashCommandPopup popup;
     popup.show_hint("Waiting for a reason...", /*is_error=*/false);

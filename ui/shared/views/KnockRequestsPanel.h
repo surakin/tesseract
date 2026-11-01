@@ -41,14 +41,23 @@ public:
 
     void open(const std::string& room_id);
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     // A dialog titled like the painted header; when empty its description
     // says so.
-    tk::Role access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override;
     std::string access_description() const override;
-    const std::string& room_id() const { return room_id_; }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
 
     // Replace the pending-request list. No-op on row identity (rebuilds
     // wholesale) — fine given the list is always small.
@@ -77,11 +86,11 @@ public:
     void on_theme_changed(const tk::Theme& t) override;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
 private:
     class RowWidget;
@@ -107,11 +116,11 @@ private:
 
     void rebuild_rows_();
 
-    static constexpr float kPadX      = 16.0f;
-    static constexpr float kPadY      = 12.0f;
-    static constexpr float kHeaderH   = 48.0f;
-    static constexpr float kCloseSz   = 24.0f;
-    static constexpr float kRowH      = 96.0f;
+    static constexpr float kPadX = 16.0f;
+    static constexpr float kPadY = 12.0f;
+    static constexpr float kHeaderH = 48.0f;
+    static constexpr float kCloseSz = 24.0f;
+    static constexpr float kRowH = 96.0f;
 };
 
 } // namespace tesseract::views

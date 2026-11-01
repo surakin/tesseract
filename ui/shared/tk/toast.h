@@ -46,10 +46,10 @@ private:
     // sets a genuinely new message (see its early-return guard).
     FloatTween reveal_{1.0f};
 
-    static constexpr float kPadX         = 16.0f;
-    static constexpr float kPadY         = 10.0f;
+    static constexpr float kPadX = 16.0f;
+    static constexpr float kPadY = 10.0f;
     static constexpr float kBottomMargin = 24.0f;
-    static constexpr float kRadius       = tesseract::visual::kRadiusMD;
+    static constexpr float kRadius = tesseract::visual::kRadiusMD;
 };
 
 } // namespace tk

@@ -35,21 +35,21 @@ struct NowPlaying
         Audio,
         Video
     };
-    Kind          kind = Kind::None;
-    std::string   room_id;
-    std::string   event_id;  // doubles as the MPRIS trackid seed
-    std::string   title;     // body/filename, falls back to "Voice message"
-    std::string   artist;    // sender display name
+    Kind kind = Kind::None;
+    std::string room_id;
+    std::string event_id; // doubles as the MPRIS trackid seed
+    std::string title;    // body/filename, falls back to "Voice message"
+    std::string artist;   // sender display name
     std::uint64_t position_ms = 0;
     std::uint64_t duration_ms = 0;
-    bool          is_playing  = false;
+    bool is_playing = false;
 };
 
 class MediaPlaybackHub
 {
 public:
     using Control = std::function<void()>;
-    using SeekFn  = std::function<void(std::int64_t offset_ms)>;
+    using SeekFn = std::function<void(std::int64_t offset_ms)>;
 
     // Bundled with the NowPlaying report they act on, so Play/Pause/Seek
     // always target whichever ShellBase most recently reported — never a
@@ -61,7 +61,7 @@ public:
         Control pause;
         Control play_pause;
         Control stop;
-        SeekFn  seek; // relative, per MPRIS Player.Seek's offset semantics
+        SeekFn seek; // relative, per MPRIS Player.Seek's offset semantics
     };
 
     // Called by ShellBase on every track-start/play/pause/seek/progress tick.
@@ -74,27 +74,37 @@ public:
     void play() const
     {
         if (controls_.play)
+        {
             controls_.play();
+        }
     }
     void pause() const
     {
         if (controls_.pause)
+        {
             controls_.pause();
+        }
     }
     void play_pause() const
     {
         if (controls_.play_pause)
+        {
             controls_.play_pause();
+        }
     }
     void stop() const
     {
         if (controls_.stop)
+        {
             controls_.stop();
+        }
     }
     void seek(std::int64_t offset_ms) const
     {
         if (controls_.seek)
+        {
             controls_.seek(offset_ms);
+        }
     }
 
     const NowPlaying& current() const
@@ -109,7 +119,7 @@ public:
 
 private:
     NowPlaying current_;
-    Controls   controls_;
+    Controls controls_;
 };
 
 } // namespace tesseract

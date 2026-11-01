@@ -53,8 +53,8 @@ private:
     class InfoRow; // defined in ServerSection.cpp
     void fill_group_(SettingsGroup* group, const std::vector<ServerInfoRow>& rows);
 
-    SettingsGroup* server_group_       = nullptr;
-    SettingsGroup* features_group_     = nullptr;
+    SettingsGroup* server_group_ = nullptr;
+    SettingsGroup* features_group_ = nullptr;
     SettingsGroup* capabilities_group_ = nullptr;
 };
 

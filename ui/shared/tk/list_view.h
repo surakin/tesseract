@@ -31,13 +31,12 @@ public:
     virtual std::size_t count() const = 0;
 
     // Return the row's pixel height given `available_width`.
-    virtual float measure_row_height(std::size_t index, LayoutCtx& ctx,
-                                     float available_width) = 0;
+    virtual float measure_row_height(std::size_t index, LayoutCtx& ctx, float available_width) = 0;
 
     // Paint a single row into `bounds`. `selected` and `hovered` reflect
     // user-interaction state owned by ListView.
-    virtual void paint_row(std::size_t index, PaintCtx& ctx, Rect bounds,
-                           bool selected, bool hovered) = 0;
+    virtual void paint_row(std::size_t index, PaintCtx& ctx, Rect bounds, bool selected,
+                           bool hovered) = 0;
 
     // Override to disable selection on individual rows (e.g. separators).
     virtual bool is_selectable(std::size_t /*index*/) const
@@ -61,8 +60,7 @@ public:
     // whose rows are independent (e.g. the room list). Adapters whose heights
     // couple to neighbours (e.g. the message list's continuation grouping and
     // day-separator visibility) widen the span accordingly.
-    virtual void height_dependency_span(std::size_t i, std::size_t& lo,
-                                        std::size_t& hi) const
+    virtual void height_dependency_span(std::size_t i, std::size_t& lo, std::size_t& hi) const
     {
         lo = i;
         hi = i + 1;
@@ -110,8 +108,7 @@ public:
     // buttons, read receipts on a MessageListView message. Each returned
     // AccessNode should carry its own `activate` closure (there is no per-
     // child widget or row index to dispatch through). Default: none.
-    virtual std::vector<AccessNode>
-    access_subtree_for_row(std::size_t /*index*/) const
+    virtual std::vector<AccessNode> access_subtree_for_row(std::size_t /*index*/) const
     {
         return {};
     }
@@ -134,8 +131,8 @@ public:
 
     // Paint one cell into `bounds`. The grid clamps the bounds to its
     // cell_size — the adapter never has to clip.
-    virtual void paint_cell(std::size_t index, PaintCtx& ctx, Rect bounds,
-                            bool selected, bool hovered) = 0;
+    virtual void paint_cell(std::size_t index, PaintCtx& ctx, Rect bounds, bool selected,
+                            bool hovered) = 0;
 
     virtual bool is_selectable(std::size_t /*index*/) const
     {
@@ -335,8 +332,8 @@ private:
 // visible or item_count is 0. Factors out the viewport+lookahead-margin
 // range computation shared by every media-grid picker's prefetch scoping
 // (StickerPicker/EmojiPicker's collect_prefetchable_media_keys()).
-std::pair<int, int> grid_prefetch_range(const GridView& grid,
-                                        std::size_t item_count, int lookahead);
+std::pair<int, int> grid_prefetch_range(const GridView& grid, std::size_t item_count,
+                                        int lookahead);
 
 class ListView : public ScrollableBase
 {
@@ -521,11 +518,12 @@ public:
     Rect row_world_rect(int idx) const
     {
         if (idx < 0 || static_cast<std::size_t>(idx) + 1 >= row_offsets_.size())
+        {
             return {};
+        }
         const float top = row_offsets_[static_cast<std::size_t>(idx)];
         const float bot = row_offsets_[static_cast<std::size_t>(idx) + 1];
-        return {bounds_.x, bounds_.y + content_top_pad_() + top - scroll_y_,
-                bounds_.w, bot - top};
+        return {bounds_.x, bounds_.y + content_top_pad_() + top - scroll_y_, bounds_.w, bot - top};
     }
 
     // Force a height rebuild if dirty (and re-snap to bottom when sticking)
@@ -656,8 +654,7 @@ private:
     // shorter than the viewport. Must be applied consistently to every
     // screen<->content y mapping (paint, hit-test, visible range).
     float content_top_pad_() const;
-    void fire_latch_(bool now_near, bool& was_near,
-                     const std::function<void()>& callback);
+    void fire_latch_(bool now_near, bool& was_near, const std::function<void()>& callback);
     std::size_t first_visible_row_() const;
 
     // scroll_y_, the scrollbar drag state, clamp_scroll(), thumb_geom(), and
@@ -673,13 +670,13 @@ private:
     int pressed_index_ = -1;
 
     float measured_width_ = 0;
-    float measured_height_ = 0; // viewport height at last arrange (0 = never)
-    bool heights_dirty_ = true; // full rebuild pending (subsumes dirty range)
+    float measured_height_ = 0;    // viewport height at last arrange (0 = never)
+    bool heights_dirty_ = true;    // full rebuild pending (subsumes dirty range)
     bool stick_to_bottom_ = false; // re-snap to bottom on heights rebuild
 
     // Deferred scroll_to_index request (see scroll_to_index_deferred). Applied
     // by consume_pending_scroll_() once row_offsets_ is valid again, then reset.
-    int  pending_scroll_idx_ = -1;
+    int pending_scroll_idx_ = -1;
     bool pending_scroll_align_top_ = false;
 
     // Accumulated targeted-invalidation range [dirty_lo_, dirty_hi_). Active
@@ -716,15 +713,15 @@ private:
     // leaving scroll_y_ as a stale pixel offset into the rebuilt layout.
     struct ScrollAnchor
     {
-        bool        pending     = false;
-        bool        from_bottom = false; // pin bottom edge, not top (resize)
-        std::size_t index       = 0;     // captured row index (old layout)
-        std::string key;                 // stable identity (preferred locator)
+        bool pending = false;
+        bool from_bottom = false; // pin bottom edge, not top (resize)
+        std::size_t index = 0;    // captured row index (old layout)
+        std::string key;          // stable identity (preferred locator)
         // Top anchor: row_offsets_[index] - scroll_y_ (row top → viewport top).
         // Bottom anchor: (scroll_y_ + bounds_.h) - row_offsets_[index + 1]
         // (row bottom → viewport bottom).
-        float       offset     = 0.f;
-        float       pre_height = 0.f;    // content_height() before the mutation
+        float offset = 0.f;
+        float pre_height = 0.f; // content_height() before the mutation
     };
     ScrollAnchor anchor_;
     bool anchored_relayout_pending_ = false;

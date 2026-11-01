@@ -38,7 +38,7 @@ struct MediaInfo
     std::uint32_t thumb_w = 0, thumb_h = 0;
     std::uint32_t video_w = 0, video_h = 0;
     std::uint64_t duration_ms = 0;
-    bool is_animated = false;   // gif/webp animation flag
+    bool is_animated = false; // gif/webp animation flag
     // Generation token: set to ComposeBar::pending_gen() immediately after
     // set_pending_*() and checked in update_pending_attachment() to discard
     // results that arrive after the user replaced or removed the attachment.
@@ -58,8 +58,11 @@ public:
     // ── Accessibility ─────────────────────────────────────────────────────
     // The painted banner text ("Editing message" / "Replying to …") and the
     // pending attachment's name and size, read before the controls.
-    std::size_t access_row_count() const override { return access_texts_().size(); }
-    tk::Role    access_role_for_widget_row(std::size_t) const override
+    std::size_t access_row_count() const override
+    {
+        return access_texts_().size();
+    }
+    tk::Role access_role_for_widget_row(std::size_t) const override
     {
         return tk::Role::StaticText;
     }
@@ -68,13 +71,16 @@ public:
         const auto t = access_texts_();
         return i < t.size() ? t[i].first : std::string();
     }
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override
     {
         const auto t = access_texts_();
         return i < t.size() ? t[i].second : tk::Rect{};
     }
 
-    ~ComposeBar() override { invalidate_weak_self(); }
+    ~ComposeBar() override
+    {
+        invalidate_weak_self();
+    }
 
     static constexpr float kMinHeight = 56.0f;
     static constexpr float kMaxHeight = 160.0f;
@@ -120,12 +126,21 @@ public:
     /// "trigger" (see tk::Host::register_popup()'s doc comment): a click on
     /// the button while its own picker is already open shouldn't
     /// dismiss-then-reopen it.
-    tk::Button* emoji_button() const { return emoji_btn_; }
-    tk::Button* sticker_button() const { return sticker_btn_; }
+    tk::Button* emoji_button() const
+    {
+        return emoji_btn_;
+    }
+    tk::Button* sticker_button() const
+    {
+        return sticker_btn_;
+    }
 
     void on_theme_changed(const tk::Theme& t) override;
     // The attachment chip layouts are rebuilt only when their key changes.
-    void on_fonts_changed() override { file_layout_key_.clear(); }
+    void on_fonts_changed() override
+    {
+        file_layout_key_.clear();
+    }
 
     /// Host bridge: integration code pushes the latest natural height of
     /// the NativeTextArea here on every `on_height_changed` callback.
@@ -165,7 +180,10 @@ public:
     /// detected at startup (capture_ == nullptr after make_audio_capture()).
     /// Defaults to true.
     void set_mic_available(bool available);
-    bool mic_available() const { return mic_available_; }
+    bool mic_available() const
+    {
+        return mic_available_;
+    }
 
     /// Attach an image as a pending payload. The shared widget stores
     /// the raw bytes + mime, decodes a thumbnail lazily on the next
@@ -192,31 +210,27 @@ public:
     /// existing on_send_image/file/video/audio callbacks fire exactly as
     /// before. With two or more, on_send_gallery fires instead (MSC4274).
     void add_pending_image(std::vector<std::uint8_t> bytes, std::string mime,
-                           std::string filename = {},
-                           bool is_animated = false);
+                           std::string filename = {}, bool is_animated = false);
 
     /// Attach a non-image file as a pending payload. Renders as a single-
     /// line chip (paperclip + filename + size). Appends to the queue; see
     /// add_pending_image()'s doc comment for cap/gallery-dispatch behavior.
     /// `filename` is required (no synthesis) — drag-and-drop / file-picker
     /// always supplies it.
-    void add_pending_file(std::vector<std::uint8_t> bytes, std::string mime,
-                          std::string filename);
+    void add_pending_file(std::vector<std::uint8_t> bytes, std::string mime, std::string filename);
 
     /// Attach a video as a pending payload with `loading = true`. Renders as a
     /// film-icon chip until `update_pending_attachment()` fills in the thumbnail
     /// and metadata. Appends to the queue; see add_pending_image()'s doc
     /// comment for cap/gallery-dispatch behavior.
-    void add_pending_video(std::vector<std::uint8_t> bytes, std::string mime,
-                           std::string filename);
+    void add_pending_video(std::vector<std::uint8_t> bytes, std::string mime, std::string filename);
 
     /// Attach an audio file as a pending payload with `loading = true`. Renders
     /// as an audio-icon chip; duration text is filled in by
     /// `update_pending_attachment()` once background extraction completes.
     /// Appends to the queue; see add_pending_image()'s doc comment for
     /// cap/gallery-dispatch behavior.
-    void add_pending_audio(std::vector<std::uint8_t> bytes, std::string mime,
-                           std::string filename);
+    void add_pending_audio(std::vector<std::uint8_t> bytes, std::string mime, std::string filename);
 
     /// Called on the UI thread after background media extraction completes.
     /// Looks up the item whose `gen` matches `info.pending_gen` (there may
@@ -244,7 +258,10 @@ public:
     /// add_pending_* (it equals the just-added item's `gen`) and embed it
     /// in the MediaInfo they pass to the background extractor so
     /// update_pending_attachment() can find that specific item later.
-    std::uint32_t pending_gen() const { return pending_gen_; }
+    std::uint32_t pending_gen() const
+    {
+        return pending_gen_;
+    }
 
     // Attachment kinds — public so pending_for_test() callers can inspect them.
     struct PendingAttachment
@@ -308,7 +325,10 @@ public:
     }
 
     /// Number of attachments currently queued.
-    std::size_t pending_count() const { return pending_.size(); }
+    std::size_t pending_count() const
+    {
+        return pending_.size();
+    }
 
     /// Test accessor: world-space rect of the multi-attachment mode's
     /// per-chip × remove badge at `index` (populated by arrange() when
@@ -316,8 +336,7 @@ public:
     /// tests only.
     tk::Rect chip_remove_rect_for_test(std::size_t index) const
     {
-        return index < chip_remove_rects_.size() ? chip_remove_rects_[index]
-                                                  : tk::Rect{};
+        return index < chip_remove_rects_.size() ? chip_remove_rects_[index] : tk::Rect{};
     }
 
     /// Move every pending attachment out without sending it (e.g. to stash
@@ -352,9 +371,8 @@ public:
     /// reply_event_id (empty when no reply is pending). For still images the
     /// host re-encodes per `Settings::image_quality`, uploads, and posts the
     /// `m.image` event.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::uint32_t width, std::uint32_t height,
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, std::uint32_t width, std::uint32_t height,
                        bool is_animated, std::string reply_event_id)>
         on_send_image;
 
@@ -363,9 +381,8 @@ public:
     /// the file's basename, the trimmed caption (may be empty), and the
     /// reply_event_id (empty when no reply is pending). The host uploads
     /// as-is and posts the `m.file` event.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::string reply_event_id)>
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, std::string reply_event_id)>
         on_send_file;
 
     /// Fires when the user pastes one or more files copied from a file
@@ -382,21 +399,19 @@ public:
     /// its dimensions; `duration_ms` populates `info.duration` (0 when
     /// unknown). The host uploads via `client::send_video` and posts an
     /// `m.video` event.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::uint32_t width, std::uint32_t height,
-                       std::vector<std::uint8_t> thumb_bytes,
-                       std::uint32_t thumb_width, std::uint32_t thumb_height,
-                       std::uint64_t duration_ms, std::string reply_event_id)>
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, std::uint32_t width, std::uint32_t height,
+                       std::vector<std::uint8_t> thumb_bytes, std::uint32_t thumb_width,
+                       std::uint32_t thumb_height, std::uint64_t duration_ms,
+                       std::string reply_event_id)>
         on_send_video;
 
     /// Fires when send runs with a pending audio file attached. `duration_ms`
     /// populates `info.duration` (0 when unknown). Sends a plain `m.audio`
     /// event — NOT the MSC3245 voice extension (that is for voice recordings
     /// only). The host uploads via `client::send_audio`.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::uint64_t duration_ms, std::string reply_event_id)>
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, std::uint64_t duration_ms, std::string reply_event_id)>
         on_send_audio;
 
     /// Fires when send runs with 2+ pending attachments queued (MSC4274
@@ -432,8 +447,7 @@ public:
     /// Enter reply mode. Displays a "Replying to <sender_name>" banner
     /// with `body_preview` above the text input. Grows `natural_height()`
     /// by `kReplyBandH + kReplyBandGap` and fires `on_size_changed`.
-    void set_reply_to(std::string event_id, std::string sender_name,
-                      std::string body_preview);
+    void set_reply_to(std::string event_id, std::string sender_name, std::string body_preview);
 
     /// Exit reply mode. Clears the reply banner, shrinks `natural_height()`,
     /// and fires `on_size_changed`. No-op when not in reply mode.
@@ -452,9 +466,7 @@ public:
 
     /// Fires in place of `on_send` when a reply is pending. The host should
     /// call `Client::send_reply(current_room_, reply_event_id, body)`.
-    std::function<void(const std::string& reply_event_id,
-                       const std::string& body)>
-        on_send_reply;
+    std::function<void(const std::string& reply_event_id, const std::string& body)> on_send_reply;
 
     /// Enter edit mode. Displays an "Editing message" banner above the text
     /// input (replaces any active reply mode). Grows `natural_height()` by
@@ -483,8 +495,7 @@ public:
     /// call `Client::send_edit(current_room_, event_id, new_body)` when
     /// `is_caption` is false, or `Client::send_caption_edit(current_room_,
     /// event_id, new_body)` when true.
-    std::function<void(const std::string& event_id,
-                       const std::string& new_body, bool is_caption)>
+    std::function<void(const std::string& event_id, const std::string& new_body, bool is_caption)>
         on_send_edit;
 
     /// Fires after `clear_editing()` when the user cancels an edit via the
@@ -496,7 +507,10 @@ public:
     /// Switch between idle and recording visual state.
     /// Transitioning idle → recording clears the amplitude history.
     void set_recording(bool recording);
-    bool is_recording() const { return recording_; }
+    bool is_recording() const
+    {
+        return recording_;
+    }
 
     /// Push a live amplitude sample [0, 1000] from the capture backend.
     /// No-op when not recording.
@@ -545,19 +559,19 @@ private:
     // ▶ badge painted over the video thumbnail in the preview band.
     tk::CachedTextLayout video_badge_layout_;
 
-    tk::Button* emoji_btn_ = nullptr;   // borrowed (owned by Widget tree)
-    tk::Button* sticker_btn_ = nullptr; // borrowed
-    tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
+    tk::Button* emoji_btn_ = nullptr;    // borrowed (owned by Widget tree)
+    tk::Button* sticker_btn_ = nullptr;  // borrowed
+    tk::Button* mic_btn_ = nullptr;      // borrowed; hidden when no mic device
     tk::BusyButton* send_btn_ = nullptr; // borrowed
     // Single-attachment mode only (pending_.size() == 1): borrowed remove
     // button, hidden when nothing is queued. Multi-attachment mode (2+)
     // uses manually hit-tested per-chip × glyphs instead — see
     // chip_rects_/chip_remove_rects_ below, same pattern as
     // reply_cancel_rect_/edit_cancel_rect_.
-    tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
+    tk::Button* remove_btn_ = nullptr; // borrowed; hidden when no image
     // The "×" on the edit / reply banners and the recording strip — real
     // buttons positioned in arrange() and painted in paint().
-    tk::Button* edit_cancel_btn_  = nullptr;
+    tk::Button* edit_cancel_btn_ = nullptr;
     tk::Button* reply_cancel_btn_ = nullptr;
     tk::Button* voice_cancel_btn_ = nullptr;
 
@@ -572,7 +586,7 @@ private:
     tk::IconCache remove_icon_;
     tk::Rect text_area_rect_{};
     ComposerTextArea* text_area_ = nullptr; // self-owned; null if constructed without a Host
-    tk::Rect compose_card_rect_{}; // card outline wrapping text + icon buttons
+    tk::Rect compose_card_rect_{};          // card outline wrapping text + icon buttons
     tk::Rect emoji_rect_{};
     tk::Rect sticker_rect_{};
     tk::Rect send_rect_{};
@@ -624,7 +638,13 @@ private:
     tk::Rect edit_cancel_rect_{};
 
     // Which compose button is currently showing a tooltip (None = none).
-    enum class TooltipBtn { None, Emoji, Sticker, Mic };
+    enum class TooltipBtn
+    {
+        None,
+        Emoji,
+        Sticker,
+        Mic
+    };
     TooltipBtn tooltip_hover_ = TooltipBtn::None;
 
     // dispatch_pointer_move() always returns `this` (see its doc comment), which

@@ -29,10 +29,16 @@ Entry entry(std::string name, std::string domain, bool is_public = true, bool on
 tk::Widget* find_clickable(tk::Widget& w, const std::string& name)
 {
     if (w.clickable() && w.access_name() == name)
+    {
         return &w;
+    }
     for (auto& ch : w.children())
+    {
         if (auto* hit = find_clickable(*ch, name))
+        {
             return hit;
+        }
+    }
     return nullptr;
 }
 
@@ -40,7 +46,9 @@ std::vector<std::string> names(const std::vector<const Entry*>& v)
 {
     std::vector<std::string> out;
     for (const auto* e : v)
+    {
         out.push_back(e->name);
+    }
     return out;
 }
 
@@ -109,14 +117,20 @@ TEST_CASE("ServerBrowserOverlay pick closes the overlay and reports the domain",
     ServerBrowserOverlay& ov = *owner;
     ov.on_layout_changed = [] {};
     std::string picked;
-    ov.on_pick = [&](const std::string& d) { picked = d; };
+    ov.on_pick = [&](const std::string& d)
+    {
+        picked = d;
+    };
     ov.set_servers({entry("alpha", "alpha.example")});
     ov.open();
     REQUIRE(ov.is_open());
     // Failed state shows a Retry instead of servers.
     ov.set_state(ServerBrowserOverlay::State::Failed);
     int retries = 0;
-    ov.on_retry = [&] { ++retries; };
+    ov.on_retry = [&]
+    {
+        ++retries;
+    };
     CHECK(ov.state() == ServerBrowserOverlay::State::Failed);
     ov.close();
     CHECK_FALSE(ov.is_open());
@@ -132,7 +146,10 @@ TEST_CASE("ServerBrowserOverlay: clicking a server card picks it",
     ServerBrowserOverlay& ov = *owner;
     ov.on_layout_changed = [] {};
     std::string picked;
-    ov.on_pick = [&](const std::string& d) { picked = d; };
+    ov.on_pick = [&](const std::string& d)
+    {
+        picked = d;
+    };
     ov.set_servers({entry("alpha", "alpha.example"), entry("beta", "beta.example")});
     ov.open();
 
@@ -175,7 +192,9 @@ TEST_CASE("LoginView offers the server browser, with matrix.org as one choice",
     lv.set_relayout([] {});
     lv.finish_init();
     if (!lv.server_browser_available())
+    {
         SKIP("a homeserver is provisioned on this machine");
+    }
 
     REQUIRE(lv.find_server_button());
     CHECK(lv.find_server_button()->visible());
@@ -197,8 +216,7 @@ TEST_CASE("LoginView offers the server browser, with matrix.org as one choice",
     CHECK(browser->is_open());
 }
 
-TEST_CASE("LoginView failed server list shows the retry state",
-          "[tk][view][login][server_browser]")
+TEST_CASE("LoginView failed server list shows the retry state", "[tk][view][login][server_browser]")
 {
     StubHost host;
     auto lv_owner = tk::create_root_widget<LoginView>(&host);
@@ -206,7 +224,9 @@ TEST_CASE("LoginView failed server list shows the retry state",
     lv.set_relayout([] {});
     lv.finish_init();
     if (!lv.server_browser_available())
+    {
         SKIP("a homeserver is provisioned on this machine");
+    }
 
     tesseract::Client::ServerList list; // ok == false
     lv.simulate_server_list_result(list);
@@ -222,7 +242,9 @@ TEST_CASE("LoginView Create an account with an empty field opens the server brow
     lv.set_relayout([] {});
     lv.finish_init();
     if (!lv.server_browser_available())
+    {
         SKIP("a homeserver is provisioned on this machine");
+    }
 
     CHECK_FALSE(lv.server_browser()->is_open());
     lv.simulate_register_click();
@@ -238,7 +260,9 @@ TEST_CASE("LoginView picking a server fills the homeserver field",
     lv.set_relayout([] {});
     lv.finish_init();
     if (!lv.server_browser_available())
+    {
         SKIP("a homeserver is provisioned on this machine");
+    }
 
     lv.open_server_browser();
     REQUIRE(lv.server_browser()->on_pick);
@@ -255,7 +279,9 @@ TEST_CASE("LoginView hides the homeserver field while the server browser is open
     lv.set_relayout([] {});
     lv.finish_init();
     if (!lv.server_browser_available())
+    {
         SKIP("a homeserver is provisioned on this machine");
+    }
 
     REQUIRE(lv.homeserver_field());
     CHECK(lv.homeserver_field()->visible());

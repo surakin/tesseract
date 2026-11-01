@@ -26,36 +26,58 @@ NSAccessibilityRole to_ns_role(tk::Role r)
 {
     switch (r)
     {
-    case tk::Role::Button:      return NSAccessibilityButtonRole;
-    case tk::Role::CheckBox:    return NSAccessibilityCheckBoxRole;
-    case tk::Role::Switch:      return NSAccessibilityCheckBoxRole;
-    case tk::Role::RadioButton: return NSAccessibilityRadioButtonRole;
-    case tk::Role::ComboBox:    return NSAccessibilityComboBoxRole;
-    case tk::Role::TextInput:   return NSAccessibilityTextFieldRole;
-    case tk::Role::StaticText:  return NSAccessibilityStaticTextRole;
-    case tk::Role::Image:       return NSAccessibilityImageRole;
-    case tk::Role::Link:        return NSAccessibilityLinkRole;
-    case tk::Role::List:        return NSAccessibilityListRole;
+    case tk::Role::Button:
+        return NSAccessibilityButtonRole;
+    case tk::Role::CheckBox:
+        return NSAccessibilityCheckBoxRole;
+    case tk::Role::Switch:
+        return NSAccessibilityCheckBoxRole;
+    case tk::Role::RadioButton:
+        return NSAccessibilityRadioButtonRole;
+    case tk::Role::ComboBox:
+        return NSAccessibilityComboBoxRole;
+    case tk::Role::TextInput:
+        return NSAccessibilityTextFieldRole;
+    case tk::Role::StaticText:
+        return NSAccessibilityStaticTextRole;
+    case tk::Role::Image:
+        return NSAccessibilityImageRole;
+    case tk::Role::Link:
+        return NSAccessibilityLinkRole;
+    case tk::Role::List:
+        return NSAccessibilityListRole;
     // Apple's own guidance for custom (non-NSTableView) list content maps
     // each item to the row role, not a distinct "list item" role — matches
     // this exact "custom-drawn list" scenario even though it doesn't read
     // as a 1:1 name match with the other three platforms' role constants.
-    case tk::Role::ListItem:    return NSAccessibilityRowRole;
-    case tk::Role::Grid:        return NSAccessibilityGridRole;
-    case tk::Role::GridCell:    return NSAccessibilityCellRole;
+    case tk::Role::ListItem:
+        return NSAccessibilityRowRole;
+    case tk::Role::Grid:
+        return NSAccessibilityGridRole;
+    case tk::Role::GridCell:
+        return NSAccessibilityCellRole;
     // Individual tabs are NSAccessibilityRadioButtonRole per AppKit's own
     // tab-group convention (also exposed via the tab group's special
     // -accessibilityTabs array — see access_tabs()/-accessibilityTabs
     // below), not a role of their own.
-    case tk::Role::Tab:         return NSAccessibilityRadioButtonRole;
-    case tk::Role::TabList:     return NSAccessibilityTabGroupRole;
-    case tk::Role::TabPanel:    return NSAccessibilityGroupRole;
-    case tk::Role::Dialog:      return NSAccessibilityGroupRole; // + subrole, see to_ns_subrole
-    case tk::Role::MenuItem:    return NSAccessibilityMenuItemRole;
-    case tk::Role::Group:       return NSAccessibilityGroupRole;
-    case tk::Role::ProgressBar: return NSAccessibilityProgressIndicatorRole;
-    case tk::Role::Slider:      return NSAccessibilitySliderRole;
-    case tk::Role::None:        return NSAccessibilityGroupRole;
+    case tk::Role::Tab:
+        return NSAccessibilityRadioButtonRole;
+    case tk::Role::TabList:
+        return NSAccessibilityTabGroupRole;
+    case tk::Role::TabPanel:
+        return NSAccessibilityGroupRole;
+    case tk::Role::Dialog:
+        return NSAccessibilityGroupRole; // + subrole, see to_ns_subrole
+    case tk::Role::MenuItem:
+        return NSAccessibilityMenuItemRole;
+    case tk::Role::Group:
+        return NSAccessibilityGroupRole;
+    case tk::Role::ProgressBar:
+        return NSAccessibilityProgressIndicatorRole;
+    case tk::Role::Slider:
+        return NSAccessibilitySliderRole;
+    case tk::Role::None:
+        return NSAccessibilityGroupRole;
     }
     return NSAccessibilityGroupRole;
 }
@@ -70,8 +92,10 @@ NSString* to_ns_subrole(tk::Role r)
     // symbol is a hard build failure for the whole target — not worth the
     // risk for a role that already reads correctly as a plain checkbox
     // without it. Revisit once this can actually be compiled and checked.
-    case tk::Role::Dialog: return NSAccessibilityDialogSubrole;
-    default:               return nil;
+    case tk::Role::Dialog:
+        return NSAccessibilityDialogSubrole;
+    default:
+        return nil;
     }
 }
 
@@ -130,7 +154,9 @@ AccessKey key_for(const tk::AccessNode& n)
 bool node_disabled(const tk::AccessNode& n)
 {
     if (n.state.disabled)
+    {
         return true;
+    }
     return n.row_index == -1 && n.widget && !n.activate && !n.widget->enabled();
 }
 
@@ -163,7 +189,9 @@ const tk::AccessNode* hit_test_node(const tk::AccessNode& node, tk::Point local)
     {
         if (child.rect.x <= local.x && local.x <= child.rect.x + child.rect.w &&
             child.rect.y <= local.y && local.y <= child.rect.y + child.rect.h)
+        {
             return hit_test_node(child, local);
+        }
     }
     return &node;
 }
@@ -184,7 +212,9 @@ const tk::AccessNode* hit_test_node(const tk::AccessNode& node, tk::Point local)
 class AccessBridge
 {
 public:
-    explicit AccessBridge(Surface* surface) : surface_(surface) {}
+    explicit AccessBridge(Surface* surface) : surface_(surface)
+    {
+    }
 
     Surface* surface() const
     {
@@ -232,7 +262,9 @@ public:
     {
         NSView* v = view();
         if (!v || !v.window)
+        {
             return NSZeroRect;
+        }
         NSRect local = NSMakeRect(r.x, r.y, r.w, r.h);
         NSRect win_rect = [v convertRect:local toView:nil];
         return [v.window convertRectToScreen:win_rect];
@@ -291,18 +323,24 @@ private:
     void hook_selection_changed(tk::Widget* widget)
     {
         if (!widget || selection_hooked_.count(widget))
+        {
             return;
+        }
         selection_hooked_.insert(widget);
 
         if (auto* list = dynamic_cast<tk::ListView*>(widget))
         {
             list->on_selection_changed = [this, list](int idx)
-            { notify_current_row(list, idx); };
+            {
+                notify_current_row(list, idx);
+            };
         }
         else if (auto* grid = dynamic_cast<tk::GridView*>(widget))
         {
             grid->on_selection_changed = [this, grid](int idx)
-            { notify_current_row(grid, idx); };
+            {
+                notify_current_row(grid, idx);
+            };
         }
     }
 
@@ -317,7 +355,9 @@ public:
     {
         auto it = index_.find(key);
         if (it != index_.end())
+        {
             snapshots_[key] = snapshot_of(*it->second);
+        }
     }
 
 private:
@@ -328,7 +368,7 @@ private:
     tk::AccessNode tree_;
     std::unordered_map<AccessKey, const tk::AccessNode*, AccessKeyHash> index_;
     std::unordered_map<AccessKey, AccessKey, AccessKeyHash> parent_of_;
-    std::unordered_map<AccessKey, TKAccessElement* __strong, AccessKeyHash> elements_;
+    std::unordered_map<AccessKey, TKAccessElement * __strong, AccessKeyHash> elements_;
     std::unordered_set<tk::Widget*> selection_hooked_;
     std::unordered_map<tk::Widget*, int> current_row_;
 };
@@ -347,8 +387,7 @@ private:
 // win32_accessible.cpp's AccessNodeProvider.
 
 @interface TKAccessElement : NSAccessibilityElement
-- (instancetype)initWithBridge:(tk::macos::AccessBridge*)bridge
-                           key:(tk::macos::AccessKey)key;
+- (instancetype)initWithBridge:(tk::macos::AccessBridge*)bridge key:(tk::macos::AccessKey)key;
 // Called by AccessBridge::detach()/rebuild_if_dirty() when this node's
 // bridge is going away (Surface teardown) or this key no longer resolves
 // to a node (retired). After this, -tkNode always returns nullptr and
@@ -362,8 +401,7 @@ private:
     tk::macos::AccessKey _key;
 }
 
-- (instancetype)initWithBridge:(tk::macos::AccessBridge*)bridge
-                           key:(tk::macos::AccessKey)key
+- (instancetype)initWithBridge:(tk::macos::AccessBridge*)bridge key:(tk::macos::AccessKey)key
 {
     self = [super init];
     if (self)
@@ -411,9 +449,13 @@ private:
 {
     const tk::AccessNode* n = self.tkNode;
     if (!n)
+    {
         return nil;
+    }
     if (n->value.present)
+    {
         return @(n->value.now);
+    }
     switch (n->role)
     {
     case tk::Role::CheckBox:
@@ -430,7 +472,9 @@ private:
 {
     const tk::AccessNode* n = self.tkNode;
     if (n && [value isKindOfClass:[NSNumber class]])
+    {
         tk::set_node_value(*n, [(NSNumber*)value doubleValue]);
+    }
 }
 
 - (BOOL)isAccessibilityEnabled
@@ -455,7 +499,9 @@ private:
 {
     const tk::AccessNode* n = self.tkNode;
     if (!n || n->description.empty())
+    {
         return nil;
+    }
     return [NSString stringWithUTF8String:n->description.c_str()];
 }
 
@@ -475,7 +521,9 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
     NSArray<NSAccessibilityAttributeName>* names = [super accessibilityAttributeNames];
     const tk::AccessNode* n = self.tkNode;
     if (n && !n->language.empty() && ![names containsObject:kTKLanguageAttribute])
+    {
         return [names arrayByAddingObject:kTKLanguageAttribute];
+    }
     return names;
 }
 
@@ -485,7 +533,9 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
     {
         const tk::AccessNode* n = self.tkNode;
         if (!n || n->language.empty())
+        {
             return nil;
+        }
         return [NSString stringWithUTF8String:n->language.c_str()];
     }
     return [super accessibilityAttributeValue:attribute];
@@ -532,7 +582,9 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
 - (BOOL)isAccessibilityFocused
 {
     const tk::AccessNode* n = self.tkNode;
-    return (n && n->row_index == -1 && n->widget && !n->activate) ? (n->widget->has_focus() ? YES : NO) : NO;
+    return (n && n->row_index == -1 && n->widget && !n->activate)
+               ? (n->widget->has_focus() ? YES : NO)
+               : NO;
 }
 
 - (BOOL)isAccessibilityExpanded
@@ -550,9 +602,13 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
 - (id)accessibilityParent
 {
     if (!_bridge)
+    {
         return nil;
+    }
     if (TKAccessElement* parent = _bridge->parent_element_for(_key))
+    {
         return parent;
+    }
     // No tk-level parent — this key is the root; the surface's own NSView
     // plays the "fragment root" role (see the doc comment at the top of
     // this file), not a separate wrapper element.
@@ -577,7 +633,9 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
 {
     const tk::AccessNode* n = self.tkNode;
     if (n && n->role == tk::Role::TabList)
+    {
         return self.accessibilityChildren;
+    }
     return nil;
 }
 
@@ -590,14 +648,22 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
 {
     const tk::AccessNode* n = self.tkNode;
     if (!n || !_bridge)
+    {
         return @[];
+    }
     if (n->role != tk::Role::List && n->role != tk::Role::Grid)
+    {
         return @[];
+    }
     int idx = _bridge->current_row_for(n->widget);
     if (idx < 0)
+    {
         return @[];
+    }
     if (TKAccessElement* el = _bridge->element_for(tk::macos::AccessKey{n->widget, idx}))
+    {
         return @[ el ];
+    }
     return @[];
 }
 
@@ -605,7 +671,9 @@ static NSString* const kTKLanguageAttribute = @"AXLanguage";
 {
     const tk::AccessNode* n = self.tkNode;
     if (n)
+    {
         tk::invoke_default_action(*n);
+    }
     return n != nullptr;
 }
 
@@ -620,10 +688,14 @@ namespace
 void AccessBridge::rebuild_if_dirty()
 {
     if (!dirty_)
+    {
         return;
+    }
     dirty_ = false;
     if (!surface_)
+    {
         return; // detached
+    }
 
     tk::Widget* root = surface_->root();
     tree_ = root ? tk::build_access_tree(root) : tk::AccessNode{};
@@ -670,8 +742,12 @@ void AccessBridge::rebuild_if_dirty()
     // Coarse-grained "something changed" notification (once per rebuild
     // that actually added/removed nodes).
     if (structure_changed)
+    {
         if (NSView* v = view())
+        {
             NSAccessibilityPostNotification(v, NSAccessibilityLayoutChangedNotification);
+        }
+    }
     post_change_notifications();
 }
 
@@ -680,7 +756,7 @@ void AccessBridge::post_change_notifications()
     for (auto it = snapshots_.begin(); it != snapshots_.end();)
     {
         auto node_it = index_.find(it->first);
-        auto el_it   = elements_.find(it->first);
+        auto el_it = elements_.find(it->first);
         if (node_it == index_.end() || el_it == elements_.end())
         {
             it = snapshots_.erase(it);
@@ -690,11 +766,15 @@ void AccessBridge::post_change_notifications()
         Snapshot& was = it->second;
         TKAccessElement* el = el_it->second;
         if (now.name != was.name)
+        {
             NSAccessibilityPostNotification(el, NSAccessibilityTitleChangedNotification);
+        }
         if (now.state.checked != was.state.checked || now.state.selected != was.state.selected ||
             now.state.expanded != was.state.expanded || now.disabled != was.disabled ||
             now.value != was.value)
+        {
             NSAccessibilityPostNotification(el, NSAccessibilityValueChangedNotification);
+        }
         was = std::move(now);
         ++it;
     }
@@ -704,20 +784,28 @@ void AccessBridge::notify_current_row(tk::Widget* owner, int idx)
 {
     current_row_[owner] = idx;
     if (idx < 0)
+    {
         return; // deselected — nothing to report as "current"
+    }
     if (TKAccessElement* container = element_for(AccessKey{owner, -1}))
+    {
         NSAccessibilityPostNotification(container, NSAccessibilitySelectedRowsChangedNotification);
+    }
 }
 
 TKAccessElement* AccessBridge::element_for(const AccessKey& key)
 {
     rebuild_if_dirty();
     if (index_.find(key) == index_.end())
+    {
         return nil;
+    }
 
     auto it = elements_.find(key);
     if (it != elements_.end())
+    {
         return it->second;
+    }
 
     TKAccessElement* el = [[TKAccessElement alloc] initWithBridge:this key:key];
     elements_.emplace(key, el);
@@ -730,7 +818,9 @@ TKAccessElement* AccessBridge::parent_element_for(const AccessKey& key)
     rebuild_if_dirty();
     auto it = parent_of_.find(key);
     if (it == parent_of_.end())
+    {
         return nil;
+    }
     return element_for(it->second);
 }
 
@@ -739,12 +829,16 @@ NSArray* AccessBridge::children_for(const AccessKey& key)
     rebuild_if_dirty();
     const tk::AccessNode* n = find(key);
     if (!n || n->children.empty())
+    {
         return @[];
+    }
     NSMutableArray* out = [NSMutableArray arrayWithCapacity:n->children.size()];
     for (auto& child : n->children)
     {
         if (TKAccessElement* el = element_for(key_for(child)))
+        {
             [out addObject:el];
+        }
     }
     return out;
 }
@@ -752,7 +846,9 @@ NSArray* AccessBridge::children_for(const AccessKey& key)
 void AccessBridge::detach()
 {
     for (auto& entry : elements_)
+    {
         [entry.second detach];
+    }
     elements_.clear();
     surface_ = nullptr;
 }
@@ -770,7 +866,9 @@ std::unordered_map<const void*, std::unique_ptr<AccessBridge>>& bridge_registry(
 AccessBridge* bridge_for_view(id view)
 {
     if (!view)
+    {
         return nullptr;
+    }
     auto& registry = bridge_registry();
     auto it = registry.find((__bridge const void*)view);
     return it == registry.end() ? nullptr : it->second.get();
@@ -786,10 +884,14 @@ AccessBridge* bridge_for_key(const void* key)
 void AccessBridge::schedule_refresh()
 {
     if (elements_.empty() || refresh_pending_ || !surface_)
+    {
         return;
+    }
     NSView* v = view();
     if (!v)
+    {
         return;
+    }
     refresh_pending_ = true;
     const void* key = (__bridge const void*)v;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kRefreshDelayMs * NSEC_PER_MSEC),
@@ -807,10 +909,14 @@ void AccessBridge::announce(const std::string& text, bool assertive)
 {
     NSView* v = view();
     if (!v)
+    {
         return;
+    }
     NSString* msg = [NSString stringWithUTF8String:text.c_str()];
     if (!msg)
+    {
         return;
+    }
     id target = v.window ? (id)v.window : (id)v;
     NSAccessibilityPostNotificationWithUserInfo(
         target, NSAccessibilityAnnouncementRequestedNotification, @{
@@ -826,34 +932,49 @@ void attach_accessible_bridge(Surface& surface)
 {
     NSView* view = (__bridge NSView*)surface.view_handle();
     if (!view)
+    {
         return;
+    }
     auto bridge = std::make_unique<AccessBridge>(&surface);
     AccessBridge* raw = bridge.get();
     bridge_registry().emplace((__bridge const void*)view, std::move(bridge));
-    surface.add_layout_listener([raw] { raw->mark_dirty(); });
+    surface.add_layout_listener(
+        [raw]
+        {
+            raw->mark_dirty();
+        });
     const void* key = (__bridge const void*)view;
-    surface.host().add_paint_listener([key]
-    {
-        if (AccessBridge* b = bridge_for_key(key))
-            b->schedule_refresh();
-    });
+    surface.host().add_paint_listener(
+        [key]
+        {
+            if (AccessBridge* b = bridge_for_key(key))
+            {
+                b->schedule_refresh();
+            }
+        });
 }
 
 void announce(id view, const std::string& text, bool assertive)
 {
     if (AccessBridge* b = bridge_for_view(view))
+    {
         b->announce(text, assertive);
+    }
 }
 
 void detach_accessible_bridge(Surface& surface)
 {
     NSView* view = (__bridge NSView*)surface.view_handle();
     if (!view)
+    {
         return;
+    }
     auto& registry = bridge_registry();
     auto it = registry.find((__bridge const void*)view);
     if (it == registry.end())
+    {
         return;
+    }
     it->second->detach();
     registry.erase(it);
 }
@@ -893,10 +1014,14 @@ NSArray* access_children(id view)
 {
     AccessBridge* bridge = bridge_for_view(view);
     if (!bridge)
+    {
         return @[];
+    }
     const tk::AccessNode* root = bridge->root_node();
     if (!root)
+    {
         return @[];
+    }
     return bridge->children_for(key_for(*root));
 }
 
@@ -905,7 +1030,9 @@ NSArray* access_tabs(id view)
     AccessBridge* bridge = bridge_for_view(view);
     const tk::AccessNode* root = bridge ? bridge->root_node() : nullptr;
     if (root && root->role == tk::Role::TabList)
+    {
         return access_children(view);
+    }
     return nil;
 }
 
@@ -913,20 +1040,28 @@ id access_hit_test(id view, NSPoint screen_point)
 {
     AccessBridge* bridge = bridge_for_view(view);
     if (!bridge)
+    {
         return nil;
+    }
     NSView* v = bridge->view();
     if (!v || !v.window)
+    {
         return nil;
+    }
     NSRect screen_rect = NSMakeRect(screen_point.x, screen_point.y, 0, 0);
     NSRect win_rect = [v.window convertRectFromScreen:screen_rect];
     NSPoint local = [v convertPoint:win_rect.origin fromView:nil];
     const tk::AccessNode* root = bridge->root_node();
     if (!root)
+    {
         return nil;
+    }
     const tk::AccessNode* hit =
         hit_test_node(*root, tk::Point{static_cast<float>(local.x), static_cast<float>(local.y)});
     if (hit == root)
+    {
         return view; // the view itself represents the root
+    }
     return bridge->element_for(key_for(*hit));
 }
 
@@ -934,10 +1069,14 @@ id access_focused_element(id view)
 {
     AccessBridge* bridge = bridge_for_view(view);
     if (!bridge || !bridge->surface())
+    {
         return nil;
+    }
     tk::Widget* focused = bridge->surface()->host().focused_widget();
     if (!focused)
+    {
         return nil;
+    }
     return bridge->element_for(AccessKey{focused, -1});
 }
 
@@ -945,9 +1084,13 @@ void notify_focus_changed(id view, tk::Widget* /*old_widget*/, tk::Widget* now_w
 {
     AccessBridge* bridge = bridge_for_view(view);
     if (!bridge || !now_widget)
+    {
         return;
+    }
     if (TKAccessElement* el = bridge->element_for(AccessKey{now_widget, -1}))
+    {
         NSAccessibilityPostNotification(el, NSAccessibilityFocusedUIElementChangedNotification);
+    }
 }
 
 } // namespace tk::macos

@@ -76,10 +76,10 @@ private:
     // MainAppWidget::any_modal_open_().
     bool any_modal_open_() const;
 
-    RoomView*           room_view_       = nullptr; // owned via add_child
-    MediaViewerOverlay* media_viewer_    = nullptr;
-    ForwardRoomPicker*  forward_picker_  = nullptr;
-    ConfirmDialog*      confirm_dialog_  = nullptr;
+    RoomView* room_view_ = nullptr; // owned via add_child
+    MediaViewerOverlay* media_viewer_ = nullptr;
+    ForwardRoomPicker* forward_picker_ = nullptr;
+    ConfirmDialog* confirm_dialog_ = nullptr;
 
     bool modal_was_open_ = false;
 };

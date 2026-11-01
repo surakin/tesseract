@@ -60,17 +60,23 @@ struct Harness
     Harness()
     {
         qs.set_rooms_provider(
-            []() -> std::vector<RoomInfo> {
-                return {make_room("!a:srv", "Alpha"),
-                        make_room("!b:srv", "Beta")};
+            []() -> std::vector<RoomInfo>
+            {
+                return {make_room("!a:srv", "Alpha"), make_room("!b:srv", "Beta")};
             });
-        qs.on_user_query_changed =
-            [this](const std::string& q) { last_user_query = q; };
-        qs.on_room_selected =
-            [this](const std::string& id) { selected_room = id; };
-        qs.on_user_selected =
-            [this](const std::string& id, const std::string& reason)
-            { selected_user = id; selected_reason = reason; };
+        qs.on_user_query_changed = [this](const std::string& q)
+        {
+            last_user_query = q;
+        };
+        qs.on_room_selected = [this](const std::string& id)
+        {
+            selected_room = id;
+        };
+        qs.on_user_selected = [this](const std::string& id, const std::string& reason)
+        {
+            selected_user = id;
+            selected_reason = reason;
+        };
         qs.open();
     }
 
@@ -294,7 +300,10 @@ TEST_CASE("QuickSwitcher: an upgraded room is hidden only once its successor is 
     QuickSwitcher& qs = *qs_owner;
     TkQuickSwitcherStage stage;
     std::optional<std::string> selected;
-    qs.on_room_selected = [&](const std::string& id) { selected = id; };
+    qs.on_room_selected = [&](const std::string& id)
+    {
+        selected = id;
+    };
     qs.set_rooms_provider(
         []() -> std::vector<RoomInfo>
         {

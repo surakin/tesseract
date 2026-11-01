@@ -94,13 +94,11 @@ public:
     // Closure that opens a confirmation dialog with the given options. Set by
     // MainAppWidget to route through its shared ConfirmDialog overlay; if
     // unset, destructive callbacks fire directly without confirmation.
-    using ConfirmProvider = std::function<void(ConfirmDialog::Options,
-                                                std::function<void()>)>;
+    using ConfirmProvider = std::function<void(ConfirmDialog::Options, std::function<void()>)>;
     void set_confirm_provider(ConfirmProvider p);
     // Opens the shared confirmation dialog. Returns false (nothing shown,
     // `on_confirm` never runs) when no provider is installed.
-    bool request_confirm(ConfirmDialog::Options opts,
-                         std::function<void()> on_confirm);
+    bool request_confirm(ConfirmDialog::Options opts, std::function<void()> on_confirm);
 
     // Closure that opens the shared history-export overlay for a room. Set
     // by MainAppWidget to route through its ExportHistoryDialog; unset
@@ -128,8 +126,7 @@ public:
     // pane visibility) without RoomView itself knowing about that concept.
     std::function<void()> on_room_cleared;
 
-    void set_messages(std::vector<MessageRowData> msgs,
-                      bool room_switch = false);
+    void set_messages(std::vector<MessageRowData> msgs, bool room_switch = false);
     void insert_message(std::size_t index, MessageRowData msg);
     void update_message(std::size_t index, MessageRowData msg);
     void remove_message(std::size_t index);
@@ -187,8 +184,7 @@ public:
 
     // Video GC hooks; see MessageListView::advance_video_generation().
     void advance_video_generation();
-    void sweep_video_players(unsigned keep_generations,
-                             std::chrono::milliseconds retired_ttl);
+    void sweep_video_players(unsigned keep_generations, std::chrono::milliseconds retired_ttl);
     void release_idle_video_players(std::chrono::milliseconds retired_ttl);
     std::size_t video_memory_bytes() const;
 
@@ -290,8 +286,11 @@ public:
     // Close the search strip, clear match highlights and focused event.
     void close_room_search();
 
-    bool      has_room()                 const { return has_room_; }
-    bool      room_search_open()         const;
+    bool has_room() const
+    {
+        return has_room_;
+    }
+    bool room_search_open() const;
 
     RoomSearchBar* room_search_bar() const;
 
@@ -342,8 +341,7 @@ public:
         List,
         Open,
     };
-    void set_thread_panel(ThreadPanelState state,
-                          const std::string& root_event_id);
+    void set_thread_panel(ThreadPanelState state, const std::string& root_event_id);
     ThreadPanelState thread_panel_state() const
     {
         return thread_panel_state_;
@@ -371,21 +369,16 @@ public:
     // Forwarded by RoomView → shell.
     std::function<void()> on_threads_button_clicked;
     // The thread panel's follow toggle: (root_event_id, follow).
-    std::function<void(const std::string& root_event_id, bool follow)>
-        on_thread_follow_toggled;
-    std::function<void(const std::string& root_event_id)>
-        on_thread_open_requested;
+    std::function<void(const std::string& root_event_id, bool follow)> on_thread_follow_toggled;
+    std::function<void(const std::string& root_event_id)> on_thread_open_requested;
     std::function<void()> on_thread_close_requested;
     // Thread-list panel's "mark all as read" button.
     std::function<void()> on_mark_all_read;
-    std::function<void(const std::string& body,
-                       const std::string& formatted_body)>
-        on_thread_send;
+    std::function<void(const std::string& body, const std::string& formatted_body)> on_thread_send;
     // Reply send routed through the active thread instead of the room. Fires
     // when compose_bar_->on_send_reply triggers and thread_panel_state_ ==
     // Open; the shell calls send_thread_reply on the SDK.
-    std::function<void(const std::string& reply_to_event_id,
-                       const std::string& body,
+    std::function<void(const std::string& reply_to_event_id, const std::string& body,
                        const std::string& formatted_body)>
         on_thread_send_reply;
 
@@ -414,16 +407,17 @@ public:
     // around hide_pickers_() for callers outside RoomView — e.g. a shell's
     // resize handler, where a stale-positioned popup should just close
     // rather than stay open in the wrong place.
-    void dismiss_popups() { hide_pickers_(); }
+    void dismiss_popups()
+    {
+        hide_pickers_();
+    }
 
     // Show the "call in progress" banner: a state of the room, so it has no
     // dismiss and no timeout. The shell shows it while the room has a live call
     // the user is not part of and clears it otherwise. Join fires
     // on_start_call; join_enabled is false while the user is in another call.
-    void set_call_banner(const std::string&                 room_id,
-                         const std::string&                 call_intent,
-                         std::vector<CallBanner::Member>    members,
-                         bool                               join_enabled);
+    void set_call_banner(const std::string& room_id, const std::string& call_intent,
+                         std::vector<CallBanner::Member> members, bool join_enabled);
     void clear_call_banner();
     // Show (non-empty) or hide (empty) the banner's Decline button, which the
     // shell offers while an invite to the call is pending.
@@ -452,16 +446,14 @@ public:
     // Room upgrades: fired to open the shown room's previous version ("View
     // older messages" at the top of the timeline) or its replacement (the
     // "replaced" strip's button). `via` are candidate servers for joining it.
-    std::function<void(const std::string& room_id,
-                       const std::vector<std::string>& via)>
+    std::function<void(const std::string& room_id, const std::vector<std::string>& via)>
         on_open_room_version;
 
     // Fired when the user answers (banner or header button). The shell calls
     // ShellBase::start_call(room_id, slot_id, audio_only).
     // audio_only=true skips video capture; audio_only=false starts with video.
-    std::function<void(const std::string& room_id,
-                       const std::string& slot_id,
-                       bool               audio_only)> on_start_call;
+    std::function<void(const std::string& room_id, const std::string& slot_id, bool audio_only)>
+        on_start_call;
 
     // ── Docked call panel ────────────────────────────────────────────────
     // post_delayed signature matches the post_delayed_ provider used by
@@ -470,25 +462,30 @@ public:
 
     // Creates and mounts a CallOverlayWidget child in Docked or DockedExpanded
     // mode. Returns a borrowed pointer (ownership stays in the widget tree).
-    views::CallOverlayWidget* mount_call_panel(
-        views::CallOverlayWidget::Mode        initial_mode,
-        PostDelayedFn                         post_delayed,
-        std::function<void()>                 repaint_requester,
-        std::function<const tk::Image*(const std::string&)> avatar_provider,
-        std::function<std::string(const std::string&)>      display_name_provider);
+    views::CallOverlayWidget*
+    mount_call_panel(views::CallOverlayWidget::Mode initial_mode, PostDelayedFn post_delayed,
+                     std::function<void()> repaint_requester,
+                     std::function<const tk::Image*(const std::string&)> avatar_provider,
+                     std::function<std::string(const std::string&)> display_name_provider);
 
     // Removes and destroys the CallOverlayWidget child.
     void unmount_call_panel();
 
     // Returns the active docked call panel, or nullptr if not mounted.
-    views::CallOverlayWidget* call_panel() const { return call_panel_; }
+    views::CallOverlayWidget* call_panel() const
+    {
+        return call_panel_;
+    }
 
     // ── Pre-call lobby ────────────────────────────────────────────────────
     // Always mounted (hidden until opened). ShellBase::request_call_() calls
     // open() on this instead of joining directly — see CallLobbyView.h.
     // Covers the message list + compose bar (everything below the header)
     // while open; the header itself stays interactive.
-    views::CallLobbyView* call_lobby() const { return call_lobby_; }
+    views::CallLobbyView* call_lobby() const
+    {
+        return call_lobby_;
+    }
 
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
@@ -496,51 +493,45 @@ public:
     std::function<void(std::string body)> on_send;
 
     // Reply send.
-    std::function<void(std::string reply_event_id, std::string body)>
-        on_send_reply;
+    std::function<void(std::string reply_event_id, std::string body)> on_send_reply;
 
     // Edit send. `is_caption` is true for a media-caption edit (route to
     // `Client::send_caption_edit`) vs. a text-body edit (`Client::send_edit`).
-    std::function<void(std::string event_id, std::string new_body,
-                       bool is_caption)>
-        on_send_edit;
+    std::function<void(std::string event_id, std::string new_body, bool is_caption)> on_send_edit;
 
     // Image send. `is_animated` is true for animated GIF/WebP — the host
     // sends via the MSC4230 raw path instead of re-encoding.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption, int w, int h,
-                       bool is_animated, std::string reply_event_id)>
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, int w, int h, bool is_animated,
+                       std::string reply_event_id)>
         on_send_image;
 
     // Video send. `thumb_bytes` is a JPEG first-frame thumbnail (empty when
     // unavailable) with dimensions `thumb_w`/`thumb_h`; `duration_ms`
     // populates `info.duration`. Wired to real routing in a later task.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption, int w, int h,
-                       std::vector<std::uint8_t> thumb_bytes, int thumb_w,
-                       int thumb_h, std::uint64_t duration_ms,
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, int w, int h, std::vector<std::uint8_t> thumb_bytes,
+                       int thumb_w, int thumb_h, std::uint64_t duration_ms,
                        std::string reply_event_id)>
         on_send_video;
 
     // Audio send (plain m.audio, not MSC3245 voice). `duration_ms`
     // populates `info.duration`. Wired to real routing in a later task.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::uint64_t duration_ms, std::string reply_event_id)>
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, std::uint64_t duration_ms, std::string reply_event_id)>
         on_send_audio;
 
     // File send.
-    std::function<void(std::vector<std::uint8_t> bytes, std::string mime,
-                       std::string filename, std::string caption,
-                       std::string reply_event_id)>
+    std::function<void(std::vector<std::uint8_t> bytes, std::string mime, std::string filename,
+                       std::string caption, std::string reply_event_id)>
         on_send_file;
 
     // Gallery send (MSC4274): fires when the composer had 2+ attachments
     // queued. Passthrough of ComposeBar::on_send_gallery — see its doc
     // comment for why this is a separate callback from the four scalar
     // sends above rather than a size-1-vs-N branch inside them.
-    std::function<void(std::vector<ComposeBar::PendingAttachment> items,
-                       std::string caption, std::string reply_event_id)>
+    std::function<void(std::vector<ComposeBar::PendingAttachment> items, std::string caption,
+                       std::string reply_event_id)>
         on_send_gallery;
 
     std::function<void()> on_mic_clicked;
@@ -550,8 +541,7 @@ public:
     std::function<void(std::string event_id)> on_forward_requested;
     // Fired after the user confirms the "Report message" prompt. `reason` is
     // the trimmed optional text (empty if none).
-    std::function<void(std::string event_id, std::string reason)>
-        on_report_requested;
+    std::function<void(std::string event_id, std::string reason)> on_report_requested;
     // Fired from the "Copy event source" overflow-menu item, shown only
     // when Settings::developer_mode is on. Hosts route this to
     // Client::get_event_source() + a clipboard write.
@@ -562,19 +552,15 @@ public:
     std::function<void(const std::string& mxc_url, const std::string& body,
                        const std::string& info_json)>
         on_save_sticker_requested;
-    std::function<bool(const std::string& mxc_url,
-                       const std::string& info_json)>
-        is_sticker_saved;
+    std::function<bool(const std::string& mxc_url, const std::string& info_json)> is_sticker_saved;
     // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
     // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
     // non-empty → `Client::send_reaction_custom`.
-    std::function<void(std::string event_id, std::string key,
-                       std::string source_mxc)>
+    std::function<void(std::string event_id, std::string key, std::string source_mxc)>
         on_reaction_toggled;
     // MSC3381 polls. on_poll_vote carries the full new selection of answer
     // ids; on_poll_end_requested fires only after the user confirmed.
-    std::function<void(std::string event_id, std::vector<std::string> answer_ids)>
-        on_poll_vote;
+    std::function<void(std::string event_id, std::vector<std::string> answer_ids)> on_poll_vote;
     std::function<void(std::string event_id)> on_poll_end_requested;
     std::function<void(std::string url)> on_link_clicked;
     std::function<void(std::string url)> on_link_hovered;
@@ -610,8 +596,7 @@ public:
     std::function<void(std::string original_event_id)> on_scroll_to_original;
     // A forwarded message's "Forwarded from …" attribution was clicked
     // (main timeline and thread panel): open that event, possibly in another room.
-    std::function<void(std::string room_id, std::string event_id)>
-        on_forward_origin_clicked;
+    std::function<void(std::string room_id, std::string event_id)> on_forward_origin_clicked;
     // The timeline's "Jump to first unread" found the divider outside the
     // loaded window; `fully_read_event_id` is the room's m.fully_read event.
     std::function<void(std::string fully_read_event_id)> on_jump_to_unread;
@@ -662,54 +647,54 @@ public:
     // isn't cached yet; the shell fetches the thumbnail.
     std::function<void(const std::string& mxc_url)> on_bridge_avatar_needed;
 
-    std::function<void(std::string room_id)>                on_fetch_notification_mode;
-    std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
-    std::function<void(std::string room_id, bool)>          on_favourite_changed;
-    std::function<void(std::string room_id, bool)>          on_low_priority_changed;
-    std::function<void(std::string room_id)>                on_fetch_room_members;
+    std::function<void(std::string room_id)> on_fetch_notification_mode;
+    std::function<void(std::string room_id, std::string)> on_notification_mode_changed;
+    std::function<void(std::string room_id, bool)> on_favourite_changed;
+    std::function<void(std::string room_id, bool)> on_low_priority_changed;
+    std::function<void(std::string room_id)> on_fetch_room_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
-    std::function<void(std::string room_id)>                on_leave_room;
+    std::function<void(std::string room_id)> on_leave_room;
     // Fired when the user clicks the "Media (N)" row in RoomInfoPanel. The
     // shell opens the MainAppWidget-level RoomMediaView overlay for room_id.
-    std::function<void(std::string room_id)>                on_media_view_requested;
+    std::function<void(std::string room_id)> on_media_view_requested;
     // Fired when RoomInfoPanel opens, so the shell can push
     // set_knock_requests_visible() from a fresh permission check.
-    std::function<void(std::string room_id)>                on_room_info_opened;
+    std::function<void(std::string room_id)> on_room_info_opened;
     // Fired when RoomSettingsView opens, so the shell can push per-field
     // permissions (can_set_room_name/topic/avatar).
-    std::function<void(std::string room_id)>                on_room_settings_opened;
+    std::function<void(std::string room_id)> on_room_settings_opened;
     // Fired when KnockRequestsPanel opens/closes, so the shell can
     // subscribe/unsubscribe Client's live knock-request watcher for room_id
     // (see ShellBase::subscribe_knock_requests_panel_/
     // unsubscribe_knock_requests_panel_).
-    std::function<void(std::string room_id)>                on_knock_requests_opened;
+    std::function<void(std::string room_id)> on_knock_requests_opened;
     // Fired right after invite_dialog_ opens for room_id (from
     // RoomInfoPanel's "Invite people" button) — the owner pushes the room's
     // existing members and wires/refreshes its providers here.
-    std::function<void(std::string room_id)>                on_invite_dialog_opened;
-    std::function<void()>                                   on_knock_requests_closed;
+    std::function<void(std::string room_id)> on_invite_dialog_opened;
+    std::function<void()> on_knock_requests_closed;
     // Fired when the user confirms "Deny & Ban" in the confirm dialog RoomView
     // itself interposes on knock_requests_panel_->on_decline_and_ban (mirrors
     // on_leave_room's confirm-then-forward pattern).
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string reason)>                 on_decline_and_ban_knock_request;
+    std::function<void(std::string room_id, std::string user_id, std::string reason)>
+        on_decline_and_ban_knock_request;
     // Fired once the user confirms Kick / Ban from the room info panel's
     // member context menu (RoomView interposes a ConfirmDialog with an
     // optional reason field). `reason` empty = none given.
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name, std::string reason)> on_kick_member;
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name, std::string reason)> on_ban_member;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name,
+                       std::string reason)>
+        on_kick_member;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name,
+                       std::string reason)>
+        on_ban_member;
     // Fired when the user clicks the room-settings avatar disc to pick a
     // new image. The shell uploads it (Client::upload_media) and calls
     // room_settings_view()->set_staged_avatar() — never commits directly.
-    std::function<void(std::string room_id)>
-        on_room_settings_avatar_upload_requested;
+    std::function<void(std::string room_id)> on_room_settings_avatar_upload_requested;
     // Fired immediately when the room-settings General tab's bridge-override
     // checkbox is toggled — see RoomSettingsView::on_bridge_override_changed's
     // doc comment (local-only preference, applied right away, not staged).
-    std::function<void(std::string room_id, bool not_bridged)>
-        on_bridge_override_changed;
+    std::function<void(std::string room_id, bool not_bridged)> on_bridge_override_changed;
     // The account's default emoji skin tone, read each time the emoji picker
     // opens; on_emoji_skin_tone_changed fires when the user picks a new one
     // from the picker's tone menu.
@@ -717,16 +702,14 @@ public:
     std::function<void(tesseract::emoji::SkinTone)> on_emoji_skin_tone_changed;
     // Room Settings → Moderation's Unban button (applies immediately — see
     // RoomSettingsView::on_unban_requested).
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name)>
+    std::function<void(std::string room_id, std::string user_id, std::string display_name)>
         on_unban_member;
-    std::function<void(std::string user_id)>                on_open_dm;
+    std::function<void(std::string user_id)> on_open_dm;
     // Predicate: return true when a DM with user_id already exists.
     // Set by the shell (ShellBase wires this to find_existing_dm_).
-    std::function<bool(const std::string& user_id)>         on_has_dm;
-    std::function<void(std::string user_id)>                on_ignore_user;
-    std::function<void(std::string avatar_url, std::string display_name)>
-                                                            on_avatar_clicked;
+    std::function<bool(const std::string& user_id)> on_has_dm;
+    std::function<void(std::string user_id)> on_ignore_user;
+    std::function<void(std::string avatar_url, std::string display_name)> on_avatar_clicked;
 
     // Emoji picking (compose insert or reaction toggle) and sticker sending
     // are both handled internally — RoomView owns and positions the picker
@@ -796,7 +779,7 @@ public:
     // room/space image-pack grid, which claims it first via
     // RoomSettingsView being the active overlay panel).
     std::function<std::uint64_t()> media_upload_limit_provider;
-    MediaInfoExtractor              media_info_extractor;
+    MediaInfoExtractor media_info_extractor;
     std::function<void(FileDropOutcome)> on_file_drop_outcome;
 
     // ── tk::Widget overrides ─────────────────────────────────────────────
@@ -814,11 +797,17 @@ public:
     void access_detached_children(std::vector<tk::Widget*>& out) const override
     {
         if (emoji_picker_visible_ && emoji_picker_)
+        {
             out.push_back(emoji_picker_.get());
+        }
         if (sticker_picker_visible_ && sticker_picker_)
+        {
             out.push_back(sticker_picker_.get());
+        }
         if (receipt_popup_visible_ && receipt_popup_)
+        {
             out.push_back(receipt_popup_.get());
+        }
     }
     // Reached via Host's popup-first-refusal click-outside path while a
     // picker is the registered popup.
@@ -842,7 +831,7 @@ public:
     tk::Widget* dispatch_pointer_down(tk::Point world) override;
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override;
     tk::Widget* dispatch_right_click(tk::Point world) override;
-    bool        dispatch_wheel(tk::Point world, float dx, float dy, bool is_touchpad = false) override;
+    bool dispatch_wheel(tk::Point world, float dx, float dy, bool is_touchpad = false) override;
     // Same overlay-first routing as above, for a dropped file — e.g. while
     // RoomSettingsView is open, a drop anywhere in the room reaches its
     // image-pack grid (or is discarded if it misses the dialog) rather than
@@ -897,7 +886,7 @@ private:
     // (except from show_room_info(), which always seeds it) so mutations in
     // rooms nobody is looking at don't pay the O(n) rescan.
     void refresh_media_count_();
-    int  media_count_() const;
+    int media_count_() const;
     // Set by refresh_media_count_(); paint() takes the count once for a burst.
     bool media_count_dirty_ = false;
     void show_room_settings();
@@ -905,13 +894,11 @@ private:
     // firing directly if unset) then forwards to on_leave_room. Shared by
     // room_info_panel_->on_leave_room and room_settings_view_->on_leave_room
     // — close_panel closes whichever of the two panels is currently open.
-    void confirm_and_leave_room_(std::function<void()> close_panel,
-                                 std::string room_id);
+    void confirm_and_leave_room_(std::function<void()> close_panel, std::string room_id);
     // Confirms kicking (ban=false) / banning a member, collecting an
     // optional reason, then forwards to on_kick_member / on_ban_member.
     // Falls back to firing directly (no reason) if confirm_provider_ is unset.
-    void confirm_and_moderate_member_(bool ban, std::string room_id,
-                                      std::string user_id,
+    void confirm_and_moderate_member_(bool ban, std::string room_id, std::string user_id,
                                       std::string display_name);
     // Asks for an optional reason, then fires on_report_requested. Falls back
     // to firing directly (no reason) if confirm_provider_ is unset.
@@ -923,8 +910,7 @@ private:
     void show_knock_requests();
     // Close room_info_panel_ and open invite_dialog_ for the current room.
     void show_invite_dialog();
-    void show_user_profile(std::string user_id, std::string display_name,
-                           std::string avatar_url);
+    void show_user_profile(std::string user_id, std::string display_name, std::string avatar_url);
 
     // ── Emoji/sticker picker hosting ─────────────────────────────────────
     // Both pickers are constructed via tk::create_widget (so their own
@@ -971,9 +957,9 @@ private:
     // emoji button).
     std::string pending_reaction_event_id_;
 
-    bool has_room_ = false; // true after the first set_room() call
+    bool has_room_ = false;               // true after the first set_room() call
     tesseract::Client* client_ = nullptr; // borrowed; see set_client()
-    bool native_drag_hover_ = false; // true while claiming on_native_drag_hover
+    bool native_drag_hover_ = false;      // true while claiming on_native_drag_hover
 
     std::function<void()> repaint_requester_;
     std::function<void(int, std::function<void()>)> post_delayed_;
@@ -990,11 +976,11 @@ private:
     RoomHeader* header_ = nullptr;
     MessageListView* message_list_ = nullptr;
     ComposeBar* compose_bar_ = nullptr;
-    RoomInfoPanel*    room_info_panel_    = nullptr;
+    RoomInfoPanel* room_info_panel_ = nullptr;
     RoomSettingsView* room_settings_view_ = nullptr;
     UserProfilePanel* user_profile_panel_ = nullptr;
-    PopupMenu*        overflow_menu_      = nullptr;
-    PopupMenu*        call_popup_         = nullptr;
+    PopupMenu* overflow_menu_ = nullptr;
+    PopupMenu* call_popup_ = nullptr;
     // Backs RoomHeader's action-button overflow ("more") trigger. A
     // dedicated instance rather than reusing overflow_menu_ (the per-message
     // "more" menu) — RoomHeader can't own this itself since it paints early
@@ -1002,7 +988,7 @@ private:
     // anything it painted would just get overdrawn; owning it here, arranged
     // at RoomView's own full bounds like every other overlay panel, is what
     // lets it paint last and appear above everything.
-    PopupMenu*        header_overflow_menu_ = nullptr;
+    PopupMenu* header_overflow_menu_ = nullptr;
     // Full-bleed media gallery, opened from the "Media (N)" row in
     // RoomInfoPanel. Added last (after everything else, including
     // room_search_bar_/call_banner_) so it paints and dispatches above the
@@ -1010,13 +996,13 @@ private:
     // so it participates in active_overlay_panel_()'s Tab-scoping/pointer
     // routing and set_room()'s room-switch panel-closing for free, the same
     // as room_info_panel_/room_settings_view_/user_profile_panel_.
-    RoomMediaView*    room_media_view_    = nullptr;
+    RoomMediaView* room_media_view_ = nullptr;
     // Modal invite-to-room card, opened from RoomInfoPanel's "Invite
     // people" button. RoomView-owned (added after room_media_view_) for the
     // same reasons as room_media_view_: pop-out windows get it for free, and
     // it joins active_overlay_panel_() routing and set_room()'s room-switch
     // closing.
-    InviteDialog*     invite_dialog_      = nullptr;
+    InviteDialog* invite_dialog_ = nullptr;
     // Admin-side "Requests to join" panel (MSC2403). Swaps in for
     // room_info_panel_ exactly like room_settings_view_ does — see
     // show_knock_requests()/KnockRequestsPanel's own header doc comment.
@@ -1027,7 +1013,7 @@ private:
     std::function<bool(const std::string&)> stored_media_failed_provider_;
     // Lazily created when the thread panel first opens. Owned by the tk
     // child list (add_child); we keep a borrowed pointer for access.
-    ThreadView*     thread_view_      = nullptr;
+    ThreadView* thread_view_ = nullptr;
     // The visible list copy_active_selection() would copy from, or null.
     MessageListView* selection_list_() const;
     ThreadListView* thread_list_view_ = nullptr;
@@ -1036,10 +1022,10 @@ private:
     // pointer for access. Stays in the child list (with set_visible(false))
     // after the room's pins drop back to empty so subsequent set_pinned()
     // calls don't re-add it.
-    PinnedBanner*   pinned_banner_    = nullptr;
+    PinnedBanner* pinned_banner_ = nullptr;
     // Click/hover blocker over message_list_, visible only while the
     // thread panel is open. See the nested class doc above.
-    MessageBlocker*  message_blocker_   = nullptr;
+    MessageBlocker* message_blocker_ = nullptr;
     // Call-in-progress banner — created in constructor (hidden), driven by
     // set_call_banner() / clear_call_banner().
     CallBanner* call_banner_ = nullptr;
@@ -1056,7 +1042,7 @@ private:
     // list + compose bar while open(). See call_lobby()'s doc comment.
     views::CallLobbyView* call_lobby_ = nullptr;
     // Docked search strip under the header; nullptr until first open.
-    RoomSearchBar*   room_search_bar_   = nullptr;
+    RoomSearchBar* room_search_bar_ = nullptr;
     ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;
     std::string thread_panel_root_;
     bool thread_subscriptions_supported_ = false;

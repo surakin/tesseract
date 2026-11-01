@@ -77,15 +77,24 @@ public:
     // the thumb first (matching ListView's "thumb wins over content
     // underneath" priority), then falls back to ordinary recursion.
     tk::Widget* dispatch_pointer_down(tk::Point world) override;
-    void        on_pointer_drag(tk::Point local) override;
-    void        on_pointer_up(tk::Point local, bool inside_self) override;
+    void on_pointer_drag(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
 
     // Test-only inspection of the scroll math.
-    float content_height_for_testing() const { return content_height_; }
-    float scroll_y_for_testing() const { return scroll_y_; }
+    float content_height_for_testing() const
+    {
+        return content_height_;
+    }
+    float scroll_y_for_testing() const
+    {
+        return scroll_y_;
+    }
 
 protected:
-    float content_height() const override { return content_height_; }
+    float content_height() const override
+    {
+        return content_height_;
+    }
 
 private:
     // Owns every group/widget added via add_group()/add_widget(); handles

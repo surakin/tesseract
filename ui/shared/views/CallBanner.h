@@ -41,7 +41,10 @@ public:
     void set_call(const std::string& call_intent, std::vector<Member> members,
                   std::function<void()> on_join, bool join_enabled);
 
-    void set_avatar_provider(AvatarProvider p) { avatar_provider_ = std::move(p); }
+    void set_avatar_provider(AvatarProvider p)
+    {
+        avatar_provider_ = std::move(p);
+    }
 
     // Show a Decline button while an invite to this call is pending; an empty
     // callback hides it again. The button is created on first use, so a banner
@@ -54,17 +57,23 @@ public:
     // Hide the banner and clear its callback.
     void clear();
 
-    const std::vector<Member>& members() const { return members_; }
+    const std::vector<Member>& members() const
+    {
+        return members_;
+    }
 
     static constexpr float kBannerH = 48.0f;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
     // Accessibility: a named Group so the call type and who is in it (both
     // canvas-painted) are announced; Join attaches under it.
-    tk::Role access_role() const override { return tk::Role::Group; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
     std::string access_name() const override;
 
 private:
@@ -72,16 +81,16 @@ private:
     // "+N" disc when members overflow).
     static std::size_t avatar_slots(std::size_t count);
 
-    std::string           call_intent_; // "audio" | "video" | ""
-    std::vector<Member>   members_;
-    AvatarProvider        avatar_provider_;
-    tk::Button*           join_btn_ = nullptr;
-    tk::Button*           decline_btn_ = nullptr;
-    tk::IconCache         phone_icon_;
-    tk::IconCache         video_icon_;
-    tk::Rect              icon_rect_{};
-    tk::Rect              text_rect_{};
-    tk::Rect              avatars_rect_{};
+    std::string call_intent_; // "audio" | "video" | ""
+    std::vector<Member> members_;
+    AvatarProvider avatar_provider_;
+    tk::Button* join_btn_ = nullptr;
+    tk::Button* decline_btn_ = nullptr;
+    tk::IconCache phone_icon_;
+    tk::IconCache video_icon_;
+    tk::Rect icon_rect_{};
+    tk::Rect text_rect_{};
+    tk::Rect avatars_rect_{};
 };
 
 } // namespace tesseract::views

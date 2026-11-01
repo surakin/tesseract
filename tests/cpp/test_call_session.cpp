@@ -70,8 +70,7 @@ TEST_CASE("CallSession tracks joins, updates and leaves", "[call_session]")
     CHECK(s.participants().size() == 1);
 }
 
-TEST_CASE("CallSession update for an untracked participant adds it",
-          "[call_session]")
+TEST_CASE("CallSession update for an untracked participant adds it", "[call_session]")
 {
     tesseract::Client client;
     CallSession s(&client, "!r:x", "s", 1);
@@ -80,8 +79,7 @@ TEST_CASE("CallSession update for an untracked participant adds it",
     CHECK(s.participants()[0].participant_id == "late");
 }
 
-TEST_CASE("CallSession end clears the roster and blocks further controls",
-          "[call_session]")
+TEST_CASE("CallSession end clears the roster and blocks further controls", "[call_session]")
 {
     tesseract::Client client;
     CallSession s(&client, "!r:x", "s", 1);
@@ -98,8 +96,7 @@ TEST_CASE("CallSession end clears the roster and blocks further controls",
     CHECK_NOTHROW(s.hang_up());
 }
 
-TEST_CASE("CallSession controls forward while the call is live",
-          "[call_session]")
+TEST_CASE("CallSession controls forward while the call is live", "[call_session]")
 {
     tesseract::Client client;
     CallSession s(&client, "!r:x", "s", 1);

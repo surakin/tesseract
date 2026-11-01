@@ -59,16 +59,14 @@ void apply_menu_theme(Mode m)
     static SetPreferredAppModeFn set_preferred_app_mode = []
     {
         HMODULE h = GetModuleHandleW(L"uxtheme.dll");
-        return h ? reinterpret_cast<SetPreferredAppModeFn>(
-                       GetProcAddress(h, MAKEINTRESOURCEA(135)))
-                  : nullptr;
+        return h ? reinterpret_cast<SetPreferredAppModeFn>(GetProcAddress(h, MAKEINTRESOURCEA(135)))
+                 : nullptr;
     }();
     static FlushMenuThemesFn flush_menu_themes = []
     {
         HMODULE h = GetModuleHandleW(L"uxtheme.dll");
-        return h ? reinterpret_cast<FlushMenuThemesFn>(
-                       GetProcAddress(h, MAKEINTRESOURCEA(136)))
-                  : nullptr;
+        return h ? reinterpret_cast<FlushMenuThemesFn>(GetProcAddress(h, MAKEINTRESOURCEA(136)))
+                 : nullptr;
     }();
     if (!set_preferred_app_mode || !flush_menu_themes)
     {
@@ -151,10 +149,9 @@ const Palette& dark_palette()
 Mode read_system_mode()
 {
     HKEY key = nullptr;
-    LSTATUS rc = RegOpenKeyExW(
-        HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 0,
-        KEY_READ, &key);
+    LSTATUS rc = RegOpenKeyExW(HKEY_CURRENT_USER,
+                               L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                               0, KEY_READ, &key);
     if (rc != ERROR_SUCCESS)
     {
         return Mode::Light;
@@ -162,8 +159,8 @@ Mode read_system_mode()
     DWORD value = 1;
     DWORD size = sizeof(value);
     DWORD type = REG_DWORD;
-    RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, &type,
-                     reinterpret_cast<BYTE*>(&value), &size);
+    RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, &type, reinterpret_cast<BYTE*>(&value),
+                     &size);
     RegCloseKey(key);
     return value == 0 ? Mode::Dark : Mode::Light;
 }
@@ -215,8 +212,7 @@ const wchar_t* preferred_family(FontRole role)
     {
         return L"Segoe UI";
     }
-    return (role == FontRole::Title) ? L"Segoe UI Variable Display"
-                                     : L"Segoe UI Variable Text";
+    return (role == FontRole::Title) ? L"Segoe UI Variable Display" : L"Segoe UI Variable Text";
 }
 
 // Point size + weight for a FontRole, shared by make_font() (which turns it
@@ -265,8 +261,8 @@ HFONT make_font(FontRole role)
     // latter is captured once and never reflects a monitor move or a live
     // WM_DPICHANGED, so on_dpi_changed() below would clear the font cache
     // only to rebuild it at the same wrong size.
-    const int dpi = g_main_hwnd ? static_cast<int>(GetDpiForWindow(g_main_hwnd))
-                                 : GetDpiForSystem();
+    const int dpi =
+        g_main_hwnd ? static_cast<int>(GetDpiForWindow(g_main_hwnd)) : GetDpiForSystem();
     LONG height = -MulDiv(pt, dpi, 72);
 
     LOGFONTW lf{};
@@ -280,21 +276,28 @@ HFONT make_font(FontRole role)
     // A user family (font_config.h) for the tk role this GDI role sizes from.
     tk::FontRole tk_role = tk::FontRole::SenderName;
     if (role == FontRole::Small)
+    {
         tk_role = tk::FontRole::Timestamp;
+    }
     else if (role == FontRole::Body)
+    {
         tk_role = tk::FontRole::SidebarPreview;
+    }
     else if (role == FontRole::Title)
+    {
         tk_role = tk::FontRole::Title;
+    }
     const std::string_view user = tk::font_role_family(tk_role);
     if (!user.empty())
     {
-        const int n = MultiByteToWideChar(CP_UTF8, 0, user.data(),
-                                          static_cast<int>(user.size()),
+        const int n = MultiByteToWideChar(CP_UTF8, 0, user.data(), static_cast<int>(user.size()),
                                           lf.lfFaceName, LF_FACESIZE - 1);
         lf.lfFaceName[n > 0 ? n : 0] = L'\0';
     }
     if (!lf.lfFaceName[0] || user.empty())
+    {
         wcsncpy_s(lf.lfFaceName, preferred_family(role), _TRUNCATE);
+    }
     return CreateFontIndirectW(&lf);
 }
 
@@ -369,10 +372,8 @@ namespace
 int read_accent_on_title_bars()
 {
     DWORD value = 0, size = sizeof(value);
-    LSTATUS rc = RegGetValueW(HKEY_CURRENT_USER,
-                              L"Software\\Microsoft\\Windows\\DWM",
-                              L"ColorPrevalence", RRF_RT_REG_DWORD, nullptr,
-                              &value, &size);
+    LSTATUS rc = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\DWM",
+                              L"ColorPrevalence", RRF_RT_REG_DWORD, nullptr, &value, &size);
     return (rc == ERROR_SUCCESS && value == 1) ? 1 : 0;
 }
 } // namespace
@@ -431,11 +432,9 @@ TitleBarColors title_bar_colors(bool active)
 {
     if (high_contrast())
     {
-        const COLORREF text = GetSysColor(active ? COLOR_CAPTIONTEXT
-                                                 : COLOR_INACTIVECAPTIONTEXT);
+        const COLORREF text = GetSysColor(active ? COLOR_CAPTIONTEXT : COLOR_INACTIVECAPTIONTEXT);
         const COLORREF hl = GetSysColor(COLOR_HIGHLIGHT);
-        return {GetSysColor(active ? COLOR_ACTIVECAPTION
-                                   : COLOR_INACTIVECAPTION),
+        return {GetSysColor(active ? COLOR_ACTIVECAPTION : COLOR_INACTIVECAPTION),
                 text,
                 hl,
                 hl,
@@ -445,12 +444,11 @@ TitleBarColors title_bar_colors(bool active)
     const auto& pal = palette();
     if (active && accent_on_title_bars())
     {
-        return {pal.accent,        pal.text_on_accent, pal.accent_hover,
+        return {pal.accent,         pal.text_on_accent, pal.accent_hover,
                 pal.accent_pressed, pal.accent,         pal.text_on_accent};
     }
     const COLORREF text = active ? pal.text_primary : pal.text_secondary;
-    return {pal.chrome_bg, text, pal.subtle_hover, pal.subtle_pressed,
-            pal.separator, text};
+    return {pal.chrome_bg, text, pal.subtle_hover, pal.subtle_pressed, pal.separator, text};
 }
 
 void apply_border_color(HWND hwnd, bool active)
@@ -460,10 +458,8 @@ void apply_border_color(HWND hwnd, bool active)
         return;
     }
     const auto& pal = palette();
-    COLORREF col = high_contrast()
-                       ? kDwmColorDefault
-                       : ((active && accent_on_title_bars()) ? pal.accent
-                                                             : pal.border);
+    COLORREF col = high_contrast() ? kDwmColorDefault
+                                   : ((active && accent_on_title_bars()) ? pal.accent : pal.border);
     DwmSetWindowAttribute(hwnd, kDwmaBorderColor, &col, sizeof(col));
 }
 
@@ -486,21 +482,25 @@ COLORREF accent_colorref()
     // Masking out the alpha gives a ready-to-use COLORREF.
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER,
-            L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent",
-            0, KEY_READ, &key) == ERROR_SUCCESS)
+                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent", 0,
+                      KEY_READ, &key) == ERROR_SUCCESS)
     {
         DWORD value = 0, size = sizeof(value), type = REG_DWORD;
         LSTATUS rc = RegQueryValueExW(key, L"AccentColorMenu", nullptr, &type,
                                       reinterpret_cast<BYTE*>(&value), &size);
         RegCloseKey(key);
         if (rc == ERROR_SUCCESS && type == REG_DWORD)
+        {
             return value & 0x00FFFFFF;
+        }
     }
     // Fallback: DwmGetColorizationColor is documented as 0xAARRGGBB.
     DWORD col = 0;
-    BOOL  opaque = FALSE;
+    BOOL opaque = FALSE;
     if (SUCCEEDED(DwmGetColorizationColor(&col, &opaque)))
+    {
         return RGB((col >> 16) & 0xFF, (col >> 8) & 0xFF, col & 0xFF);
+    }
     return RGB(0x00, 0x78, 0xD4); // Win11 default blue
 }
 
@@ -532,11 +532,9 @@ void apply_window_attributes(HWND hwnd)
 
     // Dark caption. Try the post-20H1 attribute first; fall back to the
     // 19H1 placeholder value used by early Insider builds.
-    if (FAILED(DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkMode, &dark,
-                                     sizeof(dark))))
+    if (FAILED(DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkMode, &dark, sizeof(dark))))
     {
-        DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkMode_Pre20H1, &dark,
-                              sizeof(dark));
+        DwmSetWindowAttribute(hwnd, kDwmaUseImmersiveDarkMode_Pre20H1, &dark, sizeof(dark));
     }
 
     // Title bar colours (Win11 22H2+). Silently ignored on older builds.
@@ -547,19 +545,16 @@ void apply_window_attributes(HWND hwnd)
     COLORREF caption = hc ? kDwmColorDefault : pal.chrome_bg;
     COLORREF caption_text = hc ? kDwmColorDefault : pal.text_primary;
     DwmSetWindowAttribute(hwnd, kDwmaCaptionColor, &caption, sizeof(caption));
-    DwmSetWindowAttribute(hwnd, kDwmaTextColor, &caption_text,
-                          sizeof(caption_text));
+    DwmSetWindowAttribute(hwnd, kDwmaTextColor, &caption_text, sizeof(caption_text));
     apply_border_color(hwnd, GetForegroundWindow() == hwnd);
 
     // Mica backdrop (Win11 22H2+). Ignored on older builds.
     int backdrop = kDwmsbtMainWindow;
-    DwmSetWindowAttribute(hwnd, kDwmaSystemBackdropType, &backdrop,
-                          sizeof(backdrop));
+    DwmSetWindowAttribute(hwnd, kDwmaSystemBackdropType, &backdrop, sizeof(backdrop));
 
     // Win11 rounded corners.
     int corner = kDwmwcpRound;
-    DwmSetWindowAttribute(hwnd, kDwmaWindowCornerPreference, &corner,
-                          sizeof(corner));
+    DwmSetWindowAttribute(hwnd, kDwmaWindowCornerPreference, &corner, sizeof(corner));
 }
 
 void apply_control_theme(HWND hwnd)
@@ -568,8 +563,7 @@ void apply_control_theme(HWND hwnd)
     {
         return;
     }
-    const wchar_t* sub =
-        (current_mode() == Mode::Dark) ? L"DarkMode_Explorer" : L"Explorer";
+    const wchar_t* sub = (current_mode() == Mode::Dark) ? L"DarkMode_Explorer" : L"Explorer";
     SetWindowTheme(hwnd, sub, nullptr);
 }
 
@@ -658,8 +652,8 @@ std::unordered_map<HWND, BtnInfo>& button_registry()
     return map;
 }
 
-void fill_rounded(Gdiplus::Graphics& g, Gdiplus::Brush& brush, float x, float y,
-                  float w, float h, float r)
+void fill_rounded(Gdiplus::Graphics& g, Gdiplus::Brush& brush, float x, float y, float w, float h,
+                  float r)
 {
     r = std::min(r, std::min(w, h) / 2.0f);
     Gdiplus::GraphicsPath path;
@@ -671,9 +665,8 @@ void fill_rounded(Gdiplus::Graphics& g, Gdiplus::Brush& brush, float x, float y,
     g.FillPath(&brush, &path);
 }
 
-LRESULT CALLBACK button_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                      LPARAM lParam, UINT_PTR /*id*/,
-                                      DWORD_PTR /*ref*/)
+LRESULT CALLBACK button_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                      UINT_PTR /*id*/, DWORD_PTR /*ref*/)
 {
     auto& reg = button_registry();
     auto it = reg.find(hwnd);
@@ -695,8 +688,7 @@ LRESULT CALLBACK button_subclass_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_MOUSELEAVE:
         if (it != reg.end())
         {
-            it->second.state =
-                IsWindowEnabled(hwnd) ? BtnState::Normal : BtnState::Disabled;
+            it->second.state = IsWindowEnabled(hwnd) ? BtnState::Normal : BtnState::Disabled;
             invalidate();
         }
         break;
@@ -752,10 +744,8 @@ void draw_button(DRAWITEMSTRUCT* dis)
     BtnInfo info = it->second;
     const auto& pal = palette();
 
-    bool pressed =
-        (dis->itemState & ODS_SELECTED) != 0 || info.state == BtnState::Pressed;
-    bool disabled = (dis->itemState & ODS_DISABLED) != 0 ||
-                    info.state == BtnState::Disabled;
+    bool pressed = (dis->itemState & ODS_SELECTED) != 0 || info.state == BtnState::Pressed;
+    bool disabled = (dis->itemState & ODS_DISABLED) != 0 || info.state == BtnState::Disabled;
     bool hover = info.state == BtnState::Hover && !pressed && !disabled;
 
     COLORREF fill;
@@ -835,9 +825,7 @@ void draw_button(DRAWITEMSTRUCT* dis)
     float fy = (float)dis->rcItem.top + 1.0f;
     float fw = (float)(dis->rcItem.right - dis->rcItem.left) - 2.0f;
     float fh = (float)(dis->rcItem.bottom - dis->rcItem.top) - 2.0f;
-    float radius = (info.style == ButtonStyle::Icon)
-                       ? std::min(fw, fh) / 2.0f - 2.0f
-                       : 4.0f;
+    float radius = (info.style == ButtonStyle::Icon) ? std::min(fw, fh) / 2.0f - 2.0f : 4.0f;
     fill_rounded(g, fillBrush, fx, fy, fw, fh, radius);
 
     wchar_t label[128] = {};
@@ -846,10 +834,9 @@ void draw_button(DRAWITEMSTRUCT* dis)
     {
         SetBkMode(dis->hDC, TRANSPARENT);
         SetTextColor(dis->hDC, text);
-        HFONT old = (HFONT)SelectObject(dis->hDC,
-                                        font(info.style == ButtonStyle::Primary
-                                                 ? FontRole::UiSemibold
-                                                 : FontRole::Ui));
+        HFONT old = (HFONT)SelectObject(
+            dis->hDC,
+            font(info.style == ButtonStyle::Primary ? FontRole::UiSemibold : FontRole::Ui));
         DrawTextW(dis->hDC, label, -1, &dis->rcItem,
                   DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
         SelectObject(dis->hDC, old);

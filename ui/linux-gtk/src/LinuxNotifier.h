@@ -25,17 +25,13 @@ public:
     void notify(const tesseract::Notification& n) override;
 
 private:
-    static void on_action_invoked_cb(GDBusConnection*, const char*, const char*,
-                                     const char*, const char*, GVariant*,
-                                     gpointer);
-    static void on_notification_closed_cb(GDBusConnection*, const char*,
-                                          const char*, const char*, const char*,
-                                          GVariant*, gpointer);
-    static void on_portal_action_invoked_cb(GDBusConnection*, const char*,
-                                            const char*, const char*,
+    static void on_action_invoked_cb(GDBusConnection*, const char*, const char*, const char*,
+                                     const char*, GVariant*, gpointer);
+    static void on_notification_closed_cb(GDBusConnection*, const char*, const char*, const char*,
+                                          const char*, GVariant*, gpointer);
+    static void on_portal_action_invoked_cb(GDBusConnection*, const char*, const char*, const char*,
                                             const char*, GVariant*, gpointer);
-    static void on_notification_replied_cb(GDBusConnection*, const char*,
-                                           const char*, const char*,
+    static void on_notification_replied_cb(GDBusConnection*, const char*, const char*, const char*,
                                            const char*, GVariant*, gpointer);
     // KDE/GNOME de-facto extension (not in the base freedesktop.org spec):
     // fires just before ActionInvoked with a Wayland xdg_activation_v1
@@ -43,9 +39,8 @@ private:
     // resolve. Daemons that don't implement it simply never fire this, so
     // subscribing unconditionally is safe. Stashed in correlation_ until
     // the matching ActionInvoked arrives.
-    static void on_activation_token_cb(GDBusConnection*, const char*,
-                                       const char*, const char*, const char*,
-                                       GVariant*, gpointer);
+    static void on_activation_token_cb(GDBusConnection*, const char*, const char*, const char*,
+                                       const char*, GVariant*, gpointer);
     bool use_portal() const;
 
     GDBusConnection* bus_ = nullptr;

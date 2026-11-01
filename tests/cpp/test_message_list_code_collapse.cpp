@@ -15,19 +15,20 @@ using namespace tk;
 
 namespace
 {
-MessageRowData code_collapse_row(const std::string& id, int lines,
-                                 bool with_prose)
+MessageRowData code_collapse_row(const std::string& id, int lines, bool with_prose)
 {
     std::string code;
     for (int i = 0; i < lines; ++i)
+    {
         code += "line " + std::to_string(i) + "\n";
+    }
     MessageRowData r;
     r.kind = MessageRowData::Kind::Text;
     r.event_id = id;
     r.sender_name = "Alice";
     r.body = "code";
-    r.formatted_body = std::string(with_prose ? "<p>intro</p>" : "") +
-                       "<pre><code>" + code + "</code></pre>";
+    r.formatted_body =
+        std::string(with_prose ? "<p>intro</p>" : "") + "<pre><code>" + code + "</code></pre>";
     return r;
 }
 
@@ -38,7 +39,9 @@ MessageRowData code_collapse_wrapped_row(const std::string& id)
     for (int i = 0; i < 4; ++i)
     {
         for (int j = 0; j < 60; ++j)
+        {
             code += "word" + std::to_string(j) + " ";
+        }
         code += "\n";
     }
     MessageRowData r;
@@ -66,12 +69,14 @@ struct CodeCollapseFixture
         v.measure(lc, {500, 900});
         v.arrange(lc, {0, 0, 500, 900});
     }
-    AccessNode tree() { return build_access_tree(&v); }
+    AccessNode tree()
+    {
+        return build_access_tree(&v);
+    }
 };
 } // namespace
 
-TEST_CASE("a long code block is shorter collapsed than expanded",
-          "[message_list][code_collapse]")
+TEST_CASE("a long code block is shorter collapsed than expanded", "[message_list][code_collapse]")
 {
     CodeCollapseFixture f(code_collapse_row("$a", 30, true));
     const float collapsed = f.v.content_height();
@@ -85,8 +90,7 @@ TEST_CASE("a long code block is shorter collapsed than expanded",
     CHECK(expanded > collapsed);
 
     AccessNode t2 = f.tree();
-    const AccessNode* collapse =
-        access_test::find_named(t2, "Collapse code block");
+    const AccessNode* collapse = access_test::find_named(t2, "Collapse code block");
     REQUIRE(collapse != nullptr);
     CHECK(access_test::find_named(t2, "Expand code block") == nullptr);
     CHECK(invoke_default_action(*collapse));
@@ -94,16 +98,14 @@ TEST_CASE("a long code block is shorter collapsed than expanded",
     CHECK(f.v.content_height() == collapsed);
 }
 
-TEST_CASE("a code-only message also gets the Expand action",
-          "[message_list][code_collapse]")
+TEST_CASE("a code-only message also gets the Expand action", "[message_list][code_collapse]")
 {
     CodeCollapseFixture f(code_collapse_row("$a", 30, false));
     AccessNode t = f.tree();
     CHECK(access_test::find_named(t, "Expand code block") != nullptr);
 }
 
-TEST_CASE("a short code block is not collapsible",
-          "[message_list][code_collapse]")
+TEST_CASE("a short code block is not collapsible", "[message_list][code_collapse]")
 {
     CodeCollapseFixture f(code_collapse_row("$a", 5, true));
     AccessNode t = f.tree();
@@ -111,8 +113,7 @@ TEST_CASE("a short code block is not collapsible",
     CHECK(access_test::find_named(t, "Collapse code block") == nullptr);
 }
 
-TEST_CASE("a code block at the threshold stays expanded",
-          "[message_list][code_collapse]")
+TEST_CASE("a code block at the threshold stays expanded", "[message_list][code_collapse]")
 {
     CodeCollapseFixture f(code_collapse_row("$a", 15, true));
     AccessNode t = f.tree();

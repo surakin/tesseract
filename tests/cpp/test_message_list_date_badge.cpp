@@ -19,10 +19,9 @@ namespace
 
 std::uint64_t now_ms()
 {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count());
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
 }
 
 MessageRowData make_text_row(const std::string& id, std::uint64_t ts)
@@ -77,7 +76,9 @@ TEST_CASE("date badge is hidden at the bottom and shown once scrolled up, "
     const std::uint64_t ts = now_ms();
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 60; ++i)
+    {
         rows.push_back(make_text_row("$e" + std::to_string(i), ts));
+    }
 
     v.set_messages(std::move(rows), /*room_switch=*/true); // auto-scrolls to bottom
     st.run(v, {0, 0, 320, 200});
@@ -108,10 +109,14 @@ TEST_CASE("date badge label reflects the day of the topmost visible row",
 
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 30; ++i)
+    {
         rows.push_back(make_text_row("$old" + std::to_string(i), ts_old));
+    }
     rows.push_back(make_day_separator(ts_new));
     for (int i = 0; i < 60; ++i)
+    {
         rows.push_back(make_text_row("$new" + std::to_string(i), ts_new));
+    }
 
     v.set_messages(std::move(rows), /*room_switch=*/true);
     st.run(v, {0, 0, 320, 200});
@@ -146,10 +151,14 @@ TEST_CASE("date badge rests at the same position when no DaySeparator row "
 
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 30; ++i)
+    {
         rows.push_back(make_text_row("$old" + std::to_string(i), ts_old));
+    }
     rows.push_back(make_day_separator(ts_new));
     for (int i = 0; i < 60; ++i)
+    {
         rows.push_back(make_text_row("$new" + std::to_string(i), ts_new));
+    }
 
     v.set_messages(std::move(rows), /*room_switch=*/true);
     st.run(v, {0, 0, 320, 200});

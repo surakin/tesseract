@@ -10,8 +10,7 @@ using tesseract::views::CallBanner;
 using tesseract::views::InviteCard;
 using tesseract::views::RoomPreviewView;
 
-TEST_CASE("CallBanner announces the call type and who is in it",
-         "[banner][accessibility]")
+TEST_CASE("CallBanner announces the call type and who is in it", "[banner][accessibility]")
 {
     auto banner = tk::create_root_widget<CallBanner>(nullptr);
     banner->set_call("video", {{"@a:x.org", "Alice"}, {"@b:x.org", ""}}, [] {}, true);
@@ -22,14 +21,19 @@ TEST_CASE("CallBanner announces the call type and who is in it",
     CHECK(banner->access_name() == "Call in progress");
 }
 
-TEST_CASE("CallBanner shows until cleared and has only a Join button",
-         "[banner]")
+TEST_CASE("CallBanner shows until cleared and has only a Join button", "[banner]")
 {
     auto banner = tk::create_root_widget<CallBanner>(nullptr);
     CHECK_FALSE(banner->visible());
 
     int joined = 0;
-    banner->set_call("audio", {{"@a:x.org", "Alice"}}, [&] { ++joined; }, true);
+    banner->set_call(
+        "audio", {{"@a:x.org", "Alice"}},
+        [&]
+        {
+            ++joined;
+        },
+        true);
     CHECK(banner->visible());
     CHECK(banner->members().size() == 1);
     // Join is the only button: no Decline/Answer pair, and no auto-dismiss API.
@@ -47,7 +51,11 @@ TEST_CASE("CallBanner offers Decline only while an invite is pending", "[banner]
     CHECK_FALSE(banner->decline_visible());
 
     int declined = 0;
-    banner->set_decline([&] { ++declined; });
+    banner->set_decline(
+        [&]
+        {
+            ++declined;
+        });
     CHECK(banner->decline_visible());
     REQUIRE(banner->children().size() == 2);
     auto* btn = dynamic_cast<tk::Button*>(banner->children()[1].get());
@@ -64,7 +72,7 @@ TEST_CASE("CallBanner offers Decline only while an invite is pending", "[banner]
 }
 
 TEST_CASE("RoomPreviewView summarises the room; None until a summary is set",
-         "[banner][accessibility]")
+          "[banner][accessibility]")
 {
     auto view = tk::create_root_widget<RoomPreviewView>(nullptr);
     CHECK(view->access_role() == tk::Role::None);
@@ -80,8 +88,7 @@ TEST_CASE("RoomPreviewView summarises the room; None until a summary is set",
     CHECK(view->access_name() == "Design, 3 members: pixels");
 }
 
-TEST_CASE("InviteCard announces who invited you and to what",
-         "[banner][accessibility]")
+TEST_CASE("InviteCard announces who invited you and to what", "[banner][accessibility]")
 {
     auto card = tk::create_root_widget<InviteCard>(nullptr);
     CHECK(card->access_role() == tk::Role::None);

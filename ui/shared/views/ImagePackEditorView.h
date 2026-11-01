@@ -103,7 +103,10 @@ public:
     // Gates remove chips (hidden), the usage toggle, and name/shortcode
     // click-to-edit (all no-ops when false) — header-click-to-select-active
     // stays available regardless, since it doesn't mutate anything.
-    void set_can_edit(bool can_edit) { can_edit_ = can_edit; }
+    void set_can_edit(bool can_edit)
+    {
+        can_edit_ = can_edit;
+    }
     void set_editing(std::optional<std::pair<std::size_t, std::size_t>> pack_and_tile);
     // Which pack's name header (if any) is being renamed — hides that pack's
     // name text (the native overlay covers it) mirroring set_editing's tile
@@ -135,7 +138,10 @@ public:
         native_drag_hover_pack_ = pack_idx;
     }
     // Test accessor.
-    std::optional<std::size_t> native_drag_hover_pack() const { return native_drag_hover_pack_; }
+    std::optional<std::size_t> native_drag_hover_pack() const
+    {
+        return native_drag_hover_pack_;
+    }
 
     std::function<void(std::size_t pack_idx)> on_pack_header_clicked;
     std::function<void(std::size_t pack_idx)> on_pack_name_clicked;
@@ -150,11 +156,11 @@ public:
     // controls, then each image's shortcode-edit and remove. Each activates
     // the same callback a click does. Rebuilt in access_row_count().
     std::size_t access_row_count() const override;
-    tk::Role    access_role_for_widget_row(std::size_t i) const override;
+    tk::Role access_role_for_widget_row(std::size_t i) const override;
     std::string access_name_for_widget_row(std::size_t i) const override;
     tk::AccessState access_state_for_widget_row(std::size_t i) const override;
-    bool        access_activate_widget_row(std::size_t i) override;
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override;
+    bool access_activate_widget_row(std::size_t i) override;
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override;
 
     // Keyboard: a Tab stop whose arrow keys walk the same rows exposed to
     // assistive technology (pack header, rename, usage, remove, each tile's
@@ -163,7 +169,10 @@ public:
     {
         return enabled_ && packs_ && !packs_->empty();
     }
-    bool focus_on_click() const override { return false; }
+    bool focus_on_click() const override
+    {
+        return false;
+    }
     bool on_key_down(const tk::KeyEvent& e) override
     {
         return kbd_.handle_key(*this, *this, e);
@@ -172,17 +181,20 @@ public:
     {
         kbd_.paint_ring(ctx, *this, *this);
     }
-    void on_focus_lost() override { kbd_.reset(); }
+    void on_focus_lost() override
+    {
+        kbd_.reset();
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_drag(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_drag(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
 
 protected:
     float content_height() const override;
@@ -209,10 +221,10 @@ private:
 
     struct AccessRow
     {
-        tk::Role              role = tk::Role::Button;
-        std::string           name;
-        tk::Rect              rect; // world-space
-        tk::AccessState       state;
+        tk::Role role = tk::Role::Button;
+        std::string name;
+        tk::Rect rect; // world-space
+        tk::AccessState state;
         std::function<void()> activate;
     };
     tk::RowKeyboardCursor kbd_;
@@ -220,8 +232,8 @@ private:
     // Widget-local, un-scrolled layout rect → world rect.
     tk::Rect to_world_(const tk::Rect& r) const;
 
-    void paint_header_(tk::PaintCtx&, std::size_t pack_idx, const SectionLayout&,
-                       tk::Point origin, bool active, bool hovered_remove) const;
+    void paint_header_(tk::PaintCtx&, std::size_t pack_idx, const SectionLayout&, tk::Point origin,
+                       bool active, bool hovered_remove) const;
 
     const std::vector<StagedPack>* packs_ = nullptr;
     std::optional<std::size_t> active_pack_index_;
@@ -245,14 +257,14 @@ private:
     // single IconCache isn't shared across distinct draw sizes.
     mutable tk::IconCache header_remove_icon_;
 
-    static constexpr float kHeaderH        = 40.0f;
-    static constexpr float kSectionGap     = 16.0f;
-    static constexpr float kHeaderPadX     = 12.0f;
-    static constexpr float kUsageSegW      = 52.0f;
-    static constexpr float kUsageSegH      = 24.0f;
-    static constexpr float kUsageSegGap    = 4.0f;
-    static constexpr float kHeaderRemoveR  = 10.0f;
-    static constexpr float kActiveBarW     = 4.0f;
+    static constexpr float kHeaderH = 40.0f;
+    static constexpr float kSectionGap = 16.0f;
+    static constexpr float kHeaderPadX = 12.0f;
+    static constexpr float kUsageSegW = 52.0f;
+    static constexpr float kUsageSegH = 24.0f;
+    static constexpr float kUsageSegGap = 4.0f;
+    static constexpr float kHeaderRemoveR = 10.0f;
+    static constexpr float kActiveBarW = 4.0f;
 };
 
 class ImagePackEditorView : public tk::Widget
@@ -273,8 +285,14 @@ public:
     // resolve.
     void open(std::string room_id);
     void close();
-    bool is_open() const { return open_; }
-    const std::string& room_id() const { return room_id_; }
+    bool is_open() const
+    {
+        return open_;
+    }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
 
     // Gates create_btn_ and the native-overlay rects below while
     // RoomSettingsView's shared Accept commit is in flight — mirrors
@@ -303,8 +321,7 @@ public:
     // Pushed by the host once its list_pack_images(pack_id, ...) call for
     // one pack resolves. Ignored if no currently-listed pack has this id
     // (it was removed in the meantime).
-    void set_pack_images(std::string pack_id,
-                         std::vector<tesseract::ImagePackImage> images);
+    void set_pack_images(std::string pack_id, std::vector<tesseract::ImagePackImage> images);
 
     void set_image_provider(ImagePackImageProvider p);
 
@@ -312,35 +329,47 @@ public:
     // only). The field itself is self-owned — see new_pack_name_field() —
     // these remain as pure geometry/text queries.
     tk::Rect new_pack_name_field_rect() const;
-    void     set_new_pack_name_text(std::string text);
+    void set_new_pack_name_text(std::string text);
     // Bumped every time Create succeeds (the field's own text is cleared
     // directly in create_pack_() — this counter is otherwise just a test
     // observable now).
-    std::uint64_t new_pack_name_reset_generation() const { return new_pack_name_reset_gen_; }
+    std::uint64_t new_pack_name_reset_generation() const
+    {
+        return new_pack_name_reset_gen_;
+    }
     // Borrowed — owned via add_child(). Null when constructed without a
     // Host.
-    tk::TextField* new_pack_name_field() const { return new_pack_name_field_; }
+    tk::TextField* new_pack_name_field() const
+    {
+        return new_pack_name_field_;
+    }
 
-    tk::Rect    shortcode_edit_rect() const; // valid only while a tile is being edited
+    tk::Rect shortcode_edit_rect() const;            // valid only while a tile is being edited
     std::string shortcode_edit_initial_text() const; // seed text once, on begin_editing_shortcode_
-    tk::TextField* shortcode_field() const { return shortcode_field_; }
-    void        set_editing_shortcode_text(std::string text);
-    void        commit_editing_shortcode(); // called on submit/Enter
+    tk::TextField* shortcode_field() const
+    {
+        return shortcode_field_;
+    }
+    void set_editing_shortcode_text(std::string text);
+    void commit_editing_shortcode(); // called on submit/Enter
     // Discards any edits made since this tile's shortcode field was
     // opened, restoring the value it had at that point (the suggested
     // shortcode for a fresh drop, or the existing one when renaming) —
     // called when focus leaves the field by any means other than Enter
     // (click elsewhere, Escape, switching tabs, etc).
-    void        cancel_editing_shortcode();
+    void cancel_editing_shortcode();
 
     // Clicking an existing pack's name header turns it into an editable
     // field (mirrors the shortcode field above, scoped to a pack index
     // instead of a (pack, tile) pair).
-    tk::Rect    pack_name_edit_rect() const; // valid only while a pack name is being edited
+    tk::Rect pack_name_edit_rect() const;            // valid only while a pack name is being edited
     std::string pack_name_edit_initial_text() const; // seed text once, on begin_editing_pack_name_
-    tk::TextField* pack_name_field() const { return pack_name_field_; }
-    void        set_editing_pack_name_text(std::string text);
-    void        commit_editing_pack_name(); // called on submit/blur
+    tk::TextField* pack_name_field() const
+    {
+        return pack_name_field_;
+    }
+    void set_editing_pack_name_text(std::string text);
+    void commit_editing_pack_name(); // called on submit/blur
 
     // Shadows tk::Widget::set_visible (not virtual — same idiom as
     // tk::TextField's own shadow) so hiding this view also hides all 3
@@ -363,11 +392,10 @@ public:
     // unavailable) seeds the new tile's shortcode via
     // suggest_pack_shortcode_from_filename, de-duped against that pack's
     // other staged images.
-    void add_pending_image_at(tk::Point world, std::vector<std::uint8_t> bytes,
-                              std::string mime, std::string filename = {});
+    void add_pending_image_at(tk::Point world, std::vector<std::uint8_t> bytes, std::string mime,
+                              std::string filename = {});
 
-    std::function<void(std::uint64_t local_id,
-                       const std::vector<std::uint8_t>& bytes,
+    std::function<void(std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                        const std::string& mime)>
         on_pending_image_added;
     // Pushed by the host once its off-thread decode of a pending image
@@ -386,7 +414,10 @@ public:
     // plain Cmd+V/Ctrl+V with no field explicitly focused still lands here
     // and routes to add_pending_image_to_active(). Borrowed — owned via
     // add_child(). Null when constructed without a Host.
-    tk::TextArea* paste_catcher() const { return paste_catcher_; }
+    tk::TextArea* paste_catcher() const
+    {
+        return paste_catcher_;
+    }
 
     // True once the user has made any edit since the last open()/
     // set_available_packs() baseline (pack create/remove/rename/usage
@@ -395,7 +426,10 @@ public:
     // own doc comment). Lets RoomSettingsView's shared Accept skip
     // building/delivering a result at all when this tab was never touched,
     // mirroring how every other tab only reports fields that changed.
-    bool has_changes() const { return dirty_; }
+    bool has_changes() const
+    {
+        return dirty_;
+    }
 
     // The current staged snapshot — not a diff, see ImagePackEditorResult's
     // own doc comment. Called by RoomSettingsView's shared Accept click
@@ -409,8 +443,8 @@ public:
     std::function<void()> on_layout_changed;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
     // Tree-dispatched drop (see tk::Widget::on_file_drop). `local` is
     // relative to this widget's own origin; converted back to world space
@@ -427,10 +461,22 @@ public:
     void on_native_drag_leave() override;
 
     // Test accessors.
-    tk::Button* create_button() const { return create_btn_; }
-    ImagePackSectionList* list() const { return list_; }
-    const std::vector<StagedPack>& packs() const { return packs_; }
-    std::optional<std::size_t> active_pack_index() const { return active_pack_index_; }
+    tk::Button* create_button() const
+    {
+        return create_btn_;
+    }
+    ImagePackSectionList* list() const
+    {
+        return list_;
+    }
+    const std::vector<StagedPack>& packs() const
+    {
+        return packs_;
+    }
+    std::optional<std::size_t> active_pack_index() const
+    {
+        return active_pack_index_;
+    }
 
 private:
     void select_active_pack_(std::size_t idx);
@@ -443,14 +489,13 @@ private:
     // Common tail of add_pending_image_to_active/add_pending_image_at once
     // the target pack index is known. `filename` empty means no suggested
     // shortcode (paste).
-    void add_pending_image_to_pack_(std::size_t pack_idx,
-                                    std::vector<std::uint8_t> bytes,
+    void add_pending_image_to_pack_(std::size_t pack_idx, std::vector<std::uint8_t> bytes,
                                     std::string mime, std::string filename);
 
-    bool open_       = false;
+    bool open_ = false;
     bool committing_ = false;
-    bool dirty_      = false;
-    bool can_edit_   = false;
+    bool dirty_ = false;
+    bool can_edit_ = false;
 
     std::string room_id_;
     std::vector<StagedPack> packs_;
@@ -465,25 +510,25 @@ private:
     std::string editing_shortcode_original_; // snapshot for cancel_editing_shortcode
     std::optional<std::size_t> editing_pack_name_;
 
-    ImagePackSectionList* list_       = nullptr;
-    tk::Button*           create_btn_ = nullptr;
+    ImagePackSectionList* list_ = nullptr;
+    tk::Button* create_btn_ = nullptr;
 
     // Borrowed — owned via add_child(). Null when constructed without a Host.
     tk::TextField* new_pack_name_field_ = nullptr;
-    tk::TextField* shortcode_field_     = nullptr;
-    tk::TextField* pack_name_field_     = nullptr;
-    tk::TextArea*  paste_catcher_       = nullptr;
+    tk::TextField* shortcode_field_ = nullptr;
+    tk::TextField* pack_name_field_ = nullptr;
+    tk::TextArea* paste_catcher_ = nullptr;
 
     tk::Rect new_pack_name_field_rect_{};
 
     tk::CachedTextLayout new_pack_label_layout_;
 
-    static constexpr float kPadX     = 24.0f;
-    static constexpr float kPadY     = 16.0f;
-    static constexpr float kRowH     = 32.0f;
+    static constexpr float kPadX = 24.0f;
+    static constexpr float kPadY = 16.0f;
+    static constexpr float kRowH = 32.0f;
     static constexpr float kLabelGap = 4.0f;
-    static constexpr float kLabelH   = 16.0f;
-    static constexpr float kBtnGap   = 8.0f;
+    static constexpr float kLabelH = 16.0f;
+    static constexpr float kBtnGap = 8.0f;
 };
 
 } // namespace tesseract::views

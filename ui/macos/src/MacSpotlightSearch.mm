@@ -35,8 +35,7 @@ void MacSpotlightSearch::reindex()
 {
     const auto results = account_manager_.search_backend().query("", kMaxIndexed);
 
-    NSMutableArray<CSSearchableItem*>* items =
-        [NSMutableArray arrayWithCapacity:results.size()];
+    NSMutableArray<CSSearchableItem*>* items = [NSMutableArray arrayWithCapacity:results.size()];
     std::unordered_set<std::string> new_ids;
     new_ids.reserve(results.size());
 
@@ -58,40 +57,47 @@ void MacSpotlightSearch::reindex()
             [[CSSearchableItemAttributeSet alloc] initWithContentType:UTTypeText];
         attrs.title = [NSString stringWithUTF8String:r.title.c_str()];
         if (!r.subtitle.empty())
+        {
             attrs.contentDescription = [NSString stringWithUTF8String:r.subtitle.c_str()];
+        }
 
         NSString* identifier = [NSString stringWithUTF8String:r.id.c_str()];
-        CSSearchableItem* item =
-            [[CSSearchableItem alloc] initWithUniqueIdentifier:identifier
-                                               domainIdentifier:domain
-                                                   attributeSet:attrs];
+        CSSearchableItem* item = [[CSSearchableItem alloc] initWithUniqueIdentifier:identifier
+                                                                   domainIdentifier:domain
+                                                                       attributeSet:attrs];
         [items addObject:item];
     }
 
     [[CSSearchableIndex defaultSearchableIndex]
         indexSearchableItems:items
-            completionHandler:^(NSError* error) {
-                if (error)
-                    NSLog(@"MacSpotlightSearch: indexSearchableItems failed: %@", error);
-            }];
+           completionHandler:^(NSError* error) {
+               if (error)
+               {
+                   NSLog(@"MacSpotlightSearch: indexSearchableItems failed: %@", error);
+               }
+           }];
 
     NSMutableArray<NSString*>* stale = [NSMutableArray array];
     for (const auto& id : indexed_ids_)
     {
         if (!new_ids.contains(id))
+        {
             [stale addObject:[NSString stringWithUTF8String:id.c_str()]];
+        }
     }
     if (stale.count > 0)
     {
         [[CSSearchableIndex defaultSearchableIndex]
             deleteSearchableItemsWithIdentifiers:stale
-                                completionHandler:^(NSError* error) {
-                                    if (error)
-                                        NSLog(@"MacSpotlightSearch: "
-                                              @"deleteSearchableItemsWithIdentifiers "
-                                              @"failed: %@",
-                                              error);
-                                }];
+                               completionHandler:^(NSError* error) {
+                                   if (error)
+                                   {
+                                       NSLog(@"MacSpotlightSearch: "
+                                             @"deleteSearchableItemsWithIdentifiers "
+                                             @"failed: %@",
+                                             error);
+                                   }
+                               }];
     }
 
     indexed_ids_ = std::move(new_ids);

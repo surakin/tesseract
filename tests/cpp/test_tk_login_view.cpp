@@ -37,7 +37,7 @@ TEST_CASE("LoginView starts discovery for default homeserver on init",
     StubHost host;
     auto lv_owner = tk::create_root_widget<LoginView>(&host);
     LoginView& lv = *lv_owner;
-    lv.set_relayout([] {});  // required: hs_changed_() calls relayout_()
+    lv.set_relayout([] {}); // required: hs_changed_() calls relayout_()
     lv.finish_init();
 
     // The homeserver field shows "matrix.org" as a placeholder only — it has
@@ -50,8 +50,7 @@ TEST_CASE("LoginView starts discovery for default homeserver on init",
     CHECK(lv.sign_in_visible());
 }
 
-TEST_CASE("LoginView re-triggers discovery after reset",
-          "[tk][view][login][discovery]")
+TEST_CASE("LoginView re-triggers discovery after reset", "[tk][view][login][discovery]")
 {
     StubHost host;
     auto lv_owner = tk::create_root_widget<LoginView>(&host);
@@ -72,15 +71,15 @@ TEST_CASE("LoginView shows Sign in button by default before any discovery",
 {
     TkLoginViewStage st;
     StubHost host;
-    auto lv_owner = tk::create_root_widget<LoginView>(&host); // finish_init() not called — no discovery has run
+    auto lv_owner =
+        tk::create_root_widget<LoginView>(&host); // finish_init() not called — no discovery has run
     LoginView& lv = *lv_owner;
     st.run(lv, {0, 0, 640, 480});
 
     CHECK(lv.sign_in_visible());
 }
 
-TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
-          "[tk][view][login][multi_account]")
+TEST_CASE("LoginView Mode::Initial hides Cancel in Form state", "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
     StubHost host;
@@ -264,7 +263,11 @@ TEST_CASE("LoginView settings button shows only on the first-login form",
     lv.finish_init();
 
     int opened = 0;
-    lv.set_on_open_settings([&] { ++opened; });
+    lv.set_on_open_settings(
+        [&]
+        {
+            ++opened;
+        });
 
     CHECK(lv.settings_visible());
     lv.simulate_settings_click();

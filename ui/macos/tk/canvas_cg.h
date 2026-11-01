@@ -113,10 +113,8 @@ struct DecodedFrames
 // callers build on top of this (see macos::MainWindow::decode_image_streamed_) is.
 DecodedFrames decode_image_bytes(
     std::span<const std::uint8_t> bytes, int max_w = 0, int max_h = 0,
-    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame =
-        nullptr,
-    const std::function<void(int, std::unique_ptr<Image>, int)>*
-        on_extra_frame = nullptr);
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame = nullptr,
+    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame = nullptr);
 
 // Windowed variant of decode_image_bytes' streaming mode: for animations
 // with at most `window_threshold_frames` frames, behaves exactly like
@@ -146,13 +144,12 @@ DecodedFrames decode_image_bytes(
 // on_first_frame fired, exactly like decode_image_bytes' own streaming
 // mode.
 DecodedFrames decode_image_bytes_windowed(
-    std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    int window_threshold_frames,
+    std::span<const std::uint8_t> bytes, int max_w, int max_h, int window_threshold_frames,
     const std::function<void(std::unique_ptr<Image>, int delay_ms,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t total_frames)>& on_first_frame,
-    const std::function<void(int frame_index, std::unique_ptr<Image>,
-                             int delay_ms)>& on_extra_frame);
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t total_frames)>&
+        on_first_frame,
+    const std::function<void(int frame_index, std::unique_ptr<Image>, int delay_ms)>&
+        on_extra_frame);
 
 // The reverse of make_image() — extract the underlying native bitmap from
 // a tk::Image so it can be embedded into a platform-native rich-text

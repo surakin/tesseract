@@ -31,7 +31,10 @@ struct RoomPaneStickerTestAccess
         p.thread_panel_ = ThreadPanelController::ThreadPanel::Open;
         p.thread_root_ = std::move(thread_root);
     }
-    static views::RoomView*& room_view(RoomPane& p) { return p.room_view_; }
+    static views::RoomView*& room_view(RoomPane& p)
+    {
+        return p.room_view_;
+    }
 };
 
 } // namespace tesseract
@@ -50,30 +53,30 @@ namespace
 struct SendStickerShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::client_;
 };
 
-std::unique_ptr<RoomPane> make_pane(SendStickerShell& s,
-                                    const std::string& room_id)
+std::unique_ptr<RoomPane> make_pane(SendStickerShell& s, const std::string& room_id)
 {
     return std::make_unique<RoomPane>(
-        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
-        room_id);
+        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, room_id);
 }
 
 } // namespace
 
-TEST_CASE("send_sticker_ clears an active reply after sending",
-          "[shell][sticker][reply]")
+TEST_CASE("send_sticker_ clears an active reply after sending", "[shell][sticker][reply]")
 {
     SendStickerShell s;
     tesseract::Client client;

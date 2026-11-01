@@ -21,8 +21,7 @@ namespace tk
 // video it is the /dev/videoN path. The video id matters: it is what
 // VideoCapture::start() injects into the v4l2src pipeline, so it has to be a
 // real device path rather than anything provider-specific.
-std::vector<DeviceListing>
-enumerate_gst_devices(const char* gst_class, const char* caps_mime);
+std::vector<DeviceListing> enumerate_gst_devices(const char* gst_class, const char* caps_mime);
 
 // Strips the " (V4L2)" suffix and trailing whitespace that GstV4l2Device adds
 // to its display name: the kernel truncates card names to 31 characters and

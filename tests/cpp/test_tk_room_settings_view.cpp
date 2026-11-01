@@ -21,8 +21,7 @@ struct TkRoomSettingsViewStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -37,9 +36,9 @@ struct TkRoomSettingsViewStage
 tesseract::RoomInfo make_room_info()
 {
     tesseract::RoomInfo info;
-    info.id         = "!room:example.org";
-    info.name       = "My Room";
-    info.topic      = "My Topic";
+    info.id = "!room:example.org";
+    info.name = "My Room";
+    info.topic = "My Topic";
     info.avatar_url = "mxc://example.org/avatar";
     return info;
 }
@@ -58,8 +57,7 @@ TEST_CASE("RoomSettingsView: closed by default", "[room_settings][view]")
     CHECK_FALSE(v.topic_field()->visible());
 }
 
-TEST_CASE("RoomSettingsView: open() seeds state and opens the view",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: open() seeds state and opens the view", "[room_settings][view]")
 {
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
@@ -67,8 +65,7 @@ TEST_CASE("RoomSettingsView: open() seeds state and opens the view",
     CHECK(v.is_open());
 }
 
-TEST_CASE("RoomSettingsView: close() closes the view",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: close() closes the view", "[room_settings][view]")
 {
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
@@ -77,8 +74,7 @@ TEST_CASE("RoomSettingsView: close() closes the view",
     CHECK_FALSE(v.is_open());
 }
 
-TEST_CASE("RoomSettingsView: field rects empty until permissions granted",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: field rects empty until permissions granted", "[room_settings][view]")
 {
     StubHost host;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
@@ -120,8 +116,7 @@ TEST_CASE("RoomSettingsView: the Emojis & Stickers tab's new-pack-name field "
     CHECK_FALSE(v.image_pack_editor()->new_pack_name_field()->visible());
 }
 
-TEST_CASE("RoomSettingsView: per-field permission gating",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: per-field permission gating", "[room_settings][view]")
 {
     StubHost host;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
@@ -139,8 +134,7 @@ TEST_CASE("RoomSettingsView: per-field permission gating",
     CHECK_FALSE(v.topic_field()->visible());
 }
 
-TEST_CASE("RoomSettingsView: both fields editable when both permitted",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: both fields editable when both permitted", "[room_settings][view]")
 {
     StubHost host;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
@@ -198,8 +192,7 @@ TEST_CASE("RoomSettingsView: General's fields stay hidden across a relayout "
     CHECK_FALSE(v.topic_field()->visible());
 }
 
-TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself", "[room_settings][view]")
 {
     // Cancel is wired by the shell to call close(); the view itself only
     // fires the callback (mirrors ConfirmDialog's cancel_btn_ contract).
@@ -211,7 +204,10 @@ TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
     int cancel_count = 0;
-    v.on_cancel = [&] { ++cancel_count; };
+    v.on_cancel = [&]
+    {
+        ++cancel_count;
+    };
 
     // Cancel sits at the bottom-right of the footer bar, left of Accept.
     // With an 800x600 stage: footer_y=536 (600-kFooterH), btns_y=550
@@ -225,8 +221,7 @@ TEST_CASE("RoomSettingsView: on_cancel fires and closes nothing by itself",
     CHECK(cancel_count == 1);
 }
 
-TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: on_accept fires only with changed fields", "[room_settings][view]")
 {
     StubHost host;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
@@ -247,8 +242,8 @@ TEST_CASE("RoomSettingsView: on_accept fires only with changed fields",
     std::string accepted_room_id;
     tesseract::views::RoomSettingsChanges accepted_changes;
     int accept_count = 0;
-    v.on_accept = [&](std::string room_id,
-                      tesseract::views::RoomSettingsChanges changes) {
+    v.on_accept = [&](std::string room_id, tesseract::views::RoomSettingsChanges changes)
+    {
         ++accept_count;
         accepted_room_id = std::move(room_id);
         accepted_changes = std::move(changes);
@@ -296,7 +291,7 @@ TEST_CASE("RoomSettingsView: label switches to Leave Space for a space root",
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
     tesseract::RoomInfo info = make_room_info();
-    info.is_space            = true;
+    info.is_space = true;
     v.open(info);
     REQUIRE(v.leave_button() != nullptr);
     CHECK(v.leave_button()->label() == "Leave Space");
@@ -315,7 +310,8 @@ TEST_CASE("RoomSettingsView: clicking Leave fires on_leave_room with the "
 
     std::string left_room_id;
     int leave_count = 0;
-    v.on_leave_room = [&](std::string room_id) {
+    v.on_leave_room = [&](std::string room_id)
+    {
         ++leave_count;
         left_room_id = std::move(room_id);
     };
@@ -430,7 +426,8 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
     REQUIRE(v.image_pack_editor()->has_changes());
 
     tesseract::views::RoomSettingsChanges accepted_changes;
-    v.on_accept = [&](std::string, tesseract::views::RoomSettingsChanges changes) {
+    v.on_accept = [&](std::string, tesseract::views::RoomSettingsChanges changes)
+    {
         accepted_changes = std::move(changes);
     };
     const tk::Point accept_pt{730.0f, 558.0f};
@@ -505,7 +502,7 @@ TEST_CASE("RoomSettingsView: dispatch_file_drop reaches the image pack "
     tk::Widget* target2 = v.dispatch_file_drop(drop_pt, payload2);
     CHECK(target2 == nullptr);
     CHECK(v.image_pack_editor()->packs()[0].images.size() == 1); // unchanged
-    CHECK_FALSE(payload2.bytes.empty()); // rejected — untouched
+    CHECK_FALSE(payload2.bytes.empty());                         // rejected — untouched
 
     // Closing the whole dialog must also stop the drop from reaching it.
     v.close();
@@ -545,8 +542,7 @@ TEST_CASE("RoomSettingsView: set_image_pack_field_permissions forwards to "
     CHECK(v.image_pack_new_pack_name_field_rect().empty());
 }
 
-TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view", "[room_settings][view]")
 {
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
@@ -557,8 +553,7 @@ TEST_CASE("RoomSettingsView: set_commit_result(true) closes the view",
     CHECK_FALSE(v.is_open());
 }
 
-TEST_CASE("RoomSettingsView: set_commit_result(false) keeps the view open",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: set_commit_result(false) keeps the view open", "[room_settings][view]")
 {
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
@@ -572,8 +567,7 @@ TEST_CASE("RoomSettingsView: set_commit_result(false) keeps the view open",
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
-TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch", "[room_settings][view]")
 {
     StubHost host;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(&host);
@@ -592,9 +586,9 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
     // Switching rooms (or reopening the same room) reseeds staged_* from the
     // fresh RoomInfo, discarding any unsaved edit.
     tesseract::RoomInfo other;
-    other.id         = "!other:example.org";
-    other.name       = "Other Room";
-    other.topic      = "Other Topic";
+    other.id = "!other:example.org";
+    other.name = "Other Room";
+    other.topic = "Other Topic";
     other.avatar_url = "mxc://example.org/other";
     v.open(other);
 
@@ -604,7 +598,8 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
 
     int accept_count = 0;
     tesseract::views::RoomSettingsChanges accepted_changes;
-    v.on_accept = [&](std::string, tesseract::views::RoomSettingsChanges changes) {
+    v.on_accept = [&](std::string, tesseract::views::RoomSettingsChanges changes)
+    {
         ++accept_count;
         accepted_changes = std::move(changes);
     };
@@ -619,8 +614,7 @@ TEST_CASE("RoomSettingsView: re-opening reseeds staged state from scratch",
     CHECK_FALSE(accepted_changes.name.has_value());
 }
 
-TEST_CASE("RoomSettingsView: paints without crashing across states",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: paints without crashing across states", "[room_settings][view]")
 {
     TkRoomSettingsViewStage st;
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
@@ -656,8 +650,7 @@ TEST_CASE("RoomSettingsView: paints without crashing across states",
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
-TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard", "[room_settings][view]")
 {
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
@@ -671,8 +664,7 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
     // the click, not the Label itself) — robust against RoomGeneralSection's
     // internal layout (row order/spacing/font metrics), unlike a hardcoded
     // pixel coordinate.
-    std::function<tk::Widget*(tk::Widget*)> find_room_id_row =
-        [&](tk::Widget* w) -> tk::Widget*
+    std::function<tk::Widget*(tk::Widget*)> find_room_id_row = [&](tk::Widget* w) -> tk::Widget*
     {
         for (auto& ch : w->children())
         {
@@ -682,7 +674,9 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
                 return w;
             }
             if (auto* found = find_room_id_row(ch.get()))
+            {
                 return found;
+            }
         }
         return nullptr;
     };
@@ -698,8 +692,7 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
     };
 
     const tk::Rect row_bounds = room_id_row->bounds();
-    const tk::Point pt{row_bounds.x + row_bounds.w * 0.5f,
-                       row_bounds.y + row_bounds.h * 0.5f};
+    const tk::Point pt{row_bounds.x + row_bounds.w * 0.5f, row_bounds.y + row_bounds.h * 0.5f};
     tk::Widget* hit = v.dispatch_pointer_down(pt);
     REQUIRE(hit != nullptr);
 
@@ -707,8 +700,7 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
     CHECK(copied == "!room:example.org");
 }
 
-TEST_CASE("RoomSettingsView: room_id() reflects the open()'d room",
-          "[room_settings][view]")
+TEST_CASE("RoomSettingsView: room_id() reflects the open()'d room", "[room_settings][view]")
 {
     auto v_owner = tk::create_root_widget<RoomSettingsView>(nullptr);
     RoomSettingsView& v = *v_owner;
@@ -795,7 +787,7 @@ TEST_CASE("RoomSettingsView: re-opening reseeds permissions to spec defaults",
     // responsible for calling set_permissions_state() again with the new
     // room's actual levels right after this.
     tesseract::RoomInfo other;
-    other.id   = "!other:example.org";
+    other.id = "!other:example.org";
     other.name = "Other Room";
     v.open(other);
 
@@ -834,8 +826,7 @@ TEST_CASE("RoomSettingsView: a staged Permissions change that would lock "
     v.set_permissions_state(tesseract::RoomPermissions{});
     // Explicit override at 50 — meets the default change_permissions
     // requirement (50), so Accept starts out enabled.
-    v.set_own_power_level(
-        tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
+    v.set_own_power_level(tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -863,11 +854,10 @@ TEST_CASE("RoomSettingsView: lowering Default Role below the requirement "
     v.open(make_room_info());
     v.set_permissions_field_permissions(true);
     tesseract::RoomPermissions perms;
-    perms.default_role       = 50;
+    perms.default_role = 50;
     perms.change_permissions = 50;
     v.set_permissions_state(perms);
-    v.set_own_power_level(
-        tesseract::RoomOwnPowerLevel{.level = 0, .has_explicit_override = false});
+    v.set_own_power_level(tesseract::RoomOwnPowerLevel{.level = 0, .has_explicit_override = false});
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -892,8 +882,7 @@ TEST_CASE("RoomSettingsView: no lockout warning or Accept-disable when the "
     tesseract::RoomPermissions perms;
     perms.change_permissions = 100;
     v.set_permissions_state(perms);
-    v.set_own_power_level(
-        tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
+    v.set_own_power_level(tesseract::RoomOwnPowerLevel{.level = 50, .has_explicit_override = true});
 
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
@@ -994,11 +983,11 @@ namespace
 tesseract::BannedMember banned(const std::string& uid, bool can_unban = true)
 {
     tesseract::BannedMember m;
-    m.user_id      = uid;
+    m.user_id = uid;
     m.display_name = uid.substr(1, uid.find(':') - 1);
-    m.reason       = "spam";
-    m.banned_by    = "@admin:example.org";
-    m.can_unban    = can_unban;
+    m.reason = "spam";
+    m.banned_by = "@admin:example.org";
+    m.can_unban = can_unban;
     return m;
 }
 
@@ -1027,9 +1016,10 @@ TEST_CASE("RoomModerationSection: rows replace the empty label and Unban fires t
     auto view = tk::create_root_widget<RoomSettingsView>(nullptr);
     view->open(make_room_info());
     std::string room, uid, name;
-    view->on_unban_requested = [&](std::string r, std::string u, std::string n) {
+    view->on_unban_requested = [&](std::string r, std::string u, std::string n)
+    {
         room = std::move(r);
-        uid  = std::move(u);
+        uid = std::move(u);
         name = std::move(n);
     };
 

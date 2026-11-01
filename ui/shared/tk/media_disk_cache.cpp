@@ -89,8 +89,7 @@ std::vector<uint8_t> MediaDiskCache::load(const CacheKey& key) const
     // length and bytes, then the payload.
     std::uint32_t id_len = 0;
     std::memcpy(&id_len, buf.data() + sizeof(kEntryMagic), sizeof(id_len));
-    if (std::memcmp(buf.data(), kEntryMagic, sizeof(kEntryMagic)) != 0 ||
-        id_len != id.size() ||
+    if (std::memcmp(buf.data(), kEntryMagic, sizeof(kEntryMagic)) != 0 || id_len != id.size() ||
         std::memcmp(buf.data() + sizeof(kEntryMagic) + sizeof(id_len), id.data(), id.size()) != 0)
     {
         ++misses_;
@@ -100,8 +99,7 @@ std::vector<uint8_t> MediaDiskCache::load(const CacheKey& key) const
     return std::vector<uint8_t>(buf.begin() + static_cast<std::ptrdiff_t>(header), buf.end());
 }
 
-void MediaDiskCache::store(const CacheKey& key,
-                           const std::vector<uint8_t>& bytes) const
+void MediaDiskCache::store(const CacheKey& key, const std::vector<uint8_t>& bytes) const
 {
     if (bytes.empty())
     {
@@ -130,8 +128,8 @@ void MediaDiskCache::store(const CacheKey& key,
         }
     }
     std::error_code ec;
-    fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write,
-                    fs::perm_options::replace, ec);
+    fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace,
+                    ec);
     ec.clear();
     fs::rename(tmp, dest, ec);
     if (ec)
@@ -210,8 +208,12 @@ std::uintmax_t MediaDiskCache::size_bytes() const
     std::uintmax_t total = 0;
     std::error_code ec;
     for (const auto& de : fs::directory_iterator(dir_, ec))
+    {
         if (de.is_regular_file(ec))
+        {
             total += de.file_size(ec);
+        }
+    }
     return total;
 }
 
@@ -231,13 +233,14 @@ fs::path MediaDiskCache::retire_for_clear() const
     // even across runs that left a directory behind.
     static std::atomic<std::uint64_t> seq{0};
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    const fs::path retired(dir_.string() + ".clearing-" +
-                           std::to_string(seq.fetch_add(1)) + "-" +
+    const fs::path retired(dir_.string() + ".clearing-" + std::to_string(seq.fetch_add(1)) + "-" +
                            std::to_string(stamp));
     std::error_code ec;
     fs::rename(dir_, retired, ec);
     if (ec)
+    {
         return {};
+    }
     // Writers that race this window either land in the aside copy, which is
     // deleted anyway, or miss the cache for the moment. Both are harmless.
     fs::create_directories(dir_, ec);
@@ -256,8 +259,12 @@ void MediaDiskCache::finish_clear(const fs::path& retired) const
         return;
     }
     for (const auto& de : fs::directory_iterator(dir_, ec))
+    {
         if (de.is_regular_file(ec))
+        {
             fs::remove(de.path(), ec);
+        }
+    }
 }
 
 } // namespace tk

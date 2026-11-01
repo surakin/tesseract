@@ -27,9 +27,13 @@ std::vector<std::string> row_names(const tk::AccessNode& n, tk::Role r)
     std::function<void(const tk::AccessNode&)> walk = [&](const tk::AccessNode& x)
     {
         if (x.role == r)
+        {
             out.push_back(x.name);
+        }
         for (const auto& c : x.children)
+        {
             walk(c);
+        }
     };
     walk(n);
     return out;
@@ -37,14 +41,23 @@ std::vector<std::string> row_names(const tk::AccessNode& n, tk::Role r)
 } // namespace
 
 TEST_CASE("PopupMenu items are MenuItem nodes; separators omitted, disabled reported",
-         "[popup_menu][accessibility]")
+          "[popup_menu][accessibility]")
 {
     PopupCapableStubHost host;
     auto menu = tk::create_root_widget<PopupMenu>(&host);
 
     int reacted = 0;
     std::vector<PopupMenu::Item> items;
-    items.push_back({{}, {}, "React", false, [&] { ++reacted; }, false, true});
+    items.push_back({{},
+                     {},
+                     "React",
+                     false,
+                     [&]
+                     {
+                         ++reacted;
+                     },
+                     false,
+                     true});
     items.push_back({{}, {}, "", false, {}, /*is_separator=*/true, true});
     items.push_back({{}, {}, "Delete", true, {}, false, /*enabled=*/false});
     items.push_back({{}, {}, "Reply", false, [] {}, false, true});
@@ -60,13 +73,16 @@ TEST_CASE("PopupMenu items are MenuItem nodes; separators omitted, disabled repo
 
     // Invoke the "React" node → fires its on_selected (and on_dismissed).
     const tk::AccessNode* list = nullptr;
-    std::function<void(const tk::AccessNode&)> find =
-        [&](const tk::AccessNode& n)
+    std::function<void(const tk::AccessNode&)> find = [&](const tk::AccessNode& n)
     {
         if (n.role == tk::Role::List)
+        {
             list = &n;
+        }
         for (const auto& c : n.children)
+        {
             find(c);
+        }
     };
     find(tree);
     REQUIRE(list != nullptr);
@@ -78,19 +94,50 @@ TEST_CASE("PopupMenu items are MenuItem nodes; separators omitted, disabled repo
 }
 
 TEST_CASE("PopupMenu is keyboard-driven: arrows skip separators/disabled, Enter "
-         "activates, Escape dismisses",
-         "[popup_menu][accessibility]")
+          "activates, Escape dismisses",
+          "[popup_menu][accessibility]")
 {
     PopupCapableStubHost host;
     auto menu = tk::create_root_widget<PopupMenu>(&host);
     std::string picked;
     int dismissed = 0;
-    menu->on_dismissed = [&] { ++dismissed; menu->close(); };
+    menu->on_dismissed = [&]
+    {
+        ++dismissed;
+        menu->close();
+    };
     std::vector<PopupMenu::Item> items;
-    items.push_back({{}, {}, "React", false, [&] { picked = "React"; }, false, true});
+    items.push_back({{},
+                     {},
+                     "React",
+                     false,
+                     [&]
+                     {
+                         picked = "React";
+                     },
+                     false,
+                     true});
     items.push_back({{}, {}, "", false, {}, /*is_separator=*/true, true});
-    items.push_back({{}, {}, "Delete", true, [&] { picked = "Delete"; }, false, false});
-    items.push_back({{}, {}, "Reply", false, [&] { picked = "Reply"; }, false, true});
+    items.push_back({{},
+                     {},
+                     "Delete",
+                     true,
+                     [&]
+                     {
+                         picked = "Delete";
+                     },
+                     false,
+                     false});
+    items.push_back({{},
+                     {},
+                     "Reply",
+                     false,
+                     [&]
+                     {
+                         picked = "Reply";
+                     },
+                     false,
+                     true});
     menu->open(std::move(items), {});
 
     auto key = [&](tk::Key k)
@@ -103,8 +150,12 @@ TEST_CASE("PopupMenu is keyboard-driven: arrows skip separators/disabled, Enter 
     {
         tk::AccessNode tree = tk::build_access_tree(host.popups_created[0]->root());
         for (const auto& n : tree.children)
+        {
             if (n.state.selected)
+            {
                 return n.name;
+            }
+        }
         return std::string();
     };
 
@@ -128,8 +179,7 @@ TEST_CASE("PopupMenu is keyboard-driven: arrows skip separators/disabled, Enter 
     CHECK_FALSE(menu->is_open());
 }
 
-TEST_CASE("ComboBox dropdown options are selectable ListItem nodes",
-         "[combobox][accessibility]")
+TEST_CASE("ComboBox dropdown options are selectable ListItem nodes", "[combobox][accessibility]")
 {
     PopupCapableStubHost host;
     auto combo = tk::create_root_widget<tk::ComboBox>(&host);
@@ -140,19 +190,20 @@ TEST_CASE("ComboBox dropdown options are selectable ListItem nodes",
     REQUIRE(combo->is_expanded());
     REQUIRE(host.popups_created.size() == 1);
 
-    tk::AccessNode tree =
-        tk::build_access_tree(host.popups_created[0]->root());
-    CHECK(row_names(tree, tk::Role::ListItem) ==
-          std::vector<std::string>{"Light", "Dark"});
+    tk::AccessNode tree = tk::build_access_tree(host.popups_created[0]->root());
+    CHECK(row_names(tree, tk::Role::ListItem) == std::vector<std::string>{"Light", "Dark"});
 
     const tk::AccessNode* list = nullptr;
-    std::function<void(const tk::AccessNode&)> find =
-        [&](const tk::AccessNode& n)
+    std::function<void(const tk::AccessNode&)> find = [&](const tk::AccessNode& n)
     {
         if (n.role == tk::Role::List)
+        {
             list = &n;
+        }
         for (const auto& c : n.children)
+        {
             find(c);
+        }
     };
     find(tree);
     REQUIRE(list != nullptr);
@@ -161,15 +212,13 @@ TEST_CASE("ComboBox dropdown options are selectable ListItem nodes",
 }
 
 TEST_CASE("ConfirmDialog / AlertDialog report a Dialog role named for their "
-         "title + body",
-         "[dialog][accessibility]")
+          "title + body",
+          "[dialog][accessibility]")
 {
     PopupCapableStubHost host;
 
     auto confirm = tk::create_root_widget<tesseract::views::ConfirmDialog>(&host);
-    confirm->open({"Leave room?", "You can rejoin later.", "Leave", "Cancel",
-                   true},
-                  [] {});
+    confirm->open({"Leave room?", "You can rejoin later.", "Leave", "Cancel", true}, [] {});
     CHECK(confirm->access_role() == tk::Role::Dialog);
     CHECK(confirm->access_name() == "Leave room?");
     CHECK(confirm->access_description() == "You can rejoin later.");
@@ -183,12 +232,15 @@ TEST_CASE("ConfirmDialog / AlertDialog report a Dialog role named for their "
 }
 
 TEST_CASE("BusyDialog opens and closes, consumes pointer and keys, and is modal",
-         "[dialog][accessibility]")
+          "[dialog][accessibility]")
 {
     PopupCapableStubHost host;
     auto busy = tk::create_root_widget<tesseract::views::BusyDialog>(&host);
     int layout_changes = 0;
-    busy->on_layout_changed = [&] { ++layout_changes; };
+    busy->on_layout_changed = [&]
+    {
+        ++layout_changes;
+    };
 
     CHECK_FALSE(busy->is_open());
     CHECK_FALSE(busy->on_pointer_down({1, 1}));

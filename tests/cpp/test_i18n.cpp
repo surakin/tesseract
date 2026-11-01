@@ -32,8 +32,7 @@ static void write_u32(std::vector<uint8_t>& v, uint32_t x)
     v.push_back(static_cast<uint8_t>(x >> 24));
 }
 
-std::vector<uint8_t> build_mo(
-    const std::vector<std::pair<std::string, std::string>>& entries)
+std::vector<uint8_t> build_mo(const std::vector<std::pair<std::string, std::string>>& entries)
 {
     uint32_t n = static_cast<uint32_t>(entries.size());
 
@@ -49,16 +48,16 @@ std::vector<uint8_t> build_mo(
 
     for (auto& [id, str] : entries)
     {
-        orig_info.push_back({static_cast<uint32_t>(id.size()),
-                             static_cast<uint32_t>(orig_strings.size())});
+        orig_info.push_back(
+            {static_cast<uint32_t>(id.size()), static_cast<uint32_t>(orig_strings.size())});
         for (char c : id)
         {
             orig_strings.push_back(static_cast<uint8_t>(c));
         }
         orig_strings.push_back(0);
 
-        trans_info.push_back({static_cast<uint32_t>(str.size()),
-                              static_cast<uint32_t>(trans_strings.size())});
+        trans_info.push_back(
+            {static_cast<uint32_t>(str.size()), static_cast<uint32_t>(trans_strings.size())});
         for (char c : str)
         {
             trans_strings.push_back(static_cast<uint8_t>(c));
@@ -66,11 +65,11 @@ std::vector<uint8_t> build_mo(
         trans_strings.push_back(0);
     }
 
-    uint32_t header_size    = 28;
+    uint32_t header_size = 28;
     uint32_t orig_table_off = header_size;
     uint32_t trans_table_off = header_size + n * 8;
-    uint32_t orig_str_off   = header_size + n * 8 * 2;
-    uint32_t trans_str_off  = orig_str_off + static_cast<uint32_t>(orig_strings.size());
+    uint32_t orig_str_off = header_size + n * 8 * 2;
+    uint32_t trans_str_off = orig_str_off + static_cast<uint32_t>(orig_strings.size());
 
     std::vector<uint8_t> mo;
     write_u32(mo, 0x950412deU);
@@ -103,8 +102,7 @@ std::string write_tmp_mo(const std::vector<uint8_t>& mo, const std::string& file
 {
     std::string path = tmp_dir() + "/" + filename;
     std::ofstream f(path, std::ios::binary);
-    f.write(reinterpret_cast<const char*>(mo.data()),
-            static_cast<std::streamsize>(mo.size()));
+    f.write(reinterpret_cast<const char*>(mo.data()), static_cast<std::streamsize>(mo.size()));
     return path;
 }
 
@@ -157,7 +155,7 @@ TEST_CASE("tk::trn selects plural form correctly", "[i18n]")
     std::string meta = "Content-Type: text/plain; charset=UTF-8\n"
                        "Plural-Forms: nplurals=2; plural=(n != 1);\n";
 
-    std::string plural_msgid  = std::string("{0} item")     + '\0' + "{0} items";
+    std::string plural_msgid = std::string("{0} item") + '\0' + "{0} items";
     std::string plural_msgstr = std::string("{0} elemento") + '\0' + "{0} elementos";
 
     auto mo = build_mo({
@@ -177,7 +175,7 @@ TEST_CASE("Plural-Forms evaluator: French-style rule (plural=(n>1))", "[i18n]")
     std::string meta = "Content-Type: text/plain; charset=UTF-8\n"
                        "Plural-Forms: nplurals=2; plural=(n>1);\n";
 
-    std::string plural_msgid  = std::string("form")  + '\0' + "forms";
+    std::string plural_msgid = std::string("form") + '\0' + "forms";
     std::string plural_msgstr = std::string("forme") + '\0' + "formes";
 
     auto mo = build_mo({
@@ -193,14 +191,13 @@ TEST_CASE("Plural-Forms evaluator: French-style rule (plural=(n>1))", "[i18n]")
     CHECK(tk::trn("form", "forms", 5L) == "formes");
 }
 
-TEST_CASE("Plural-Forms evaluator: a dangling operator does not read past the expression",
-          "[i18n]")
+TEST_CASE("Plural-Forms evaluator: a dangling operator does not read past the expression", "[i18n]")
 {
     // "n>" ends in an operator with no right-hand side: the parser reaches the
     // end of the expression where it expects a value.
     std::string meta = "Content-Type: text/plain; charset=UTF-8\n"
                        "Plural-Forms: nplurals=2; plural=n>;\n";
-    std::string plural_msgid  = std::string("item")  + '\0' + "items";
+    std::string plural_msgid = std::string("item") + '\0' + "items";
     std::string plural_msgstr = std::string("élément") + '\0' + "éléments";
     auto mo = build_mo({
         {"", meta},
@@ -237,7 +234,7 @@ std::tm make_tm(int year, int mon, int mday, int wday)
 {
     std::tm tm{};
     tm.tm_year = year - 1900;
-    tm.tm_mon  = mon - 1;
+    tm.tm_mon = mon - 1;
     tm.tm_mday = mday;
     tm.tm_wday = wday;
     return tm;

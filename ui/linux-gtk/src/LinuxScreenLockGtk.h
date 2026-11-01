@@ -27,10 +27,8 @@ public:
     }
 
 private:
-    static void on_signal(GDBusConnection*, const char* sender,
-                          const char* path, const char* iface,
-                          const char* signal, GVariant* params,
-                          gpointer user_data);
+    static void on_signal(GDBusConnection*, const char* sender, const char* path, const char* iface,
+                          const char* signal, GVariant* params, gpointer user_data);
 
     GDBusConnection* bus_ = nullptr; // owned (g_object_unref)
     guint sub_lock_ = 0;

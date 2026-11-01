@@ -18,9 +18,9 @@ void ShellBase::debounce_(DebounceSlot slot, int ms, std::function<void()> fn)
 {
     auto& st = debounce_state_[static_cast<int>(slot)];
     ++st.gen;
-    st.ms        = ms;
+    st.ms = ms;
     st.last_call = std::chrono::steady_clock::now();
-    st.fn        = std::move(fn);
+    st.fn = std::move(fn);
     if (!st.armed)
     {
         st.armed = true;
@@ -52,14 +52,14 @@ void ShellBase::arm_debounce_(int key, int delay_ms, std::uint64_t gen)
                                   std::chrono::duration_cast<std::chrono::milliseconds>(
                                       std::chrono::steady_clock::now() - st.last_call)
                                       .count();
-                              const int left = std::clamp(
-                                  st.ms - static_cast<int>(elapsed), 1, std::max(st.ms, 1));
+                              const int left = std::clamp(st.ms - static_cast<int>(elapsed), 1,
+                                                          std::max(st.ms, 1));
                               arm_debounce_(key, left, st.gen);
                               return;
                           }
                           st.armed = false;
-                          auto fn  = std::move(st.fn);
-                          st.fn    = nullptr;
+                          auto fn = std::move(st.fn);
+                          st.fn = nullptr;
                           fn();
                       });
 }
@@ -68,13 +68,11 @@ std::string ShellBase::inflight_tooltip_text_() const
 {
     const auto n = inflight_total_();
     std::string tip =
-        tk::trf(tk::trn("{0} request in flight", "{0} requests in flight",
-                        static_cast<long>(n)),
+        tk::trf(tk::trn("{0} request in flight", "{0} requests in flight", static_cast<long>(n)),
                 {std::to_string(n)}) +
         "\n" +
         tk::trf(tk::tr("media: {0} loading · fetch: {1} queued · send: {2} queued"),
-                {std::to_string(pending_media_count_()),
-                 std::to_string(pool_pending_count_()),
+                {std::to_string(pending_media_count_()), std::to_string(pool_pending_count_()),
                  std::to_string(mut_pool_pending_count_())});
 #ifndef NDEBUG
     if (!last_inflight_urls_.empty())
@@ -89,7 +87,7 @@ std::string ShellBase::inflight_tooltip_text_() const
 void ShellBase::refresh_sync_status_()
 {
     using RLS = RoomListState;
-    using BS  = BackupState;
+    using BS = BackupState;
 
     // Nobody is signed in (startup before a session restores, after the last
     // sign-out): nothing is syncing, so none of the states below applies.
@@ -107,10 +105,10 @@ void ShellBase::refresh_sync_status_()
         return;
     }
 
-    const bool room_busy = (last_room_list_state_ == RLS::Init ||
-                            last_room_list_state_ == RLS::SettingUp);
+    const bool room_busy =
+        (last_room_list_state_ == RLS::Init || last_room_list_state_ == RLS::SettingUp);
     const bool reconnecting = (last_room_list_state_ == RLS::Recovering);
-    const bool keys_busy    = (last_backup_state_ == BS::Downloading);
+    const bool keys_busy = (last_backup_state_ == BS::Downloading);
 
     if (room_busy)
     {
@@ -150,9 +148,8 @@ void ShellBase::refresh_sync_status_()
     if (keys_busy)
     {
         sync_progress_shown_ = true;
-        show_sync_status_text_(
-            tk::trf(tk::tr("Downloading message keys ({0})…"),
-                    {std::to_string(last_imported_keys_)}));
+        show_sync_status_text_(tk::trf(tk::tr("Downloading message keys ({0})…"),
+                                       {std::to_string(last_imported_keys_)}));
         return;
     }
     if (has_status_override_())
@@ -182,17 +179,22 @@ void ShellBase::cancel_debounce_(DebounceSlot slot)
 void ShellBase::populate_pending_restore_popouts_()
 {
     if (!pending_restore_popouts_.empty())
+    {
         return;
+    }
     for (const auto& e : Settings::instance().popout_windows)
     {
         if (e.room_id.empty())
+        {
             continue;
+        }
         // Skip entries that explicitly belong to a different account.
         // An empty user_id means the entry predates the multi-account field
         // (pre-migration data) and should be restored for the active account.
-        if (!e.user_id.empty() && active_account_ &&
-            e.user_id != active_account_->user_id)
+        if (!e.user_id.empty() && active_account_ && e.user_id != active_account_->user_id)
+        {
             continue;
+        }
         pending_restore_popouts_.push_back(e.room_id);
     }
 }
@@ -200,30 +202,31 @@ void ShellBase::populate_pending_restore_popouts_()
 void ShellBase::save_settings_debounced_()
 {
     if (tearing_down_)
+    {
         return;
+    }
     settings_save_pending_ = true;
     debounce_(DebounceSlot::SaveSettings, 500,
-              [this]() {
+              [this]()
+              {
                   settings_save_pending_ = false;
-                  tesseract::Settings::instance().save_to_disk(
-                      tesseract::config_dir());
+                  tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
               });
 }
 
-Settings::WindowGeometry ShellBase::clamp_to_screens_(
-    const Settings::WindowGeometry& saved,
-    int default_w,
-    int default_h,
-    const std::vector<tk::Rect>& screens)
+Settings::WindowGeometry ShellBase::clamp_to_screens_(const Settings::WindowGeometry& saved,
+                                                      int default_w, int default_h,
+                                                      const std::vector<tk::Rect>& screens)
 {
     return shell_helpers::clamp_to_screens(saved, default_w, default_h, screens);
 }
 
-std::vector<tesseract::StatusSegment>
-ShellBase::parse_status_message_(const std::string& msg) const
+std::vector<tesseract::StatusSegment> ShellBase::parse_status_message_(const std::string& msg) const
 {
     if (status_message_allows_links_)
+    {
         return tesseract::parse_status_links(msg);
+    }
     return {{msg, std::string{}}}; // plain: never linkify un-opted-in text
 }
 
@@ -235,19 +238,22 @@ ShellBase::parse_status_message_(const std::string& msg) const
 // to false so server/error-sourced messages (subscribe / sync / sign-out
 // failures whose tail is a homeserver string) can never inject a clickable
 // link. Safe to call from any thread.
-void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
-                                     bool allow_links)
+void ShellBase::show_status_message_(std::string msg, int auto_clear_ms, bool allow_links)
 {
     const std::uint32_t gen = ++status_msg_gen_;
-    const bool persistent  = (auto_clear_ms <= 0);
+    const bool persistent = (auto_clear_ms <= 0);
     post_to_ui_alive_(
         [this, msg = std::move(msg), allow_links, gen, persistent]
         {
             // Drop if a newer message or a restore has already superseded this.
             if (status_msg_gen_ != gen)
+            {
                 return;
+            }
             if (persistent)
+            {
                 status_override_active_ = true;
+            }
             status_message_allows_links_ = allow_links;
             on_show_status_message_ui_(msg);
             // The status line is the shell's channel for errors and
@@ -259,7 +265,7 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
                 (msg != last_announced_status_ ||
                  now - last_announced_status_at_ > std::chrono::minutes(1)))
             {
-                last_announced_status_    = msg;
+                last_announced_status_ = msg;
                 last_announced_status_at_ = now;
                 main_app_->host()->announce(msg);
             }
@@ -267,7 +273,9 @@ void ShellBase::show_status_message_(std::string msg, int auto_clear_ms,
     // auto_clear_ms <= 0 → persistent: the message stays until a newer
     // status message (which bumps the generation) replaces it.
     if (auto_clear_ms <= 0)
+    {
         return;
+    }
     post_to_ui_after_(auto_clear_ms,
                       [this, gen]
                       {
@@ -327,7 +335,7 @@ std::vector<tesseract::ActivityEntry> ShellBase::activity_snapshot_(tesseract::C
     }
     const struct
     {
-        const char*       name;
+        const char* name;
         const WorkerPool& pool;
     } pools[] = {{"pool (shared reads)", pool_},
                  {"mut_pool (serialised writes)", mut_pool_},
@@ -335,19 +343,21 @@ std::vector<tesseract::ActivityEntry> ShellBase::activity_snapshot_(tesseract::C
     for (const auto& p : pools)
     {
         const size_t queued = p.pool.pending_count();
-        const size_t total  = p.pool.in_flight_.load(std::memory_order_relaxed);
+        const size_t total = p.pool.in_flight_.load(std::memory_order_relaxed);
         tesseract::ActivityEntry e;
-        e.name   = p.name;
-        e.group  = "Workers";
-        e.kind   = "pool";
-        e.state  = total > 0 ? tesseract::ActivityState::Running : tesseract::ActivityState::Idle;
+        e.name = p.name;
+        e.group = "Workers";
+        e.kind = "pool";
+        e.state = total > 0 ? tesseract::ActivityState::Running : tesseract::ActivityState::Idle;
         e.detail = std::to_string(total - std::min(total, queued)) + " running, " +
                    std::to_string(queued) + " queued";
         out.push_back(std::move(e));
     }
     std::stable_sort(out.begin(), out.end(),
                      [](const tesseract::ActivityEntry& a, const tesseract::ActivityEntry& b)
-                     { return a.group != b.group ? a.group < b.group : a.name < b.name; });
+                     {
+                         return a.group != b.group ? a.group < b.group : a.name < b.name;
+                     });
     return out;
 }
 
@@ -358,7 +368,14 @@ void ShellBase::run_async_mut_(std::function<void()> fn)
 
 void ShellBase::init_pool_callbacks_()
 {
-    auto notify = [this] { post_to_ui_alive_([this] { on_inflight_ui_(); }); };
+    auto notify = [this]
+    {
+        post_to_ui_alive_(
+            [this]
+            {
+                on_inflight_ui_();
+            });
+    };
     {
         std::lock_guard<std::mutex> lk(pool_.mu_);
         pool_.on_change_ = notify;
@@ -371,8 +388,7 @@ void ShellBase::init_pool_callbacks_()
 
 // ── Secondary window registry ─────────────────────────────────────────────────
 
-ShellBase::ShellBase(AccountManager& account_manager)
-    : account_manager_(account_manager)
+ShellBase::ShellBase(AccountManager& account_manager) : account_manager_(account_manager)
 {
     // A token refresh that could not be saved is lost for good (the server has
     // already retired the old one), so say so until something newer replaces it.
@@ -383,8 +399,10 @@ ShellBase::ShellBase(AccountManager& account_manager)
                 [this, user_id]
                 {
                     show_status_message_(
-                        tk::trf(tk::tr("Couldn't save the sign-in for {0}. You may have to sign in again next time."),
-                                {user_id}),
+                        tk::trf(
+                            tk::tr(
+                                "Couldn't save the sign-in for {0}. You may have to sign in again next time."),
+                            {user_id}),
                         0);
                 });
         });
@@ -400,7 +418,9 @@ ShellBase::~ShellBase()
 
     // A window destroyed without a close event still hands its bridges over.
     if (!window_closing_handled_)
+    {
         hand_over_accounts_();
+    }
 
     // Decrypted attachments handed to external apps don't outlive the session.
     tesseract::purge_open_media_dir();
@@ -412,7 +432,9 @@ ShellBase::~ShellBase()
     // A debounced settings save that has not run yet would be dropped with this
     // shell, so the settings are written here.
     if (settings_save_pending_)
+    {
         tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+    }
 
     // Stop the media-sweep timer before the derived shell is torn down: a
     // pending tick must not re-arm (post_to_ui_after_ is pure-virtual once the
@@ -420,7 +442,9 @@ ShellBase::~ShellBase()
     media_sweep_timer_.stop();
 
     if (search_backend_handle_)
+    {
         account_manager_.search_backend().unregister_shell(*search_backend_handle_);
+    }
 
     // Join the screen-picker thumbnail worker (if any) before this object's
     // members start tearing down — it captures `this` to call
@@ -429,13 +453,17 @@ ShellBase::~ShellBase()
     // each capture_thumbnail() call is itself short (one PrintWindow/DXGI
     // acquire), so this is a brief wait, not an indefinite block.
     if (screen_thumb_worker_.joinable())
+    {
         screen_thumb_worker_.join();
+    }
 
     // Cancel an in-flight known-user roster build so its worker loop bails
     // between rooms instead of finishing a full member sweep — otherwise the
     // thread-pool join below would block until the sweep completes.
     if (roster_build_cancel_)
+    {
         roster_build_cancel_->store(true);
+    }
 
     // Prevent save_settings_debounced_() from calling post_to_ui_after_()
     // (pure virtual at this point in teardown) when ~RoomWindowBase runs below.
@@ -463,14 +491,16 @@ ShellBase::~ShellBase()
 bool ShellBase::seed_screenshot_fixture_(tk::CanvasFactory& factory)
 {
     if (!screenshot::install_assets(factory, account_manager_.thumbnail_cache()))
+    {
         return false;
+    }
 
     screenshot_fixture_ = screenshot::make_fixture();
-    const auto& f    = screenshot_fixture_;
-    my_user_id_      = f.user_id;
+    const auto& f = screenshot_fixture_;
+    my_user_id_ = f.user_id;
     my_display_name_ = f.display_name;
-    my_avatar_url_   = f.avatar_url;
-    rooms_           = f.rooms;
+    my_avatar_url_ = f.avatar_url;
+    rooms_ = f.rooms;
     current_room_id_ = f.selected_room_id;
 
     main_app_->show_room();
@@ -497,49 +527,68 @@ std::vector<screenshot::Scene> ShellBase::make_screenshot_scenes_()
 
     std::vector<screenshot::Scene> scenes;
     scenes.push_back({"main", {}, {}});
-    scenes.push_back(
-        {"thread",
-         [this, &f]
-         {
-             room_view_->set_thread_panel(State::Open, f.thread_root_id);
-             room_view_->thread_view()->set_messages(f.thread_messages,
-                                                     /*room_switch=*/true);
-         },
-         [this] { room_view_->set_thread_panel(State::Closed, {}); }});
-    scenes.push_back(
-        {"room-info",
-         [this, &f]
-         {
-             room_view_->show_room_info();
-             auto* panel = room_view_->room_info_panel();
-             panel->set_presence_provider(
-                 [&f](const std::string& user_id)
-                 {
-                     for (const auto& [id, state] : f.presence)
-                         if (id == user_id)
-                             return state;
-                     return tesseract::PresenceState::Offline;
-                 });
-             // After show_room_info(): RoomInfoPanel::open() clears members.
-             panel->set_members(f.members);
-         },
-         [this] { room_view_->room_info_panel()->close(); }});
+    scenes.push_back({"thread",
+                      [this, &f]
+                      {
+                          room_view_->set_thread_panel(State::Open, f.thread_root_id);
+                          room_view_->thread_view()->set_messages(f.thread_messages,
+                                                                  /*room_switch=*/true);
+                      },
+                      [this]
+                      {
+                          room_view_->set_thread_panel(State::Closed, {});
+                      }});
+    scenes.push_back({"room-info",
+                      [this, &f]
+                      {
+                          room_view_->show_room_info();
+                          auto* panel = room_view_->room_info_panel();
+                          panel->set_presence_provider(
+                              [&f](const std::string& user_id)
+                              {
+                                  for (const auto& [id, state] : f.presence)
+                                  {
+                                      if (id == user_id)
+                                      {
+                                          return state;
+                                      }
+                                  }
+                                  return tesseract::PresenceState::Offline;
+                              });
+                          // After show_room_info(): RoomInfoPanel::open() clears members.
+                          panel->set_members(f.members);
+                      },
+                      [this]
+                      {
+                          room_view_->room_info_panel()->close();
+                      }});
     scenes.push_back({"emoji",
-                      [this] { room_view_->show_emoji_picker(); },
-                      [this] { room_view_->close_pickers(); }});
+                      [this]
+                      {
+                          room_view_->show_emoji_picker();
+                      },
+                      [this]
+                      {
+                          room_view_->close_pickers();
+                      }});
     scenes.push_back({"settings",
                       [this]
                       {
                           open_app_settings_ui_();
                           if (stats_settings_view_)
+                          {
                               stats_settings_view_->show_appearance_section();
+                          }
                       },
-                      [this] { close_app_settings_ui_(); }});
+                      [this]
+                      {
+                          close_app_settings_ui_();
+                      }});
     return scenes;
 }
 
-void ShellBase::start_screenshot_director_(screenshot::ScreenshotHost& host,
-                                           std::string prefix, int settle_ms)
+void ShellBase::start_screenshot_director_(screenshot::ScreenshotHost& host, std::string prefix,
+                                           int settle_ms)
 {
     screenshot_director_ = std::make_unique<screenshot::ScreenshotDirector>(
         host, make_screenshot_scenes_(), std::move(prefix), settle_ms);

@@ -24,28 +24,27 @@ public:
     AudioPlaybackGtk(std::uint32_t sample_rate, std::uint32_t num_channels)
         : sample_rate_(sample_rate), num_channels_(num_channels)
     {
-        const std::string caps =
-            "audio/x-raw,format=S16LE,rate=" + std::to_string(sample_rate) +
-            ",channels=" + std::to_string(num_channels) + ",layout=interleaved";
+        const std::string caps = "audio/x-raw,format=S16LE,rate=" + std::to_string(sample_rate) +
+                                 ",channels=" + std::to_string(num_channels) +
+                                 ",layout=interleaved";
 
         const std::string& pref = tesseract::Settings::instance().audio_output_device_id;
         // Use pulsesink (named) when a device is selected so we can set the
         // device property programmatically; autoaudiosink otherwise.
-        const char* sink_elem = pref.empty() ? "autoaudiosink"
-                                              : "pulsesink name=aud_sink";
+        const char* sink_elem = pref.empty() ? "autoaudiosink" : "pulsesink name=aud_sink";
         const std::string desc =
-            "appsrc name=src format=time is-live=true do-timestamp=true caps=\"" +
-            caps +
+            "appsrc name=src format=time is-live=true do-timestamp=true caps=\"" + caps +
             "\" ! audioconvert ! audioresample ! " + sink_elem;
 
         pipeline_ = gst_parse_launch(desc.c_str(), nullptr);
         if (!pipeline_)
+        {
             return;
+        }
 
         if (!pref.empty())
         {
-            GstElement* sink_elem_ptr =
-                gst_bin_get_by_name(GST_BIN(pipeline_), "aud_sink");
+            GstElement* sink_elem_ptr = gst_bin_get_by_name(GST_BIN(pipeline_), "aud_sink");
             if (sink_elem_ptr)
             {
                 g_object_set(sink_elem_ptr, "device", pref.c_str(), nullptr);
@@ -54,10 +53,13 @@ public:
         }
 
         src_ = gst_bin_get_by_name(GST_BIN(pipeline_), "src");
-        if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) ==
-            GST_STATE_CHANGE_FAILURE)
+        if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
         {
-            if (src_) { gst_object_unref(src_); src_ = nullptr; }
+            if (src_)
+            {
+                gst_object_unref(src_);
+                src_ = nullptr;
+            }
             gst_object_unref(pipeline_);
             pipeline_ = nullptr;
         }
@@ -68,7 +70,9 @@ public:
         if (pipeline_)
         {
             if (src_)
+            {
                 gst_app_src_end_of_stream(GST_APP_SRC(src_));
+            }
             gst_element_set_state(pipeline_, GST_STATE_NULL);
             if (src_)
             {
@@ -80,13 +84,13 @@ public:
         }
     }
 
-    void push_frame(const std::int16_t* samples,
-                    std::size_t         sample_count,
-                    std::uint32_t       sample_rate,
-                    std::uint32_t       num_channels) override
+    void push_frame(const std::int16_t* samples, std::size_t sample_count,
+                    std::uint32_t sample_rate, std::uint32_t num_channels) override
     {
         if (!src_ || !pipeline_)
+        {
             return;
+        }
 
         // Re-create pipeline if format changes mid-call (uncommon in practice).
         if (sample_rate != sample_rate_ || num_channels != num_channels_)
@@ -97,21 +101,22 @@ public:
             gst_object_unref(pipeline_);
             pipeline_ = nullptr;
 
-            sample_rate_  = sample_rate;
+            sample_rate_ = sample_rate;
             num_channels_ = num_channels;
             AudioPlaybackGtk replacement(sample_rate, num_channels);
             std::swap(pipeline_, replacement.pipeline_);
             std::swap(src_, replacement.src_);
             replacement.pipeline_ = nullptr;
-            replacement.src_      = nullptr;
+            replacement.src_ = nullptr;
             // The replacement did not start. Drop this frame; pushing to the
             // null source would crash and leak the buffer.
             if (!src_)
+            {
                 return;
+            }
         }
 
-        const std::size_t byte_size =
-            sample_count * num_channels_ * sizeof(std::int16_t);
+        const std::size_t byte_size = sample_count * num_channels_ * sizeof(std::int16_t);
         GstBuffer* buf = gst_buffer_new_allocate(nullptr, byte_size, nullptr);
         GstMapInfo map;
         if (gst_buffer_map(buf, &map, GST_MAP_WRITE))
@@ -123,8 +128,8 @@ public:
     }
 
 private:
-    GstElement*   pipeline_    = nullptr;
-    GstElement*   src_         = nullptr;
+    GstElement* pipeline_ = nullptr;
+    GstElement* src_ = nullptr;
     std::uint32_t sample_rate_;
     std::uint32_t num_channels_;
 };
@@ -138,7 +143,9 @@ std::unique_ptr<tk::AudioPlayback> make_audio_playback_gtk()
 {
     GstElementFactory* factory = gst_element_factory_find("autoaudiosink");
     if (!factory)
+    {
         return nullptr;
+    }
     gst_object_unref(factory);
     return std::make_unique<AudioPlaybackGtk>(48000, 1);
 }

@@ -33,9 +33,9 @@ TEST_CASE("GifEngine rejects non-commands", "[view][gif][engine]")
     GifEngine e;
     CHECK_FALSE(e.match("").has_value());
     CHECK_FALSE(e.match("hello").has_value());
-    CHECK_FALSE(e.match("/gif").has_value());      // no space, no query
-    CHECK_FALSE(e.match("/gif ").has_value());     // prefix only, empty query
-    CHECK_FALSE(e.match("/gif   ").has_value());   // whitespace-only query
+    CHECK_FALSE(e.match("/gif").has_value());       // no space, no query
+    CHECK_FALSE(e.match("/gif ").has_value());      // prefix only, empty query
+    CHECK_FALSE(e.match("/gif   ").has_value());    // whitespace-only query
     CHECK_FALSE(e.match("a /gif cat").has_value()); // not at composer start
     CHECK_FALSE(e.match("/giftcat").has_value());   // different command
 }

@@ -42,7 +42,10 @@ public:
     // Apply a just-picked (or cleared, with "") emoji — fires on_changed.
     void set_emoji(std::string glyph);
 
-    std::string status_emoji() const { return emoji_; }
+    std::string status_emoji() const
+    {
+        return emoji_;
+    }
     std::string status_text() const;
 
     // Trigger widget for Host::register_popup() (so reclicking the button
@@ -71,24 +74,24 @@ public:
     std::function<void(std::string emoji, std::string text)> on_changed;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_after_children(tk::PaintCtx&) override;
-    void     on_theme_changed(const tk::Theme& t) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_after_children(tk::PaintCtx&) override;
+    void on_theme_changed(const tk::Theme& t) override;
 
-    static constexpr float kRowH     = 32.0f;
-    static constexpr float kEmojiW   = 32.0f;
-    static constexpr float kClearW   = 22.0f;
+    static constexpr float kRowH = 32.0f;
+    static constexpr float kEmojiW = 32.0f;
+    static constexpr float kClearW = 22.0f;
     static constexpr float kFieldGap = 6.0f;
-    static constexpr float kTextW    = 260.0f; // capped, not stretched
-    static constexpr float kErrorH   = 14.0f;
+    static constexpr float kTextW = 260.0f; // capped, not stretched
+    static constexpr float kErrorH = 14.0f;
     static constexpr float kErrorGap = 4.0f;
 
 private:
     void notify_changed_();
     void refresh_emoji_button_();
 
-    tk::Button*    emoji_btn_  = nullptr; // owned via add_child
-    tk::Button*    clear_btn_  = nullptr; // owned via add_child; hidden when no emoji
+    tk::Button* emoji_btn_ = nullptr;     // owned via add_child
+    tk::Button* clear_btn_ = nullptr;     // owned via add_child; hidden when no emoji
     tk::TextField* text_field_ = nullptr; // owned via add_child
 
     std::string emoji_;
@@ -97,10 +100,10 @@ private:
     // and repeated picks no-op when nothing changed.
     std::string last_emoji_;
     std::string last_text_;
-    bool        have_last_ = false;
+    bool have_last_ = false;
 
-    bool        editable_ = false;
-    bool        busy_     = false;
+    bool editable_ = false;
+    bool busy_ = false;
     std::string error_;
     mutable tk::CachedTextLayout error_layout_;
     // The chosen emoji is hand-drawn over the button at emoji-cell size — the

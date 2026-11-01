@@ -34,7 +34,7 @@ struct TkRoomViewThreadCallbacksStage
 void open_room_and_thread(RoomView& view)
 {
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
     view.set_thread_panel(RoomView::ThreadPanelState::Open, "$root:example.org");
@@ -95,7 +95,10 @@ TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
     auto view_owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *view_owner;
     std::string captured;
-    view.on_delete_requested = [&](std::string id) { captured = std::move(id); };
+    view.on_delete_requested = [&](std::string id)
+    {
+        captured = std::move(id);
+    };
 
     open_room_and_thread(view);
 
@@ -106,8 +109,8 @@ TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
     tesseract::views::MessageListView::MessageMenuRequest req;
     req.event_id = "$evt:example.org";
     req.anchor = {10.f, 10.f, 24.f, 24.f};
-    req.actions.push_back({tesseract::views::MessageActionId::Delete,
-                           "Delete message", {}, true, false});
+    req.actions.push_back(
+        {tesseract::views::MessageActionId::Delete, "Delete message", {}, true, false});
     ml->on_actions_menu_requested(req);
 
     auto* pm = view.overflow_menu();
@@ -134,17 +137,18 @@ TEST_CASE("Compose-bar reply send routes through on_thread_send_reply while the 
     RoomView& view = *view_owner;
 
     std::string room_reply_id, room_reply_body;
-    view.on_send_reply = [&](std::string id, std::string body) {
-        room_reply_id   = std::move(id);
+    view.on_send_reply = [&](std::string id, std::string body)
+    {
+        room_reply_id = std::move(id);
         room_reply_body = std::move(body);
     };
 
     std::string thread_reply_id, thread_reply_body, thread_reply_formatted;
-    view.on_thread_send_reply = [&](const std::string& id,
-                                    const std::string& body,
-                                    const std::string& formatted) {
-        thread_reply_id        = id;
-        thread_reply_body      = body;
+    view.on_thread_send_reply =
+        [&](const std::string& id, const std::string& body, const std::string& formatted)
+    {
+        thread_reply_id = id;
+        thread_reply_body = body;
         thread_reply_formatted = formatted;
     };
 
@@ -173,8 +177,14 @@ TEST_CASE("Opening the thread panel wires its search bar to RoomView's "
 
     std::string queried;
     int navigated = 0;
-    view.on_thread_search_query = [&](const std::string& q) { queried = q; };
-    view.on_thread_search_navigate = [&](int delta) { navigated = delta; };
+    view.on_thread_search_query = [&](const std::string& q)
+    {
+        queried = q;
+    };
+    view.on_thread_search_navigate = [&](int delta)
+    {
+        navigated = delta;
+    };
 
     open_room_and_thread(view);
     st.run(view, {0, 0, 800, 600});
@@ -188,7 +198,9 @@ TEST_CASE("Opening the thread panel wires its search bar to RoomView's "
     CHECK(queried == "hello");
 
     if (bar->on_navigate)
+    {
         bar->on_navigate(-1);
+    }
     CHECK(navigated == -1);
 }
 
@@ -201,19 +213,19 @@ TEST_CASE("Compose-bar reply send still routes to on_send_reply with the "
     RoomView& view = *view_owner;
 
     std::string room_reply_id, room_reply_body;
-    view.on_send_reply = [&](std::string id, std::string body) {
-        room_reply_id   = std::move(id);
+    view.on_send_reply = [&](std::string id, std::string body)
+    {
+        room_reply_id = std::move(id);
         room_reply_body = std::move(body);
     };
     std::string thread_reply_id;
-    view.on_thread_send_reply = [&](const std::string& id,
-                                    const std::string&,
-                                    const std::string&) {
+    view.on_thread_send_reply = [&](const std::string& id, const std::string&, const std::string&)
+    {
         thread_reply_id = id;
     };
 
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Test Room";
     view.set_room(info);
     st.run(view, {0, 0, 800, 600});

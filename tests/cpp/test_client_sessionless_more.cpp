@@ -22,28 +22,29 @@ const std::vector<std::uint8_t> kCmBytes{1, 2, 3, 4};
 TEST_CASE("sessionless Client: blocking media sends fail", "[client][sessionless]")
 {
     Client c;
-    CHECK_FALSE(c.send_image(kCmRoom, kCmBytes, "image/png", "a.png", "cap", 10, 10,
-                             false).ok);
-    CHECK_FALSE(c.send_image(kCmRoom, kCmBytes, "image/gif", "a.gif", "", 10, 10,
-                             true, "$reply", "$thread").ok);
-    CHECK_FALSE(c.send_video(kCmRoom, kCmBytes, "video/mp4", "v.mp4", "cap", 10, 10,
-                             kCmBytes, 5, 5, 1000).ok);
+    CHECK_FALSE(c.send_image(kCmRoom, kCmBytes, "image/png", "a.png", "cap", 10, 10, false).ok);
+    CHECK_FALSE(
+        c.send_image(kCmRoom, kCmBytes, "image/gif", "a.gif", "", 10, 10, true, "$reply", "$thread")
+            .ok);
+    CHECK_FALSE(
+        c.send_video(kCmRoom, kCmBytes, "video/mp4", "v.mp4", "cap", 10, 10, kCmBytes, 5, 5, 1000)
+            .ok);
     CHECK_FALSE(c.send_audio(kCmRoom, kCmBytes, "audio/ogg", "a.ogg", "", 1000).ok);
     CHECK_FALSE(c.send_file(kCmRoom, kCmBytes, "text/plain", "a.txt", "").ok);
     const std::uint8_t pcm[8] = {0};
     CHECK_FALSE(c.send_voice(kCmRoom, pcm, sizeof pcm, 500, {1, 2, 3}, "", "").ok);
-    CHECK_FALSE(c.send_gif_video(kCmRoom, kCmBytes, "video/mp4", "gif", 10, 10, 500,
-                                 kCmBytes, "image/png", 5, 5, "", "").ok);
+    CHECK_FALSE(c.send_gif_video(kCmRoom, kCmBytes, "video/mp4", "gif", 10, 10, 500, kCmBytes,
+                                 "image/png", 5, 5, "", "")
+                    .ok);
 }
 
-TEST_CASE("sessionless Client: async sends and exports are harmless",
-          "[client][sessionless]")
+TEST_CASE("sessionless Client: async sends and exports are harmless", "[client][sessionless]")
 {
     Client c;
     const std::uint8_t pcm[8] = {0};
     CHECK_NOTHROW(c.send_voice_async(1, kCmRoom, pcm, sizeof pcm, 500, {1}, "", ""));
-    CHECK_NOTHROW(c.send_image_async(2, kCmRoom, kCmBytes, "image/png", "a.png", "",
-                                     10, 10, false));
+    CHECK_NOTHROW(
+        c.send_image_async(2, kCmRoom, kCmBytes, "image/png", "a.png", "", 10, 10, false));
     CHECK_NOTHROW(c.send_file_async(3, kCmRoom, kCmBytes, "text/plain", "a.txt", ""));
     CHECK_NOTHROW(c.search_room_directory(4, "filter", "example.invalid"));
     CHECK_NOTHROW(c.start_room_export_async(5, kCmRoom, tesseract::RoomExportOptions{}));
@@ -70,12 +71,11 @@ TEST_CASE("sessionless Client: device, activity and backoff queries are empty",
 TEST_CASE("sessionless Client: pusher registration fails", "[client][sessionless]")
 {
     Client c;
-    CHECK_FALSE(c.register_pusher("key", "app", "App", "Device",
-                                  "https://push.example.invalid", "en").ok);
+    CHECK_FALSE(
+        c.register_pusher("key", "app", "App", "Device", "https://push.example.invalid", "en").ok);
 }
 
-TEST_CASE("sessionless Client: RTC frame pushes with no call are no-ops",
-          "[client][sessionless]")
+TEST_CASE("sessionless Client: RTC frame pushes with no call are no-ops", "[client][sessionless]")
 {
     Client c;
     std::vector<std::uint8_t> y(16, 0), u(4, 0), v(4, 0);

@@ -33,7 +33,10 @@ TEST_CASE("poll_draft_valid", "[poll]")
     CHECK_FALSE(poll_draft_valid(PollDraft{"Q", {"a"}, false, false}));
     CHECK_FALSE(poll_draft_valid(PollDraft{"Q", {"a", "a"}, false, false})); // duplicate text
     std::vector<std::string> many;
-    for (int i = 0; i < 21; ++i) many.push_back("o" + std::to_string(i));
+    for (int i = 0; i < 21; ++i)
+    {
+        many.push_back("o" + std::to_string(i));
+    }
     CHECK_FALSE(poll_draft_valid(PollDraft{"Q", many, false, false}));
     many.pop_back();
     CHECK(poll_draft_valid(PollDraft{"Q", many, false, false})); // exactly 20
@@ -175,7 +178,8 @@ TEST_CASE("poll card wraps very long text and stays finite", "[poll]")
     CHECK(h < 1.0e6f);
 }
 
-TEST_CASE("poll card paints exactly its measured height and records hits only when interactive", "[poll]")
+TEST_CASE("poll card paints exactly its measured height and records hits only when interactive",
+          "[poll]")
 {
     auto surf = TestSurface::create(500, 800);
     const tk::Theme& theme = tk::Theme::light();
@@ -213,7 +217,13 @@ TEST_CASE("the poll command is a registered slash command", "[poll][slash]")
 {
     bool found = false;
     for (const auto& c : tesseract::available_commands())
-        if (c.name == "poll") { found = true; CHECK(c.args_hint.empty()); }
+    {
+        if (c.name == "poll")
+        {
+            found = true;
+            CHECK(c.args_hint.empty());
+        }
+    }
     CHECK(found);
     CHECK(tesseract::is_slash_command_no_arg("/poll", "poll"));
     CHECK(tesseract::is_slash_command_no_arg("/poll  ", "poll"));
@@ -229,7 +239,12 @@ TEST_CASE("CreatePollDialog gates Create on a valid draft", "[poll][dialog]")
 
     int calls = 0;
     PollDraft got;
-    dlg->open([&](PollDraft d) { ++calls; got = std::move(d); });
+    dlg->open(
+        [&](PollDraft d)
+        {
+            ++calls;
+            got = std::move(d);
+        });
     CHECK(dlg->is_open());
     REQUIRE(dlg->option_count() == 2);
     CHECK_FALSE(dlg->create_enabled());
@@ -240,7 +255,8 @@ TEST_CASE("CreatePollDialog gates Create on a valid draft", "[poll][dialog]")
     // on every arrange, so lay out once.
     auto surface = TestSurface::create(800, 600);
     tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
-    auto relayout = [&] {
+    auto relayout = [&]
+    {
         dlg->measure(lc, {800, 600});
         dlg->arrange(lc, {0, 0, 800, 600});
     };
@@ -273,12 +289,16 @@ TEST_CASE("CreatePollDialog add/remove options and checkboxes", "[poll][dialog]"
     auto dlg = tk::create_root_widget<CreatePollDialog>(&host);
     dlg->open([](PollDraft) {});
     for (int i = 0; i < 30; ++i)
+    {
         dlg->add_option();
+    }
     CHECK(dlg->option_count() == static_cast<std::size_t>(kPollMaxOptions));
     dlg->remove_option(5);
     CHECK(dlg->option_count() == static_cast<std::size_t>(kPollMaxOptions) - 1);
     while (dlg->option_count() > 2)
+    {
         dlg->remove_option(dlg->option_count() - 1);
+    }
     dlg->remove_option(0); // never below the minimum
     CHECK(dlg->option_count() == 2);
 
@@ -303,12 +323,15 @@ TEST_CASE("CreatePollDialog Enter in the last option reveals the new row", "[pol
     auto dlg = tk::create_root_widget<CreatePollDialog>(&host);
     dlg->open([](PollDraft) {});
     for (int i = 0; i < 8; ++i)
+    {
         dlg->add_option();
+    }
     REQUIRE(dlg->option_count() == 10);
 
     auto surface = TestSurface::create(800, 360); // short: options must scroll
     tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
-    auto relayout = [&] {
+    auto relayout = [&]
+    {
         dlg->measure(lc, {800, 360});
         dlg->arrange(lc, {0, 0, 800, 360});
     };
@@ -382,7 +405,9 @@ TEST_CASE("read-only poll still exposes options, results and status to AT", "[po
     CHECK(g->children[0].state.checked);
     CHECK_FALSE(g->children[1].state.checked);
     for (const auto& c : g->children)
+    {
         CHECK_FALSE(static_cast<bool>(c.activate));
+    }
 }
 
 TEST_CASE("interactive poll options carry activate; no options means no group",
@@ -433,8 +458,12 @@ TEST_CASE("a poll cannot be forwarded", "[poll][accessibility]")
         called = true;
         can_forward = false;
         for (const auto& a : req.actions)
+        {
             if (a.id == tesseract::views::MessageActionId::Forward)
+            {
                 can_forward = true;
+            }
+        }
     };
     v.set_can_pin(true); // something in the overflow, so "More options" exists
     v.set_messages({ended_poll_row()}, false);

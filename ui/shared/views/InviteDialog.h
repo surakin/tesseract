@@ -58,16 +58,21 @@ public:
     using UsersFilter = std::function<std::vector<UserEntry>(const std::string& needle)>;
     // Exact roster lookup by mxid.
     using UserLookup = std::function<std::optional<UserEntry>(const std::string& user_id)>;
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
 
     ~InviteDialog() override;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
     void open(const std::string& room_id, const std::string& room_name);
     void close();
-    bool is_open() const { return is_open_; }
-    const std::string& room_id() const { return room_id_; }
+    bool is_open() const
+    {
+        return is_open_;
+    }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
 
     // ── Data ──────────────────────────────────────────────────────────────
     void set_users_filter(UsersFilter f);
@@ -79,14 +84,16 @@ public:
     // re-filter and re-try converting committed mxids into pills.
     void refresh_candidates();
     // Outcome of an on_resolve_user request. nullopt = no such user.
-    void set_resolved_user(const std::string& user_id,
-                           std::optional<UserEntry> entry);
+    void set_resolved_user(const std::string& user_id, std::optional<UserEntry> entry);
     // Re-render every pill's avatar from the avatar provider (call when a
     // user avatar finished decoding).
     void refresh_pill_avatars();
 
     // The self-owned search field, or null when constructed without a Host.
-    tk::TextArea* search_field() const { return search_field_; }
+    tk::TextArea* search_field() const
+    {
+        return search_field_;
+    }
 
     // ── Keyboard ──────────────────────────────────────────────────────────
     void move_highlight(int delta);
@@ -102,7 +109,10 @@ public:
     void set_inviting(int user_count);
     void add_invite_error(const std::string& user, const std::string& detail);
     void mark_complete();
-    bool is_inviting() const { return inviting_; }
+    bool is_inviting() const
+    {
+        return inviting_;
+    }
 
     // Invite list: the pills, plus the query token when it is a complete,
     // known mxid (so "type an mxid, click Invite" works without Enter).
@@ -115,8 +125,7 @@ public:
     // committed one. Answer with set_resolved_user().
     std::function<void(const std::string& user_id, bool debounce)> on_resolve_user;
     // A row/pill avatar isn't cached yet.
-    std::function<void(const std::string& user_id, const std::string& mxc)>
-        on_user_avatar_needed;
+    std::function<void(const std::string& user_id, const std::string& mxc)> on_user_avatar_needed;
     std::function<void()> on_close;
     // Card geometry changed (field grew/shrank, row count changed).
     std::function<void()> on_layout_changed;
@@ -138,22 +147,34 @@ public:
     // ── Accessibility ─────────────────────────────────────────────────────
     // A modal dialog named by its title. The painted status / error / empty
     // text are exposed as rows; the list rows are checkboxes (see Adapter).
-    tk::Role    access_role() const override { return tk::Role::Dialog; }
-    std::string access_name() const override { return title_(); }
-    bool        access_modal() const override { return is_open_ && visible(); }
-    std::size_t access_row_count() const override { return access_texts_().size(); }
-    tk::Role    access_role_for_widget_row(std::size_t) const override
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
+    std::string access_name() const override
+    {
+        return title_();
+    }
+    bool access_modal() const override
+    {
+        return is_open_ && visible();
+    }
+    std::size_t access_row_count() const override
+    {
+        return access_texts_().size();
+    }
+    tk::Role access_role_for_widget_row(std::size_t) const override
     {
         return tk::Role::StaticText;
     }
     std::string access_name_for_widget_row(std::size_t i) const override;
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override;
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override;
 
-    static constexpr float kCardW     = 560.0f;
-    static constexpr float kCardMaxH  = 560.0f;
-    static constexpr float kTitleH    = 44.0f;
-    static constexpr float kFooterH   = 52.0f;
-    static constexpr float kRowH      = 48.0f;
+    static constexpr float kCardW = 560.0f;
+    static constexpr float kCardMaxH = 560.0f;
+    static constexpr float kTitleH = 44.0f;
+    static constexpr float kFooterH = 52.0f;
+    static constexpr float kRowH = 48.0f;
     static constexpr float kFieldMinH = 34.0f;
     static constexpr float kFieldMaxH = 96.0f;
 
@@ -168,11 +189,17 @@ public:
     struct Row
     {
         UserEntry user;
-        RowState  state = RowState::Available;
+        RowState state = RowState::Available;
     };
     // Exposed for tests.
-    const std::vector<Row>& rows() const { return rows_; }
-    const InviteFieldParse& parse() const { return parse_; }
+    const std::vector<Row>& rows() const
+    {
+        return rows_;
+    }
+    const InviteFieldParse& parse() const
+    {
+        return parse_;
+    }
 
 private:
     class Adapter;
@@ -196,9 +223,9 @@ private:
     std::vector<std::string> access_texts_() const;
     void announce_(const std::string& text, bool assertive = false);
 
-    bool is_open_       = false;
+    bool is_open_ = false;
     bool pending_focus_ = false;
-    bool reconciling_   = false;
+    bool reconciling_ = false;
     std::string room_id_;
     std::string room_name_;
 
@@ -211,30 +238,30 @@ private:
     std::unordered_map<std::string, UserEntry> pill_entries_;
     std::unordered_set<std::string> existing_members_;
 
-    UsersFilter    users_filter_;
-    UserLookup     user_lookup_;
+    UsersFilter users_filter_;
+    UserLookup user_lookup_;
     AvatarProvider avatar_provider_;
 
     std::unique_ptr<Adapter> adapter_;
-    tk::ListView*  list_         = nullptr;
-    tk::TextArea*  search_field_ = nullptr;
-    float          field_natural_h_ = kFieldMinH;
+    tk::ListView* list_ = nullptr;
+    tk::TextArea* search_field_ = nullptr;
+    float field_natural_h_ = kFieldMinH;
 
     tk::Rect card_rect_{};
     tk::Rect field_rect_{};
 
     // Footer buttons (positioned in arrange(), painted in paint()). Cancel /
     // Invite (N) while choosing; Dismiss replaces them on the error body.
-    tk::Button* cancel_btn_  = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
     tk::Button* confirm_btn_ = nullptr;
     tk::Button* dismiss_btn_ = nullptr;
 
     bool press_outside_ = false;
 
-    bool                     inviting_       = false;
-    int                      invite_errors_  = 0;
-    int                      invite_count_   = 0;
-    std::string              inviting_status_;
+    bool inviting_ = false;
+    int invite_errors_ = 0;
+    int invite_count_ = 0;
+    std::string inviting_status_;
     std::vector<std::string> error_lines_;
 };
 

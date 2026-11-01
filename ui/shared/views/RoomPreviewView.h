@@ -22,10 +22,13 @@ namespace tesseract::views
 class RoomPreviewView : public tk::Widget
 {
 public:
-    enum class State { Idle, Joining };
+    enum class State
+    {
+        Idle,
+        Joining
+    };
 
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc)>;
 
     RoomPreviewView();
     ~RoomPreviewView() override = default;
@@ -48,8 +51,8 @@ public:
 
     // tk::Widget overrides.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx& ctx) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx& ctx) override;
 
     // Accessibility: a Group summarising the (canvas-painted) room name +
     // member count + topic; Join / Dismiss attach under it. Mirrors
@@ -62,35 +65,38 @@ public:
 
 private:
     std::optional<tesseract::RoomSummary> summary_;
-    State          state_           = State::Idle;
+    State state_ = State::Idle;
     AvatarProvider avatar_provider_;
 
-    tk::Button* join_btn_    = nullptr;
+    tk::Button* join_btn_ = nullptr;
     tk::Button* dismiss_btn_ = nullptr;
 
     mutable tk::CachedTextLayout name_layout_;
     mutable tk::CachedTextLayout alias_layout_;
     mutable tk::CachedTextLayout topic_layout_;
     mutable tk::CachedTextLayout meta_layout_;
-    mutable tk::CanvasFactory*              factory_seen_    = nullptr;
-    mutable float                           last_bounds_h_   = -1.0f;
+    mutable tk::CanvasFactory* factory_seen_ = nullptr;
+    mutable float last_bounds_h_ = -1.0f;
 
-    static constexpr float kAvatarD  = 72.0f;
+    static constexpr float kAvatarD = 72.0f;
     static constexpr float kContentW = 300.0f;
-    static constexpr float kPadY     = 32.0f;
-    static constexpr float kGap      = 12.0f;
-    static constexpr float kBtnH     = 36.0f;
-    static constexpr float kBtnGap   = 8.0f;
+    static constexpr float kPadY = 32.0f;
+    static constexpr float kGap = 12.0f;
+    static constexpr float kBtnH = 36.0f;
+    static constexpr float kBtnGap = 8.0f;
 
     std::string join_rule_label_() const;
-    void        reset_layouts_();
-    void        on_fonts_changed() override { factory_seen_ = nullptr; }
-    void        fire_join_();
+    void reset_layouts_();
+    void on_fonts_changed() override
+    {
+        factory_seen_ = nullptr;
+    }
+    void fire_join_();
     // True when summary_'s join_rule requires a knock (MSC2403) rather than
     // a direct join. Cosmetic here (button label only) — the actual
     // join-vs-knock dispatch decision is made in
     // ShellBase::join_room_command_ from the live cached summary.
-    bool        wants_knock_() const;
+    bool wants_knock_() const;
 };
 
 } // namespace tesseract::views

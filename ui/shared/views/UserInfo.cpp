@@ -44,27 +44,39 @@ UserInfo::UserInfo()
     status_target_->on_activate = [this]
     {
         if (on_status_clicked)
+        {
             on_status_clicked();
+        }
     };
 }
 
 bool UserInfo::on_key_down(const tk::KeyEvent& e)
 {
     if (!has_focus() || e.ctrl || e.alt || e.meta)
+    {
         return false;
+    }
     if (e.key != tk::Key::Enter && e.key != tk::Key::Space)
+    {
         return false;
+    }
     if (on_keyboard_activate)
+    {
         on_keyboard_activate();
+    }
     else if (on_primary)
+    {
         on_primary({bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f});
+    }
     return true;
 }
 
 bool UserInfo::on_context_menu_key()
 {
     if (!on_secondary)
+    {
         return false;
+    }
     on_secondary({bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f});
     return true;
 }
@@ -198,9 +210,9 @@ tk::Size UserInfo::measure(tk::LayoutCtx& ctx, tk::Size constraints)
         {
             // paint() sizes the row by the taller of the emoji (Body) and
             // text (SidebarPreview) layouts.
-            text_col_h += kUserInfoLineGap +
-                          std::max(line_h(tk::FontRole::Body, "\xF0\x9F\x98\x80"),
-                                   line_h(tk::FontRole::SidebarPreview, "Ag"));
+            text_col_h +=
+                kUserInfoLineGap + std::max(line_h(tk::FontRole::Body, "\xF0\x9F\x98\x80"),
+                                            line_h(tk::FontRole::SidebarPreview, "Ag"));
         }
     }
     const float h = std::max(shown_avatar_(), text_col_h) + 2 * kUserInfoPadY;
@@ -235,8 +247,8 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         r.w -= 8;
         r.h -= 4;
         const tk::Color bg = active_indicator_ ? theme.palette.sidebar_selected
-                              : pressed_        ? theme.palette.subtle_pressed
-                                                : theme.palette.subtle_hover;
+                             : pressed_        ? theme.palette.subtle_pressed
+                                               : theme.palette.subtle_hover;
         ctx.canvas.fill_rounded_rect(r, kHoverRadius, bg);
         if (active_indicator_)
         {
@@ -255,11 +267,12 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     if (avatar_url_provider_)
     {
         if (std::string url = avatar_url_provider_(); url != avatar_url_)
+        {
             avatar_url_ = std::move(url);
+        }
     }
-    const tk::Image* img = (image_provider_ && !avatar_url_.empty())
-                               ? image_provider_(avatar_url_)
-                               : nullptr;
+    const tk::Image* img =
+        (image_provider_ && !avatar_url_.empty()) ? image_provider_(avatar_url_) : nullptr;
     if (!img && !avatar_url_.empty() && on_avatar_needed)
     {
         on_avatar_needed(avatar_url_);
@@ -282,8 +295,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         }
     }
     draw_avatar(ctx.canvas, img, avatar_centre, shown_avatar_(), name_source,
-                row_pal.avatar_initials_bg,
-                row_pal.avatar_initials_text);
+                row_pal.avatar_initials_bg, row_pal.avatar_initials_text);
 
     // -------- Notification dot (avatar corner) --------
     // Ring first (matches the row's current backdrop so the dot "punches
@@ -296,15 +308,14 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         const float outer_d = kDotD + kRing * 2.0f;
         const float dot_cx = avatar_centre.x + shown_avatar_() * 0.5f;
         const float dot_cy = avatar_centre.y + shown_avatar_() * 0.5f;
-        const tk::Color ring_col = pressed_ ? theme.palette.subtle_pressed
+        const tk::Color ring_col = pressed_   ? theme.palette.subtle_pressed
                                    : hovered_ ? theme.palette.subtle_hover
                                               : theme.palette.sidebar_bg;
         ctx.canvas.fill_rounded_rect(
-            {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d},
-            outer_d * 0.5f, ring_col);
-        ctx.canvas.fill_rounded_rect(
-            {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
-            kDotD * 0.5f, theme.palette.unread_bg);
+            {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d}, outer_d * 0.5f,
+            ring_col);
+        ctx.canvas.fill_rounded_rect({dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
+                                     kDotD * 0.5f, theme.palette.unread_bg);
     }
 
     // -------- Warning dot (opposite avatar corner) --------
@@ -317,15 +328,14 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         const float outer_d = kDotD + kRing * 2.0f;
         const float dot_cx = avatar_centre.x + shown_avatar_() * 0.5f;
         const float dot_cy = avatar_centre.y - shown_avatar_() * 0.5f;
-        const tk::Color ring_col = pressed_ ? theme.palette.subtle_pressed
+        const tk::Color ring_col = pressed_   ? theme.palette.subtle_pressed
                                    : hovered_ ? theme.palette.subtle_hover
                                               : theme.palette.sidebar_bg;
         ctx.canvas.fill_rounded_rect(
-            {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d},
-            outer_d * 0.5f, ring_col);
-        ctx.canvas.fill_rounded_rect(
-            {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
-            kDotD * 0.5f, theme.palette.destructive);
+            {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d}, outer_d * 0.5f,
+            ring_col);
+        ctx.canvas.fill_rounded_rect({dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
+                                     kDotD * 0.5f, theme.palette.destructive);
     }
 
     // Icon-only (collapsed sidebar): avatar only, no text column.
@@ -333,14 +343,15 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     {
         status_rect_ = {};
         if (status_target_)
+        {
             status_target_->set_target_rect({});
+        }
         return;
     }
 
     // -------- Text column --------
     const float text_x = bounds_.x + kUserInfoPadX + shown_avatar_() + kUserInfoAvatarTextGap;
-    const float text_w =
-        std::max(0.0f, bounds_.x + bounds_.w - kUserInfoPadX - text_x);
+    const float text_w = std::max(0.0f, bounds_.x + bounds_.w - kUserInfoPadX - text_x);
 
     // (Re)build text layouts on demand. The factory is bound to the
     // backend, so layouts must be rebuilt whenever the text changes — the
@@ -377,8 +388,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     // the box's literal top, ignoring the request, and can also drop a run
     // whose real line height exceeds too tight a box entirely).
     constexpr float kStatusEmojiGap = 5.0f;
-    const bool status_is_placeholder =
-        status_emoji_.empty() && status_text_.empty();
+    const bool status_is_placeholder = status_emoji_.empty() && status_text_.empty();
     if (status_line_enabled_ && !status_layout_ && !status_emoji_layout_)
     {
         tk::TextStyle st;
@@ -393,8 +403,9 @@ void UserInfo::paint(tk::PaintCtx& ctx)
             // No placeholder when the server can't store a status: clicking
             // it would open a Settings editor that can't save anything.
             if (status_editable_)
-                status_layout_ =
-                    ctx.factory.build_text(tk::tr("Click to set status"), st);
+            {
+                status_layout_ = ctx.factory.build_text(tk::tr("Click to set status"), st);
+            }
         }
         else
         {
@@ -407,10 +418,11 @@ void UserInfo::paint(tk::PaintCtx& ctx)
                 // to it): a modest, deliberate step up from SidebarPreview.
                 est.role = tk::FontRole::Body;
                 est.trim = tk::TextTrim::None;
-                status_emoji_layout_ =
-                    ctx.factory.build_text(status_emoji_, est);
+                status_emoji_layout_ = ctx.factory.build_text(status_emoji_, est);
                 if (status_emoji_layout_)
+                {
                     used = status_emoji_layout_->measure().w + kStatusEmojiGap;
+                }
             }
             if (!status_text_.empty())
             {
@@ -421,26 +433,23 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     }
 
     // Vertically centre the text column inside the row.
-    const tk::Size name_sz =
-        name_layout_ ? name_layout_->measure() : tk::Size{};
+    const tk::Size name_sz = name_layout_ ? name_layout_->measure() : tk::Size{};
     const tk::Size uid_sz = uid_layout_ ? uid_layout_->measure() : tk::Size{};
-    const bool has_status_line =
-        status_line_enabled_ && (status_layout_ || status_emoji_layout_);
+    const bool has_status_line = status_line_enabled_ && (status_layout_ || status_emoji_layout_);
     const tk::Size status_emoji_sz =
         status_emoji_layout_ ? status_emoji_layout_->measure() : tk::Size{};
-    const tk::Size status_text_sz =
-        status_layout_ ? status_layout_->measure() : tk::Size{};
+    const tk::Size status_text_sz = status_layout_ ? status_layout_->measure() : tk::Size{};
     const float status_line_h = std::max(status_emoji_sz.h, status_text_sz.h);
-    float col_h =
-        name_sz.h + (uid_sz.h > 0 ? kUserInfoLineGap + uid_sz.h : 0);
+    float col_h = name_sz.h + (uid_sz.h > 0 ? kUserInfoLineGap + uid_sz.h : 0);
     if (has_status_line)
+    {
         col_h += kUserInfoLineGap + status_line_h;
+    }
     const float col_top = bounds_.y + (bounds_.h - col_h) * 0.5f;
 
     if (name_layout_)
     {
-        ctx.canvas.draw_text(*name_layout_, {text_x, col_top},
-                             row_pal.text_primary);
+        ctx.canvas.draw_text(*name_layout_, {text_x, col_top}, row_pal.text_primary);
     }
     else if (display_name_.empty() && !user_id_.empty())
     {
@@ -456,8 +465,9 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         // build_text can return nullptr on backend/font error or OOM; the
         // member-layout draws above guard their results, this local did not.
         if (lay)
-            ctx.canvas.draw_text(*lay, {text_x, col_top},
-                                 row_pal.text_primary);
+        {
+            ctx.canvas.draw_text(*lay, {text_x, col_top}, row_pal.text_primary);
+        }
     }
 
     const float uid_y = col_top + name_sz.h + kUserInfoLineGap;
@@ -478,8 +488,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         if (status_emoji_layout_)
         {
             const float y = status_y + (status_line_h - status_emoji_sz.h) * 0.5f;
-            ctx.canvas.draw_text(*status_emoji_layout_, {x, y},
-                                 row_pal.text_secondary);
+            ctx.canvas.draw_text(*status_emoji_layout_, {x, y}, row_pal.text_secondary);
             x += status_emoji_sz.w + kStatusEmojiGap;
         }
         if (status_layout_)
@@ -494,14 +503,14 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         // Hit target: the whole text column from the status line down to the
         // bottom of the row, so a click on that line (or the padding just
         // below it) opens Settings rather than the account picker.
-        status_rect_ = {text_x, status_y - kUserInfoLineGap * 0.5f, text_w,
-                        std::max(status_line_h + kUserInfoLineGap,
-                                 bounds_.y + bounds_.h - status_y)};
+        status_rect_ = {
+            text_x, status_y - kUserInfoLineGap * 0.5f, text_w,
+            std::max(status_line_h + kUserInfoLineGap, bounds_.y + bounds_.h - status_y)};
     }
     if (status_target_)
     {
-        const bool status_stop = keyboard_focusable_ && status_line_enabled_ &&
-                                 status_editable_ && on_status_clicked;
+        const bool status_stop =
+            keyboard_focusable_ && status_line_enabled_ && status_editable_ && on_status_clicked;
         status_target_->set_target_rect(status_stop ? status_rect_ : tk::Rect{});
     }
 }

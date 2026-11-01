@@ -28,24 +28,53 @@ public:
         bool this_device_unverified = false;
     };
 
-    bool        has_flow() const { return !flow_.id.empty(); }
-    const Flow& flow() const { return flow_; }
-    bool        is_flow(const std::string& id) const { return has_flow() && flow_.id == id; }
-    void        begin(Flow f) { flow_ = std::move(f); awaiting_outgoing_ = false; }
-    void        clear() { flow_ = {}; awaiting_outgoing_ = false; }
+    bool has_flow() const
+    {
+        return !flow_.id.empty();
+    }
+    const Flow& flow() const
+    {
+        return flow_;
+    }
+    bool is_flow(const std::string& id) const
+    {
+        return has_flow() && flow_.id == id;
+    }
+    void begin(Flow f)
+    {
+        flow_ = std::move(f);
+        awaiting_outgoing_ = false;
+    }
+    void clear()
+    {
+        flow_ = {};
+        awaiting_outgoing_ = false;
+    }
 
     // request_self_verification() doesn't return a flow id; the id arrives
     // later via on_verification_request(incoming=false). While this is true a
     // Ready for a flow we started belongs to the dialog; once the user has
     // cancelled, a late Ready must be cancelled instead of adopted.
-    bool awaiting_outgoing() const { return awaiting_outgoing_; }
-    void set_awaiting_outgoing(bool v) { awaiting_outgoing_ = v; }
+    bool awaiting_outgoing() const
+    {
+        return awaiting_outgoing_;
+    }
+    void set_awaiting_outgoing(bool v)
+    {
+        awaiting_outgoing_ = v;
+    }
 
     // Who our last outgoing request went to: empty for our own devices,
     // otherwise another user. Survives clear() so "Try again" after a
     // cancel re-asks the same party.
-    const std::string& outgoing_target() const { return outgoing_target_; }
-    void set_outgoing_target(std::string user_id) { outgoing_target_ = std::move(user_id); }
+    const std::string& outgoing_target() const
+    {
+        return outgoing_target_;
+    }
+    void set_outgoing_target(std::string user_id)
+    {
+        outgoing_target_ = std::move(user_id);
+    }
 
     // ── Incoming requests ───────────────────────────────────────────────────
     enum class IncomingAction
@@ -55,8 +84,7 @@ public:
     };
     static IncomingAction on_incoming(bool dialog_visible, bool dialog_busy)
     {
-        return dialog_visible && dialog_busy ? IncomingAction::RefuseBusy
-                                             : IncomingAction::Show;
+        return dialog_visible && dialog_busy ? IncomingAction::RefuseBusy : IncomingAction::Show;
     }
 
     // ── Reminder strip ──────────────────────────────────────────────────────
@@ -75,7 +103,7 @@ public:
                                  bool foreign_identity, bool key_unsaved = false);
 
     static constexpr std::int64_t kSnoozeSeconds = 3 * 24 * 60 * 60;
-    static constexpr std::int64_t kDaySeconds    = 24 * 60 * 60;
+    static constexpr std::int64_t kDaySeconds = 24 * 60 * 60;
     // How long the SaveKey reminder stays away after its `dismissals`-th ✕
     // (1-based): 1, 3, 7, then 14 days from then on. It never stops while
     // the key is unsaved.

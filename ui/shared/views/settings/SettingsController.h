@@ -21,15 +21,14 @@ namespace tesseract
 class SettingsController : public tk::EnableWeakSelf<SettingsController>
 {
 public:
-    SettingsController(
-        tesseract::Client* client,
-        std::function<void(std::function<void()>)>                          post_to_ui,
-        std::function<void(std::function<void()>)>                          run_async,
-        std::function<void(std::function<void(std::vector<uint8_t>,
-                                              std::string)>)>               open_file_picker,
-        std::function<std::shared_ptr<tk::Image>(const std::vector<uint8_t>&)>
-                                                                             decode_avatar_preview,
-        std::shared_ptr<void> client_owner = {});
+    SettingsController(tesseract::Client* client,
+                       std::function<void(std::function<void()>)> post_to_ui,
+                       std::function<void(std::function<void()>)> run_async,
+                       std::function<void(std::function<void(std::vector<uint8_t>, std::string)>)>
+                           open_file_picker,
+                       std::function<std::shared_ptr<tk::Image>(const std::vector<uint8_t>&)>
+                           decode_avatar_preview,
+                       std::shared_ptr<void> client_owner = {});
     ~SettingsController();
 
     /// `client_owner` is whatever keeps `client` alive (the shell's
@@ -38,7 +37,10 @@ public:
     /// the Client — can't destroy it under a blocking call.
     void set_client(tesseract::Client* client, std::shared_ptr<void> client_owner = {});
 
-    tesseract::Client* client() const { return client_; }
+    tesseract::Client* client() const
+    {
+        return client_;
+    }
 
     // Bind the per-account UnifiedPush connector so notification-toggle changes
     // can drive `register_pusher` / `remove_pusher`. May be null — passing
@@ -78,28 +80,23 @@ public:
     // Emojis & Stickers (global image packs).
     void load_image_packs();
     void save_user_pack_changes(tesseract::views::UserPackEditor::Result diff);
-    void set_pack_subscribed(std::string room_id, std::string state_key,
-                             bool subscribed);
+    void set_pack_subscribed(std::string room_id, std::string state_key, bool subscribed);
 
     std::function<void(std::vector<tesseract::ImagePack>)> on_image_packs_loaded;
-    std::function<void(std::vector<tesseract::ImagePackImage>)>
-        on_user_pack_images_loaded;
+    std::function<void(std::vector<tesseract::ImagePackImage>)> on_user_pack_images_loaded;
     std::function<void(bool ok, std::string error)> on_user_pack_save_result;
 
     std::function<void(bool ok, std::string error)> on_avatar_result;
     std::function<void(bool ok, std::string error)> on_name_result;
-    std::function<void(std::string new_mxc_url)>    on_avatar_changed;
+    std::function<void(std::string new_mxc_url)> on_avatar_changed;
     std::function<void(std::shared_ptr<tk::Image> preview)> on_avatar_preview;
-    std::function<void(std::string new_name)>        on_name_changed;
+    std::function<void(std::string new_name)> on_name_changed;
 
     std::function<void(std::vector<tesseract::Client::Device>)> on_devices_loaded;
-    std::function<void(std::string device_id, bool ok, std::string error)>
-                                                                 on_device_renamed;
-    std::function<void(std::string device_id,
-                       std::string fallback_url,
-                       std::string session)>                     on_device_needs_uia;
-    std::function<void(std::string device_id, bool ok, std::string error)>
-                                                                 on_device_deleted;
+    std::function<void(std::string device_id, bool ok, std::string error)> on_device_renamed;
+    std::function<void(std::string device_id, std::string fallback_url, std::string session)>
+        on_device_needs_uia;
+    std::function<void(std::string device_id, bool ok, std::string error)> on_device_deleted;
 
     // Emitted once load_mentions_settings()'s round trip completes.
     std::function<void(bool mentions, bool room_mentions, bool all_messages,
@@ -107,16 +104,16 @@ public:
         on_mentions_settings_loaded;
     // Emitted after each toggle write completes — `ok` tells the section
     // whether to keep the optimistic UI value or revert it.
-    std::function<void(bool ok, bool mentions_enabled)>          on_mentions_toggle_result;
-    std::function<void(bool ok, bool room_mentions_enabled)>     on_room_mentions_toggle_result;
-    std::function<void(bool ok, bool all_messages_enabled)>      on_notify_all_messages_result;
+    std::function<void(bool ok, bool mentions_enabled)> on_mentions_toggle_result;
+    std::function<void(bool ok, bool room_mentions_enabled)> on_room_mentions_toggle_result;
+    std::function<void(bool ok, bool all_messages_enabled)> on_notify_all_messages_result;
     std::function<void(bool ok, bool notify_on_keywords_enabled)> on_notify_on_keywords_result;
     // No refetched list here deliberately — see add_notification_keyword()'s
     // comment for why re-reading the server/sync-cached keyword list right
     // after a mutation is racy. The section applies/reverts its own local
     // list optimistically instead.
-    std::function<void(bool ok, std::string keyword)>            on_keyword_add_result;
-    std::function<void(bool ok, std::string keyword)>            on_keyword_remove_result;
+    std::function<void(bool ok, std::string keyword)> on_keyword_add_result;
+    std::function<void(bool ok, std::string keyword)> on_keyword_remove_result;
 
     // ── Room key export / import ─────────────────────────────────────────────
     // These callbacks must be set by the platform shell before calling
@@ -126,20 +123,17 @@ public:
 
     // Show a native password-entry dialog with `title`. Invoke `cb` with the
     // entered passphrase, or with an empty string on cancel.
-    std::function<void(std::string                          title,
-                       std::function<void(std::string)>    cb)>
+    std::function<void(std::string title, std::function<void(std::string)> cb)>
         show_passphrase_prompt;
 
     // Show a native save-file dialog with `suggested_name` as the default
     // filename. Invoke `cb` with the chosen path, or empty on cancel.
-    std::function<void(std::string                          suggested_name,
-                       std::function<void(std::string)>    cb)>
+    std::function<void(std::string suggested_name, std::function<void(std::string)> cb)>
         show_save_file_dialog;
 
     // Show a native open-file dialog. Invoke `cb` with the chosen path, or
     // empty on cancel.
-    std::function<void(std::function<void(std::string)>    cb)>
-        show_open_file_dialog;
+    std::function<void(std::function<void(std::string)> cb)> show_open_file_dialog;
 
     // Fired on the UI thread with the result of export_room_keys().
     std::function<void(bool ok, std::string error)> on_export_keys_result;
@@ -158,12 +152,10 @@ private:
     tesseract::Client* client_;
     std::shared_ptr<void> client_owner_;
     tesseract::IUpConnector* up_connector_ = nullptr;
-    std::function<void(std::function<void()>)>                       post_to_ui_;
-    std::function<void(std::function<void()>)>                       run_async_;
-    std::function<void(std::function<void(std::vector<uint8_t>,
-                                          std::string)>)>            open_file_picker_;
-    std::function<std::shared_ptr<tk::Image>(const std::vector<uint8_t>&)>
-                                                                     decode_avatar_preview_;
+    std::function<void(std::function<void()>)> post_to_ui_;
+    std::function<void(std::function<void()>)> run_async_;
+    std::function<void(std::function<void(std::vector<uint8_t>, std::string)>)> open_file_picker_;
+    std::function<std::shared_ptr<tk::Image>(const std::vector<uint8_t>&)> decode_avatar_preview_;
 
     std::atomic<bool> avatar_in_flight_{false};
     std::atomic<bool> name_in_flight_{false};

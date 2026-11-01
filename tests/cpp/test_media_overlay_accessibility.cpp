@@ -43,14 +43,15 @@ struct MediaOverlayAccessibilityStage
 // fire_save_() is pure virtual).
 
 TEST_CASE("MediaViewerOverlay's chrome buttons (inherited from "
-         "MediaOverlayBase) have real accessible names, not the empty "
-         "label_ they're constructed with",
-         "[image_viewer][accessibility]")
+          "MediaOverlayBase) have real accessible names, not the empty "
+          "label_ they're constructed with",
+          "[image_viewer][accessibility]")
 {
     MediaOverlayAccessibilityStage st;
     auto overlay_owner = tk::create_root_widget<MediaViewerOverlay>(nullptr);
     MediaViewerOverlay& overlay = *overlay_owner;
-    overlay.open(tesseract::views::test::image_item("mxc://example.org/img", "", "caption", 640, 360));
+    overlay.open(
+        tesseract::views::test::image_item("mxc://example.org/img", "", "caption", 640, 360));
     st.run(overlay, {0, 0, 600, 400});
 
     CHECK(overlay.close_btn_for_test()->access_name() == "Close");
@@ -65,13 +66,14 @@ TEST_CASE("MediaViewerOverlay's chrome buttons (inherited from "
 // rate_ reads that already pick the visual icon/text, so it can't drift.
 
 TEST_CASE("MediaViewerOverlay video page's play button announces \"Play\" when "
-         "paused and would announce \"Pause\" once playing",
-         "[video_viewer][accessibility]")
+          "paused and would announce \"Pause\" once playing",
+          "[video_viewer][accessibility]")
 {
     MediaOverlayAccessibilityStage st;
     auto overlay_owner = tk::create_root_widget<MediaViewerOverlay>(nullptr);
     MediaViewerOverlay& overlay = *overlay_owner;
-    overlay.open(tesseract::views::test::video_item("mxc://example.org/v", "", "video/mp4", 30000u, 1280, 720));
+    overlay.open(tesseract::views::test::video_item("mxc://example.org/v", "", "video/mp4", 30000u,
+                                                    1280, 720));
     st.run(overlay, {0, 0, 600, 400});
 
     // No video_player_ set in this test, so is_playing() is false — the
@@ -81,13 +83,14 @@ TEST_CASE("MediaViewerOverlay video page's play button announces \"Play\" when "
 }
 
 TEST_CASE("MediaViewerOverlay video page's speed button announces the current "
-         "playback rate, defaulting to 1x",
-         "[video_viewer][accessibility]")
+          "playback rate, defaulting to 1x",
+          "[video_viewer][accessibility]")
 {
     MediaOverlayAccessibilityStage st;
     auto overlay_owner = tk::create_root_widget<MediaViewerOverlay>(nullptr);
     MediaViewerOverlay& overlay = *overlay_owner;
-    overlay.open(tesseract::views::test::video_item("mxc://example.org/v", "", "video/mp4", 30000u, 1280, 720));
+    overlay.open(tesseract::views::test::video_item("mxc://example.org/v", "", "video/mp4", 30000u,
+                                                    1280, 720));
     st.run(overlay, {0, 0, 600, 400});
 
     CHECK(overlay.speed_btn_for_test()->access_name() == "Playback speed: 1x");

@@ -46,32 +46,41 @@ protected:
 public:
     void set_options(std::vector<Option> options);
     void set_selected_value(const std::string& value);
-    const std::string& selected_value() const { return selected_value_; }
+    const std::string& selected_value() const
+    {
+        return selected_value_;
+    }
 
     // Optional static hover tooltip shown while the pointer rests over the
     // closed combo button (suppressed while the dropdown is expanded).
     // Empty (default) shows nothing.
-    void set_tooltip(std::string text) { tooltip_text_ = std::move(text); }
+    void set_tooltip(std::string text)
+    {
+        tooltip_text_ = std::move(text);
+    }
 
     // Disabled: never expands the dropdown, drawn dimmed. Collapses the
     // dropdown if it happens to be open when disabled.
     void set_enabled(bool enabled) override;
 
-    bool is_expanded() const { return expanded_; }
+    bool is_expanded() const
+    {
+        return expanded_;
+    }
     void collapse();
 
     std::function<void(std::string value)> on_changed;
 
-    Size     measure(LayoutCtx&, Size constraints) override;
-    void     arrange(LayoutCtx&, Rect bounds) override;
-    void     paint_before_children(PaintCtx&) override;
-    void     on_theme_changed(const Theme& t) override;
-    void     on_popup_dismiss() override;
-    bool     on_pointer_down(Point local) override;
-    void     on_pointer_up(Point local, bool inside_self) override;
-    bool     on_pointer_move(Point local) override;
-    void     on_pointer_leave() override;
-    bool     on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
+    Size measure(LayoutCtx&, Size constraints) override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint_before_children(PaintCtx&) override;
+    void on_theme_changed(const Theme& t) override;
+    void on_popup_dismiss() override;
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
+    bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Keyboard-focusable whenever enabled. Enter/Space/Up/Down opens the
     // dropdown; once open, Up/Down moves the highlighted option,
@@ -92,8 +101,12 @@ public:
     std::string access_name() const override
     {
         for (const auto& opt : options_)
+        {
             if (opt.value == selected_value_)
+            {
                 return opt.label;
+            }
+        }
         return {};
     }
     AccessState access_state() const override
@@ -108,11 +121,17 @@ public:
     bool access_default_action() override
     {
         if (!enabled_)
+        {
             return false;
+        }
         if (expanded_)
+        {
             collapse();
+        }
         else
+        {
             set_expanded_(true);
+        }
         return true;
     }
 
@@ -125,8 +144,8 @@ private:
     void reposition_popup_();
 
     std::vector<Option> options_;
-    std::string         selected_value_;
-    std::string         tooltip_text_;
+    std::string selected_value_;
+    std::string tooltip_text_;
 
     // Button label layout only now — dropdown row layouts live in
     // DropdownList, inside the popup's own surface.
@@ -135,12 +154,12 @@ private:
     std::unique_ptr<PopupSurfaceHandle> popup_;
     DropdownList* dropdown_ = nullptr; // borrowed — owned by popup_ once set
 
-    bool expanded_       = false;
-    int  hovered_option_ = -1;
+    bool expanded_ = false;
+    int hovered_option_ = -1;
     bool button_hovered_ = false;
     bool button_pressed_ = false;
 
-    Rect  button_rect_{};
+    Rect button_rect_{};
     float last_w_ = -1.0f;
 
     FloatTween button_hover_fade_;

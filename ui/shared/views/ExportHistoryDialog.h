@@ -58,8 +58,7 @@ public:
     void open(std::string room_id, std::string room_display_name);
 
     // Skips straight to BusyElsewhere: another room's export is active.
-    void open_busy_elsewhere(std::string busy_room_id,
-                             std::string busy_room_display_name,
+    void open_busy_elsewhere(std::string busy_room_id, std::string busy_room_display_name,
                              const tesseract::RoomExportProgress& last_progress);
 
     // Skips straight to InProgress for `room_id`, seeded from
@@ -71,14 +70,23 @@ public:
     // Hides the dialog WITHOUT cancelling an in-progress export — the
     // export keeps running; control moves to the status bar.
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     // A modal dialog named by the step title, described by its body (the
     // resume prompt, export target, or output path / error).
-    tk::Role    access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override;
     std::string access_description() const override;
-    bool        access_modal() const override { return open_ && visible(); }
+    bool access_modal() const override
+    {
+        return open_ && visible();
+    }
 
     // Populates the Options state's resume-vs-new choice. No-op if the
     // dialog isn't currently showing Options for the room the checkpoint
@@ -91,8 +99,8 @@ public:
     void show_progress(const tesseract::RoomExportProgress& progress);
 
     // Terminal state. Shows a brief result with a Close button.
-    void show_finished(bool ok, bool cancelled, std::string out_path,
-                       std::uint64_t events_written, std::string error);
+    void show_finished(bool ok, bool cancelled, std::string out_path, std::uint64_t events_written,
+                       std::string error);
 
     // Fires when the dialog opens/closes/changes size, so the shell can
     // re-query native-overlay rects (mirrors ConfirmDialog::on_layout_changed).
@@ -111,10 +119,10 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
 
     // Pure: no Client, no UI calls — safe to unit-test directly (see
     // HistoryExportController::build_labels()/suggested_folder_name() for
@@ -157,7 +165,7 @@ private:
     // factored out so show_finished() can either call it immediately or
     // defer it (see kMinInProgressDurationMs).
     void apply_finished_(bool ok, bool cancelled, std::string out_path,
-                        std::uint64_t events_written, std::string error);
+                         std::uint64_t events_written, std::string error);
 
     bool open_ = false;
     std::pair<std::string, std::string> title_and_body_() const;
@@ -240,12 +248,12 @@ private:
     tk::CachedTextLayout title_layout_;
     tk::CachedTextLayout body_layout_;
 
-    static constexpr float kCardW    = 400.0f;
-    static constexpr float kCardPad  = 20.0f;
-    static constexpr float kRowH     = 32.0f;
-    static constexpr float kRowGap   = 8.0f;
-    static constexpr float kBtnH     = 36.0f;
-    static constexpr float kTitleH   = 22.0f;
+    static constexpr float kCardW = 400.0f;
+    static constexpr float kCardPad = 20.0f;
+    static constexpr float kRowH = 32.0f;
+    static constexpr float kRowGap = 8.0f;
+    static constexpr float kBtnH = 36.0f;
+    static constexpr float kTitleH = 22.0f;
     static constexpr float kTitleGap = 12.0f;
 };
 

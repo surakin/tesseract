@@ -17,7 +17,9 @@ constexpr float kIdentityButtonH = 28.0f;
 std::string identity_who(const tesseract::IdentityWarning& w)
 {
     if (w.display_name.empty() || w.display_name == w.user_id)
+    {
         return w.user_id;
+    }
     return tk::trf(tk::tr("{0} ({1})"), {w.display_name, w.user_id});
 }
 } // namespace
@@ -36,7 +38,9 @@ IdentityChangeBanner::IdentityChangeBanner()
         [this]
         {
             if (!warnings_.empty() && on_resolve)
+            {
                 on_resolve(warnings_.front());
+            }
         });
     action->set_min_size({60.0f, kIdentityButtonH});
     action_ = add_child(std::move(action));
@@ -54,16 +58,23 @@ void IdentityChangeBanner::set_warnings(std::vector<tesseract::IdentityWarning> 
 std::string IdentityChangeBanner::label_text() const
 {
     if (warnings_.empty())
+    {
         return {};
+    }
     const auto& w = warnings_.front();
     if (w.kind == tesseract::IdentityWarning::Kind::VerificationBroken)
+    {
         return tk::trf(tk::tr("{0}'s verified digital identity was reset."), {identity_who(w)});
+    }
     return tk::trf(tk::tr("{0}'s digital identity was reset."), {identity_who(w)});
 }
 
 void IdentityChangeBanner::apply_()
 {
-    if (label_) label_->set_text(label_text());
+    if (label_)
+    {
+        label_->set_text(label_text());
+    }
     if (action_ && !warnings_.empty())
     {
         action_->set_label(warnings_.front().kind ==

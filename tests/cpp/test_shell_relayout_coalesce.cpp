@@ -32,14 +32,17 @@ struct CoalesceShell : tesseract::test::TestShellBase
     {
         ++relayout_calls;
     }
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::schedule_relayout_;
 
@@ -50,15 +53,16 @@ struct CoalesceShell : tesseract::test::TestShellBase
         for (auto& fn : pending)
         {
             if (fn)
+            {
                 fn();
+            }
         }
     }
 };
 
 } // namespace
 
-TEST_CASE("schedule_relayout_ coalesces a burst into one relayout pass",
-          "[shell][relayout]")
+TEST_CASE("schedule_relayout_ coalesces a burst into one relayout pass", "[shell][relayout]")
 {
     CoalesceShell s;
 
@@ -76,8 +80,7 @@ TEST_CASE("schedule_relayout_ coalesces a burst into one relayout pass",
     CHECK(s.relayout_calls == 1);
 }
 
-TEST_CASE("schedule_relayout_ re-arms after the flush runs",
-          "[shell][relayout]")
+TEST_CASE("schedule_relayout_ re-arms after the flush runs", "[shell][relayout]")
 {
     CoalesceShell s;
 

@@ -19,15 +19,13 @@ constexpr float kHeaderGap = 12.0f;    // rule → first row
 // Sized for the default font; grown with the user's font config.
 float header_h()
 {
-    return std::ceil(kSettingsGroupHeaderH *
-                     tk::font_height_scale(tk::FontRole::UiSemibold));
+    return std::ceil(kSettingsGroupHeaderH * tk::font_height_scale(tk::FontRole::UiSemibold));
 }
 constexpr float kSettingsGroupRowSpacing = 6.0f;
 
 } // namespace
 
-SettingsGroup::SettingsGroup(std::string header)
-    : header_text_(std::move(header))
+SettingsGroup::SettingsGroup(std::string header) : header_text_(std::move(header))
 {
     // Reserve room for the header inside the top padding; below the header,
     // child widgets stack with a small inter-row gap.
@@ -37,8 +35,7 @@ SettingsGroup::SettingsGroup(std::string header)
 
 void SettingsGroup::update_header_padding_()
 {
-    const float top = header_text_.empty() ? 0.0f
-                                           : header_h() + kHeaderRuleGap + kHeaderGap;
+    const float top = header_text_.empty() ? 0.0f : header_h() + kHeaderRuleGap + kHeaderGap;
     set_padding(tk::Edges{top, 0.0f, 0.0f, 0.0f});
 }
 

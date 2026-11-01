@@ -32,7 +32,7 @@ using access_test::find_named;
 using access_test::find_prefix;
 
 TEST_CASE("DatePickerView is a grid of named day cells with month navigation",
-         "[datepicker][accessibility]")
+          "[datepicker][accessibility]")
 {
     auto surface = TestSurface::create(400, 400);
     DatePickerView picker;
@@ -59,17 +59,24 @@ TEST_CASE("DatePickerView is a grid of named day cells with month navigation",
 
     int cells = 0;
     int picked_day = 0;
-    picker.on_date_picked = [&](int, int, int d) { picked_day = d; };
+    picker.on_date_picked = [&](int, int, int d)
+    {
+        picked_day = d;
+    };
     const AccessNode* first_enabled = nullptr;
     for (const auto& ch : tree.children)
     {
         if (ch.role != Role::GridCell)
+        {
             continue;
+        }
         ++cells;
         CHECK(ch.grid_row >= 0);
         CHECK(ch.grid_col >= 0);
         if (!ch.state.disabled && !first_enabled)
+        {
             first_enabled = &ch;
+        }
     }
     CHECK(cells == 31); // October: only in-month days are exposed
     REQUIRE(first_enabled != nullptr);
@@ -81,8 +88,7 @@ TEST_CASE("DatePickerView is a grid of named day cells with month navigation",
     CHECK(picker.access_name() != before);
 }
 
-TEST_CASE("ExportHistoryDialog is a modal dialog named by its title",
-         "[export][accessibility]")
+TEST_CASE("ExportHistoryDialog is a modal dialog named by its title", "[export][accessibility]")
 {
     auto dlg = create_root_widget<ExportHistoryDialog>(nullptr);
     dlg->open("!r:s", "General");
@@ -91,15 +97,14 @@ TEST_CASE("ExportHistoryDialog is a modal dialog named by its title",
     CHECK(dlg->access_name() == "Export History of General");
 }
 
-TEST_CASE("KnockStatusCard names the room and pending status",
-         "[knock][accessibility]")
+TEST_CASE("KnockStatusCard names the room and pending status", "[knock][accessibility]")
 {
     KnockStatusCard card;
     tesseract::KnockedRoomInfo info;
-    info.room_id   = "!r:s";
+    info.room_id = "!r:s";
     info.room_name = "Secret Club";
     info.room_topic = "Members only";
-    info.reason    = "Friend of Bob";
+    info.reason = "Friend of Bob";
     card.set_knock(info, {});
     CHECK(card.access_role() == Role::Group);
     CHECK(card.access_name() == "Secret Club: Request pending");
@@ -107,7 +112,7 @@ TEST_CASE("KnockStatusCard names the room and pending status",
 }
 
 TEST_CASE("AvatarEditControl offers change / remove items only while editable",
-         "[avatar][accessibility]")
+          "[avatar][accessibility]")
 {
     AvatarEditControl av;
     av.set_geometry({50, 50}, 64);
@@ -128,17 +133,20 @@ TEST_CASE("AvatarEditControl offers change / remove items only while editable",
 }
 
 TEST_CASE("RoomHeader exposes the lock and a rich topic's links after the name",
-         "[room_header][accessibility]")
+          "[room_header][accessibility]")
 {
     RoomHeader h;
     tesseract::RoomInfo info;
-    info.id           = "!r:s";
-    info.name         = "Rust";
+    info.id = "!r:s";
+    info.name = "Rust";
     info.is_encrypted = true;
-    info.topic        = "Docs at https://doc.rust-lang.org";
+    info.topic = "Docs at https://doc.rust-lang.org";
     h.set_room(info);
     std::string clicked;
-    h.on_link_clicked = [&](const std::string& url) { clicked = url; };
+    h.on_link_clicked = [&](const std::string& url)
+    {
+        clicked = url;
+    };
 
     AccessNode tree = build_access_tree(&h);
     const AccessNode* lock = find_named(tree, "Encrypted room");
@@ -155,7 +163,7 @@ TEST_CASE("RoomHeader exposes the lock and a rich topic's links after the name",
 }
 
 TEST_CASE("ComposeBar's reply banner is readable and its cancel is a real button",
-         "[compose][accessibility]")
+          "[compose][accessibility]")
 {
     auto surface = TestSurface::create(600, 200);
     auto bar = create_root_widget<ComposeBar>(nullptr);
@@ -175,8 +183,7 @@ TEST_CASE("ComposeBar's reply banner is readable and its cancel is a real button
     CHECK_FALSE(bar->has_reply());
 }
 
-TEST_CASE("the composer is labelled with the current room",
-         "[compose][accessibility]")
+TEST_CASE("the composer is labelled with the current room", "[compose][accessibility]")
 {
     StubHost host;
     auto bar = create_root_widget<ComposeBar>(&host);

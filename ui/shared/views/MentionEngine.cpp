@@ -31,8 +31,7 @@ bool icontains(std::string_view hay, std::string_view needle)
         bool ok = true;
         for (std::size_t k = 0; k < needle.size(); ++k)
         {
-            if (std::tolower((unsigned char)hay[i + k]) !=
-                std::tolower((unsigned char)needle[k]))
+            if (std::tolower((unsigned char)hay[i + k]) != std::tolower((unsigned char)needle[k]))
             {
                 ok = false;
                 break;
@@ -57,13 +56,11 @@ int match_rank(std::string_view hay, std::string_view needle)
     {
         return std::tolower((unsigned char)a) == std::tolower((unsigned char)b);
     };
-    if (hay.size() == needle.size() &&
-        std::equal(hay.begin(), hay.end(), needle.begin(), ieq))
+    if (hay.size() == needle.size() && std::equal(hay.begin(), hay.end(), needle.begin(), ieq))
     {
         return 0;
     }
-    if (hay.size() >= needle.size() &&
-        std::equal(needle.begin(), needle.end(), hay.begin(), ieq))
+    if (hay.size() >= needle.size() && std::equal(needle.begin(), needle.end(), hay.begin(), ieq))
     {
         return 1;
     }
@@ -88,8 +85,7 @@ std::string_view localpart(std::string_view user_id)
 
 } // namespace
 
-std::optional<MentionMatch>
-MentionEngine::find_prefix(std::string_view text, int cursor) const
+std::optional<MentionMatch> MentionEngine::find_prefix(std::string_view text, int cursor) const
 {
     cursor = std::min(cursor, (int)text.size());
     if (cursor < 0)
@@ -120,8 +116,7 @@ MentionEngine::find_prefix(std::string_view text, int cursor) const
 }
 
 std::vector<MentionCandidate>
-MentionEngine::lookup(std::string_view prefix,
-                      const std::vector<tesseract::RoomMember>& members,
+MentionEngine::lookup(std::string_view prefix, const std::vector<tesseract::RoomMember>& members,
                       int max_results, bool include_room) const
 {
     using Ranked = std::pair<int, MentionCandidate>;
@@ -130,23 +125,24 @@ MentionEngine::lookup(std::string_view prefix,
 
     for (const auto& m : members)
     {
-        int rn = std::min(match_rank(m.display_name, prefix),
-                          match_rank(localpart(m.user_id), prefix));
+        int rn =
+            std::min(match_rank(m.display_name, prefix), match_rank(localpart(m.user_id), prefix));
         if (rn >= 3)
         {
             continue;
         }
         MentionCandidate c;
         c.user_id = m.user_id;
-        c.display_name =
-            m.display_name.empty() ? m.user_id : m.display_name;
+        c.display_name = m.display_name.empty() ? m.user_id : m.display_name;
         c.avatar_url = m.avatar_url;
         ranked.emplace_back(rn, std::move(c));
     }
 
     std::stable_sort(ranked.begin(), ranked.end(),
                      [](const Ranked& a, const Ranked& b)
-                     { return a.first < b.first; });
+                     {
+                         return a.first < b.first;
+                     });
 
     std::vector<MentionCandidate> out;
     if (include_room && (prefix.empty() || icontains("room", prefix)))

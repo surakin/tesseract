@@ -312,7 +312,7 @@ public:
     // Bookkeeping for save_to_disk (const): not a setting.
     mutable bool proxy_creds_in_keyring = false;
     mutable bool proxy_creds_unreadable = false; // the keyring couldn't be read at load
-    mutable std::string proxy_creds_saved; // the userinfo last written there
+    mutable std::string proxy_creds_saved;       // the userinfo last written there
 
     // ── MSC4278 media-preview controls ────────────────────────────────
     // In-memory mirror of the active account's global `m.media_preview_config`
@@ -330,26 +330,26 @@ public:
         On
     };
     MediaPreviews media_previews = MediaPreviews::On;
-    bool          invite_avatars = true;
+    bool invite_avatars = true;
 
     // ── Window geometry ───────────────────────────────────────────────────
     // Persisted locally (not synced) so windows reopen at the same position
     // and size. valid=false means "no saved geometry; use platform default".
     struct WindowGeometry
     {
-        int  x = 0, y = 0, w = 0, h = 0;
-        int  dpi   = 0; // 0 = unknown (written before this field existed)
+        int x = 0, y = 0, w = 0, h = 0;
+        int dpi = 0; // 0 = unknown (written before this field existed)
         bool valid = false;
     };
 
     struct PopoutEntry
     {
-        std::string    room_id;
-        std::string    user_id;   // empty = pre-migration entry (restore for any account)
+        std::string room_id;
+        std::string user_id; // empty = pre-migration entry (restore for any account)
         WindowGeometry geometry;
     };
 
-    WindowGeometry           main_window_geometry;
+    WindowGeometry main_window_geometry;
     std::vector<PopoutEntry> popout_windows;
 
     // ── Encryption reminder ──────────────────────────────────────────
@@ -397,22 +397,22 @@ public:
 
     // Collapsed state of each room-list section; persisted across restarts.
     // Defaults match the hardcoded initial state in RoomListView.
-    bool room_section_invites_collapsed         = false;
-    bool room_section_favorites_collapsed       = false;
-    bool room_section_dms_collapsed             = false;
-    bool room_section_rooms_collapsed           = false;
-    bool room_section_spaces_collapsed          = false;
-    bool room_section_inactive_collapsed        = true;
-    bool room_section_unread_collapsed          = false;
-    bool room_section_space_unjoined_collapsed  = false;
-    bool room_section_call_rooms_collapsed      = false;
-    bool room_section_knocks_collapsed          = false;
+    bool room_section_invites_collapsed = false;
+    bool room_section_favorites_collapsed = false;
+    bool room_section_dms_collapsed = false;
+    bool room_section_rooms_collapsed = false;
+    bool room_section_spaces_collapsed = false;
+    bool room_section_inactive_collapsed = true;
+    bool room_section_unread_collapsed = false;
+    bool room_section_space_unjoined_collapsed = false;
+    bool room_section_call_rooms_collapsed = false;
+    bool room_section_knocks_collapsed = false;
 
     // User-chosen width of the room-list sidebar, in logical px. 0 = unset →
     // fall back to visual::kSidebarWidth. When sidebar_collapsed is true the
     // sidebar renders in icon-only mode regardless of this value (which is
     // retained as the width to restore when it is expanded again).
-    int  sidebar_width     = 0;
+    int sidebar_width = 0;
     bool sidebar_collapsed = false;
 
     // ── General ───────────────────────────────────────────────────────
@@ -504,7 +504,13 @@ public:
     std::string sdk_log_level = "warn";
 
     // ── Call overlay ─────────────────────────────────────────────────
-    enum class CallOverlayMode { Docked, DockedExpanded, Floating, Popout };
+    enum class CallOverlayMode
+    {
+        Docked,
+        DockedExpanded,
+        Floating,
+        Popout
+    };
     CallOverlayMode call_overlay_mode = CallOverlayMode::Docked;
     float call_overlay_float_x = 40.0f;
     float call_overlay_float_y = 40.0f;

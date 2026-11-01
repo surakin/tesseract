@@ -13,8 +13,7 @@ namespace tesseract
 // room_id, so the handlers use the scope to update the main window only for
 // the active account and each pop-out only for the account that opened it
 // (including results of requests a pop-out made on its own account).
-void EventHandlerBase::on_timeline_reset(
-    const std::string& room_id, EventList snapshot)
+void EventHandlerBase::on_timeline_reset(const std::string& room_id, EventList snapshot)
 {
     // Wrap in shared_ptr so the move-only lambda is copy-constructible
     // (std::function requires a copyable target).
@@ -28,13 +27,11 @@ void EventHandlerBase::on_timeline_reset(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_timeline_reset_ui_(std::move(p->rid),
-                                             std::move(p->snap));
+            shell->handle_timeline_reset_ui_(std::move(p->rid), std::move(p->snap));
         });
 }
 
-void EventHandlerBase::on_message_inserted(const std::string& room_id,
-                                           std::size_t index,
+void EventHandlerBase::on_message_inserted(const std::string& room_id, std::size_t index,
                                            std::unique_ptr<Event> event)
 {
     struct Payload
@@ -43,19 +40,16 @@ void EventHandlerBase::on_message_inserted(const std::string& room_id,
         std::size_t idx;
         std::unique_ptr<Event> ev;
     };
-    auto p =
-        std::make_shared<Payload>(Payload{room_id, index, std::move(event)});
+    auto p = std::make_shared<Payload>(Payload{room_id, index, std::move(event)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_message_inserted_ui_(std::move(p->rid), p->idx,
-                                               std::move(p->ev));
+            shell->handle_message_inserted_ui_(std::move(p->rid), p->idx, std::move(p->ev));
         });
 }
 
-void EventHandlerBase::on_message_updated(const std::string& room_id,
-                                          std::size_t index,
+void EventHandlerBase::on_message_updated(const std::string& room_id, std::size_t index,
                                           std::unique_ptr<Event> event)
 {
     struct Payload
@@ -64,19 +58,16 @@ void EventHandlerBase::on_message_updated(const std::string& room_id,
         std::size_t idx;
         std::unique_ptr<Event> ev;
     };
-    auto p =
-        std::make_shared<Payload>(Payload{room_id, index, std::move(event)});
+    auto p = std::make_shared<Payload>(Payload{room_id, index, std::move(event)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_message_updated_ui_(std::move(p->rid), p->idx,
-                                              std::move(p->ev));
+            shell->handle_message_updated_ui_(std::move(p->rid), p->idx, std::move(p->ev));
         });
 }
 
-void EventHandlerBase::on_message_removed(const std::string& room_id,
-                                          std::size_t index)
+void EventHandlerBase::on_message_removed(const std::string& room_id, std::size_t index)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, rid = room_id, idx = index]() mutable
@@ -86,9 +77,8 @@ void EventHandlerBase::on_message_removed(const std::string& room_id,
         });
 }
 
-void EventHandlerBase::on_thread_reset(
-    const std::string& room_id, const std::string& thread_root,
-    EventList snapshot)
+void EventHandlerBase::on_thread_reset(const std::string& room_id, const std::string& thread_root,
+                                       EventList snapshot)
 {
     struct Payload
     {
@@ -96,21 +86,19 @@ void EventHandlerBase::on_thread_reset(
         std::string root;
         EventList snap;
     };
-    auto p = std::make_shared<Payload>(
-        Payload{room_id, thread_root, std::move(snapshot)});
+    auto p = std::make_shared<Payload>(Payload{room_id, thread_root, std::move(snapshot)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_thread_reset_ui_(std::move(p->rid),
-                                           std::move(p->root),
+            shell->handle_thread_reset_ui_(std::move(p->rid), std::move(p->root),
                                            std::move(p->snap));
         });
 }
 
-void EventHandlerBase::on_thread_inserted(
-    const std::string& room_id, const std::string& thread_root,
-    std::size_t index, std::unique_ptr<Event> event)
+void EventHandlerBase::on_thread_inserted(const std::string& room_id,
+                                          const std::string& thread_root, std::size_t index,
+                                          std::unique_ptr<Event> event)
 {
     struct Payload
     {
@@ -119,21 +107,18 @@ void EventHandlerBase::on_thread_inserted(
         std::size_t idx;
         std::unique_ptr<Event> ev;
     };
-    auto p = std::make_shared<Payload>(
-        Payload{room_id, thread_root, index, std::move(event)});
+    auto p = std::make_shared<Payload>(Payload{room_id, thread_root, index, std::move(event)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_thread_inserted_ui_(
-                std::move(p->rid), std::move(p->root), p->idx,
-                std::move(p->ev));
+            shell->handle_thread_inserted_ui_(std::move(p->rid), std::move(p->root), p->idx,
+                                              std::move(p->ev));
         });
 }
 
-void EventHandlerBase::on_thread_updated(
-    const std::string& room_id, const std::string& thread_root,
-    std::size_t index, std::unique_ptr<Event> event)
+void EventHandlerBase::on_thread_updated(const std::string& room_id, const std::string& thread_root,
+                                         std::size_t index, std::unique_ptr<Event> event)
 {
     struct Payload
     {
@@ -142,34 +127,28 @@ void EventHandlerBase::on_thread_updated(
         std::size_t idx;
         std::unique_ptr<Event> ev;
     };
-    auto p = std::make_shared<Payload>(
-        Payload{room_id, thread_root, index, std::move(event)});
+    auto p = std::make_shared<Payload>(Payload{room_id, thread_root, index, std::move(event)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_thread_updated_ui_(
-                std::move(p->rid), std::move(p->root), p->idx,
-                std::move(p->ev));
+            shell->handle_thread_updated_ui_(std::move(p->rid), std::move(p->root), p->idx,
+                                             std::move(p->ev));
         });
 }
 
-void EventHandlerBase::on_thread_removed(
-    const std::string& room_id, const std::string& thread_root,
-    std::size_t index)
+void EventHandlerBase::on_thread_removed(const std::string& room_id, const std::string& thread_root,
+                                         std::size_t index)
 {
     shell()->post_to_ui_(
-        [shell = shell(), uid = user_id_, rid = room_id, root = thread_root,
-         idx = index]() mutable
+        [shell = shell(), uid = user_id_, rid = room_id, root = thread_root, idx = index]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_thread_removed_ui_(std::move(rid), std::move(root),
-                                             idx);
+            shell->handle_thread_removed_ui_(std::move(rid), std::move(root), idx);
         });
 }
 
-void EventHandlerBase::on_messages_prepended(const std::string& room_id,
-                                             EventList events)
+void EventHandlerBase::on_messages_prepended(const std::string& room_id, EventList events)
 {
     struct Payload
     {
@@ -181,13 +160,11 @@ void EventHandlerBase::on_messages_prepended(const std::string& room_id,
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_messages_prepended_ui_(std::move(p->rid),
-                                                 std::move(p->evs));
+            shell->handle_messages_prepended_ui_(std::move(p->rid), std::move(p->evs));
         });
 }
 
-void EventHandlerBase::on_messages_appended(const std::string& room_id,
-                                            EventList events)
+void EventHandlerBase::on_messages_appended(const std::string& room_id, EventList events)
 {
     struct Payload
     {
@@ -199,14 +176,12 @@ void EventHandlerBase::on_messages_appended(const std::string& room_id,
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_messages_appended_ui_(std::move(p->rid),
-                                                std::move(p->evs));
+            shell->handle_messages_appended_ui_(std::move(p->rid), std::move(p->evs));
         });
 }
 
 void EventHandlerBase::on_messages_updated_batch(const std::string& room_id,
-                                                 std::vector<std::size_t> indices,
-                                                 EventList events)
+                                                 std::vector<std::size_t> indices, EventList events)
 {
     struct Payload
     {
@@ -214,21 +189,19 @@ void EventHandlerBase::on_messages_updated_batch(const std::string& room_id,
         std::vector<std::size_t> idxs;
         EventList evs;
     };
-    auto p = std::make_shared<Payload>(
-        Payload{room_id, std::move(indices), std::move(events)});
+    auto p = std::make_shared<Payload>(Payload{room_id, std::move(indices), std::move(events)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_messages_updated_batch_ui_(std::move(p->rid),
-                                                     std::move(p->idxs),
+            shell->handle_messages_updated_batch_ui_(std::move(p->rid), std::move(p->idxs),
                                                      std::move(p->evs));
         });
 }
 
-void EventHandlerBase::on_thread_messages_prepended(
-    const std::string& room_id, const std::string& thread_root,
-    EventList events)
+void EventHandlerBase::on_thread_messages_prepended(const std::string& room_id,
+                                                    const std::string& thread_root,
+                                                    EventList events)
 {
     struct Payload
     {
@@ -236,21 +209,18 @@ void EventHandlerBase::on_thread_messages_prepended(
         std::string root;
         EventList evs;
     };
-    auto p = std::make_shared<Payload>(
-        Payload{room_id, thread_root, std::move(events)});
+    auto p = std::make_shared<Payload>(Payload{room_id, thread_root, std::move(events)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_thread_messages_prepended_ui_(std::move(p->rid),
-                                                        std::move(p->root),
+            shell->handle_thread_messages_prepended_ui_(std::move(p->rid), std::move(p->root),
                                                         std::move(p->evs));
         });
 }
 
-void EventHandlerBase::on_thread_messages_appended(
-    const std::string& room_id, const std::string& thread_root,
-    EventList events)
+void EventHandlerBase::on_thread_messages_appended(const std::string& room_id,
+                                                   const std::string& thread_root, EventList events)
 {
     struct Payload
     {
@@ -258,14 +228,12 @@ void EventHandlerBase::on_thread_messages_appended(
         std::string root;
         EventList evs;
     };
-    auto p = std::make_shared<Payload>(
-        Payload{room_id, thread_root, std::move(events)});
+    auto p = std::make_shared<Payload>(Payload{room_id, thread_root, std::move(events)});
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_thread_messages_appended_ui_(std::move(p->rid),
-                                                       std::move(p->root),
+            shell->handle_thread_messages_appended_ui_(std::move(p->rid), std::move(p->root),
                                                        std::move(p->evs));
         });
 }
@@ -303,8 +271,7 @@ void EventHandlerBase::on_media_ready(std::uint64_t request_id,
 }
 
 void EventHandlerBase::on_media_chunk(std::uint64_t request_id,
-                                      const std::vector<std::uint8_t>& chunk,
-                                      std::uint8_t status,
+                                      const std::vector<std::uint8_t>& chunk, std::uint8_t status,
                                       std::uint64_t total_size)
 {
     auto c = std::make_shared<std::vector<std::uint8_t>>(chunk);
@@ -345,8 +312,7 @@ void EventHandlerBase::on_gif_results(std::uint64_t request_id,
         });
 }
 
-void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id,
-                                            const std::string& message)
+void EventHandlerBase::on_gif_search_failed(std::uint64_t request_id, const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, msg = message]() mutable
@@ -367,8 +333,7 @@ void EventHandlerBase::on_forward_done(std::uint64_t request_id)
         });
 }
 
-void EventHandlerBase::on_forward_failed(std::uint64_t     request_id,
-                                         const std::string& message)
+void EventHandlerBase::on_forward_failed(std::uint64_t request_id, const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, msg = message]() mutable
@@ -389,8 +354,7 @@ void EventHandlerBase::on_space_child_summary_ready(std::uint64_t request_id,
         });
 }
 
-void EventHandlerBase::on_server_info_ready(std::uint64_t request_id,
-                                            const ServerInfo& info)
+void EventHandlerBase::on_server_info_ready(std::uint64_t request_id, const ServerInfo& info)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, info]() mutable
@@ -424,8 +388,7 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
         });
 }
 
-void EventHandlerBase::on_search_failed(std::uint64_t request_id,
-                                        const std::string& message)
+void EventHandlerBase::on_search_failed(std::uint64_t request_id, const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, msg = message]() mutable
@@ -446,50 +409,47 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id,
         });
 }
 
-void EventHandlerBase::on_paginate_result(std::uint64_t request_id, bool ok,
-                                          bool reached_start, bool reached_end,
-                                          const std::string& message)
+void EventHandlerBase::on_paginate_result(std::uint64_t request_id, bool ok, bool reached_start,
+                                          bool reached_end, const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, ok, reached_start, reached_end,
          msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_paginate_result_ui_(request_id, ok, reached_start,
-                                             reached_end, std::move(msg));
+            shell->handle_paginate_result_ui_(request_id, ok, reached_start, reached_end,
+                                              std::move(msg));
         });
 }
 
-void EventHandlerBase::on_media_view_paginate_result(
-    std::uint64_t request_id, bool ok, bool reached_start,
-    std::uint64_t media_count, const std::string& message)
+void EventHandlerBase::on_media_view_paginate_result(std::uint64_t request_id, bool ok,
+                                                     bool reached_start, std::uint64_t media_count,
+                                                     const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, ok, reached_start, media_count,
          msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_media_view_paginate_result_ui_(
-                request_id, ok, reached_start, media_count, std::move(msg));
+            shell->handle_media_view_paginate_result_ui_(request_id, ok, reached_start, media_count,
+                                                         std::move(msg));
         });
 }
 
-void EventHandlerBase::on_room_media_page(
-    std::uint64_t request_id, const std::vector<tesseract::MediaIndexRow>& rows,
-    bool reached_db_end, std::uint64_t total)
+void EventHandlerBase::on_room_media_page(std::uint64_t request_id,
+                                          const std::vector<tesseract::MediaIndexRow>& rows,
+                                          bool reached_db_end, std::uint64_t total)
 {
     auto r = std::make_shared<std::vector<tesseract::MediaIndexRow>>(rows);
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, r, reached_db_end, total]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_room_media_page_ui_(request_id, std::move(*r),
-                                              reached_db_end, total);
+            shell->handle_room_media_page_ui_(request_id, std::move(*r), reached_db_end, total);
         });
 }
 
-void EventHandlerBase::on_room_export_progress(
-    const tesseract::RoomExportProgress& progress)
+void EventHandlerBase::on_room_export_progress(const tesseract::RoomExportProgress& progress)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, progress]()
@@ -499,20 +459,20 @@ void EventHandlerBase::on_room_export_progress(
         });
 }
 
-void EventHandlerBase::on_room_export_complete(
-    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
-    const std::string& out_path, std::uint64_t events_written,
-    std::uint64_t bytes_written, const std::string& message)
+void EventHandlerBase::on_room_export_complete(std::uint64_t request_id, bool ok, bool cancelled,
+                                               bool reached_start, const std::string& out_path,
+                                               std::uint64_t events_written,
+                                               std::uint64_t bytes_written,
+                                               const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, ok, cancelled, reached_start,
-         out_path = out_path, events_written, bytes_written,
-         msg = message]() mutable
+         out_path = out_path, events_written, bytes_written, msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_room_export_complete_ui_(
-                request_id, ok, cancelled, reached_start, std::move(out_path),
-                events_written, bytes_written, std::move(msg));
+            shell->handle_room_export_complete_ui_(request_id, ok, cancelled, reached_start,
+                                                   std::move(out_path), events_written,
+                                                   bytes_written, std::move(msg));
         });
 }
 
@@ -529,7 +489,7 @@ void EventHandlerBase::on_rooms_updated(const std::vector<RoomInfo>& rooms)
 
 void EventHandlerBase::on_invites_updated(const std::vector<InviteInfo>& invites)
 {
-    auto inv = invites;  // one copy; moved into the lambda below
+    auto inv = invites; // one copy; moved into the lambda below
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, inv = std::move(inv)]() mutable
         {
@@ -540,7 +500,7 @@ void EventHandlerBase::on_invites_updated(const std::vector<InviteInfo>& invites
 
 void EventHandlerBase::on_my_knocks_updated(const std::vector<KnockedRoomInfo>& knocks)
 {
-    auto k = knocks;  // one copy; moved into the lambda below
+    auto k = knocks; // one copy; moved into the lambda below
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, k = std::move(k)]() mutable
         {
@@ -549,8 +509,7 @@ void EventHandlerBase::on_my_knocks_updated(const std::vector<KnockedRoomInfo>& 
         });
 }
 
-void EventHandlerBase::on_sync_error(const std::string& context,
-                                     const std::string& description,
+void EventHandlerBase::on_sync_error(const std::string& context, const std::string& description,
                                      bool soft_logout)
 {
     shell()->post_to_ui_(
@@ -562,8 +521,7 @@ void EventHandlerBase::on_sync_error(const std::string& context,
             {
                 shell->handle_offline_ui_();
             }
-            shell->handle_sync_error_ui_(std::move(ctx), std::move(uid),
-                                         std::move(desc), sl);
+            shell->handle_sync_error_ui_(std::move(ctx), std::move(uid), std::move(desc), sl);
         });
 }
 
@@ -592,29 +550,29 @@ void EventHandlerBase::on_backup_progress(const BackupProgress& progress)
         });
 }
 
-void EventHandlerBase::on_enable_recovery_progress(uint8_t step,
-                                                    const std::string& recovery_key,
-                                                    uint32_t backed_up,
-                                                    uint32_t total)
+void EventHandlerBase::on_enable_recovery_progress(uint8_t step, const std::string& recovery_key,
+                                                   uint32_t backed_up, uint32_t total)
 {
     auto* s = shell();
     std::string key = recovery_key;
-    s->post_to_ui_([s, uid = user_id_, step, key, backed_up, total]()
-    {
-        ShellBase::EventAccountScope scope(*s, uid);
-        s->handle_enable_recovery_progress_ui_(step, key, backed_up, total);
-    });
+    s->post_to_ui_(
+        [s, uid = user_id_, step, key, backed_up, total]()
+        {
+            ShellBase::EventAccountScope scope(*s, uid);
+            s->handle_enable_recovery_progress_ui_(step, key, backed_up, total);
+        });
 }
 
 void EventHandlerBase::on_crypto_reset_result(bool ok, const std::string& message)
 {
     auto* s = shell();
     std::string msg = message;
-    s->post_to_ui_([s, uid = user_id_, ok, msg]()
-    {
-        ShellBase::EventAccountScope scope(*s, uid);
-        s->handle_crypto_reset_result_ui_(ok, msg);
-    });
+    s->post_to_ui_(
+        [s, uid = user_id_, ok, msg]()
+        {
+            ShellBase::EventAccountScope scope(*s, uid);
+            s->handle_crypto_reset_result_ui_(ok, msg);
+        });
 }
 
 void EventHandlerBase::on_room_list_state(RoomListState state)
@@ -651,9 +609,13 @@ void EventHandlerBase::on_inflight_changed(uint32_t count)
             // callback; a briefly stale spinner is far preferable to a freeze.
             shell->last_inflight_ = n;
             if (shell->inflight_needs_anim_())
+            {
                 shell->start_inflight_tick_();
+            }
             else
+            {
                 shell->stop_inflight_tick_();
+            }
             shell->on_inflight_ui_();
         });
 }
@@ -668,9 +630,13 @@ void EventHandlerBase::on_inflight_changed_debug(uint32_t count, std::string url
             shell->last_inflight_ = n;
             shell->last_inflight_urls_ = std::move(u);
             if (shell->inflight_needs_anim_())
+            {
                 shell->start_inflight_tick_();
+            }
             else
+            {
                 shell->stop_inflight_tick_();
+            }
             shell->on_inflight_ui_();
         });
 }
@@ -692,8 +658,7 @@ void EventHandlerBase::on_account_prefs_updated(const std::string& json)
         [shell = shell(), uid = user_id_, j = json]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_account_prefs_updated_ui_(std::move(uid),
-                                                    std::move(j));
+            shell->handle_account_prefs_updated_ui_(std::move(uid), std::move(j));
         });
 }
 
@@ -703,34 +668,30 @@ void EventHandlerBase::on_media_preview_config_updated(const std::string& json)
         [shell = shell(), uid = user_id_, j = json]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_media_preview_config_updated_ui_(std::move(uid),
-                                                           std::move(j));
+            shell->handle_media_preview_config_updated_ui_(std::move(uid), std::move(j));
         });
 }
 
-void EventHandlerBase::on_own_profile_changed(
-    const std::optional<std::string>& display_name,
-    const std::optional<std::string>& avatar_url)
+void EventHandlerBase::on_own_profile_changed(const std::optional<std::string>& display_name,
+                                              const std::optional<std::string>& avatar_url)
 {
     shell()->post_to_ui_(
-        [shell = shell(), uid = user_id_, n = display_name,
-         a = avatar_url]() mutable
+        [shell = shell(), uid = user_id_, n = display_name, a = avatar_url]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_own_profile_changed_ui_(std::move(uid), std::move(n),
-                                                  std::move(a));
+            shell->handle_own_profile_changed_ui_(std::move(uid), std::move(n), std::move(a));
         });
 }
 
-void EventHandlerBase::on_room_media_preview_override_updated(
-    const std::string& room_id, const std::string& override_json)
+void EventHandlerBase::on_room_media_preview_override_updated(const std::string& room_id,
+                                                              const std::string& override_json)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, rid = room_id, j = override_json]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_room_media_preview_override_updated_ui_(
-                std::move(uid), std::move(rid), std::move(j));
+            shell->handle_room_media_preview_override_updated_ui_(std::move(uid), std::move(rid),
+                                                                  std::move(j));
         });
 }
 
@@ -767,35 +728,30 @@ void EventHandlerBase::on_room_security_state_ready(std::uint64_t request_id,
         });
 }
 
-void EventHandlerBase::on_notification(const std::string& room_id,
-                                       const std::string& room_name,
-                                       const std::string& sender,
-                                       const std::string& body, bool is_mention,
-                                       const std::vector<uint8_t>& avatar_bytes,
+void EventHandlerBase::on_notification(const std::string& room_id, const std::string& room_name,
+                                       const std::string& sender, const std::string& body,
+                                       bool is_mention, const std::vector<uint8_t>& avatar_bytes,
                                        const std::vector<uint8_t>& image_bytes,
                                        const std::string& event_id)
 {
     shell()->post_to_ui_(
-        [shell = shell(), uid = user_id_, rid = room_id, rn = room_name,
-         s = sender, b = body, im = is_mention, av = avatar_bytes,
-         img = image_bytes, eid = event_id]() mutable
+        [shell = shell(), uid = user_id_, rid = room_id, rn = room_name, s = sender, b = body,
+         im = is_mention, av = avatar_bytes, img = image_bytes, eid = event_id]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_notification_ui_(
-                std::move(uid), std::move(rid), std::move(rn), std::move(s),
-                std::move(b), im, std::move(av), std::move(img),
-                std::move(eid));
+            shell->handle_notification_ui_(std::move(uid), std::move(rid), std::move(rn),
+                                           std::move(s), std::move(b), im, std::move(av),
+                                           std::move(img), std::move(eid));
         });
 }
 
 void EventHandlerBase::on_verification_request(const std::string& flow_id,
                                                const std::string& user_id,
-                                               const std::string& device_id,
-                                               bool incoming)
+                                               const std::string& device_id, bool incoming)
 {
     shell()->post_to_ui_(
-        [shell = shell(), account = user_id_, fid = flow_id, uid = user_id,
-         did = device_id, inc = incoming]() mutable
+        [shell = shell(), account = user_id_, fid = flow_id, uid = user_id, did = device_id,
+         inc = incoming]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, account);
             shell->handle_verification_request_ui_(std::move(account), std::move(fid),
@@ -803,8 +759,7 @@ void EventHandlerBase::on_verification_request(const std::string& flow_id,
         });
 }
 
-void EventHandlerBase::on_sas_ready(const std::string& flow_id,
-                                    VerificationSas sas)
+void EventHandlerBase::on_sas_ready(const std::string& flow_id, VerificationSas sas)
 {
     struct Payload
     {
@@ -837,8 +792,7 @@ void EventHandlerBase::on_verification_cancelled(const std::string& flow_id,
         [shell = shell(), uid = user_id_, fid = flow_id, r = cancel_code]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_verification_cancelled_ui_(std::move(fid),
-                                                     std::move(r));
+            shell->handle_verification_cancelled_ui_(std::move(fid), std::move(r));
         });
 }
 
@@ -873,7 +827,9 @@ void EventHandlerBase::on_recovery_state_changed(std::uint8_t /*state*/)
         {
             ShellBase::EventAccountScope scope(*shell, uid);
             if (shell->active_account_ && shell->active_account_->user_id == uid)
+            {
                 shell->handle_recovery_state_changed_ui_();
+            }
         });
 }
 
@@ -890,8 +846,7 @@ void EventHandlerBase::on_typing_changed(const std::string& room_id,
         [shell = shell(), uid = user_id_, p]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_typing_changed_ui_(std::move(p->rid),
-                                             std::move(p->ns));
+            shell->handle_typing_changed_ui_(std::move(p->rid), std::move(p->ns));
         });
 }
 
@@ -905,8 +860,8 @@ void EventHandlerBase::on_user_identities_changed(const std::vector<std::string>
         });
 }
 
-void EventHandlerBase::on_identity_status_changed(
-    const std::string& room_id, const std::vector<IdentityWarning>& warnings)
+void EventHandlerBase::on_identity_status_changed(const std::string& room_id,
+                                                  const std::vector<IdentityWarning>& warnings)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, rid = room_id, ws = warnings]() mutable
@@ -917,7 +872,7 @@ void EventHandlerBase::on_identity_status_changed(
 }
 
 void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
-                                           const std::string& message)
+                                          const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, ok, msg = message]() mutable
@@ -927,34 +882,30 @@ void EventHandlerBase::on_upload_complete(std::uint64_t request_id, bool ok,
         });
 }
 
-void EventHandlerBase::on_upload_progress(std::uint64_t request_id,
-                                           std::uint64_t current_bytes,
-                                           std::uint64_t total_bytes)
+void EventHandlerBase::on_upload_progress(std::uint64_t request_id, std::uint64_t current_bytes,
+                                          std::uint64_t total_bytes)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, current_bytes, total_bytes]
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_upload_progress_ui_(request_id, current_bytes,
-                                               total_bytes);
+            shell->handle_upload_progress_ui_(request_id, current_bytes, total_bytes);
         });
 }
 
-void EventHandlerBase::on_profile_field_result(std::uint64_t request_id,
-                                               const std::string& key, bool ok,
-                                               const std::string& message)
+void EventHandlerBase::on_profile_field_result(std::uint64_t request_id, const std::string& key,
+                                               bool ok, const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, k = key, ok, msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_profile_field_result_ui_(request_id, std::move(k),
-                                                   ok, std::move(msg));
+            shell->handle_profile_field_result_ui_(request_id, std::move(k), ok, std::move(msg));
         });
 }
 
 void EventHandlerBase::on_extended_profile_ready(std::uint64_t request_id,
-                                                  const std::string& profile_json)
+                                                 const std::string& profile_json)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, j = profile_json]() mutable
@@ -964,8 +915,7 @@ void EventHandlerBase::on_extended_profile_ready(std::uint64_t request_id,
         });
 }
 
-void EventHandlerBase::on_mutual_rooms_ready(std::uint64_t request_id,
-                                             const std::string& json)
+void EventHandlerBase::on_mutual_rooms_ready(std::uint64_t request_id, const std::string& json)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, j = json]() mutable
@@ -976,33 +926,29 @@ void EventHandlerBase::on_mutual_rooms_ready(std::uint64_t request_id,
 }
 
 void EventHandlerBase::on_room_directory_search_results(
-    std::uint64_t request_id, const std::vector<RoomDirectoryEntry>& entries,
-    bool reached_end)
+    std::uint64_t request_id, const std::vector<RoomDirectoryEntry>& entries, bool reached_end)
 {
     auto e = std::make_shared<std::vector<RoomDirectoryEntry>>(entries);
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, e, reached_end]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_room_directory_search_results_ui_(
-                request_id, std::move(*e), reached_end);
+            shell->handle_room_directory_search_results_ui_(request_id, std::move(*e), reached_end);
         });
 }
 
-void EventHandlerBase::on_room_directory_search_failed(
-    std::uint64_t request_id, const std::string& message)
+void EventHandlerBase::on_room_directory_search_failed(std::uint64_t request_id,
+                                                       const std::string& message)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, request_id, msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_room_directory_search_failed_ui_(request_id,
-                                                            std::move(msg));
+            shell->handle_room_directory_search_failed_ui_(request_id, std::move(msg));
         });
 }
 
-void EventHandlerBase::on_room_action_complete(std::uint64_t request_id,
-                                               bool ok,
+void EventHandlerBase::on_room_action_complete(std::uint64_t request_id, bool ok,
                                                const std::string& joined_room_id,
                                                const std::string& message)
 {
@@ -1011,14 +957,11 @@ void EventHandlerBase::on_room_action_complete(std::uint64_t request_id,
          msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_room_action_complete_ui_(request_id, ok,
-                                                   std::move(rid),
-                                                   std::move(msg));
+            shell->handle_room_action_complete_ui_(request_id, ok, std::move(rid), std::move(msg));
         });
 }
 
-void EventHandlerBase::on_presence_changed(const std::string& user_id,
-                                           PresenceState state)
+void EventHandlerBase::on_presence_changed(const std::string& user_id, PresenceState state)
 {
     shell()->post_to_ui_(
         [shell = shell(), account = user_id_, uid = user_id, s = state]()
@@ -1028,12 +971,10 @@ void EventHandlerBase::on_presence_changed(const std::string& user_id,
         });
 }
 
-void EventHandlerBase::on_call_invitation(const std::string& room_id,
-                                           const std::string& slot_id,
-                                           const std::string& caller_user_id,
-                                           const std::string& call_intent,
-                                           std::uint64_t      lifetime_ms,
-                                           const std::string& notification_event_id)
+void EventHandlerBase::on_call_invitation(const std::string& room_id, const std::string& slot_id,
+                                          const std::string& caller_user_id,
+                                          const std::string& call_intent, std::uint64_t lifetime_ms,
+                                          const std::string& notification_event_id)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, rid = room_id, sid = slot_id, caller = caller_user_id,
@@ -1045,7 +986,7 @@ void EventHandlerBase::on_call_invitation(const std::string& room_id,
 }
 
 void EventHandlerBase::on_call_participant_joined(std::uint64_t session_id,
-                                                   const RtcParticipantInfo& info)
+                                                  const RtcParticipantInfo& info)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, session_id, p = info]()
@@ -1056,7 +997,7 @@ void EventHandlerBase::on_call_participant_joined(std::uint64_t session_id,
 }
 
 void EventHandlerBase::on_call_participant_left(std::uint64_t session_id,
-                                                 const std::string& participant_id)
+                                                const std::string& participant_id)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, session_id, pid = participant_id]()
@@ -1067,7 +1008,7 @@ void EventHandlerBase::on_call_participant_left(std::uint64_t session_id,
 }
 
 void EventHandlerBase::on_call_participant_updated(std::uint64_t session_id,
-                                                    const RtcParticipantInfo& info)
+                                                   const RtcParticipantInfo& info)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, session_id, p = info]()
@@ -1077,8 +1018,7 @@ void EventHandlerBase::on_call_participant_updated(std::uint64_t session_id,
         });
 }
 
-void EventHandlerBase::on_call_ended(std::uint64_t session_id,
-                                      const std::string& reason)
+void EventHandlerBase::on_call_ended(std::uint64_t session_id, const std::string& reason)
 {
     shell()->post_to_ui_(
         [shell = shell(), uid = user_id_, session_id, r = reason]()
@@ -1093,13 +1033,15 @@ namespace
 // Premultiplied BGRA of one RGBA frame, or null when the size reported with it
 // does not fit the bytes given. The conversion indexes n_px * 4 bytes, so an
 // inconsistent (width, height, size) triple must not reach it.
-std::shared_ptr<std::vector<std::uint8_t>> frame_to_bgra(
-    const std::uint8_t* rgba, std::size_t rgba_size, std::uint32_t width,
-    std::uint32_t height)
+std::shared_ptr<std::vector<std::uint8_t>> frame_to_bgra(const std::uint8_t* rgba,
+                                                         std::size_t rgba_size, std::uint32_t width,
+                                                         std::uint32_t height)
 {
     const std::uint64_t n_px = static_cast<std::uint64_t>(width) * height;
     if (!rgba || n_px == 0 || n_px * 4 > rgba_size)
+    {
         return nullptr;
+    }
     const auto n = static_cast<std::size_t>(n_px);
     auto bgra = std::make_shared<std::vector<std::uint8_t>>(n * 4);
     // Video frames are always fully opaque (α=255 from the I420 decoder), so
@@ -1120,9 +1062,9 @@ std::shared_ptr<std::vector<std::uint8_t>> frame_to_bgra(
         for (std::size_t i = 0; i < n; ++i)
         {
             const unsigned a = rgba[i * 4 + 3];
-            (*bgra)[i * 4 + 0] = static_cast<std::uint8_t>((rgba[i*4+2] * a + 127u) / 255u);
-            (*bgra)[i * 4 + 1] = static_cast<std::uint8_t>((rgba[i*4+1] * a + 127u) / 255u);
-            (*bgra)[i * 4 + 2] = static_cast<std::uint8_t>((rgba[i*4+0] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 0] = static_cast<std::uint8_t>((rgba[i * 4 + 2] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 1] = static_cast<std::uint8_t>((rgba[i * 4 + 1] * a + 127u) / 255u);
+            (*bgra)[i * 4 + 2] = static_cast<std::uint8_t>((rgba[i * 4 + 0] * a + 127u) / 255u);
             (*bgra)[i * 4 + 3] = static_cast<std::uint8_t>(a);
         }
     }
@@ -1143,74 +1085,76 @@ std::function<void()> FrameMailbox::take(const std::string& key)
     queued_.erase(key);
     auto it = pending_.find(key);
     if (it == pending_.end())
+    {
         return {};
+    }
     auto deliver = std::move(it->second);
     pending_.erase(it);
     return deliver;
 }
 
-void EventHandlerBase::post_latest_frame_(const std::string& key,
-                                          std::function<void()> deliver)
+void EventHandlerBase::post_latest_frame_(const std::string& key, std::function<void()> deliver)
 {
     if (!frames_->put(key, std::move(deliver)))
-        return; // a UI task for this key is already queued; it will pick this up
-    shell()->post_to_ui_([frames = frames_, key]
     {
-        if (auto fn = frames->take(key))
-            fn();
-    });
+        return; // a UI task for this key is already queued; it will pick this up
+    }
+    shell()->post_to_ui_(
+        [frames = frames_, key]
+        {
+            if (auto fn = frames->take(key))
+            {
+                fn();
+            }
+        });
 }
 
 void EventHandlerBase::on_call_video_frame(std::uint64_t session_id,
-                                            const std::string& participant_id,
-                                            std::uint32_t width,
-                                            std::uint32_t height,
-                                            const std::uint8_t* rgba,
-                                            std::size_t rgba_size)
+                                           const std::string& participant_id, std::uint32_t width,
+                                           std::uint32_t height, const std::uint8_t* rgba,
+                                           std::size_t rgba_size)
 {
     // Convert RGBA → premultiplied BGRA on this worker thread, then hand the
     // shared_ptr to the UI thread — no second memcpy in push_video_frame().
     auto bgra = frame_to_bgra(rgba, rgba_size, width, height);
     if (!bgra)
+    {
         return;
-    post_latest_frame_(
-        "video/" + std::to_string(session_id) + "/" + participant_id,
-        [shell = shell(), uid = user_id_, session_id, participant_id, width,
-         height, bgra = std::move(bgra)]
-        {
-            ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_rtc_video_frame_ui_(session_id, participant_id,
-                                              width, height, bgra);
-        });
+    }
+    post_latest_frame_("video/" + std::to_string(session_id) + "/" + participant_id,
+                       [shell = shell(), uid = user_id_, session_id, participant_id, width, height,
+                        bgra = std::move(bgra)]
+                       {
+                           ShellBase::EventAccountScope scope(*shell, uid);
+                           shell->handle_rtc_video_frame_ui_(session_id, participant_id, width,
+                                                             height, bgra);
+                       });
 }
 
 void EventHandlerBase::on_call_screen_frame(std::uint64_t session_id,
-                                             const std::string& participant_id,
-                                             std::uint32_t width,
-                                             std::uint32_t height,
-                                             const std::uint8_t* rgba,
-                                             std::size_t rgba_size)
+                                            const std::string& participant_id, std::uint32_t width,
+                                            std::uint32_t height, const std::uint8_t* rgba,
+                                            std::size_t rgba_size)
 {
     auto bgra = frame_to_bgra(rgba, rgba_size, width, height);
     if (!bgra)
+    {
         return;
-    post_latest_frame_(
-        "screen/" + std::to_string(session_id) + "/" + participant_id,
-        [shell = shell(), uid = user_id_, session_id, participant_id, width,
-         height, bgra = std::move(bgra)]
-        {
-            ShellBase::EventAccountScope scope(*shell, uid);
-            shell->handle_rtc_screen_frame_ui_(session_id, participant_id,
-                                               width, height, bgra);
-        });
+    }
+    post_latest_frame_("screen/" + std::to_string(session_id) + "/" + participant_id,
+                       [shell = shell(), uid = user_id_, session_id, participant_id, width, height,
+                        bgra = std::move(bgra)]
+                       {
+                           ShellBase::EventAccountScope scope(*shell, uid);
+                           shell->handle_rtc_screen_frame_ui_(session_id, participant_id, width,
+                                                              height, bgra);
+                       });
 }
 
 void EventHandlerBase::on_call_audio_frame(std::uint64_t session_id,
-                                            const std::string& /*participant_id*/,
-                                            const std::int16_t* samples,
-                                            std::size_t sample_count,
-                                            std::uint32_t sample_rate,
-                                            std::uint32_t num_channels)
+                                           const std::string& /*participant_id*/,
+                                           const std::int16_t* samples, std::size_t sample_count,
+                                           std::uint32_t sample_rate, std::uint32_t num_channels)
 {
     // AudioPlayback::push_frame() is documented thread-safe (audio_playback.h).
     // Call it directly on this worker thread — no post_to_ui_() overhead.

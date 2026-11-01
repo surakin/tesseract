@@ -17,9 +17,8 @@ std::filesystem::path open_media_dir();
 /// collisions) and returns the path. The directories are created 0700 and the
 /// file 0600 (POSIX). `filename` must already be sanitized — a name containing
 /// a path separator is refused. Returns nullopt on any I/O error.
-std::optional<std::filesystem::path>
-write_open_media_file(const std::string& filename,
-                      const std::vector<std::uint8_t>& bytes);
+std::optional<std::filesystem::path> write_open_media_file(const std::string& filename,
+                                                           const std::vector<std::uint8_t>& bytes);
 
 /// Deletes everything under `open_media_dir()`. Best-effort: files an external
 /// app still holds open (Windows) are skipped and swept on the next call.

@@ -52,8 +52,8 @@ struct CountingGridAdapter : GridAdapter
     {
         return n;
     }
-    void paint_cell(std::size_t /*index*/, PaintCtx& ctx, Rect bounds,
-                    bool /*selected*/, bool /*hovered*/) override
+    void paint_cell(std::size_t /*index*/, PaintCtx& ctx, Rect bounds, bool /*selected*/,
+                    bool /*hovered*/) override
     {
         ++paint_calls;
         ctx.canvas.fill_rect(bounds, Color::rgb(0x808080));
@@ -133,8 +133,7 @@ TEST_CASE("GridView click fires on_cell_clicked", "[tk][gridview]")
 //  EmojiPicker
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("EmojiPicker initial state shows the default category",
-          "[tk][view][emoji]")
+TEST_CASE("EmojiPicker initial state shows the default category", "[tk][view][emoji]")
 {
     TkEmojiPickerStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
@@ -188,8 +187,7 @@ TEST_CASE("EmojiPicker tab click switches category", "[tk][view][emoji]")
     st.run(picker, {0, 0, 320, 360});
 }
 
-TEST_CASE("EmojiPicker search filters + clears back to category",
-          "[tk][view][emoji]")
+TEST_CASE("EmojiPicker search filters + clears back to category", "[tk][view][emoji]")
 {
     TkEmojiPickerStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
@@ -207,11 +205,9 @@ TEST_CASE("EmojiPicker search filters + clears back to category",
     SUCCEED();
 }
 
-TEST_CASE("match_pack_emoticons filters by shortcode/body across packs",
-          "[tk][view][emoji]")
+TEST_CASE("match_pack_emoticons filters by shortcode/body across packs", "[tk][view][emoji]")
 {
-    auto img = [](std::string pack, std::string sc, std::string url,
-                  std::string body = {})
+    auto img = [](std::string pack, std::string sc, std::string url, std::string body = {})
     {
         tesseract::ImagePackImage i;
         i.pack_id = std::move(pack);
@@ -286,17 +282,23 @@ int selected_tab_row(EmojiPicker& picker)
     for (const auto& child : tree.children)
     {
         if (child.role != Role::TabList)
+        {
             continue;
+        }
         for (const auto& tab : child.children)
+        {
             if (tab.state.selected)
+            {
                 return tab.row_index;
+            }
+        }
     }
     return -1;
 }
 
 TEST_CASE("EmojiPicker's tab strip: arrow keys move the keyboard cursor "
-         "without switching category; Enter commits it",
-         "[tk][view][emoji][keyboard]")
+          "without switching category; Enter commits it",
+          "[tk][view][emoji][keyboard]")
 {
     TestHost host(nullptr);
     auto picker_owner = tk::create_root_widget<EmojiPicker>(&host);
@@ -309,7 +311,7 @@ TEST_CASE("EmojiPicker's tab strip: arrow keys move the keyboard cursor "
     // TestHost's make_text_field() returns null, so search_field_ isn't
     // focusable() (see tk::TextField::focusable()'s field_ != nullptr
     // requirement) — the first Tab-stop is the grid, the second the strip.
-    REQUIRE(host.advance_focus(true));  // -> grid
+    REQUIRE(host.advance_focus(true)); // -> grid
     REQUIRE(host.advance_focus(true)); // -> tab strip
 
     int start = selected_tab_row(picker);

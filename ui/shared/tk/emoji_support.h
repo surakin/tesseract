@@ -35,15 +35,13 @@ std::uint16_t detect_emoji_version(CanvasFactory& f);
 
 /// detect_emoji_version() run once per process on a factory from `make`
 /// (fonts are process-wide) and cached. UI thread only.
-std::uint16_t cached_emoji_version(
-    const std::function<std::unique_ptr<CanvasFactory>()>& make);
+std::uint16_t cached_emoji_version(const std::function<std::unique_ptr<CanvasFactory>()>& make);
 
 /// The glyph to offer for `glyph` with the default `tone`, given the font's
 /// `max_version`: the toned variant when supported, else the base, else
 /// nullopt (hide it). Glyphs outside the table (version 0) pass unchanged.
 std::optional<std::string_view>
-offered_emoji(std::string_view glyph, tesseract::emoji::SkinTone tone,
-              std::uint16_t max_version);
+offered_emoji(std::string_view glyph, tesseract::emoji::SkinTone tone, std::uint16_t max_version);
 
 /// True when every tone variant of `glyph` is within `max_version`.
 bool all_skin_tones_supported(std::string_view glyph, std::uint16_t max_version);

@@ -33,14 +33,17 @@ struct SettingsShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     // Queue delayed posts: media_sweep_timer_ reschedules itself and would
     // recurse forever if run inline.
@@ -50,7 +53,10 @@ struct SettingsShell : tesseract::test::TestShellBase
     }
     std::vector<std::function<void()>> delayed;
 
-    void request_relayout_() override { ++relayouts; }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
     int relayouts = 0;
 
     tk::ThemeMode scheme = tk::ThemeMode::Light;
@@ -60,9 +66,18 @@ struct SettingsShell : tesseract::test::TestShellBase
     bool low_power_ui = false;
     int low_power_ui_calls = 0;
 
-    tk::ThemeMode os_color_scheme_() const override { return scheme; }
-    std::optional<tk::Color> os_accent_color_() const override { return accent; }
-    void apply_theme_ui_(const tk::Theme&) override { ++theme_applies; }
+    tk::ThemeMode os_color_scheme_() const override
+    {
+        return scheme;
+    }
+    std::optional<tk::Color> os_accent_color_() const override
+    {
+        return accent;
+    }
+    void apply_theme_ui_(const tk::Theme&) override
+    {
+        ++theme_applies;
+    }
     void on_low_power_mode_ui_(bool a) override
     {
         low_power_ui = a;
@@ -85,7 +100,10 @@ struct SettingsShell : tesseract::test::TestShellBase
     using ShellBase::take_settings_from_login_;
 
     // The login view's client is only swapped while Settings is open.
-    void rebind_login_client_ui_() override { ++login_rebinds; }
+    void rebind_login_client_ui_() override
+    {
+        ++login_rebinds;
+    }
     int login_rebinds = 0;
     using ShellBase::last_system_accent_;
     using ShellBase::low_power_active;
@@ -132,9 +150,18 @@ struct FakePower : tesseract::IPowerMonitor
     bool saver = false;
     bool battery_discharging = false;
     bool battery = true;
-    bool os_power_saver_active() const override { return saver; }
-    bool on_battery_discharging() const override { return battery_discharging; }
-    bool has_battery() const override { return battery; }
+    bool os_power_saver_active() const override
+    {
+        return saver;
+    }
+    bool on_battery_discharging() const override
+    {
+        return battery_discharging;
+    }
+    bool has_battery() const override
+    {
+        return battery;
+    }
 };
 
 std::shared_ptr<tesseract::AccountSession> settings_handlers_account(const std::string& uid)
@@ -168,9 +195,11 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.msc2545_legacy_compat = false;
     st.send_bundled_url_previews = true;
     st.fetch_url_previews_directly = true;
-    for (K k : {K::DeveloperMode, K::SendMapsAsLocation, K::IndexMessages,
-                K::ShowMembershipEvents, K::Msc2545Compat, K::BundledUrlPreviews})
+    for (K k : {K::DeveloperMode, K::SendMapsAsLocation, K::IndexMessages, K::ShowMembershipEvents,
+                K::Msc2545Compat, K::BundledUrlPreviews})
+    {
         changed(s, k);
+    }
 
     // Every key is persisted: flip the in-memory values, reload from disk.
     st.developer_mode = false;
@@ -190,8 +219,7 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     CHECK(st.fetch_url_previews_directly);
 }
 
-TEST_CASE("toggles that need a client push to clients when present",
-          "[shell][settings_handlers]")
+TEST_CASE("toggles that need a client push to clients when present", "[shell][settings_handlers]")
 {
     tesseract::test::SettingsGuard guard;
     SettingsShell s;
@@ -209,8 +237,7 @@ TEST_CASE("toggles that need a client push to clients when present",
     CHECK_NOTHROW(changed(s, K::BundledUrlPreviews));
 }
 
-TEST_CASE("sender status, layout and density changes relayout",
-          "[shell][settings_handlers]")
+TEST_CASE("sender status, layout and density changes relayout", "[shell][settings_handlers]")
 {
     tesseract::test::SettingsGuard guard;
     SettingsShell s;
@@ -238,8 +265,7 @@ TEST_CASE("sender status, layout and density changes relayout",
     st.room_list_density = RD::Normal;
 }
 
-TEST_CASE("timeline column width and anchor changes relayout",
-          "[shell][settings_handlers]")
+TEST_CASE("timeline column width and anchor changes relayout", "[shell][settings_handlers]")
 {
     tesseract::test::SettingsGuard guard;
     SettingsShell s;
@@ -309,7 +335,8 @@ TEST_CASE("apply_bridge_overrides_ flags exactly the listed rooms",
           "[shell][settings_handlers][bridge]")
 {
     SettingsShell s;
-    std::vector<tesseract::RoomInfo> rooms{settings_handlers_room("!a:x"), settings_handlers_room("!b:x"),
+    std::vector<tesseract::RoomInfo> rooms{settings_handlers_room("!a:x"),
+                                           settings_handlers_room("!b:x"),
                                            settings_handlers_room("!c:x")};
     s.apply_bridge_overrides_(rooms, {});
     CHECK_FALSE(rooms[0].bridge_overridden);
@@ -381,8 +408,7 @@ TEST_CASE("system accent changes re-theme only when the OS colour moved",
     CHECK(s.theme_applies == after + 1);
 }
 
-TEST_CASE("display scale changes flush caches and relayout once",
-          "[shell][settings_handlers]")
+TEST_CASE("display scale changes flush caches and relayout once", "[shell][settings_handlers]")
 {
     SettingsShell s;
     s.set_current_scale_(1.0f); // within epsilon of the default: nothing
@@ -394,8 +420,7 @@ TEST_CASE("display scale changes flush caches and relayout once",
     CHECK(s.relayouts == 1);
 }
 
-TEST_CASE("low power mode is unavailable without a battery",
-          "[shell][settings_handlers][power]")
+TEST_CASE("low power mode is unavailable without a battery", "[shell][settings_handlers][power]")
 {
     tesseract::test::SettingsGuard guard;
     SettingsShell s;
@@ -428,8 +453,7 @@ TEST_CASE("low power preference On/Off drives the policy and the UI",
     CHECK_FALSE(s.low_power_ui);
 }
 
-TEST_CASE("a persisted On preference is applied at startup",
-          "[shell][settings_handlers][power]")
+TEST_CASE("a persisted On preference is applied at startup", "[shell][settings_handlers][power]")
 {
     tesseract::test::SettingsGuard guard;
     Settings::instance().low_power_pref = Settings::LowPowerPreference::On;

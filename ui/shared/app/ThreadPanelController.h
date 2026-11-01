@@ -49,12 +49,12 @@ public:
     struct ThreadTransition
     {
         ThreadPanel new_state = ThreadPanel::Closed;
-        ThreadPanel new_prev  = ThreadPanel::Closed;
+        ThreadPanel new_prev = ThreadPanel::Closed;
         std::string new_root;
         // Effects (executed in order by the applier):
         std::vector<std::string> threads_to_unsubscribe;
         std::vector<std::string> threads_to_subscribe;
-        bool subscribe_room_threads_   = false;
+        bool subscribe_room_threads_ = false;
         bool unsubscribe_room_threads_ = false;
         // Set with unsubscribe_room_threads_ when the list is closed. A main pane's
         // active room keeps its own background subscription for the threads button,
@@ -79,20 +79,29 @@ public:
         run_paginate_ = std::move(f);
     }
 
-    bool reached_start() const { return reached_start_; }
-    bool paginating() const { return paginating_; }
+    bool reached_start() const
+    {
+        return reached_start_;
+    }
+    bool paginating() const
+    {
+        return paginating_;
+    }
 
     // Reset the backfill guards (called on every room switch: each new room
     // starts with an unknown thread history, so pagination is allowed again).
     void reset_backfill()
     {
         reached_start_ = false;
-        paginating_    = false;
+        paginating_ = false;
     }
 
     // Re-arm backfill without clearing the in-flight guard. Called when the
     // List panel (re)opens so a shrunken service window can re-paginate.
-    void rearm_backfill() { reached_start_ = false; }
+    void rearm_backfill()
+    {
+        reached_start_ = false;
+    }
 
     // Begin a pagination pass: returns false (and does nothing) when one is
     // already in flight, the history start was reached, or there is no work to
@@ -108,7 +117,7 @@ public:
 
 private:
     bool reached_start_ = false; // SDK reported no older threads remain
-    bool paginating_    = false; // a paginate pass is in flight
+    bool paginating_ = false;    // a paginate pass is in flight
     std::function<void()> run_paginate_;
 };
 

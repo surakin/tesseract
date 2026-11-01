@@ -13,7 +13,7 @@
 #include <winrt/Windows.Devices.Geolocation.h>
 
 namespace WDG = winrt::Windows::Devices::Geolocation;
-namespace WF  = winrt::Windows::Foundation;
+namespace WF = winrt::Windows::Foundation;
 
 namespace
 {
@@ -24,7 +24,9 @@ class LocationProviderWin32 : public tk::LocationProvider,
                               public tk::EnableWeakSelf<LocationProviderWin32>
 {
 public:
-    explicit LocationProviderWin32(PostFn post) : post_(std::move(post)) {}
+    explicit LocationProviderWin32(PostFn post) : post_(std::move(post))
+    {
+    }
 
     ~LocationProviderWin32() override
     {
@@ -35,7 +37,9 @@ public:
     void request_current_location(LocationCallback cb) override
     {
         if (cb_)
+        {
             return;
+        }
         cb_ = std::move(cb);
 
         // guarded() is called HERE, synchronously (this is a normal,
@@ -44,9 +48,10 @@ public:
         // later, on whatever thread WinRT uses, possibly after this object
         // is gone.
         auto access_op = WDG::Geolocator::RequestAccessAsync();
-        access_op.Completed(
-            guarded([this](WF::IAsyncOperation<WDG::GeolocationAccessStatus> const& op,
-                            WF::AsyncStatus status) {
+        access_op.Completed(guarded(
+            [this](WF::IAsyncOperation<WDG::GeolocationAccessStatus> const& op,
+                   WF::AsyncStatus status)
+            {
                 WDG::GeolocationAccessStatus access = WDG::GeolocationAccessStatus::Unspecified;
                 if (status == WF::AsyncStatus::Completed)
                 {
@@ -59,18 +64,23 @@ public:
                     }
                 }
 
-                post_(guarded([this, access]() {
-                    if (access != WDG::GeolocationAccessStatus::Allowed)
+                post_(guarded(
+                    [this, access]()
                     {
-                        finish_(false, {}, tk::LocationError::PermissionDenied);
-                        return;
-                    }
-                    start_position_request_();
-                }));
+                        if (access != WDG::GeolocationAccessStatus::Allowed)
+                        {
+                            finish_(false, {}, tk::LocationError::PermissionDenied);
+                            return;
+                        }
+                        start_position_request_();
+                    }));
             }));
     }
 
-    void cancel() override { cb_ = nullptr; }
+    void cancel() override
+    {
+        cb_ = nullptr;
+    }
 
 private:
     // Only ever called synchronously from within the already-guarded
@@ -89,9 +99,9 @@ private:
         }
 
         auto pos_op = geolocator_.GetGeopositionAsync();
-        pos_op.Completed(
-            guarded([this](WF::IAsyncOperation<WDG::Geoposition> const& op,
-                            WF::AsyncStatus status) {
+        pos_op.Completed(guarded(
+            [this](WF::IAsyncOperation<WDG::Geoposition> const& op, WF::AsyncStatus status)
+            {
                 tk::LocationFix fix;
                 tk::LocationError error = tk::LocationError::Unknown;
                 bool success = false;
@@ -104,11 +114,11 @@ private:
                         auto coord = pos.Coordinate();
                         auto point = coord.Point();
                         auto pos3d = point.Position();
-                        fix.latitude  = pos3d.Latitude;
+                        fix.latitude = pos3d.Latitude;
                         fix.longitude = pos3d.Longitude;
                         fix.accuracy_meters = coord.Accuracy();
                         success = true;
-                        error   = tk::LocationError::None;
+                        error = tk::LocationError::None;
                     }
                     catch (...)
                     {
@@ -120,16 +130,20 @@ private:
                     error = tk::LocationError::Timeout;
                 }
 
-                post_(guarded([this, success, fix, error]() {
-                    finish_(success, fix, error);
-                }));
+                post_(guarded(
+                    [this, success, fix, error]()
+                    {
+                        finish_(success, fix, error);
+                    }));
             }));
     }
 
     void finish_(bool success, tk::LocationFix fix, tk::LocationError error)
     {
         if (!cb_)
+        {
             return;
+        }
         auto cb = std::move(cb_);
         cb_ = nullptr;
         cb(success, fix, error);

@@ -31,46 +31,57 @@ using PostFn = tk::LocationProviderPostFn;
 
 constexpr gint64 kStartTimeoutUsec = 30 * G_USEC_PER_SEC;
 
-struct SignalWait {
-    bool        done{false};
+struct SignalWait
+{
+    bool done{false};
     std::string new_path;
 };
 
-static void on_location_updated(GDBusConnection*, const gchar*, const gchar*,
-                                 const gchar*, const gchar*,
-                                 GVariant* params, gpointer user_data)
+static void on_location_updated(GDBusConnection*, const gchar*, const gchar*, const gchar*,
+                                const gchar*, GVariant* params, gpointer user_data)
 {
     auto* w = static_cast<SignalWait*>(user_data);
     const gchar* old_path = nullptr;
     const gchar* new_path = nullptr;
     g_variant_get(params, "(&o&o)", &old_path, &new_path);
     if (new_path && new_path[0])
+    {
         w->new_path = new_path;
+    }
     w->done = true;
 }
 
 class LocationProviderGeoClue : public tk::LocationProvider
 {
 public:
-    explicit LocationProviderGeoClue(PostFn post) : post_(std::move(post)) {}
+    explicit LocationProviderGeoClue(PostFn post) : post_(std::move(post))
+    {
+    }
 
-    ~LocationProviderGeoClue() override { cancel(); }
+    ~LocationProviderGeoClue() override
+    {
+        cancel();
+    }
 
     void request_current_location(LocationCallback cb) override
     {
         if (in_flight_.load(std::memory_order_acquire))
+        {
             return; // a request is already pending
+        }
         reap_(); // release any finished-but-unreaped previous request
-        cb_        = std::move(cb);
+        cb_ = std::move(cb);
         cancelled_ = g_cancellable_new();
         in_flight_.store(true, std::memory_order_release);
-        thread_    = std::thread(&LocationProviderGeoClue::run_, this, cancelled_);
+        thread_ = std::thread(&LocationProviderGeoClue::run_, this, cancelled_);
     }
 
     void cancel() override
     {
         if (cancelled_)
+        {
             g_cancellable_cancel(cancelled_);
+        }
         reap_();
         cb_ = nullptr;
     }
@@ -84,7 +95,9 @@ private:
     void reap_()
     {
         if (thread_.joinable())
+        {
             thread_.join();
+        }
         if (cancelled_)
         {
             g_object_unref(cancelled_);
@@ -100,13 +113,14 @@ private:
     // connection happens to be bound to.
     void run_(GCancellable* cancel)
     {
-        bool               success = false;
-        tk::LocationFix    fix;
-        tk::LocationError  error = tk::LocationError::Unknown;
+        bool success = false;
+        tk::LocationFix fix;
+        tk::LocationError error = tk::LocationError::Unknown;
 
         GMainContext* glib_ctx = g_main_context_new();
         g_main_context_push_thread_default(glib_ctx);
-        auto pop_and_free_ctx = [&] {
+        auto pop_and_free_ctx = [&]
+        {
             g_main_context_pop_thread_default(glib_ctx);
             g_main_context_unref(glib_ctx);
         };
@@ -119,29 +133,33 @@ private:
         // /usr/share/dbus-1/system-services/, not the session-bus
         // equivalent. Session bus here returns "ServiceUnknown: The name is
         // not activatable".
-        gchar* bus_addr =
-            g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SYSTEM, cancel, &err);
+        gchar* bus_addr = g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SYSTEM, cancel, &err);
         if (!bus_addr)
         {
             std::fprintf(stderr, "[location] get bus address failed: %s\n",
                          err ? err->message : "(no error)");
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             pop_and_free_ctx();
             finish_on_ui_(false, fix, tk::LocationError::Unavailable);
             return;
         }
         GDBusConnection* conn = g_dbus_connection_new_for_address_sync(
             bus_addr,
-            static_cast<GDBusConnectionFlags>(
-                G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
-                G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
+            static_cast<GDBusConnectionFlags>(G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
+                                              G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
             nullptr, cancel, &err);
         g_free(bus_addr);
         if (!conn)
         {
             std::fprintf(stderr, "[location] connect to system bus failed: %s\n",
                          err ? err->message : "(no error)");
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             pop_and_free_ctx();
             finish_on_ui_(false, fix, tk::LocationError::Unavailable);
             return;
@@ -154,28 +172,33 @@ private:
         // D-Bus-activatable service that sits idle until needed, and this is
         // exactly the moment (an explicit user request) it should start.
         GDBusProxy* manager = g_dbus_proxy_new_sync(
-            conn, G_DBUS_PROXY_FLAGS_NONE, nullptr,
-            "org.freedesktop.GeoClue2", "/org/freedesktop/GeoClue2/Manager",
-            "org.freedesktop.GeoClue2.Manager", cancel, &err);
+            conn, G_DBUS_PROXY_FLAGS_NONE, nullptr, "org.freedesktop.GeoClue2",
+            "/org/freedesktop/GeoClue2/Manager", "org.freedesktop.GeoClue2.Manager", cancel, &err);
         if (!manager)
         {
             std::fprintf(stderr, "[location] create Manager proxy failed: %s\n",
                          err ? err->message : "(no error)");
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             g_object_unref(conn);
             pop_and_free_ctx();
             finish_on_ui_(false, fix, tk::LocationError::Unavailable);
             return;
         }
 
-        GVariant* create_ret = g_dbus_proxy_call_sync(
-            manager, "CreateClient", nullptr, G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
+        GVariant* create_ret = g_dbus_proxy_call_sync(manager, "CreateClient", nullptr,
+                                                      G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
         if (!create_ret)
         {
             std::fprintf(stderr, "[location] CreateClient failed: %s\n",
                          err ? err->message : "(no error)");
             error = classify_error_(err);
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             g_object_unref(manager);
             g_object_unref(conn);
             pop_and_free_ctx();
@@ -198,14 +221,16 @@ private:
         }
 
         GDBusProxy* client = g_dbus_proxy_new_sync(
-            conn, G_DBUS_PROXY_FLAGS_NONE, nullptr,
-            "org.freedesktop.GeoClue2", client_path_str.c_str(),
-            "org.freedesktop.GeoClue2.Client", cancel, &err);
+            conn, G_DBUS_PROXY_FLAGS_NONE, nullptr, "org.freedesktop.GeoClue2",
+            client_path_str.c_str(), "org.freedesktop.GeoClue2.Client", cancel, &err);
         if (!client)
         {
             std::fprintf(stderr, "[location] create Client proxy failed: %s\n",
                          err ? err->message : "(no error)");
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             g_object_unref(conn);
             pop_and_free_ctx();
             finish_on_ui_(false, fix, tk::LocationError::Unavailable);
@@ -221,28 +246,38 @@ private:
             g_variant_new("(ssv)", "org.freedesktop.GeoClue2.Client", "DesktopId",
                           g_variant_new_string("tesseract")),
             nullptr, G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
-        if (set_ret) g_variant_unref(set_ret);
+        if (set_ret)
+        {
+            g_variant_unref(set_ret);
+        }
         else
         {
             std::fprintf(stderr, "[location] set DesktopId failed: %s\n",
                          err ? err->message : "(no error)");
-            if (err) { g_error_free(err); err = nullptr; }
+            if (err)
+            {
+                g_error_free(err);
+                err = nullptr;
+            }
         }
 
         SignalWait wait;
         guint sub = g_dbus_connection_signal_subscribe(
-            conn, "org.freedesktop.GeoClue2", "org.freedesktop.GeoClue2.Client",
-            "LocationUpdated", client_path_str.c_str(), nullptr,
-            G_DBUS_SIGNAL_FLAGS_NONE, on_location_updated, &wait, nullptr);
+            conn, "org.freedesktop.GeoClue2", "org.freedesktop.GeoClue2.Client", "LocationUpdated",
+            client_path_str.c_str(), nullptr, G_DBUS_SIGNAL_FLAGS_NONE, on_location_updated, &wait,
+            nullptr);
 
-        GVariant* start_ret = g_dbus_proxy_call_sync(
-            client, "Start", nullptr, G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
+        GVariant* start_ret = g_dbus_proxy_call_sync(client, "Start", nullptr,
+                                                     G_DBUS_CALL_FLAGS_NONE, -1, cancel, &err);
         if (!start_ret)
         {
             std::fprintf(stderr, "[location] Start failed: %s\n",
                          err ? err->message : "(no error)");
             error = classify_error_(err);
-            if (err) g_error_free(err);
+            if (err)
+            {
+                g_error_free(err);
+            }
             g_dbus_connection_signal_unsubscribe(conn, sub);
             g_object_unref(client);
             g_object_unref(conn);
@@ -263,9 +298,8 @@ private:
         if (wait.done && !wait.new_path.empty())
         {
             GDBusProxy* loc = g_dbus_proxy_new_sync(
-                conn, G_DBUS_PROXY_FLAGS_NONE, nullptr,
-                "org.freedesktop.GeoClue2", wait.new_path.c_str(),
-                "org.freedesktop.GeoClue2.Location", cancel, &err);
+                conn, G_DBUS_PROXY_FLAGS_NONE, nullptr, "org.freedesktop.GeoClue2",
+                wait.new_path.c_str(), "org.freedesktop.GeoClue2.Location", cancel, &err);
             if (loc)
             {
                 GVariant* lat = g_dbus_proxy_get_cached_property(loc, "Latitude");
@@ -273,26 +307,38 @@ private:
                 GVariant* acc = g_dbus_proxy_get_cached_property(loc, "Accuracy");
                 if (lat && lon)
                 {
-                    fix.latitude        = g_variant_get_double(lat);
-                    fix.longitude       = g_variant_get_double(lon);
+                    fix.latitude = g_variant_get_double(lat);
+                    fix.longitude = g_variant_get_double(lon);
                     fix.accuracy_meters = acc ? g_variant_get_double(acc) : -1.0;
                     success = true;
-                    error   = tk::LocationError::None;
+                    error = tk::LocationError::None;
                 }
                 else
                 {
                     error = tk::LocationError::Unknown;
                 }
-                if (lat) g_variant_unref(lat);
-                if (lon) g_variant_unref(lon);
-                if (acc) g_variant_unref(acc);
+                if (lat)
+                {
+                    g_variant_unref(lat);
+                }
+                if (lon)
+                {
+                    g_variant_unref(lon);
+                }
+                if (acc)
+                {
+                    g_variant_unref(acc);
+                }
                 g_object_unref(loc);
             }
             else
             {
                 std::fprintf(stderr, "[location] create Location proxy failed: %s\n",
                              err ? err->message : "(no error)");
-                if (err) g_error_free(err);
+                if (err)
+                {
+                    g_error_free(err);
+                }
                 error = tk::LocationError::Unknown;
             }
         }
@@ -306,9 +352,12 @@ private:
             error = tk::LocationError::Timeout;
         }
 
-        GVariant* stop_ret = g_dbus_proxy_call_sync(
-            client, "Stop", nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
-        if (stop_ret) g_variant_unref(stop_ret);
+        GVariant* stop_ret = g_dbus_proxy_call_sync(client, "Stop", nullptr, G_DBUS_CALL_FLAGS_NONE,
+                                                    -1, nullptr, nullptr);
+        if (stop_ret)
+        {
+            g_variant_unref(stop_ret);
+        }
 
         g_object_unref(client);
         g_object_unref(conn);
@@ -324,7 +373,9 @@ private:
     {
         if (err && err->message &&
             std::string(err->message).find("NotAuthorized") != std::string::npos)
+        {
             return tk::LocationError::PermissionDenied;
+        }
         return tk::LocationError::Unknown;
     }
 
@@ -336,15 +387,21 @@ private:
         // thread_/cancelled_ as soon as this store is visible.
         in_flight_.store(false, std::memory_order_release);
         if (!cb_)
+        {
             return;
+        }
         auto cb = cb_;
-        post_([cb, success, fix, error]() { cb(success, fix, error); });
+        post_(
+            [cb, success, fix, error]()
+            {
+                cb(success, fix, error);
+            });
     }
 
-    PostFn            post_;
-    LocationCallback  cb_;
-    std::thread       thread_;
-    GCancellable*     cancelled_ = nullptr;
+    PostFn post_;
+    LocationCallback cb_;
+    std::thread thread_;
+    GCancellable* cancelled_ = nullptr;
     std::atomic<bool> in_flight_{false};
 };
 
@@ -360,14 +417,15 @@ std::unique_ptr<LocationProvider> make_location_provider_geoclue(LocationProvide
     // SYSTEM-bus activatable service (see the longer note in run_()).
     GDBusProxy* test = g_dbus_proxy_new_for_bus_sync(
         G_BUS_TYPE_SYSTEM,
-        static_cast<GDBusProxyFlags>(
-            G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START_AT_CONSTRUCTION |
-            G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
-            G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
+        static_cast<GDBusProxyFlags>(G_DBUS_PROXY_FLAGS_DO_NOT_AUTO_START_AT_CONSTRUCTION |
+                                     G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
+                                     G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
         nullptr, "org.freedesktop.GeoClue2", "/org/freedesktop/GeoClue2/Manager",
         "org.freedesktop.GeoClue2.Manager", nullptr, nullptr);
     if (!test)
+    {
         return nullptr;
+    }
     g_object_unref(test);
     return std::make_unique<LocationProviderGeoClue>(std::move(post));
 }

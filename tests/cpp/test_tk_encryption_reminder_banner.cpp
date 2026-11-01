@@ -31,8 +31,15 @@ struct ReminderBannerStage
 Button* find_button(Widget& root, const std::string& lbl)
 {
     for (auto& ch : root.children())
+    {
         if (auto* b = dynamic_cast<Button*>(ch.get()))
-            if (b->label() == lbl) return b;
+        {
+            if (b->label() == lbl)
+            {
+                return b;
+            }
+        }
+    }
     return nullptr;
 }
 
@@ -53,7 +60,10 @@ TEST_CASE("EncryptionReminderBanner Locked offers Unlock and fires on_open",
     EncryptionReminderBanner banner;
     banner.set_kind(EncryptionReminderBanner::Kind::Locked);
     bool opened = false;
-    banner.on_open = [&] { opened = true; };
+    banner.on_open = [&]
+    {
+        opened = true;
+    };
     st.run(banner, {0, 0, 640, 48});
 
     CHECK(banner.label_text().find("locked") != std::string::npos);
@@ -80,7 +90,10 @@ TEST_CASE("EncryptionReminderBanner dismiss fires on_dismiss", "[tk][view][encry
     ReminderBannerStage st;
     EncryptionReminderBanner banner;
     bool dismissed = false;
-    banner.on_dismiss = [&] { dismissed = true; };
+    banner.on_dismiss = [&]
+    {
+        dismissed = true;
+    };
     st.run(banner, {0, 0, 640, 48});
     Button* b = find_button(banner, "\xe2\x9c\x95");
     REQUIRE(b);

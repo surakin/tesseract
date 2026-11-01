@@ -69,10 +69,10 @@ TEST_CASE("Prefs backward compat: last_room only populates open_rooms")
 TEST_CASE("Prefs serialize open_rooms round-trips")
 {
     PrefsData p;
-    p.last_room  = "!a:h";
+    p.last_room = "!a:h";
     p.open_rooms = {"!a:h", "!b:h", "!c:h"};
     auto json = serialize(p);
-    auto p2   = parse(json);
+    auto p2 = parse(json);
     CHECK(p2.last_room == "!a:h");
     REQUIRE(p2.open_rooms.size() == 3);
     CHECK(p2.open_rooms[0] == "!a:h");
@@ -108,10 +108,10 @@ TEST_CASE("Prefs room_layout with no active room and no tabs stays empty")
 TEST_CASE("Prefs serialize single tab produces open_rooms of size 1")
 {
     PrefsData p;
-    p.last_room  = "!only:host";
+    p.last_room = "!only:host";
     p.open_rooms = {"!only:host"};
     auto json = serialize(p);
-    auto p2   = parse(json);
+    auto p2 = parse(json);
     CHECK(p2.last_room == "!only:host");
     REQUIRE(p2.open_rooms.size() == 1);
     CHECK(p2.open_rooms[0] == "!only:host");
@@ -153,9 +153,9 @@ TEST_CASE("Prefs serialize with empty recent_rooms removes the stored key")
 
 TEST_CASE("Prefs layout save carries recent_rooms alongside the tab layout")
 {
-    auto p         = tesseract::Prefs::room_layout("!b:x", {"!a:x", "!b:x"});
+    auto p = tesseract::Prefs::room_layout("!b:x", {"!a:x", "!b:x"});
     p.recent_rooms = {"!b:x", "!z:x"};
-    auto back      = parse(serialize(p, R"({"recent_rooms":["!old:x"],"future":1})"));
+    auto back = parse(serialize(p, R"({"recent_rooms":["!old:x"],"future":1})"));
     CHECK(back.last_room == "!b:x");
     CHECK(back.recent_rooms == std::vector<std::string>{"!b:x", "!z:x"});
 }
@@ -186,7 +186,9 @@ TEST_CASE("Prefs add_directory_server moves to front, dedupes, caps at 8")
     CHECK(l == std::vector<std::string>{"A.ORG", "b.org"});
     CHECK(add_directory_server(l, "") == l);
     for (int i = 0; i < 10; ++i)
+    {
         l = add_directory_server(l, "s" + std::to_string(i) + ".org");
+    }
     CHECK(l.size() == tesseract::kMaxDirectoryServers);
     CHECK(l.front() == "s9.org");
 }
@@ -196,9 +198,9 @@ TEST_CASE("Prefs directory_server_choices lists defaults until pushed out")
     using tesseract::Prefs::directory_server_choices;
     CHECK(directory_server_choices({}, "home.org") ==
           std::vector<std::string>{"home.org", "activematrixrooms.com", "matrixrooms.info"});
-    CHECK(directory_server_choices({"x.org", "MatrixRooms.info"}, "home.org") ==
-          std::vector<std::string>{"x.org", "MatrixRooms.info", "home.org",
-                                   "activematrixrooms.com"});
+    CHECK(
+        directory_server_choices({"x.org", "MatrixRooms.info"}, "home.org") ==
+        std::vector<std::string>{"x.org", "MatrixRooms.info", "home.org", "activematrixrooms.com"});
     CHECK(directory_server_choices({}, "") ==
           std::vector<std::string>{"activematrixrooms.com", "matrixrooms.info"});
     std::vector<std::string> full{"1", "2", "3", "4", "5", "6", "7", "8"};

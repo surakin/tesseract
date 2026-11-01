@@ -24,9 +24,16 @@ public:
     {
         bounds_ = r;
     }
-    Size measure(LayoutCtx&, Size) override { return {bounds_.w, bounds_.h}; }
-    void arrange(LayoutCtx&, Rect) override {}
-    void paint(PaintCtx&) override {}
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void arrange(LayoutCtx&, Rect) override
+    {
+    }
+    void paint(PaintCtx&) override
+    {
+    }
 };
 
 // A view that writes its own "link" cursor while handling pointer-move,
@@ -38,7 +45,9 @@ public:
     bool on_pointer_move(Point) override
     {
         if (host_log)
+        {
             host_log->push_back(CursorShape::Text);
+        }
         return false;
     }
     std::vector<CursorShape>* host_log = nullptr;
@@ -62,8 +71,7 @@ TEST_CASE("A hoverable container is hovered while the pointer is over a plain ch
     CHECK_FALSE(area->hovered());
 }
 
-TEST_CASE("Hover goes to the nearest hoverable, not its hoverable ancestor",
-          "[tk][hoverable]")
+TEST_CASE("Hover goes to the nearest hoverable, not its hoverable ancestor", "[tk][hoverable]")
 {
     HvBox root({0, 0, 400, 400});
     auto* outer = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 200, 60}));
@@ -80,8 +88,7 @@ TEST_CASE("Hover goes to the nearest hoverable, not its hoverable ancestor",
     CHECK_FALSE(inner->hovered());
 }
 
-TEST_CASE("A disabled widget shows no hover and hides its hoverable ancestor",
-          "[tk][hoverable]")
+TEST_CASE("A disabled widget shows no hover and hides its hoverable ancestor", "[tk][hoverable]")
 {
     HvBox root({0, 0, 400, 400});
     auto* outer = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 200, 60}));
@@ -96,8 +103,7 @@ TEST_CASE("A disabled widget shows no hover and hides its hoverable ancestor",
     CHECK_FALSE(outer->hovered()); // disabled widgets are opaque to input
 }
 
-TEST_CASE("Hoverable widgets inside the open popup are hover-tracked",
-          "[tk][hoverable][popup]")
+TEST_CASE("Hoverable widgets inside the open popup are hover-tracked", "[tk][hoverable][popup]")
 {
     HvBox root({0, 0, 400, 400});
     auto* behind = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 50, 30}));
@@ -122,7 +128,11 @@ TEST_CASE("A plain widget with set_on_click claims presses and fires on release"
     HvBox root({0, 0, 400, 400});
     auto* w = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 50, 30}));
     int clicks = 0;
-    w->set_hoverable().set_on_click([&] { ++clicks; });
+    w->set_hoverable().set_on_click(
+        [&]
+        {
+            ++clicks;
+        });
     TestHost host(&root);
 
     host.dispatch_pointer_down({20, 20});
@@ -136,8 +146,7 @@ TEST_CASE("A plain widget with set_on_click claims presses and fires on release"
     CHECK(clicks == 1);
 }
 
-TEST_CASE("A hoverable widget with no click handler declines presses",
-          "[tk][hoverable][click]")
+TEST_CASE("A hoverable widget with no click handler declines presses", "[tk][hoverable][click]")
 {
     HvBox root({0, 0, 400, 400});
     auto* w = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 50, 30}));
@@ -155,7 +164,11 @@ TEST_CASE("A clickable plain widget is focusable and activates on Enter/Space",
     HvBox root({0, 0, 400, 400});
     auto* w = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 50, 30}));
     int clicks = 0;
-    w->set_on_click([&] { ++clicks; });
+    w->set_on_click(
+        [&]
+        {
+            ++clicks;
+        });
     TestHost host(&root);
 
     CHECK(w->focusable());
@@ -171,8 +184,7 @@ TEST_CASE("A clickable plain widget is focusable and activates on Enter/Space",
     CHECK(clicks == 2);
 }
 
-TEST_CASE("A widget that opts into nothing is unaffected",
-          "[tk][hoverable]")
+TEST_CASE("A widget that opts into nothing is unaffected", "[tk][hoverable]")
 {
     HvBox root({0, 0, 400, 400});
     auto* w = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 50, 30}));
@@ -212,8 +224,8 @@ TEST_CASE("Every Button gets the pointer cursor, a disabled one does not",
     auto surface = TestSurface::create(100, 100);
     LayoutCtx lc{surface->factory(), Theme::light()};
     HvBox root({0, 0, 400, 400});
-    auto* b = root.add_child(create_widget<Button>(
-        &root, "B", std::function<void()>{}, Button::Variant::Subtle));
+    auto* b = root.add_child(
+        create_widget<Button>(&root, "B", std::function<void()>{}, Button::Variant::Subtle));
     b->arrange(lc, {10, 10, 50, 30});
     TestHost host(&root);
 
@@ -243,8 +255,7 @@ TEST_CASE("set_cursor overrides the default shape; Default-cursor hover writes n
     CHECK(host.last_cursor() == CursorShape::Default); // released by grab→fill_only
 }
 
-TEST_CASE("Surface leave releases the cursor and clears hover",
-          "[tk][hoverable][cursor]")
+TEST_CASE("Surface leave releases the cursor and clears hover", "[tk][hoverable][cursor]")
 {
     HvBox root({0, 0, 400, 400});
     auto* w = root.add_child(create_widget<HvBox>(&root, Rect{10, 10, 50, 30}));
@@ -279,7 +290,7 @@ TEST_CASE("Releasing happens before the move dispatch so a view's own cursor win
 
     REQUIRE(host.cursor_log.size() == before + 1);
     CHECK(host.last_cursor() == CursorShape::Default); // release written…
-    CHECK(order.size() == 1);                           // …and the view then ran
+    CHECK(order.size() == 1);                          // …and the view then ran
 }
 
 TEST_CASE("Claiming happens after the previous widget's on_pointer_leave",
@@ -294,7 +305,9 @@ TEST_CASE("Claiming happens after the previous widget's on_pointer_leave",
         void on_pointer_leave() override
         {
             if (host_ptr)
+            {
                 snapshot = host_ptr->cursor_log.size();
+            }
             left = true;
         }
         TestHost* host_ptr = nullptr;
@@ -313,7 +326,7 @@ TEST_CASE("Claiming happens after the previous widget's on_pointer_leave",
     host.dispatch_pointer_move({20, 20});  // onto the clickable widget
 
     REQUIRE(view->left);
-    CHECK(view->snapshot == 0);                         // leave ran before any write
+    CHECK(view->snapshot == 0);                        // leave ran before any write
     CHECK(host.last_cursor() == CursorShape::Pointer); // claim written after
 }
 
@@ -331,13 +344,16 @@ namespace
 tk::Point find_hover_area(TestHost& host, tk::Rect area, float step = 4.0f)
 {
     for (float y = area.y; y < area.y + area.h; y += step)
+    {
         for (float x = area.x; x < area.x + area.w; x += step)
         {
             host.dispatch_pointer_move({x, y});
-            if (auto w = host.hover_feedback_.lock();
-                w && dynamic_cast<tk::HoverArea*>(w.get()))
+            if (auto w = host.hover_feedback_.lock(); w && dynamic_cast<tk::HoverArea*>(w.get()))
+            {
                 return {x, y};
+            }
         }
+    }
     return {-1.0f, -1.0f};
 }
 } // namespace
@@ -350,7 +366,10 @@ TEST_CASE("UserProfilePanel avatar: hover ring, pointer cursor, click opens the 
     tesseract::views::UserProfilePanel panel;
     std::string clicked_url, clicked_name;
     panel.on_avatar_clicked = [&](const std::string& u, const std::string& n)
-    { clicked_url = u; clicked_name = n; };
+    {
+        clicked_url = u;
+        clicked_name = n;
+    };
     panel.open("@alice:example.org", "Alice", "mxc://hs/avatar");
     panel.measure(lc, {300, 400});
     panel.arrange(lc, {0, 0, 300, 400});
@@ -398,7 +417,9 @@ TEST_CASE("RoomInfoPanel avatar: hover ring and click opens the lightbox",
     info.avatar_url = "mxc://hs/room";
     std::string clicked_url;
     panel.on_avatar_clicked = [&](const std::string& u, const std::string&)
-    { clicked_url = u; };
+    {
+        clicked_url = u;
+    };
     panel.open(info);
     const tk::Rect bounds{0, 0, 1000, 800};
     panel.measure(lc, {bounds.w, bounds.h});
@@ -425,13 +446,19 @@ namespace
 tk::Button* find_hovered_button(TestHost& host, tk::Rect area)
 {
     for (float y = area.y; y < area.y + area.h; y += 3.0f)
+    {
         for (float x = area.x; x < area.x + area.w; x += 3.0f)
         {
             host.dispatch_pointer_move({x, y});
             if (auto w = host.hover_feedback_.lock())
+            {
                 if (auto* b = dynamic_cast<tk::Button*>(w.get()))
+                {
                     return b;
+                }
+            }
         }
+    }
     return nullptr;
 }
 } // namespace
@@ -443,7 +470,10 @@ TEST_CASE("RoomListView '+' button: hover feedback, pointer cursor, click adds a
     auto owner = tk::create_root_widget<tesseract::views::RoomListView>(&st.host);
     tesseract::views::RoomListView& view = *owner;
     int added = 0;
-    view.on_add_room_requested = [&] { ++added; };
+    view.on_add_room_requested = [&]
+    {
+        ++added;
+    };
     st.mount(view, {0, 0, 300, 400});
 
     // The "+" is the only button in the header when no query is typed.
@@ -466,15 +496,22 @@ TEST_CASE("RoomListView '×' button appears with a query and clears it on click"
     auto owner = tk::create_root_widget<tesseract::views::RoomListView>(&st.host);
     tesseract::views::RoomListView& view = *owner;
     int cleared = 0;
-    view.on_search_clear = [&] { ++cleared; };
+    view.on_search_clear = [&]
+    {
+        ++cleared;
+    };
     st.mount(view, {0, 0, 300, 400});
 
     const auto visible_buttons = [&]
     {
         std::vector<tk::Button*> v;
         for (const auto& ch : view.children())
+        {
             if (auto* b = dynamic_cast<tk::Button*>(ch.get()); b && b->visible())
+            {
                 v.push_back(b);
+            }
+        }
         return v;
     };
     // No query: only the "+" exists in the header.
@@ -484,8 +521,7 @@ TEST_CASE("RoomListView '×' button appears with a query and clears it on click"
     st.relayout_paint(view, {0, 0, 300, 400});
     auto buttons = visible_buttons();
     REQUIRE(buttons.size() == 2);
-    tk::Button* clear = buttons[0]->bounds().x < buttons[1]->bounds().x ? buttons[0]
-                                                                         : buttons[1];
+    tk::Button* clear = buttons[0]->bounds().x < buttons[1]->bounds().x ? buttons[0] : buttons[1];
 
     const tk::Rect r = clear->bounds();
     const tk::Point c{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
@@ -547,11 +583,16 @@ TEST_CASE("MruSwitcher chips: hover feedback, pointer cursor, click commits that
     vt::Stage st;
     auto mru = tk::create_root_widget<tesseract::views::MruSwitcher>(&st.host);
     mru->set_recent_provider(
-        [] { return std::vector<tesseract::RoomInfo>{
-                 chip_room("!a:x", "Alpha"), chip_room("!b:x", "Beta"),
-                 chip_room("!c:x", "Gamma")}; });
+        []
+        {
+            return std::vector<tesseract::RoomInfo>{
+                chip_room("!a:x", "Alpha"), chip_room("!b:x", "Beta"), chip_room("!c:x", "Gamma")};
+        });
     std::string switched;
-    mru->on_room_selected = [&](const std::string& id) { switched = id; };
+    mru->on_room_selected = [&](const std::string& id)
+    {
+        switched = id;
+    };
     mru->begin_cycle();
     st.mount(*mru, {0, 0, 800, 600});
     st.paint(*mru); // second paint: chip areas now placed (fill-before-chips order)
@@ -571,12 +612,18 @@ TEST_CASE("QuickSwitcher recent chips: hover feedback and click selects the room
 {
     vt::Stage st;
     auto qs = tk::create_root_widget<tesseract::views::QuickSwitcher>(&st.host);
-    const auto rooms = [] { return std::vector<tesseract::RoomInfo>{
-                                chip_room("!a:x", "Alpha"), chip_room("!b:x", "Beta")}; };
+    const auto rooms = []
+    {
+        return std::vector<tesseract::RoomInfo>{chip_room("!a:x", "Alpha"),
+                                                chip_room("!b:x", "Beta")};
+    };
     qs->set_rooms_provider(rooms);
     qs->set_recent_provider(rooms);
     std::string chosen;
-    qs->on_room_selected = [&](const std::string& id) { chosen = id; };
+    qs->on_room_selected = [&](const std::string& id)
+    {
+        chosen = id;
+    };
     qs->open();
     st.mount(*qs, {0, 0, 900, 700});
     st.paint(*qs);
@@ -624,7 +671,11 @@ TEST_CASE("A hovered widget that hides itself drops hover and releases the curso
     auto* w = root->add_child(create_widget<HvBox>(root.get(), Rect{10, 10, 50, 30}));
     int leaves = 0;
     w->set_hoverable().set_on_click([] {});
-    w->set_on_hover_leave([&] { ++leaves; });
+    w->set_on_hover_leave(
+        [&]
+        {
+            ++leaves;
+        });
 
     host.dispatch_pointer_move({20, 20});
     REQUIRE(w->hovered());
@@ -665,12 +716,18 @@ TEST_CASE("QuickSwitcher recent chips stop taking clicks once a query hides the 
 {
     vt::Stage st;
     auto qs = tk::create_root_widget<tesseract::views::QuickSwitcher>(&st.host);
-    const auto rooms = [] { return std::vector<tesseract::RoomInfo>{
-                                chip_room("!a:x", "Alpha"), chip_room("!b:x", "Beta")}; };
+    const auto rooms = []
+    {
+        return std::vector<tesseract::RoomInfo>{chip_room("!a:x", "Alpha"),
+                                                chip_room("!b:x", "Beta")};
+    };
     qs->set_rooms_provider(rooms);
     qs->set_recent_provider(rooms);
     std::string chosen;
-    qs->on_room_selected = [&](const std::string& id) { chosen = id; };
+    qs->on_room_selected = [&](const std::string& id)
+    {
+        chosen = id;
+    };
     qs->open();
     st.mount(*qs, {0, 0, 900, 700});
     st.paint(*qs);

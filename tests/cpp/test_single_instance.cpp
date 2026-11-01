@@ -20,8 +20,7 @@
 
 TEST_CASE("activation payload: round trip")
 {
-    tk::ActivationRequest req{"tok", "matrix:r/room:example.org",
-                              "open-room", "!abc:example.org"};
+    tk::ActivationRequest req{"tok", "matrix:r/room:example.org", "open-room", "!abc:example.org"};
     const auto back = tk::parse_activation_payload(tk::format_activation_payload(req));
     CHECK(back.token == req.token);
     CHECK(back.uri == req.uri);
@@ -66,24 +65,36 @@ struct EnvGuard
     EnvGuard(const char* var, const char* value) : name(var)
     {
         if (const char* v = std::getenv(var))
+        {
             saved = v;
+        }
         if (value)
+        {
             setenv(var, value, 1);
+        }
         else
+        {
             unsetenv(var);
+        }
     }
     ~EnvGuard()
     {
         if (saved)
+        {
             setenv(name.c_str(), saved->c_str(), 1);
+        }
         else
+        {
             unsetenv(name.c_str());
+        }
     }
 };
 
 struct RuntimeDirEnv : EnvGuard
 {
-    explicit RuntimeDirEnv(const char* value) : EnvGuard("XDG_RUNTIME_DIR", value) {}
+    explicit RuntimeDirEnv(const char* value) : EnvGuard("XDG_RUNTIME_DIR", value)
+    {
+    }
 };
 
 // Switches to a throwaway profile so lock tests never touch a real instance.
@@ -114,8 +125,8 @@ std::filesystem::path make_temp_dir(const char* tag, std::filesystem::perms perm
 bool is_private_dir(const std::string& path)
 {
     struct stat st{};
-    return lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) &&
-           st.st_uid == getuid() && (st.st_mode & 077) == 0;
+    return lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid() &&
+           (st.st_mode & 077) == 0;
 }
 
 } // namespace
@@ -199,7 +210,9 @@ void remove_new_lock_files()
 {
     const std::string dir = tk::private_runtime_dir();
     if (!dir.empty())
+    {
         unlink((dir + "/tesseract" + tesseract::profile_suffix() + ".lock").c_str());
+    }
 }
 
 } // namespace

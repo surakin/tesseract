@@ -11,8 +11,8 @@
 namespace tesseract::views::test
 {
 
-inline MediaViewerItem image_item(std::string url, std::string thumb = {},
-                                  std::string caption = {}, int w = 0, int h = 0)
+inline MediaViewerItem image_item(std::string url, std::string thumb = {}, std::string caption = {},
+                                  int w = 0, int h = 0)
 {
     MediaViewerItem item;
     item.kind = MediaViewerItem::Kind::Image;
@@ -26,8 +26,8 @@ inline MediaViewerItem image_item(std::string url, std::string thumb = {},
 }
 
 inline MediaViewerItem video_item(std::string source, std::string thumb = {},
-                                  std::string mime = "video/mp4",
-                                  std::uint64_t duration_ms = 0, int w = 0, int h = 0)
+                                  std::string mime = "video/mp4", std::uint64_t duration_ms = 0,
+                                  int w = 0, int h = 0)
 {
     MediaViewerItem item;
     item.kind = MediaViewerItem::Kind::Video;

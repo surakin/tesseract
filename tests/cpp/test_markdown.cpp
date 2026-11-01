@@ -52,12 +52,11 @@ TEST_CASE("markdown: a lone marker with no pair is not formatting")
 
 TEST_CASE("markdown: inline emphasis")
 {
-    CHECK(contains_markdown(markdown_to_html("**b**").formatted_body,
-                   "<strong>b</strong>"));
+    CHECK(contains_markdown(markdown_to_html("**b**").formatted_body, "<strong>b</strong>"));
     CHECK(contains_markdown(markdown_to_html("*i*").formatted_body, "<em>i</em>"));
     // pulldown-cmark (CommonMark) nests *** as <em><strong> (outermost first).
     CHECK(contains_markdown(markdown_to_html("***bi***").formatted_body,
-                   "<em><strong>bi</strong></em>"));
+                            "<em><strong>bi</strong></em>"));
     CHECK(contains_markdown(markdown_to_html("~~s~~").formatted_body, "<del>s</del>"));
     auto code = markdown_to_html("`x<y`").formatted_body;
     CHECK(contains_markdown(code, "<code>x&lt;y</code>")); // escaped inside code
@@ -66,8 +65,7 @@ TEST_CASE("markdown: inline emphasis")
 TEST_CASE("markdown: underscore emphasis only at word boundaries")
 {
     CHECK(contains_markdown(markdown_to_html("_em_").formatted_body, "<em>em</em>"));
-    CHECK(contains_markdown(markdown_to_html("__bold__").formatted_body,
-                   "<strong>bold</strong>"));
+    CHECK(contains_markdown(markdown_to_html("__bold__").formatted_body, "<strong>bold</strong>"));
     // Intra-word underscores must NOT emphasise (snake_case identifiers).
     auto r = markdown_to_html("a_b_c snake_case_name");
     CHECK(r.formatted_body.empty());
@@ -81,8 +79,7 @@ TEST_CASE("markdown: links are http(s) only")
     // javascript: / other schemes must never become an <a>.
     auto bad = markdown_to_html("[x](javascript:alert(1))");
     CHECK_FALSE(contains_markdown(bad.formatted_body, "<a "));
-    CHECK_FALSE(
-        contains_markdown(bad.formatted_body, "javascript:alert")); // escaped/plain
+    CHECK_FALSE(contains_markdown(bad.formatted_body, "javascript:alert")); // escaped/plain
 }
 
 TEST_CASE("markdown: HTML is escaped (XSS guard)")

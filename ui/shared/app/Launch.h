@@ -61,7 +61,9 @@ struct LaunchPlan
     bool start_hidden() const
     {
         if (args.hidden)
+        {
             return true;
+        }
         return Settings::instance().start_minimized;
     }
 
@@ -71,18 +73,21 @@ struct LaunchPlan
     /// instance.
     bool has_forwardable_intent() const
     {
-        return args.matrix_uri.has_value() ||
-               args.action != LaunchAction::None;
+        return args.matrix_uri.has_value() || args.action != LaunchAction::None;
     }
     bool should_raise_existing_instance() const
     {
         // Something to forward must reach the running instance regardless of
         // how this launch was started.
         if (has_forwardable_intent())
+        {
             return true;
+        }
         // An OS-started launch with nothing to forward stays out of the way.
         if (args.autostart)
+        {
             return false;
+        }
         // A user-started launch raises even when it asked to start hidden.
         // Without this, enabling "Start minimized to tray" would make the app
         // reachable only by clicking the tray icon: launching it again while
@@ -95,8 +100,7 @@ struct LaunchPlan
     /// previous instance is still shutting down.
     std::chrono::milliseconds instance_lock_wait() const
     {
-        return args.relaunch ? std::chrono::seconds(15)
-                             : std::chrono::milliseconds(0);
+        return args.relaunch ? std::chrono::seconds(15) : std::chrono::milliseconds(0);
     }
 };
 
@@ -110,8 +114,7 @@ struct LaunchPlan
 ///   7. apply --log-level / --verbose to the SDK logger.
 /// Otherwise returns with exit_code unset and the shell continues its
 /// normal startup.
-LaunchPlan prepare_launch(const std::vector<std::string>& args,
-                          const LaunchHooks& hooks);
+LaunchPlan prepare_launch(const std::vector<std::string>& args, const LaunchHooks& hooks);
 
 /// The translated --help text.
 std::string launch_help_text(std::string_view program_name);

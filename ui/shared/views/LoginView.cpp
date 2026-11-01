@@ -27,11 +27,11 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kLoginCardWidth    = 360.0f;
-constexpr float kLoginCardPadding  = 24.0f;
-constexpr float kLoginCardSpacing  = 12.0f;
+constexpr float kLoginCardWidth = 360.0f;
+constexpr float kLoginCardPadding = 24.0f;
+constexpr float kLoginCardSpacing = 12.0f;
 constexpr float kHSFieldHeight = 36.0f;
-constexpr float kButtonHeight  = 36.0f;
+constexpr float kButtonHeight = 36.0f;
 constexpr float kBrandIconDiameter = 56.0f;
 
 // Built-in default when no homeserver is provisioned. The homeserver field
@@ -43,8 +43,8 @@ constexpr const char* kBuiltinDefaultHomeserver = "matrix.org";
 } // namespace
 
 LoginView::LoginView()
-    : default_homeserver_(tesseract::provisioned_default_homeserver().value_or(
-          kBuiltinDefaultHomeserver)),
+    : default_homeserver_(
+          tesseract::provisioned_default_homeserver().value_or(kBuiltinDefaultHomeserver)),
       provisioned_(tesseract::login_provisioned())
 {
     rebuild_tree();
@@ -66,8 +66,7 @@ void LoginView::rebuild_tree()
     title->set_halign(tk::TextHAlign::Center);
 
     auto hs_input_label = tk::create_widget<tk::Label>(
-        this,
-        tk::tr("Your account or server - e.g. @alice:matrix.org or matrix.org"),
+        this, tk::tr("Your account or server - e.g. @alice:matrix.org or matrix.org"),
         tk::FontRole::Small);
     hs_input_label->set_halign(tk::TextHAlign::Leading);
     hs_input_label->set_wrap(true);
@@ -85,23 +84,31 @@ void LoginView::rebuild_tree()
     discovery_icon->set_halign(tk::TextHAlign::Leading);
     discovery_icon->set_visible(false);
 
-    auto hs_help_btn = tk::create_widget<tk::Button>(
-        this, tk::tr("?"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto hs_help_btn = tk::create_widget<tk::Button>(this, tk::tr("?"), std::function<void()>{},
+                                                     tk::Button::Variant::Subtle);
 
     auto discovery_error = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
     discovery_error->set_halign(tk::TextHAlign::Leading);
     discovery_error->set_wrap(true);
     discovery_error->set_visible(false);
 
-    auto sign_in = tk::create_widget<tk::Button>(
-        this, tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto sign_in = tk::create_widget<tk::Button>(this, tk::tr("Sign in"), std::function<void()>{},
+                                                 tk::Button::Variant::Primary);
     sign_in->set_min_size({0, kButtonHeight});
-    sign_in->set_on_click([this] { sign_in_(); });
+    sign_in->set_on_click(
+        [this]
+        {
+            sign_in_();
+        });
 
-    auto cancel = tk::create_widget<tk::Button>(
-        this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                                tk::Button::Variant::Subtle);
     cancel->set_min_size({0, kButtonHeight});
-    cancel->set_on_click([this] { cancel_(); });
+    cancel->set_on_click(
+        [this]
+        {
+            cancel_();
+        });
     cancel->set_visible(false);
 
     auto status = tk::create_widget<tk::Label>(this, "", tk::FontRole::Small);
@@ -109,62 +116,77 @@ void LoginView::rebuild_tree()
     status->set_wrap(true);
     status->set_visible(false);
 
-    hs_field_            = hs_field_row->add_child(std::move(hs_field));
-    discovery_icon_lbl_  = hs_field_row->add_child(std::move(discovery_icon));
-    hs_help_btn_         = hs_field_row->add_child(std::move(hs_help_btn));
-    hs_help_btn_->set_on_hover_enter([this]
-    {
-        if (host())
-            host()->show_tooltip(
-                hs_help_btn_,
-                tk::tr("Your homeserver is where your account lives — similar to "
-                       "choosing an email provider. Not sure? Use \"Find a server\" "
-                       "to browse some. Any server works with anyone on Matrix."),
-                hs_help_btn_->bounds());
-    });
-    hs_help_btn_->set_on_hover_leave([this]
-    {
-        if (host()) host()->hide_tooltip(hs_help_btn_);
-    });
+    hs_field_ = hs_field_row->add_child(std::move(hs_field));
+    discovery_icon_lbl_ = hs_field_row->add_child(std::move(discovery_icon));
+    hs_help_btn_ = hs_field_row->add_child(std::move(hs_help_btn));
+    hs_help_btn_->set_on_hover_enter(
+        [this]
+        {
+            if (host())
+            {
+                host()->show_tooltip(
+                    hs_help_btn_,
+                    tk::tr("Your homeserver is where your account lives — similar to "
+                           "choosing an email provider. Not sure? Use \"Find a server\" "
+                           "to browse some. Any server works with anyone on Matrix."),
+                    hs_help_btn_->bounds());
+            }
+        });
+    hs_help_btn_->set_on_hover_leave(
+        [this]
+        {
+            if (host())
+            {
+                host()->hide_tooltip(hs_help_btn_);
+            }
+        });
 
-    brand_avatar_        = card->add_child(std::move(brand_avatar));
-    title_lbl_           = card->add_child(std::move(title));
-    hs_input_label_      = card->add_child(std::move(hs_input_label));
+    brand_avatar_ = card->add_child(std::move(brand_avatar));
+    title_lbl_ = card->add_child(std::move(title));
+    hs_input_label_ = card->add_child(std::move(hs_input_label));
     card->add_child(std::move(hs_field_row));
 
 #ifdef TESSERACT_SERVER_BROWSER_ENABLED
     auto find_server = tk::create_widget<tk::Button>(
         this, tk::tr("Find a server"), std::function<void()>{}, tk::Button::Variant::Link);
-    find_server->set_on_click([this] { open_server_browser(); });
+    find_server->set_on_click(
+        [this]
+        {
+            open_server_browser();
+        });
     find_server->set_visible(!provisioned_);
     find_server_btn_ = card->add_child(std::move(find_server));
 #endif
 
     discovery_error_lbl_ = card->add_child(std::move(discovery_error));
-    sign_in_btn_         = card->add_child(std::move(sign_in));
+    sign_in_btn_ = card->add_child(std::move(sign_in));
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     // Toggle button on the OAuthOnly form — only ever shown once discovery
     // positively confirms the server supports m.login.password.
-    auto password_toggle = tk::create_widget<tk::Button>(
-        this, tk::tr("Sign in with password"), std::function<void()>{},
-        tk::Button::Variant::Subtle);
+    auto password_toggle =
+        tk::create_widget<tk::Button>(this, tk::tr("Sign in with password"),
+                                      std::function<void()>{}, tk::Button::Variant::Subtle);
     password_toggle->set_min_size({0, kButtonHeight});
-    password_toggle->set_on_click([this] { switch_to_password_form_(); });
+    password_toggle->set_on_click(
+        [this]
+        {
+            switch_to_password_form_();
+        });
     password_toggle->set_visible(false);
     password_toggle_btn_ = card->add_child(std::move(password_toggle));
 
     // Password form fields — hidden until switch_to_password_form_() shows them.
-    auto username_input_label = tk::create_widget<tk::Label>(
-        this, tk::tr("Matrix ID"), tk::FontRole::Small);
+    auto username_input_label =
+        tk::create_widget<tk::Label>(this, tk::tr("Matrix ID"), tk::FontRole::Small);
     username_input_label->set_halign(tk::TextHAlign::Leading);
     username_input_label->set_visible(false);
 
     auto username_field = tk::create_widget<tk::TextField>(this, kHSFieldHeight);
     username_field->set_visible(false);
 
-    auto password_input_label = tk::create_widget<tk::Label>(
-        this, tk::tr("Password"), tk::FontRole::Small);
+    auto password_input_label =
+        tk::create_widget<tk::Label>(this, tk::tr("Password"), tk::FontRole::Small);
     password_input_label->set_halign(tk::TextHAlign::Leading);
     password_input_label->set_visible(false);
 
@@ -175,46 +197,60 @@ void LoginView::rebuild_tree()
     auto password_sign_in = tk::create_widget<tk::Button>(
         this, tk::tr("Sign in"), std::function<void()>{}, tk::Button::Variant::Primary);
     password_sign_in->set_min_size({0, kButtonHeight});
-    password_sign_in->set_on_click([this] { submit_password_(); });
+    password_sign_in->set_on_click(
+        [this]
+        {
+            submit_password_();
+        });
     password_sign_in->set_visible(false);
 
     // Back button — returns to the OAuthOnly form.
-    auto back = tk::create_widget<tk::Button>(
-        this, tk::tr("Back"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto back = tk::create_widget<tk::Button>(this, tk::tr("Back"), std::function<void()>{},
+                                              tk::Button::Variant::Subtle);
     back->set_min_size({0, kButtonHeight});
-    back->set_on_click([this] { switch_to_oauth_form_(); });
+    back->set_on_click(
+        [this]
+        {
+            switch_to_oauth_form_();
+        });
     back->set_visible(false);
 
     username_input_label_ = card->add_child(std::move(username_input_label));
-    username_field_       = card->add_child(std::move(username_field));
+    username_field_ = card->add_child(std::move(username_field));
     password_input_label_ = card->add_child(std::move(password_input_label));
-    password_field_       = card->add_child(std::move(password_field));
+    password_field_ = card->add_child(std::move(password_field));
     password_sign_in_btn_ = card->add_child(std::move(password_sign_in));
-    back_btn_              = card->add_child(std::move(back));
+    back_btn_ = card->add_child(std::move(back));
 #endif
 
-    auto register_link = tk::create_widget<tk::Button>(
-        this, tk::tr("New here? Create an account"), std::function<void()>{},
-        tk::Button::Variant::Subtle);
+    auto register_link =
+        tk::create_widget<tk::Button>(this, tk::tr("New here? Create an account"),
+                                      std::function<void()>{}, tk::Button::Variant::Subtle);
     register_link->set_min_size({0, kButtonHeight});
-    register_link->set_on_click([this] { on_register_clicked_(); });
+    register_link->set_on_click(
+        [this]
+        {
+            on_register_clicked_();
+        });
     register_link->set_visible(false);
     register_link_ = card->add_child(std::move(register_link));
 
-    cancel_btn_     = card->add_child(std::move(cancel));
-    status_lbl_     = card->add_child(std::move(status));
+    cancel_btn_ = card->add_child(std::move(cancel));
+    status_lbl_ = card->add_child(std::move(status));
 
     card_ = add_child(std::move(card));
 
-    auto settings = tk::create_widget<tk::Button>(
-        this, "", std::function<void()>{}, tk::Button::Variant::Icon);
+    auto settings =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     settings->set_icon(kWrenchSvg, 18.0f);
     settings->set_accessible_name(tk::tr("Settings"));
     settings->set_on_click(
         [this]
         {
             if (on_open_settings_)
+            {
                 on_open_settings_();
+            }
         });
     settings_btn_ = add_child(std::move(settings));
     update_settings_visibility_();
@@ -243,12 +279,16 @@ void LoginView::rebuild_tree()
             }
         }
         if (relayout_)
+        {
             relayout_();
+        }
     };
     browser->on_pick = [this](const std::string& domain)
     {
         if (!hs_field_)
+        {
             return;
+        }
         hs_field_->set_text(domain);
         hs_changed_(domain); // native controls don't all report programmatic edits
         hs_field_->set_focused(true);
@@ -256,16 +296,29 @@ void LoginView::rebuild_tree()
     browser->on_open_url = [this](const std::string& url)
     {
         if (open_browser_)
+        {
             open_browser_(url);
+        }
         else
+        {
             tesseract::Client::open_in_browser(url);
+        }
     };
-    browser->on_retry = [this] { load_server_list_(); };
+    browser->on_retry = [this]
+    {
+        load_server_list_();
+    };
     server_browser_ = add_child(std::move(browser));
 #endif
 
     auto alert_dlg = std::make_unique<AlertDialog>();
-    alert_dlg->on_layout_changed = [this] { if (relayout_) relayout_(); };
+    alert_dlg->on_layout_changed = [this]
+    {
+        if (relayout_)
+        {
+            relayout_();
+        }
+    };
     alert_ = add_child(std::move(alert_dlg));
 }
 
@@ -276,8 +329,9 @@ void LoginView::rebuild_tree()
 void LoginView::update_settings_visibility_()
 {
     if (settings_btn_)
-        settings_btn_->set_visible(mode_ == Mode::Initial &&
-                                   state_ == State::Form);
+    {
+        settings_btn_->set_visible(mode_ == Mode::Initial && state_ == State::Form);
+    }
 }
 
 void LoginView::set_state(State s)
@@ -285,14 +339,20 @@ void LoginView::set_state(State s)
     state_ = s;
     update_settings_visibility_();
     if (!sign_in_btn_ || !cancel_btn_)
+    {
         return;
+    }
     sign_in_btn_->set_visible(s == State::Form && oauth_available_);
     cancel_btn_->set_visible(mode_ == Mode::AddAccount || s == State::Waiting);
     if (register_link_)
+    {
         register_link_->set_visible(s == State::Form && registration_supported_);
+    }
 #ifdef TESSERACT_SERVER_BROWSER_ENABLED
     if (find_server_btn_)
+    {
         find_server_btn_->set_visible(!provisioned_ && s == State::Form);
+    }
 #endif
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     update_form_visibility_();
@@ -304,9 +364,13 @@ void LoginView::set_mode(Mode m)
     mode_ = m;
     update_settings_visibility_();
     if (cancel_btn_)
+    {
         cancel_btn_->set_visible(m == Mode::AddAccount || state_ == State::Waiting);
+    }
     if (relayout_)
+    {
         relayout_();
+    }
 }
 
 bool LoginView::cancel_visible() const
@@ -318,7 +382,9 @@ void LoginView::set_status(std::string message, bool is_error)
 {
     status_is_error_ = is_error;
     if (!status_lbl_)
+    {
         return;
+    }
     if (message.empty())
     {
         status_lbl_->set_visible(false);
@@ -340,13 +406,19 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
     {
         registration_supported_ = false;
         if (register_link_)
+        {
             register_link_->set_visible(false);
+        }
     }
 
     if (s == DiscoveryState::Resolved)
+    {
         resolved_base_url_ = detail;
+    }
     else if (s == DiscoveryState::Idle)
+    {
         resolved_base_url_.clear();
+    }
 
     // Probe before the discovery-label guard so the gates are independent of
     // that widget existing.
@@ -360,7 +432,9 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
     }
 
     if (!discovery_icon_lbl_ || !discovery_error_lbl_)
+    {
         return;
+    }
 
     switch (s)
     {
@@ -385,8 +459,8 @@ void LoginView::set_discovery_state(DiscoveryState s, std::string detail)
     case DiscoveryState::Failed:
         discovery_icon_lbl_->set_text("\xe2\x9c\x97");
         discovery_icon_lbl_->set_visible(true);
-        discovery_error_lbl_->set_text(
-            detail.empty() ? tk::tr("Could not reach this server") : detail);
+        discovery_error_lbl_->set_text(detail.empty() ? tk::tr("Could not reach this server")
+                                                      : detail);
         discovery_error_lbl_->set_visible(true);
         break;
     }
@@ -401,13 +475,22 @@ void LoginView::finish_init()
     hs_field_->set_placeholder(default_homeserver_ == kBuiltinDefaultHomeserver
                                    ? tk::tr("matrix.org")
                                    : default_homeserver_);
-    hs_field_->set_on_submit([this] { submit_homeserver_(); });
+    hs_field_->set_on_submit(
+        [this]
+        {
+            submit_homeserver_();
+        });
     hs_field_->set_on_changed(
-        [this](const std::string& text) { hs_changed_(text); });
+        [this](const std::string& text)
+        {
+            hs_changed_(text);
+        });
     hs_changed_("");
 #ifdef TESSERACT_SERVER_BROWSER_ENABLED
     if (!provisioned_)
+    {
         load_server_list_();
+    }
 #endif
 }
 
@@ -427,9 +510,13 @@ void LoginView::on_register_clicked_()
 void LoginView::open_server_browser()
 {
     if (!server_browser_ || provisioned_)
+    {
         return;
+    }
     if (server_browser_->state() != ServerBrowserOverlay::State::Ready)
+    {
         load_server_list_();
+    }
     server_browser_->open();
     request_server_icons_();
 }
@@ -438,9 +525,13 @@ void LoginView::load_server_list_()
 {
     auto* snap = client_;
     if (!snap || !server_browser_)
+    {
         return;
+    }
     if (server_list_loading_)
+    {
         return;
+    }
     server_list_loading_ = true;
     server_browser_->set_state(ServerBrowserOverlay::State::Loading);
     const uint32_t gen = ++server_list_gen_;
@@ -448,26 +539,36 @@ void LoginView::load_server_list_()
     {
         auto list = snap->load_server_list();
         if (gen != server_list_gen_.load() || !post_to_ui_)
+        {
             return;
+        }
         post_to_ui_(
             [this, gen, list = std::move(list)]
             {
                 if (gen != server_list_gen_.load())
+                {
                     return;
+                }
                 server_list_loading_ = false;
                 apply_server_list_(list);
             });
     };
     if (run_async_)
+    {
         run_async_(std::move(body));
+    }
     else
+    {
         std::thread(std::move(body)).detach();
+    }
 }
 
 void LoginView::apply_server_list_(const tesseract::Client::ServerList& list)
 {
     if (!server_browser_)
+    {
         return;
+    }
     if (!list.ok)
     {
         server_browser_->set_state(ServerBrowserOverlay::State::Failed);
@@ -488,18 +589,24 @@ void LoginView::apply_server_list_(const tesseract::Client::ServerList& list)
     std::mt19937 rng{std::random_device{}()};
     server_icon_targets_.clear();
     for (const auto& e : entries)
+    {
         server_icon_targets_.emplace_back(e.client_domain, e.homepage);
+    }
     server_browser_->set_servers(
         ServerBrowserOverlay::arrange_for_display(std::move(entries), rng));
     if (server_browser_->is_open())
+    {
         request_server_icons_();
+    }
 }
 
 void LoginView::request_server_icons_()
 {
     auto* snap = client_;
     if (!snap || !server_browser_ || icons_fetching_)
+    {
         return;
+    }
     struct Work
     {
         std::vector<std::pair<std::string, std::string>> todo;
@@ -508,12 +615,20 @@ void LoginView::request_server_icons_()
     };
     auto work = std::make_shared<Work>();
     for (const auto& t : server_icon_targets_)
+    {
         if (!t.second.empty() && !server_browser_->has_icon(t.first))
+        {
             work->todo.push_back(t);
+        }
+    }
     if (work->todo.empty())
+    {
         return;
+    }
     if (!icon_cache_)
+    {
         icon_cache_ = std::make_shared<tk::MediaDiskCache>(tesseract::cache_dir() / "media");
+    }
     icons_fetching_ = true;
     const uint32_t gen = icon_gen_.load();
     const std::size_t workers = std::min<std::size_t>(4, work->todo.size());
@@ -526,7 +641,9 @@ void LoginView::request_server_icons_()
             {
                 const std::size_t i = work->next.fetch_add(1);
                 if (i >= work->todo.size() || gen != icon_gen_.load())
+                {
                     break;
+                }
                 const auto& [domain, homepage] = work->todo[i];
                 const tk::CacheKey key = tk::CacheKey::server_icon(homepage);
                 auto bytes = cache->load(key);
@@ -534,29 +651,43 @@ void LoginView::request_server_icons_()
                 {
                     bytes = snap->fetch_server_icon(homepage);
                     if (!bytes.empty())
+                    {
                         cache->store(key, bytes);
+                    }
                 }
                 if (bytes.empty() || gen != icon_gen_.load() || !post_to_ui_)
+                {
                     continue;
+                }
                 post_to_ui_(
                     [this, gen, domain = domain, bytes = std::move(bytes)]() mutable
                     {
                         if (gen == icon_gen_.load() && server_browser_)
+                        {
                             server_browser_->set_icon(domain, std::move(bytes));
+                        }
                     });
             }
             if (work->active.fetch_sub(1) == 1 && gen == icon_gen_.load() && post_to_ui_)
+            {
                 post_to_ui_(
                     [this, gen]
                     {
                         if (gen == icon_gen_.load())
+                        {
                             icons_fetching_ = false;
+                        }
                     });
+            }
         };
         if (run_async_)
+        {
             run_async_(std::move(body));
+        }
         else
+        {
             std::thread(std::move(body)).detach();
+        }
     }
 }
 #endif // TESSERACT_SERVER_BROWSER_ENABLED
@@ -565,13 +696,23 @@ void LoginView::request_server_icons_()
 void LoginView::finish_password_init()
 {
     username_field_->set_placeholder(tk::tr("@user:example.org"));
-    username_field_->set_on_submit([this] { submit_password_(); });
+    username_field_->set_on_submit(
+        [this]
+        {
+            submit_password_();
+        });
     username_field_->set_visible(password_available_);
     if (auto user_id = tesseract::provisioned_user_id())
+    {
         username_field_->set_text(*user_id);
+    }
 
     password_field_->set_password(true);
-    password_field_->set_on_submit([this] { submit_password_(); });
+    password_field_->set_on_submit(
+        [this]
+        {
+            submit_password_();
+        });
     password_field_->set_visible(password_available_);
 }
 #endif
@@ -580,7 +721,9 @@ void LoginView::set_status_message(const std::string& msg)
 {
     set_status(msg);
     if (relayout_)
+    {
         relayout_();
+    }
 }
 
 void LoginView::set_client(tesseract::Client* c)
@@ -613,7 +756,9 @@ void LoginView::shutdown()
     ++registration_gen_;
     cancelled_.store(true);
     if (client_)
+    {
         client_->cancel_oauth();
+    }
     join_worker_();
 }
 
@@ -622,7 +767,9 @@ void LoginView::reset()
     ++discovery_gen_;
     cancelled_.store(true);
     if (client_)
+    {
         client_->cancel_oauth();
+    }
     join_worker_();
     cancelled_.store(false);
 
@@ -641,12 +788,18 @@ void LoginView::reset()
     }
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     if (username_field_)
+    {
         username_field_->set_enabled(true);
+    }
     if (password_field_)
+    {
         password_field_->set_enabled(true);
+    }
 #endif
     if (relayout_)
+    {
         relayout_();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -656,10 +809,14 @@ void LoginView::reset()
 void LoginView::start_oauth_(bool register_account)
 {
     if (!client_)
+    {
         return;
+    }
     std::string hs_raw = tesseract::text::trim(hs_field_->text());
     if (hs_raw.empty())
+    {
         hs_raw = default_homeserver_; // empty field shows the placeholder default
+    }
 
     // OAuth login hint (prefills the username on the server): a Matrix ID typed
     // into the homeserver field wins over the provisioned one.
@@ -667,9 +824,13 @@ void LoginView::start_oauth_(bool register_account)
     if (!register_account)
     {
         if (hs_raw.size() > 1 && hs_raw.front() == '@' && hs_raw.find(':') != std::string::npos)
+        {
             user_id_hint = hs_raw;
+        }
         else if (auto user_id = tesseract::provisioned_user_id())
+        {
             user_id_hint = *user_id;
+        }
     }
 
     // Use the pre-resolved URL when available; extract server name from a
@@ -697,7 +858,9 @@ void LoginView::start_oauth_(bool register_account)
     join_worker_();
     cancelled_.store(false);
     if (on_begin_oauth_)
+    {
         on_begin_oauth_();
+    }
 
     auto* c = client_; // snapshot: set_client() may race with this worker
     worker_ = std::thread(
@@ -705,8 +868,10 @@ void LoginView::start_oauth_(bool register_account)
         {
             auto flow = c->begin_oauth(hs, register_account, user_id_hint);
             if (cancelled_.load())
+            {
                 return;
-            bool        ok      = static_cast<bool>(flow);
+            }
+            bool ok = static_cast<bool>(flow);
             std::string payload = ok ? flow.auth_url : flow.message;
             post_to_ui_(
                 [this, ok, payload = std::move(payload)]
@@ -725,12 +890,18 @@ void LoginView::update_method_controls_enabled_()
 {
     const bool ready = homeserver_submit_action() != SubmitAction::Wait;
     if (sign_in_btn_)
+    {
         sign_in_btn_->set_enabled(ready);
+    }
     if (register_link_)
+    {
         register_link_->set_enabled(ready);
+    }
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     if (password_toggle_btn_)
+    {
         password_toggle_btn_->set_enabled(ready);
+    }
 #endif
 }
 
@@ -739,15 +910,20 @@ LoginView::SubmitAction LoginView::homeserver_submit_action() const
     // Still checking what the server offers (its sign-in methods and OAuth
     // support): the OAuth default isn't an answer yet, and a password-only
     // server would get an OAuth attempt.
-    if (!discovery_settled_ ||
-        (discovery_state_ == DiscoveryState::Resolved && !oauth_probe_done_))
+    if (!discovery_settled_ || (discovery_state_ == DiscoveryState::Resolved && !oauth_probe_done_))
+    {
         return SubmitAction::Wait;
+    }
     // Otherwise the same as the button the form shows.
     if (oauth_available_)
+    {
         return SubmitAction::OAuth;
+    }
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     if (password_available_)
+    {
         return SubmitAction::Password;
+    }
 #endif
     return SubmitAction::Nothing;
 }
@@ -761,42 +937,53 @@ void LoginView::submit_homeserver_()
         submit_status_shown_ = false;
     }
     if (state_ != State::Form)
+    {
         return;
+    }
     switch (homeserver_submit_action())
     {
-        case SubmitAction::Wait:
-            // Say the Enter was taken; it goes ahead once the check is done.
-            submit_pending_      = true;
-            submit_status_shown_ = true;
-            set_status(tk::tr("Checking how you can sign in to this server\xe2\x80\xa6"));
-            if (relayout_) relayout_();
-            break;
-        case SubmitAction::OAuth:
-            start_oauth_(false);
-            break;
-        case SubmitAction::Password:
+    case SubmitAction::Wait:
+        // Say the Enter was taken; it goes ahead once the check is done.
+        submit_pending_ = true;
+        submit_status_shown_ = true;
+        set_status(tk::tr("Checking how you can sign in to this server\xe2\x80\xa6"));
+        if (relayout_)
+        {
+            relayout_();
+        }
+        break;
+    case SubmitAction::OAuth:
+        start_oauth_(false);
+        break;
+    case SubmitAction::Password:
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
-            switch_to_password_form_();
+        switch_to_password_form_();
 #endif
-            break;
-        case SubmitAction::Nothing:
-            break;
+        break;
+    case SubmitAction::Nothing:
+        break;
     }
 }
 
 void LoginView::run_pending_submit_()
 {
     if (submit_pending_ && homeserver_submit_action() != SubmitAction::Wait)
+    {
         submit_homeserver_();
+    }
 }
 
 void LoginView::apply_discovery_result_(bool ok, const std::string& base_url_or_error,
                                         bool supports_password)
 {
     if (ok)
+    {
         set_discovery_state(DiscoveryState::Resolved, base_url_or_error);
+    }
     else
+    {
         set_discovery_state(DiscoveryState::Failed, base_url_or_error);
+    }
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     // Strict: the toggle button only ever appears once discovery positively
     // confirms (Resolved) the server supports m.login.password. Any other
@@ -819,7 +1006,9 @@ void LoginView::oauth_probe_done_result_(bool supported)
     update_oauth_availability_(supported);
     update_method_controls_enabled_();
     if (relayout_)
+    {
         relayout_();
+    }
     run_pending_submit_();
 }
 
@@ -827,36 +1016,47 @@ void LoginView::probe_registration_support_(const std::string& base_url)
 {
     auto* snap = client_;
     if (!snap || base_url.empty())
+    {
         return;
+    }
     uint32_t gen = registration_gen_.load();
     auto body = [this, gen, snap, base_url]
     {
         if (gen != registration_gen_.load())
+        {
             return;
+        }
         bool supported = snap->homeserver_supports_registration(base_url);
         if (gen != registration_gen_.load())
+        {
             return;
+        }
         post_to_ui_(
             [this, gen, supported]
             {
                 if (gen != registration_gen_.load())
+                {
                     return;
+                }
                 registration_supported_ = supported;
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
                 update_form_visibility_();
 #else
                 if (register_link_)
-                    register_link_->set_visible(state_ == State::Form &&
-                                                supported);
+                    register_link_->set_visible(state_ == State::Form && supported);
 #endif
                 if (relayout_)
                     relayout_();
             });
     };
     if (run_async_)
+    {
         run_async_(std::move(body));
+    }
     else
+    {
         std::thread(std::move(body)).detach();
+    }
 }
 
 void LoginView::probe_oauth_support_(const std::string& base_url)
@@ -873,22 +1073,32 @@ void LoginView::probe_oauth_support_(const std::string& base_url)
     auto body = [this, gen, snap, base_url]
     {
         if (gen != oauth_gen_.load())
+        {
             return;
+        }
         bool supported = snap->homeserver_supports_oauth(base_url);
         if (gen != oauth_gen_.load())
+        {
             return;
+        }
         post_to_ui_(
             [this, gen, supported]
             {
                 if (gen != oauth_gen_.load())
+                {
                     return;
+                }
                 oauth_probe_done_result_(supported);
             });
     };
     if (run_async_)
+    {
         run_async_(std::move(body));
+    }
     else
+    {
         std::thread(std::move(body)).detach();
+    }
 }
 
 void LoginView::hs_changed_(const std::string& text)
@@ -900,8 +1110,8 @@ void LoginView::hs_changed_(const std::string& text)
 
     uint32_t gen = ++discovery_gen_;
     // A different server: an Enter pressed for the old one no longer applies.
-    submit_pending_    = false;
-    oauth_probe_done_  = false;
+    submit_pending_ = false;
+    oauth_probe_done_ = false;
     discovery_settled_ = false;
     if (submit_status_shown_)
     {
@@ -918,7 +1128,9 @@ void LoginView::hs_changed_(const std::string& text)
 
     auto* snap = client_;
     if (!snap)
+    {
         return;
+    }
 
     // Route through the host's `run_async` thunk so the worker is tracked
     // by ShellBase::workers_in_flight_ and drained on shutdown.  Without
@@ -932,15 +1144,21 @@ void LoginView::hs_changed_(const std::string& text)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         if (gen != discovery_gen_.load())
+        {
             return;
+        }
         auto result = snap->discover_homeserver(effective);
         if (gen != discovery_gen_.load())
+        {
             return;
+        }
         post_to_ui_(
             [this, gen, result = std::move(result)]
             {
                 if (gen != discovery_gen_.load())
+                {
                     return;
+                }
                 apply_discovery_result_(static_cast<bool>(result),
                                         result ? result.base_url : result.error,
                                         result && result.supports_password);
@@ -965,25 +1183,33 @@ void LoginView::begin_completed_(bool ok, std::string url)
         set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {url}), true);
         set_state(State::Form);
         if (hs_field_)
+        {
             hs_field_->set_enabled(true);
+        }
         relayout_();
         return;
     }
 
     if (open_browser_)
+    {
         open_browser_(url);
+    }
     else
+    {
         tesseract::Client::open_in_browser(url);
+    }
 
     cancelled_.store(false);
     auto* c = client_;
     worker_ = std::thread(
         [this, c]
         {
-            auto        res = c->await_oauth();
+            auto res = c->await_oauth();
             if (cancelled_.load())
+            {
                 return;
-            bool        ok  = static_cast<bool>(res);
+            }
+            bool ok = static_cast<bool>(res);
             std::string msg = res.message;
             post_to_ui_(
                 [this, ok, msg = std::move(msg)]
@@ -999,13 +1225,17 @@ void LoginView::await_completed_(bool ok, std::string err)
     if (ok)
     {
         if (on_success_)
+        {
             on_success_();
+        }
         return;
     }
     set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err}), true);
     set_state(State::Form);
     if (hs_field_)
+    {
         hs_field_->set_enabled(true);
+    }
     relayout_();
 }
 
@@ -1013,17 +1243,23 @@ void LoginView::cancel_()
 {
     cancelled_.store(true);
     if (client_)
+    {
         client_->cancel_oauth();
+    }
     set_status(tk::tr("Cancelling\xe2\x80\xa6"));
     relayout_();
     join_worker_();
     set_status("");
     set_state(State::Form);
     if (hs_field_)
+    {
         hs_field_->set_enabled(true);
+    }
     relayout_();
     if (on_cancel_done_)
+    {
         on_cancel_done_();
+    }
 }
 
 void LoginView::update_oauth_availability_(bool available)
@@ -1033,7 +1269,9 @@ void LoginView::update_oauth_availability_(bool available)
     update_form_visibility_();
 #else
     if (sign_in_btn_)
+    {
         sign_in_btn_->set_visible(state_ == State::Form && oauth_available_);
+    }
 #endif
 }
 
@@ -1049,9 +1287,13 @@ void LoginView::switch_to_password_form_()
     form_kind_ = FormKind::Password;
     update_form_visibility_();
     if (relayout_)
+    {
         relayout_();
+    }
     if (username_field_)
+    {
         username_field_->set_focused(true);
+    }
 }
 
 void LoginView::switch_to_oauth_form_()
@@ -1060,61 +1302,107 @@ void LoginView::switch_to_oauth_form_()
     // Clear the typed password as a minor security nicety; keep the typed
     // username since re-entering it is pure friction with no benefit.
     if (password_field_)
+    {
         password_field_->set_text("");
+    }
     update_form_visibility_();
     if (relayout_)
+    {
         relayout_();
+    }
 }
 
 void LoginView::update_form_visibility_()
 {
-    bool oauth_form_visible    = state_ == State::Form && form_kind_ == FormKind::OAuthOnly;
+    bool oauth_form_visible = state_ == State::Form && form_kind_ == FormKind::OAuthOnly;
     bool password_form_visible = state_ == State::Form && form_kind_ == FormKind::Password;
 
-    if (hs_input_label_) hs_input_label_->set_visible(oauth_form_visible);
-    if (hs_field_)       hs_field_->set_visible(oauth_form_visible);
-    if (hs_help_btn_)    hs_help_btn_->set_visible(oauth_form_visible);
+    if (hs_input_label_)
+    {
+        hs_input_label_->set_visible(oauth_form_visible);
+    }
+    if (hs_field_)
+    {
+        hs_field_->set_visible(oauth_form_visible);
+    }
+    if (hs_help_btn_)
+    {
+        hs_help_btn_->set_visible(oauth_form_visible);
+    }
 #ifdef TESSERACT_SERVER_BROWSER_ENABLED
     if (find_server_btn_)
+    {
         find_server_btn_->set_visible(!provisioned_ && oauth_form_visible);
+    }
 #endif
     if (discovery_icon_lbl_)
+    {
         discovery_icon_lbl_->set_visible(oauth_form_visible &&
-                                    discovery_state_ != DiscoveryState::Idle);
+                                         discovery_state_ != DiscoveryState::Idle);
+    }
     if (discovery_error_lbl_)
+    {
         discovery_error_lbl_->set_visible(oauth_form_visible &&
-                                    discovery_state_ == DiscoveryState::Failed);
+                                          discovery_state_ == DiscoveryState::Failed);
+    }
     if (sign_in_btn_)
+    {
         sign_in_btn_->set_visible(oauth_form_visible && oauth_available_);
+    }
     if (password_toggle_btn_)
+    {
         password_toggle_btn_->set_visible(oauth_form_visible && password_available_);
+    }
     if (register_link_)
+    {
         register_link_->set_visible(oauth_form_visible && registration_supported_);
+    }
 
-    if (username_input_label_) username_input_label_->set_visible(password_form_visible);
-    if (username_field_)       username_field_->set_visible(password_form_visible);
-    if (password_input_label_) password_input_label_->set_visible(password_form_visible);
-    if (password_field_)       password_field_->set_visible(password_form_visible);
-    if (password_sign_in_btn_) password_sign_in_btn_->set_visible(password_form_visible);
-    if (back_btn_)              back_btn_->set_visible(password_form_visible);
+    if (username_input_label_)
+    {
+        username_input_label_->set_visible(password_form_visible);
+    }
+    if (username_field_)
+    {
+        username_field_->set_visible(password_form_visible);
+    }
+    if (password_input_label_)
+    {
+        password_input_label_->set_visible(password_form_visible);
+    }
+    if (password_field_)
+    {
+        password_field_->set_visible(password_form_visible);
+    }
+    if (password_sign_in_btn_)
+    {
+        password_sign_in_btn_->set_visible(password_form_visible);
+    }
+    if (back_btn_)
+    {
+        back_btn_->set_visible(password_form_visible);
+    }
 
     // Cancel button: AddAccount mode shows it, except while a password login
     // is in flight — that call has no cancellation support (see
     // submit_password_), so leaving Cancel clickable would block the caller
     // inside join_worker_() for up to the HTTP client's timeout.
     if (cancel_btn_)
-        cancel_btn_->set_visible(
-            (mode_ == Mode::AddAccount || state_ == State::Waiting) &&
-            !(state_ == State::Waiting && form_kind_ == FormKind::Password));
+    {
+        cancel_btn_->set_visible((mode_ == Mode::AddAccount || state_ == State::Waiting) &&
+                                 !(state_ == State::Waiting && form_kind_ == FormKind::Password));
+    }
 }
 
 void LoginView::submit_password_()
 {
     if (!client_ || !username_field_ || !password_field_)
+    {
         return;
+    }
 
     std::string username = tesseract::text::trim(username_field_->text());
-    std::string password  = password_field_->text(); // never trim a password
+    std::string password = password_field_->text(); // never trim a password
     if (username.empty() || password.empty())
     {
         set_status(tk::tr("Please enter your Matrix ID and password."), true);
@@ -1138,7 +1426,9 @@ void LoginView::submit_password_()
         hs = hs_raw;
     }
     if (hs.empty())
+    {
         hs = default_homeserver_; // empty field shows the placeholder default
+    }
 
     set_status("");
     hs_field_->set_enabled(false);
@@ -1152,7 +1442,9 @@ void LoginView::submit_password_()
     join_worker_();
     cancelled_.store(false);
     if (on_begin_oauth_)
+    {
         on_begin_oauth_(); // arms the temp dir; auth-agnostic despite the name
+    }
 
     auto* c = client_; // snapshot: set_client() may race with this worker
     worker_ = std::thread(
@@ -1160,8 +1452,10 @@ void LoginView::submit_password_()
         {
             auto res = c->login_password(hs, username, password);
             if (cancelled_.load())
+            {
                 return;
-            bool        ok  = static_cast<bool>(res);
+            }
+            bool ok = static_cast<bool>(res);
             std::string msg = res.message;
             post_to_ui_(
                 [this, ok, msg = std::move(msg)]
@@ -1177,17 +1471,25 @@ void LoginView::password_login_completed_(bool ok, std::string err)
     if (ok)
     {
         if (on_success_)
+        {
             on_success_();
+        }
         return;
     }
     set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {err}), true);
     set_state(State::Form);
     if (hs_field_)
+    {
         hs_field_->set_enabled(true);
+    }
     if (username_field_)
+    {
         username_field_->set_enabled(true);
+    }
     if (password_field_)
+    {
         password_field_->set_enabled(true);
+    }
     relayout_();
 }
 #endif
@@ -1195,7 +1497,9 @@ void LoginView::password_login_completed_(bool ok, std::string err)
 void LoginView::join_worker_()
 {
     if (worker_.joinable())
+    {
         worker_.join();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1211,7 +1515,9 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
     if (!card_)
+    {
         return;
+    }
 
 #if TESSERACT_HAS_BRAND_ICON
     if (!brand_icon_)
@@ -1219,13 +1525,15 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         brand_icon_ = ctx.factory.decode_image(
             std::span<const std::uint8_t>(kBrandIconPng, sizeof(kBrandIconPng)));
         if (brand_icon_ && brand_avatar_)
+        {
             brand_avatar_->set_image(brand_icon_.get());
+        }
     }
 #endif
 
     tk::Size card_size = card_->measure(ctx, {kLoginCardWidth, bounds.h});
-    float    card_w    = std::min(kLoginCardWidth, bounds.w);
-    float    card_h    = std::min(card_size.h, bounds.h);
+    float card_w = std::min(kLoginCardWidth, bounds.w);
+    float card_h = std::min(card_size.h, bounds.h);
 
     // Center using the height the card would have if every row that can
     // toggle on its own (an async probe resolving, a sign-in error) were
@@ -1242,7 +1550,9 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     auto reserve_if_hidden = [&](tk::Widget* w)
     {
         if (w && !w->visible())
+        {
             max_card_h += w->measure(ctx, inner_constraints).h + kLoginCardSpacing;
+        }
     };
     reserve_if_hidden(discovery_error_lbl_);
     reserve_if_hidden(sign_in_btn_);
@@ -1262,16 +1572,21 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         constexpr float kSettingsBtnSize = 36.0f;
         constexpr float kSettingsBtnInset = 12.0f;
         settings_btn_->measure(ctx, {kSettingsBtnSize, kSettingsBtnSize});
-        settings_btn_->arrange(
-            ctx, {bounds.x + bounds.w - kSettingsBtnSize - kSettingsBtnInset,
-                  bounds.y + kSettingsBtnInset, kSettingsBtnSize,
-                  kSettingsBtnSize});
+        settings_btn_->arrange(ctx,
+                               {bounds.x + bounds.w - kSettingsBtnSize - kSettingsBtnInset,
+                                bounds.y + kSettingsBtnInset, kSettingsBtnSize, kSettingsBtnSize});
     }
 
 #ifdef TESSERACT_SERVER_BROWSER_ENABLED
-    if (server_browser_) server_browser_->arrange(ctx, bounds);
+    if (server_browser_)
+    {
+        server_browser_->arrange(ctx, bounds);
+    }
 #endif
-    if (alert_) alert_->arrange(ctx, bounds);
+    if (alert_)
+    {
+        alert_->arrange(ctx, bounds);
+    }
 }
 
 void LoginView::paint_before_children(tk::PaintCtx& ctx)
@@ -1279,7 +1594,9 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
     if (!card_)
+    {
         return;
+    }
 
     tk::Rect cb = card_->bounds();
     ctx.canvas.fill_rounded_rect(cb, 10.0f, ctx.theme.palette.chrome_bg);
@@ -1308,9 +1625,11 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
 #endif
 
     if (status_lbl_)
-        status_lbl_->set_colour(
-            status_is_error_ ? std::optional<tk::Color>(ctx.theme.palette.destructive)
-                              : std::nullopt);
+    {
+        status_lbl_->set_colour(status_is_error_
+                                    ? std::optional<tk::Color>(ctx.theme.palette.destructive)
+                                    : std::nullopt);
+    }
     if (discovery_icon_lbl_)
     {
         switch (discovery_state_)
@@ -1327,8 +1646,9 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
         }
     }
     if (discovery_error_lbl_)
+    {
         discovery_error_lbl_->set_colour(ctx.theme.palette.destructive);
-
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,29 +1657,45 @@ void LoginView::paint_before_children(tk::PaintCtx& ctx)
 
 void LoginView::show_restore_error(std::string body, std::function<void()> retry_cb)
 {
-    if (!alert_) return;
+    if (!alert_)
+    {
+        return;
+    }
     AlertDialog::Options opts;
-    opts.title           = tk::tr("Connection Error");
-    opts.body            = std::move(body);
-    opts.primary_label   = tk::tr("Retry");
+    opts.title = tk::tr("Connection Error");
+    opts.body = std::move(body);
+    opts.primary_label = tk::tr("Retry");
     opts.secondary_label = tk::tr("Sign In");
-    alert_->open(std::move(opts),
-                 std::move(retry_cb),
-                 [this] { if (alert_) alert_->close(); });
+    alert_->open(std::move(opts), std::move(retry_cb),
+                 [this]
+                 {
+                     if (alert_)
+                     {
+                         alert_->close();
+                     }
+                 });
 }
 
 void LoginView::show_offline_error(std::function<void()> retry_cb)
 {
-    if (!alert_) return;
+    if (!alert_)
+    {
+        return;
+    }
     AlertDialog::Options opts;
-    opts.title           = tk::tr("No Internet Connection");
-    opts.body            = tk::tr("Tesseract couldn't detect an internet connection. "
-                                  "Check your Wi-Fi or network settings, then try again.");
-    opts.primary_label   = tk::tr("Retry");
+    opts.title = tk::tr("No Internet Connection");
+    opts.body = tk::tr("Tesseract couldn't detect an internet connection. "
+                       "Check your Wi-Fi or network settings, then try again.");
+    opts.primary_label = tk::tr("Retry");
     opts.secondary_label = tk::tr("Sign In");
-    alert_->open(std::move(opts),
-                 std::move(retry_cb),
-                 [this] { if (alert_) alert_->close(); });
+    alert_->open(std::move(opts), std::move(retry_cb),
+                 [this]
+                 {
+                     if (alert_)
+                     {
+                         alert_->close();
+                     }
+                 });
 }
 
 } // namespace tesseract::views

@@ -38,15 +38,15 @@ struct PendingMediaReq
     std::uint64_t group_id = 0;
     // Exactly one is set, matching the request type.
     std::function<void(std::vector<std::uint8_t>&&)> on_bytes;
-    std::function<void(std::string&&)>               on_preview;
+    std::function<void(std::string&&)> on_preview;
     // Run when the request is cancelled (room switch) instead of completing.
     // Clears the caller's dedup-set key so the media can be re-requested on
     // re-entry; without this the key would stay stuck in-flight forever.
-    std::function<void()>                            on_cancel;
+    std::function<void()> on_cancel;
     // Display/cache key this request feeds (the row's media fetch_token), or
     // empty for requests not tied to a visible row. Used to drop the
     // media_key_to_req_ reverse-map entry when the request ends.
-    std::string                                      priority_key;
+    std::string priority_key;
 };
 
 struct PendingMediaStream
@@ -145,8 +145,8 @@ struct MediaPrefetchBatch
 // not via an out-param — see that function's doc comment for why).
 struct WindowedStreamedDecodeCallbacks
 {
-    std::function<void(std::unique_ptr<tk::Image>, int,
-                       std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>
+    std::function<void(std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession>,
+                       std::size_t)>
         on_first;
     std::function<void(int, std::unique_ptr<tk::Image>, int)> on_extra;
 };
@@ -178,7 +178,9 @@ inline std::string media_gif_src_disk_key(const std::string& url)
 inline std::uint64_t media_group_for_room(const std::string& room_id)
 {
     if (room_id.empty())
+    {
         return 0;
+    }
     std::uint64_t h = std::hash<std::string>{}(room_id);
     return h == 0 ? 1 : h;
 }

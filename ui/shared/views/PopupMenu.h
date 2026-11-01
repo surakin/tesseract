@@ -42,16 +42,16 @@ namespace tesseract::views
 class PopupMenu : public tk::Widget
 {
 public:
-    static constexpr float kWidth     = 180.0f;
+    static constexpr float kWidth = 180.0f;
     static constexpr float kRowHeight = 34.0f;
     static constexpr float kSeparatorHeight = 1.0f; // thin rule, no margin
-    static constexpr float kGlyphX   = 10.0f;  // icon left margin
-    static constexpr float kTextX    = 34.0f;  // label left margin (with icon)
-    static constexpr float kTextXNoIcon = 12.0f; // label left margin (no icon)
+    static constexpr float kGlyphX = 10.0f;         // icon left margin
+    static constexpr float kTextX = 34.0f;          // label left margin (with icon)
+    static constexpr float kTextXNoIcon = 12.0f;    // label left margin (no icon)
 
     struct Item
     {
-        std::string glyph;        // Unicode icon character(s); empty = no icon
+        std::string glyph; // Unicode icon character(s); empty = no icon
         // Optional SVG icon (embedded k*Svg byte span). When non-empty it is
         // rasterized + tinted and drawn instead of `glyph`. Points at static
         // data, so the span stays valid for the menu's lifetime.
@@ -76,10 +76,16 @@ public:
     // menu would clip the screen's bottom.
     void open(std::vector<Item> items, tk::Rect anchor_world);
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     // Test-only: the items passed to the most recent open() call.
-    const std::vector<Item>& items_for_test() const { return items_; }
+    const std::vector<Item>& items_for_test() const
+    {
+        return items_;
+    }
 
     // Fires when an item is selected or the menu is otherwise dismissed via
     // its own row interaction. Owner is expected to call close() here.
@@ -94,31 +100,31 @@ public:
     // Repositions the popup surface (if open) each layout pass. The bounds
     // param is unused — a popup surface positions itself against the anchor
     // + the whole screen, not this widget's own local bounds.
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     // Only registers this widget as the host's active popup while open, for
     // click-anywhere-dismiss — never draws (drawing happens inside the
     // native popup surface's own separate paint pass).
-    void     paint(tk::PaintCtx&) override;
-    void     on_theme_changed(const tk::Theme&) override;
+    void paint(tk::PaintCtx&) override;
+    void on_theme_changed(const tk::Theme&) override;
     // Fired by Host::dispatch_pointer_down when a click lands outside this
     // registered popup (see register_popup()'s doc comment) — the
     // click-anywhere-dismiss path now that there's no backdrop of our own to
     // detect it locally. Fires on_dismissed(), matching the existing
     // contract owners already wire to call close().
-    void     on_popup_dismiss() override;
+    void on_popup_dismiss() override;
     // While open (the host routes keys to the active popup first): Up/Down
     // (wrapping) and Home/End move the highlight over enabled items, Enter/
     // Space activate it, Escape/Tab dismiss.
-    bool     on_key_down(const tk::KeyEvent& e) override;
+    bool on_key_down(const tk::KeyEvent& e) override;
 
 private:
     class MenuList; // popup surface's root widget — defined in the .cpp
 
     void reposition_(); // computes size + positions popup_surface_
 
-    bool              open_   = false;
+    bool open_ = false;
     std::vector<Item> items_;
-    tk::Rect          anchor_world_{}; // anchor in local/world coords, set by open()
+    tk::Rect anchor_world_{}; // anchor in local/world coords, set by open()
 
     std::unique_ptr<tk::PopupSurfaceHandle> popup_surface_;
     MenuList* list_ = nullptr; // owned by popup_surface_ via set_root()

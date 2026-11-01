@@ -27,8 +27,7 @@ using tesseract::text::name_matches;
 
 // ─────────────────────────────────────────────────────────────────────────
 
-class QuickSwitcher::Adapter : public tk::ListAdapter,
-                               public tk::ListAdapterAccessibility
+class QuickSwitcher::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
     explicit Adapter(QuickSwitcher& owner) : owner_(owner)
@@ -45,8 +44,8 @@ public:
         return kRowH;
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool selected, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override
     {
         if (owner_.mode_ == Mode::User)
         {
@@ -88,11 +87,12 @@ public:
             }
         }
 
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize,
-                    room.name, pal.avatar_initials_bg, pal.avatar_initials_text);
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize, room.name,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
 
         // Room name — single line, ellipsised to the row width.
-        const float text_x = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
+        const float text_x =
+            bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
         const float text_w = std::max(0.0f, bounds.x + bounds.w - kQuickSwitcherPadX - text_x);
 
         // Single-line, ellipsised. Note: do NOT set max_height/valign here — a
@@ -102,20 +102,19 @@ public:
         ns.role = tk::FontRole::SidebarName;
         ns.trim = tk::TextTrim::Ellipsis;
         ns.max_width = text_w;
-        auto name_lo = ctx.factory.build_text(
-            room.name.empty() ? tk::tr("Unnamed room") : room.name, ns);
+        auto name_lo =
+            ctx.factory.build_text(room.name.empty() ? tk::tr("Unnamed room") : room.name, ns);
         if (name_lo)
         {
             const tk::Size sz = name_lo->measure();
-            ctx.canvas.draw_text(*name_lo,
-                                 {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
+            ctx.canvas.draw_text(*name_lo, {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
                                  pal.text_primary);
         }
     }
 
     // User-mode row: avatar + display name (top) + mxid (muted, below).
-    void paint_user_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                        bool selected, bool hovered)
+    void paint_user_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                        bool hovered)
     {
         if (index >= owner_.user_results_.size())
         {
@@ -149,12 +148,12 @@ public:
             }
         }
 
-        const std::string& disc_name =
-            user.display_name.empty() ? user.user_id : user.display_name;
-        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize,
-                    disc_name, pal.avatar_initials_bg, pal.avatar_initials_text);
+        const std::string& disc_name = user.display_name.empty() ? user.user_id : user.display_name;
+        draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize, disc_name,
+                    pal.avatar_initials_bg, pal.avatar_initials_text);
 
-        const float text_x = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
+        const float text_x =
+            bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
         const float text_w = std::max(0.0f, bounds.x + bounds.w - kQuickSwitcherPadX - text_x);
 
         // Display name (primary, upper line).
@@ -190,18 +189,21 @@ public:
     // ── tk::ListAdapterAccessibility ───────────────────────────────────
     tk::Role access_role_for_row(std::size_t index) const override
     {
-        return index < owner_.active_count_() ? tk::Role::ListItem
-                                              : tk::Role::None;
+        return index < owner_.active_count_() ? tk::Role::ListItem : tk::Role::None;
     }
     std::string access_name_for_row(std::size_t index) const override
     {
         if (index >= owner_.active_count_())
+        {
             return {};
+        }
         if (owner_.mode_ == Mode::User)
         {
             const auto& u = owner_.user_results_[index];
             if (u.display_name.empty())
+            {
                 return u.user_id;
+            }
             return tk::trf(tk::tr("{0} ({1})"), {u.display_name, u.user_id});
         }
         const auto& r = owner_.filtered_[index];
@@ -210,7 +212,9 @@ public:
     bool access_activate_row(std::size_t index) override
     {
         if (index >= owner_.active_count_() || !owner_.list_)
+        {
             return false;
+        }
         owner_.list_->set_selected_index(static_cast<int>(index));
         owner_.activate_selected(); // same path as on_row_clicked
         return true;
@@ -222,24 +226,34 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-QuickSwitcher::QuickSwitcher()
-    : adapter_(std::make_unique<Adapter>(*this))
+QuickSwitcher::QuickSwitcher() : adapter_(std::make_unique<Adapter>(*this))
 {
     tk::Widget::set_visible(false);
 
     if (host())
     {
         auto field = tk::create_widget<tk::TextField>(this, kQuickSwitcherFieldH);
-        field->set_placeholder(
-            tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
-        field->set_on_changed([this](const std::string& q) { set_query(q); });
-        field->set_on_submit([this] { activate_selected(); });
+        field->set_placeholder(tk::tr("Jump to a room, or @user to start a chat\xe2\x80\xa6"));
+        field->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_query(q);
+            });
+        field->set_on_submit(
+            [this]
+            {
+                activate_selected();
+            });
         field->set_visible(false);
         search_field_ = add_child(std::move(field));
 
         auto reason = tk::create_widget<tk::TextField>(this, kReasonFieldH);
         reason->set_placeholder(tk::tr("Reason (optional)"));
-        reason->set_on_submit([this] { activate_selected(); });
+        reason->set_on_submit(
+            [this]
+            {
+                activate_selected();
+            });
         // Self-contained Up/Down/Escape — unlike search_field_, which gets its
         // handler from ShellBase::wire_overlay_nav_. close() fires on_close,
         // which wire_overlay_nav_ hooks to close_quick_switch_().
@@ -250,11 +264,17 @@ QuickSwitcher::QuickSwitcher()
                 {
                 case tk::NavKey::Up:
                     move_selection(-1);
-                    if (host()) host()->request_relayout();
+                    if (host())
+                    {
+                        host()->request_relayout();
+                    }
                     return true;
                 case tk::NavKey::Down:
                     move_selection(+1);
-                    if (host()) host()->request_relayout();
+                    if (host())
+                    {
+                        host()->request_relayout();
+                    }
                     return true;
                 case tk::NavKey::Escape:
                     close();
@@ -315,14 +335,14 @@ void QuickSwitcher::set_avatar_provider(AvatarProvider p)
 
 void QuickSwitcher::open()
 {
-    all_rooms_ = rooms_provider_ ? rooms_provider_()
-                                 : std::vector<tesseract::RoomInfo>{};
-    recent_ = recent_provider_ ? recent_provider_()
-                               : std::vector<tesseract::RoomInfo>{};
+    all_rooms_ = rooms_provider_ ? rooms_provider_() : std::vector<tesseract::RoomInfo>{};
+    recent_ = recent_provider_ ? recent_provider_() : std::vector<tesseract::RoomInfo>{};
     // An upgraded (tombstoned) room is a dead end once its successor is
     // joined; until then it is the only way to reach the new room.
     const auto tombstoned = [](const tesseract::RoomInfo& r)
-    { return !r.successor_room_id.empty() && r.successor_joined; };
+    {
+        return !r.successor_room_id.empty() && r.successor_joined;
+    };
     std::erase_if(all_rooms_, tombstoned);
     std::erase_if(recent_, tombstoned);
     query_.clear();
@@ -359,7 +379,9 @@ void QuickSwitcher::close()
     mode_ = Mode::Room;
     user_results_.clear();
     if (reason_field_)
+    {
         reason_field_->set_text("");
+    }
     press_outside_ = false;
     if (on_close)
     {
@@ -371,9 +393,13 @@ void QuickSwitcher::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (!v && search_field_)
+    {
         search_field_->set_visible(false);
+    }
     if (!v && reason_field_)
+    {
         reason_field_->set_visible(false);
+    }
 }
 
 void QuickSwitcher::set_query(const std::string& q)
@@ -469,9 +495,13 @@ void QuickSwitcher::on_theme_changed(const tk::Theme& t)
     // QuickSwitcher itself serves both fields.
     set_background_color(t.palette.compose_card_bg);
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+    }
     if (reason_field_)
+    {
         reason_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void QuickSwitcher::move_selection(int delta)
@@ -502,10 +532,8 @@ void QuickSwitcher::activate_selected()
 
     if (mode_ == Mode::User)
     {
-        const std::string mxid =
-            user_results_[static_cast<std::size_t>(sel)].user_id;
-        const std::string reason =
-            reason_field_ ? reason_field_->text() : std::string();
+        const std::string mxid = user_results_[static_cast<std::size_t>(sel)].user_id;
+        const std::string reason = reason_field_ ? reason_field_->text() : std::string();
         if (on_user_selected)
         {
             on_user_selected(mxid, reason);
@@ -547,11 +575,9 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float chrome_h = kHeaderH + strip_h + reason_h;
 
     const float list_content =
-        active_count_() == 0 ? kRowH
-                             : static_cast<float>(active_count_()) * kRowH;
+        active_count_() == 0 ? kRowH : static_cast<float>(active_count_()) * kRowH;
     const float max_h = std::min(kCardMaxH, std::max(0.0f, bounds.h - 2 * margin));
-    float ch =
-        chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
+    float ch = chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
     ch = std::max(ch, chrome_h + kRowH);
     ch = std::min(ch, max_h);
 
@@ -563,14 +589,12 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     card_rect_ = {cx, cy, cw, ch};
     search_field_rect_ = {cx + kQuickSwitcherPadX, cy + (kHeaderH - kQuickSwitcherFieldH) * 0.5f,
                           std::max(0.0f, cw - 2 * kQuickSwitcherPadX), kQuickSwitcherFieldH};
-    recent_strip_rect_ =
-        strip_h > 0.0f ? tk::Rect{cx, cy + kHeaderH, cw, strip_h} : tk::Rect{};
-    reason_field_rect_ =
-        reason_h > 0.0f
-            ? tk::Rect{cx + kQuickSwitcherPadX,
-                       cy + kHeaderH + (kReasonRowH - kReasonFieldH) * 0.5f,
-                       std::max(0.0f, cw - 2 * kQuickSwitcherPadX), kReasonFieldH}
-            : tk::Rect{};
+    recent_strip_rect_ = strip_h > 0.0f ? tk::Rect{cx, cy + kHeaderH, cw, strip_h} : tk::Rect{};
+    reason_field_rect_ = reason_h > 0.0f
+                             ? tk::Rect{cx + kQuickSwitcherPadX,
+                                        cy + kHeaderH + (kReasonRowH - kReasonFieldH) * 0.5f,
+                                        std::max(0.0f, cw - 2 * kQuickSwitcherPadX), kReasonFieldH}
+                             : tk::Rect{};
 
     if (search_field_)
     {
@@ -581,11 +605,12 @@ void QuickSwitcher::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         reason_field_->set_visible(reason_h > 0.0f);
         if (reason_h > 0.0f)
+        {
             reason_field_->arrange(ctx, reason_field_rect_);
+        }
     }
 
-    const tk::Rect list_bounds{cx, cy + chrome_h, cw,
-                               std::max(0.0f, ch - chrome_h)};
+    const tk::Rect list_bounds{cx, cy + chrome_h, cw, std::max(0.0f, ch - chrome_h)};
     list_->arrange(ctx, list_bounds);
 }
 
@@ -605,7 +630,9 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
     {
         pending_focus_ = false;
         if (search_field_)
+        {
             search_field_->set_focused(true);
+        }
     }
 
     // Dim backdrop over the whole surface.
@@ -613,36 +640,38 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
 
     // Card.
     ctx.canvas.fill_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f,
-                                   ctx.theme.palette.popup_border, 1.0f);
+    ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.popup_border, 1.0f);
 
     // Header strip background + the search-field card.
-    tk::Rect sep{card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w,
-                 1.0f};
+    tk::Rect sep{card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f};
     ctx.canvas.fill_rect(sep, ctx.theme.palette.separator);
     if (!search_field_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f,
-                                     ctx.theme.palette.compose_card_bg);
-        ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
-                                       ctx.theme.palette.border, 1.0f);
+        ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f, ctx.theme.palette.compose_card_bg);
+        ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f, ctx.theme.palette.border, 1.0f);
     }
-    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
+    if (search_field_ && search_field_->visible())
+    {
+        search_field_->paint(ctx);
+    }
 
     if (!reason_field_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(reason_field_rect_, 6.0f,
-                                     ctx.theme.palette.compose_card_bg);
-        ctx.canvas.stroke_rounded_rect(reason_field_rect_, 6.0f,
-                                       ctx.theme.palette.border, 1.0f);
+        ctx.canvas.fill_rounded_rect(reason_field_rect_, 6.0f, ctx.theme.palette.compose_card_bg);
+        ctx.canvas.stroke_rounded_rect(reason_field_rect_, 6.0f, ctx.theme.palette.border, 1.0f);
     }
-    if (reason_field_ && reason_field_->visible()) reason_field_->paint(ctx);
+    if (reason_field_ && reason_field_->visible())
+    {
+        reason_field_->paint(ctx);
+    }
 
     // Recent strip (only when the query is empty). Rebuilt each paint so the
     // hit rects stay in sync with what's drawn.
     recent_chips_.clear();
     for (auto* t : chip_targets_)
+    {
         t->set_target_rect({});
+    }
     if (show_recent_() && !recent_strip_rect_.empty())
     {
         paint_recent_strip_(ctx);
@@ -660,9 +689,8 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
         tk::TextStyle es{};
         es.role = tk::FontRole::Body;
         const std::string empty_msg =
-            mode_ == Mode::User
-                ? tk::tr("No matching users — type a full @user:server to chat")
-                : tk::tr("No rooms");
+            mode_ == Mode::User ? tk::tr("No matching users — type a full @user:server to chat")
+                                : tk::tr("No rooms");
         auto empty_lo = ctx.factory.build_text(empty_msg, es);
         if (empty_lo)
         {
@@ -670,8 +698,7 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
             ctx.canvas.draw_text(
                 *empty_lo,
                 {card_rect_.x + (card_rect_.w - sz.w) * 0.5f,
-                 card_rect_.y + kHeaderH +
-                     (card_rect_.h - kHeaderH - sz.h) * 0.5f},
+                 card_rect_.y + kHeaderH + (card_rect_.h - kHeaderH - sz.h) * 0.5f},
                 ctx.theme.palette.text_muted);
         }
         return;
@@ -698,13 +725,15 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
     style.pad_x = kQuickSwitcherPadX;
     style.caption = tk::tr("Recent");
     chip_areas_.paint(ctx); // hover/press fill, behind the chips
-    paint_room_chips(ctx, strip, recent_, avatar_provider_, on_room_avatar_needed,
-                     style, recent_chips_);
+    paint_room_chips(ctx, strip, recent_, avatar_provider_, on_room_avatar_needed, style,
+                     recent_chips_);
     chip_areas_.sync(*this, recent_chips_,
                      [this](std::size_t, const std::string& room_id)
                      {
                          if (on_room_selected)
+                         {
                              on_room_selected(room_id);
+                         }
                          close();
                      });
 
@@ -715,10 +744,14 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
         t->on_activate = [this, idx]
         {
             if (idx >= recent_chips_.size())
+            {
                 return;
+            }
             const std::string room_id = recent_chips_[idx].second;
             if (on_room_selected)
+            {
                 on_room_selected(room_id);
+            }
             close();
         };
         chip_targets_.push_back(t);
@@ -726,11 +759,17 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
     for (std::size_t i = 0; i < chip_targets_.size(); ++i)
     {
         if (i >= recent_chips_.size())
+        {
             continue; // parked by paint()'s reset
+        }
         chip_targets_[i]->set_target_rect(recent_chips_[i].first);
         for (const auto& r : recent_)
+        {
             if (r.id == recent_chips_[i].second)
+            {
                 chip_targets_[i]->set_accessible_name(r.name.empty() ? r.id : r.name);
+            }
+        }
     }
 
     // Separator below the strip.

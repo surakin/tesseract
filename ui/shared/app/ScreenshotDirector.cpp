@@ -5,8 +5,7 @@
 namespace tesseract::screenshot
 {
 
-std::string screenshot_filename(std::string_view prefix,
-                                std::string_view scene,
+std::string screenshot_filename(std::string_view prefix, std::string_view scene,
                                 ScreenshotTheme theme)
 {
     std::string out{prefix};
@@ -19,13 +18,9 @@ std::string screenshot_filename(std::string_view prefix,
     return out;
 }
 
-ScreenshotDirector::ScreenshotDirector(ScreenshotHost& host,
-                                       std::vector<Scene> scenes,
+ScreenshotDirector::ScreenshotDirector(ScreenshotHost& host, std::vector<Scene> scenes,
                                        std::string prefix, int settle_ms)
-    : host_(host),
-      scenes_(std::move(scenes)),
-      prefix_(std::move(prefix)),
-      settle_ms_(settle_ms)
+    : host_(host), scenes_(std::move(scenes)), prefix_(std::move(prefix)), settle_ms_(settle_ms)
 {
 }
 
@@ -47,7 +42,9 @@ void ScreenshotDirector::step_()
     }
 
     if (!dark && scenes_[scene].setup)
+    {
         scenes_[scene].setup();
+    }
 
     const auto theme = dark ? ScreenshotTheme::Dark : ScreenshotTheme::Light;
     host_.apply_theme(theme);
@@ -56,14 +53,15 @@ void ScreenshotDirector::step_()
         settle_ms_,
         [this, scene, dark, theme]
         {
-            if (!host_.save_png(
-                    screenshot_filename(prefix_, scenes_[scene].name, theme)))
+            if (!host_.save_png(screenshot_filename(prefix_, scenes_[scene].name, theme)))
             {
                 host_.finish(false);
                 return;
             }
             if (dark && scenes_[scene].teardown)
+            {
                 scenes_[scene].teardown();
+            }
             ++index_;
             step_();
         });

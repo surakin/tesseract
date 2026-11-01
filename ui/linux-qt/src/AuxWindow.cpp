@@ -8,8 +8,8 @@
 namespace qt6
 {
 
-AuxWindow::AuxWindow(const std::string& title, std::unique_ptr<tk::Widget> root,
-                     int width, int height, const tk::Theme& theme)
+AuxWindow::AuxWindow(const std::string& title, std::unique_ptr<tk::Widget> root, int width,
+                     int height, const tk::Theme& theme)
     : QWidget(nullptr, Qt::Window)
 {
     setAttribute(Qt::WA_DeleteOnClose, false); // lifetime managed externally
@@ -50,7 +50,9 @@ void AuxWindow::apply_theme(const tk::Theme& t)
 void AuxWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void AuxWindow::request_relayout()
@@ -65,7 +67,9 @@ void AuxWindow::request_relayout()
 void AuxWindow::request_repaint()
 {
     if (surface_)
+    {
         surface_->update();
+    }
 }
 
 void AuxWindow::schedule_delete()
@@ -77,7 +81,9 @@ void AuxWindow::schedule_delete()
 void AuxWindow::closeEvent(QCloseEvent* ev)
 {
     if (on_window_closed)
+    {
         on_window_closed();
+    }
     ev->accept();
 }
 

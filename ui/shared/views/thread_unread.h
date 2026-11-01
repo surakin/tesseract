@@ -25,9 +25,13 @@ enum class ThreadDot
 inline ThreadDot thread_dot_for(bool unread, bool mentions_me)
 {
     if (unread && mentions_me)
+    {
         return ThreadDot::Mention;
+    }
     if (unread)
+    {
         return ThreadDot::Unread;
+    }
     return ThreadDot::None;
 }
 
@@ -46,10 +50,14 @@ inline ThreadsAggregate aggregate_threads(const std::vector<ThreadInfo>& threads
     for (const auto& t : threads)
     {
         if (!t.unread)
+        {
             continue;
+        }
         agg.any_unread = true;
         if (t.mentions_me)
+        {
             agg.any_mention = true;
+        }
     }
     return agg;
 }

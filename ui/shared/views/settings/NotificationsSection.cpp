@@ -22,11 +22,15 @@ namespace
 std::string trim(const std::string& s)
 {
     std::size_t begin = 0;
-    std::size_t end   = s.size();
+    std::size_t end = s.size();
     while (begin < end && std::isspace(static_cast<unsigned char>(s[begin])))
+    {
         ++begin;
+    }
     while (end > begin && std::isspace(static_cast<unsigned char>(s[end - 1])))
+    {
         --end;
+    }
     return s.substr(begin, end - begin);
 }
 } // namespace
@@ -41,9 +45,9 @@ namespace
 {
 constexpr float kKeywordChipPadX = 10.0f;
 constexpr float kKeywordChipPadY = 5.0f;
-constexpr float kKeywordChipGap  = 6.0f;  // between label and remove button
-constexpr float kKeywordFlowGapX = 8.0f;  // between chips on the same row
-constexpr float kKeywordFlowGapY = 8.0f;  // between rows
+constexpr float kKeywordChipGap = 6.0f;  // between label and remove button
+constexpr float kKeywordFlowGapX = 8.0f; // between chips on the same row
+constexpr float kKeywordFlowGapY = 8.0f; // between rows
 } // namespace
 
 class NotificationsSection::KeywordChip : public tk::HBox
@@ -57,8 +61,8 @@ public:
         auto label = tk::create_widget<tk::Label>(this, keyword);
         add_child(std::move(label));
 
-        auto remove = tk::create_widget<tk::Button>(
-            this, "", std::function<void()>{}, tk::Button::Variant::Icon);
+        auto remove = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                                    tk::Button::Variant::Icon);
         remove->set_icon(kCloseSvg, 12.0f);
         remove->set_min_size({16.0f, 16.0f});
         remove->set_accessible_name(tk::trf(tk::tr("Remove keyword \"{0}\""), {keyword}));
@@ -68,8 +72,7 @@ public:
 
     void paint_before_children(tk::PaintCtx& ctx) override
     {
-        ctx.canvas.fill_rounded_rect(bounds_, bounds_.h * 0.5f,
-                                     ctx.theme.palette.chip_bg);
+        ctx.canvas.fill_rounded_rect(bounds_, bounds_.h * 0.5f, ctx.theme.palette.chip_bg);
     }
 };
 
@@ -109,7 +112,9 @@ private:
         for (auto& ch : children())
         {
             if (!ch->visible())
+            {
                 continue;
+            }
             tk::Size sz = ch->measure(ctx, {avail_w, 0});
             if (row_has_item && x + sz.w > avail_w)
             {
@@ -143,8 +148,7 @@ NotificationsSection::NotificationsSection(SettingBinder& binder)
     binder.bind(notif_cb_, &S::notifications_enabled, SettingKey::Notifications);
 
     auto hide_content_cb = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("Hide message content in notifications"),
-        s.notification_hide_content);
+        this, tk::tr("Hide message content in notifications"), s.notification_hide_content);
     hide_content_cb_ = group->add_widget(std::move(hide_content_cb));
     binder.bind(hide_content_cb_, &S::notification_hide_content, SettingKey::HideContent);
 
@@ -158,41 +162,52 @@ NotificationsSection::NotificationsSection(SettingBinder& binder)
 
     mentions_group_ = add_group(tk::tr("Mentions & Keywords"));
 
-    auto mentions_loading_lbl =
-        tk::create_widget<tk::Label>(this, tk::tr("Loading…"));
+    auto mentions_loading_lbl = tk::create_widget<tk::Label>(this, tk::tr("Loading…"));
     mentions_loading_label_ = mentions_group_->add_widget(std::move(mentions_loading_lbl));
     mentions_loading_label_->set_visible(false);
 
-    auto mentions_sw = tk::create_widget<tk::SwitchButton>(
-        this, tk::tr("Notify me for @mentions"), true);
+    auto mentions_sw =
+        tk::create_widget<tk::SwitchButton>(this, tk::tr("Notify me for @mentions"), true);
     mentions_switch_ = mentions_group_->add_widget(std::move(mentions_sw));
     mentions_switch_->on_change = [this](bool v)
     {
-        if (on_mentions_changed) on_mentions_changed(v);
+        if (on_mentions_changed)
+        {
+            on_mentions_changed(v);
+        }
     };
 
-    auto room_mentions_sw = tk::create_widget<tk::SwitchButton>(
-        this, tk::tr("Notify me when @room is used"), true);
+    auto room_mentions_sw =
+        tk::create_widget<tk::SwitchButton>(this, tk::tr("Notify me when @room is used"), true);
     room_mentions_switch_ = mentions_group_->add_widget(std::move(room_mentions_sw));
     room_mentions_switch_->on_change = [this](bool v)
     {
-        if (on_room_mentions_changed) on_room_mentions_changed(v);
+        if (on_room_mentions_changed)
+        {
+            on_room_mentions_changed(v);
+        }
     };
 
-    auto all_messages_sw = tk::create_widget<tk::SwitchButton>(
-        this, tk::tr("Notify me for all messages"), true);
+    auto all_messages_sw =
+        tk::create_widget<tk::SwitchButton>(this, tk::tr("Notify me for all messages"), true);
     all_messages_switch_ = mentions_group_->add_widget(std::move(all_messages_sw));
     all_messages_switch_->on_change = [this](bool v)
     {
-        if (on_notify_all_messages_changed) on_notify_all_messages_changed(v);
+        if (on_notify_all_messages_changed)
+        {
+            on_notify_all_messages_changed(v);
+        }
     };
 
-    auto notify_on_keywords_sw = tk::create_widget<tk::SwitchButton>(
-        this, tk::tr("Notify on keywords"), false);
+    auto notify_on_keywords_sw =
+        tk::create_widget<tk::SwitchButton>(this, tk::tr("Notify on keywords"), false);
     notify_on_keywords_switch_ = mentions_group_->add_widget(std::move(notify_on_keywords_sw));
     notify_on_keywords_switch_->on_change = [this](bool v)
     {
-        if (on_notify_on_keywords_changed) on_notify_on_keywords_changed(v);
+        if (on_notify_on_keywords_changed)
+        {
+            on_notify_on_keywords_changed(v);
+        }
     };
 
     auto add_row = tk::create_widget<tk::HBox>(this);
@@ -200,12 +215,20 @@ NotificationsSection::NotificationsSection(SettingBinder& binder)
 
     auto keyword_field = tk::create_widget<tk::TextField>(this, 32.0f);
     keyword_field->set_placeholder(tk::tr("Add a keyword…"));
-    keyword_field->set_on_submit([this] { try_submit_keyword_(); });
+    keyword_field->set_on_submit(
+        [this]
+        {
+            try_submit_keyword_();
+        });
     keyword_field->set_layout_hints({.fill_main = true});
     keyword_field_ = add_row->add_child(std::move(keyword_field));
 
     auto keyword_add = tk::create_widget<tk::Button>(
-        this, tk::tr("Add"), [this] { try_submit_keyword_(); },
+        this, tk::tr("Add"),
+        [this]
+        {
+            try_submit_keyword_();
+        },
         tk::Button::Variant::Subtle);
     keyword_add_btn_ = add_row->add_child(std::move(keyword_add));
 
@@ -260,7 +283,12 @@ void NotificationsSection::set_mentions_loading(bool loading)
     keyword_field_->set_enabled(!loading);
     keyword_add_btn_->set_enabled(!loading);
     for (auto* chip : keyword_chips_)
-        if (chip) chip->set_enabled(!loading);
+    {
+        if (chip)
+        {
+            chip->set_enabled(!loading);
+        }
+    }
 }
 
 void NotificationsSection::set_keyword_error(std::string error)
@@ -274,10 +302,14 @@ void NotificationsSection::try_submit_keyword_()
 {
     const std::string trimmed = trim(keyword_field_->text());
     if (trimmed.empty())
+    {
         return;
+    }
     keyword_field_->set_text("");
     if (std::find(keywords_.begin(), keywords_.end(), trimmed) != keywords_.end())
+    {
         return; // already present (e.g. a slow revert hasn't landed yet)
+    }
 
     // Apply optimistically — see SettingsController::add_notification_
     // keyword's comment for why the round trip can't be trusted to hand
@@ -286,14 +318,18 @@ void NotificationsSection::try_submit_keyword_()
     keywords_.push_back(trimmed);
     rebuild_keyword_rows_();
     if (on_keyword_add_requested)
+    {
         on_keyword_add_requested(trimmed);
+    }
 }
 
 void NotificationsSection::revert_keyword_add(const std::string& keyword)
 {
     auto it = std::find(keywords_.begin(), keywords_.end(), keyword);
     if (it == keywords_.end())
+    {
         return;
+    }
     keywords_.erase(it);
     rebuild_keyword_rows_();
 }
@@ -301,7 +337,9 @@ void NotificationsSection::revert_keyword_add(const std::string& keyword)
 void NotificationsSection::revert_keyword_remove(const std::string& keyword)
 {
     if (std::find(keywords_.begin(), keywords_.end(), keyword) != keywords_.end())
+    {
         return;
+    }
     keywords_.push_back(keyword);
     rebuild_keyword_rows_();
 }
@@ -313,20 +351,22 @@ void NotificationsSection::rebuild_keyword_rows_()
 
     for (const auto& kw : keywords_)
     {
-        auto chip = tk::create_widget<KeywordChip>(
-            this, kw,
-            [this, kw]
-            {
-                // Apply optimistically, same reasoning as try_submit_keyword_.
-                auto it = std::find(keywords_.begin(), keywords_.end(), kw);
-                if (it != keywords_.end())
-                {
-                    keywords_.erase(it);
-                    rebuild_keyword_rows_();
-                }
-                if (on_keyword_remove_requested)
-                    on_keyword_remove_requested(kw);
-            });
+        auto chip = tk::create_widget<KeywordChip>(this, kw,
+                                                   [this, kw]
+                                                   {
+                                                       // Apply optimistically, same reasoning as try_submit_keyword_.
+                                                       auto it = std::find(keywords_.begin(),
+                                                                           keywords_.end(), kw);
+                                                       if (it != keywords_.end())
+                                                       {
+                                                           keywords_.erase(it);
+                                                           rebuild_keyword_rows_();
+                                                       }
+                                                       if (on_keyword_remove_requested)
+                                                       {
+                                                           on_keyword_remove_requested(kw);
+                                                       }
+                                                   });
         keyword_chips_.push_back(keyword_flow_->add_child(std::move(chip)));
     }
 }

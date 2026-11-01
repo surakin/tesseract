@@ -27,7 +27,8 @@ using tesseract::ParamSchemaKind;
 
 TEST_CASE("parse_param_schema decodes every primitive subtype", "[bot_commands][schema]")
 {
-    auto decode = [](const char* type) {
+    auto decode = [](const char* type)
+    {
         return tesseract::parse_param_schema(
             nlohmann::json{{"schema_type", "primitive"}, {"type", type}});
     };
@@ -38,7 +39,9 @@ TEST_CASE("parse_param_schema decodes every primitive subtype", "[bot_commands][
     CHECK(decode("server_name").primitive_type == ParamPrimitiveType::ServerName);
     CHECK(decode("room_alias").primitive_type == ParamPrimitiveType::RoomAlias);
     for (const char* t : {"string", "integer", "boolean", "user_id", "server_name", "room_alias"})
+    {
         CHECK(decode(t).kind == ParamSchemaKind::Primitive);
+    }
 }
 
 TEST_CASE("parse_param_schema rejects an unrecognized primitive type", "[bot_commands][schema]")
@@ -80,11 +83,10 @@ TEST_CASE("parse_param_schema decodes an array of a union", "[bot_commands][sche
         {"items",
          {{"schema_type", "union"},
           {"variants",
-           nlohmann::json::array(
-               {nlohmann::json{{"schema_type", "primitive"}, {"type", "string"}},
-                nlohmann::json{{"schema_type", "literal"},
-                               {"value", "yes"},
-                               {"literal_type", "string"}}})}}},
+           nlohmann::json::array({nlohmann::json{{"schema_type", "primitive"}, {"type", "string"}},
+                                  nlohmann::json{{"schema_type", "literal"},
+                                                 {"value", "yes"},
+                                                 {"literal_type", "string"}}})}}},
     });
     REQUIRE(s.kind == ParamSchemaKind::Array);
     REQUIRE(s.array_item->kind == ParamSchemaKind::Union);
@@ -93,7 +95,8 @@ TEST_CASE("parse_param_schema decodes an array of a union", "[bot_commands][sche
     CHECK(s.array_item->union_variants[1].kind == ParamSchemaKind::Literal);
 }
 
-TEST_CASE("parse_param_schema decodes a literal and keeps its raw JSON value", "[bot_commands][schema]")
+TEST_CASE("parse_param_schema decodes a literal and keeps its raw JSON value",
+          "[bot_commands][schema]")
 {
     auto s = tesseract::parse_param_schema(
         nlohmann::json{{"schema_type", "literal"}, {"value", 42}, {"literal_type", "integer"}});
@@ -104,14 +107,14 @@ TEST_CASE("parse_param_schema decodes a literal and keeps its raw JSON value", "
 
 TEST_CASE("parse_param_schema marks a non-object as invalid", "[bot_commands][schema]")
 {
-    REQUIRE(tesseract::parse_param_schema(nlohmann::json("not an object")).kind
-            == ParamSchemaKind::Invalid);
+    REQUIRE(tesseract::parse_param_schema(nlohmann::json("not an object")).kind ==
+            ParamSchemaKind::Invalid);
 }
 
 TEST_CASE("parse_param_schema marks an unknown schema_type as invalid", "[bot_commands][schema]")
 {
-    REQUIRE(tesseract::parse_param_schema(nlohmann::json{{"schema_type", "wat"}}).kind
-            == ParamSchemaKind::Invalid);
+    REQUIRE(tesseract::parse_param_schema(nlohmann::json{{"schema_type", "wat"}}).kind ==
+            ParamSchemaKind::Invalid);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +122,7 @@ TEST_CASE("parse_param_schema marks an unknown schema_type as invalid", "[bot_co
 // ---------------------------------------------------------------------------
 
 TEST_CASE("from_ffi decodes a CommandParameterFfi's schema_json and flat fields",
-         "[bot_commands][ffi]")
+          "[bot_commands][ffi]")
 {
     tesseract_ffi::CommandParameterFfi p{};
     p.key = "timeout_seconds";
@@ -135,8 +138,7 @@ TEST_CASE("from_ffi decodes a CommandParameterFfi's schema_json and flat fields"
     CHECK(out.schema.primitive_type == ParamPrimitiveType::Integer);
 }
 
-TEST_CASE("from_ffi falls back to Invalid schema on malformed schema_json",
-         "[bot_commands][ffi]")
+TEST_CASE("from_ffi falls back to Invalid schema on malformed schema_json", "[bot_commands][ffi]")
 {
     tesseract_ffi::CommandParameterFfi p{};
     p.key = "x";
@@ -197,10 +199,10 @@ CommandDescription make_desc(std::vector<std::pair<std::string, bool>> params)
     return d;
 }
 
-}  // namespace
+} // namespace
 
 TEST_CASE("match_bot_command_arguments fills every parameter when token count matches",
-         "[bot_commands][match]")
+          "[bot_commands][match]")
 {
     tesseract::Client client;
     auto desc = make_desc({{"a", false}, {"b", true}});
@@ -212,7 +214,7 @@ TEST_CASE("match_bot_command_arguments fills every parameter when token count ma
 }
 
 TEST_CASE("match_bot_command_arguments allows omitting trailing optional parameters",
-         "[bot_commands][match]")
+          "[bot_commands][match]")
 {
     tesseract::Client client;
     auto desc = make_desc({{"a", false}, {"b", true}, {"c", true}});
@@ -225,7 +227,7 @@ TEST_CASE("match_bot_command_arguments allows omitting trailing optional paramet
 }
 
 TEST_CASE("match_bot_command_arguments rejects a missing required parameter",
-         "[bot_commands][match]")
+          "[bot_commands][match]")
 {
     tesseract::Client client;
     auto desc = make_desc({{"a", false}, {"b", false}});
@@ -244,7 +246,7 @@ TEST_CASE("match_bot_command_arguments rejects too many tokens", "[bot_commands]
 }
 
 TEST_CASE("match_bot_command_arguments accepts zero tokens for an all-optional command",
-         "[bot_commands][match]")
+          "[bot_commands][match]")
 {
     tesseract::Client client;
     auto desc = make_desc({{"a", true}});
@@ -258,7 +260,7 @@ TEST_CASE("match_bot_command_arguments accepts zero tokens for an all-optional c
 // ---------------------------------------------------------------------------
 
 TEST_CASE("dispatch_bot_command_send rejects too many arguments before touching the SDK",
-         "[bot_commands][dispatch]")
+          "[bot_commands][dispatch]")
 {
     tesseract::Client client;
     auto desc = make_desc({{"a", false}});
@@ -268,7 +270,7 @@ TEST_CASE("dispatch_bot_command_send rejects too many arguments before touching 
 }
 
 TEST_CASE("dispatch_bot_command_send reports a missing required argument by key",
-         "[bot_commands][dispatch]")
+          "[bot_commands][dispatch]")
 {
     tesseract::Client client;
     auto desc = make_desc({{"target_room", false}});
@@ -278,7 +280,7 @@ TEST_CASE("dispatch_bot_command_send reports a missing required argument by key"
 }
 
 TEST_CASE("dispatch_bot_command_send rejects a non-integer token for an integer parameter",
-         "[bot_commands][dispatch]")
+          "[bot_commands][dispatch]")
 {
     tesseract::Client client;
     CommandDescription desc;
@@ -294,8 +296,9 @@ TEST_CASE("dispatch_bot_command_send rejects a non-integer token for an integer 
     CHECK(r.error.find("timeout_seconds") != std::string::npos);
 }
 
-TEST_CASE("dispatch_bot_command_send rejects a float-shaped token for an integer parameter (no float type)",
-         "[bot_commands][dispatch]")
+TEST_CASE(
+    "dispatch_bot_command_send rejects a float-shaped token for an integer parameter (no float type)",
+    "[bot_commands][dispatch]")
 {
     tesseract::Client client;
     CommandDescription desc;
@@ -311,7 +314,7 @@ TEST_CASE("dispatch_bot_command_send rejects a float-shaped token for an integer
 }
 
 TEST_CASE("dispatch_bot_command_send accepts a well-formed command and reaches the SDK call",
-         "[bot_commands][dispatch]")
+          "[bot_commands][dispatch]")
 {
     // The test-cfg Rust FFI stub for send_bot_command always returns
     // {ok:false, message:"not logged in"} — reaching that specific error
@@ -338,7 +341,7 @@ TEST_CASE("dispatch_bot_command_send accepts a well-formed command and reaches t
 }
 
 TEST_CASE("dispatch_bot_command_send accepts a comma-separated array token",
-         "[bot_commands][dispatch]")
+          "[bot_commands][dispatch]")
 {
     tesseract::Client client;
     CommandDescription desc;
@@ -352,10 +355,9 @@ TEST_CASE("dispatch_bot_command_send accepts a comma-separated array token",
     users.schema.array_item->primitive_type = ParamPrimitiveType::UserId;
     desc.parameters.push_back(users);
 
-    auto r = tesseract::dispatch_bot_command_send(client, "!room:h", desc,
-                                                   "@alice:h,@bob:h");
+    auto r = tesseract::dispatch_bot_command_send(client, "!room:h", desc, "@alice:h,@bob:h");
     REQUIRE_FALSE(r.ok);
-    CHECK(r.error == "not logged in");  // reached the SDK call — coercion succeeded
+    CHECK(r.error == "not logged in"); // reached the SDK call — coercion succeeded
 }
 
 TEST_CASE("dispatch_bot_command_send rejects a malformed array element", "[bot_commands][dispatch]")
@@ -397,7 +399,7 @@ TEST_CASE("next_bot_command_arg_hint points at the next parameter", "[bot_comman
 }
 
 TEST_CASE("next_bot_command_arg_hint signals readiness once every parameter is typed",
-         "[bot_commands][hint]")
+          "[bot_commands][hint]")
 {
     auto desc = make_desc({{"a", false}});
     CHECK(tesseract::next_bot_command_arg_hint(desc, 1) == "Press Enter to send");

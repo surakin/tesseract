@@ -35,39 +35,36 @@ struct CountingFactory : tk::CanvasFactory
     // (a wrapped QTextDocument / Pango layout measures ~2x a single line).
     float last_rich_height = 0.f;
     float tallest_rich_height = 0.f;
-    explicit CountingFactory(tk::CanvasFactory& f) : inner(f) {}
+    explicit CountingFactory(tk::CanvasFactory& f) : inner(f)
+    {
+    }
 
-    std::unique_ptr<tk::Image>
-    decode_image(std::span<const std::uint8_t> b) override
+    std::unique_ptr<tk::Image> decode_image(std::span<const std::uint8_t> b) override
     {
         return inner.decode_image(b);
     }
-    std::unique_ptr<tk::Image>
-    create_image_rgba(const std::uint8_t* p, int w, int h) override
+    std::unique_ptr<tk::Image> create_image_rgba(const std::uint8_t* p, int w, int h) override
     {
         return inner.create_image_rgba(p, w, h);
     }
-    std::unique_ptr<tk::Image>
-    scale_image(const tk::Image& s, int mw, int mh) override
+    std::unique_ptr<tk::Image> scale_image(const tk::Image& s, int mw, int mh) override
     {
         return inner.scale_image(s, mw, mh);
     }
-    std::unique_ptr<tk::AnimatedImage>
-    decode_animated_image(std::span<const std::uint8_t> b, int mp) override
+    std::unique_ptr<tk::AnimatedImage> decode_animated_image(std::span<const std::uint8_t> b,
+                                                             int mp) override
     {
         return inner.decode_animated_image(b, mp);
     }
-    std::unique_ptr<tk::TextLayout>
-    build_rich_text(std::span<const tk::TextSpan> sp,
-                    const tk::TextStyle& s) override
+    std::unique_ptr<tk::TextLayout> build_rich_text(std::span<const tk::TextSpan> sp,
+                                                    const tk::TextStyle& s) override
     {
         ++rich;
         auto layout = inner.build_rich_text(sp, s);
         if (layout)
         {
             last_rich_height = layout->measure().h;
-            tallest_rich_height =
-                std::max(tallest_rich_height, last_rich_height);
+            tallest_rich_height = std::max(tallest_rich_height, last_rich_height);
         }
         return layout;
     }
@@ -120,8 +117,7 @@ float single_line_ref_h(tk::CanvasFactory& f, tk::FontRole role)
 
 } // namespace
 
-TEST_CASE("RoomListView renders an emoji-only preview through build_rich_text",
-          "[roomlist][emoji]")
+TEST_CASE("RoomListView renders an emoji-only preview through build_rich_text", "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -139,15 +135,13 @@ TEST_CASE("RoomListView renders a mixed text+emoji preview through "
     RoomListPreviewEmojiStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
     RoomListView& view = *view_owner;
-    view.set_rooms(
-        {room_with_preview("$a", "hi \xF0\x9F\x98\x80 there")}); // "hi 😀 there"
+    view.set_rooms({room_with_preview("$a", "hi \xF0\x9F\x98\x80 there")}); // "hi 😀 there"
 
     st.run(view, kPreviewTestBounds);
     CHECK(st.cf.rich >= 1);
 }
 
-TEST_CASE("RoomListView renders a plain-text preview without crashing",
-          "[roomlist][emoji]")
+TEST_CASE("RoomListView renders a plain-text preview without crashing", "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -158,8 +152,7 @@ TEST_CASE("RoomListView renders a plain-text preview without crashing",
     CHECK(st.cf.rich >= 1); // now always routed through build_rich_text
 }
 
-TEST_CASE("RoomListView with no last message paints without a preview layout",
-          "[roomlist][emoji]")
+TEST_CASE("RoomListView with no last message paints without a preview layout", "[roomlist][emoji]")
 {
     RoomListPreviewEmojiStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -189,8 +182,7 @@ TEST_CASE("RoomListView truncates a long preview to a single line instead "
     }
     view.set_rooms({room_with_preview("$a", long_body)});
 
-    const float ref_h =
-        single_line_ref_h(st.surface->factory(), tk::FontRole::SidebarPreview);
+    const float ref_h = single_line_ref_h(st.surface->factory(), tk::FontRole::SidebarPreview);
     st.run(view, kPreviewTestBounds);
     REQUIRE(st.cf.rich >= 1);
     REQUIRE(st.cf.tallest_rich_height > 0);
@@ -213,12 +205,10 @@ TEST_CASE("RoomListView truncates a long preview containing emoji to a "
     }
     view.set_rooms({room_with_preview("$a", long_body)});
 
-    const float ref_h =
-        single_line_ref_h(st.surface->factory(), tk::FontRole::SidebarPreview);
+    const float ref_h = single_line_ref_h(st.surface->factory(), tk::FontRole::SidebarPreview);
     st.run(view, kPreviewTestBounds);
     REQUIRE(st.cf.rich >= 1);
     REQUIRE(st.cf.tallest_rich_height > 0);
     REQUIRE(ref_h > 0);
     CHECK(st.cf.tallest_rich_height < ref_h * 1.8f);
 }
-

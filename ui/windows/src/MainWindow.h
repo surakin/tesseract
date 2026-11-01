@@ -85,7 +85,6 @@ class Win32Notifier; // defined in Win32Notifier.h, included by MainWindow.cpp
 class Win32TrayIcon; // defined in Win32TrayIcon.h, included by MainWindow.cpp
 class Win32Taskbar;
 
-
 // ---------------------------------------------------------------------------
 
 class MainWindow : public tesseract::ShellBase
@@ -104,17 +103,20 @@ public:
     // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to restore.
     explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
                         Win32Taskbar& taskbar, bool start_hidden = false,
-                        tesseract::LaunchAction launch_action =
-                            tesseract::LaunchAction::None,
+                        tesseract::LaunchAction launch_action = tesseract::LaunchAction::None,
                         std::string launch_room_id = {}
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                        , std::filesystem::path screenshot_dir = {}
+                        ,
+                        std::filesystem::path screenshot_dir = {}
 #endif
-                        );
+    );
     ~MainWindow();
 
     bool create(int nCmdShow);
-    Win32Taskbar& taskbar() { return taskbar_; }
+    Win32Taskbar& taskbar()
+    {
+        return taskbar_;
+    }
 
     // Called by the main message loop before TranslateMessage/DispatchMessage.
     // Routes application accelerators (e.g. Ctrl+K → quick switcher) to the
@@ -133,15 +135,20 @@ public:
     // same room_view_ this shell owns and dispatch to secondary windows. They
     // also carry guards this shell used to drop (in-thread reply exclusion,
     // scroll/focus restore on reset), so the base path is strictly more correct.
-    void handle_sync_error_ui_(std::string context, std::string user_id,
-                               std::string description,
+    void handle_sync_error_ui_(std::string context, std::string user_id, std::string description,
                                bool soft_logout) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_low_power_mode_ui_(bool active) override;
     bool tray_available_() const override;
-    void open_app_settings_ui_() override { open_settings_(); }
-    void close_app_settings_ui_() override { close_settings_(); }
+    void open_app_settings_ui_() override
+    {
+        open_settings_();
+    }
+    void close_app_settings_ui_() override
+    {
+        close_settings_();
+    }
     void rebind_login_client_ui_() override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
@@ -149,27 +156,22 @@ public:
 
     // Returns the user-chosen path, or L"" if cancelled.
     // Also called by RoomWindow for save dialogs in popout windows.
-    std::wstring show_save_dialog_(const std::wstring& suggested,
-                                   const wchar_t* filter);
+    std::wstring show_save_dialog_(const std::wstring& suggested, const wchar_t* filter);
     // An OPENFILENAMEW filter ("Label\0pattern\0...\0") from UTF-8 labels,
     // so the labels can be translated.
-    static std::wstring file_filter(
-        std::initializer_list<std::pair<std::string, const wchar_t*>> entries);
+    static std::wstring
+    file_filter(std::initializer_list<std::pair<std::string, const wchar_t*>> entries);
     // OPENFILENAMEW filter for a MediaSaveSpec (its type group + "All files").
     static std::wstring save_filter_for(const tesseract::views::MediaSaveSpec& spec);
     bool has_save_file_dialog_() const override;
-    void prompt_passphrase_(std::string title,
-                            std::function<void(std::string)> cb) override;
+    void prompt_passphrase_(std::string title, std::function<void(std::string)> cb) override;
     void pick_media_save_path_(const tesseract::views::MediaSaveSpec& spec,
                                std::function<void(std::string)> cb) override;
     void pick_save_file_(std::string title, std::string suggested_name,
                          std::function<void(std::string)> cb) override;
-    void pick_open_file_(std::string title,
-                         std::function<void(std::string)> cb) override;
-    void pick_folder_(std::string title,
-                      std::function<void(std::string)> cb) override;
-    void show_message_dialog_(std::string title, std::string text,
-                              bool is_error) override;
+    void pick_open_file_(std::string title, std::function<void(std::string)> cb) override;
+    void pick_folder_(std::string title, std::function<void(std::string)> cb) override;
+    void show_message_dialog_(std::string title, std::string text, bool is_error) override;
 
 public:
     /// Split a status-bar string into text and link runs, honouring the opt-in
@@ -192,11 +194,9 @@ private:
     // only losing it to a genuinely different application does.
     bool is_tray_owner_effectively_active_() const;
     bool main_window_foreground_for_tray_() const override;
-    std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* bgra,
-                                                  std::uint32_t w,
+    std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
                                                   std::uint32_t h) override;
-    std::unique_ptr<tk::Image>
-    decode_avatar_(const std::vector<std::uint8_t>& bytes) override;
+    std::unique_ptr<tk::Image> decode_avatar_(const std::vector<std::uint8_t>& bytes) override;
     void hide_main_window_for_tray_() override;
     void show_main_window_for_tray_(const std::string& token) override;
     static bool is_explorer_foreground_(HWND fg);
@@ -308,8 +308,8 @@ private:
     tk::TextArea* room_text_area_ = nullptr;
 
     // ── GIF picker (/gif <query>) ─────────────────────────────────────────
-    std::unique_ptr<tk::Image> make_image_from_bgra_(
-        int w, int h, const std::uint8_t* bgra) override;
+    std::unique_ptr<tk::Image> make_image_from_bgra_(int w, int h,
+                                                     const std::uint8_t* bgra) override;
     HWND hStatus_ = nullptr;
     HWND hStatusTip_ = nullptr;
     std::wstring inflight_tip_text_;
@@ -319,7 +319,6 @@ private:
     // event_handler_, per_account_rooms_, pending_login_client_,
     // pending_login_temp_dir_, pending_login_is_add_account_,
     // add_account_return_uid_ are inherited from tesseract::ShellBase.
-
 
     std::unique_ptr<Win32TrayIcon> tray_;
     bool quitting_ = false;
@@ -385,8 +384,7 @@ private:
         navigate_to_room(room_id);
     }
     void apply_native_theme_(const tk::Theme& t) override;
-    void for_each_shell_surface_(
-        const std::function<void(tk::SurfaceBase&)>& fn) override;
+    void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn) override;
     void apply_fonts_ui_() override;
     tk::ThemeMode os_color_scheme_() const override;
     std::optional<tk::Color> os_accent_color_() const override;
@@ -399,17 +397,14 @@ private:
     void on_recent_room_visited_(const tesseract::RoomInfo& room) override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_tray_unread_changed_(bool has_unread,
-                                 bool has_highlight) override;
-    void on_upload_progress_ui_(std::uint64_t request_id,
-                                std::uint64_t current,
+    void on_tray_unread_changed_(bool has_unread, bool has_highlight) override;
+    void on_upload_progress_ui_(std::uint64_t request_id, std::uint64_t current,
                                 std::uint64_t total) override;
     void on_upload_finished_ui_(std::uint64_t request_id, bool ok) override;
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;
-    tesseract::RoomWindowBase*
-    create_secondary_room_window_(const std::string& room_id) override;
+    tesseract::RoomWindowBase* create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
     void activate_for_notification_(const std::string& token) override;
     void set_window_fullscreen_(bool on) override;
@@ -417,37 +412,29 @@ private:
     bool spawn_relaunch_(const std::vector<std::string>& args) override;
     void quit_app_() override;
     bool is_ctrl_held_() const override;
-    void spawn_main_window_(
-        std::shared_ptr<tesseract::AccountSession> account) override;
-    std::unique_ptr<tesseract::IEventHandler>
-    make_account_bridge_(const std::string& uid) override;
-    void install_account_notifier_(
-        tesseract::AccountSession& session) override;
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account) override;
+    std::unique_ptr<tesseract::IEventHandler> make_account_bridge_(const std::string& uid) override;
+    void install_account_notifier_(tesseract::AccountSession& session) override;
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
     tesseract::CallWindowBase* create_call_window_() override;
     tesseract::AuxWindowBase* create_aux_window_(std::string title,
-                                                 std::unique_ptr<tk::Widget> root,
-                                                 int width, int height) override;
+                                                 std::unique_ptr<tk::Widget> root, int width,
+                                                 int height) override;
     bool accept_media_bytes_(const tk::CacheKey& key, MediaKind kind,
                              const std::vector<std::uint8_t>& bytes) override;
-    void ingest_tile_media_(const tk::CacheKey& key,
-                            std::vector<std::uint8_t> bytes) override;
-    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                               int max_h) override;
+    void ingest_tile_media_(const tk::CacheKey& key, std::vector<std::uint8_t> bytes) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w, int max_h) override;
     bool decode_image_streamed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
     bool decode_image_streamed_windowed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int,
-                                 std::shared_ptr<tk::AnimDecodeSession>,
-                                 std::size_t)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)> cb) override;
+                                 std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>&
+            on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
@@ -455,9 +442,8 @@ private:
     void start_inflight_tick_() override;
     void stop_inflight_tick_() override;
     void repaint_inflight_spinner_() override;
-    void decode_video_first_frame_(
-        std::vector<std::uint8_t> bytes,
-        std::function<void(std::vector<std::uint8_t>)> done) override;
+    void decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                   std::function<void(std::vector<std::uint8_t>)> done) override;
     void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
@@ -467,12 +453,10 @@ private:
     // posts the result back via post_to_ui_. When `target` is non-null the
     // result is posted to that compose bar (a pop-out window's), guarded by
     // `target_alive`; otherwise to the main compose bar.
-    void probe_drop_video_(std::uint32_t pending_gen,
-                           std::vector<std::uint8_t> bytes,
+    void probe_drop_video_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                            tesseract::views::ComposeBar* target,
                            std::shared_ptr<bool> target_alive) override;
-    void probe_drop_audio_(std::uint32_t pending_gen,
-                           std::vector<std::uint8_t> bytes,
+    void probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
                            tesseract::views::ComposeBar* target,
                            std::shared_ptr<bool> target_alive) override;
 

@@ -14,7 +14,7 @@ struct ScreenSource
 {
     std::string id;           // opaque platform handle (stringified)
     std::string display_name; // user-visible name, e.g. "Display 1", "My App"
-    bool        is_window;    // false = full monitor, true = application window
+    bool is_window;           // false = full monitor, true = application window
 };
 
 /// Cross-platform screen / window capture abstraction.
@@ -80,13 +80,18 @@ public:
     /// capture thread or inside start(), so the owner must hop to its own
     /// thread. Set before start().
     using FailureCallback = std::function<void()>;
-    void set_failure_callback(FailureCallback cb) { on_failure_ = std::move(cb); }
+    void set_failure_callback(FailureCallback cb)
+    {
+        on_failure_ = std::move(cb);
+    }
 
 protected:
     void report_failure_() const
     {
         if (on_failure_)
+        {
             on_failure_();
+        }
     }
 
     FailureCallback on_failure_;

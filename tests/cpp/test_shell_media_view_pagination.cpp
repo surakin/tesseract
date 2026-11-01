@@ -73,11 +73,16 @@ struct RoomPaneMediaViewTestAccess
                                        std::vector<tesseract::MediaIndexRow> rows,
                                        bool reached_db_end, std::uint64_t total)
     {
-        p.handle_room_media_page_(request_id, std::move(rows), reached_db_end,
-                                  total);
+        p.handle_room_media_page_(request_id, std::move(rows), reached_db_end, total);
     }
-    static RoomView*& room_view(RoomPane& p) { return p.room_view_; }
-    static RoomPane::Widgets& widgets(RoomPane& p) { return p.widgets_; }
+    static RoomView*& room_view(RoomPane& p)
+    {
+        return p.room_view_;
+    }
+    static RoomPane::Widgets& widgets(RoomPane& p)
+    {
+        return p.widgets_;
+    }
 };
 
 } // namespace tesseract
@@ -95,18 +100,25 @@ namespace
 // is stubbed to no-ops, mirroring PriorityShell in test_shell_media_priority.cpp.
 struct MediaViewShell : tesseract::test::TestShellBase
 {
-    void post_to_ui_(std::function<void()> fn) override { queue.push_back(std::move(fn)); }
+    void post_to_ui_(std::function<void()> fn) override
+    {
+        queue.push_back(std::move(fn));
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         queue.push_back(std::move(fn));
     }
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     std::vector<std::function<void()>> queue;
 
@@ -126,19 +138,16 @@ struct MediaViewShell : tesseract::test::TestShellBase
 // on_media_view_load_older_ / request_media_view_pagination_back_ /
 // handle_media_view_paginate_result_ui_ retry-budget plumbing, which never
 // touches room_view_/widgets_.room_media_view directly.
-std::unique_ptr<RoomPane> make_pane(MediaViewShell& s,
-                                    const std::string& room_id)
+std::unique_ptr<RoomPane> make_pane(MediaViewShell& s, const std::string& room_id)
 {
     return std::make_unique<RoomPane>(
-        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
-        room_id);
+        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, room_id);
 }
 
 } // namespace
 
-TEST_CASE(
-    "on_media_view_load_older_ does not rearm retries while a round is in flight",
-    "[shell][media-view]")
+TEST_CASE("on_media_view_load_older_ does not rearm retries while a round is in flight",
+          "[shell][media-view]")
 {
     // Reproduces the reported bug: opening the gallery in a media-sparse room
     // kicks off the automatic retry/accumulate chain in
@@ -162,9 +171,8 @@ TEST_CASE(
     CHECK(RoomPaneMediaViewTestAccess::media_view_retries_left(*pane) == 1);
 }
 
-TEST_CASE(
-    "on_media_view_load_older_ rearms retries for a genuine new gesture",
-    "[shell][media-view]")
+TEST_CASE("on_media_view_load_older_ rearms retries for a genuine new gesture",
+          "[shell][media-view]")
 {
     // Companion to the above: once the automatic chain has actually finished
     // (no round in flight) and exhausted its budget, a later real scroll
@@ -189,9 +197,8 @@ TEST_CASE(
     CHECK(s.pagination_[room_id].in_flight);
 }
 
-TEST_CASE(
-    "on_media_view_load_older_ pages the persistent index before the network",
-    "[shell][media-view]")
+TEST_CASE("on_media_view_load_older_ pages the persistent index before the network",
+          "[shell][media-view]")
 {
     // While the media index still has older rows, a scroll-to-top gesture
     // pages it (instant, offline) instead of firing a network round.
@@ -248,7 +255,10 @@ struct GalleryFixture
     std::string room_id = "!room:example.org";
     std::unique_ptr<RoomPane> pane;
 
-    tk::LayoutCtx layout_ctx() { return {surface->factory(), tk::Theme::light()}; }
+    tk::LayoutCtx layout_ctx()
+    {
+        return {surface->factory(), tk::Theme::light()};
+    }
 
     GalleryFixture()
     {
@@ -260,8 +270,7 @@ struct GalleryFixture
         app->room_media_view()->open(room_id, "Test Room");
 
         pane = make_pane(s, room_id);
-        RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view =
-            app->room_media_view();
+        RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view = app->room_media_view();
         RoomPaneMediaViewTestAccess::media_view_room_id(*pane) = room_id;
         RoomPaneMediaViewTestAccess::media_view_retries_left(*pane) =
             MediaViewShell::kMediaViewMaxRetries;
@@ -270,10 +279,9 @@ struct GalleryFixture
 
 } // namespace
 
-TEST_CASE(
-    "gallery pagination keeps requesting past the old 4-round cap while "
-    "media_count stays below the threshold and history isn't reached",
-    "[shell][media-view]")
+TEST_CASE("gallery pagination keeps requesting past the old 4-round cap while "
+          "media_count stays below the threshold and history isn't reached",
+          "[shell][media-view]")
 {
     // Reproduces the reported bug: a media-sparse-relative-to-volume room
     // (lots of media overall, but none in the next few hundred raw events)
@@ -284,12 +292,10 @@ TEST_CASE(
 
     f.pane->request_media_view_pagination_back_(); // first round
     int rounds = 0;
-    while (RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) != 0 &&
-           rounds < 20)
+    while (RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) != 0 && rounds < 20)
     {
         ++rounds;
-        auto req_id =
-            RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+        auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
         // ok, no reached_start, media_count stays at 0 every round.
         f.s.handle_media_view_paginate_result_ui_(req_id, true, false, 0, "");
     }
@@ -297,15 +303,12 @@ TEST_CASE(
     CHECK(rounds > 4);
 }
 
-TEST_CASE(
-    "gallery pagination stops once reached_start is reported",
-    "[shell][media-view]")
+TEST_CASE("gallery pagination stops once reached_start is reported", "[shell][media-view]")
 {
     GalleryFixture f;
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
     // The server reports the true start of history on this very first round.
     f.s.handle_media_view_paginate_result_ui_(req_id, true, true, 0, "");
@@ -314,9 +317,8 @@ TEST_CASE(
     CHECK(f.s.pagination_[f.room_id].reached_start);
 }
 
-TEST_CASE(
-    "handle_room_media_page_ populates the gallery from persistent-index rows",
-    "[shell][media-view]")
+TEST_CASE("handle_room_media_page_ populates the gallery from persistent-index rows",
+          "[shell][media-view]")
 {
     GalleryFixture f;
 
@@ -332,58 +334,53 @@ TEST_CASE(
     }
 
     RoomPaneMediaViewTestAccess::handle_room_media_page(
-        *f.pane, RoomPaneMediaViewTestAccess::media_view_db_request_id(*f.pane),
-        rows, /*reached_db_end=*/true, /*total=*/3);
+        *f.pane, RoomPaneMediaViewTestAccess::media_view_db_request_id(*f.pane), rows,
+        /*reached_db_end=*/true, /*total=*/3);
 
     CHECK(f.app->room_media_view()->item_count() == 3);
     CHECK(RoomPaneMediaViewTestAccess::media_view_db_oldest_ts(*f.pane) == 1002);
     CHECK(RoomPaneMediaViewTestAccess::media_view_db_exhausted(*f.pane));
 }
 
-TEST_CASE(
-    "gallery pagination stops once the authoritative media_count reaches the "
-    "threshold",
-    "[shell][media-view]")
+TEST_CASE("gallery pagination stops once the authoritative media_count reaches the "
+          "threshold",
+          "[shell][media-view]")
 {
     GalleryFixture f;
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
 
     // Reported directly from the SDK's timeline (see
     // paginate_media_view_back_async) — no widget content manipulation
     // needed; this is exactly the value the round would carry regardless of
     // whether the separate diff-streaming task has rendered anything yet.
-    f.s.handle_media_view_paginate_result_ui_(
-        req_id, true, false, MediaViewShell::kMediaViewMinTotal, "");
+    f.s.handle_media_view_paginate_result_ui_(req_id, true, false,
+                                              MediaViewShell::kMediaViewMinTotal, "");
 
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) == 0);
 }
 
-TEST_CASE(
-    "gallery pagination keeps going when media_count is just below the "
-    "threshold",
-    "[shell][media-view]")
+TEST_CASE("gallery pagination keeps going when media_count is just below the "
+          "threshold",
+          "[shell][media-view]")
 {
     GalleryFixture f;
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
 
-    f.s.handle_media_view_paginate_result_ui_(
-        req_id, true, false, MediaViewShell::kMediaViewMinTotal - 1, "");
+    f.s.handle_media_view_paginate_result_ui_(req_id, true, false,
+                                              MediaViewShell::kMediaViewMinTotal - 1, "");
 
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) != 0);
 }
 
-TEST_CASE(
-    "open_room_media_view_ requests a media-index page on open, then falls "
-    "back to the network once the index is drained",
-    "[shell][media-view]")
+TEST_CASE("open_room_media_view_ requests a media-index page on open, then falls "
+          "back to the network once the index is drained",
+          "[shell][media-view]")
 {
     // Under the DB-first design the first open issues a load_room_media_page
     // request (the persistent per-room media index), NOT a network round.
@@ -413,36 +410,33 @@ TEST_CASE(
     info.id = "!room:example.org";
     view.set_room(info);
     MessageRowData image_row;
-    image_row.kind     = MessageRowData::Kind::Image;
+    image_row.kind = MessageRowData::Kind::Image;
     image_row.event_id = "$only-event";
     view.set_messages({image_row}, /*room_switch=*/true);
 
     auto pane = make_pane(s, info.id);
     RoomPaneMediaViewTestAccess::room_view(*pane) = &view;
-    RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view =
-        app.room_media_view();
+    RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view = app.room_media_view();
 
     pane->open_room_media_view_();
 
     // First: a DB media-index page request, no network round yet.
-    const auto db_req =
-        RoomPaneMediaViewTestAccess::media_view_db_request_id(*pane);
+    const auto db_req = RoomPaneMediaViewTestAccess::media_view_db_request_id(*pane);
     CHECK(db_req != 0);
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*pane) == 0);
     CHECK_FALSE(s.pagination_[info.id].in_flight);
 
     // Deliver a drained, under-full page → network fallback kicks in.
-    RoomPaneMediaViewTestAccess::handle_room_media_page(
-        *pane, db_req, /*rows=*/{}, /*reached_db_end=*/true, /*total=*/0);
+    RoomPaneMediaViewTestAccess::handle_room_media_page(*pane, db_req, /*rows=*/{},
+                                                        /*reached_db_end=*/true, /*total=*/0);
 
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*pane) != 0);
     CHECK(s.pagination_[info.id].in_flight);
 }
 
-TEST_CASE(
-    "open/close_room_media_view_ registers the gallery's media group so its "
-    "thumbnail fetches aren't dropped by should_deliver_",
-    "[shell][media-view]")
+TEST_CASE("open/close_room_media_view_ registers the gallery's media group so its "
+          "thumbnail fetches aren't dropped by should_deliver_",
+          "[shell][media-view]")
 {
     MediaViewShell s;
     tesseract::Client client;
@@ -465,8 +459,7 @@ TEST_CASE(
 
     auto pane = make_pane(s, info.id);
     RoomPaneMediaViewTestAccess::room_view(*pane) = &view;
-    RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view =
-        app.room_media_view();
+    RoomPaneMediaViewTestAccess::widgets(*pane).room_media_view = app.room_media_view();
 
     CHECK(s.active_media_view_groups_.empty());
 
@@ -479,10 +472,9 @@ TEST_CASE(
     CHECK(s.active_media_view_groups_.count(grp) == 0);
 }
 
-TEST_CASE(
-    "gallery pagination keeps going past kMediaViewMinTotal once the "
-    "widget's real (larger) capacity is known",
-    "[shell][media-view]")
+TEST_CASE("gallery pagination keeps going past kMediaViewMinTotal once the "
+          "widget's real (larger) capacity is known",
+          "[shell][media-view]")
 {
     // Reproduces the "found six, stopped" bug: once RoomMediaView has been
     // arranged with its real viewport, the retry loop's target must be
@@ -491,17 +483,15 @@ TEST_CASE(
     GalleryFixture f;
     auto lc = f.layout_ctx();
     f.app->room_media_view()->arrange(lc, {0, 0, 800, 600});
-    REQUIRE(f.app->room_media_view()->estimated_capacity() >
-            MediaViewShell::kMediaViewMinTotal);
+    REQUIRE(f.app->room_media_view()->estimated_capacity() > MediaViewShell::kMediaViewMinTotal);
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
 
     // More than the old fixed floor, but still fewer than the real capacity.
-    f.s.handle_media_view_paginate_result_ui_(
-        req_id, true, false, MediaViewShell::kMediaViewMinTotal + 1, "");
+    f.s.handle_media_view_paginate_result_ui_(req_id, true, false,
+                                              MediaViewShell::kMediaViewMinTotal + 1, "");
 
     // Must still be going — six-plus is not "the viewport is full" once the
     // widget's real geometry says otherwise.
@@ -517,7 +507,7 @@ std::vector<MessageRowData> make_image_rows(int count)
     for (int i = 0; i < count; ++i)
     {
         MessageRowData row;
-        row.kind     = MessageRowData::Kind::Image;
+        row.kind = MessageRowData::Kind::Image;
         row.event_id = "$ev" + std::to_string(i);
         rows.push_back(std::move(row));
     }
@@ -526,10 +516,9 @@ std::vector<MessageRowData> make_image_rows(int count)
 
 } // namespace
 
-TEST_CASE(
-    "gallery pagination defers the next round when rendering is far behind "
-    "the authoritative count",
-    "[shell][media-view]")
+TEST_CASE("gallery pagination defers the next round when rendering is far behind "
+          "the authoritative count",
+          "[shell][media-view]")
 {
     // Reproduces the "huge bunch" bug: the widget has rendered nothing yet,
     // but the round reports a media_count far beyond kMediaViewMaxRenderGap
@@ -547,8 +536,7 @@ TEST_CASE(
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
 
     const std::uint64_t big_count = MediaViewShell::kMediaViewMaxRenderGap + 50;
@@ -557,15 +545,13 @@ TEST_CASE(
     // Deferred, not fired: no new request_id, but a fallback timer queued.
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) == 0);
     CHECK(RoomPaneMediaViewTestAccess::media_view_paginate_pending(*f.pane));
-    CHECK(RoomPaneMediaViewTestAccess::media_view_known_media_count(*f.pane) ==
-          big_count);
+    CHECK(RoomPaneMediaViewTestAccess::media_view_known_media_count(*f.pane) == big_count);
     CHECK_FALSE(f.s.queue.empty());
 }
 
-TEST_CASE(
-    "maybe_resume_media_view_pagination_ fires once the render gap has "
-    "closed enough",
-    "[shell][media-view]")
+TEST_CASE("maybe_resume_media_view_pagination_ fires once the render gap has "
+          "closed enough",
+          "[shell][media-view]")
 {
     GalleryFixture f;
     // Arrange a tall viewport so estimated_capacity() comfortably exceeds
@@ -578,8 +564,7 @@ TEST_CASE(
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
     const std::uint64_t big_count = MediaViewShell::kMediaViewMaxRenderGap + 50;
     f.s.handle_media_view_paginate_result_ui_(req_id, true, false, big_count, "");
@@ -588,10 +573,8 @@ TEST_CASE(
 
     // Simulate the diff-streaming task delivering enough rows to close the
     // gap (item_count() now within kMediaViewMaxRenderGap of big_count).
-    f.app->room_media_view()->set_media(
-        make_image_rows(static_cast<int>(big_count - 1)));
-    REQUIRE(f.app->room_media_view()->item_count() ==
-            static_cast<std::size_t>(big_count - 1));
+    f.app->room_media_view()->set_media(make_image_rows(static_cast<int>(big_count - 1)));
+    REQUIRE(f.app->room_media_view()->item_count() == static_cast<std::size_t>(big_count - 1));
 
     f.pane->maybe_resume_media_view_pagination_(/*force=*/false);
 
@@ -599,10 +582,9 @@ TEST_CASE(
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) != 0);
 }
 
-TEST_CASE(
-    "maybe_resume_media_view_pagination_ is a no-op while the render gap "
-    "is still too large",
-    "[shell][media-view]")
+TEST_CASE("maybe_resume_media_view_pagination_ is a no-op while the render gap "
+          "is still too large",
+          "[shell][media-view]")
 {
     GalleryFixture f;
     // Arrange a tall viewport so estimated_capacity() comfortably exceeds
@@ -615,8 +597,7 @@ TEST_CASE(
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
     const std::uint64_t big_count = MediaViewShell::kMediaViewMaxRenderGap + 50;
     f.s.handle_media_view_paginate_result_ui_(req_id, true, false, big_count, "");
@@ -629,10 +610,9 @@ TEST_CASE(
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) == 0);
 }
 
-TEST_CASE(
-    "maybe_resume_media_view_pagination_ force=true fires regardless of "
-    "the render gap (fallback-timer path)",
-    "[shell][media-view]")
+TEST_CASE("maybe_resume_media_view_pagination_ force=true fires regardless of "
+          "the render gap (fallback-timer path)",
+          "[shell][media-view]")
 {
     GalleryFixture f;
     // Arrange a tall viewport so estimated_capacity() comfortably exceeds
@@ -645,8 +625,7 @@ TEST_CASE(
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
     const std::uint64_t big_count = MediaViewShell::kMediaViewMaxRenderGap + 50;
     f.s.handle_media_view_paginate_result_ui_(req_id, true, false, big_count, "");
@@ -658,10 +637,9 @@ TEST_CASE(
     CHECK(RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane) != 0);
 }
 
-TEST_CASE(
-    "closing the gallery clears a pending deferred round; a stale fallback "
-    "closure is a no-op afterward",
-    "[shell][media-view]")
+TEST_CASE("closing the gallery clears a pending deferred round; a stale fallback "
+          "closure is a no-op afterward",
+          "[shell][media-view]")
 {
     GalleryFixture f;
     // Arrange a tall viewport so estimated_capacity() comfortably exceeds
@@ -674,8 +652,7 @@ TEST_CASE(
             MediaViewShell::kMediaViewMaxRenderGap + 50);
 
     f.pane->request_media_view_pagination_back_();
-    auto req_id =
-        RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
+    auto req_id = RoomPaneMediaViewTestAccess::media_view_pending_request_id(*f.pane);
     REQUIRE(req_id != 0);
     const std::uint64_t big_count = MediaViewShell::kMediaViewMaxRenderGap + 50;
     f.s.handle_media_view_paginate_result_ui_(req_id, true, false, big_count, "");

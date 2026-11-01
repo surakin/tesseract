@@ -11,8 +11,8 @@ namespace
 // commands on the way in, so the popup must accept the same characters.
 constexpr bool is_name_char(char c)
 {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || c == '_' || c == '-';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' ||
+           c == '-';
 }
 
 // Compact positional hint shown next to "/name" in the popup row, e.g.
@@ -39,8 +39,7 @@ std::string build_bot_args_hint(const tesseract::CommandDescription& d)
     return hint;
 }
 
-bool shadowed_by_builtin(const std::vector<SlashCommandSuggestion>& out,
-                         const std::string& name)
+bool shadowed_by_builtin(const std::vector<SlashCommandSuggestion>& out, const std::string& name)
 {
     for (const auto& s : out)
     {
@@ -52,23 +51,32 @@ bool shadowed_by_builtin(const std::vector<SlashCommandSuggestion>& out,
     return false;
 }
 
-}  // namespace
+} // namespace
 
-std::optional<SlashCommandMatch>
-SlashCommandEngine::find_prefix(std::string_view text, int cursor_byte_pos) const
+std::optional<SlashCommandMatch> SlashCommandEngine::find_prefix(std::string_view text,
+                                                                 int cursor_byte_pos) const
 {
     // Activate only when the slash is at position 0 (start of composer)
     // and the cursor is at end-of-text. Anything else is a literal slash
     // in a message — pass through.
-    if (text.empty() || text[0] != '/') return std::nullopt;
-    if (cursor_byte_pos != (int)text.size()) return std::nullopt;
+    if (text.empty() || text[0] != '/')
+    {
+        return std::nullopt;
+    }
+    if (cursor_byte_pos != (int)text.size())
+    {
+        return std::nullopt;
+    }
 
     // All chars after the leading '/' must be name chars (letters, digits,
     // '_' and '-'). The first space terminates the popup because the user
     // has moved on to typing args.
     for (std::size_t i = 1; i < text.size(); ++i)
     {
-        if (!is_name_char(text[i])) return std::nullopt;
+        if (!is_name_char(text[i]))
+        {
+            return std::nullopt;
+        }
     }
     SlashCommandMatch m;
     m.start = 0;
@@ -110,8 +118,14 @@ SlashCommandEngine::lookup(std::string_view prefix,
     }
     for (const auto& d : bot_commands)
     {
-        if (!d.valid || d.command != prefix) continue;
-        if (shadowed_by_builtin(out, d.command)) continue;
+        if (!d.valid || d.command != prefix)
+        {
+            continue;
+        }
+        if (shadowed_by_builtin(out, d.command))
+        {
+            continue;
+        }
         push_bot(d);
     }
 
@@ -119,19 +133,46 @@ SlashCommandEngine::lookup(std::string_view prefix,
     // exact one, then bot commands.
     for (const auto& c : all)
     {
-        if ((int)out.size() >= max_results) break;
-        if (c.name == prefix) continue;  // already added
-        if (c.name.size() < prefix.size()) continue;
-        if (c.name.compare(0, prefix.size(), prefix) != 0) continue;
+        if ((int)out.size() >= max_results)
+        {
+            break;
+        }
+        if (c.name == prefix)
+        {
+            continue; // already added
+        }
+        if (c.name.size() < prefix.size())
+        {
+            continue;
+        }
+        if (c.name.compare(0, prefix.size(), prefix) != 0)
+        {
+            continue;
+        }
         out.push_back({c.name, c.args_hint, c.description});
     }
     for (const auto& d : bot_commands)
     {
-        if ((int)out.size() >= max_results) break;
-        if (!d.valid || d.command == prefix) continue;  // already added above
-        if (d.command.size() < prefix.size()) continue;
-        if (d.command.compare(0, prefix.size(), prefix) != 0) continue;
-        if (shadowed_by_builtin(out, d.command)) continue;
+        if ((int)out.size() >= max_results)
+        {
+            break;
+        }
+        if (!d.valid || d.command == prefix)
+        {
+            continue; // already added above
+        }
+        if (d.command.size() < prefix.size())
+        {
+            continue;
+        }
+        if (d.command.compare(0, prefix.size(), prefix) != 0)
+        {
+            continue;
+        }
+        if (shadowed_by_builtin(out, d.command))
+        {
+            continue;
+        }
         push_bot(d);
     }
     return out;

@@ -17,14 +17,10 @@ std::vector<OptionSpec> specs()
     return {
         {"help", "help", 'h', Arity::Flag, "", "Show help", false, false, {}},
         {"verbose", "verbose", 'v', Arity::Flag, "", "Verbose", false, false, {}},
-        {"profile", "profile", 'p', Arity::Required, "NAME", "Profile", false,
-         false, {}},
-        {"include", "include", 'I', Arity::Required, "DIR", "Include", true,
-         false, {}},
-        {"hidden", "hidden", '\0', Arity::Flag, "", "Start hidden", false,
-         false, {"minimized"}},
-        {"secret", "secret", '\0', Arity::Required, "DIR", "Secret", false,
-         true, {}},
+        {"profile", "profile", 'p', Arity::Required, "NAME", "Profile", false, false, {}},
+        {"include", "include", 'I', Arity::Required, "DIR", "Include", true, false, {}},
+        {"hidden", "hidden", '\0', Arity::Flag, "", "Start hidden", false, false, {"minimized"}},
+        {"secret", "secret", '\0', Arity::Required, "DIR", "Secret", false, true, {}},
     };
 }
 
@@ -164,10 +160,9 @@ TEST_CASE("cli: duplicates warn, last wins; repeatable collects")
 
 TEST_CASE("cli: foreign options are skipped silently")
 {
-    std::vector<ForeignOption> foreign = {
-        {"-psn_", false}, {"-NS", true}, {"-platform", true}};
-    auto r = run({"-psn_0_1234", "-NSDocumentRevisionsDebugMode", "YES",
-                  "-platform", "wayland", "-platform=xcb", "--verbose"},
+    std::vector<ForeignOption> foreign = {{"-psn_", false}, {"-NS", true}, {"-platform", true}};
+    auto r = run({"-psn_0_1234", "-NSDocumentRevisionsDebugMode", "YES", "-platform", "wayland",
+                  "-platform=xcb", "--verbose"},
                  foreign);
     CHECK(r.has("verbose"));
     CHECK(r.positionals().empty());
@@ -188,17 +183,16 @@ TEST_CASE("cli: occurrences preserve argv order")
 TEST_CASE("cli: format_usage aligns columns and omits hidden options")
 {
     const auto s = specs();
-    const std::string usage = tesseract::cli::format_usage(
-        s, "tesseract", "[OPTIONS] [URI]", "Usage:", "Options:");
-    const std::string expected =
-        "Usage: tesseract [OPTIONS] [URI]\n"
-        "\n"
-        "Options:\n"
-        "  -h, --help           Show help\n"
-        "  -v, --verbose        Verbose\n"
-        "  -p, --profile=NAME   Profile\n"
-        "  -I, --include=DIR    Include\n"
-        "      --hidden         Start hidden\n";
+    const std::string usage =
+        tesseract::cli::format_usage(s, "tesseract", "[OPTIONS] [URI]", "Usage:", "Options:");
+    const std::string expected = "Usage: tesseract [OPTIONS] [URI]\n"
+                                 "\n"
+                                 "Options:\n"
+                                 "  -h, --help           Show help\n"
+                                 "  -v, --verbose        Verbose\n"
+                                 "  -p, --profile=NAME   Profile\n"
+                                 "  -I, --include=DIR    Include\n"
+                                 "      --hidden         Start hidden\n";
     CHECK(usage == expected);
 }
 

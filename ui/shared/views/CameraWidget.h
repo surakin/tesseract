@@ -46,8 +46,7 @@ public:
 
     // Fired on the UI thread after the countdown completes.
     // bgra: row-major BGRA8888, stride = w*4, A=255 (opaque camera frame).
-    std::function<void(std::vector<std::uint8_t> bgra,
-                       std::uint32_t w, std::uint32_t h)>
+    std::function<void(std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)>
         on_frame_captured;
 
     // Fired when the widget closes (after capture, cancel, or dismissing
@@ -55,27 +54,33 @@ public:
     std::function<void()> on_dismissed;
 
     // The camera failure being shown, or None.
-    tk::VideoCapture::Error error() const { return error_; }
+    tk::VideoCapture::Error error() const
+    {
+        return error_;
+    }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
     // Full-surface overlay: keep Tab from reaching the inert UI behind it.
     // Escape is handled by MainAppWidget::dismiss_top_transient_().
-    bool     access_modal() const override { return visible(); }
+    bool access_modal() const override
+    {
+        return visible();
+    }
 
 private:
     std::unique_ptr<tk::VideoCapture> capture_;
 
-    std::mutex              frame_mu_;
+    std::mutex frame_mu_;
     std::vector<std::uint8_t> last_bgra_;
-    std::uint32_t           frame_w_  = 0;
-    std::uint32_t           frame_h_  = 0;
+    std::uint32_t frame_w_ = 0;
+    std::uint32_t frame_h_ = 0;
 
     std::optional<std::chrono::steady_clock::time_point> start_;
-    bool opened_    = false;
-    bool captured_  = false;
+    bool opened_ = false;
+    bool captured_ = false;
     bool dismissed_ = false;
     tk::VideoCapture::Error error_ = tk::VideoCapture::Error::None;
 

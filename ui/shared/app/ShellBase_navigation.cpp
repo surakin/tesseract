@@ -46,30 +46,31 @@ void ShellBase::tab_open_room(const std::string& room_id)
         return;
     }
     if (main_room_pane_)
+    {
         main_room_pane_->save_compose_draft_(current_room_id_);
+    }
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
         if (active_tab_idx_ < tabs_.size())
         {
-            tabs_[active_tab_idx_].scroll_offset =
-                get_message_scroll_fraction_();
+            tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
         }
         active_tab_idx_ = existing;
         {
             if (main_room_pane_)
             {
                 auto _tt = compute_thread_transition_(
-                    main_room_pane_->thread_panel(),
-                    main_room_pane_->thread_panel_prev(),
-                    main_room_pane_->thread_root(),
-                    ThreadTrigger::RoomSwitch, {});
+                    main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
                 main_room_pane_->apply_thread_transition_(_tt);
             }
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         if (main_room_pane_)
+        {
             main_room_pane_->retarget(current_room_id_);
+        }
         after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
@@ -89,16 +90,16 @@ void ShellBase::tab_open_room(const std::string& room_id)
         if (main_room_pane_)
         {
             auto _tt = compute_thread_transition_(
-                main_room_pane_->thread_panel(),
-                main_room_pane_->thread_panel_prev(),
-                main_room_pane_->thread_root(),
-                ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
             main_room_pane_->apply_thread_transition_(_tt);
         }
     }
     current_room_id_ = room_id;
     if (main_room_pane_)
+    {
         main_room_pane_->retarget(current_room_id_);
+    }
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
@@ -116,40 +117,47 @@ void ShellBase::tab_select_room(const std::string& room_id)
     }
     // Dismiss any visible InviteCard so the chat panel shows the room view.
     if (main_app_)
+    {
         main_app_->show_room();
+    }
     size_t existing = find_tab_(tabs_, room_id);
     if (existing != SIZE_MAX)
     {
         if (existing == active_tab_idx_)
+        {
             return;
+        }
         if (main_room_pane_)
+        {
             main_room_pane_->save_compose_draft_(current_room_id_);
+        }
         if (active_tab_idx_ < tabs_.size())
         {
-            tabs_[active_tab_idx_].scroll_offset =
-                get_message_scroll_fraction_();
+            tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
         }
         active_tab_idx_ = existing;
         {
             if (main_room_pane_)
             {
                 auto _tt = compute_thread_transition_(
-                    main_room_pane_->thread_panel(),
-                    main_room_pane_->thread_panel_prev(),
-                    main_room_pane_->thread_root(),
-                    ThreadTrigger::RoomSwitch, {});
+                    main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
                 main_room_pane_->apply_thread_transition_(_tt);
             }
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         if (main_room_pane_)
+        {
             main_room_pane_->retarget(current_room_id_);
+        }
         after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
     }
     if (main_room_pane_)
+    {
         main_room_pane_->save_compose_draft_(current_room_id_);
+    }
     if (tabs_.empty())
     {
         tabs_.push_back({room_id, 0.f});
@@ -162,16 +170,16 @@ void ShellBase::tab_select_room(const std::string& room_id)
         if (main_room_pane_)
         {
             auto _tt = compute_thread_transition_(
-                main_room_pane_->thread_panel(),
-                main_room_pane_->thread_panel_prev(),
-                main_room_pane_->thread_root(),
-                ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
             main_room_pane_->apply_thread_transition_(_tt);
         }
     }
     current_room_id_ = room_id;
     if (main_room_pane_)
+    {
         main_room_pane_->retarget(current_room_id_);
+    }
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
@@ -191,27 +199,28 @@ void ShellBase::tab_navigate_room(const std::string& room_id)
     if (existing != SIZE_MAX)
     {
         if (main_room_pane_)
+        {
             main_room_pane_->save_compose_draft_(current_room_id_);
+        }
         if (active_tab_idx_ < tabs_.size())
         {
-            tabs_[active_tab_idx_].scroll_offset =
-                get_message_scroll_fraction_();
+            tabs_[active_tab_idx_].scroll_offset = get_message_scroll_fraction_();
         }
         active_tab_idx_ = existing;
         {
             if (main_room_pane_)
             {
                 auto _tt = compute_thread_transition_(
-                    main_room_pane_->thread_panel(),
-                    main_room_pane_->thread_panel_prev(),
-                    main_room_pane_->thread_root(),
-                    ThreadTrigger::RoomSwitch, {});
+                    main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                    main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
                 main_room_pane_->apply_thread_transition_(_tt);
             }
         }
         current_room_id_ = tabs_[active_tab_idx_].room_id;
         if (main_room_pane_)
+        {
             main_room_pane_->retarget(current_room_id_);
+        }
         after_active_room_changed_();
         on_tab_state_changed_ui_();
         return;
@@ -245,20 +254,22 @@ void ShellBase::tab_close(const std::string& room_id)
         if (main_room_pane_)
         {
             auto _tt = compute_thread_transition_(
-                main_room_pane_->thread_panel(),
-                main_room_pane_->thread_panel_prev(),
-                main_room_pane_->thread_root(),
-                ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
             main_room_pane_->apply_thread_transition_(_tt);
         }
         if (main_room_pane_)
+        {
             main_room_pane_->save_compose_draft_(current_room_id_);
+        }
         current_room_id_.clear();
         tabs_.clear();
         active_tab_idx_ = 0;
         after_active_room_changed_();
         if (room_view_)
+        {
             room_view_->clear_room();
+        }
         request_relayout_();
         on_tab_state_changed_ui_();
         return;
@@ -272,7 +283,9 @@ void ShellBase::tab_close(const std::string& room_id)
     else
     {
         if (main_room_pane_)
-        main_room_pane_->save_compose_draft_(current_room_id_);
+        {
+            main_room_pane_->save_compose_draft_(current_room_id_);
+        }
     }
     size_t new_active = active_tab_idx_;
     if (closing_active)
@@ -290,16 +303,16 @@ void ShellBase::tab_close(const std::string& room_id)
         if (main_room_pane_)
         {
             auto _tt = compute_thread_transition_(
-                main_room_pane_->thread_panel(),
-                main_room_pane_->thread_panel_prev(),
-                main_room_pane_->thread_root(),
-                ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
             main_room_pane_->apply_thread_transition_(_tt);
         }
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     if (main_room_pane_)
+    {
         main_room_pane_->retarget(current_room_id_);
+    }
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 }
@@ -317,8 +330,8 @@ void ShellBase::tab_popout_room(const std::string& room_id)
     {
         return;
     }
-    tab_close(id);                // deselects to empty state if this is the last tab
-    open_room_in_new_window(id);  // raises an existing pop-out if present
+    tab_close(id);               // deselects to empty state if this is the last tab
+    open_room_in_new_window(id); // raises an existing pop-out if present
 }
 
 bool ShellBase::room_open_in_tab(const std::string& room_id) const
@@ -328,13 +341,12 @@ bool ShellBase::room_open_in_tab(const std::string& room_id) const
 
 bool ShellBase::room_open_in_window(const std::string& room_id) const
 {
-    return find_secondary_(room_id, active_account_ ? active_account_->user_id
-                                                    : std::string{}) != nullptr;
+    return find_secondary_(room_id, active_account_ ? active_account_->user_id : std::string{}) !=
+           nullptr;
 }
 
-bool ShellBase::try_restore_tab_session_(
-    const std::vector<std::string>& room_ids,
-    const std::string&              active_room_id)
+bool ShellBase::try_restore_tab_session_(const std::vector<std::string>& room_ids,
+                                         const std::string& active_room_id)
 {
     std::vector<TabState> new_tabs;
     for (const auto& id : room_ids)
@@ -349,9 +361,11 @@ bool ShellBase::try_restore_tab_session_(
         }
     }
     if (new_tabs.empty())
+    {
         return false;
+    }
 
-    tabs_          = std::move(new_tabs);
+    tabs_ = std::move(new_tabs);
     active_tab_idx_ = 0;
     if (!active_room_id.empty())
     {
@@ -368,16 +382,16 @@ bool ShellBase::try_restore_tab_session_(
         if (main_room_pane_)
         {
             auto _tt = compute_thread_transition_(
-                main_room_pane_->thread_panel(),
-                main_room_pane_->thread_panel_prev(),
-                main_room_pane_->thread_root(),
-                ThreadTrigger::RoomSwitch, {});
+                main_room_pane_->thread_panel(), main_room_pane_->thread_panel_prev(),
+                main_room_pane_->thread_root(), ThreadTrigger::RoomSwitch, {});
             main_room_pane_->apply_thread_transition_(_tt);
         }
     }
     current_room_id_ = tabs_[active_tab_idx_].room_id;
     if (main_room_pane_)
+    {
         main_room_pane_->retarget(current_room_id_);
+    }
     after_active_room_changed_();
     on_tab_state_changed_ui_();
 
@@ -391,11 +405,17 @@ bool ShellBase::try_restore_tab_session_(
         {
             bool known = std::any_of(rooms_.begin(), rooms_.end(),
                                      [&id](const RoomInfo& r)
-                                     { return r.id == id; });
+                                     {
+                                         return r.id == id;
+                                     });
             if (known)
+            {
                 open_room_in_new_window(id);
+            }
             else
+            {
                 still_pending.push_back(id);
+            }
         }
         pending_restore_popouts_ = std::move(still_pending);
     }
@@ -417,49 +437,73 @@ bool ShellBase::try_restore_tab_session_(
 void ShellBase::on_pin_requested(const std::string& event_id)
 {
     if (!client_ || current_room_id_.empty() || event_id.empty())
+    {
         return;
+    }
     auto sess = active_account_;
     auto rid = current_room_id_;
     auto eid = event_id;
     auto alive = weak_flag();
-    run_async_mut_([this, alive, sess, rid, eid]() mutable {
-        if (!sess || !sess->client) return;
-        auto r = sess->client->pin_event(rid, eid);
-        if (!r.ok)
+    run_async_mut_(
+        [this, alive, sess, rid, eid]() mutable
         {
-            std::fprintf(stderr, "[pin] pin failed for %s in %s: %s\n",
-                         eid.c_str(), rid.c_str(), r.message.c_str());
-            if (!alive.expired())
-                post_to_ui_alive_([this, msg = r.message]() {
-                    show_status_message_(tk::trf(tk::tr("Could not pin the message: {0}"), {msg}));
-                });
-        }
-    });
+            if (!sess || !sess->client)
+            {
+                return;
+            }
+            auto r = sess->client->pin_event(rid, eid);
+            if (!r.ok)
+            {
+                std::fprintf(stderr, "[pin] pin failed for %s in %s: %s\n", eid.c_str(),
+                             rid.c_str(), r.message.c_str());
+                if (!alive.expired())
+                {
+                    post_to_ui_alive_(
+                        [this, msg = r.message]()
+                        {
+                            show_status_message_(
+                                tk::trf(tk::tr("Could not pin the message: {0}"), {msg}));
+                        });
+                }
+            }
+        });
 }
 
 void ShellBase::on_unpin_requested(const std::string& event_id)
 {
     if (!client_ || current_room_id_.empty() || event_id.empty())
+    {
         return;
+    }
     auto sess = active_account_;
     auto rid = current_room_id_;
     auto eid = event_id;
     auto alive = weak_flag();
     // The unpin is a state write over the network: run it on the mutating
     // pool like pin, not on the UI thread.
-    run_async_mut_([this, alive, sess, rid, eid]() mutable {
-        if (!sess || !sess->client) return;
-        auto r = sess->client->unpin_event(rid, eid);
-        if (!r.ok)
+    run_async_mut_(
+        [this, alive, sess, rid, eid]() mutable
         {
-            std::fprintf(stderr, "[pin] unpin failed for %s in %s: %s\n",
-                         eid.c_str(), rid.c_str(), r.message.c_str());
-            if (!alive.expired())
-                post_to_ui_alive_([this, msg = r.message]() {
-                    show_status_message_(tk::trf(tk::tr("Could not unpin the message: {0}"), {msg}));
-                });
-        }
-    });
+            if (!sess || !sess->client)
+            {
+                return;
+            }
+            auto r = sess->client->unpin_event(rid, eid);
+            if (!r.ok)
+            {
+                std::fprintf(stderr, "[pin] unpin failed for %s in %s: %s\n", eid.c_str(),
+                             rid.c_str(), r.message.c_str());
+                if (!alive.expired())
+                {
+                    post_to_ui_alive_(
+                        [this, msg = r.message]()
+                        {
+                            show_status_message_(
+                                tk::trf(tk::tr("Could not unpin the message: {0}"), {msg}));
+                        });
+                }
+            }
+        });
 }
 
 // Compute and apply calls-button visibility for one room header:
@@ -470,21 +514,20 @@ void ShellBase::on_unpin_requested(const std::string& event_id)
 // mid-call). Called for room_view_ and
 // every secondary window's header whenever room state, server info, or
 // the active room changes.
-void ShellBase::update_call_btn_visibility_(views::RoomHeader* header,
-                                             const std::string& room_id)
+void ShellBase::update_call_btn_visibility_(views::RoomHeader* header, const std::string& room_id)
 {
     if (!header)
+    {
         return;
+    }
     const auto* r = room_by_id_(room_id);
     const bool room_is_bridged = r && r->is_bridged && !r->bridge_overridden;
-    const bool in_call_room =
-        call_session_ != nullptr && call_session_->room_id() == room_id;
-    const bool can_call =
-        client_ && call_entry_permitted(r && r->has_active_call,
-                                        client_->can_join_call_in_room(room_id),
-                                        client_->can_start_call_in_room(room_id));
+    const bool in_call_room = call_session_ != nullptr && call_session_->room_id() == room_id;
+    const bool can_call = client_ && call_entry_permitted(r && r->has_active_call,
+                                                          client_->can_join_call_in_room(room_id),
+                                                          client_->can_start_call_in_room(room_id));
     header->set_show_call_btn(server_info_.supports_calls && !room_is_bridged &&
-                               (can_call || in_call_room));
+                              (can_call || in_call_room));
     update_call_lobby_gate_(room_id);
 }
 
@@ -493,17 +536,18 @@ void ShellBase::update_call_lobby_gate_(const std::string& room_id)
     views::RoomView* rv = room_view_for_room_(room_id);
     views::CallLobbyView* lobby = rv ? rv->call_lobby() : nullptr;
     if (!lobby || !lobby->is_open() || lobby->room_id() != room_id)
+    {
         return;
+    }
     const auto* r = room_by_id_(room_id);
     const bool has_call = r && r->has_active_call;
     const bool permitted =
-        !client_ || call_entry_permitted(has_call,
-                                         client_->can_join_call_in_room(room_id),
+        !client_ || call_entry_permitted(has_call, client_->can_join_call_in_room(room_id),
                                          client_->can_start_call_in_room(room_id));
-    lobby->set_join_blocked(
-        permitted ? std::string()
-                  : has_call ? tk::tr("You don't have permission to join calls in this room.")
-                             : tk::tr("A moderator needs to start the call."));
+    lobby->set_join_blocked(permitted ? std::string()
+                            : has_call
+                                ? tk::tr("You don't have permission to join calls in this room.")
+                                : tk::tr("A moderator needs to start the call."));
 }
 
 void ShellBase::refresh_pinned_for_current_room_()
@@ -515,13 +559,17 @@ void ShellBase::refresh_pinned_for_current_room_()
     // current_room_id_ context, and main_room_pane_ is always retargeted to
     // stay in sync with current_room_id_.
     if (main_room_pane_)
+    {
         main_room_pane_->refresh_pinned_for_current_room_();
+    }
 }
 
 void ShellBase::navigate_history_back()
 {
     if (room_nav_history_.empty() || room_nav_history_cursor_ == 0)
+    {
         return;
+    }
     --room_nav_history_cursor_;
     room_nav_in_progress_ = true;
     navigate_to_room_(room_nav_history_[room_nav_history_cursor_]);
@@ -531,7 +579,9 @@ void ShellBase::navigate_history_back()
 void ShellBase::navigate_history_forward()
 {
     if (room_nav_history_.empty() || room_nav_history_cursor_ + 1 >= room_nav_history_.size())
+    {
         return;
+    }
     ++room_nav_history_cursor_;
     room_nav_in_progress_ = true;
     navigate_to_room_(room_nav_history_[room_nav_history_cursor_]);
@@ -557,7 +607,9 @@ void ShellBase::after_active_room_changed_()
     {
         client_->set_active_room(current_room_id_);
         for (const auto& space_id : parent_spaces_for_room_(current_room_id_))
+        {
             client_->set_active_room(space_id);
+        }
     }
     refresh_pickers_packs_();
 
@@ -568,9 +620,8 @@ void ShellBase::after_active_room_changed_()
     // RoomPane::close_room_media_view_()'s cleanup (cancel its media group,
     // clear its own media_view_room_id_, lift the main timeline's relayout
     // suppression).
-    if (main_app_ && main_app_->room_media_view() &&
-        main_app_->room_media_view()->is_open() && main_room_pane_ &&
-        main_room_pane_->media_view_room_id() != current_room_id_)
+    if (main_app_ && main_app_->room_media_view() && main_app_->room_media_view()->is_open() &&
+        main_room_pane_ && main_room_pane_->media_view_room_id() != current_room_id_)
     {
         main_app_->room_media_view()->close();
     }
@@ -582,10 +633,9 @@ void ShellBase::after_active_room_changed_()
         // Truncate any forward entries the user had navigated back into.
         if (!room_nav_history_.empty())
         {
-            room_nav_history_.erase(
-                room_nav_history_.begin() +
-                    static_cast<std::ptrdiff_t>(room_nav_history_cursor_) + 1,
-                room_nav_history_.end());
+            room_nav_history_.erase(room_nav_history_.begin() +
+                                        static_cast<std::ptrdiff_t>(room_nav_history_cursor_) + 1,
+                                    room_nav_history_.end());
         }
         room_nav_history_.push_back(current_room_id_);
         room_nav_history_cursor_ = room_nav_history_.size() - 1;
@@ -594,7 +644,9 @@ void ShellBase::after_active_room_changed_()
         {
             room_nav_history_.erase(room_nav_history_.begin());
             if (room_nav_history_cursor_ > 0)
+            {
                 --room_nav_history_cursor_;
+            }
         }
     }
 
@@ -604,10 +656,11 @@ void ShellBase::after_active_room_changed_()
     // Room dialog's post-join/post-create navigation, none of which touched
     // this otherwise.
     if (main_app_ && main_app_->room_list_view())
+    {
         main_app_->room_list_view()->set_selected_room(current_room_id_);
+    }
 
-    if (const auto* cur_room = room_by_id_(current_room_id_);
-        cur_room && cur_room->is_space)
+    if (const auto* cur_room = room_by_id_(current_room_id_); cur_room && cur_room->is_space)
     {
         show_space_root_(current_room_id_);
         return;
@@ -619,8 +672,12 @@ void ShellBase::after_active_room_changed_()
     // replaces the old "flash to empty then repopulate": the previous room's rows
     // never linger under the new room's header.
     if (room_view_)
+    {
         if (auto* ml = room_view_->message_list())
+        {
             ml->begin_switch_loading();
+        }
+    }
 
     // Warm-subscription LRU: mark this room most-recently-active and unsubscribe
     // any room that has aged out of the warm window (kept rooms = active + open
@@ -641,7 +698,9 @@ void ShellBase::after_active_room_changed_()
     // Done before the early-return so closing the last tab also cancels.
     const std::uint64_t new_group = media_group_for_room_(current_room_id_);
     if (active_media_group_ != 0 && active_media_group_ != new_group)
+    {
         cancel_media_group_(active_media_group_);
+    }
     active_media_group_ = new_group;
 
     // Schedule a debounced save of the new layout (active room + open tabs).
@@ -651,7 +710,9 @@ void ShellBase::after_active_room_changed_()
     schedule_account_data_save_();
 
     if (!client_ || current_room_id_.empty())
+    {
         return;
+    }
 
     // Record the visit for the quick switcher's "Recent" strip — move this
     // room to the front of the MRU list (visit order), de-duplicating and
@@ -661,15 +722,19 @@ void ShellBase::after_active_room_changed_()
         v.erase(std::remove(v.begin(), v.end(), current_room_id_), v.end());
         v.insert(v.begin(), current_room_id_);
         if (v.size() > kRecentRoomsMax)
+        {
             v.resize(kRecentRoomsMax);
+        }
     }
     if (const auto* room = room_by_id_(current_room_id_))
+    {
         on_recent_room_visited_(*room);
+    }
 
     if (room_view_ && room_view_->header())
     {
-        const bool in_call_room = call_session_ != nullptr &&
-                                  call_session_->room_id() == current_room_id_;
+        const bool in_call_room =
+            call_session_ != nullptr && call_session_->room_id() == current_room_id_;
         update_call_btn_visibility_(room_view_->header(), current_room_id_);
         room_view_->header()->set_call_active(in_call_room);
         refresh_call_banners_();
@@ -681,7 +746,9 @@ void ShellBase::after_active_room_changed_()
             const bool was_visible = panel->visible();
             panel->set_visible(in_call_room);
             if (was_visible != in_call_room)
+            {
                 schedule_relayout_();
+            }
         }
     }
 
@@ -690,7 +757,9 @@ void ShellBase::after_active_room_changed_()
 
     // Each new room starts with an unknown thread history — allow pagination.
     if (main_room_pane_)
+    {
         main_room_pane_->reset_thread_backfill();
+    }
     // Keep an always-on background subscription on the active room so the
     // threads button reflects whether the room contains threads — long before
     // the user opens the panel. subscribe_room_threads is idempotent (aborts
@@ -698,11 +767,14 @@ void ShellBase::after_active_room_changed_()
     // already released the outgoing room's handle. Queued on the mut pool
     // behind that release (RoomPane::apply_thread_transition_), so the release
     // cannot run after this re-subscribe and drop the active room's handle.
-    run_async_mut_([sess = active_account_, rid = current_room_id_]
-    {
-        if (sess && sess->client)
-            sess->client->subscribe_room_threads(rid);
-    });
+    run_async_mut_(
+        [sess = active_account_, rid = current_room_id_]
+        {
+            if (sess && sess->client)
+            {
+                sess->client->subscribe_room_threads(rid);
+            }
+        });
     // Seed the button from the local snapshot. On a first visit the service
     // hasn't paginated yet so this is empty, which correctly hides the
     // button; on_threads_updated will reveal it once roots are discovered.
@@ -726,11 +798,13 @@ void ShellBase::after_active_room_changed_()
 // is dispatched on every switch (not gated by in_flight) so the reset always
 // arrives; only the network paginate is deduplicated per room. Shared by all
 // four shells. `visible_ids` seeds the background unread prefetch.
-void ShellBase::start_room_subscription_(const std::string&       room_id,
+void ShellBase::start_room_subscription_(const std::string& room_id,
                                          std::vector<std::string> visible_ids)
 {
     if (room_id.empty() || !active_account_ || !active_account_->client)
+    {
         return;
+    }
     // Capture the OWNING session (not the raw client_): the workers run on
     // mut_pool_ / pool_ where a concurrent account switch/logout can free the
     // raw client_ pointer. Holding `sess` keeps the Client alive for the call —
@@ -746,9 +820,11 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
         [this, sess, room_id, visible_ids = std::move(visible_ids)]() mutable
         {
             if (!sess->client)
+            {
                 return;
-            auto        res = sess->client->subscribe_room(room_id);
-            const bool  ok  = res.ok;
+            }
+            auto res = sess->client->subscribe_room(room_id);
+            const bool ok = res.ok;
             std::string msg = res.message;
             post_to_ui_(
                 [this, sess, room_id, ok, msg = std::move(msg),
@@ -761,8 +837,12 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                         // state — otherwise begin_switch_loading's cleared view
                         // hangs on the spinner forever.
                         if (current_room_id_ == room_id && room_view_)
+                        {
                             if (auto* ml = room_view_->message_list())
+                            {
                                 ml->end_switch_loading();
+                            }
+                        }
                         return;
                     }
                     // One-time initial-history fill: the very first successful
@@ -793,9 +873,11 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                             {
                                 if (!sess->client)
                                 {
-                                    post_to_ui_([this, room_id]()
-                                                { pagination_[room_id].in_flight =
-                                                      false; });
+                                    post_to_ui_(
+                                        [this, room_id]()
+                                        {
+                                            pagination_[room_id].in_flight = false;
+                                        });
                                     return;
                                 }
                                 auto pr = sess->client->paginate_back_with_status(
@@ -808,7 +890,9 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                                         st.in_flight = false;
                                         st.initial_fill_done = true;
                                         if (current_room_id_ == room_id)
+                                        {
                                             st.reached_start = reached;
+                                        }
                                     });
                             });
                     }
@@ -820,7 +904,9 @@ void ShellBase::start_room_subscription_(const std::string&       room_id,
                         [sess, visible_ids = std::move(visible_ids)]() mutable
                         {
                             if (!sess->client)
+                            {
                                 return;
+                            }
                             sess->client->start_background_backfill(visible_ids);
                         });
                 });
@@ -846,12 +932,13 @@ tesseract::PrefsData ShellBase::carried_prefs_() const
 {
     tesseract::PrefsData p;
     if (!active_account_)
+    {
         return p;
+    }
     p.bridge_not_bridged_overrides = active_account_->bridge_not_bridged_overrides;
-    p.emoji_skin_tone =
-        tesseract::emoji::skin_tone_key(active_account_->emoji_skin_tone);
+    p.emoji_skin_tone = tesseract::emoji::skin_tone_key(active_account_->emoji_skin_tone);
     p.directory_servers = active_account_->directory_servers;
-    p.pinned_spaces     = active_account_->pinned_spaces;
+    p.pinned_spaces = active_account_->pinned_spaces;
     return p;
 }
 
@@ -863,7 +950,9 @@ void ShellBase::persist_room_layout_pref_(bool blocking)
         // now (or skips, if nothing changed since the last one) supersedes it.
         cancel_debounce_(DebounceSlot::AccountDataSave);
         if (!account_data_dirty_ || !client_)
+        {
             return;
+        }
     }
     else if (!client_)
     {
@@ -886,24 +975,30 @@ void ShellBase::persist_room_layout_pref_(bool blocking)
     {
         open.reserve(tabs_.size());
         for (const auto& t : tabs_)
+        {
             open.push_back(t.room_id);
+        }
     }
     // Everything that isn't the layout is carried through unchanged so a tab
     // switch doesn't wipe it.
     settle_emoji_skin_tone_();
     auto prefs_data = carried_prefs_();
     const auto layout = tesseract::Prefs::room_layout(last_room, open);
-    prefs_data.last_room  = layout.last_room;
+    prefs_data.last_room = layout.last_room;
     prefs_data.open_rooms = layout.open_rooms;
     if (active_account_)
+    {
         active_account_->recent_rooms = recent_room_ids_;
+    }
     prefs_data.recent_rooms = recent_room_ids_;
     // Overlay onto the last known event so keys this build doesn't write
     // survive.
     const std::string json = tesseract::Prefs::serialize(
         prefs_data, active_account_ ? active_account_->prefs_json : std::string{});
     if (active_account_)
+    {
         active_account_->prefs_json = json;
+    }
 
     if (blocking)
     {
@@ -925,14 +1020,18 @@ void ShellBase::rebuild_room_index_() const
     room_index_by_id_.clear();
     room_index_by_id_.reserve(rooms_.size());
     for (std::size_t i = 0; i < rooms_.size(); ++i)
+    {
         room_index_by_id_[rooms_[i].id] = i;
+    }
     room_index_dirty_ = false;
 }
 
 const RoomInfo* ShellBase::room_by_id_(const std::string& room_id) const
 {
     if (room_index_dirty_)
+    {
         rebuild_room_index_();
+    }
     auto it = room_index_by_id_.find(room_id);
     if (it == room_index_by_id_.end() || it->second >= rooms_.size())
     {
@@ -942,20 +1041,22 @@ const RoomInfo* ShellBase::room_by_id_(const std::string& room_id) const
     return &rooms_[it->second];
 }
 
-void ShellBase::open_room_version_(const std::string& room_id,
-                                   const std::vector<std::string>& via,
-                                   const std::string& highlight_event,
-                                   bool join_if_missing)
+void ShellBase::open_room_version_(const std::string& room_id, const std::vector<std::string>& via,
+                                   const std::string& highlight_event, bool join_if_missing)
 {
     if (room_id.empty())
+    {
         return;
+    }
     auto reveal = [this, room_id, highlight_event]
     {
         tab_navigate_room(room_id);
         if (!highlight_event.empty())
         {
             if (room_view_ && room_view_->message_list())
+            {
                 room_view_->message_list()->set_highlighted_event(highlight_event);
+            }
             try_scroll_to_room_event_(highlight_event);
         }
     };
@@ -966,49 +1067,56 @@ void ShellBase::open_room_version_(const std::string& room_id,
     }
     const auto sess = acting_session_(nullptr);
     if (!sess || !sess->client)
+    {
         return;
+    }
     // Refreshed every time: the cached copy of a hidden room goes stale (its
     // successor may have been joined or left since).
-    run_async_(
-        "room-version",
-        [this, sess, room_id, via, highlight_event, join_if_missing, reveal]() mutable
-        {
-            std::optional<RoomInfo> info = sess->client->room_info(room_id);
-            post_to_ui_alive_(
-                [this, sess, room_id, via, highlight_event, join_if_missing, reveal,
-                 info = std::move(info)]() mutable
-                {
-                    if (info)
-                    {
-                        // Still listed (e.g. its successor was left meanwhile):
-                        // the live entry wins.
-                        if (!room_by_id_(room_id) || hidden_rooms_.count(room_id))
-                            hidden_rooms_[room_id] = std::move(*info);
-                        reveal();
-                        return;
-                    }
-                    // Not a room we're in: join it (or offer to), and let the
-                    // post-join hook navigate and jump to the event.
-                    if (!highlight_event.empty())
-                        pending_event_scroll_after_join_[room_id] = highlight_event;
-                    if (join_if_missing)
-                    {
-                        join_room_command_(room_id, via, sess);
-                    }
-                    else if (main_app_)
-                    {
-                        main_app_->add_room_view()->open_join_with_prefill(room_id);
-                        request_relayout_();
-                    }
-                });
-        });
+    run_async_("room-version",
+               [this, sess, room_id, via, highlight_event, join_if_missing, reveal]() mutable
+               {
+                   std::optional<RoomInfo> info = sess->client->room_info(room_id);
+                   post_to_ui_alive_(
+                       [this, sess, room_id, via, highlight_event, join_if_missing, reveal,
+                        info = std::move(info)]() mutable
+                       {
+                           if (info)
+                           {
+                               // Still listed (e.g. its successor was left meanwhile):
+                               // the live entry wins.
+                               if (!room_by_id_(room_id) || hidden_rooms_.count(room_id))
+                               {
+                                   hidden_rooms_[room_id] = std::move(*info);
+                               }
+                               reveal();
+                               return;
+                           }
+                           // Not a room we're in: join it (or offer to), and let the
+                           // post-join hook navigate and jump to the event.
+                           if (!highlight_event.empty())
+                           {
+                               pending_event_scroll_after_join_[room_id] = highlight_event;
+                           }
+                           if (join_if_missing)
+                           {
+                               join_room_command_(room_id, via, sess);
+                           }
+                           else if (main_app_)
+                           {
+                               main_app_->add_room_view()->open_join_with_prefill(room_id);
+                               request_relayout_();
+                           }
+                       });
+               });
 }
 
 void ShellBase::tray_activate_(const std::string& token)
 {
     // If the unread room is popped out, raise that window instead.
     if (focus_tray_unread_popout_())
+    {
         return;
+    }
     show_main_window_for_tray_(token);
     navigate_tray_unread_();
 }
@@ -1016,7 +1124,9 @@ void ShellBase::tray_activate_(const std::string& token)
 void ShellBase::tray_toggle_(const std::string& token)
 {
     if (focus_tray_unread_popout_())
+    {
         return;
+    }
     if (main_window_foreground_for_tray_() && !last_tray_unread_)
     {
         hide_main_window_for_tray_();
@@ -1029,7 +1139,10 @@ void ShellBase::tray_toggle_(const std::string& token)
 void ShellBase::restart_mark_read_timer_(int delay_ms)
 {
     debounce_(DebounceSlot::MarkRead, delay_ms,
-              [this] { mark_room_read_(current_room_id_); });
+              [this]
+              {
+                  mark_room_read_(current_room_id_);
+              });
 }
 
 void ShellBase::on_room_selected_(const std::string& room_id)
@@ -1042,8 +1155,7 @@ void ShellBase::on_room_selected_(const std::string& room_id)
     // Drill into a space if the clicked row is one.
     if (const auto* r = room_by_id_(room_id); r && r->is_space)
     {
-        views::RoomListView* rlv =
-            main_app_ ? main_app_->room_list_view() : nullptr;
+        views::RoomListView* rlv = main_app_ ? main_app_->room_list_view() : nullptr;
         space_nav_frames_.push_back(SpaceNavFrame::capture(rlv));
         space_stack_.push_back(room_id);
         refresh_room_list_();
@@ -1083,13 +1195,15 @@ void ShellBase::on_room_selected_(const std::string& room_id)
     }
     refresh_window_title_();
     if (main_room_pane_)
+    {
         main_room_pane_->apply_compose_draft_(current_room_id_);
+    }
 
     // Subscribe (mut pool) + initial history (shared pool). The split keeps the
     // network paginate off the single mut thread so the next switch's reset is
     // never blocked. See start_room_subscription_.
-    auto visible_ids = main_app_ ? main_app_->room_list_view()->visible_room_ids()
-                                 : std::vector<std::string>{};
+    auto visible_ids =
+        main_app_ ? main_app_->room_list_view()->visible_room_ids() : std::vector<std::string>{};
     start_room_subscription_(current_room_id_, std::move(visible_ids));
 }
 
@@ -1155,9 +1269,12 @@ void ShellBase::on_tab_state_changed_ui_()
 std::string ShellBase::compose_window_title_() const
 {
     if (!app_settings_open_)
-        if (const RoomInfo* r = room_by_id_(current_room_id_);
-            r && !r->name.empty())
+    {
+        if (const RoomInfo* r = room_by_id_(current_room_id_); r && !r->name.empty())
+        {
             return "Tesseract - " + r->name;
+        }
+    }
     return "Tesseract";
 }
 
@@ -1169,7 +1286,9 @@ void ShellBase::refresh_window_title_()
 void ShellBase::set_app_settings_open_(bool open)
 {
     if (app_settings_open_ == open)
+    {
         return;
+    }
     app_settings_open_ = open;
     refresh_window_title_();
     if (!open)
@@ -1178,22 +1297,27 @@ void ShellBase::set_app_settings_open_(bool open)
         settings_closed_to_login_ = false;
         // Deferred a tick: sign-out and reset-identity paths close settings
         // before starting their own flow, which the apply must see.
-        post_to_ui_alive_([this, from_login]
-                          { apply_encryption_flags_after_settings_(from_login); });
+        post_to_ui_alive_(
+            [this, from_login]
+            {
+                apply_encryption_flags_after_settings_(from_login);
+            });
     }
 }
 
 void ShellBase::touch_visited_room_(const std::string& room_id)
 {
     if (room_id.empty())
+    {
         return;
+    }
     auto& v = visited_lru_;
     v.erase(std::remove(v.begin(), v.end(), room_id), v.end());
     v.insert(v.begin(), room_id); // most-recently-active at the front
 }
 
-std::vector<std::string> ShellBase::select_warm_evictions_(
-    const std::unordered_set<std::string>& keep, std::size_t warm_cap)
+std::vector<std::string>
+ShellBase::select_warm_evictions_(const std::unordered_set<std::string>& keep, std::size_t warm_cap)
 {
     std::vector<std::string> evicted;
     std::vector<std::string> retained;
@@ -1223,21 +1347,33 @@ void ShellBase::prune_warm_subscriptions_()
 {
     std::unordered_set<std::string> keep;
     if (!current_room_id_.empty())
+    {
         keep.insert(current_room_id_);
+    }
     for (const auto& t : tabs_)
+    {
         keep.insert(t.room_id);
+    }
     // Pinned by one of this (the active) account's pop-outs. visited_lru_ is
     // the active account's, so other accounts' pins don't apply here.
     for (const auto& r : visited_lru_)
+    {
         if (room_pinned_by_popout_(r))
+        {
             keep.insert(r);
+        }
+    }
     // Favorite rooms, once opened, stay warm for the rest of the session so
     // switching back is always instant (no timeline rebuild / gap-resolving
     // /messages). They bypass the kWarmRoomsMax cap; un-favouriting drops a room
     // back to normal warm-LRU eviction on the next prune.
     for (const auto& r : rooms_)
+    {
         if (r.is_favorite)
+        {
             keep.insert(r.id);
+        }
+    }
     for (const auto& room : select_warm_evictions_(keep, kWarmRoomsMax))
     {
         // Drop the room's per-room pagination state: unsubscribe_room tears the
@@ -1253,43 +1389,49 @@ void ShellBase::prune_warm_subscriptions_()
         last_sent_receipt_.erase(room);
         forget_thread_receipts_(room);
         if (client_)
+        {
             client_->unsubscribe_room(room);
+        }
     }
 }
 
 std::vector<std::string> ShellBase::select_idle_room_evictions_(
-    const std::unordered_map<std::string, std::chrono::steady_clock::time_point>&
-        last_active,
+    const std::unordered_map<std::string, std::chrono::steady_clock::time_point>& last_active,
     const std::unordered_set<std::string>& currently_visible,
-    std::chrono::steady_clock::time_point now,
-    std::chrono::minutes ttl)
+    std::chrono::steady_clock::time_point now, std::chrono::minutes ttl)
 {
     std::vector<std::string> evicted;
     for (const auto& [room_id, last] : last_active)
     {
         if (currently_visible.count(room_id) != 0)
+        {
             continue; // genuinely on-screen right now: never idle-evicted
+        }
         if (now - last >= ttl)
+        {
             evicted.push_back(room_id);
+        }
     }
     return evicted;
 }
 
-std::vector<std::pair<std::string, std::string>>
-ShellBase::select_idle_thread_evictions_(
-    const std::map<std::pair<std::string, std::string>,
-                   std::chrono::steady_clock::time_point>& last_active,
+std::vector<std::pair<std::string, std::string>> ShellBase::select_idle_thread_evictions_(
+    const std::map<std::pair<std::string, std::string>, std::chrono::steady_clock::time_point>&
+        last_active,
     const std::set<std::pair<std::string, std::string>>& currently_visible,
-    std::chrono::steady_clock::time_point now,
-    std::chrono::minutes ttl)
+    std::chrono::steady_clock::time_point now, std::chrono::minutes ttl)
 {
     std::vector<std::pair<std::string, std::string>> evicted;
     for (const auto& [key, last] : last_active)
     {
         if (currently_visible.count(key) != 0)
+        {
             continue;
+        }
         if (now - last >= ttl)
+        {
             evicted.push_back(key);
+        }
     }
     return evicted;
 }
@@ -1307,17 +1449,26 @@ void ShellBase::sweep_idle_timelines_()
 
     std::unordered_set<std::string> visible_rooms;
     if (!current_room_id_.empty())
+    {
         visible_rooms.insert(current_room_id_);
+    }
     for (const auto& w : owned_secondary_windows_)
+    {
         visible_rooms.insert(w->room_id());
+    }
 
     std::set<std::pair<std::string, std::string>> visible_threads;
-    if (main_room_pane_ && !current_room_id_.empty() &&
-        !main_room_pane_->thread_root().empty())
+    if (main_room_pane_ && !current_room_id_.empty() && !main_room_pane_->thread_root().empty())
+    {
         visible_threads.insert({current_room_id_, main_room_pane_->thread_root()});
+    }
     for (const auto& w : owned_secondary_windows_)
+    {
         if (!w->popout_thread_root().empty())
+        {
             visible_threads.insert({w->room_id(), w->popout_thread_root()});
+        }
+    }
 
     // Self-refresh: anything on-screen right now is never idle regardless of
     // when (or whether) it last went through touch_visited_room_ /
@@ -1325,13 +1476,16 @@ void ShellBase::sweep_idle_timelines_()
     // never shown in the main window) from acquiring no entry at all and thus
     // being permanently exempt from eviction even after its window closes.
     for (const auto& room : visible_rooms)
+    {
         room_last_active_[room] = now;
+    }
     for (const auto& key : visible_threads)
+    {
         thread_last_active_[key] = now;
+    }
 
     for (const auto& room :
-         select_idle_room_evictions_(room_last_active_, visible_rooms, now,
-                                     kIdleTimelineTtl))
+         select_idle_room_evictions_(room_last_active_, visible_rooms, now, kIdleTimelineTtl))
     {
         // Same bookkeeping as prune_warm_subscriptions_: unsubscribe_room tears
         // the SDK timeline down, so stale pagination/receipt state must go too,
@@ -1342,23 +1496,29 @@ void ShellBase::sweep_idle_timelines_()
         forget_thread_receipts_(room);
         room_last_active_.erase(room);
         if (client_)
+        {
             client_->unsubscribe_room(room);
+        }
     }
 
     for (const auto& [room_id, thread_root] :
-         select_idle_thread_evictions_(thread_last_active_, visible_threads, now,
-                                       kIdleTimelineTtl))
+         select_idle_thread_evictions_(thread_last_active_, visible_threads, now, kIdleTimelineTtl))
     {
         thread_last_active_.erase({room_id, thread_root});
         // Queued behind any thread subscribe on the mutable pool, like the panel
         // transitions, so the release cannot overtake it.
         if (client_)
-            run_async_mut_([sess = active_account_, rid = std::string(room_id),
-                            root = std::string(thread_root)]
-            {
-                if (sess && sess->client)
-                    sess->client->unsubscribe_thread(rid, root);
-            });
+        {
+            run_async_mut_(
+                [sess = active_account_, rid = std::string(room_id),
+                 root = std::string(thread_root)]
+                {
+                    if (sess && sess->client)
+                    {
+                        sess->client->unsubscribe_thread(rid, root);
+                    }
+                });
+        }
     }
 }
 

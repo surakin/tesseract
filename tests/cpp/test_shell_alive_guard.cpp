@@ -22,8 +22,7 @@ namespace
 // run, rather than dereferencing the freed shell.
 struct AliveShell : tesseract::test::TestShellBase
 {
-    explicit AliveShell(std::vector<std::function<void()>>* queue)
-        : queue_(queue)
+    explicit AliveShell(std::vector<std::function<void()>>* queue) : queue_(queue)
     {
     }
 
@@ -37,14 +36,17 @@ struct AliveShell : tesseract::test::TestShellBase
     {
         queue_->push_back(std::move(fn));
     }
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     // Expose the guarded post helper to the test.
     using ShellBase::post_to_ui_alive_;
@@ -56,8 +58,7 @@ struct AliveShell : tesseract::test::TestShellBase
 
 } // namespace
 
-TEST_CASE("post_to_ui_alive_ continuation no-ops after the shell is destroyed",
-          "[shell][alive]")
+TEST_CASE("post_to_ui_alive_ continuation no-ops after the shell is destroyed", "[shell][alive]")
 {
     std::vector<std::function<void()>> queue;
     bool ran = false;
@@ -65,13 +66,14 @@ TEST_CASE("post_to_ui_alive_ continuation no-ops after the shell is destroyed",
     {
         AliveShell s(&queue);
         // Enqueue a continuation that captures the shell and would touch it.
-        s.post_to_ui_alive_([&s, &ran]
-                            {
-                                // Touch the (would-be freed) shell to model a
-                                // real continuation dereferencing `this`.
-                                (void)&s;
-                                ran = true;
-                            });
+        s.post_to_ui_alive_(
+            [&s, &ran]
+            {
+                // Touch the (would-be freed) shell to model a
+                // real continuation dereferencing `this`.
+                (void)&s;
+                ran = true;
+            });
 
         // The guard wraps the fn; it is queued, not yet run.
         REQUIRE(queue.size() == 1);
@@ -82,26 +84,39 @@ TEST_CASE("post_to_ui_alive_ continuation no-ops after the shell is destroyed",
     // the dead token and skip the body — without the guard this would
     // dereference the freed shell (use-after-free) and set `ran`.
     for (auto& fn : queue)
-        if (fn) fn();
+    {
+        if (fn)
+        {
+            fn();
+        }
+    }
 
     CHECK_FALSE(ran);
 }
 
-TEST_CASE("post_to_ui_alive_ continuation runs while the shell is alive",
-          "[shell][alive]")
+TEST_CASE("post_to_ui_alive_ continuation runs while the shell is alive", "[shell][alive]")
 {
     std::vector<std::function<void()>> queue;
     bool ran = false;
 
     AliveShell s(&queue);
-    s.post_to_ui_alive_([&ran] { ran = true; });
+    s.post_to_ui_alive_(
+        [&ran]
+        {
+            ran = true;
+        });
 
     REQUIRE(queue.size() == 1);
     REQUIRE_FALSE(ran);
 
     // Drain while the shell is still alive: the body runs.
     for (auto& fn : queue)
-        if (fn) fn();
+    {
+        if (fn)
+        {
+            fn();
+        }
+    }
 
     CHECK(ran);
 }
@@ -124,11 +139,11 @@ TEST_CASE("worker body capturing the active AccountSession keeps it alive "
 
     // Gate the worker so it cannot run until after we drop the shell's strong
     // ref, deterministically reproducing the logout/switch race window.
-    std::mutex              mu;
+    std::mutex mu;
     std::condition_variable cv;
-    bool                    release = false;
-    bool                    done    = false;
-    bool                    saw_live_session = false;
+    bool release = false;
+    bool done = false;
+    bool saw_live_session = false;
 
     // Production pattern: capture a strong ref to the active account at
     // dispatch time and dereference THAT inside the worker body.
@@ -137,7 +152,11 @@ TEST_CASE("worker body capturing the active AccountSession keeps it alive "
         [sess, &mu, &cv, &release, &done, &saw_live_session]
         {
             std::unique_lock<std::mutex> lk(mu);
-            cv.wait(lk, [&] { return release; });
+            cv.wait(lk,
+                    [&]
+                    {
+                        return release;
+                    });
             // The shell dropped its active_account_ before this ran; the
             // captured shared_ptr must still observe the live session.
             saw_live_session = (sess != nullptr);
@@ -161,7 +180,11 @@ TEST_CASE("worker body capturing the active AccountSession keeps it alive "
     // Wait for the worker to finish before asserting.
     {
         std::unique_lock<std::mutex> lk(mu);
-        cv.wait(lk, [&] { return done; });
+        cv.wait(lk,
+                [&]
+                {
+                    return done;
+                });
     }
 
     CHECK(saw_live_session);

@@ -32,8 +32,7 @@ struct TkSettingsViewStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -60,7 +59,9 @@ tk::SideTabView* find_tabs(SettingsView& view)
     for (auto& c : view.children())
     {
         if (auto* t = dynamic_cast<tk::SideTabView*>(c.get()))
+        {
             return t;
+        }
     }
     return nullptr;
 }
@@ -70,9 +71,13 @@ tk::Button* find_button(tk::Widget& root, const std::string& label)
     for (auto& c : root.children())
     {
         if (auto* b = dynamic_cast<tk::Button*>(c.get()); b && b->label() == label)
+        {
             return b;
+        }
         if (auto* b = find_button(*c, label))
+        {
             return b;
+        }
     }
     return nullptr;
 }
@@ -82,7 +87,9 @@ void collect_check_buttons(tk::Widget& root, std::vector<tk::CheckButton*>& out)
     for (auto& c : root.children())
     {
         if (auto* b = dynamic_cast<tk::CheckButton*>(c.get()))
+        {
             out.push_back(b);
+        }
         collect_check_buttons(*c, out);
     }
 }
@@ -106,7 +113,10 @@ TEST_CASE("AppearanceSection: the sender-status checkbox writes Settings and rep
     tk::CheckButton* status_cb = boxes[boxes.size() - 2];
 
     std::vector<tesseract::views::SettingKey> fired;
-    binder.on_changed = [&](tesseract::views::SettingKey k) { fired.push_back(k); };
+    binder.on_changed = [&](tesseract::views::SettingKey k)
+    {
+        fired.push_back(k);
+    };
 
     binder.reload(); // silent
     CHECK(status_cb->checked());
@@ -135,7 +145,10 @@ TEST_CASE("AppearanceSection: the sender-timezone checkbox writes Settings and r
     tk::CheckButton* tz_cb = boxes.back(); // added last, to the Timeline group
 
     std::vector<tesseract::views::SettingKey> fired;
-    binder.on_changed = [&](tesseract::views::SettingKey k) { fired.push_back(k); };
+    binder.on_changed = [&](tesseract::views::SettingKey k)
+    {
+        fired.push_back(k);
+    };
 
     binder.reload();
     CHECK_FALSE(tz_cb->checked());
@@ -148,13 +161,15 @@ TEST_CASE("AppearanceSection: the sender-timezone checkbox writes Settings and r
     st.show_sender_timezone_in_timeline = saved;
 }
 
-TEST_CASE("LanguageSection: Restart now shows only while a restart is pending",
-          "[settings-view]")
+TEST_CASE("LanguageSection: Restart now shows only while a restart is pending", "[settings-view]")
 {
     tesseract::views::SettingBinder binder;
     tesseract::views::LanguageSection section(binder);
     int restarts = 0;
-    section.on_restart_requested = [&] { ++restarts; };
+    section.on_restart_requested = [&]
+    {
+        ++restarts;
+    };
 
     auto* restart = find_button(section, "Restart now");
     REQUIRE(restart);
@@ -177,9 +192,13 @@ T* find_widget(tk::Widget& root)
     for (auto& c : root.children())
     {
         if (auto* w = dynamic_cast<T*>(c.get()))
+        {
             return w;
+        }
         if (auto* w = find_widget<T>(*c))
+        {
             return w;
+        }
     }
     return nullptr;
 }
@@ -238,8 +257,7 @@ TEST_CASE("NetworkSection: URL field is enabled only for Manual and invalid URLs
     st.proxy_url = saved_url;
 }
 
-TEST_CASE("SettingsView::show_account_section selects the Account tab",
-          "[settings-view]")
+TEST_CASE("SettingsView::show_account_section selects the Account tab", "[settings-view]")
 {
     TkSettingsViewStage st;
     auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
@@ -250,7 +268,10 @@ TEST_CASE("SettingsView::show_account_section selects the Account tab",
     REQUIRE(tabs);
 
     bool tab_changed = false;
-    view.on_tab_changed = [&] { tab_changed = true; };
+    view.on_tab_changed = [&]
+    {
+        tab_changed = true;
+    };
 
     tabs->select(kUserPackTabIdx); // navigate away from Account (index 0)
     REQUIRE(tabs->selected_idx() == kUserPackTabIdx);
@@ -273,8 +294,7 @@ TEST_CASE("SettingsView: Advanced tab is hidden by default", "[settings-view]")
     CHECK_FALSE(tabs->tab_visible(kAdvancedTabIdx));
 }
 
-TEST_CASE("SettingsView: Advanced tab hides again after navigating away",
-          "[settings-view]")
+TEST_CASE("SettingsView: Advanced tab hides again after navigating away", "[settings-view]")
 {
     TkSettingsViewStage st;
     auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
@@ -407,8 +427,7 @@ TEST_CASE("SettingsView: file drop stages an image into the personal "
     CHECK(editor->has_changes());
 }
 
-TEST_CASE("SettingsView: signed-out mode keeps only Network, Language and About",
-          "[settings-view]")
+TEST_CASE("SettingsView: signed-out mode keeps only Network, Language and About", "[settings-view]")
 {
     TkSettingsViewStage st;
     auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
@@ -417,27 +436,27 @@ TEST_CASE("SettingsView: signed-out mode keeps only Network, Language and About"
 
     auto* tabs = find_tabs(view);
     REQUIRE(tabs);
-    constexpr int kNetworkTabIdx  = 7;
+    constexpr int kNetworkTabIdx = 7;
     constexpr int kLanguageTabIdx = 10;
-    constexpr int kAboutTabIdx    = 11;
+    constexpr int kAboutTabIdx = 11;
 
     view.set_signed_out_mode(true);
     for (int i = 0; i <= kAdvancedTabIdx; ++i)
     {
-        const bool expected = i == kNetworkTabIdx || i == kLanguageTabIdx ||
-                              i == kAboutTabIdx;
+        const bool expected = i == kNetworkTabIdx || i == kLanguageTabIdx || i == kAboutTabIdx;
         CHECK(view.tab_visible(i) == expected);
     }
     CHECK(tabs->selected_idx() == kNetworkTabIdx);
 
     view.set_signed_out_mode(false);
     for (int i = 0; i <= kAboutTabIdx; ++i)
+    {
         CHECK(view.tab_visible(i));
+    }
     CHECK_FALSE(view.tab_visible(kAdvancedTabIdx));
 }
 
-TEST_CASE("NetworkSection: the note says changes apply now when signed out",
-          "[settings-view]")
+TEST_CASE("NetworkSection: the note says changes apply now when signed out", "[settings-view]")
 {
     tesseract::views::SettingBinder binder;
     tesseract::views::NetworkSection section(binder);
@@ -491,11 +510,17 @@ void collect_widgets_of(tk::Widget& root, std::vector<tk::Slider*>& sliders,
     for (auto& c : root.children())
     {
         if (auto* s = dynamic_cast<tk::Slider*>(c.get()))
+        {
             sliders.push_back(s);
+        }
         if (auto* b = dynamic_cast<tk::ComboBox*>(c.get()))
+        {
             combos.push_back(b);
+        }
         if (auto* l = dynamic_cast<tk::Label*>(c.get()))
+        {
             labels.push_back(l);
+        }
         collect_widgets_of(*c, sliders, combos, labels);
     }
 }
@@ -540,14 +565,21 @@ TEST_CASE("AppearanceSection: the timeline width slider persists and reads out a
     auto readout = [&]() -> std::string
     {
         for (auto* l : labels)
+        {
             if (l->access_name().ends_with("%"))
+            {
                 return l->access_name();
+            }
+        }
         return {};
     };
     CHECK(readout() == "50%");
 
     std::vector<tesseract::views::SettingKey> fired;
-    binder.on_changed = [&](tesseract::views::SettingKey k) { fired.push_back(k); };
+    binder.on_changed = [&](tesseract::views::SettingKey k)
+    {
+        fired.push_back(k);
+    };
     slider->on_changed(72.0); // live while dragging: value + readout, no save yet
     CHECK(st.timeline_column_pct == 72);
     CHECK(fired.empty());
@@ -557,8 +589,7 @@ TEST_CASE("AppearanceSection: the timeline width slider persists and reads out a
     CHECK(fired[0] == tesseract::views::SettingKey::TimelineColumnWidth);
 }
 
-TEST_CASE("AppearanceSection: the timeline position choice writes the anchor",
-          "[settings-view]")
+TEST_CASE("AppearanceSection: the timeline position choice writes the anchor", "[settings-view]")
 {
     ColumnSettingsGuard guard;
     auto& st = tesseract::Settings::instance();
@@ -573,13 +604,20 @@ TEST_CASE("AppearanceSection: the timeline position choice writes the anchor",
     binder.reload();
     tk::ComboBox* anchor = nullptr;
     for (auto* c : combos)
+    {
         if (c->selected_value() == "left" || c->selected_value() == "center")
+        {
             anchor = c;
+        }
+    }
     REQUIRE(anchor != nullptr);
     CHECK(anchor->selected_value() == "left");
 
     std::vector<tesseract::views::SettingKey> fired;
-    binder.on_changed = [&](tesseract::views::SettingKey k) { fired.push_back(k); };
+    binder.on_changed = [&](tesseract::views::SettingKey k)
+    {
+        fired.push_back(k);
+    };
     anchor->on_changed("center");
     CHECK(st.timeline_column_anchor == tesseract::Settings::TimelineColumnAnchor::Center);
     REQUIRE(fired.size() == 1);
@@ -636,12 +674,19 @@ TEST_CASE("SettingsView: controller results and pushed state relayout through th
 {
     // The controller must outlive the view: the view clears its callbacks on
     // destruction.
-    auto post = [](std::function<void()> fn) { fn(); };
-    auto run = [](std::function<void()> fn) { fn(); };
-    auto picker =
-        [](std::function<void(std::vector<uint8_t>, std::string)>) {};
+    auto post = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto picker = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
     auto decode = [](const std::vector<uint8_t>&)
-    { return std::shared_ptr<tk::Image>(); };
+    {
+        return std::shared_ptr<tk::Image>();
+    };
     tesseract::SettingsController ctrl(nullptr, post, run, picker, decode);
 
     TestHost host(nullptr);
@@ -656,14 +701,31 @@ TEST_CASE("SettingsView: controller results and pushed state relayout through th
         fn();
         CHECK(host.relayout_count > before);
     };
-    fires_relayout("on_devices_loaded", [&] { ctrl.on_devices_loaded({}); });
-    fires_relayout("on_name_changed", [&] { ctrl.on_name_changed("Alice"); });
+    fires_relayout("on_devices_loaded",
+                   [&]
+                   {
+                       ctrl.on_devices_loaded({});
+                   });
+    fires_relayout("on_name_changed",
+                   [&]
+                   {
+                       ctrl.on_name_changed("Alice");
+                   });
     fires_relayout("on_mentions_toggle_result",
-                   [&] { ctrl.on_mentions_toggle_result(true, true); });
+                   [&]
+                   {
+                       ctrl.on_mentions_toggle_result(true, true);
+                   });
     fires_relayout("set_server_info",
-                   [&] { view.set_server_info(tesseract::ServerInfo{}); });
+                   [&]
+                   {
+                       view.set_server_info(tesseract::ServerInfo{});
+                   });
     fires_relayout("set_cache_sizes",
-                   [&] { view.set_cache_sizes(1, 2, 3, 4, 5, 6, 7); });
+                   [&]
+                   {
+                       view.set_cache_sizes(1, 2, 3, 4, 5, 6, 7);
+                   });
 }
 
 TEST_CASE("SettingsView: without a host the state setters and load_device_lists are inert",

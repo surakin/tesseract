@@ -25,7 +25,10 @@ struct TabBarStage
     StubHost host;
     std::unique_ptr<TabBar> bar = create_root_widget<TabBar>(&host);
 
-    LayoutCtx lc() { return LayoutCtx{surface->factory(), Theme::light()}; }
+    LayoutCtx lc()
+    {
+        return LayoutCtx{surface->factory(), Theme::light()};
+    }
     void layout(float w = 600)
     {
         auto l = lc();
@@ -82,8 +85,7 @@ TEST_CASE("TabBar hides itself until there are two tabs", "[tk][tab_bar]")
     CHECK_FALSE(s.bar->visible());
 }
 
-TEST_CASE("TabBar first tab is active; remove keeps the active index sane",
-          "[tk][tab_bar]")
+TEST_CASE("TabBar first tab is active; remove keeps the active index sane", "[tk][tab_bar]")
 {
     TabBarStage s;
     s.add3();
@@ -101,8 +103,7 @@ TEST_CASE("TabBar first tab is active; remove keeps the active index sane",
     CHECK(s.bar->access_state_for_widget_row(0).selected);
 }
 
-TEST_CASE("TabBar click selects, close button closes, drag-off cancels",
-          "[tk][tab_bar]")
+TEST_CASE("TabBar click selects, close button closes, drag-off cancels", "[tk][tab_bar]")
 {
     TabBarStage s;
     s.add3();
@@ -110,8 +111,14 @@ TEST_CASE("TabBar click selects, close button closes, drag-off cancels",
     s.paint();
 
     std::vector<std::string> sel, closed;
-    s.bar->on_tab_selected = [&](const std::string& id) { sel.push_back(id); };
-    s.bar->on_tab_closed = [&](const std::string& id) { closed.push_back(id); };
+    s.bar->on_tab_selected = [&](const std::string& id)
+    {
+        sel.push_back(id);
+    };
+    s.bar->on_tab_closed = [&](const std::string& id)
+    {
+        closed.push_back(id);
+    };
 
     CHECK(s.bar->on_pointer_down({250, 20})); // tab 1 body
     s.bar->on_pointer_up({250, 20}, true);
@@ -146,8 +153,14 @@ TEST_CASE("TabBar single tab has no close button", "[tk][tab_bar]")
     s.bar->add_tab("!a", "Alpha", nullptr);
     s.layout();
     std::vector<std::string> sel, closed;
-    s.bar->on_tab_selected = [&](const std::string& id) { sel.push_back(id); };
-    s.bar->on_tab_closed = [&](const std::string& id) { closed.push_back(id); };
+    s.bar->on_tab_selected = [&](const std::string& id)
+    {
+        sel.push_back(id);
+    };
+    s.bar->on_tab_closed = [&](const std::string& id)
+    {
+        closed.push_back(id);
+    };
     // Single tab spans the clamped max width (240); its right-edge close spot
     // acts as a plain tab click.
     s.bar->on_pointer_down({220, 20});
@@ -169,13 +182,13 @@ TEST_CASE("TabBar hover tracking and leave", "[tk][tab_bar]")
     s.paint();
 }
 
-TEST_CASE("TabBar wheel scrolls when tabs overflow and clamps",
-          "[tk][tab_bar]")
+TEST_CASE("TabBar wheel scrolls when tabs overflow and clamps", "[tk][tab_bar]")
 {
     TabBarStage s;
     for (int i = 0; i < 8; ++i)
-        s.bar->add_tab("!r" + std::to_string(i), "Room " + std::to_string(i),
-                       nullptr);
+    {
+        s.bar->add_tab("!r" + std::to_string(i), "Room " + std::to_string(i), nullptr);
+    }
     s.layout(400); // 8 * 120 = 960 > 400
     const Rect before = s.bar->access_rect_for_widget_row(0);
     CHECK(s.bar->on_wheel({10, 10}, 0, 1));
@@ -199,14 +212,16 @@ TEST_CASE("TabBar wheel scrolls when tabs overflow and clamps",
     s.paint();
 }
 
-TEST_CASE("TabBar Left/Right keys cycle via on_tab_selected only when focused",
-          "[tk][tab_bar]")
+TEST_CASE("TabBar Left/Right keys cycle via on_tab_selected only when focused", "[tk][tab_bar]")
 {
     TabBarStage s;
     s.add3();
     s.layout();
     std::vector<std::string> sel;
-    s.bar->on_tab_selected = [&](const std::string& id) { sel.push_back(id); };
+    s.bar->on_tab_selected = [&](const std::string& id)
+    {
+        sel.push_back(id);
+    };
 
     CHECK_FALSE(s.bar->on_key_down(tabbar_key(Key::Right))); // unfocused
     s.host.request_focus(s.bar.get());
@@ -234,7 +249,10 @@ TEST_CASE("TabBar accessibility rows", "[tk][tab_bar][accessibility]")
 
     CHECK_FALSE(s.bar->access_activate_widget_row(0)); // no handler
     std::string sel;
-    s.bar->on_tab_selected = [&](const std::string& id) { sel = id; };
+    s.bar->on_tab_selected = [&](const std::string& id)
+    {
+        sel = id;
+    };
     CHECK(s.bar->access_activate_widget_row(2));
     CHECK(sel == "!c");
     CHECK_FALSE(s.bar->access_activate_widget_row(7));

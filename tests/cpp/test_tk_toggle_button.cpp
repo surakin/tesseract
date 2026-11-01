@@ -41,7 +41,11 @@ TEST_CASE("ToggleButton click flips state and reports the new value", "[toggle_b
 {
     ToggleStage st;
     std::vector<bool> seen;
-    st.btn->set_on_toggled([&](bool on) { seen.push_back(on); });
+    st.btn->set_on_toggled(
+        [&](bool on)
+        {
+            seen.push_back(on);
+        });
 
     CHECK_FALSE(st.btn->checked());
     st.click();
@@ -58,7 +62,11 @@ TEST_CASE("ToggleButton::set_checked is silent", "[toggle_button]")
 {
     ToggleStage st;
     int calls = 0;
-    st.btn->set_on_toggled([&](bool) { ++calls; });
+    st.btn->set_on_toggled(
+        [&](bool)
+        {
+            ++calls;
+        });
 
     st.btn->set_checked(true);
     CHECK(st.btn->checked());

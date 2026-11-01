@@ -23,8 +23,8 @@ enum class LocationError
 
 struct LocationFix
 {
-    double latitude    = 0.0;
-    double longitude   = 0.0;
+    double latitude = 0.0;
+    double longitude = 0.0;
     double accuracy_meters = -1.0; // -1 if the backend doesn't report accuracy
 };
 

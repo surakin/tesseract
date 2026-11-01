@@ -32,14 +32,17 @@ struct PopupsShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     using ShellBase::client_;
 };
 
@@ -74,8 +77,7 @@ struct PopupsRig
     tesseract::Client client;
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
     PopupsHost host;
-    std::unique_ptr<tk::TextArea> area =
-        tk::create_root_widget<tk::TextArea>(&host, 40.0f);
+    std::unique_ptr<tk::TextArea> area = tk::create_root_widget<tk::TextArea>(&host, 40.0f);
     std::unique_ptr<tesseract::RoomPane> pane;
     std::unique_ptr<tesseract::ComposerPopups> popups;
 
@@ -88,7 +90,9 @@ struct PopupsRig
         Gif = 3
     };
 
-    PopupsRig() : PopupsRig(tesseract::ComposerPopups::Options()) {}
+    PopupsRig() : PopupsRig(tesseract::ComposerPopups::Options())
+    {
+    }
 
     explicit PopupsRig(tesseract::ComposerPopups::Options options)
     {
@@ -98,11 +102,10 @@ struct PopupsRig
         area->arrange(lc, {0, 0, 200, 40});
         REQUIRE(host.native != nullptr);
         pane = std::make_unique<tesseract::RoomPane>(
-            tesseract::RoomPane::Deps{
-                .shell = &shell, .repaint = [] {}, .relayout = [] {}},
+            tesseract::RoomPane::Deps{.shell = &shell, .repaint = [] {}, .relayout = [] {}},
             "!room:x");
-        popups = std::make_unique<tesseract::ComposerPopups>(
-            host, area.get(), pane.get(), nullptr, std::move(options));
+        popups = std::make_unique<tesseract::ComposerPopups>(host, area.get(), pane.get(), nullptr,
+                                                             std::move(options));
         REQUIRE(host.popups_created.size() == 4);
     }
 
@@ -112,7 +115,10 @@ struct PopupsRig
         host.native->text_ = t;
         host.native->on_changed(t);
     }
-    bool popup_visible(int i) const { return host.popups_created[i]->visible(); }
+    bool popup_visible(int i) const
+    {
+        return host.popups_created[i]->visible();
+    }
 };
 
 } // namespace
@@ -170,18 +176,14 @@ TEST_CASE("an outside click dismisses the slash popup", "[composer_popups]")
     CHECK_FALSE(r.popup_visible(PopupsRig::Slash));
 }
 
-TEST_CASE("submit with no popup open and no room view is a no-op",
-          "[composer_popups]")
+TEST_CASE("submit with no popup open and no room view is a no-op", "[composer_popups]")
 {
     PopupsRig r;
     REQUIRE(r.area != nullptr);
-    CHECK_NOTHROW(r.host.native->on_submit
-                      ? r.host.native->on_submit()
-                      : void());
+    CHECK_NOTHROW(r.host.native->on_submit ? r.host.native->on_submit() : void());
 }
 
-TEST_CASE("gif results and failures for unknown requests are ignored",
-          "[composer_popups]")
+TEST_CASE("gif results and failures for unknown requests are ignored", "[composer_popups]")
 {
     PopupsRig r;
     r.popups->on_gif_results(123456789, {});
@@ -193,8 +195,7 @@ TEST_CASE("gif results and failures for unknown requests are ignored",
     r.popups->hide_gif_popup();
 }
 
-TEST_CASE("theme and animation refresh reach the popups safely",
-          "[composer_popups]")
+TEST_CASE("theme and animation refresh reach the popups safely", "[composer_popups]")
 {
     PopupsRig r;
     CHECK_NOTHROW(r.popups->apply_theme(tk::Theme::dark()));
@@ -211,15 +212,19 @@ TEST_CASE("destroying ComposerPopups unhooks the composer", "[composer_popups]")
     CHECK_FALSE(r.host.native->on_submit);
 }
 
-TEST_CASE("the text-change option replaces the built-in typing notice",
-          "[composer_popups]")
+TEST_CASE("the text-change option replaces the built-in typing notice", "[composer_popups]")
 {
     std::vector<std::string> seen;
     bool slash_extended = false;
     tesseract::ComposerPopups::Options o;
-    o.on_text_changed = [&](const std::string& t) { seen.push_back(t); };
+    o.on_text_changed = [&](const std::string& t)
+    {
+        seen.push_back(t);
+    };
     o.extend_slash_hooks = [&](tesseract::views::SlashCommandController::Hooks&)
-    { slash_extended = true; };
+    {
+        slash_extended = true;
+    };
     PopupsRig r(std::move(o));
     CHECK(slash_extended);
     r.type("hello");
@@ -242,8 +247,7 @@ TEST_CASE("a bot-command change refreshes an open slash popup and is harmless ot
     CHECK(r.popup_visible(PopupsRig::Slash));
 }
 
-TEST_CASE("a landed avatar or image redraws only visible popups",
-          "[composer_popups]")
+TEST_CASE("a landed avatar or image redraws only visible popups", "[composer_popups]")
 {
     PopupsRig r;
     auto* mention = r.host.popups_created[PopupsRig::Mention];
@@ -271,12 +275,13 @@ TEST_CASE("a landed avatar or image redraws only visible popups",
     CHECK(r.popup_visible(PopupsRig::Shortcode));
 }
 
-TEST_CASE("the shortcode image provider option replaces the peek-only default",
-          "[composer_popups]")
+TEST_CASE("the shortcode image provider option replaces the peek-only default", "[composer_popups]")
 {
     tesseract::ComposerPopups::Options o;
     o.shortcode_image_provider = [](const std::string&) -> const tk::Image*
-    { return nullptr; };
+    {
+        return nullptr;
+    };
     PopupsRig r(std::move(o));
     r.type(":smi");
     CHECK(r.popup_visible(PopupsRig::Shortcode));
@@ -284,8 +289,7 @@ TEST_CASE("the shortcode image provider option replaces the peek-only default",
     CHECK_FALSE(r.popup_visible(PopupsRig::Shortcode));
 }
 
-TEST_CASE("the strip repaints partially through the shell's animation cache",
-          "[composer_popups]")
+TEST_CASE("the strip repaints partially through the shell's animation cache", "[composer_popups]")
 {
     PopupsRig r;
     auto* gif = static_cast<StubPopupSurface*>(r.host.popups_created[PopupsRig::Gif]);

@@ -27,22 +27,29 @@ namespace
 
 std::wstring to_wide(const std::string& text)
 {
-    if (text.empty()) return {};
-    const int count = MultiByteToWideChar(CP_UTF8, 0, text.data(),
-                                           static_cast<int>(text.size()),
-                                           nullptr, 0);
-    if (count <= 0) return {};
+    if (text.empty())
+    {
+        return {};
+    }
+    const int count =
+        MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    if (count <= 0)
+    {
+        return {};
+    }
     std::wstring result(static_cast<std::size_t>(count), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                        result.data(), count);
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
+                        count);
     return result;
 }
 
 std::string to_utf8(const wchar_t* text)
 {
-    const int len = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0,
-                                        nullptr, nullptr);
-    if (len <= 1) return {};
+    const int len = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 1)
+    {
+        return {};
+    }
     // `len` includes the terminating NUL. Give the conversion API room for
     // it, then remove it.
     std::string out(static_cast<std::size_t>(len), '\0');
@@ -82,12 +89,17 @@ void write_console(DWORD which, std::string_view text)
     HANDLE h = GetStdHandle(which);
     if (!h || h == INVALID_HANDLE_VALUE)
     {
-        if (!attached) return;
-        static HANDLE conout = CreateFileW(L"CONOUT$", GENERIC_WRITE,
-                                           FILE_SHARE_WRITE, nullptr,
+        if (!attached)
+        {
+            return;
+        }
+        static HANDLE conout = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr,
                                            OPEN_EXISTING, 0, nullptr);
         h = conout;
-        if (h == INVALID_HANDLE_VALUE) return;
+        if (h == INVALID_HANDLE_VALUE)
+        {
+            return;
+        }
     }
     DWORD mode = 0;
     DWORD written = 0;
@@ -96,21 +108,18 @@ void write_console(DWORD which, std::string_view text)
         // A real console: write UTF-16 so non-ASCII (translated help)
         // renders regardless of the console code page.
         const std::wstring wide = to_wide(std::string(text));
-        WriteConsoleW(h, wide.data(), static_cast<DWORD>(wide.size()), &written,
-                      nullptr);
+        WriteConsoleW(h, wide.data(), static_cast<DWORD>(wide.size()), &written, nullptr);
     }
     else
     {
-        WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &written,
-                  nullptr);
+        WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
     }
 }
 
 // Per-profile so named profiles run side by side.
 std::wstring single_instance_mutex_name()
 {
-    return L"io.gnomos.Tesseract.SingleInstanceMutex" +
-           to_wide(tesseract::profile_suffix());
+    return L"io.gnomos.Tesseract.SingleInstanceMutex" + to_wide(tesseract::profile_suffix());
 }
 
 // Materialise the embedded app-icon PNG (IDR_TOAST_ICON) to a stable file and
@@ -120,8 +129,7 @@ std::wstring single_instance_mutex_name()
 // caller then falls back to the exe path).
 std::wstring write_toast_icon_png(HINSTANCE hInstance)
 {
-    HRSRC res =
-        FindResourceW(hInstance, MAKEINTRESOURCEW(IDR_TOAST_ICON), RT_RCDATA);
+    HRSRC res = FindResourceW(hInstance, MAKEINTRESOURCEW(IDR_TOAST_ICON), RT_RCDATA);
     if (!res)
     {
         return {};
@@ -146,8 +154,7 @@ std::wstring write_toast_icon_png(HINSTANCE hInstance)
     {
         return {};
     }
-    out.write(static_cast<const char*>(data),
-              static_cast<std::streamsize>(size));
+    out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
     if (!out)
     {
         return {};
@@ -157,8 +164,8 @@ std::wstring write_toast_icon_png(HINSTANCE hInstance)
 
 } // namespace
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
-                    LPWSTR /*lpCmdLine*/, int nCmdShow)
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*lpCmdLine*/,
+                    int nCmdShow)
 {
     const std::vector<std::string> utf8_args = command_line_utf8_args();
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -167,8 +174,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // Environment changes are process-local.
     if (tesseract::parse_launch_args(utf8_args).screenshot_dir)
     {
-        const auto isolated =
-            std::filesystem::temp_directory_path() / L"TesseractScreenshotMode";
+        const auto isolated = std::filesystem::temp_directory_path() / L"TesseractScreenshotMode";
         SetEnvironmentVariableW(L"APPDATA", isolated.c_str());
         SetEnvironmentVariableW(L"LOCALAPPDATA", isolated.c_str());
     }
@@ -186,7 +192,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         char narrow[LOCALE_NAME_MAX_LENGTH] = {};
         WideCharToMultiByte(CP_UTF8, 0, locale_name, -1, narrow, sizeof(narrow), nullptr, nullptr);
         // Replace '-' with '_' to match gettext convention (en-US -> en_US)
-        for (char* p = narrow; *p; ++p) { if (*p == '-') *p = '_'; }
+        for (char* p = narrow; *p; ++p)
+        {
+            if (*p == '-')
+            {
+                *p = '_';
+            }
+        }
         return std::string(narrow);
     };
     hooks.i18n_dir = []
@@ -197,9 +209,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         return (std::filesystem::path(exe_path).parent_path() / "i18n").string();
     };
     hooks.write_stdout = [](std::string_view text)
-    { write_console(STD_OUTPUT_HANDLE, text); };
+    {
+        write_console(STD_OUTPUT_HANDLE, text);
+    };
     hooks.write_stderr = [](std::string_view text)
-    { write_console(STD_ERROR_HANDLE, text); };
+    {
+        write_console(STD_ERROR_HANDLE, text);
+    };
     hooks.acquire_instance_lock = []
     {
         // Held (leaked) until exit, like the normal-startup mutex below.
@@ -221,12 +237,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // Single-instance guard (per --profile): if another process already
     // holds this mutex, find its main window, bring it to the foreground,
     // and exit.
-    HANDLE single_inst_mutex = CreateMutexW(
-        nullptr, TRUE,
+    HANDLE single_inst_mutex =
+        CreateMutexW(nullptr, TRUE,
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
+                     screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
 #endif
-        single_instance_mutex_name().c_str());
+                                     single_instance_mutex_name().c_str());
     bool duplicate = !single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS;
     if (duplicate && single_inst_mutex && launch.relaunch)
     {
@@ -234,8 +250,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         // it to release the mutex (an abandoned mutex, if it exits without
         // releasing, is acquired just the same) instead of handing off.
         const DWORD wait = WaitForSingleObject(
-            single_inst_mutex,
-            static_cast<DWORD>(plan.instance_lock_wait().count()));
+            single_inst_mutex, static_cast<DWORD>(plan.instance_lock_wait().count()));
         duplicate = wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED;
     }
     if (duplicate)
@@ -244,7 +259,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         if (screenshot_mode)
         {
             if (single_inst_mutex)
+            {
                 CloseHandle(single_inst_mutex);
+            }
             return 0;
         }
 #endif
@@ -273,12 +290,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     cds.dwData = 1; // matrix URI
                     cds.cbData = static_cast<DWORD>(startup_uri.size() + 1);
                     cds.lpData = startup_uri.data();
-                    SendMessageW(existing, WM_COPYDATA,
-                                 reinterpret_cast<WPARAM>(nullptr),
+                    SendMessageW(existing, WM_COPYDATA, reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
                 }
-                if (launch.action == tesseract::LaunchAction::Room &&
-                    launch.room_id)
+                if (launch.action == tesseract::LaunchAction::Room && launch.room_id)
                 {
                     // lpData is non-const PVOID; send from a local copy.
                     std::string room_id = *launch.room_id;
@@ -286,8 +301,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     cds.dwData = 3; // recent room ID
                     cds.cbData = static_cast<DWORD>(room_id.size() + 1);
                     cds.lpData = room_id.data();
-                    SendMessageW(existing, WM_COPYDATA,
-                                 reinterpret_cast<WPARAM>(nullptr),
+                    SendMessageW(existing, WM_COPYDATA, reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
                 }
                 else if (launch.action != tesseract::LaunchAction::None)
@@ -297,8 +311,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     cds.dwData = 2; // typed launch action
                     cds.cbData = sizeof(action);
                     cds.lpData = &action;
-                    SendMessageW(existing, WM_COPYDATA,
-                                 reinterpret_cast<WPARAM>(nullptr),
+                    SendMessageW(existing, WM_COPYDATA, reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
                 }
             }
@@ -313,7 +326,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // MSIX installs are updated by the Store or App Installer, not by the
     // GitHub release check (which would point at the NSIS installer).
     if (win32::package_context::is_packaged())
+    {
         tesseract::disable_update_checks();
+    }
 
     // Packaged installs declare matrix: in AppxManifest.xml. Only the NSIS /
     // developer build owns the equivalent HKCU registration.
@@ -323,8 +338,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 #else
         true &&
 #endif
-        !win32::package_context::is_packaged()
-    ) {
+        !win32::package_context::is_packaged())
+    {
         wchar_t exe_path[MAX_PATH]{};
         GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
         // "--" ends option parsing, so a URI carrying a raw quote can't
@@ -332,25 +347,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" -- \"%1\"";
 
         HKEY key = nullptr;
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\matrix",
-                            0, nullptr, REG_OPTION_NON_VOLATILE,
-                            KEY_SET_VALUE | KEY_CREATE_SUB_KEY, nullptr,
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\matrix", 0, nullptr,
+                            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE | KEY_CREATE_SUB_KEY, nullptr,
                             &key, nullptr) == ERROR_SUCCESS)
         {
             const wchar_t desc[] = L"URL:matrix Protocol";
-            RegSetValueExW(key, nullptr, 0, REG_SZ,
-                           reinterpret_cast<const BYTE*>(desc), sizeof(desc));
-            RegSetValueExW(key, L"URL Protocol", 0, REG_SZ,
-                           reinterpret_cast<const BYTE*>(L""), sizeof(wchar_t));
+            RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(desc),
+                           sizeof(desc));
+            RegSetValueExW(key, L"URL Protocol", 0, REG_SZ, reinterpret_cast<const BYTE*>(L""),
+                           sizeof(wchar_t));
             HKEY cmd_key = nullptr;
-            if (RegCreateKeyExW(key, L"shell\\open\\command", 0, nullptr,
-                                REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr,
-                                &cmd_key, nullptr) == ERROR_SUCCESS)
+            if (RegCreateKeyExW(key, L"shell\\open\\command", 0, nullptr, REG_OPTION_NON_VOLATILE,
+                                KEY_SET_VALUE, nullptr, &cmd_key, nullptr) == ERROR_SUCCESS)
             {
                 RegSetValueExW(cmd_key, nullptr, 0, REG_SZ,
                                reinterpret_cast<const BYTE*>(cmd.c_str()),
-                               static_cast<DWORD>((cmd.size() + 1) *
-                                                  sizeof(wchar_t)));
+                               static_cast<DWORD>((cmd.size() + 1) * sizeof(wchar_t)));
                 RegCloseKey(cmd_key);
             }
             RegCloseKey(key);
@@ -372,7 +384,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     // profile gets its own taskbar group and Jump List.
     const std::wstring aumid = win32::package_context::effective_aumid();
     if (!win32::package_context::is_packaged())
+    {
         SetCurrentProcessExplicitAppUserModelID(aumid.c_str());
+    }
     winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     // Register the AUMID in the current-user registry so the WinRT toast
@@ -385,14 +399,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 #else
         true &&
 #endif
-        !win32::package_context::is_packaged()
-    ) {
+        !win32::package_context::is_packaged())
+    {
         HKEY key = nullptr;
         const std::wstring aumid_key = L"Software\\Classes\\AppUserModelId\\" + aumid;
-        if (RegCreateKeyExW(
-                HKEY_CURRENT_USER, aumid_key.c_str(), 0,
-                nullptr, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr, &key,
-                nullptr) == ERROR_SUCCESS)
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, aumid_key.c_str(), 0, nullptr,
+                            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr, &key,
+                            nullptr) == ERROR_SUCCESS)
         {
             const std::wstring display =
                 L"Tesseract" + (tesseract::profile().empty()
@@ -400,8 +413,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                                     : L" (" + to_wide(tesseract::profile()) + L")");
             RegSetValueExW(key, L"DisplayName", 0, REG_SZ,
                            reinterpret_cast<const BYTE*>(display.c_str()),
-                           static_cast<DWORD>((display.size() + 1) *
-                                              sizeof(wchar_t)));
+                           static_cast<DWORD>((display.size() + 1) * sizeof(wchar_t)));
             // IconUri must be an image file — a bare .exe path does not render
             // in the toast / Action Centre. Materialise the embedded app icon
             // and point at the PNG; fall back to the exe path if that fails.
@@ -418,8 +430,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
             {
                 RegSetValueExW(key, L"IconUri", 0, REG_SZ,
                                reinterpret_cast<const BYTE*>(icon_uri.c_str()),
-                               static_cast<DWORD>((icon_uri.size() + 1) *
-                                                  sizeof(wchar_t)));
+                               static_cast<DWORD>((icon_uri.size() + 1) * sizeof(wchar_t)));
             }
             RegCloseKey(key);
         }
@@ -431,16 +442,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     using SetCtxFn = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT);
     if (HMODULE u32 = GetModuleHandleW(L"user32.dll"))
     {
-        if (auto setCtx = reinterpret_cast<SetCtxFn>(
-                GetProcAddress(u32, "SetProcessDpiAwarenessContext")))
+        if (auto setCtx =
+                reinterpret_cast<SetCtxFn>(GetProcAddress(u32, "SetProcessDpiAwarenessContext")))
         {
             setCtx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         }
     }
 
     // Enable common controls (status bar, etc.)
-    INITCOMMONCONTROLSEX icce{sizeof(icce),
-                              ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES};
+    INITCOMMONCONTROLSEX icce{sizeof(icce), ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&icce);
 
     // Settings, crash handler and locale were set up by prepare_launch().
@@ -448,20 +458,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
 
     win32::Win32Taskbar taskbar(hInstance);
-    taskbar.rebuild_jump_list(
-        to_wide(tk::tr("Open quick switcher")),
-        to_wide(tk::tr("Search messages")),
-        to_wide(tk::tr("Open settings")));
+    taskbar.rebuild_jump_list(to_wide(tk::tr("Open quick switcher")),
+                              to_wide(tk::tr("Search messages")), to_wide(tk::tr("Open settings")));
 
     int exit_code = 1;
     if (win32::MainWindow::register_class(hInstance))
     {
         tesseract::AccountManager account_manager;
-        win32::MainWindow window(account_manager, hInstance, taskbar,
-                                 plan.start_hidden(), launch.action,
-                                 launch.room_id.value_or(std::string{})
+        win32::MainWindow window(account_manager, hInstance, taskbar, plan.start_hidden(),
+                                 launch.action, launch.room_id.value_or(std::string{})
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                                 , launch.screenshot_dir
+                                                    ,
+                                 launch.screenshot_dir
                                      ? std::filesystem::u8path(*launch.screenshot_dir)
                                      : std::filesystem::path{}
 #endif
@@ -474,7 +482,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                 screenshot_mode ? SW_SHOW :
 #endif
-                (plan.start_hidden() ? SW_HIDE : nCmdShow)))
+                                (plan.start_hidden() ? SW_HIDE : nCmdShow)))
         {
             if (!startup_uri.empty())
             {

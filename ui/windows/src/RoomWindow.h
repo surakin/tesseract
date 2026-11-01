@@ -55,8 +55,7 @@ protected:
     // pop-out; only the controller that issued the search matches).
     void on_gif_results(std::uint64_t request_id,
                         std::vector<tesseract::GifResult> results) override;
-    void on_gif_search_failed(std::uint64_t request_id,
-                              const std::string& message) override;
+    void on_gif_search_failed(std::uint64_t request_id, const std::string& message) override;
 
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
@@ -79,7 +78,7 @@ private:
     // RoomSearchBar::search_field() / ForwardRoomPicker::search_field().
     tk::TextArea* text_area_ = nullptr;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
+    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr;    // borrowed
 
     // Composer popups (@mention, /command, :shortcode:, /gif). Declared after
     // surface_ so the popups are destroyed before the Host they came from.

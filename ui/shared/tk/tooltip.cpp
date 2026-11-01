@@ -28,13 +28,14 @@ void Tooltip::set_content(std::string text, Rect anchor_world)
 
 void Tooltip::paint_overlay(PaintCtx& ctx, Rect surface_bounds)
 {
-    if (text_.empty()) return;
+    if (text_.empty())
+    {
+        return;
+    }
 
-    const float max_width = std::max(
-        0.0f, std::min(kMaxTextWidth, surface_bounds.w - kPad * 4));
+    const float max_width = std::max(0.0f, std::min(kMaxTextWidth, surface_bounds.w - kPad * 4));
 
-    if (!layout_ || layout_text_cache_ != text_ ||
-        layout_max_width_cache_ != max_width)
+    if (!layout_ || layout_text_cache_ != text_ || layout_max_width_cache_ != max_width)
     {
         TextStyle style{};
         style.role = FontRole::Caption;
@@ -44,7 +45,10 @@ void Tooltip::paint_overlay(PaintCtx& ctx, Rect surface_bounds)
         layout_text_cache_ = text_;
         layout_max_width_cache_ = max_width;
     }
-    if (!layout_) return;
+    if (!layout_)
+    {
+        return;
+    }
 
     const Size tsz = layout_->measure();
     float tx = anchor_.x + (anchor_.w - tsz.w) / 2.0f - kPad;
@@ -69,10 +73,8 @@ void Tooltip::paint_overlay(PaintCtx& ctx, Rect surface_bounds)
         fade.emplace(ctx.canvas, t);
     }
     ctx.canvas.fill_rounded_rect(bg, kRadius, ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(bg, kRadius, ctx.theme.palette.popup_border,
-                                   1.0f);
-    ctx.canvas.draw_text(*layout_, {bg.x + kPad, bg.y + kPad},
-                          ctx.theme.palette.text_primary);
+    ctx.canvas.stroke_rounded_rect(bg, kRadius, ctx.theme.palette.popup_border, 1.0f);
+    ctx.canvas.draw_text(*layout_, {bg.x + kPad, bg.y + kPad}, ctx.theme.palette.text_primary);
 }
 
 } // namespace tk

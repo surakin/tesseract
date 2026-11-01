@@ -25,18 +25,26 @@ class UserProfilePanel : public tk::Widget
 public:
     static constexpr float kCardW = 480.0f;
 
-    enum class DmButtonState { Normal, HasDM, Sending };
+    enum class DmButtonState
+    {
+        Normal,
+        HasDM,
+        Sending
+    };
 
-    void        set_dm_button_state(DmButtonState state);
+    void set_dm_button_state(DmButtonState state);
     std::string dm_button_label() const;
-    bool        dm_button_enabled() const;
+    bool dm_button_enabled() const;
 
     UserProfilePanel();
     ~UserProfilePanel() override;
 
     void open(std::string user_id, std::string display_name, std::string avatar_url);
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_avatar_provider(ImageProvider p);
@@ -59,7 +67,10 @@ public:
     // false while this device itself is unverified: verifying someone signs
     // their key with this device's cross-signing key.
     void set_trust(tesseract::UserTrust trust, bool can_verify);
-    const std::string& user_id() const { return user_id_; }
+    const std::string& user_id() const
+    {
+        return user_id_;
+    }
     // Fired from open() so the shell can fetch the trust and call set_trust().
     std::function<void(std::string user_id)> on_trust_requested;
     // "Verify" (NotVerified) / "Withdraw verification" (VerificationViolation).
@@ -76,7 +87,10 @@ public:
     };
     void set_common_rooms_supported(bool supported);
     void set_common_rooms(std::vector<CommonRoom> rooms, int total, bool has_more);
-    const std::vector<CommonRoom>& common_rooms() const { return common_rooms_; }
+    const std::vector<CommonRoom>& common_rooms() const
+    {
+        return common_rooms_;
+    }
     // Fired from open() so the shell can fetch the list and call set_common_rooms().
     std::function<void(std::string user_id)> on_common_rooms_requested;
     std::function<void(std::string room_id)> on_common_room_clicked;
@@ -86,7 +100,10 @@ public:
     // Small (thumbnail) avatars for the list rows, separate from the full-res
     // provider the big avatar uses. Fired from paint once per room per open()
     // when a row's avatar isn't loaded yet, so the shell can fetch it.
-    void set_common_room_avatar_provider(ImageProvider p) { common_avatar_provider_ = std::move(p); }
+    void set_common_room_avatar_provider(ImageProvider p)
+    {
+        common_avatar_provider_ = std::move(p);
+    }
     std::function<void(std::string room_id)> on_common_room_avatar_needed;
 
     // Callbacks wired by shell
@@ -97,24 +114,23 @@ public:
     // if a DM room already exists for the given user_id (→ HasDM), false for
     // Normal. Leave unset to default to Normal.
     std::function<bool(const std::string& user_id)> on_check_has_dm;
-    std::function<void()>                    on_close;
-    std::function<void(std::string avatar_url, std::string display_name)>
-                                             on_avatar_clicked;
+    std::function<void()> on_close;
+    std::function<void(std::string avatar_url, std::string display_name)> on_avatar_clicked;
 
     // Fires on open/close. RoomView routes this into the shared layout-
     // changed chain so the shells re-query rect accessors (specifically:
     // hide the compose textarea + room-search NativeTextField while the
     // panel covers the canvas).
-    std::function<void()>                    on_layout_changed;
+    std::function<void()> on_layout_changed;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
 
     // Accessibility: a Group announcing the (canvas-painted) display name +
     // user id; the DM / Ignore buttons attach under it.
@@ -125,11 +141,16 @@ public:
     std::string access_name() const override
     {
         if (display_name_.empty())
+        {
             return user_id_;
+        }
         return display_name_ + " (" + user_id_ + ")";
     }
     // The trust shield is canvas-painted, so its meaning is announced here.
-    std::string access_description() const override { return trust_tooltip_text_(); }
+    std::string access_description() const override
+    {
+        return trust_tooltip_text_();
+    }
 
 private:
     bool open_ = false;
@@ -144,22 +165,22 @@ private:
     ImageProvider image_provider_;
 
     // Child widgets (borrowed pointers)
-    tk::Button* close_btn_  = nullptr;
+    tk::Button* close_btn_ = nullptr;
 
     tk::IconCache close_icon_;
-    tk::Button* dm_btn_     = nullptr;
+    tk::Button* dm_btn_ = nullptr;
     tk::Button* ignore_btn_ = nullptr;
 
     // Trust: a shield icon beside the name (Verified / VerificationViolation
     // only) plus an optional action button, hidden until set_trust() and for
     // users with no cross-signing identity.
-    tk::Button* verify_btn_  = nullptr;
+    tk::Button* verify_btn_ = nullptr;
     tesseract::UserTrust trust_ = tesseract::UserTrust::Unknown;
     bool can_verify_ = false;
     tk::IconCache trust_icon_;
     tk::Rect trust_icon_rect_{};
-    bool     hover_trust_  = false;
-    bool     hover_verify_ = false;
+    bool hover_trust_ = false;
+    bool hover_verify_ = false;
     bool trust_icon_visible_() const
     {
         return trust_ == tesseract::UserTrust::Verified ||
@@ -175,7 +196,7 @@ private:
     std::vector<CommonRoom> common_rooms_;
     ImageProvider common_avatar_provider_;
     std::unordered_set<std::string> common_avatar_requested_; // room ids, per open()
-    int  common_total_    = 0;
+    int common_total_ = 0;
     bool common_has_more_ = false;
     bool common_supported_ = false;
     bool common_section_visible_() const
@@ -219,26 +240,26 @@ private:
     // Pronouns row hover → tooltip listing every configured language/pronoun
     // pair (only shown when there's more than one; see pronouns_tooltip_text_).
     tk::Rect pronouns_row_rect_{};
-    bool     hover_pronouns_ = false;
+    bool hover_pronouns_ = false;
     std::string pronouns_tooltip_text_() const;
 
     // Per-row geometry for the extended-profile fields (pronouns/tz/bio/
     // status/activity, in that fixed order), computed by layout_ext_rows_().
     struct RowGeom
     {
-        float h        = 0.0f; // row height (tallest of label / wrapped value)
+        float h = 0.0f;        // row height (tallest of label / wrapped value)
         float label_dy = 0.0f; // label draw-y offset from the row's top, for
         float value_dy = 0.0f; // baseline alignment between label and value
     };
     std::array<RowGeom, 5> ext_row_geom_{};
     float layout_ext_rows_(tk::LayoutCtx& lc, float max_val_w);
 
-    static constexpr float kLeftW      = 200.0f; // left column (avatar, name, buttons)
-    static constexpr float kAvatarD    = 160.0f;
-    static constexpr float kPadX       = 16.0f;
-    static constexpr float kPadY       = 12.0f;
-    static constexpr float kButtonH    = 36.0f;
-    static constexpr float kHeaderH    = 40.0f;
+    static constexpr float kLeftW = 200.0f; // left column (avatar, name, buttons)
+    static constexpr float kAvatarD = 160.0f;
+    static constexpr float kPadX = 16.0f;
+    static constexpr float kPadY = 12.0f;
+    static constexpr float kButtonH = 36.0f;
+    static constexpr float kHeaderH = 40.0f;
 };
 
 } // namespace tesseract::views

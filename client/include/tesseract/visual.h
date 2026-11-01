@@ -23,7 +23,7 @@ namespace tesseract::visual
 // and a runtime cap. A drag that ends below kSidebarMinExpandedWidth snaps to
 // the collapsed width.
 inline constexpr int kSidebarWidth = 260;
-inline constexpr int kSidebarCollapsedWidth = 68;    // kUserInfoPadX(12) + avatar(44) + 12
+inline constexpr int kSidebarCollapsedWidth = 68; // kUserInfoPadX(12) + avatar(44) + 12
 inline constexpr int kSidebarMinExpandedWidth = 180;
 inline constexpr int kRoomAvatarSize = 36;
 inline constexpr int kRoomRowHeight = 48;
@@ -95,9 +95,9 @@ inline constexpr float kComposeButtonRenderSize =
 // (card padding, send, mic, sticker, emoji, each separated by
 // kComposeBarGap) — if that packing ever changes shape (a button
 // added/removed/reordered), update this formula to match.
-inline constexpr float kMinWindowWidth =
-    4.0f * kComposeBarPadX + kComposeSendWidth + 4.0f * kComposeBarGap +
-    6.0f * kComposeButtonRenderSize; // = 312 today
+inline constexpr float kMinWindowWidth = 4.0f * kComposeBarPadX + kComposeSendWidth +
+                                         4.0f * kComposeBarGap +
+                                         6.0f * kComposeButtonRenderSize; // = 312 today
 
 // Minimum total window height for any window stacking a room header, a
 // timeline, and a compose bar (the main window and the room popout window

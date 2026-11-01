@@ -19,8 +19,8 @@ struct ContrastCheck
 {
     const char* name;
     ContrastLevel level;
-    tk::Color Palette::*fg;
-    tk::Color Palette::*bg;
+    tk::Color Palette::* fg;
+    tk::Color Palette::* bg;
 };
 
 // Mirrors the contrast relationships already hand-documented in theme.cpp's
@@ -37,11 +37,14 @@ const std::vector<ContrastCheck>& contrast_checks()
     static const std::vector<ContrastCheck> checks = {
         {"text_primary on bg", ContrastLevel::Text, &Palette::text_primary, &Palette::bg},
         {"text_secondary on bg", ContrastLevel::Text, &Palette::text_secondary, &Palette::bg},
-        {"text_on_accent on accent", ContrastLevel::Text, &Palette::text_on_accent, &Palette::accent},
-        {"chip_text_me on chip_bg_me", ContrastLevel::Text, &Palette::chip_text_me, &Palette::chip_bg_me},
-        {"unread_text on unread_bg", ContrastLevel::Text, &Palette::unread_text, &Palette::unread_bg},
+        {"text_on_accent on accent", ContrastLevel::Text, &Palette::text_on_accent,
+         &Palette::accent},
+        {"chip_text_me on chip_bg_me", ContrastLevel::Text, &Palette::chip_text_me,
+         &Palette::chip_bg_me},
+        {"unread_text on unread_bg", ContrastLevel::Text, &Palette::unread_text,
+         &Palette::unread_bg},
         {"avatar_initials_text on avatar_initials_bg", ContrastLevel::Text,
-            &Palette::avatar_initials_text, &Palette::avatar_initials_bg},
+         &Palette::avatar_initials_text, &Palette::avatar_initials_bg},
         {"border_strong on bg", ContrastLevel::UI, &Palette::border_strong, &Palette::bg},
     };
     return checks;
@@ -49,12 +52,12 @@ const std::vector<ContrastCheck>& contrast_checks()
 
 } // namespace
 
-TEST_CASE("Every Theme::variant() accent/mode combination meets WCAG AA", "[tk][theme][color_contrast]")
+TEST_CASE("Every Theme::variant() accent/mode combination meets WCAG AA",
+          "[tk][theme][color_contrast]")
 {
     const auto mode = GENERATE(ThemeMode::Light, ThemeMode::Dark);
-    const auto accent = GENERATE(AccentTheme::Blue, AccentTheme::Forest,
-                                  AccentTheme::Sunset, AccentTheme::Violet,
-                                  AccentTheme::System);
+    const auto accent = GENERATE(AccentTheme::Blue, AccentTheme::Forest, AccentTheme::Sunset,
+                                 AccentTheme::Violet, AccentTheme::System);
 
     const Theme& t = Theme::variant(mode, accent);
     const Palette& p = t.palette;
@@ -66,7 +69,8 @@ TEST_CASE("Every Theme::variant() accent/mode combination meets WCAG AA", "[tk][
     }
 }
 
-TEST_CASE("Theme::light()/dark() (the default Blue accent) meets WCAG AA", "[tk][theme][color_contrast]")
+TEST_CASE("Theme::light()/dark() (the default Blue accent) meets WCAG AA",
+          "[tk][theme][color_contrast]")
 {
     for (const Theme* t : {&Theme::light(), &Theme::dark()})
     {
@@ -122,12 +126,12 @@ TEST_CASE("apply_system_accent's 7 accent fields hold across a spread of raw acc
           "[tk][theme][apply_system_accent]")
 {
     const auto mode = GENERATE(ThemeMode::Light, ThemeMode::Dark);
-    const auto raw = GENERATE(tk::Color::rgb(0x0078D4), // Win11 default blue
-                              tk::Color::rgb(0x808080), // mid-grey
-                              tk::Color::rgb(0x101010), // near-black
-                              tk::Color::rgb(0xF2F2F2), // near-white
-                              tk::Color::rgb(0xE81123), // saturated red
-                              tk::Color::rgb(0x2ECC71), // saturated green
+    const auto raw = GENERATE(tk::Color::rgb(0x0078D4),  // Win11 default blue
+                              tk::Color::rgb(0x808080),  // mid-grey
+                              tk::Color::rgb(0x101010),  // near-black
+                              tk::Color::rgb(0xF2F2F2),  // near-white
+                              tk::Color::rgb(0xE81123),  // saturated red
+                              tk::Color::rgb(0x2ECC71),  // saturated green
                               tk::Color::rgb(0xFFD700)); // saturated yellow
 
     Theme t = Theme::variant(mode, AccentTheme::System);
@@ -148,8 +152,8 @@ TEST_CASE("apply_system_accent's 7 accent fields hold across a spread of raw acc
     // the original Win32 behaviour this was ported from; not a regression.
     if (!tk::meets_wcag_aa(t.palette.text_on_accent, t.palette.accent, ContrastLevel::Text))
     {
-        WARN("text_on_accent/accent contrast below AA for raw=" << (int)raw.r << ","
-             << (int)raw.g << "," << (int)raw.b);
+        WARN("text_on_accent/accent contrast below AA for raw=" << (int)raw.r << "," << (int)raw.g
+                                                                << "," << (int)raw.b);
     }
 
     // Fields apply_system_accent doesn't touch stay exactly as
@@ -190,7 +194,7 @@ TEST_CASE("apply_system_accent's wash fields differ between Light and Dark",
     // (f) same raw accent, per-mode anchor branch is live (not collapsed to
     // one path).
     Theme light = Theme::variant(ThemeMode::Light, AccentTheme::System);
-    Theme dark  = Theme::variant(ThemeMode::Dark, AccentTheme::System);
+    Theme dark = Theme::variant(ThemeMode::Dark, AccentTheme::System);
     const tk::Color raw = tk::Color::rgb(0x9B59B6); // saturated violet
     tk::apply_system_accent(light, raw);
     tk::apply_system_accent(dark, raw);

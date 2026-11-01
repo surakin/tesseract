@@ -31,9 +31,9 @@ bool poll_draft_valid(const PollDraft& normalized);
 std::uint32_t poll_draft_max_selections(const PollDraft& normalized);
 
 // Selection after the user clicks `clicked`; nullopt means "no change".
-std::optional<std::vector<std::string>>
-next_poll_selection(const std::vector<std::string>& current, const std::string& clicked,
-                    std::uint32_t max_selections);
+std::optional<std::vector<std::string>> next_poll_selection(const std::vector<std::string>& current,
+                                                            const std::string& clicked,
+                                                            std::uint32_t max_selections);
 
 // Rounded percentage; 0 when total == 0.
 int poll_percent(std::uint32_t votes, std::uint32_t total);

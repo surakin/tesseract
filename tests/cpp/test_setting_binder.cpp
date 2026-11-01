@@ -30,8 +30,7 @@ struct BinderSettingsGuard
 
 } // namespace
 
-TEST_CASE("SettingBinder: checkbox writes the field and reports the key once",
-          "[setting_binder]")
+TEST_CASE("SettingBinder: checkbox writes the field and reports the key once", "[setting_binder]")
 {
     BinderSettingsGuard guard;
     vt::Stage st;
@@ -39,10 +38,17 @@ TEST_CASE("SettingBinder: checkbox writes the field and reports the key once",
     SettingBinder b;
     int fires = 0;
     SettingKey last{};
-    b.on_changed = [&](SettingKey k) { ++fires; last = k; };
+    b.on_changed = [&](SettingKey k)
+    {
+        ++fires;
+        last = k;
+    };
     bool local_v = false;
     b.bind(cb.get(), &Settings::send_presence, SettingKey::SendPresence,
-           [&](bool v) { local_v = v; });
+           [&](bool v)
+           {
+               local_v = v;
+           });
 
     Settings::instance().send_presence = false;
     cb->on_change(true);
@@ -55,15 +61,17 @@ TEST_CASE("SettingBinder: checkbox writes the field and reports the key once",
     CHECK(fires == 1);
 }
 
-TEST_CASE("SettingBinder: reload pushes fields into controls silently",
-          "[setting_binder]")
+TEST_CASE("SettingBinder: reload pushes fields into controls silently", "[setting_binder]")
 {
     BinderSettingsGuard guard;
     vt::Stage st;
     auto cb = tk::create_root_widget<tk::CheckButton>(&st.host, "x", false);
     SettingBinder b;
     int fires = 0;
-    b.on_changed = [&](SettingKey) { ++fires; };
+    b.on_changed = [&](SettingKey)
+    {
+        ++fires;
+    };
     b.bind(cb.get(), &Settings::send_presence, SettingKey::SendPresence);
 
     Settings::instance().send_presence = true;
@@ -80,11 +88,14 @@ TEST_CASE("SettingBinder: combo maps ids to enum values", "[setting_binder]")
     combo->set_options({{"Classic", "classic"}, {"Bubbles", "bubbles"}});
     SettingBinder b;
     int fires = 0;
-    b.on_changed = [&](SettingKey) { ++fires; };
-    b.bind<Settings::MessageLayout>(
-        combo.get(), &Settings::message_layout, SettingKey::MessageLayout,
-        {{Settings::MessageLayout::Classic, "classic"},
-         {Settings::MessageLayout::Bubbles, "bubbles"}});
+    b.on_changed = [&](SettingKey)
+    {
+        ++fires;
+    };
+    b.bind<Settings::MessageLayout>(combo.get(), &Settings::message_layout,
+                                    SettingKey::MessageLayout,
+                                    {{Settings::MessageLayout::Classic, "classic"},
+                                     {Settings::MessageLayout::Bubbles, "bubbles"}});
 
     Settings::instance().message_layout = Settings::MessageLayout::Classic;
     combo->on_changed("bubbles");
@@ -107,10 +118,17 @@ TEST_CASE("SettingBinder: string combo and custom loader", "[setting_binder]")
     auto combo = tk::create_root_widget<tk::ComboBox>(&st.host);
     SettingBinder b;
     SettingKey last = SettingKey::Theme;
-    b.on_changed = [&](SettingKey k) { last = k; };
+    b.on_changed = [&](SettingKey k)
+    {
+        last = k;
+    };
     b.bind(combo.get(), &Settings::camera_device_id, SettingKey::Camera);
     int loads = 0;
-    b.bind_custom([&] { ++loads; });
+    b.bind_custom(
+        [&]
+        {
+            ++loads;
+        });
 
     combo->on_changed("cam0");
     CHECK(Settings::instance().camera_device_id == "cam0");
@@ -125,21 +143,27 @@ TEST_CASE("SettingBinder: string combo and custom loader", "[setting_binder]")
     CHECK(last == SettingKey::Proxy);
 }
 
-TEST_CASE("SettingBinder: slider writes an int field and reloads silently",
-          "[setting_binder]")
+TEST_CASE("SettingBinder: slider writes an int field and reloads silently", "[setting_binder]")
 {
     struct ColumnGuard
     {
         Settings& s = Settings::instance();
         int pct = s.timeline_column_pct;
-        ~ColumnGuard() { s.timeline_column_pct = pct; }
+        ~ColumnGuard()
+        {
+            s.timeline_column_pct = pct;
+        }
     } guard;
     vt::Stage st;
     auto slider = tk::create_root_widget<tk::Slider>(&st.host, 30.0, 100.0, 1.0);
     SettingBinder b;
     int fires = 0;
     SettingKey last{};
-    b.on_changed = [&](SettingKey k) { ++fires; last = k; };
+    b.on_changed = [&](SettingKey k)
+    {
+        ++fires;
+        last = k;
+    };
     b.bind(slider.get(), &Settings::timeline_column_pct, SettingKey::TimelineColumnWidth);
 
     Settings::instance().timeline_column_pct = 50;

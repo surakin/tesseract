@@ -47,8 +47,7 @@ TEST_CASE("aggregate_threads: an unread reply pings", "[thread][unread]")
     CHECK(agg.any_mention);
 }
 
-TEST_CASE("aggregate_threads: mention flag ignored on a read thread",
-          "[thread][unread]")
+TEST_CASE("aggregate_threads: mention flag ignored on a read thread", "[thread][unread]")
 {
     // mentions_me true but unread false — must not promote the header dot.
     auto agg = aggregate_threads({thread(false, true)});

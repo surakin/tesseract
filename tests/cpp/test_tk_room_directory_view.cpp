@@ -24,19 +24,17 @@ tesseract::RoomDirectoryEntry make_entry(const std::string& room_id)
 }
 } // namespace
 
-TEST_CASE("RoomDirectoryView: open() issues an initial search",
-          "[roomdirectory]")
+TEST_CASE("RoomDirectoryView: open() issues an initial search", "[roomdirectory]")
 {
     auto v = tk::create_root_widget<RoomDirectoryView>(nullptr);
 
     int requests = 0;
     std::uint64_t last_id = 0;
-    v->on_search_requested =
-        [&](std::uint64_t id, const std::string&, const std::string&)
-        {
-            ++requests;
-            last_id = id;
-        };
+    v->on_search_requested = [&](std::uint64_t id, const std::string&, const std::string&)
+    {
+        ++requests;
+        last_id = id;
+    };
 
     v->open();
     CHECK(v->is_open());
@@ -56,9 +54,10 @@ TEST_CASE("RoomDirectoryView: set_results appends only for the active "
     auto v = tk::create_root_widget<RoomDirectoryView>(nullptr);
 
     std::uint64_t id = 0;
-    v->on_search_requested =
-        [&](std::uint64_t rid, const std::string&, const std::string&)
-        { id = rid; };
+    v->on_search_requested = [&](std::uint64_t rid, const std::string&, const std::string&)
+    {
+        id = rid;
+    };
     v->open();
     REQUIRE(id != 0);
 
@@ -81,9 +80,10 @@ TEST_CASE("RoomDirectoryView: join button enables only after a row is "
     auto v = tk::create_root_widget<RoomDirectoryView>(nullptr);
 
     std::uint64_t id = 0;
-    v->on_search_requested =
-        [&](std::uint64_t rid, const std::string&, const std::string&)
-        { id = rid; };
+    v->on_search_requested = [&](std::uint64_t rid, const std::string&, const std::string&)
+    {
+        id = rid;
+    };
     v->open();
     v->set_results(id, {make_entry("!a:s")}, true);
 
@@ -120,9 +120,10 @@ TEST_CASE("RoomDirectoryView: search_failed on the active request surfaces "
     auto v = tk::create_root_widget<RoomDirectoryView>(nullptr);
 
     std::uint64_t id = 0;
-    v->on_search_requested =
-        [&](std::uint64_t rid, const std::string&, const std::string&)
-        { id = rid; };
+    v->on_search_requested = [&](std::uint64_t rid, const std::string&, const std::string&)
+    {
+        id = rid;
+    };
     v->open();
 
     v->set_search_failed(id + 1000, "ignored");
@@ -148,13 +149,15 @@ TEST_CASE("RoomDirectoryView: a typed server is kept only once its directory "
     std::uint64_t id = 0;
     std::string searched;
     std::vector<std::string> validated;
-    v->on_search_requested = [&](std::uint64_t rid, const std::string&,
-                                 const std::string& server)
+    v->on_search_requested = [&](std::uint64_t rid, const std::string&, const std::string& server)
     {
         id = rid;
         searched = server;
     };
-    v->on_server_validated = [&](const std::string& s) { validated.push_back(s); };
+    v->on_server_validated = [&](const std::string& s)
+    {
+        validated.push_back(s);
+    };
     v->open();
     CHECK(searched.empty()); // own homeserver: no server argument
 

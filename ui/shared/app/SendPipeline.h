@@ -87,8 +87,7 @@ private:
         std::uint64_t epoch = 0;
     };
 
-    void on_prepared_(const std::string& room_id, std::uint64_t id,
-                      std::string prepared);
+    void on_prepared_(const std::string& room_id, std::uint64_t id, std::string prepared);
     void pump_(const std::string& room_id);
     void on_sent_(const std::string& room_id);
 

@@ -15,8 +15,7 @@
 @implementation TesseractScreenshotWindow
 - (NSRect)constrainFrameRect:(NSRect)frameRect toScreen:(NSScreen*)screen
 {
-    return self.unconstrained ? frameRect
-                              : [super constrainFrameRect:frameRect toScreen:screen];
+    return self.unconstrained ? frameRect : [super constrainFrameRect:frameRect toScreen:screen];
 }
 @end
 
@@ -39,30 +38,36 @@ public:
 
     void apply_theme(tesseract::screenshot::ScreenshotTheme theme) override
     {
-        [controller_ _screenshotApplyDark:
-                         theme == tesseract::screenshot::ScreenshotTheme::Dark];
+        [controller_ _screenshotApplyDark:theme == tesseract::screenshot::ScreenshotTheme::Dark];
     }
-    void refresh() override { [controller_ _screenshotRefresh]; }
+    void refresh() override
+    {
+        [controller_ _screenshotRefresh];
+    }
     bool save_png(const std::string& filename) override
     {
-        NSString* path = [directory_
-            stringByAppendingPathComponent:@(filename.c_str())];
+        NSString* path = [directory_ stringByAppendingPathComponent:@(filename.c_str())];
         if ([controller_ _saveScreenshotToPath:path])
+        {
             return true;
+        }
         NSLog(@"Could not save screenshot: %@", path);
         return false;
     }
     void run_after(int ms, std::function<void()> fn) override
     {
         __block std::function<void()> step = std::move(fn);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                     static_cast<int64_t>(ms) * NSEC_PER_MSEC),
-                       dispatch_get_main_queue(), ^{ step(); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(ms) * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(), ^{
+                           step();
+                       });
     }
     void finish(bool ok) override
     {
         if (!ok)
+        {
             std::exit(EXIT_FAILURE);
+        }
         [NSApp terminate:nil];
     }
 
@@ -86,7 +91,7 @@ private:
     // spawn_main_window_(), _sharedAccountManager points to the primary's manager
     // and _accountManager is unused; MainWindow is constructed from the pointer.
     // Declared before _window so the window is destroyed first.
-    tesseract::AccountManager  _accountManager;
+    tesseract::AccountManager _accountManager;
     tesseract::AccountManager* _sharedAccountManager; // non-owning
 
     // Owns the window state and logic; holds only a weak back-pointer to us.
@@ -101,9 +106,8 @@ private:
 - (instancetype)init
 {
     NSRect frame = NSMakeRect(0, 0, 1100, 768);
-    NSWindowStyleMask mask =
-        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+    NSWindowStyleMask mask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                             NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     Class window_class = TesseractScreenshotWindow.class;
 #else
@@ -114,8 +118,8 @@ private:
                                                          backing:NSBackingStoreBuffered
                                                            defer:NO];
     window.title = @"Tesseract";
-    window.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth,
-                                 tesseract::visual::kMinWindowHeight);
+    window.minSize =
+        NSMakeSize(tesseract::visual::kMinWindowWidth, tesseract::visual::kMinWindowHeight);
     window.titlebarAppearsTransparent = NO;
     window.releasedWhenClosed = NO;
 
@@ -186,14 +190,13 @@ private:
     if ([keyPath isEqualToString:@"effectiveAppearance"] && object == NSApp)
     {
         if (_window)
+        {
             _window->on_os_appearance_changed();
+        }
     }
     else
     {
-        [super observeValueForKeyPath:keyPath
-                             ofObject:object
-                               change:change
-                              context:context];
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
     }
 }
 
@@ -206,10 +209,11 @@ private:
     NSRect bounds = view.bounds;
     NSBitmapImageRep* rep = [view bitmapImageRepForCachingDisplayInRect:bounds];
     if (!rep)
+    {
         return NO;
+    }
     [view cacheDisplayInRect:bounds toBitmapImageRep:rep];
-    NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG
-                                     properties:@{}];
+    NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
     return png && [png writeToFile:path atomically:YES];
 }
 
@@ -227,11 +231,10 @@ private:
 {
     _screenshotMode = YES;
     NSError* error = nil;
-    if (![NSFileManager.defaultManager
-            createDirectoryAtPath:directory
-      withIntermediateDirectories:YES
-                       attributes:nil
-                            error:&error])
+    if (![NSFileManager.defaultManager createDirectoryAtPath:directory
+                                 withIntermediateDirectories:YES
+                                                  attributes:nil
+                                                       error:&error])
     {
         NSLog(@"Could not create screenshot directory %@: %@", directory, error);
         std::exit(EXIT_FAILURE);
@@ -270,11 +273,12 @@ private:
 - (void)openMatrixLink:(NSString*)uri
 {
     if (uri)
+    {
         _window->open_matrix_link([uri UTF8String]);
+    }
 }
 
-- (void)dispatchLaunchAction:(tesseract::LaunchAction)action
-                      roomId:(NSString*)roomId
+- (void)dispatchLaunchAction:(tesseract::LaunchAction)action roomId:(NSString*)roomId
 {
     _window->dispatch_launch_action(action, roomId ? [roomId UTF8String] : "");
 }
@@ -298,17 +302,50 @@ private:
 //  Application-menu-bar actions
 // ─────────────────────────────────────────────────────────────────────────
 
-- (void)openSettingsMenuAction:(id)sender { _window->menu_open_settings(); }
-- (void)addRoomMenuAction:(id)sender { _window->menu_add_room(); }
-- (void)showRoomInfoMenuAction:(id)sender { _window->menu_show_room_info(); }
-- (void)findInConversationMenuAction:(id)sender { _window->menu_find_in_conversation(); }
-- (void)searchAllMessagesMenuAction:(id)sender { _window->menu_search_all_messages(); }
-- (void)goBackMenuAction:(id)sender { _window->menu_go_back(); }
-- (void)goForwardMenuAction:(id)sender { _window->menu_go_forward(); }
-- (void)openQuickSwitcherMenuAction:(id)sender { _window->menu_open_quick_switcher(); }
-- (void)cycleRecentRoomsMenuAction:(id)sender { _window->menu_cycle_recent_rooms(+1); }
-- (void)cycleRecentRoomsBackwardMenuAction:(id)sender { _window->menu_cycle_recent_rooms(-1); }
-- (void)showKeyboardShortcutsMenuAction:(id)sender { _window->menu_show_keyboard_shortcuts(); }
+- (void)openSettingsMenuAction:(id)sender
+{
+    _window->menu_open_settings();
+}
+- (void)addRoomMenuAction:(id)sender
+{
+    _window->menu_add_room();
+}
+- (void)showRoomInfoMenuAction:(id)sender
+{
+    _window->menu_show_room_info();
+}
+- (void)findInConversationMenuAction:(id)sender
+{
+    _window->menu_find_in_conversation();
+}
+- (void)searchAllMessagesMenuAction:(id)sender
+{
+    _window->menu_search_all_messages();
+}
+- (void)goBackMenuAction:(id)sender
+{
+    _window->menu_go_back();
+}
+- (void)goForwardMenuAction:(id)sender
+{
+    _window->menu_go_forward();
+}
+- (void)openQuickSwitcherMenuAction:(id)sender
+{
+    _window->menu_open_quick_switcher();
+}
+- (void)cycleRecentRoomsMenuAction:(id)sender
+{
+    _window->menu_cycle_recent_rooms(+1);
+}
+- (void)cycleRecentRoomsBackwardMenuAction:(id)sender
+{
+    _window->menu_cycle_recent_rooms(-1);
+}
+- (void)showKeyboardShortcutsMenuAction:(id)sender
+{
+    _window->menu_show_keyboard_shortcuts();
+}
 
 - (BOOL)validateMenuAction:(SEL)action
 {
@@ -320,7 +357,9 @@ private:
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
 {
     if (item.action == @selector(copy:))
+    {
         return _window->can_copy_selection();
+    }
     if ([self respondsToSelector:item.action] &&
         [NSStringFromSelector(item.action) hasSuffix:@"MenuAction:"])
     {
@@ -342,9 +381,15 @@ private:
 - (void)_saveWindowGeometry
 {
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    if (_screenshotMode) return;
+    if (_screenshotMode)
+    {
+        return;
+    }
 #endif
-    if (_window) _window->save_window_geometry();
+    if (_window)
+    {
+        _window->save_window_geometry();
+    }
 }
 
 - (void)windowDidEndLiveResize:(NSNotification*)notification
@@ -354,7 +399,10 @@ private:
 
 - (void)windowDidResize:(NSNotification*)notification
 {
-    if (_window) _window->window_did_resize();
+    if (_window)
+    {
+        _window->window_did_resize();
+    }
 }
 
 - (void)windowDidMove:(NSNotification*)notification
@@ -369,17 +417,26 @@ private:
 
 - (void)windowDidBecomeKey:(NSNotification*)notification
 {
-    if (_window) _window->window_did_become_key();
+    if (_window)
+    {
+        _window->window_did_become_key();
+    }
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification
 {
-    if (_window) _window->window_did_resign_key();
+    if (_window)
+    {
+        _window->window_did_resign_key();
+    }
 }
 
 - (void)windowDidMiniaturize:(NSNotification*)notification
 {
-    if (_window) _window->window_did_miniaturize();
+    if (_window)
+    {
+        _window->window_did_miniaturize();
+    }
 }
 
 - (void)windowDidDeminiaturize:(NSNotification*)notification
@@ -398,8 +455,7 @@ private:
 
 - (void)userNotificationCenter:(UNUserNotificationCenter*)center
        willPresentNotification:(UNNotification*)notification
-         withCompletionHandler:
-             (void (^)(UNNotificationPresentationOptions))completionHandler
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler
 {
     _window->will_present_notification(notification, completionHandler);
 }

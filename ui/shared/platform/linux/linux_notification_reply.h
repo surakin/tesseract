@@ -27,8 +27,7 @@ inline constexpr const char* kHintSubmitLabel = "x-kde-reply-submit-button-text"
 // string is always lowercase.
 inline bool supports_inline_reply(const std::vector<std::string>& caps)
 {
-    return std::find(caps.begin(), caps.end(), kInlineReplyAction) !=
-           caps.end();
+    return std::find(caps.begin(), caps.end(), kInlineReplyAction) != caps.end();
 }
 
 // XDG Desktop Portal (org.freedesktop.portal.Notification) inline-reply
@@ -83,28 +82,31 @@ public:
         id_to_room_[id] = {std::move(room_id), std::move(event_id)};
     }
 
-    void record_portal(std::string portal_id, std::string room_id,
-                       std::string event_id)
+    void record_portal(std::string portal_id, std::string room_id, std::string event_id)
     {
         // Portal ids are caller-chosen and reused per room (each new
         // notification for the same room replaces the prior one), so this
         // just overwrites with the latest event_id — same map either way.
-        portal_id_to_room_[std::move(portal_id)] =
-            {std::move(room_id), std::move(event_id)};
+        portal_id_to_room_[std::move(portal_id)] = {std::move(room_id), std::move(event_id)};
     }
 
     std::optional<RepliableNotification> find(std::uint32_t id) const
     {
         auto it = id_to_room_.find(id);
-        if (it == id_to_room_.end()) return std::nullopt;
+        if (it == id_to_room_.end())
+        {
+            return std::nullopt;
+        }
         return it->second;
     }
 
-    std::optional<RepliableNotification>
-    find_portal(const std::string& portal_id) const
+    std::optional<RepliableNotification> find_portal(const std::string& portal_id) const
     {
         auto it = portal_id_to_room_.find(portal_id);
-        if (it == portal_id_to_room_.end()) return std::nullopt;
+        if (it == portal_id_to_room_.end())
+        {
+            return std::nullopt;
+        }
         return it->second;
     }
 
@@ -121,7 +123,10 @@ public:
     std::string take_token(std::uint32_t id)
     {
         auto it = pending_tokens_.find(id);
-        if (it == pending_tokens_.end()) return {};
+        if (it == pending_tokens_.end())
+        {
+            return {};
+        }
         std::string token = std::move(it->second);
         pending_tokens_.erase(it);
         return token;

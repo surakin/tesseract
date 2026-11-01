@@ -28,10 +28,14 @@
 // ---------------------------------------------------------------------------
 @interface TKVideoCaptureDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 {
-    @public tk::VideoCapture::FrameCallback  callback_;
-    @public tk::VideoCapture::BgraCallback   bgra_callback_;
-    @public bool                             bgra_mode_;
-    @public std::mutex                       mu_;
+@public
+    tk::VideoCapture::FrameCallback callback_;
+@public
+    tk::VideoCapture::BgraCallback bgra_callback_;
+@public
+    bool bgra_mode_;
+@public
+    std::mutex mu_;
 }
 - (void)setCallback:(tk::VideoCapture::FrameCallback)cb;
 - (void)setBgraCallback:(tk::VideoCapture::BgraCallback)cb;
@@ -57,7 +61,9 @@
 {
     CVPixelBufferRef pxbuf = CMSampleBufferGetImageBuffer(sampleBuffer);
     if (!pxbuf)
+    {
         return;
+    }
 
     bool is_bgra;
     {
@@ -79,14 +85,13 @@
         }
         if (bgra_cb)
         {
-            const auto* src = static_cast<const std::uint8_t*>(
-                CVPixelBufferGetBaseAddress(pxbuf));
-            const auto w      = static_cast<std::uint32_t>(CVPixelBufferGetWidth(pxbuf));
-            const auto h      = static_cast<std::uint32_t>(CVPixelBufferGetHeight(pxbuf));
+            const auto* src = static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddress(pxbuf));
+            const auto w = static_cast<std::uint32_t>(CVPixelBufferGetWidth(pxbuf));
+            const auto h = static_cast<std::uint32_t>(CVPixelBufferGetHeight(pxbuf));
             const auto stride = CVPixelBufferGetBytesPerRow(pxbuf);
             const std::uint32_t row_bytes = w * 4;
 
-            const OSType fmt          = CVPixelBufferGetPixelFormatType(pxbuf);
+            const OSType fmt = CVPixelBufferGetPixelFormatType(pxbuf);
             const bool delivered_bgra = (fmt == kCVPixelFormatType_32BGRA);
             const bool delivered_rgba = (fmt == kCVPixelFormatType_32RGBA);
 
@@ -101,7 +106,7 @@
             for (std::uint32_t row = 0; row < h; ++row)
             {
                 const auto* s = src + row * stride;
-                auto*       d = tight.data() + row * row_bytes;
+                auto* d = tight.data() + row * row_bytes;
                 if (delivered_bgra)
                 {
                     std::memcpy(d, s, row_bytes);
@@ -109,7 +114,12 @@
                 else // RGBA → BGRA: swap byte 0 (R) and byte 2 (B)
                 {
                     for (std::uint32_t x = 0; x < w; ++x, s += 4, d += 4)
-                        { d[0] = s[2]; d[1] = s[1]; d[2] = s[0]; d[3] = s[3]; }
+                    {
+                        d[0] = s[2];
+                        d[1] = s[1];
+                        d[2] = s[0];
+                        d[3] = s[3];
+                    }
                 }
             }
 
@@ -129,20 +139,14 @@
         if (cb)
         {
             tk::VideoCapture::Frame f;
-            f.y        = static_cast<const std::uint8_t*>(
-                             CVPixelBufferGetBaseAddressOfPlane(pxbuf, 0));
-            f.u        = static_cast<const std::uint8_t*>(
-                             CVPixelBufferGetBaseAddressOfPlane(pxbuf, 1));
-            f.v        = static_cast<const std::uint8_t*>(
-                             CVPixelBufferGetBaseAddressOfPlane(pxbuf, 2));
-            f.width    = static_cast<std::uint32_t>(CVPixelBufferGetWidth(pxbuf));
-            f.height   = static_cast<std::uint32_t>(CVPixelBufferGetHeight(pxbuf));
-            f.stride_y = static_cast<std::uint32_t>(
-                             CVPixelBufferGetBytesPerRowOfPlane(pxbuf, 0));
-            f.stride_u = static_cast<std::uint32_t>(
-                             CVPixelBufferGetBytesPerRowOfPlane(pxbuf, 1));
-            f.stride_v = static_cast<std::uint32_t>(
-                             CVPixelBufferGetBytesPerRowOfPlane(pxbuf, 2));
+            f.y = static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(pxbuf, 0));
+            f.u = static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(pxbuf, 1));
+            f.v = static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(pxbuf, 2));
+            f.width = static_cast<std::uint32_t>(CVPixelBufferGetWidth(pxbuf));
+            f.height = static_cast<std::uint32_t>(CVPixelBufferGetHeight(pxbuf));
+            f.stride_y = static_cast<std::uint32_t>(CVPixelBufferGetBytesPerRowOfPlane(pxbuf, 0));
+            f.stride_u = static_cast<std::uint32_t>(CVPixelBufferGetBytesPerRowOfPlane(pxbuf, 1));
+            f.stride_v = static_cast<std::uint32_t>(CVPixelBufferGetBytesPerRowOfPlane(pxbuf, 2));
             cb(f);
         }
     }
@@ -162,7 +166,9 @@ tk::VideoCapture::Error classify_ns_error(NSError* err)
 {
     using Error = tk::VideoCapture::Error;
     if (!err || ![err.domain isEqualToString:AVFoundationErrorDomain])
+    {
         return Error::Failed;
+    }
     switch (err.code)
     {
     case AVErrorDeviceInUseByAnotherApplication:
@@ -203,13 +209,14 @@ public:
     void start() override
     {
         if (running_ || start_pending_)
+        {
             return;
+        }
         clear_error_();
 
         const AVAuthorizationStatus status =
             [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
-        if (status == AVAuthorizationStatusDenied ||
-            status == AVAuthorizationStatusRestricted)
+        if (status == AVAuthorizationStatusDenied || status == AVAuthorizationStatusRestricted)
         {
             report_error_(Error::PermissionDenied);
             return;
@@ -217,21 +224,28 @@ public:
 
         start_pending_ = true;
         std::weak_ptr<int> weak = alive_;
-        [AVCaptureDevice
-            requestAccessForMediaType:AVMediaTypeVideo
-                    completionHandler:^(BOOL granted) {
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            if (weak.expired())
-                                return; // capture destroyed meanwhile
-                            if (!start_pending_)
-                                return; // stop() ran meanwhile
-                            start_pending_ = false;
-                            if (granted)
-                                start_session_();
-                            else
-                                report_error_(Error::PermissionDenied);
-                        });
-                    }];
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
+                                 completionHandler:^(BOOL granted) {
+                                     dispatch_async(dispatch_get_main_queue(), ^{
+                                         if (weak.expired())
+                                         {
+                                             return; // capture destroyed meanwhile
+                                         }
+                                         if (!start_pending_)
+                                         {
+                                             return; // stop() ran meanwhile
+                                         }
+                                         start_pending_ = false;
+                                         if (granted)
+                                         {
+                                             start_session_();
+                                         }
+                                         else
+                                         {
+                                             report_error_(Error::PermissionDenied);
+                                         }
+                                     });
+                                 }];
     }
 
     void stop() override
@@ -239,7 +253,9 @@ public:
         start_pending_ = false;
         remove_observers_();
         if (!running_)
+        {
             return;
+        }
         running_ = false;
         if (session_)
         {
@@ -260,7 +276,9 @@ private:
                 device = [AVCaptureDevice deviceWithUniqueID:uid];
             }
             if (!device)
+            {
                 device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+            }
         }
         if (!device)
         {
@@ -269,8 +287,8 @@ private:
         }
 
         NSError* err = nil;
-        AVCaptureDeviceInput* input =
-            [AVCaptureDeviceInput deviceInputWithDevice:device error:&err];
+        AVCaptureDeviceInput* input = [AVCaptureDeviceInput deviceInputWithDevice:device
+                                                                            error:&err];
         if (!input || err)
         {
             report_error_(classify_ns_error(err));
@@ -284,24 +302,19 @@ private:
         {
             session_ = nil;
             // An exclusive hold by another app is the usual reason.
-            report_error_(device.inUseByAnotherApplication ? Error::Busy
-                                                           : Error::Failed);
+            report_error_(device.inUseByAnotherApplication ? Error::Busy : Error::Failed);
             return;
         }
         [session_ addInput:input];
 
-        OSType pixel_fmt = delegate_->bgra_mode_
-                               ? kCVPixelFormatType_32BGRA
-                               : kCVPixelFormatType_420YpCbCr8Planar;
+        OSType pixel_fmt =
+            delegate_->bgra_mode_ ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8Planar;
 
-        AVCaptureVideoDataOutput* output =
-            [[AVCaptureVideoDataOutput alloc] init];
-        output.videoSettings =
-            @{(id)kCVPixelBufferPixelFormatTypeKey : @(pixel_fmt)};
+        AVCaptureVideoDataOutput* output = [[AVCaptureVideoDataOutput alloc] init];
+        output.videoSettings = @{(id)kCVPixelBufferPixelFormatTypeKey : @(pixel_fmt)};
         output.alwaysDiscardsLateVideoFrames = YES;
 
-        dispatch_queue_t q =
-            dispatch_queue_create("tk.video_capture", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_t q = dispatch_queue_create("tk.video_capture", DISPATCH_QUEUE_SERIAL);
         [output setSampleBufferDelegate:delegate_ queue:q];
 
         if (![session_ canAddOutput:output])
@@ -321,22 +334,21 @@ private:
     void add_observers_(AVCaptureDevice* device)
     {
         NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
-        NSOperationQueue* main   = [NSOperationQueue mainQueue];
-        runtime_error_observer_ =
-            [nc addObserverForName:AVCaptureSessionRuntimeErrorNotification
-                            object:session_
-                             queue:main
-                        usingBlock:^(NSNotification* note) {
-                            NSError* e = note.userInfo[AVCaptureSessionErrorKey];
-                            report_error_(classify_ns_error(e));
-                        }];
-        disconnect_observer_ =
-            [nc addObserverForName:AVCaptureDeviceWasDisconnectedNotification
-                            object:device
-                             queue:main
-                        usingBlock:^(NSNotification*) {
-                            report_error_(Error::NoDevice);
-                        }];
+        NSOperationQueue* main = [NSOperationQueue mainQueue];
+        runtime_error_observer_ = [nc addObserverForName:AVCaptureSessionRuntimeErrorNotification
+                                                  object:session_
+                                                   queue:main
+                                              usingBlock:^(NSNotification* note) {
+                                                  NSError* e =
+                                                      note.userInfo[AVCaptureSessionErrorKey];
+                                                  report_error_(classify_ns_error(e));
+                                              }];
+        disconnect_observer_ = [nc addObserverForName:AVCaptureDeviceWasDisconnectedNotification
+                                               object:device
+                                                queue:main
+                                           usingBlock:^(NSNotification*) {
+                                               report_error_(Error::NoDevice);
+                                           }];
     }
 
     void remove_observers_()
@@ -354,12 +366,12 @@ private:
         }
     }
 
-    std::shared_ptr<int>    alive_    = std::make_shared<int>(0);
-    bool                    start_pending_ = false;
-    id                      runtime_error_observer_ = nil;
-    id                      disconnect_observer_    = nil;
-    bool                    running_  = false;
-    AVCaptureSession*       session_  = nil;
+    std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+    bool start_pending_ = false;
+    id runtime_error_observer_ = nil;
+    id disconnect_observer_ = nil;
+    bool running_ = false;
+    AVCaptureSession* session_ = nil;
     TKVideoCaptureDelegate* delegate_ = [[TKVideoCaptureDelegate alloc] init];
 };
 

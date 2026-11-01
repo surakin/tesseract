@@ -40,8 +40,14 @@ struct JrhStage : vt::Stage
         relayout_paint(*view, {0, 0, JoinRoomView::kPreferredW, JoinRoomView::kPreferredH});
         host.set_root(view.get());
     }
-    StubTextField& alias() { return *host.fields_created.at(0); }
-    StubTextField& reason() { return *host.fields_created.at(1); }
+    StubTextField& alias()
+    {
+        return *host.fields_created.at(0);
+    }
+    StubTextField& reason()
+    {
+        return *host.fields_created.at(1);
+    }
 };
 
 } // namespace
@@ -53,7 +59,10 @@ TEST_CASE("JoinRoomView hosted: typing an alias and submitting requests a "
     JrhStage s;
     CHECK(s.view->is_open());
     std::vector<std::string> looked;
-    s.view->on_lookup_requested = [&](const std::string& a) { looked.push_back(a); };
+    s.view->on_lookup_requested = [&](const std::string& a)
+    {
+        looked.push_back(a);
+    };
 
     s.alias().on_submit(); // empty alias: ignored
     CHECK(looked.empty());
@@ -83,7 +92,10 @@ TEST_CASE("JoinRoomView hosted: state banners and close", "[tk][view][join_room]
     CHECK(vt::has_name(*s.view, "Boom"));
 
     int closed = 0;
-    s.view->on_close = [&] { ++closed; };
+    s.view->on_close = [&]
+    {
+        ++closed;
+    };
     s.view->close();
     CHECK_FALSE(s.view->is_open());
     CHECK_FALSE(s.view->visible());
@@ -99,9 +111,19 @@ TEST_CASE("JoinRoomView hosted: public room joins with its room id and "
     JrhStage s;
     std::vector<std::string> joined;
     int cancelled = 0;
-    s.view->on_join_requested = [&](const std::string& id) { joined.push_back(id); };
-    s.view->on_cancel = [&] { ++cancelled; };
-    s.view->set_avatar_provider([](const std::string&) -> const tk::Image* { return nullptr; });
+    s.view->on_join_requested = [&](const std::string& id)
+    {
+        joined.push_back(id);
+    };
+    s.view->on_cancel = [&]
+    {
+        ++cancelled;
+    };
+    s.view->set_avatar_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
     s.view->set_preview(jrh_summary());
     s.run();
     CHECK(s.view->preview_room_id() == "!room:s");
@@ -144,18 +166,24 @@ TEST_CASE("JoinRoomView hosted: knock rooms show a reason field and send it",
     CHECK(s.reason().text().empty());
 }
 
-TEST_CASE("JoinRoomView hosted: topic links report hover and click",
-          "[tk][view][join_room]")
+TEST_CASE("JoinRoomView hosted: topic links report hover and click", "[tk][view][join_room]")
 {
     JrhStage s;
     std::vector<std::string> hovered, clicked;
-    s.view->on_link_hovered = [&](std::string u) { hovered.push_back(u); };
-    s.view->on_link_clicked = [&](std::string u) { clicked.push_back(u); };
+    s.view->on_link_hovered = [&](std::string u)
+    {
+        hovered.push_back(u);
+    };
+    s.view->on_link_clicked = [&](std::string u)
+    {
+        clicked.push_back(u);
+    };
     s.view->set_preview(jrh_summary("public", "Docs at https://example.org/docs please"));
     s.run();
 
     std::optional<tk::Point> hit;
     for (float y = 40; y < 400 && !hit; y += 3)
+    {
         for (float x = 10; x < 430; x += 3)
         {
             hovered.clear();
@@ -166,6 +194,7 @@ TEST_CASE("JoinRoomView hosted: topic links report hover and click",
                 break;
             }
         }
+    }
     REQUIRE(hit.has_value());
     CHECK(hovered.back() == "https://example.org/docs");
     CHECK_FALSE(s.view->on_pointer_move(*hit)); // unchanged
@@ -185,8 +214,7 @@ TEST_CASE("JoinRoomView hosted: topic links report hover and click",
     s.view->on_pointer_leave(); // already clear
 }
 
-TEST_CASE("JoinRoomView hosted: theme, focus, title toggle and a11y",
-          "[tk][view][join_room]")
+TEST_CASE("JoinRoomView hosted: theme, focus, title toggle and a11y", "[tk][view][join_room]")
 {
     JrhStage s;
     s.view->on_theme_changed(tk::Theme::dark());

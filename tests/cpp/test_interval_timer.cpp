@@ -24,7 +24,9 @@ struct FakeScheduler
     IntervalTimer::OneShot as_fn()
     {
         return [this](int ms, std::function<void()> fn)
-        { queue.push_back({ms, std::move(fn)}); };
+        {
+            queue.push_back({ms, std::move(fn)});
+        };
     }
 
     // Fire every currently-queued callback once (FIFO), leaving anything they
@@ -46,7 +48,11 @@ TEST_CASE("fires repeatedly at the configured interval", "[interval-timer]")
 {
     FakeScheduler sched;
     int ticks = 0;
-    IntervalTimer t(sched.as_fn(), 2000, [&] { ++ticks; });
+    IntervalTimer t(sched.as_fn(), 2000,
+                    [&]
+                    {
+                        ++ticks;
+                    });
 
     t.start();
     REQUIRE(sched.queue.size() == 1);
@@ -65,7 +71,11 @@ TEST_CASE("start() is idempotent", "[interval-timer]")
 {
     FakeScheduler sched;
     int ticks = 0;
-    IntervalTimer t(sched.as_fn(), 1000, [&] { ++ticks; });
+    IntervalTimer t(sched.as_fn(), 1000,
+                    [&]
+                    {
+                        ++ticks;
+                    });
 
     t.start();
     t.start();
@@ -76,7 +86,11 @@ TEST_CASE("stop() makes a pending fire a no-op", "[interval-timer]")
 {
     FakeScheduler sched;
     int ticks = 0;
-    IntervalTimer t(sched.as_fn(), 1000, [&] { ++ticks; });
+    IntervalTimer t(sched.as_fn(), 1000,
+                    [&]
+                    {
+                        ++ticks;
+                    });
 
     t.start();
     t.stop();
@@ -90,7 +104,11 @@ TEST_CASE("destruction makes a pending fire a no-op", "[interval-timer]")
     FakeScheduler sched;
     int ticks = 0;
     {
-        IntervalTimer t(sched.as_fn(), 1000, [&] { ++ticks; });
+        IntervalTimer t(sched.as_fn(), 1000,
+                        [&]
+                        {
+                            ++ticks;
+                        });
         t.start();
     }
     sched.fire_due();

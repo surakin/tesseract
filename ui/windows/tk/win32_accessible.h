@@ -86,7 +86,7 @@ public:
     struct Callbacks
     {
         std::function<std::string()> name;
-        std::function<std::string()> text;   // never called while password()
+        std::function<std::string()> text; // never called while password()
         std::function<void(const std::string&)> set_text;
         std::function<bool()> password;
     };

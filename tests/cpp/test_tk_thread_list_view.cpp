@@ -17,30 +17,27 @@ using tesseract::views::ThreadListView;
 namespace
 {
 
-ThreadInfo make_thread(const std::string& root, std::uint64_t replies,
-                       std::uint64_t root_ts = 2000,
+ThreadInfo make_thread(const std::string& root, std::uint64_t replies, std::uint64_t root_ts = 2000,
                        std::uint64_t latest_ts = 0, bool unread = false)
 {
     ThreadInfo t;
-    t.root_event_id      = root;
-    t.root_sender_name   = "Alice";
-    t.root_body          = "Hello world";
-    t.root_timestamp     = root_ts;
+    t.root_event_id = root;
+    t.root_sender_name = "Alice";
+    t.root_body = "Hello world";
+    t.root_timestamp = root_ts;
     t.latest_sender_name = "Bob";
-    t.latest_body        = "Reply!";
-    t.latest_timestamp   = latest_ts;
-    t.num_replies        = replies;
-    t.unread             = unread;
+    t.latest_body = "Reply!";
+    t.latest_timestamp = latest_ts;
+    t.num_replies = replies;
+    t.unread = unread;
     return t;
 }
 
 // Header centre-x of the "mark all read" button (immediately left of close).
 float mark_all_cx(float panel_w)
 {
-    const float close_x = panel_w - ThreadListView::kCloseSz
-                          - ThreadListView::kCloseInset;
-    const float mark_x = close_x - ThreadListView::kCloseSz
-                         - ThreadListView::kHeaderBtnGap;
+    const float close_x = panel_w - ThreadListView::kCloseSz - ThreadListView::kCloseInset;
+    const float mark_x = close_x - ThreadListView::kCloseSz - ThreadListView::kHeaderBtnGap;
     return mark_x + ThreadListView::kCloseSz * 0.5f;
 }
 
@@ -65,15 +62,13 @@ TEST_CASE("ThreadListView::set_threads stores the list", "[thread_list]")
 {
     ThreadListView v;
     // Ascending by activity: $b (lower timestamp) sorts first, $a last.
-    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000),
-                   make_thread("$b", 5, /*root_ts=*/1000)});
+    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000), make_thread("$b", 5, /*root_ts=*/1000)});
     REQUIRE(v.threads().size() == 2);
     CHECK(v.threads()[0].root_event_id == "$b");
     CHECK(v.threads()[1].root_event_id == "$a");
 }
 
-TEST_CASE("ThreadListView::set_threads sorts newest activity last",
-          "[thread_list]")
+TEST_CASE("ThreadListView::set_threads sorts newest activity last", "[thread_list]")
 {
     ThreadListView v;
     // $new has a later latest_timestamp, so it sorts LAST (bottom of the list).
@@ -84,18 +79,19 @@ TEST_CASE("ThreadListView::set_threads sorts newest activity last",
     CHECK(v.threads()[1].root_event_id == "$new");
 }
 
-TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
-          "[thread_list]")
+TEST_CASE("ThreadListView::on_close fires when floating close button clicked", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
     bool closed = false;
-    v.on_close = [&] { closed = true; };
+    v.on_close = [&]
+    {
+        closed = true;
+    };
 
     // Close button sits in the right side of the empty header strip.
-    const float cx = 300.0f - ThreadListView::kCloseInset
-                     - ThreadListView::kCloseSz * 0.5f;
+    const float cx = 300.0f - ThreadListView::kCloseInset - ThreadListView::kCloseSz * 0.5f;
     const float cy = ThreadListView::kHeaderH * 0.5f;
     // Dispatch through the widget tree so the close-button child receives
     // the click — calling ThreadListView::on_pointer_down directly would
@@ -107,34 +103,39 @@ TEST_CASE("ThreadListView::on_close fires when floating close button clicked",
     CHECK(closed);
 }
 
-TEST_CASE("ThreadListView mark-all-read button: disabled with no unread threads",
-          "[thread_list]")
+TEST_CASE("ThreadListView mark-all-read button: disabled with no unread threads", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
 
     bool fired = false;
-    v.on_mark_all_read = [&] { fired = true; };
+    v.on_mark_all_read = [&]
+    {
+        fired = true;
+    };
 
     // No threads → button disabled. A disabled widget is opaque to input: it
     // absorbs the press (so nothing behind it reacts) but never invokes its
     // own click handler.
     const tk::Point p{mark_all_cx(300.0f), ThreadListView::kHeaderH * 0.5f};
     if (tk::Widget* c = v.dispatch_pointer_down(p))
+    {
         c->on_pointer_up(p, /*inside_self=*/true);
+    }
     CHECK_FALSE(fired);
 
     // All threads read → still disabled.
     v.set_threads({make_thread("$a", 1, 1000, 0, /*unread=*/false)});
     st.arrange(v, {0, 0, 300, 400});
     if (tk::Widget* c = v.dispatch_pointer_down(p))
+    {
         c->on_pointer_up(p, /*inside_self=*/true);
+    }
     CHECK_FALSE(fired);
 }
 
-TEST_CASE("ThreadListView mark-all-read button fires on_mark_all_read when unread",
-          "[thread_list]")
+TEST_CASE("ThreadListView mark-all-read button fires on_mark_all_read when unread", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
@@ -144,7 +145,10 @@ TEST_CASE("ThreadListView mark-all-read button fires on_mark_all_read when unrea
     st.arrange(v, {0, 0, 300, 400});
 
     bool fired = false;
-    v.on_mark_all_read = [&] { fired = true; };
+    v.on_mark_all_read = [&]
+    {
+        fired = true;
+    };
 
     const tk::Point p{mark_all_cx(300.0f), ThreadListView::kHeaderH * 0.5f};
     tk::Widget* claimer = v.dispatch_pointer_down(p);
@@ -154,27 +158,26 @@ TEST_CASE("ThreadListView mark-all-read button fires on_mark_all_read when unrea
     CHECK(fired);
 }
 
-TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
-          "[thread_list]")
+TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
     // Ascending order: $b (lower timestamp) is the first row after the header
     // spacer; $a sorts last.
-    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000),
-                   make_thread("$b", 5, /*root_ts=*/1000)});
+    v.set_threads({make_thread("$a", 1, /*root_ts=*/2000), make_thread("$b", 5, /*root_ts=*/1000)});
     // set_threads doesn't rebuild row_rects_ — re-arrange after setting.
     st.arrange(v, {0, 0, 300, 400});
 
     std::string clicked;
-    v.on_thread_clicked = [&](const std::string& id) { clicked = id; };
+    v.on_thread_clicked = [&](const std::string& id)
+    {
+        clicked = id;
+    };
 
     // First row centre: rows start below the empty header strip.
     {
-        const tk::Point p{100.0f,
-                          ThreadListView::kHeaderH +
-                              ThreadListView::kRowH * 0.5f};
+        const tk::Point p{100.0f, ThreadListView::kHeaderH + ThreadListView::kRowH * 0.5f};
         REQUIRE(v.on_pointer_down(p));
         v.on_pointer_up(p, true);
         CHECK(clicked == "$b");
@@ -182,17 +185,14 @@ TEST_CASE("ThreadListView::on_thread_clicked fires for row clicks",
 
     // Second row centre.
     {
-        const tk::Point p{100.0f,
-                          ThreadListView::kHeaderH +
-                              ThreadListView::kRowH * 1.5f};
+        const tk::Point p{100.0f, ThreadListView::kHeaderH + ThreadListView::kRowH * 1.5f};
         REQUIRE(v.on_pointer_down(p));
         v.on_pointer_up(p, true);
         CHECK(clicked == "$a");
     }
 }
 
-TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside row",
-          "[thread_list]")
+TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside row", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
@@ -201,11 +201,12 @@ TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside ro
     st.arrange(v, {0, 0, 300, 400});
 
     std::string clicked;
-    v.on_thread_clicked = [&](const std::string& id) { clicked = id; };
+    v.on_thread_clicked = [&](const std::string& id)
+    {
+        clicked = id;
+    };
 
-    const tk::Point press{100.0f,
-                          ThreadListView::kHeaderH +
-                              ThreadListView::kRowH * 0.5f};
+    const tk::Point press{100.0f, ThreadListView::kHeaderH + ThreadListView::kRowH * 0.5f};
     REQUIRE(v.on_pointer_down(press));
     // Release inside the header strip (not the row) — must NOT fire the
     // thread-click callback. The press-then-release-elsewhere pattern is
@@ -214,18 +215,20 @@ TEST_CASE("ThreadListView::on_thread_clicked does NOT fire if release outside ro
     CHECK(clicked.empty());
 }
 
-TEST_CASE("ThreadListView::set_search_text filters rows and remaps clicks",
-          "[thread_list]")
+TEST_CASE("ThreadListView::set_search_text filters rows and remaps clicks", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
-    v.set_threads({make_thread("$apple", 1, /*root_ts=*/1000),
-                   make_thread("$banana", 2, /*root_ts=*/2000)});
+    v.set_threads(
+        {make_thread("$apple", 1, /*root_ts=*/1000), make_thread("$banana", 2, /*root_ts=*/2000)});
     st.arrange(v, {0, 0, 300, 400});
 
     std::string clicked;
-    v.on_thread_clicked = [&](const std::string& id) { clicked = id; };
+    v.on_thread_clicked = [&](const std::string& id)
+    {
+        clicked = id;
+    };
 
     // Both threads share root_sender_name "Alice" and root_body
     // "Hello world" (see make_thread); "Bob" only appears as the latest
@@ -235,9 +238,7 @@ TEST_CASE("ThreadListView::set_search_text filters rows and remaps clicks",
     // rows, then a query that matches to prove it's restored.
     v.set_search_text("nonexistent-query");
     st.arrange(v, {0, 0, 300, 400});
-    const tk::Point first_row{100.0f,
-                              ThreadListView::kHeaderH +
-                                  ThreadListView::kRowH * 0.5f};
+    const tk::Point first_row{100.0f, ThreadListView::kHeaderH + ThreadListView::kRowH * 0.5f};
     // No rows pass the filter, so the first-row point now falls past the
     // (empty) list content — no row should be hit.
     CHECK_FALSE(v.on_pointer_down(first_row));
@@ -249,8 +250,7 @@ TEST_CASE("ThreadListView::set_search_text filters rows and remaps clicks",
     CHECK(clicked == "$apple");
 }
 
-TEST_CASE("ThreadListView followed-only filter needs subscription support",
-          "[thread_list]")
+TEST_CASE("ThreadListView followed-only filter needs subscription support", "[thread_list]")
 {
     TkThreadListViewStage st;
     ThreadListView v;
@@ -261,9 +261,11 @@ TEST_CASE("ThreadListView followed-only filter needs subscription support",
     st.arrange(v, {0, 0, 300, 400});
 
     std::string clicked;
-    v.on_thread_clicked = [&](const std::string& id) { clicked = id; };
-    const tk::Point first_row{100.0f, ThreadListView::kHeaderH +
-                                          ThreadListView::kRowH * 0.5f};
+    v.on_thread_clicked = [&](const std::string& id)
+    {
+        clicked = id;
+    };
+    const tk::Point first_row{100.0f, ThreadListView::kHeaderH + ThreadListView::kRowH * 0.5f};
 
     // Unsupported: the filter request is ignored and every row stays.
     v.set_only_followed(true);
@@ -300,8 +302,9 @@ TEST_CASE("ThreadListView::paint re-masks the header strip over scrolled row con
     st.arrange(v, {0, 0, 300, 400});
     std::vector<ThreadInfo> threads;
     for (int i = 0; i < 10; ++i)
-        threads.push_back(make_thread("$t" + std::to_string(i),
-                                      1, /*root_ts=*/1000 + i));
+    {
+        threads.push_back(make_thread("$t" + std::to_string(i), 1, /*root_ts=*/1000 + i));
+    }
     v.set_threads(std::move(threads));
     st.arrange(v, {0, 0, 300, 400});
 
@@ -317,7 +320,8 @@ TEST_CASE("ThreadListView::paint re-masks the header strip over scrolled row con
 
     const tk::Color bg = lc.theme.palette.bg;
     const tk::Color px = st.surface->read_pixel(100, 20);
-    auto close = [](std::uint8_t a, std::uint8_t b) {
+    auto close = [](std::uint8_t a, std::uint8_t b)
+    {
         return std::abs(int(a) - int(b)) <= 2;
     };
     CHECK(close(px.r, bg.r));

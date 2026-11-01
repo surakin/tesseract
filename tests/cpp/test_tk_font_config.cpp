@@ -11,8 +11,14 @@ namespace
 // Restores the default config so other tests see stock sizes.
 struct ConfigGuard
 {
-    ConfigGuard() { set_font_config({}); }
-    ~ConfigGuard() { set_font_config({}); }
+    ConfigGuard()
+    {
+        set_font_config({});
+    }
+    ~ConfigGuard()
+    {
+        set_font_config({});
+    }
 };
 
 constexpr std::size_t cat(FontCategory c)
@@ -35,8 +41,7 @@ TEST_CASE("font_role_pt defaults reproduce the stock offsets", "[font]")
     CHECK(font_role_pt(FontRole::Small, 6) == 6); // floor
 }
 
-TEST_CASE("base size override replaces the system base, keeping offsets",
-          "[font]")
+TEST_CASE("base size override replaces the system base, keeping offsets", "[font]")
 {
     ConfigGuard g;
     FontConfig c;
@@ -73,8 +78,7 @@ TEST_CASE("inline emoji follows Messages and Emoji deltas", "[font]")
     CHECK(font_role_pt(FontRole::EmojiPickerCell, 11) == 21);
 }
 
-TEST_CASE("set_font_config clamps and bumps the generation only on change",
-          "[font]")
+TEST_CASE("set_font_config clamps and bumps the generation only on change", "[font]")
 {
     ConfigGuard g;
     const auto gen0 = font_config_generation();
@@ -87,8 +91,7 @@ TEST_CASE("set_font_config clamps and bumps the generation only on change",
     set_font_config(c);
     CHECK(font_config_generation() == gen0 + 1);
     CHECK(font_config().base_pt == kFontBaseMaxPt);
-    CHECK(font_config().delta_pt[cat(FontCategory::Headings)] ==
-          kFontDeltaMinPt);
+    CHECK(font_config().delta_pt[cat(FontCategory::Headings)] == kFontDeltaMinPt);
 }
 
 TEST_CASE("font_role_family resolves override, global, and emoji", "[font]")
@@ -136,8 +139,7 @@ TEST_CASE("apply_font_prefs converts and reports changes", "[font]")
     CHECK(tesseract::to_font_prefs(font_config()) == p);
 }
 
-TEST_CASE("font_height_scale grows with larger fonts and never shrinks",
-          "[font]")
+TEST_CASE("font_height_scale grows with larger fonts and never shrinks", "[font]")
 {
     ConfigGuard g;
     (void)font_role_pt(FontRole::Body, 11); // teaches the system base
@@ -159,8 +161,7 @@ TEST_CASE("font_height_scale grows with larger fonts and never shrinks",
 #include "views/MainAppWidget.h"
 #include "views/UserInfo.h"
 
-TEST_CASE("user strip height is 64 at default fonts and grows with them",
-          "[font]")
+TEST_CASE("user strip height is 64 at default fonts and grows with them", "[font]")
 {
     ConfigGuard g;
     (void)font_role_pt(FontRole::Body, 11); // teaches the system base

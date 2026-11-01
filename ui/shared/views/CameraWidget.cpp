@@ -16,13 +16,17 @@ CameraWidget::CameraWidget() = default;
 CameraWidget::~CameraWidget()
 {
     if (capture_)
+    {
         capture_->stop();
+    }
 }
 
 void CameraWidget::open()
 {
     if (opened_)
+    {
         return;
+    }
     opened_ = true;
 
     capture_ = tk::VideoCapture::create();
@@ -37,7 +41,9 @@ void CameraWidget::open()
         {
             std::lock_guard<std::mutex> lk(frame_mu_);
             if (!start_)
+            {
                 start_ = std::chrono::steady_clock::now();
+            }
             last_bgra_.assign(bgra, bgra + static_cast<std::size_t>(w) * h * 4);
             frame_w_ = w;
             frame_h_ = h;
@@ -50,10 +56,14 @@ void CameraWidget::open()
 void CameraWidget::check_error_()
 {
     if (!capture_ || error_ != tk::VideoCapture::Error::None)
+    {
         return;
+    }
     const auto err = capture_->error();
     if (err == tk::VideoCapture::Error::None)
+    {
         return;
+    }
     error_ = err;
     capture_->stop();
     capture_.reset();
@@ -65,9 +75,9 @@ void CameraWidget::paint_error_(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds, tk::Color::rgba(0, 0, 0, 210));
 
     tk::TextStyle st;
-    st.role      = tk::FontRole::Body;
-    st.halign    = tk::TextHAlign::Center;
-    st.valign    = tk::TextVAlign::Top;
+    st.role = tk::FontRole::Body;
+    st.halign = tk::TextHAlign::Center;
+    st.valign = tk::TextVAlign::Top;
     st.max_width = std::max(0.0f, bounds.w - 32.0f);
     if (auto lo = ctx.factory.build_text(tk::VideoCapture::describe(error_), st))
     {
@@ -77,7 +87,7 @@ void CameraWidget::paint_error_(tk::PaintCtx& ctx)
         ctx.canvas.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 230));
     }
 
-    st.halign    = tk::TextHAlign::Leading;
+    st.halign = tk::TextHAlign::Leading;
     st.max_width = -1.0f;
     if (auto lo = ctx.factory.build_text(tk::tr("Click anywhere to close"), st))
     {
@@ -108,7 +118,9 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
     const tk::Rect bounds = bounds_;
 
     if (!opened_ || dismissed_)
+    {
         return;
+    }
 
     // Failures land on a backend thread; this overlay repaints continuously
     // while live, so polling here picks them up.
@@ -128,25 +140,23 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
         if (!last_bgra_.empty() && frame_w_ > 0 && frame_h_ > 0)
         {
             // Centre-fit the preview, preserving the camera aspect ratio.
-            const float cam_w  = static_cast<float>(frame_w_);
-            const float cam_h  = static_cast<float>(frame_h_);
-            const float scale  = std::min(bounds.w / cam_w, bounds.h / cam_h);
-            const float pw     = cam_w * scale;
-            const float ph     = cam_h * scale;
-            const tk::Rect preview{
-                bounds.x + (bounds.w - pw) * 0.5f,
-                bounds.y + (bounds.h - ph) * 0.5f,
-                pw, ph};
+            const float cam_w = static_cast<float>(frame_w_);
+            const float cam_h = static_cast<float>(frame_h_);
+            const float scale = std::min(bounds.w / cam_w, bounds.h / cam_h);
+            const float pw = cam_w * scale;
+            const float ph = cam_h * scale;
+            const tk::Rect preview{bounds.x + (bounds.w - pw) * 0.5f,
+                                   bounds.y + (bounds.h - ph) * 0.5f, pw, ph};
 
-            ctx.canvas.draw_bgra_premult_pixels(
-                last_bgra_.data(), frame_w_, frame_h_, preview, /*flip_h=*/true);
+            ctx.canvas.draw_bgra_premult_pixels(last_bgra_.data(), frame_w_, frame_h_, preview,
+                                                /*flip_h=*/true);
         }
     }
 
     // Countdown number — only once the first frame has arrived.
     if (start_ && !captured_)
     {
-        const auto now      = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
         const float elapsed = std::chrono::duration<float>(now - *start_).count();
         const float remaining = kCountdownSecs - elapsed;
 
@@ -156,9 +166,9 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
             const std::string label = std::to_string(digit);
 
             tk::TextStyle st;
-            st.role      = tk::FontRole::BigEmoji;
-            st.halign    = tk::TextHAlign::Leading;
-            st.valign    = tk::TextVAlign::Top;
+            st.role = tk::FontRole::BigEmoji;
+            st.halign = tk::TextHAlign::Leading;
+            st.valign = tk::TextVAlign::Top;
             st.max_width = -1.0f;
             if (auto lo = ctx.factory.build_text(label, st))
             {
@@ -180,9 +190,9 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
     // Cancel hint at the bottom.
     {
         tk::TextStyle st;
-        st.role      = tk::FontRole::Body;
-        st.halign    = tk::TextHAlign::Leading;
-        st.valign    = tk::TextVAlign::Top;
+        st.role = tk::FontRole::Body;
+        st.halign = tk::TextHAlign::Leading;
+        st.valign = tk::TextVAlign::Top;
         st.max_width = -1.0f;
         if (auto lo = ctx.factory.build_text(tk::tr("Click anywhere to cancel"), st))
         {
@@ -195,7 +205,9 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
 
     // Keep repainting to animate the live preview and countdown.
     if (ctx.host)
+    {
         ctx.host->request_repaint();
+    }
 }
 
 bool CameraWidget::on_pointer_down(tk::Point /*local*/)
@@ -207,7 +219,9 @@ bool CameraWidget::on_pointer_down(tk::Point /*local*/)
 void CameraWidget::do_capture_()
 {
     if (captured_)
+    {
         return;
+    }
     captured_ = true;
 
     std::vector<std::uint8_t> bgra;
@@ -215,12 +229,14 @@ void CameraWidget::do_capture_()
     {
         std::lock_guard<std::mutex> lk(frame_mu_);
         bgra = last_bgra_;
-        w    = frame_w_;
-        h    = frame_h_;
+        w = frame_w_;
+        h = frame_h_;
     }
 
     if (on_frame_captured && !bgra.empty())
+    {
         on_frame_captured(std::move(bgra), w, h);
+    }
 
     do_dismiss_();
 }
@@ -228,7 +244,9 @@ void CameraWidget::do_capture_()
 void CameraWidget::do_dismiss_()
 {
     if (dismissed_)
+    {
         return;
+    }
     dismissed_ = true;
 
     if (capture_)
@@ -238,7 +256,9 @@ void CameraWidget::do_dismiss_()
     }
 
     if (on_dismissed)
+    {
         on_dismissed();
+    }
 }
 
 } // namespace tesseract::views

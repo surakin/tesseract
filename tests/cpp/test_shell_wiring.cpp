@@ -55,15 +55,26 @@ namespace
 
 struct WiringImage : tk::Image
 {
-    int width() const override { return 1; }
-    int height() const override { return 1; }
-    std::size_t memory_bytes() const override { return 4; }
+    int width() const override
+    {
+        return 1;
+    }
+    int height() const override
+    {
+        return 1;
+    }
+    std::size_t memory_bytes() const override
+    {
+        return 4;
+    }
 };
 
 // A TestHost that lets a test fire the hooks a shell installs on its host.
 struct WiringHost : TestHost
 {
-    WiringHost() : TestHost(nullptr) {}
+    WiringHost() : TestHost(nullptr)
+    {
+    }
     using tk::Host::fire_user_activity_;
     using tk::Host::run_pre_paint_hook_;
 };
@@ -71,27 +82,63 @@ struct WiringHost : TestHost
 // A backend-free SurfaceBase standing in for a shell's settings page.
 struct FakeSettingsSurface final : tk::SurfaceBase
 {
-    explicit FakeSettingsSurface(TestHost& h, int* alive_counter)
-        : host_(h), alive_(alive_counter)
+    explicit FakeSettingsSurface(TestHost& h, int* alive_counter) : host_(h), alive_(alive_counter)
     {
         ++*alive_;
     }
-    ~FakeSettingsSurface() override { --*alive_; }
-    tk::Host& host() override { return host_; }
-    tk::CanvasFactory& factory() override { std::abort(); }
-    const tk::Theme& theme() const override { return *theme_; }
-    void set_root(std::unique_ptr<tk::Widget> r) override { root_ = std::move(r); }
-    tk::Widget* root() const override { return root_.get(); }
-    void relayout() override { ++relayouts; }
+    ~FakeSettingsSurface() override
+    {
+        --*alive_;
+    }
+    tk::Host& host() override
+    {
+        return host_;
+    }
+    tk::CanvasFactory& factory() override
+    {
+        std::abort();
+    }
+    const tk::Theme& theme() const override
+    {
+        return *theme_;
+    }
+    void set_root(std::unique_ptr<tk::Widget> r) override
+    {
+        root_ = std::move(r);
+    }
+    tk::Widget* root() const override
+    {
+        return root_.get();
+    }
+    void relayout() override
+    {
+        ++relayouts;
+    }
     int relayouts = 0;
     // Like the real backends, keeps a pointer to the theme it is given.
-    void set_theme(const tk::Theme& t) override { theme_ = &t; }
-    void apply_scale_change(float) override {}
-    void set_on_scale_changed(std::function<void(float)>) override {}
-    void set_anim_cache(const tk::AnimImageCache*) override {}
-    void update_anim_regions() override { ++anim_updates; }
-    void add_layout_listener(std::function<void()>) override {}
-    void set_on_file_drop_error(tk::FileDropErrorHandler) override {}
+    void set_theme(const tk::Theme& t) override
+    {
+        theme_ = &t;
+    }
+    void apply_scale_change(float) override
+    {
+    }
+    void set_on_scale_changed(std::function<void(float)>) override
+    {
+    }
+    void set_anim_cache(const tk::AnimImageCache*) override
+    {
+    }
+    void update_anim_regions() override
+    {
+        ++anim_updates;
+    }
+    void add_layout_listener(std::function<void()>) override
+    {
+    }
+    void set_on_file_drop_error(tk::FileDropErrorHandler) override
+    {
+    }
 
     TestHost& host_;
     int* alive_;
@@ -105,23 +152,52 @@ struct FakeSettingsSurface final : tk::SurfaceBase
 // so widgets can be measured.
 struct FakeMainSurface final : tk::SurfaceBase
 {
-    explicit FakeMainSurface(TestSurface& ts) : ts_(ts) {}
-    tk::Host& host() override { return host_; }
-    tk::CanvasFactory& factory() override { return ts_.factory(); }
-    const tk::Theme& theme() const override { return theme_; }
-    void set_root(std::unique_ptr<tk::Widget>) override {}
-    tk::Widget* root() const override { return nullptr; }
-    void relayout() override {}
-    void set_theme(const tk::Theme& t) override { theme_ = t; }
-    void apply_scale_change(float) override {}
+    explicit FakeMainSurface(TestSurface& ts) : ts_(ts)
+    {
+    }
+    tk::Host& host() override
+    {
+        return host_;
+    }
+    tk::CanvasFactory& factory() override
+    {
+        return ts_.factory();
+    }
+    const tk::Theme& theme() const override
+    {
+        return theme_;
+    }
+    void set_root(std::unique_ptr<tk::Widget>) override
+    {
+    }
+    tk::Widget* root() const override
+    {
+        return nullptr;
+    }
+    void relayout() override
+    {
+    }
+    void set_theme(const tk::Theme& t) override
+    {
+        theme_ = t;
+    }
+    void apply_scale_change(float) override
+    {
+    }
     void set_on_scale_changed(std::function<void(float)> cb) override
     {
         on_scale_changed = std::move(cb);
     }
     std::function<void(float)> on_scale_changed;
-    void set_anim_cache(const tk::AnimImageCache*) override {}
-    void update_anim_regions() override {}
-    void add_layout_listener(std::function<void()>) override {}
+    void set_anim_cache(const tk::AnimImageCache*) override
+    {
+    }
+    void update_anim_regions() override
+    {
+    }
+    void add_layout_listener(std::function<void()>) override
+    {
+    }
     void set_on_file_drop_error(tk::FileDropErrorHandler h) override
     {
         file_drop_error = std::move(h);
@@ -137,7 +213,7 @@ struct WiringShell : tesseract::test::TestShellBase
 {
     ~WiringShell() override
     {
-        wait_pools_idle(); // the login view's worker reads it until done
+        wait_pools_idle();           // the login view's worker reads it until done
         release_settings_surface_(); // its fake holds references into this shell
         release_login_surface_();    // likewise, and the login view's worker
         pool_.drain();
@@ -145,20 +221,32 @@ struct WiringShell : tesseract::test::TestShellBase
         media_prefetch_pool_.drain();
     }
 
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
-    void request_relayout_() override { ++relayouts; }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
     int relayouts = 0;
 
-    void bring_main_window_forward_for_overlay_() override { ++forwards; }
-    void restore_focus_after_overlay_() override { ++focus_restores; }
+    void bring_main_window_forward_for_overlay_() override
+    {
+        ++forwards;
+    }
+    void restore_focus_after_overlay_() override
+    {
+        ++focus_restores;
+    }
     // Drop probes: record what the shared dispatcher hands to the platform.
     struct DropProbe
     {
@@ -188,32 +276,54 @@ struct WiringShell : tesseract::test::TestShellBase
     int forwards = 0;
     int focus_restores = 0;
     std::int64_t now_ms = 1000;
-    std::int64_t monotonic_ms_() override { return now_ms; }
-    void close_app_settings_ui_() override { ++settings_closes; }
+    std::int64_t monotonic_ms_() override
+    {
+        return now_ms;
+    }
+    void close_app_settings_ui_() override
+    {
+        ++settings_closes;
+    }
     // Settings page: a fake surface, so the shared create/teardown runs.
     std::unique_ptr<tk::SurfaceBase> create_settings_surface_ui_() override
     {
         ++settings_created;
         if (settings_null)
+        {
             return nullptr;
+        }
         return std::make_unique<FakeSettingsSurface>(teardown_host, &settings_alive);
     }
-    void unmount_settings_surface_ui_() override { ++settings_unmounted; }
+    void unmount_settings_surface_ui_() override
+    {
+        ++settings_unmounted;
+    }
     // Login page: a fake surface, so the shared create/show/teardown runs.
     std::unique_ptr<tk::SurfaceBase> create_login_surface_ui_() override
     {
         ++login_created;
         return std::make_unique<FakeSettingsSurface>(teardown_host, &login_alive);
     }
-    void unmount_login_surface_ui_() override { ++login_unmounted; }
+    void unmount_login_surface_ui_() override
+    {
+        ++login_unmounted;
+    }
     std::unique_ptr<FakeMainSurface> main_fake;
-    tk::SurfaceBase* main_surface_() override { return main_fake.get(); }
+    tk::SurfaceBase* main_surface_() override
+    {
+        return main_fake.get();
+    }
     // Theme: the shared apply runs; the shell's own parts are recorded.
-    void apply_native_theme_(const tk::Theme&) override { theme_log.push_back("native"); }
+    void apply_native_theme_(const tk::Theme&) override
+    {
+        theme_log.push_back("native");
+    }
     void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn) override
     {
         if (own_surface)
+        {
             fn(*own_surface);
+        }
         theme_log.push_back("surfaces");
     }
     void after_theme_applied_(const tk::Theme& t) override
@@ -222,19 +332,40 @@ struct WiringShell : tesseract::test::TestShellBase
         after_theme_ptr = &t;
     }
     const tk::Theme* after_theme_ptr = nullptr;
-    void shared_apply_theme(const tk::Theme& t) { ShellBase::apply_theme_ui_(t); }
+    void shared_apply_theme(const tk::Theme& t)
+    {
+        ShellBase::apply_theme_ui_(t);
+    }
     std::vector<std::string> theme_log;
     std::unique_ptr<tk::SurfaceBase> own_surface;
-    void show_login_page_ui_() override { ++login_pages; }
-    void shared_show_login(tesseract::views::LoginView::Mode m) { ShellBase::show_login_ui_(m); }
+    void show_login_page_ui_() override
+    {
+        ++login_pages;
+    }
+    void shared_show_login(tesseract::views::LoginView::Mode m)
+    {
+        ShellBase::show_login_ui_(m);
+    }
     int login_created = 0, login_unmounted = 0, login_alive = 0, login_pages = 0;
-    tk::Host* main_host_() override { return &teardown_host; }
+    tk::Host* main_host_() override
+    {
+        return &teardown_host;
+    }
     WiringHost teardown_host;
     int settings_created = 0, settings_unmounted = 0, settings_alive = 0;
     bool settings_null = false;
-    void shared_repaint_settings() { ShellBase::repaint_settings_ui_(); }
-    void shared_bind_settings() { ShellBase::bind_settings_controller_(); }
-    void shared_settings_anim() { ShellBase::update_settings_anim_regions_(); }
+    void shared_repaint_settings()
+    {
+        ShellBase::repaint_settings_ui_();
+    }
+    void shared_bind_settings()
+    {
+        ShellBase::bind_settings_controller_();
+    }
+    void shared_settings_anim()
+    {
+        ShellBase::update_settings_anim_regions_();
+    }
     // Login flow: record the native steps the shared handlers ask for, or run
     // the real show_login_ui_ (building the login view) when `real_login_ui`.
     void show_login_ui_(tesseract::views::LoginView::Mode m) override
@@ -248,21 +379,45 @@ struct WiringShell : tesseract::test::TestShellBase
     }
     bool real_login_ui = false;
     bool open_login_url_ok = true;
-    bool open_login_url_ui_(const std::string&) override { return open_login_url_ok; }
-    void detach_login_view_client_ui_() override { ++detaches; }
-    void start_platform_services_ui_() override { ++service_starts; }
+    bool open_login_url_ui_(const std::string&) override
+    {
+        return open_login_url_ok;
+    }
+    void detach_login_view_client_ui_() override
+    {
+        ++detaches;
+    }
+    void start_platform_services_ui_() override
+    {
+        ++service_starts;
+    }
     // Media landing: the shared repaint and failure handling run; the native
     // surfaces are counted.
-    void request_repaint_() override { ++repaints; }
-    void repaint_settings_ui_() override { ++settings_repaints; }
-    void shared_repaint_after_media(MediaKind k) { ShellBase::repaint_after_media_(k, {}); }
+    void request_repaint_() override
+    {
+        ++repaints;
+    }
+    void repaint_settings_ui_() override
+    {
+        ++settings_repaints;
+    }
+    void shared_repaint_after_media(MediaKind k)
+    {
+        ShellBase::repaint_after_media_(k, {});
+    }
     void shared_decode_failed(const tk::CacheKey& key, MediaKind k)
     {
         ShellBase::on_media_decode_failed_(key, k);
     }
     int repaints = 0, settings_repaints = 0;
-    bool main_window_foreground_for_tray_() const override { return tray_foreground; }
-    void hide_main_window_for_tray_() override { ++tray_hides; }
+    bool main_window_foreground_for_tray_() const override
+    {
+        return tray_foreground;
+    }
+    void hide_main_window_for_tray_() override
+    {
+        ++tray_hides;
+    }
     void show_main_window_for_tray_(const std::string& t) override
     {
         tray_shows.push_back(t);
@@ -270,19 +425,30 @@ struct WiringShell : tesseract::test::TestShellBase
     bool tray_foreground = false;
     int tray_hides = 0;
     std::vector<std::string> tray_shows;
-    void shared_refresh_after_switch() { ShellBase::refresh_account_ui_after_switch_(); }
+    void shared_refresh_after_switch()
+    {
+        ShellBase::refresh_account_ui_after_switch_();
+    }
     int service_starts = 0;
-    void show_main_content_() override { ++main_contents; }
+    void show_main_content_() override
+    {
+        ++main_contents;
+    }
     void switch_active_account_(const std::string& uid) override
     {
         switched.push_back(uid);
         if (refresh_on_switch)
+        {
             ShellBase::refresh_account_ui_after_switch_();
+        }
     }
     // Make the stubbed switch run the shared post-switch refresh, as a switch
     // that changes the account does.
     bool refresh_on_switch = false;
-    void shared_logout() { ShellBase::logout_active_account_ui_(); }
+    void shared_logout()
+    {
+        ShellBase::logout_active_account_ui_();
+    }
     std::vector<tesseract::views::LoginView::Mode> login_uis;
     int detaches = 0;
     int main_contents = 0;
@@ -291,22 +457,34 @@ struct WiringShell : tesseract::test::TestShellBase
     void prompt_passphrase_(std::string t, std::function<void(std::string)> cb) override
     {
         dialogs.push_back("pass:" + t);
-        if (cb) cb("secret");
+        if (cb)
+        {
+            cb("secret");
+        }
     }
     void pick_save_file_(std::string t, std::string n, std::function<void(std::string)> cb) override
     {
         dialogs.push_back("save:" + t + ":" + n);
-        if (cb) cb("/tmp/out.txt");
+        if (cb)
+        {
+            cb("/tmp/out.txt");
+        }
     }
     void pick_open_file_(std::string t, std::function<void(std::string)> cb) override
     {
         dialogs.push_back("open:" + t);
-        if (cb) cb("/tmp/in.txt");
+        if (cb)
+        {
+            cb("/tmp/in.txt");
+        }
     }
     void pick_folder_(std::string t, std::function<void(std::string)> cb) override
     {
         dialogs.push_back("folder:" + t);
-        if (cb) cb("/tmp/dir");
+        if (cb)
+        {
+            cb("/tmp/dir");
+        }
     }
     void pick_media_save_path_(const tesseract::views::MediaSaveSpec& spec,
                                std::function<void(std::string)> cb) override
@@ -326,15 +504,20 @@ struct WiringShell : tesseract::test::TestShellBase
 
     // Picker repaint: TestShellBase stubs repaint_pickers_, so the shared body
     // is called explicitly; the native extension is counted.
-    void repaint_pickers_native_() override { ++native_picker_repaints; }
-    void shared_repaint_pickers() { ShellBase::repaint_pickers_(); }
+    void repaint_pickers_native_() override
+    {
+        ++native_picker_repaints;
+    }
+    void shared_repaint_pickers()
+    {
+        ShellBase::repaint_pickers_();
+    }
     int native_picker_repaints = 0;
 
     // Media ingest: ShellBase's on_media_bytes_ready_ with the platform hooks
     // recorded. TestShellBase overrides on_media_bytes_ready_ with a no-op, so
     // the base implementation is called explicitly.
-    void ingest(const tk::CacheKey& key, MediaKind kind,
-                std::vector<std::uint8_t> bytes)
+    void ingest(const tk::CacheKey& key, MediaKind kind, std::vector<std::uint8_t> bytes)
     {
         ShellBase::on_media_bytes_ready_(key, kind, std::move(bytes));
         drain_workers();
@@ -388,16 +571,15 @@ struct WiringShell : tesseract::test::TestShellBase
     bool decode_image_streamed_windowed_(
         const std::vector<std::uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int,
-                                 std::shared_ptr<tk::AnimDecodeSession>,
-                                 std::size_t)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override
+                                 std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>&
+            on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         ++windowed_decodes;
         if (!decode_animated)
         {
-            return ShellBase::decode_image_streamed_windowed_(
-                bytes, max_w, max_h, on_first_frame, on_frame);
+            return ShellBase::decode_image_streamed_windowed_(bytes, max_w, max_h, on_first_frame,
+                                                              on_frame);
         }
         on_first_frame(std::make_unique<WiringImage>(), 10, nullptr, 0);
         on_frame(1, std::make_unique<WiringImage>(), 10);
@@ -425,23 +607,40 @@ struct WiringShell : tesseract::test::TestShellBase
     int tiles = 0;
 
     bool ready = true;
-    bool ui_ready_() const override { return ready; }
+    bool ui_ready_() const override
+    {
+        return ready;
+    }
     bool click_modifier = false;
 
     // Rooms update: the shared handler runs (TestShellBase stubs on_rooms_updated_
     // out, so it is called as ShellBase::on_rooms_updated_); the native tail
     // is counted.
-    void after_rooms_updated_ui_() override { ++rooms_tails; }
-    void rooms_updated() { ShellBase::on_rooms_updated_(); }
+    void after_rooms_updated_ui_() override
+    {
+        ++rooms_tails;
+    }
+    void rooms_updated()
+    {
+        ShellBase::on_rooms_updated_();
+    }
     int rooms_tails = 0;
 
     // Notifications: the shared policy runs; the window state and the delivery
     // are controlled and recorded here.
-    bool is_main_window_focused_() const override { return win_focused; }
-    bool is_main_window_visible_() const override { return win_visible; }
-    void request_notification_attention_() override { ++attention_requests; }
-    void deliver_notification_(const std::string& uid,
-                               const tesseract::Notification& n) override
+    bool is_main_window_focused_() const override
+    {
+        return win_focused;
+    }
+    bool is_main_window_visible_() const override
+    {
+        return win_visible;
+    }
+    void request_notification_attention_() override
+    {
+        ++attention_requests;
+    }
+    void deliver_notification_(const std::string& uid, const tesseract::Notification& n) override
     {
         delivered.emplace_back(uid, n.room_id);
         last_notification = n;
@@ -458,46 +657,73 @@ struct WiringShell : tesseract::test::TestShellBase
     std::vector<std::pair<std::string, std::string>> delivered;
     void notify(const std::string& uid, const std::string& room)
     {
-        handle_notification_ui_(uid, room, "Room", "Sender", "hi", false, {}, {},
-                                "$e");
+        handle_notification_ui_(uid, room, "Room", "Sender", "hi", false, {}, {}, "$e");
     }
     void notify_with_media(const std::string& uid, const std::string& room)
     {
-        handle_notification_ui_(uid, room, "Room", "Sender", "hi", true,
-                                {1, 2}, {3, 4}, "$e");
+        handle_notification_ui_(uid, room, "Room", "Sender", "hi", true, {1, 2}, {3, 4}, "$e");
     }
 
     // Animation frame: the shared repaint runs; the native surfaces are counted.
-    void update_main_anim_regions_() override { ++main_anim_updates; }
-    void update_settings_anim_regions_() override { ++settings_anim_updates; }
+    void update_main_anim_regions_() override
+    {
+        ++main_anim_updates;
+    }
+    void update_settings_anim_regions_() override
+    {
+        ++settings_anim_updates;
+    }
     int main_anim_updates = 0;
     int settings_anim_updates = 0;
 
     // Sync status line: the shared state machine runs; the text is recorded.
-    void show_sync_status_text_(const std::string& t) override { sync_texts.push_back(t); }
-    void on_sync_status_override_kept_() override { ++override_kept; }
+    void show_sync_status_text_(const std::string& t) override
+    {
+        sync_texts.push_back(t);
+    }
+    void on_sync_status_override_kept_() override
+    {
+        ++override_kept;
+    }
     std::vector<std::string> sync_texts;
     int override_kept = 0;
 
     // Sign-out: the shared policy runs; the native screens are recorded.
-    void logout_active_account_ui_() override { ++logouts; }
-    void show_sign_in_screen_ui_() override { ++sign_in_screens; }
-    void on_signed_out_ui_(const tesseract::LogoutResult&) override { ++signed_out_hooks; }
+    void logout_active_account_ui_() override
+    {
+        ++logouts;
+    }
+    void show_sign_in_screen_ui_() override
+    {
+        ++sign_in_screens;
+    }
+    void on_signed_out_ui_(const tesseract::LogoutResult&) override
+    {
+        ++signed_out_hooks;
+    }
     void on_show_status_message_ui_(const std::string& m) override
     {
         statuses.push_back(m);
         // What a shell's renderer sees at this point.
-        status_had_links.push_back(
-            tesseract::status_has_links(parse_status_message_(m)));
+        status_had_links.push_back(tesseract::status_has_links(parse_status_message_(m)));
     }
     std::vector<bool> status_had_links;
-    void shared_relogin(const std::string& uid) { ShellBase::request_relogin_(uid); }
+    void shared_relogin(const std::string& uid)
+    {
+        ShellBase::request_relogin_(uid);
+    }
     int logouts = 0;
     int sign_in_screens = 0;
     int signed_out_hooks = 0;
     std::vector<std::string> statuses;
-    bool click_modifier_held_() const override { return click_modifier; }
-    void on_pre_paint_() override { ++pre_paints; }
+    bool click_modifier_held_() const override
+    {
+        return click_modifier;
+    }
+    void on_pre_paint_() override
+    {
+        ++pre_paints;
+    }
     int pre_paints = 0;
 
     // wire_main_app_widget_ starts a self-rescheduling image-GC timer through
@@ -679,8 +905,7 @@ struct WiringFixture
     tesseract::Client client;
     // Surface must outlive (be declared before) the widget tree.
     std::unique_ptr<TestSurface> surface = TestSurface::create(1000, 700);
-    std::unique_ptr<MainAppWidget> app =
-        tk::create_root_widget<MainAppWidget>(nullptr);
+    std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(nullptr);
 
     WiringFixture()
     {
@@ -703,8 +928,7 @@ struct WiringHostFixture
     tesseract::Client client;
     std::unique_ptr<TestSurface> surface = TestSurface::create(1000, 700);
     PopupCapableStubHost host; // outlives the widget tree
-    std::unique_ptr<MainAppWidget> app =
-        tk::create_root_widget<MainAppWidget>(&host);
+    std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(&host);
 
     WiringHostFixture()
     {
@@ -718,7 +942,10 @@ struct WiringHostFixture
     }
 
     // The composer popups hold widgets of `app`, which dies before `s`.
-    ~WiringHostFixture() { s.release_popups_(); }
+    ~WiringHostFixture()
+    {
+        s.release_popups_();
+    }
 
     // The native control behind `field`, found by writing a marker into it.
     StubTextField* native_of(tk::TextField* field)
@@ -769,11 +996,20 @@ struct FakeCapture : tk::AudioCapture
         ++cancels;
         recording = false;
     }
-    bool is_recording() const override { return recording; }
-    std::uint64_t duration_ms() const override { return dur; }
-    void set_frame_callback(
-        std::function<void(const std::int16_t*, std::size_t)>) override {}
-    void clear_frame_callback() override {}
+    bool is_recording() const override
+    {
+        return recording;
+    }
+    std::uint64_t duration_ms() const override
+    {
+        return dur;
+    }
+    void set_frame_callback(std::function<void(const std::int16_t*, std::size_t)>) override
+    {
+    }
+    void clear_frame_callback() override
+    {
+    }
     std::vector<std::uint8_t> pcm;
     std::uint64_t dur = 0;
 };
@@ -801,8 +1037,7 @@ TEST_CASE("wiring: persisted section collapsed state is restored by section "
     CHECK_FALSE(c[RoomListView::kSecSpaceUnjoined]);
 }
 
-TEST_CASE("wiring: leading sections restore their collapsed flags",
-          "[shell][wiring]")
+TEST_CASE("wiring: leading sections restore their collapsed flags", "[shell][wiring]")
 {
     tesseract::test::SettingsGuard guard;
     auto& st = tesseract::Settings::instance();
@@ -838,8 +1073,7 @@ TEST_CASE("wiring: a section toggled inside a space does not overwrite the "
     CHECK(st.room_section_call_rooms_collapsed);
 }
 
-TEST_CASE("wiring: cache sizes arriving after Settings was closed are dropped",
-          "[shell][wiring]")
+TEST_CASE("wiring: cache sizes arriving after Settings was closed are dropped", "[shell][wiring]")
 {
     WiringFixture f;
     // Settings is not open (or was just closed): nothing to update, no crash.
@@ -857,8 +1091,7 @@ TEST_CASE("wiring: cache sizes arriving after Settings was closed are dropped",
     CHECK_NOTHROW(f.s.show_cache_sizes_(1, 2, 3, 4, 5, 6, 7));
 }
 
-TEST_CASE("wiring: toggling a section persists it to Settings by name",
-          "[shell][wiring]")
+TEST_CASE("wiring: toggling a section persists it to Settings by name", "[shell][wiring]")
 {
     WiringFixture f;
     auto& st = tesseract::Settings::instance();
@@ -887,8 +1120,7 @@ TEST_CASE("wiring: toggling a section persists it to Settings by name",
     CHECK_NOTHROW(rl.on_section_toggled(99, true));
 }
 
-TEST_CASE("wiring: sidebar layout changes are stored in Settings",
-          "[shell][wiring]")
+TEST_CASE("wiring: sidebar layout changes are stored in Settings", "[shell][wiring]")
 {
     WiringFixture f;
     f.app->on_sidebar_layout_changed(312.4f, true);
@@ -897,8 +1129,7 @@ TEST_CASE("wiring: sidebar layout changes are stored in Settings",
     CHECK(st.sidebar_collapsed);
 }
 
-TEST_CASE("wiring: clearing the room-list search resets shell and view",
-          "[shell][wiring]")
+TEST_CASE("wiring: clearing the room-list search resets shell and view", "[shell][wiring]")
 {
     // (The search TextField only exists once a Host is attached, so the typing
     // path is not reachable here; the clear hook is.)
@@ -945,8 +1176,7 @@ TEST_CASE("wiring: block also drops the invite", "[shell][wiring][invite]")
     CHECK(f.s.invites_.empty());
 }
 
-TEST_CASE("wiring: invite accept/decline without a selection are no-ops",
-          "[shell][wiring][invite]")
+TEST_CASE("wiring: invite accept/decline without a selection are no-ops", "[shell][wiring][invite]")
 {
     WiringFixture f;
     CHECK_NOTHROW(f.app->invite_card()->on_accept());
@@ -974,8 +1204,7 @@ TEST_CASE("wiring: knock row selection records the room; cancel clears content",
     CHECK(f.s.relayouts > before);
 }
 
-TEST_CASE("wiring: presence provider reads the shell's presence map",
-          "[shell][wiring]")
+TEST_CASE("wiring: presence provider reads the shell's presence map", "[shell][wiring]")
 {
     WiringFixture f;
     f.s.user_presence_["@a:x"] = tesseract::PresenceState::Online;
@@ -986,8 +1215,7 @@ TEST_CASE("wiring: presence provider reads the shell's presence map",
     CHECK(f.app->on_settings_shortcut != nullptr);
 }
 
-TEST_CASE("wiring: unjoined-space summary request is deduplicated",
-          "[shell][wiring]")
+TEST_CASE("wiring: unjoined-space summary request is deduplicated", "[shell][wiring]")
 {
     WiringFixture f;
     auto& rl = *f.app->room_list_view();
@@ -997,8 +1225,7 @@ TEST_CASE("wiring: unjoined-space summary request is deduplicated",
     CHECK(f.s.unjoined_fetch_.empty());
 }
 
-TEST_CASE("wiring: add-room dialog opens from the room list plus button",
-          "[shell][wiring]")
+TEST_CASE("wiring: add-room dialog opens from the room list plus button", "[shell][wiring]")
 {
     WiringFixture f;
     auto* ar = f.app->add_room_view();
@@ -1055,8 +1282,7 @@ TEST_CASE("wiring: forward request needs a current room", "[shell][wiring][forwa
     CHECK_FALSE(f.app->forward_picker()->is_open());
 }
 
-TEST_CASE("wiring: quick switcher lists rooms most-recent-first",
-          "[shell][wiring]")
+TEST_CASE("wiring: quick switcher lists rooms most-recent-first", "[shell][wiring]")
 {
     WiringFixture f;
     f.s.rooms_ = {wiring_make_room("!old:x", 10), wiring_make_room("!new:x", 99),
@@ -1110,8 +1336,7 @@ TEST_CASE("wiring: find in room needs a current room", "[shell][wiring][overlay]
     CHECK(f.s.focus_restores >= 1);
 }
 
-TEST_CASE("wiring: overlays close through their on_close callbacks",
-          "[shell][wiring][overlay]")
+TEST_CASE("wiring: overlays close through their on_close callbacks", "[shell][wiring][overlay]")
 {
     WiringFixture f;
     REQUIRE(f.app->quick_switcher()->on_close != nullptr);
@@ -1193,8 +1418,7 @@ TEST_CASE("wiring: forward picker field keys move the selection and Escape close
     CHECK_FALSE(fp->is_open());
 }
 
-TEST_CASE("wiring: forward picker on_close closes the picker",
-          "[shell][wiring][overlay][forward]")
+TEST_CASE("wiring: forward picker on_close closes the picker", "[shell][wiring][overlay][forward]")
 {
     WiringHostFixture f;
     f.s.current_room_id_ = "!src:x";
@@ -1214,7 +1438,10 @@ TEST_CASE("wiring: find in room opens the bar, its keys navigate matches and clo
     rv->set_room(wiring_make_room("!a:x"));
     f.s.current_room_id_ = "!a:x";
     std::vector<int> navigated;
-    rv->on_room_search_navigate = [&](int d) { navigated.push_back(d); };
+    rv->on_room_search_navigate = [&](int d)
+    {
+        navigated.push_back(d);
+    };
 
     f.s.open_find_in_room_();
     CHECK(f.s.forwards == 1);
@@ -1279,8 +1506,7 @@ TEST_CASE("wiring: a room-list click switches the tab, a modifier click opens a 
     CHECK(f.s.current_room_id_ == "!a:x");
 }
 
-TEST_CASE("wiring: a space click drills in instead of opening a tab",
-          "[shell][wiring][callbacks]")
+TEST_CASE("wiring: a space click drills in instead of opening a tab", "[shell][wiring][callbacks]")
 {
     WiringFixture f;
     auto space = wiring_make_room("!space:x");
@@ -1314,8 +1540,7 @@ TEST_CASE("wiring: a tab click switches to it, a modifier click pops it out",
     CHECK(wiring_tab_ids(f.s) == Ids{"!a:x"});
 }
 
-TEST_CASE("wiring: shared view callbacks are all wired",
-          "[shell][wiring][callbacks]")
+TEST_CASE("wiring: shared view callbacks are all wired", "[shell][wiring][callbacks]")
 {
     WiringFixture f;
     auto& a = *f.app;
@@ -1378,8 +1603,7 @@ TEST_CASE("wiring: shared view callbacks are all wired",
     }
 }
 
-TEST_CASE("wiring: clicking a space in the room list drills into it",
-          "[shell][wiring][callbacks]")
+TEST_CASE("wiring: clicking a space in the room list drills into it", "[shell][wiring][callbacks]")
 {
     WiringFixture f;
     auto space = wiring_make_room("!space:x");
@@ -1404,9 +1628,18 @@ namespace
 {
 struct GifTestImage : tk::Image
 {
-    int width() const override { return 1; }
-    int height() const override { return 1; }
-    std::size_t memory_bytes() const override { return 4; }
+    int width() const override
+    {
+        return 1;
+    }
+    int height() const override
+    {
+        return 1;
+    }
+    std::size_t memory_bytes() const override
+    {
+        return 4;
+    }
 };
 
 tesseract::GifResult gif_result()
@@ -1419,15 +1652,18 @@ tesseract::GifResult gif_result()
 }
 } // namespace
 
-TEST_CASE("gif strip: a cached preview is returned while the animation loads",
-          "[shell][gif]")
+TEST_CASE("gif strip: a cached preview is returned while the animation loads", "[shell][gif]")
 {
     WiringShell s;
     auto img = std::make_unique<GifTestImage>();
     const tk::Image* raw = img.get();
     s.gif_previews_[tk::CacheKey::gif_preview("mxc://x/preview")] = std::move(img);
     int repaints = 0;
-    CHECK(s.gif_strip_image_(gif_result(), [&] { ++repaints; }) == raw);
+    CHECK(s.gif_strip_image_(gif_result(),
+                             [&]
+                             {
+                                 ++repaints;
+                             }) == raw);
     // No client: the animation fetch fails at once, so nothing stays in flight.
     CHECK(s.gif_preview_inflight_.empty());
     CHECK(s.gif_anim_inflight_.empty());
@@ -1444,16 +1680,14 @@ TEST_CASE("gif strip: nothing cached and no client returns null and clears "
     CHECK(s.gif_anim_inflight_.empty());
 }
 
-TEST_CASE("gif strip: a decoded animation frame wins over the preview",
-          "[shell][gif]")
+TEST_CASE("gif strip: a decoded animation frame wins over the preview", "[shell][gif]")
 {
     WiringShell s;
     std::vector<std::unique_ptr<tk::Image>> frames;
     frames.push_back(std::make_unique<GifTestImage>());
     const tk::Image* frame = frames.back().get();
-    s.account_manager_.anim_cache().store(tk::CacheKey::media("mxc://x/strip"),
-                                          std::move(frames), {100},
-                                          s.monotonic_ms_());
+    s.account_manager_.anim_cache().store(tk::CacheKey::media("mxc://x/strip"), std::move(frames),
+                                          {100}, s.monotonic_ms_());
     s.gif_previews_[tk::CacheKey::gif_preview("mxc://x/preview")] =
         std::make_unique<GifTestImage>();
     CHECK(s.gif_strip_image_(gif_result(), [] {}) == frame);
@@ -1471,8 +1705,7 @@ TEST_CASE("gif strip: an animation that finished without frames is not fetched a
     CHECK(s.gif_anim_inflight_.empty());
 }
 
-TEST_CASE("gif strip: a failed download is remembered and not retried on repaint",
-          "[shell][gif]")
+TEST_CASE("gif strip: a failed download is remembered and not retried on repaint", "[shell][gif]")
 {
     WiringShell s;
     // No client: both source fetches fail at once with empty bytes.
@@ -1484,8 +1717,7 @@ TEST_CASE("gif strip: a failed download is remembered and not retried on repaint
     CHECK(s.next_media_req_id_ == next_id); // no new fetch was started
 }
 
-TEST_CASE("gif strip: resetting the failure memory lets the fetch be tried again",
-          "[shell][gif]")
+TEST_CASE("gif strip: resetting the failure memory lets the fetch be tried again", "[shell][gif]")
 {
     WiringShell s;
     s.gif_strip_image_(gif_result(), [] {});
@@ -1519,23 +1751,26 @@ struct GifStripFixture
     {
         auto acct = std::make_shared<tesseract::AccountSession>();
         acct->user_id = "@a:x";
-        acct->client  = std::make_unique<tesseract::Client>();
+        acct->client = std::make_unique<tesseract::Client>();
         s.active_account_ = acct;
         const tesseract::GifResult r = gif_result();
-        s.account_manager_.media_disk_cache().store(
-            tk::CacheKey::gif_source(r.preview_url), {1, 2, 3});
-        s.account_manager_.media_disk_cache().store(
-            tk::CacheKey::gif_source(r.strip_url), {4, 5, 6});
+        s.account_manager_.media_disk_cache().store(tk::CacheKey::gif_source(r.preview_url),
+                                                    {1, 2, 3});
+        s.account_manager_.media_disk_cache().store(tk::CacheKey::gif_source(r.strip_url),
+                                                    {4, 5, 6});
     }
     const tk::Image* strip(const tesseract::GifResult& r)
     {
-        return s.gif_strip_image_(r, [this] { ++repaints; });
+        return s.gif_strip_image_(r,
+                                  [this]
+                                  {
+                                      ++repaints;
+                                  });
     }
 };
 } // namespace
 
-TEST_CASE("gif strip: a fetched preview is decoded, stored and repainted",
-          "[shell][gif]")
+TEST_CASE("gif strip: a fetched preview is decoded, stored and repainted", "[shell][gif]")
 {
     GifStripFixture f;
     f.s.gif_anim_unavailable_.insert("mxc://x/strip");
@@ -1549,8 +1784,7 @@ TEST_CASE("gif strip: a fetched preview is decoded, stored and repainted",
     CHECK(f.strip(gif_result()) != nullptr);
 }
 
-TEST_CASE("gif strip: a preview that does not decode is remembered as unavailable",
-          "[shell][gif]")
+TEST_CASE("gif strip: a preview that does not decode is remembered as unavailable", "[shell][gif]")
 {
     GifStripFixture f;
     f.s.gif_anim_unavailable_.insert("mxc://x/strip");
@@ -1563,8 +1797,7 @@ TEST_CASE("gif strip: a preview that does not decode is remembered as unavailabl
     CHECK(f.repaints == 1);
 }
 
-TEST_CASE("gif strip: a decoded animated image fills the animation cache",
-          "[shell][gif]")
+TEST_CASE("gif strip: a decoded animated image fills the animation cache", "[shell][gif]")
 {
     GifStripFixture f;
     f.s.gif_preview_unavailable_.insert("mxc://x/preview");
@@ -1596,8 +1829,7 @@ TEST_CASE("gif strip: a still strip image becomes the preview and the animation 
     CHECK(f.strip(r) != nullptr);
 }
 
-TEST_CASE("gif strip: an MP4 that yields no frames is marked unavailable",
-          "[shell][gif]")
+TEST_CASE("gif strip: an MP4 that yields no frames is marked unavailable", "[shell][gif]")
 {
     GifStripFixture f;
     f.s.gif_preview_unavailable_.insert("mxc://x/preview");
@@ -1626,8 +1858,7 @@ TEST_CASE("shell hooks: invite and knock updates relayout unless the window is g
     CHECK(f.s.relayouts == base + 2);
 }
 
-TEST_CASE("shell hooks: scroll fraction without a room reads zero",
-          "[shell][wiring]")
+TEST_CASE("shell hooks: scroll fraction without a room reads zero", "[shell][wiring]")
 {
     WiringShell s;
     CHECK(s.get_message_scroll_fraction_() == 0.f);
@@ -1640,16 +1871,13 @@ TEST_CASE("shell hooks: the typing text reaches the room view when the window is
     WiringFixture f;
     f.s.room_view_ = f.app->room_view();
     f.s.update_typing_bar_("Alice is typing", true);
-    CHECK(f.app->room_view()->message_list()->typing_text_for_test() ==
-          "Alice is typing");
+    CHECK(f.app->room_view()->message_list()->typing_text_for_test() == "Alice is typing");
     f.s.ready = false;
     f.s.update_typing_bar_("", false);
-    CHECK(f.app->room_view()->message_list()->typing_text_for_test() ==
-          "Alice is typing");
+    CHECK(f.app->room_view()->message_list()->typing_text_for_test() == "Alice is typing");
 }
 
-TEST_CASE("shell hooks: the scroll fraction reads the populated message list",
-          "[shell][wiring]")
+TEST_CASE("shell hooks: the scroll fraction reads the populated message list", "[shell][wiring]")
 {
     WiringFixture f;
     f.s.room_view_ = f.app->room_view();
@@ -1709,8 +1937,7 @@ TEST_CASE("media ingest: a decoded avatar lands in the thumbnail cache and repai
     CHECK(s.media_failures == 0);
 }
 
-TEST_CASE("media ingest: an undecodable avatar is reported, not stored",
-          "[shell][media]")
+TEST_CASE("media ingest: an undecodable avatar is reported, not stored", "[shell][media]")
 {
     WiringShell s;
     s.decode_ok = false;
@@ -1721,8 +1948,7 @@ TEST_CASE("media ingest: an undecodable avatar is reported, not stored",
     CHECK(s.media_repaints == 0);
 }
 
-TEST_CASE("media ingest: map tiles go to the platform hook unless already cached",
-          "[shell][media]")
+TEST_CASE("media ingest: map tiles go to the platform hook unless already cached", "[shell][media]")
 {
     WiringShell s;
     const auto key = tk::CacheKey::media("tile:1/2/3");
@@ -1764,8 +1990,7 @@ TEST_CASE("media ingest: an animated image goes to the animation cache and evict
     CHECK(s.media_repaints == 1);
 }
 
-TEST_CASE("media ingest: a thumbnail still lands in the thumbnail cache",
-          "[shell][media]")
+TEST_CASE("media ingest: a thumbnail still lands in the thumbnail cache", "[shell][media]")
 {
     WiringShell s;
     const auto key = tk::CacheKey::media("mxc://x/thumb");
@@ -1798,8 +2023,7 @@ TEST_CASE("media ingest: low power mode skips the windowed decode but keeps the 
     CHECK(s.media_repaints == 1);
 }
 
-TEST_CASE("media ingest: nothing repaints once the shell is no longer ready",
-          "[shell][media]")
+TEST_CASE("media ingest: nothing repaints once the shell is no longer ready", "[shell][media]")
 {
     WiringShell s;
     s.decode_animated = true;
@@ -1828,8 +2052,7 @@ TEST_CASE("media ingest: posts queued by a streamed decode drop after the shell 
         s.decode_animated = true;
         s.parked = &parked;
         s.repaint_sink = &repaints;
-        s.ingest(tk::CacheKey::media("mxc://x/gone"),
-                 ShellBase::MediaKind::MediaImage, {1, 2, 3});
+        s.ingest(tk::CacheKey::media("mxc://x/gone"), ShellBase::MediaKind::MediaImage, {1, 2, 3});
         REQUIRE_FALSE(parked.empty());
         s.parked = nullptr;
     }
@@ -1840,8 +2063,7 @@ TEST_CASE("media ingest: posts queued by a streamed decode drop after the shell 
     CHECK(repaints == 0);
 }
 
-TEST_CASE("media ingest: empty bytes and rejected bytes are ignored",
-          "[shell][media]")
+TEST_CASE("media ingest: empty bytes and rejected bytes are ignored", "[shell][media]")
 {
     WiringShell s;
     const auto key = tk::CacheKey::media("mxc://x/none");
@@ -1952,8 +2174,7 @@ TEST_CASE("sync status: Syncing rooms waits 300 ms and shows only if still busy"
     CHECK(s.sync_progress_shown_);
 }
 
-TEST_CASE("sync status: a session that settles within 300 ms never flashes",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: a session that settles within 300 ms never flashes", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x"; // signed in
@@ -1966,8 +2187,7 @@ TEST_CASE("sync status: a session that settles within 300 ms never flashes",
     CHECK(s.sync_texts.back() == "Connected");
 }
 
-TEST_CASE("sync status: progress events do not postpone the wait",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: progress events do not postpone the wait", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x"; // signed in
@@ -1978,8 +2198,7 @@ TEST_CASE("sync status: progress events do not postpone the wait",
     CHECK(s.delayed.size() == 1);
 }
 
-TEST_CASE("sync status: Syncing rooms waits again after a connected period",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: Syncing rooms waits again after a connected period", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x"; // signed in
@@ -2017,8 +2236,7 @@ TEST_CASE("sync status: once progress is showing, busy states update at once",
     CHECK(s.delayed.empty());
 }
 
-TEST_CASE("sync status: reconnecting, key download and connected texts",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: reconnecting, key download and connected texts", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x"; // signed in
@@ -2037,8 +2255,7 @@ TEST_CASE("sync status: reconnecting, key download and connected texts",
     CHECK_FALSE(s.sync_progress_shown_);
 }
 
-TEST_CASE("backup progress drives the key-download status text",
-          "[shell][syncstatus]")
+TEST_CASE("backup progress drives the key-download status text", "[shell][syncstatus]")
 {
     WiringShell s;
     tesseract::Client client;
@@ -2084,8 +2301,7 @@ TEST_CASE("status messages: link syntax in an ordinary message is shown plain",
     CHECK_FALSE(s.status_had_links[2]);
 }
 
-TEST_CASE("sync status: with nobody signed in the line says Not logged in",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: with nobody signed in the line says Not logged in", "[shell][syncstatus]")
 {
     WiringShell s;
     s.last_room_list_state_ = tesseract::RoomListState::Init; // stale state is ignored
@@ -2107,8 +2323,7 @@ TEST_CASE("sync status: a persistent status override survives the signed-out ref
     CHECK(s.override_kept == 1);
 }
 
-TEST_CASE("sync status: Connected cancels a queued Syncing rooms",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: Connected cancels a queued Syncing rooms", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x"; // signed in
@@ -2122,8 +2337,7 @@ TEST_CASE("sync status: Connected cancels a queued Syncing rooms",
     CHECK(s.sync_texts.back() == "Connected");
 }
 
-TEST_CASE("sync status: signing out cancels a queued Syncing rooms",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: signing out cancels a queued Syncing rooms", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x"; // signed in
@@ -2138,8 +2352,7 @@ TEST_CASE("sync status: signing out cancels a queued Syncing rooms",
     CHECK(s.sync_texts.back() == "Not logged in");
 }
 
-TEST_CASE("sync status: a signed-in user gets the sync states again",
-          "[shell][syncstatus]")
+TEST_CASE("sync status: a signed-in user gets the sync states again", "[shell][syncstatus]")
 {
     WiringShell s;
     s.my_user_id_ = "@a:x";
@@ -2149,8 +2362,7 @@ TEST_CASE("sync status: a signed-in user gets the sync states again",
     CHECK(s.sync_texts.back() == "Connected");
 }
 
-TEST_CASE("animation frame: the main and settings surfaces are both repainted",
-          "[shell][anim]")
+TEST_CASE("animation frame: the main and settings surfaces are both repainted", "[shell][anim]")
 {
     WiringFixture f;
     f.s.repaint_anim_frame_();
@@ -2174,8 +2386,7 @@ TEST_CASE("animation frame: the pagination spinner repaints the whole main surfa
     CHECK(f.s.repaints == 1);
 }
 
-TEST_CASE("animation tick: the pagination spinner alone keeps it running",
-          "[shell][anim]")
+TEST_CASE("animation tick: the pagination spinner alone keeps it running", "[shell][anim]")
 {
     WiringFixture f;
     f.s.room_view_ = f.app->room_view();
@@ -2188,8 +2399,7 @@ TEST_CASE("animation tick: the pagination spinner alone keeps it running",
     CHECK(f.s.repaints == 1);
 }
 
-TEST_CASE("animation frame: nothing to repaint before a window exists",
-          "[shell][anim]")
+TEST_CASE("animation frame: nothing to repaint before a window exists", "[shell][anim]")
 {
     WiringShell s; // no main app, room view or popup
     CHECK_NOTHROW(s.repaint_anim_frame_());
@@ -2214,8 +2424,7 @@ struct NotifyFixture
 };
 } // namespace
 
-TEST_CASE("notifications: nothing is shown for the room you are looking at",
-          "[shell][notify]")
+TEST_CASE("notifications: nothing is shown for the room you are looking at", "[shell][notify]")
 {
     NotifyFixture f;
     f.s.win_focused = true;
@@ -2224,8 +2433,7 @@ TEST_CASE("notifications: nothing is shown for the room you are looking at",
     CHECK(f.s.attention_requests == 0);
 }
 
-TEST_CASE("notifications: a focused window still notifies for another room",
-          "[shell][notify]")
+TEST_CASE("notifications: a focused window still notifies for another room", "[shell][notify]")
 {
     NotifyFixture f;
     f.s.win_focused = true;
@@ -2245,8 +2453,7 @@ TEST_CASE("notifications: an unfocused window gets attention and the notificatio
     CHECK(f.s.delivered.size() == 1);
 }
 
-TEST_CASE("notifications: the same room on another account still notifies",
-          "[shell][notify]")
+TEST_CASE("notifications: the same room on another account still notifies", "[shell][notify]")
 {
     NotifyFixture f;
     f.s.win_focused = true;
@@ -2254,8 +2461,7 @@ TEST_CASE("notifications: the same room on another account still notifies",
     CHECK(f.s.delivered.size() == 1);
 }
 
-TEST_CASE("notifications: off in settings, or no window, means nothing",
-          "[shell][notify]")
+TEST_CASE("notifications: off in settings, or no window, means nothing", "[shell][notify]")
 {
     NotifyFixture f;
     tesseract::Settings::instance().notifications_enabled = false;
@@ -2278,12 +2484,14 @@ TEST_CASE("notifications: a focused but hidden window still notifies for the ope
     CHECK(f.s.attention_requests == 0);
 }
 
-TEST_CASE("notifications: the delivered notification carries the message",
-          "[shell][notify]")
+TEST_CASE("notifications: the delivered notification carries the message", "[shell][notify]")
 {
     struct Unlocked : tesseract::IScreenLock
     {
-        bool is_locked() const override { return false; }
+        bool is_locked() const override
+        {
+            return false;
+        }
     };
     NotifyFixture f;
     f.s.set_screen_lock_(std::make_unique<Unlocked>());
@@ -2310,8 +2518,7 @@ TEST_CASE("notifications: the message picture is dropped while the screen lock i
     CHECK(f.s.last_notification.avatar_bytes == std::vector<std::uint8_t>{1, 2});
 }
 
-TEST_CASE("notifications: hiding content reaches the delivered notification",
-          "[shell][notify]")
+TEST_CASE("notifications: hiding content reaches the delivered notification", "[shell][notify]")
 {
     NotifyFixture f;
     tesseract::Settings::instance().notification_hide_content = true;
@@ -2330,7 +2537,9 @@ TEST_CASE("notifications: the base delivery hands the notification to the accoun
 {
     struct RecordingNotifier : tesseract::INotifier
     {
-        explicit RecordingNotifier(std::vector<std::string>& rooms) : rooms_(rooms) {}
+        explicit RecordingNotifier(std::vector<std::string>& rooms) : rooms_(rooms)
+        {
+        }
         void notify(const tesseract::Notification& n) override
         {
             rooms_.push_back(n.room_id);
@@ -2339,8 +2548,7 @@ TEST_CASE("notifications: the base delivery hands the notification to the accoun
     };
     NotifyFixture f;
     std::vector<std::string> rooms;
-    f.s.account_manager_.find("@a:x")->notifier =
-        std::make_unique<RecordingNotifier>(rooms);
+    f.s.account_manager_.find("@a:x")->notifier = std::make_unique<RecordingNotifier>(rooms);
     tesseract::Notification n;
     n.room_id = "!r:x";
     f.s.shared_deliver("@a:x", n);
@@ -2348,8 +2556,7 @@ TEST_CASE("notifications: the base delivery hands the notification to the accoun
     CHECK(rooms == std::vector<std::string>{"!r:x"});
 }
 
-TEST_CASE("rooms updated: the native tail runs, and not once the window is gone",
-          "[shell][rooms]")
+TEST_CASE("rooms updated: the native tail runs, and not once the window is gone", "[shell][rooms]")
 {
     WiringFixture f;
     f.s.rooms_updated();
@@ -2388,8 +2595,7 @@ TEST_CASE("rooms updated: a pending restore opens its tabs once the rooms are kn
     CHECK(f.s.rooms_tails == 1);
 }
 
-TEST_CASE("rooms updated: the open room's info reaches the room view",
-          "[shell][rooms]")
+TEST_CASE("rooms updated: the open room's info reaches the room view", "[shell][rooms]")
 {
     WiringFixture f;
     f.s.room_view_ = f.app->room_view();
@@ -2412,14 +2618,15 @@ struct SettingsFixture
     tesseract::test::SettingsGuard settings_guard;
     WiringShell s;
     std::unique_ptr<TestSurface> surface = TestSurface::create(900, 700);
-    std::unique_ptr<SettingsView> view =
-        tk::create_root_widget<SettingsView>(nullptr);
-    SettingsFixture() { s.wire_settings_view_(view.get()); }
+    std::unique_ptr<SettingsView> view = tk::create_root_widget<SettingsView>(nullptr);
+    SettingsFixture()
+    {
+        s.wire_settings_view_(view.get());
+    }
 };
 } // namespace
 
-TEST_CASE("wiring: settings view changes are persisted by the shell",
-          "[shell][wiring][settings]")
+TEST_CASE("wiring: settings view changes are persisted by the shell", "[shell][wiring][settings]")
 {
     SettingsFixture f;
     auto& st = tesseract::Settings::instance();
@@ -2444,9 +2651,10 @@ TEST_CASE("wiring: settings view changes are persisted by the shell",
     st.proxy_url = "http://proxy.invalid:3128";
     for (K k : {K::HideContent, K::ImagePreviews, K::Prefetch, K::AutoscrollUnread,
                 K::ExcludeInsecure, K::BlockOnUnverified, K::GroupInactive, K::GroupUnread,
-                K::InactivePeriod, K::AudioInput, K::AudioOutput, K::Camera,
-                K::Language, K::Proxy})
+                K::InactivePeriod, K::AudioInput, K::AudioOutput, K::Camera, K::Language, K::Proxy})
+    {
         f.view->on_setting_changed(k);
+    }
 
     // Everything reached disk: reset in memory, reload.
     st.notification_hide_content = false;
@@ -2482,8 +2690,7 @@ TEST_CASE("wiring: settings view changes are persisted by the shell",
     CHECK(st.proxy_url == "http://proxy.invalid:3128");
 }
 
-TEST_CASE("wiring: settings view with a null pointer is ignored",
-          "[shell][wiring][settings]")
+TEST_CASE("wiring: settings view with a null pointer is ignored", "[shell][wiring][settings]")
 {
     WiringShell s;
     CHECK_NOTHROW(s.wire_settings_view_(nullptr));
@@ -2496,11 +2703,19 @@ TEST_CASE("wiring: avatar-changed result updates the shell and active account",
     WiringShell s;
     // The controller must outlive the view: the view keeps a pointer to it and
     // touches it again on destruction.
-    auto post = [](std::function<void()> fn) { fn(); };
+    auto post = [](std::function<void()> fn)
+    {
+        fn();
+    };
     auto picker = [](std::function<void(std::vector<uint8_t>, std::string)>) {};
     auto decode = [](const std::vector<uint8_t>&)
-    { return std::shared_ptr<tk::Image>(); };
-    auto run = [](std::function<void()> fn) { fn(); };
+    {
+        return std::shared_ptr<tk::Image>();
+    };
+    auto run = [](std::function<void()> fn)
+    {
+        fn();
+    };
     tesseract::SettingsController ctrl(nullptr, post, run, picker, decode);
 
     StubHost host; // the view relayouts through its host
@@ -2537,8 +2752,7 @@ struct VoiceFixture
     WiringShell s;
     tesseract::Client client;
     std::unique_ptr<TestSurface> surface = TestSurface::create(1000, 700);
-    std::unique_ptr<MainAppWidget> app =
-        tk::create_root_widget<MainAppWidget>(nullptr);
+    std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(nullptr);
     FakeCapture* cap = nullptr;
     int repaints = 0;
     int clears = 0;
@@ -2553,8 +2767,19 @@ struct VoiceFixture
         cap = c.get();
         s.capture_ = std::move(c);
         s.wire_voice_capture_(
-            app->room_view(), [this] { ++repaints; }, [this] { return room; },
-            [this] { ++clears; });
+            app->room_view(),
+            [this]
+            {
+                ++repaints;
+            },
+            [this]
+            {
+                return room;
+            },
+            [this]
+            {
+                ++clears;
+            });
     }
 };
 } // namespace
@@ -2564,13 +2789,17 @@ TEST_CASE("wiring: voice capture without a device hides the mic", "[shell][wirin
     WiringShell s;
     auto surface = TestSurface::create(1000, 700);
     auto app = tk::create_root_widget<MainAppWidget>(nullptr);
-    s.wire_voice_capture_(app->room_view(), [] {}, [] { return std::string(); },
-                          [] {});
+    s.wire_voice_capture_(
+        app->room_view(), [] {},
+        []
+        {
+            return std::string();
+        },
+        [] {});
     CHECK(app->room_view()->on_mic_clicked == nullptr);
 }
 
-TEST_CASE("wiring: mic click toggles recording and amplitude repaints",
-          "[shell][wiring][voice]")
+TEST_CASE("wiring: mic click toggles recording and amplitude repaints", "[shell][wiring][voice]")
 {
     VoiceFixture f;
     REQUIRE(f.app->room_view()->on_mic_clicked != nullptr);
@@ -2602,8 +2831,7 @@ TEST_CASE("wiring: a long clip clears the compose field and is sent async",
     CHECK(f.clears == 1);
 }
 
-TEST_CASE("wiring: an empty recording (device error) sends nothing",
-          "[shell][wiring][voice]")
+TEST_CASE("wiring: an empty recording (device error) sends nothing", "[shell][wiring][voice]")
 {
     VoiceFixture f;
     f.app->room_view()->on_mic_clicked();
@@ -2637,12 +2865,16 @@ TEST_CASE("room list scroll: backfill is debounced to one pending post and needs
     {
         int n = 0;
         for (const auto& d : f.s.delayed)
+        {
             n += d.first == 300 ? 1 : 0;
+        }
         return n;
     };
     const int before = count_backfill_posts();
     for (int i = 0; i < 20; ++i)
+    {
         list->on_scroll(); // a scroll drag fires this every frame
+    }
     CHECK(count_backfill_posts() == before + 1);
 
     // With no active account the settled fire does nothing.
@@ -2714,8 +2946,7 @@ TEST_CASE("picker repaint: relayouts and lets the platform repaint its own popup
     CHECK(f.s.native_picker_repaints == 1);
 }
 
-TEST_CASE("picker repaint and pack refresh tolerate a missing room view",
-          "[shell][wiring][picker]")
+TEST_CASE("picker repaint and pack refresh tolerate a missing room view", "[shell][wiring][picker]")
 {
     WiringFixture f;
     f.s.room_view_ = nullptr;
@@ -2775,35 +3006,40 @@ TEST_CASE("server info: the settings view is optional and the main surface relay
     CHECK(host.relayout_count == view_relayouts);
 }
 
-TEST_CASE("gif source: a media disk cache hit is delivered from the cache",
-          "[shell][gif]")
+TEST_CASE("gif source: a media disk cache hit is delivered from the cache", "[shell][gif]")
 {
     tesseract::test::SettingsGuard guard;
     WiringShell s;
     auto acct = std::make_shared<tesseract::AccountSession>();
     acct->user_id = "@a:x";
-    acct->client  = std::make_unique<tesseract::Client>();
+    acct->client = std::make_unique<tesseract::Client>();
     s.active_account_ = acct;
     const std::string url = "mxc://x/gifsrc";
-    s.account_manager_.media_disk_cache().store(tk::CacheKey::gif_source(url),
-                                                {1, 2, 3});
+    s.account_manager_.media_disk_cache().store(tk::CacheKey::gif_source(url), {1, 2, 3});
     int calls = 0;
     std::vector<std::uint8_t> got;
-    s.fetch_gif_source_(url, [&](std::vector<std::uint8_t> b)
-                        { ++calls; got = std::move(b); });
+    s.fetch_gif_source_(url,
+                        [&](std::vector<std::uint8_t> b)
+                        {
+                            ++calls;
+                            got = std::move(b);
+                        });
     s.drain_workers();
     CHECK(calls == 1);
     CHECK(got == std::vector<std::uint8_t>{1, 2, 3});
 }
 
-TEST_CASE("gif source: without a client the callback gets empty bytes at once",
-          "[shell][gif]")
+TEST_CASE("gif source: without a client the callback gets empty bytes at once", "[shell][gif]")
 {
     WiringShell s;
     int calls = 0;
     std::vector<std::uint8_t> got{9};
-    s.fetch_gif_source_("mxc://x/none", [&](std::vector<std::uint8_t> b)
-                        { ++calls; got = std::move(b); });
+    s.fetch_gif_source_("mxc://x/none",
+                        [&](std::vector<std::uint8_t> b)
+                        {
+                            ++calls;
+                            got = std::move(b);
+                        });
     CHECK(calls == 1);
     CHECK(got.empty());
 }
@@ -2839,7 +3075,10 @@ struct ComposerFixture : WiringHostFixture
         first_popup = host.popups_created.size();
         s.create_compose_popups_(host);
     }
-    ~ComposerFixture() { s.release_popups_(); }
+    ~ComposerFixture()
+    {
+        s.release_popups_();
+    }
     StubTextArea* composer_native()
     {
         auto* area = app->room_view()->compose_bar()->text_area();
@@ -2854,7 +3093,10 @@ struct ComposerFixture : WiringHostFixture
         }
         return nullptr;
     }
-    StubPopupSurface* popup(std::size_t i) { return host.popups_created.at(first_popup + i); }
+    StubPopupSurface* popup(std::size_t i)
+    {
+        return host.popups_created.at(first_popup + i);
+    }
 };
 } // namespace
 
@@ -3001,11 +3243,23 @@ TEST_CASE("key dialogs: the settings controller reaches the shell's native hooks
     REQUIRE(c.show_open_file_dialog);
 
     std::string got;
-    c.show_passphrase_prompt("Enter passphrase", [&](std::string p) { got = p; });
+    c.show_passphrase_prompt("Enter passphrase",
+                             [&](std::string p)
+                             {
+                                 got = p;
+                             });
     CHECK(got == "secret");
-    c.show_save_file_dialog("keys.txt", [&](std::string p) { got = p; });
+    c.show_save_file_dialog("keys.txt",
+                            [&](std::string p)
+                            {
+                                got = p;
+                            });
     CHECK(got == "/tmp/out.txt");
-    c.show_open_file_dialog([&](std::string p) { got = p; });
+    c.show_open_file_dialog(
+        [&](std::string p)
+        {
+            got = p;
+        });
     CHECK(got == "/tmp/in.txt");
 
     c.on_export_keys_result(true, "");
@@ -3029,23 +3283,24 @@ TEST_CASE("history export: the folder picker is the shell's native hook",
     s.ensure_history_export_controller_();
     REQUIRE(s.history_export_controller_->show_save_folder_dialog);
     std::string got;
-    s.history_export_controller_->show_save_folder_dialog(
-        "room", [&](std::string p) { got = p; });
+    s.history_export_controller_->show_save_folder_dialog("room",
+                                                          [&](std::string p)
+                                                          {
+                                                              got = p;
+                                                          });
     CHECK(got == "/tmp/dir");
     REQUIRE(s.dialogs.size() == 1);
     CHECK(s.dialogs[0] == "folder:Choose a folder for the exported history");
 }
 
-TEST_CASE("in-flight tooltip: count line plus the queue depths",
-          "[shell][wiring][inflight]")
+TEST_CASE("in-flight tooltip: count line plus the queue depths", "[shell][wiring][inflight]")
 {
     WiringShell s;
     s.last_room_list_state_ = tesseract::RoomListState::Init; // no sync poll
     s.last_inflight_ = 1;
     const std::string one = s.inflight_tooltip_text_();
     CHECK(one.rfind("1 request in flight\n", 0) == 0);
-    CHECK(one.find("media: 0 loading · fetch: 0 queued · send: 0 queued") !=
-          std::string::npos);
+    CHECK(one.find("media: 0 loading · fetch: 0 queued · send: 0 queued") != std::string::npos);
 
     s.last_inflight_ = 3;
     CHECK(s.inflight_tooltip_text_().rfind("3 requests in flight\n", 0) == 0);
@@ -3107,8 +3362,7 @@ TEST_CASE("login cancel: with nothing to return to the sign-in screen is re-arme
     CHECK(s.pending_login_client_ != nullptr);
 }
 
-TEST_CASE("login cancel: an account removed meanwhile is not switched to",
-          "[shell][wiring][login]")
+TEST_CASE("login cancel: an account removed meanwhile is not switched to", "[shell][wiring][login]")
 {
     using Mode = tesseract::views::LoginView::Mode;
     WiringShell s;
@@ -3266,8 +3520,7 @@ TEST_CASE("account switch: the shared refresh shows the main content and starts 
     CHECK(f.s.service_starts == 1);
 }
 
-TEST_CASE("account switch: settings stay open across a cache reset",
-          "[shell][wiring][switch]")
+TEST_CASE("account switch: settings stay open across a cache reset", "[shell][wiring][switch]")
 {
     WiringFixture f;
     f.s.room_view_ = f.app->room_view();
@@ -3277,8 +3530,7 @@ TEST_CASE("account switch: settings stay open across a cache reset",
     CHECK(f.s.service_starts == 1);
 }
 
-TEST_CASE("account switch: tabs restore at once from the cached rooms",
-          "[shell][wiring][switch]")
+TEST_CASE("account switch: tabs restore at once from the cached rooms", "[shell][wiring][switch]")
 {
     WiringFixture f;
     f.s.room_view_ = f.app->room_view();
@@ -3413,7 +3665,7 @@ TEST_CASE("login finalized: a failure after Cancel returned to the accounts show
     auto a = std::make_shared<tesseract::AccountSession>();
     a->user_id = "@a:x";
     s.account_manager_.add_account(a);
-    s.active_account_ = a; // Cancel switched back to it
+    s.active_account_ = a;                   // Cancel switched back to it
     s.pending_login_is_add_account_ = false; // Cancel already cleared it
     tesseract::FinalizeLoginResult fin;
     fin.error = "disk full";
@@ -3439,11 +3691,19 @@ TEST_CASE("login page: teardown keeps the view while a pool task may still use i
             std::unique_lock<std::mutex> lk(m);
             started = true;
             cv.notify_all();
-            cv.wait(lk, [&] { return release; });
+            cv.wait(lk,
+                    [&]
+                    {
+                        return release;
+                    });
         });
     {
         std::unique_lock<std::mutex> lk(m);
-        cv.wait(lk, [&] { return started; });
+        cv.wait(lk,
+                [&]
+                {
+                    return started;
+                });
     }
 
     s.teardown_login_view_();
@@ -3533,8 +3793,9 @@ TEST_CASE("media decode failure: remembered for the session; cached bytes droppe
     CHECK_FALSE(s.account_manager_.media_disk_cache().load(av).empty()); // kept
 }
 
-TEST_CASE("media decode failure: stickers and reactions drop their cached bytes, thumbnails keep them",
-          "[shell][wiring][media]")
+TEST_CASE(
+    "media decode failure: stickers and reactions drop their cached bytes, thumbnails keep them",
+    "[shell][wiring][media]")
 {
     tesseract::test::SettingsGuard guard;
     WiringShell s;
@@ -3543,7 +3804,9 @@ TEST_CASE("media decode failure: stickers and reactions drop their cached bytes,
     const auto reaction = tk::CacheKey::media("mxc://x/reaction");
     const auto thumb = tk::CacheKey::media("mxc://x/thumb");
     for (const auto& key : {sticker, reaction, thumb})
+    {
         s.account_manager_.media_disk_cache().store(key, {1, 2, 3});
+    }
 
     s.shared_decode_failed(sticker, K::Sticker);
     s.shared_decode_failed(reaction, K::Reaction);
@@ -3613,8 +3876,7 @@ TEST_CASE("settings page: a view recreated in the same tick survives the old tea
     CHECK(s.settings_alive == 1);
 }
 
-TEST_CASE("settings page: no surface means settings do not open",
-          "[shell][wiring][settings]")
+TEST_CASE("settings page: no surface means settings do not open", "[shell][wiring][settings]")
 {
     WiringShell s;
     s.settings_null = true;
@@ -3623,8 +3885,7 @@ TEST_CASE("settings page: no surface means settings do not open",
     CHECK(s.settings_created == 1);
 }
 
-TEST_CASE("settings page: the shared repaint needs the page open",
-          "[shell][wiring][settings]")
+TEST_CASE("settings page: the shared repaint needs the page open", "[shell][wiring][settings]")
 {
     tesseract::test::SettingsGuard guard;
     WiringShell s;
@@ -3713,7 +3974,7 @@ TEST_CASE("login page: a new page built before the teardown tick unmounts the ol
     CHECK(s.login_view_ != nullptr);
     CHECK(s.login_created == 2);
     CHECK(s.login_unmounted == 1);
-    CHECK(s.login_alive == 2); // the old one is retired, not destroyed
+    CHECK(s.login_alive == 2);         // the old one is retired, not destroyed
     s.teardown_host.fire_all_delays(); // the stale teardown is a no-op
     CHECK(s.login_alive == 2);
     s.release_login_surface_();
@@ -3841,18 +4102,30 @@ namespace
 // A call pop-out that only records the theme it is given.
 struct ThemeSpyCallWindow final : tesseract::CallWindowBase
 {
-    explicit ThemeSpyCallWindow(ShellBase* shell) : CallWindowBase(shell) {}
-    void bring_to_front() override {}
-    void close_window() override {}
-    void apply_theme(const tk::Theme& t) override { theme = &t; }
-    void apply_scale_change(float) override {}
-    void request_relayout() override {}
+    explicit ThemeSpyCallWindow(ShellBase* shell) : CallWindowBase(shell)
+    {
+    }
+    void bring_to_front() override
+    {
+    }
+    void close_window() override
+    {
+    }
+    void apply_theme(const tk::Theme& t) override
+    {
+        theme = &t;
+    }
+    void apply_scale_change(float) override
+    {
+    }
+    void request_relayout() override
+    {
+    }
     const tk::Theme* theme = nullptr;
 };
 } // namespace
 
-TEST_CASE("theme: the call pop-out gets the shell's theme member",
-          "[shell][wiring][theme]")
+TEST_CASE("theme: the call pop-out gets the shell's theme member", "[shell][wiring][theme]")
 {
     tesseract::test::SettingsGuard guard;
     WiringShell s;
@@ -3964,8 +4237,7 @@ tk::KeyEvent picker_key(tk::Key k, bool ctrl = false)
 }
 } // namespace
 
-TEST_CASE("account picker: keys reach its rows only while it is open",
-          "[shell][wiring][picker]")
+TEST_CASE("account picker: keys reach its rows only while it is open", "[shell][wiring][picker]")
 {
     WiringFixture f;
     f.s.main_fake = std::make_unique<FakeMainSurface>(*f.surface);
@@ -4029,8 +4301,7 @@ TEST_CASE("account picker: Enter on a focused row selects it, Escape closes it",
     CHECK(main_host.focused_widget() == f.app->user_info());
 }
 
-TEST_CASE("account picker: Escape and window deactivation close it",
-          "[shell][wiring][picker]")
+TEST_CASE("account picker: Escape and window deactivation close it", "[shell][wiring][picker]")
 {
     WiringFixture f;
     f.s.main_fake = std::make_unique<FakeMainSurface>(*f.surface);
@@ -4057,8 +4328,7 @@ TEST_CASE("account picker: Escape and window deactivation close it",
     CHECK_FALSE(popup->visible());
 }
 
-TEST_CASE("account picker: Escape on the main surface closes it first",
-          "[shell][wiring][picker]")
+TEST_CASE("account picker: Escape on the main surface closes it first", "[shell][wiring][picker]")
 {
     WiringFixture f;
     f.s.main_fake = std::make_unique<FakeMainSurface>(*f.surface);
@@ -4134,8 +4404,7 @@ TEST_CASE("main room pane: the viewer's Save button reaches the shell's save dia
     CHECK(f.s.dialogs[0].find("report.pdf") != std::string::npos);
 }
 
-TEST_CASE("main room pane: the DM and profile-panel callbacks are wired",
-          "[shell][wiring][pane]")
+TEST_CASE("main room pane: the DM and profile-panel callbacks are wired", "[shell][wiring][pane]")
 {
     WiringFixture f;
     auto* rv = f.app->room_view();

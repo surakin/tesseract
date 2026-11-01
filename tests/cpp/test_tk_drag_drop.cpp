@@ -32,7 +32,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
 
     bool on_pointer_down(Point) override
     {
@@ -83,8 +85,7 @@ DragPayload make_drag_payload()
 
 } // namespace
 
-TEST_CASE("DragPayload carries a kind-tagged, strongly-typed value",
-          "[tk][drag_drop]")
+TEST_CASE("DragPayload carries a kind-tagged, strongly-typed value", "[tk][drag_drop]")
 {
     DragPayload payload = make_drag_payload();
 
@@ -105,7 +106,7 @@ TEST_CASE("DragGestureTracker fires exactly once when the threshold is "
     DragGestureTracker tracker;
     tracker.begin({0, 0});
 
-    CHECK_FALSE(tracker.crossed_threshold({1, 1})); // below kDragThresholdPx
+    CHECK_FALSE(tracker.crossed_threshold({1, 1}));  // below kDragThresholdPx
     CHECK(tracker.crossed_threshold({5, 0}));        // crosses it
     CHECK_FALSE(tracker.crossed_threshold({20, 0})); // already fired, disarmed
 
@@ -119,10 +120,10 @@ TEST_CASE("dispatch_drag_enter claims the topmost accepting descendant, "
           "[tk][drag_drop]")
 {
     DragProbeWidget root({0, 0, 400, 400});
-    auto* a = root.add_child(
-        std::make_unique<DragProbeWidget>(Rect{0, 0, 100, 100}, /*accept=*/true));
-    auto* b = root.add_child(
-        std::make_unique<DragProbeWidget>(Rect{200, 0, 100, 100}, /*accept=*/true));
+    auto* a =
+        root.add_child(std::make_unique<DragProbeWidget>(Rect{0, 0, 100, 100}, /*accept=*/true));
+    auto* b =
+        root.add_child(std::make_unique<DragProbeWidget>(Rect{200, 0, 100, 100}, /*accept=*/true));
     DragPayload payload = make_drag_payload();
 
     Widget* target = root.dispatch_drag_enter({50, 50}, payload);
@@ -134,14 +135,12 @@ TEST_CASE("dispatch_drag_enter claims the topmost accepting descendant, "
     REQUIRE(target == b);
 }
 
-TEST_CASE("dispatch_drag_enter skips an invisible subtree entirely",
-          "[tk][drag_drop]")
+TEST_CASE("dispatch_drag_enter skips an invisible subtree entirely", "[tk][drag_drop]")
 {
     DragProbeWidget root({0, 0, 400, 400});
-    auto* hidden =
-        root.add_child(std::make_unique<DragProbeWidget>(Rect{0, 0, 200, 200}));
-    auto* grandchild = hidden->add_child(
-        std::make_unique<DragProbeWidget>(Rect{50, 50, 50, 50}, /*accept=*/true));
+    auto* hidden = root.add_child(std::make_unique<DragProbeWidget>(Rect{0, 0, 200, 200}));
+    auto* grandchild =
+        hidden->add_child(std::make_unique<DragProbeWidget>(Rect{50, 50, 50, 50}, /*accept=*/true));
     hidden->set_visible(false);
     DragPayload payload = make_drag_payload();
 
@@ -158,8 +157,7 @@ TEST_CASE("Host::begin_drag + dispatch_pointer_move retargets across "
           "[tk][drag_drop][host]")
 {
     DragProbeWidget root({0, 0, 400, 400});
-    auto* source =
-        root.add_child(std::make_unique<DragProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* source = root.add_child(std::make_unique<DragProbeWidget>(Rect{0, 0, 50, 50}));
     source->claim_press = true;
     auto* a = root.add_child(
         std::make_unique<DragProbeWidget>(Rect{100, 100, 100, 100}, /*accept=*/true));
@@ -238,8 +236,7 @@ TEST_CASE("cancel_drag fires on_drag_leave_target, never on_drop, and is "
     CHECK(a->leave_count == 1);
 }
 
-TEST_CASE("Escape cancels an active drag ahead of other key handling",
-          "[tk][drag_drop][host]")
+TEST_CASE("Escape cancels an active drag ahead of other key handling", "[tk][drag_drop][host]")
 {
     DragProbeWidget root({0, 0, 400, 400});
     root.claim_press = true;

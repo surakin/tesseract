@@ -39,10 +39,10 @@ public:
     enum class Error
     {
         None,
-        NoDevice,          // no camera, or the selected one is gone
-        Busy,              // held exclusively by another app
-        PermissionDenied,  // OS privacy setting / device node permissions
-        Failed,            // anything else (negotiation, driver error, ...)
+        NoDevice,         // no camera, or the selected one is gone
+        Busy,             // held exclusively by another app
+        PermissionDenied, // OS privacy setting / device node permissions
+        Failed,           // anything else (negotiation, driver error, ...)
     };
 
     // Fired at most once per start(), on any thread. Must be thread-safe.
@@ -52,8 +52,7 @@ public:
     // Delivered using the platform's native colour converter — no software
     // BT.601 loop. Camera pixels are opaque (A=255) so premult = straight.
     using BgraCallback =
-        std::function<void(const std::uint8_t* bgra, std::uint32_t w,
-                           std::uint32_t h)>;
+        std::function<void(const std::uint8_t* bgra, std::uint32_t w, std::uint32_t h)>;
 
     virtual ~VideoCapture() = default;
 
@@ -72,22 +71,26 @@ public:
     // Register the per-frame BGRA callback. Must be called before start().
     // Used by CameraWidget for the /selfie overlay. Default no-op — platforms
     // override this to deliver BGRA using native conversion.
-    virtual void set_bgra_callback(BgraCallback /*cb*/) {}
+    virtual void set_bgra_callback(BgraCallback /*cb*/)
+    {
+    }
 
     // Register the failure callback. Call before start().
     void set_error_callback(ErrorCallback cb);
 
     // The error reported since the last start(), or Error::None. Thread-safe;
     // lets paint-driven widgets poll instead of marshalling the callback.
-    Error error() const { return error_.load(std::memory_order_acquire); }
+    Error error() const
+    {
+        return error_.load(std::memory_order_acquire);
+    }
 
     // Platform factory — returns nullptr if no camera device is present.
     static std::unique_ptr<VideoCapture> create();
 
     // Tests only: replace the platform factory used by create(). Pass an
     // empty function to restore the real one.
-    static void set_factory_for_testing(
-        std::function<std::unique_ptr<VideoCapture>()> factory);
+    static void set_factory_for_testing(std::function<std::unique_ptr<VideoCapture>()> factory);
 
     // Localised user-facing sentence for an error (empty for None).
     static std::string describe(Error e);
@@ -98,12 +101,15 @@ protected:
     // are dropped so consumers see exactly one notification.
     void report_error_(Error e);
     // Backends call this at the top of start().
-    void clear_error_() { error_.store(Error::None, std::memory_order_release); }
+    void clear_error_()
+    {
+        error_.store(Error::None, std::memory_order_release);
+    }
 
 private:
     std::atomic<Error> error_{Error::None};
-    std::mutex         error_cb_mu_;
-    ErrorCallback      error_cb_;
+    std::mutex error_cb_mu_;
+    ErrorCallback error_cb_;
 };
 
 // Per-platform factory function declarations (each defined in

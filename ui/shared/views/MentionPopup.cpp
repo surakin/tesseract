@@ -13,34 +13,31 @@ void MentionPopup::set_candidates(std::vector<MentionCandidate> c)
     reset_transient_state_();
 }
 
-void MentionPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
-                             size_t index, bool selected, bool /*hovered*/)
+void MentionPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index, bool selected,
+                             bool /*hovered*/)
 {
     const auto pal = tk::row_palette(ctx.theme, selected);
-    const auto& c   = candidates_[index];
+    const auto& c = candidates_[index];
 
     // Avatar: the member's image when available, else an initials disc
     // (accent disc for @room).
     constexpr float kAvatar = 28.0f;
-    tk::Rect av{row.x + 6.0f, row.y + (kRowHeight - kAvatar) * 0.5f, kAvatar,
-                kAvatar};
-    const tk::Image* avatar_img =
-        (!c.is_room && image_provider_ && !c.avatar_url.empty())
-            ? image_provider_(c.avatar_url)
-            : nullptr;
+    tk::Rect av{row.x + 6.0f, row.y + (kRowHeight - kAvatar) * 0.5f, kAvatar, kAvatar};
+    const tk::Image* avatar_img = (!c.is_room && image_provider_ && !c.avatar_url.empty())
+                                      ? image_provider_(c.avatar_url)
+                                      : nullptr;
     tk::Point center{av.x + kAvatar * 0.5f, av.y + kAvatar * 0.5f};
     if (c.is_room && !avatar_img)
     {
         // Accent disc for @room.
-        draw_avatar(ctx.canvas, nullptr, center, kAvatar, "#", pal.accent,
-                    pal.text_on_accent, tk::AvatarText::Literal);
+        draw_avatar(ctx.canvas, nullptr, center, kAvatar, "#", pal.accent, pal.text_on_accent,
+                    tk::AvatarText::Literal);
     }
     else
     {
-        const std::string& nm =
-            !c.display_name.empty() ? c.display_name : c.user_id;
-        draw_avatar(ctx.canvas, avatar_img, center, kAvatar, nm,
-                    pal.avatar_initials_bg, pal.avatar_initials_text);
+        const std::string& nm = !c.display_name.empty() ? c.display_name : c.user_id;
+        draw_avatar(ctx.canvas, avatar_img, center, kAvatar, nm, pal.avatar_initials_bg,
+                    pal.avatar_initials_text);
     }
 
     float text_x = av.x + av.w + 10.0f;
@@ -62,8 +59,7 @@ void MentionPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
     }
 
     // Secondary (muted): user id, or a hint for @room.
-    std::string secondary =
-        c.is_room ? tk::tr("Notify the whole room") : c.user_id;
+    std::string secondary = c.is_room ? tk::tr("Notify the whole room") : c.user_id;
     if (!secondary.empty())
     {
         tk::TextStyle sst{};

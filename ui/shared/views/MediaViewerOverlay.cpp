@@ -40,24 +40,36 @@ MediaViewerOverlay::MediaViewerOverlay()
     image_page_ = std::make_unique<ImageViewerPage>(host);
     video_page_ = std::make_unique<VideoViewerPage>(host);
     audio_page_ = std::make_unique<AudioViewerPage>(host);
-    file_page_ = std::make_unique<FileViewerPage>(host, [this] { fire_save_(); });
+    file_page_ = std::make_unique<FileViewerPage>(host,
+                                                  [this]
+                                                  {
+                                                      fire_save_();
+                                                  });
 
-    auto prev = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                              tk::Button::Variant::Icon);
+    auto prev =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     prev->set_accessible_name(tk::tr("Previous"));
     prev_btn_ = add_child(std::move(prev));
     add_tooltip_(prev_btn_);
-    prev_btn_->set_on_click([this] { step_(-1); });
+    prev_btn_->set_on_click(
+        [this]
+        {
+            step_(-1);
+        });
     prev_btn_->set_fill_override(
         tk::Button::FillOverride{kNavPillRest, kNavPillHover, kNavPillPressed});
     prev_btn_->set_visible(false);
 
-    auto next = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                              tk::Button::Variant::Icon);
+    auto next =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     next->set_accessible_name(tk::tr("Next"));
     next_btn_ = add_child(std::move(next));
     add_tooltip_(next_btn_);
-    next_btn_->set_on_click([this] { step_(1); });
+    next_btn_->set_on_click(
+        [this]
+        {
+            step_(1);
+        });
     next_btn_->set_fill_override(
         tk::Button::FillOverride{kNavPillRest, kNavPillHover, kNavPillPressed});
     next_btn_->set_visible(false);
@@ -74,8 +86,7 @@ void MediaViewerOverlay::open(MediaViewerItem item)
     open_sequence(std::move(items), 0);
 }
 
-void MediaViewerOverlay::open_sequence(std::vector<MediaViewerItem> items,
-                                       std::size_t index)
+void MediaViewerOverlay::open_sequence(std::vector<MediaViewerItem> items, std::size_t index)
 {
     if (items.empty())
     {
@@ -113,9 +124,8 @@ void MediaViewerOverlay::step_(int delta)
     {
         return;
     }
-    const long long next =
-        (static_cast<long long>(index_) + delta + static_cast<long long>(n)) %
-        static_cast<long long>(n);
+    const long long next = (static_cast<long long>(index_) + delta + static_cast<long long>(n)) %
+                           static_cast<long long>(n);
     show_index_(static_cast<std::size_t>(next));
 }
 
@@ -129,22 +139,22 @@ MediaViewerPage* MediaViewerOverlay::page_for_(MediaViewerItem::Kind kind) const
 {
     switch (kind)
     {
-        case MediaViewerItem::Kind::Image:
-        {
-            return image_page_.get();
-        }
-        case MediaViewerItem::Kind::Video:
-        {
-            return video_page_.get();
-        }
-        case MediaViewerItem::Kind::Audio:
-        {
-            return audio_page_.get();
-        }
-        case MediaViewerItem::Kind::File:
-        {
-            return file_page_.get();
-        }
+    case MediaViewerItem::Kind::Image:
+    {
+        return image_page_.get();
+    }
+    case MediaViewerItem::Kind::Video:
+    {
+        return video_page_.get();
+    }
+    case MediaViewerItem::Kind::Audio:
+    {
+        return audio_page_.get();
+    }
+    case MediaViewerItem::Kind::File:
+    {
+        return file_page_.get();
+    }
     }
     return nullptr;
 }
@@ -194,8 +204,7 @@ bool MediaViewerOverlay::is_loading() const
 
 // ── video delivery ───────────────────────────────────────────────────────
 
-void MediaViewerOverlay::load_bytes(std::uint64_t token, const std::uint8_t* data,
-                                    std::size_t size)
+void MediaViewerOverlay::load_bytes(std::uint64_t token, const std::uint8_t* data, std::size_t size)
 {
     if (token != load_token_ || active_ != video_page_.get())
     {
@@ -213,8 +222,7 @@ void MediaViewerOverlay::begin_stream_or_buffer(std::uint64_t token)
     video_page_->begin_stream_or_buffer();
 }
 
-void MediaViewerOverlay::feed_stream_chunk(std::uint64_t token,
-                                           const std::uint8_t* data,
+void MediaViewerOverlay::feed_stream_chunk(std::uint64_t token, const std::uint8_t* data,
                                            std::size_t size)
 {
     if (token != load_token_ || active_ != video_page_.get())
@@ -224,8 +232,7 @@ void MediaViewerOverlay::feed_stream_chunk(std::uint64_t token,
     video_page_->feed_stream_chunk(data, size);
 }
 
-void MediaViewerOverlay::set_stream_length(std::uint64_t token,
-                                           std::uint64_t total_size)
+void MediaViewerOverlay::set_stream_length(std::uint64_t token, std::uint64_t total_size)
 {
     if (token != load_token_ || active_ != video_page_.get())
     {
@@ -252,8 +259,7 @@ void MediaViewerOverlay::fail_stream(std::uint64_t token)
     video_page_->fail_stream();
 }
 
-void MediaViewerOverlay::load_audio_bytes(std::uint64_t token,
-                                          std::vector<std::uint8_t> bytes)
+void MediaViewerOverlay::load_audio_bytes(std::uint64_t token, std::vector<std::uint8_t> bytes)
 {
     if (token != load_token_ || active_ != audio_page_.get())
     {
@@ -284,8 +290,7 @@ std::size_t MediaViewerOverlay::memory_bytes() const
     return video_page_->memory_bytes() + audio_page_->memory_bytes();
 }
 
-void MediaViewerOverlay::set_image_provider(
-    std::function<const tk::Image*(const std::string&)> fn)
+void MediaViewerOverlay::set_image_provider(std::function<const tk::Image*(const std::string&)> fn)
 {
     image_provider_ = std::move(fn);
 }
@@ -371,8 +376,8 @@ const tk::Image* MediaViewerOverlay::host_image(const std::string& key) const
 
 tk::Button* MediaViewerOverlay::host_add_icon_button()
 {
-    auto btn = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                             tk::Button::Variant::Icon);
+    auto btn =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     auto* raw = add_child(std::move(btn));
     add_tooltip_(raw);
     return raw;
@@ -380,8 +385,7 @@ tk::Button* MediaViewerOverlay::host_add_icon_button()
 
 tk::Button* MediaViewerOverlay::host_add_label_button(std::string label)
 {
-    auto btn = tk::create_widget<tk::Button>(this, std::move(label),
-                                             std::function<void()>{},
+    auto btn = tk::create_widget<tk::Button>(this, std::move(label), std::function<void()>{},
                                              tk::Button::Variant::Primary);
     return add_child(std::move(btn));
 }
@@ -426,8 +430,7 @@ void MediaViewerOverlay::layout_nav_(tk::LayoutCtx& lc, tk::Rect b)
 {
     const float y = b.y + (b.h - kNavBtnSize) * 0.5f;
     prev_btn_->arrange(lc, {b.x + kNavBtnInset, y, kNavBtnSize, kNavBtnSize});
-    next_btn_->arrange(
-        lc, {b.x + b.w - kNavBtnInset - kNavBtnSize, y, kNavBtnSize, kNavBtnSize});
+    next_btn_->arrange(lc, {b.x + b.w - kNavBtnInset - kNavBtnSize, y, kNavBtnSize, kNavBtnSize});
     const bool show = nav_shown_();
     prev_btn_->set_visible(show);
     next_btn_->set_visible(show);
@@ -492,8 +495,7 @@ void MediaViewerOverlay::paint_nav_(tk::PaintCtx& ctx)
     {
         const tk::Size sz = lo->measure();
         const tk::Rect b = bounds();
-        const tk::Rect pill{b.x + 8.0f, b.y + 8.0f, sz.w + 2.0f * kCounterPadX,
-                            kCounterH};
+        const tk::Rect pill{b.x + 8.0f, b.y + 8.0f, sz.w + 2.0f * kCounterPadX, kCounterH};
         cv.fill_rounded_rect(pill, kCounterH * 0.5f, kNavPillRest);
         cv.draw_text(*lo, {pill.x + kCounterPadX, pill.y + (kCounterH - sz.h) * 0.5f},
                      tk::Color::rgba(255, 255, 255, 230));
@@ -558,15 +560,13 @@ void MediaViewerOverlay::on_pointer_drag(tk::Point local)
     }
 }
 
-bool MediaViewerOverlay::on_wheel(tk::Point local, float dx, float dy,
-                                  bool is_touchpad)
+bool MediaViewerOverlay::on_wheel(tk::Point local, float dx, float dy, bool is_touchpad)
 {
     if (!is_open_ || !active_)
     {
         return false;
     }
-    return active_->on_wheel({local.x - content_inset_x_(), local.y}, dx, dy,
-                             is_touchpad);
+    return active_->on_wheel({local.x - content_inset_x_(), local.y}, dx, dy, is_touchpad);
 }
 
 bool MediaViewerOverlay::on_content_pointer_down_(tk::Point world, tk::Point local)
@@ -574,8 +574,7 @@ bool MediaViewerOverlay::on_content_pointer_down_(tk::Point world, tk::Point loc
     return active_ && active_->on_content_pointer_down(world, local);
 }
 
-bool MediaViewerOverlay::on_content_pointer_up_(tk::Point world, tk::Point local,
-                                                bool inside_self)
+bool MediaViewerOverlay::on_content_pointer_up_(tk::Point world, tk::Point local, bool inside_self)
 {
     return active_ && active_->on_content_pointer_up(world, local, inside_self);
 }
@@ -632,8 +631,7 @@ void MediaViewerOverlay::fire_external_()
 
 bool MediaViewerOverlay::wants_external_button_() const
 {
-    return on_open_external && index_ < items_.size() &&
-           !items_[index_].event_id.empty();
+    return on_open_external && index_ < items_.size() && !items_[index_].event_id.empty();
 }
 
 bool MediaViewerOverlay::wants_copy_button_() const
@@ -643,8 +641,8 @@ bool MediaViewerOverlay::wants_copy_button_() const
 
 bool MediaViewerOverlay::extra_chrome_hovered_() const
 {
-    return (active_ && active_->controls_hovered()) ||
-           (prev_btn_ && prev_btn_->hovered()) || (next_btn_ && next_btn_->hovered());
+    return (active_ && active_->controls_hovered()) || (prev_btn_ && prev_btn_->hovered()) ||
+           (next_btn_ && next_btn_->hovered());
 }
 
 } // namespace tesseract::views

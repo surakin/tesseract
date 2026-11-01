@@ -12,8 +12,7 @@ namespace
 
 bool is_shortcode_char(char c)
 {
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
-           c == '+' || c == '-';
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '+' || c == '-';
 }
 
 bool icontains(std::string_view hay, std::string_view needle)
@@ -31,8 +30,7 @@ bool icontains(std::string_view hay, std::string_view needle)
         bool ok = true;
         for (std::size_t k = 0; k < needle.size(); ++k)
         {
-            if (std::tolower((unsigned char)hay[i + k]) !=
-                std::tolower((unsigned char)needle[k]))
+            if (std::tolower((unsigned char)hay[i + k]) != std::tolower((unsigned char)needle[k]))
             {
                 ok = false;
                 break;
@@ -49,23 +47,21 @@ bool icontains(std::string_view hay, std::string_view needle)
 // Rank: 0 = exact, 1 = starts-with, 2 = substring
 int match_rank(std::string_view sc, std::string_view prefix)
 {
-    if (sc.size() == prefix.size() &&
-        std::equal(sc.begin(), sc.end(), prefix.begin(),
-                   [](char a, char b)
-                   {
-                       return std::tolower((unsigned char)a) ==
-                              std::tolower((unsigned char)b);
-                   }))
+    if (sc.size() == prefix.size() && std::equal(sc.begin(), sc.end(), prefix.begin(),
+                                                 [](char a, char b)
+                                                 {
+                                                     return std::tolower((unsigned char)a) ==
+                                                            std::tolower((unsigned char)b);
+                                                 }))
     {
         return 0;
     }
-    if (sc.size() >= prefix.size() &&
-        std::equal(prefix.begin(), prefix.end(), sc.begin(),
-                   [](char a, char b)
-                   {
-                       return std::tolower((unsigned char)a) ==
-                              std::tolower((unsigned char)b);
-                   }))
+    if (sc.size() >= prefix.size() && std::equal(prefix.begin(), prefix.end(), sc.begin(),
+                                                 [](char a, char b)
+                                                 {
+                                                     return std::tolower((unsigned char)a) ==
+                                                            std::tolower((unsigned char)b);
+                                                 }))
     {
         return 1;
     }
@@ -74,8 +70,7 @@ int match_rank(std::string_view sc, std::string_view prefix)
 
 } // namespace
 
-std::optional<ShortcodeMatch>
-ShortcodeEngine::find_prefix(std::string_view text, int cursor) const
+std::optional<ShortcodeMatch> ShortcodeEngine::find_prefix(std::string_view text, int cursor) const
 {
     cursor = std::min(cursor, (int)text.size());
     // Walk backward from cursor to find the start of a `:word` pattern.
@@ -107,8 +102,8 @@ ShortcodeEngine::find_prefix(std::string_view text, int cursor) const
     return ShortcodeMatch{colon, cursor, std::move(prefix)};
 }
 
-std::optional<ShortcodeMatch>
-ShortcodeEngine::find_complete(std::string_view text, int cursor) const
+std::optional<ShortcodeMatch> ShortcodeEngine::find_complete(std::string_view text,
+                                                             int cursor) const
 {
     cursor = std::min(cursor, (int)text.size());
     // Text immediately before cursor must be: space/tab OR cursor==end-of-text.
@@ -153,9 +148,8 @@ ShortcodeEngine::find_complete(std::string_view text, int cursor) const
 
 std::vector<ShortcodeSuggestion>
 ShortcodeEngine::lookup(std::string_view prefix,
-                        const std::vector<tesseract::ImagePackImage>& packs,
-                        int max_results, tesseract::emoji::SkinTone tone,
-                        std::uint16_t max_version) const
+                        const std::vector<tesseract::ImagePackImage>& packs, int max_results,
+                        tesseract::emoji::SkinTone tone, std::uint16_t max_version) const
 {
     if (prefix.empty())
     {
@@ -170,7 +164,9 @@ ShortcodeEngine::lookup(std::string_view prefix,
     {
         auto shown = tk::offered_emoji(entry->glyph, tone, max_version);
         if (!shown)
+        {
             continue;
+        }
         int r = match_rank(matched_sc, prefix);
         ShortcodeSuggestion s;
         s.shortcode = std::string(matched_sc);

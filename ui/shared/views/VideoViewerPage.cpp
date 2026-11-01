@@ -19,7 +19,7 @@ namespace tesseract::views
 namespace
 {
 constexpr float kVideoViewerMarginX = 64.0f;
-constexpr float kVideoViewerMarginY = 72.0f;  // room for controls bar
+constexpr float kVideoViewerMarginY = 72.0f;            // room for controls bar
 constexpr float kCtrlBarH = MediaTransportBar::kHeight; // controls bar height
 } // namespace
 
@@ -28,9 +28,18 @@ constexpr float kCtrlBarH = MediaTransportBar::kHeight; // controls bar height
 VideoViewerPage::VideoViewerPage(MediaViewerPageHost& host)
     : host_(host), bar_(host, /*with_speed=*/true)
 {
-    bar_.on_toggle = [this] { do_play_or_pause(); };
-    bar_.on_cycle_speed = [this] { cycle_speed(); };
-    bar_.on_seek = [this](float frac) { seek_to_fraction_(frac); };
+    bar_.on_toggle = [this]
+    {
+        do_play_or_pause();
+    };
+    bar_.on_cycle_speed = [this]
+    {
+        cycle_speed();
+    };
+    bar_.on_seek = [this](float frac)
+    {
+        seek_to_fraction_(frac);
+    };
 }
 
 void VideoViewerPage::activate(const MediaViewerItem& item)
@@ -45,15 +54,15 @@ void VideoViewerPage::activate(const MediaViewerItem& item)
     loop_ = item.loop;
     no_audio_ = item.no_audio;
     hide_controls_ = item.hide_controls;
-    is_loading_    = true;
+    is_loading_ = true;
     loading_start_ = std::chrono::steady_clock::now();
-    active_        = true;
-    has_error_     = false;
-    is_streaming_  = false;
+    active_ = true;
+    has_error_ = false;
+    is_streaming_ = false;
     stream_buffer_.clear();
     preroll_flushed_ = false;
     stream_total_size_ = 0;
-    stream_bytes_fed_  = 0;
+    stream_bytes_fed_ = 0;
 
     if (video_player_)
     {
@@ -81,7 +90,7 @@ void VideoViewerPage::deactivate()
 void VideoViewerPage::load_bytes(const std::uint8_t* data, std::size_t size)
 {
     is_loading_ = false;
-    has_error_  = false;
+    has_error_ = false;
     finish_load_(data, size);
 }
 
@@ -106,7 +115,7 @@ void VideoViewerPage::begin_stream_or_buffer()
     stream_buffer_.clear();
     preroll_flushed_ = false;
     stream_total_size_ = 0;
-    stream_bytes_fed_  = 0;
+    stream_bytes_fed_ = 0;
     if (!active_ || !video_player_)
     {
         is_streaming_ = false;
@@ -126,8 +135,7 @@ void VideoViewerPage::begin_stream_or_buffer()
     }
 }
 
-void VideoViewerPage::feed_stream_chunk(const std::uint8_t* data,
-                                           std::size_t size)
+void VideoViewerPage::feed_stream_chunk(const std::uint8_t* data, std::size_t size)
 {
     if (!active_ || !data || size == 0)
     {
@@ -150,8 +158,7 @@ void VideoViewerPage::feed_stream_chunk(const std::uint8_t* data,
             preroll_flushed_ = true;
             if (video_player_)
             {
-                video_player_->feed_chunk(stream_buffer_.data(),
-                                          stream_buffer_.size());
+                video_player_->feed_chunk(stream_buffer_.data(), stream_buffer_.size());
             }
             stream_buffer_.clear();
             stream_buffer_.shrink_to_fit();
@@ -194,8 +201,7 @@ void VideoViewerPage::end_stream()
             if (!preroll_flushed_ && !stream_buffer_.empty())
             {
                 preroll_flushed_ = true;
-                video_player_->feed_chunk(stream_buffer_.data(),
-                                          stream_buffer_.size());
+                video_player_->feed_chunk(stream_buffer_.data(), stream_buffer_.size());
                 stream_buffer_.clear();
                 stream_buffer_.shrink_to_fit();
             }
@@ -229,8 +235,7 @@ void VideoViewerPage::fail_stream()
     host_.host_request_repaint();
 }
 
-void VideoViewerPage::set_video_player(
-    std::unique_ptr<tk::VideoPlayer> player)
+void VideoViewerPage::set_video_player(std::unique_ptr<tk::VideoPlayer> player)
 {
     video_player_ = std::move(player);
     if (!video_player_)
@@ -238,8 +243,14 @@ void VideoViewerPage::set_video_player(
         return;
     }
 
-    video_player_->on_frame = [this]() { host_.host_request_repaint(); };
-    video_player_->on_progress = [this]() { host_.host_request_repaint(); };
+    video_player_->on_frame = [this]()
+    {
+        host_.host_request_repaint();
+    };
+    video_player_->on_progress = [this]()
+    {
+        host_.host_request_repaint();
+    };
     video_player_->on_error = [this]()
     {
         has_error_ = true;
@@ -288,21 +299,19 @@ void VideoViewerPage::recompute_layout(tk::LayoutCtx& lc)
             use_h = f->height();
         }
     }
-    tk::Size vs = fit_media(static_cast<float>(use_w),
-                            static_cast<float>(use_h), avail_w,
+    tk::Size vs = fit_media(static_cast<float>(use_w), static_cast<float>(use_h), avail_w,
                             std::max(avail_h, 1.0f));
     const float vx = b.x + (b.w - vs.w) * 0.5f;
     const float vy =
-        immersive ? b.y + (b.h - vs.h) * 0.5f
-                  : b.y + (b.h - vs.h - ctrl_h - 16.0f) * 0.5f;
+        immersive ? b.y + (b.h - vs.h) * 0.5f : b.y + (b.h - vs.h - ctrl_h - 16.0f) * 0.5f;
     video_rect_ = {vx, vy, vs.w, vs.h};
 
     if (immersive)
     {
         // Floating strip near the bottom of the window, overlapping the video.
         const float bar_w = std::min(vs.w, b.w - 48.0f);
-        controls_bar_ = {b.x + (b.w - bar_w) * 0.5f,
-                         b.y + b.h - kCtrlBarH - 24.0f, bar_w, kCtrlBarH};
+        controls_bar_ = {b.x + (b.w - bar_w) * 0.5f, b.y + b.h - kCtrlBarH - 24.0f, bar_w,
+                         kCtrlBarH};
     }
     else
     {
@@ -310,8 +319,7 @@ void VideoViewerPage::recompute_layout(tk::LayoutCtx& lc)
         controls_bar_ = {vx, bar_y, vs.w, kCtrlBarH};
     }
 
-    const bool controls_shown =
-        active_ && !hide_controls_ && host_.host_chrome_shown();
+    const bool controls_shown = active_ && !hide_controls_ && host_.host_chrome_shown();
     bar_.arrange(lc, controls_bar_, controls_shown);
 }
 
@@ -332,12 +340,10 @@ void VideoViewerPage::paint_content(tk::PaintCtx& ctx)
     auto& cv = ctx.canvas;
 
     // Video frame, thumbnail, or placeholder
-    const tk::Image* frame = (video_player_ && !is_loading_)
-                                 ? video_player_->current_frame()
-                                 : nullptr;
-    const tk::Image* thumb = (!frame && !thumb_url_.empty())
-                                 ? host_.host_image(thumb_url_)
-                                 : nullptr;
+    const tk::Image* frame =
+        (video_player_ && !is_loading_) ? video_player_->current_frame() : nullptr;
+    const tk::Image* thumb =
+        (!frame && !thumb_url_.empty()) ? host_.host_image(thumb_url_) : nullptr;
     const tk::Image* display = frame ? frame : thumb;
 
     if (display)
@@ -348,44 +354,37 @@ void VideoViewerPage::paint_content(tk::PaintCtx& ctx)
     else
     {
         cv.fill_rounded_rect(video_rect_, 4.0f, ctx.theme.palette.chrome_bg);
-        cv.stroke_rounded_rect(video_rect_, 4.0f, ctx.theme.palette.border,
-                               1.0f);
+        cv.stroke_rounded_rect(video_rect_, 4.0f, ctx.theme.palette.border, 1.0f);
 
         if (has_error_)
         {
-            const tk::Color col_primary   = tk::Color::rgba(255, 255, 255, 200);
+            const tk::Color col_primary = tk::Color::rgba(255, 255, 255, 200);
             const tk::Color col_secondary = tk::Color::rgba(255, 255, 255, 110);
-            const float     mid_y = video_rect_.y + video_rect_.h * 0.5f;
+            const float mid_y = video_rect_.y + video_rect_.h * 0.5f;
 
             tk::TextStyle st{};
-            st.role      = tk::FontRole::UiSemibold;
+            st.role = tk::FontRole::UiSemibold;
             st.max_width = video_rect_.w - 32.0f;
-            auto lo      = ctx.factory.build_text(tk::tr("Unable to play video"), st);
+            auto lo = ctx.factory.build_text(tk::tr("Unable to play video"), st);
             if (lo)
             {
                 tk::Size sz = lo->measure();
-                cv.draw_text(
-                    *lo,
-                    {video_rect_.x + (video_rect_.w - sz.w) * 0.5f,
-                     mid_y - sz.h - 2.0f},
-                    col_primary);
+                cv.draw_text(*lo,
+                             {video_rect_.x + (video_rect_.w - sz.w) * 0.5f, mid_y - sz.h - 2.0f},
+                             col_primary);
             }
 
             tk::TextStyle sub{};
-            sub.role      = tk::FontRole::Timestamp;
+            sub.role = tk::FontRole::Timestamp;
             sub.max_width = video_rect_.w - 32.0f;
             // \xe2\xac\x87 = ⬇  (matches the save button glyph)
             auto sub_lo = ctx.factory.build_text(
-                tk::tr("Use \xe2\xac\x87 to download and play in an external player"),
-                sub);
+                tk::tr("Use \xe2\xac\x87 to download and play in an external player"), sub);
             if (sub_lo)
             {
                 tk::Size sz = sub_lo->measure();
-                cv.draw_text(
-                    *sub_lo,
-                    {video_rect_.x + (video_rect_.w - sz.w) * 0.5f,
-                     mid_y + 4.0f},
-                    col_secondary);
+                cv.draw_text(*sub_lo, {video_rect_.x + (video_rect_.w - sz.w) * 0.5f, mid_y + 4.0f},
+                             col_secondary);
             }
         }
     }
@@ -395,10 +394,9 @@ void VideoViewerPage::paint_content(tk::PaintCtx& ctx)
     {
         const float cx = video_rect_.x + video_rect_.w * 0.5f;
         const float cy = video_rect_.y + video_rect_.h * 0.5f;
-        const auto elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - loading_start_)
-                .count();
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - loading_start_)
+                                    .count();
         const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
         tk::draw_spinner_dots(cv, {cx, cy}, phase, /*radius=*/14.0f,
                               /*dot_r=*/3.0f, tk::Color{220, 220, 220, 255});
@@ -465,9 +463,8 @@ void VideoViewerPage::seek_to_fraction_(float frac)
     {
         return;
     }
-    const std::uint64_t dur = video_player_->duration_ms() > 0
-                                  ? video_player_->duration_ms()
-                                  : duration_ms_;
+    const std::uint64_t dur =
+        video_player_->duration_ms() > 0 ? video_player_->duration_ms() : duration_ms_;
     if (dur > 0)
     {
         video_player_->seek(static_cast<std::uint64_t>(frac * static_cast<float>(dur)));
@@ -477,46 +474,63 @@ void VideoViewerPage::seek_to_fraction_(float frac)
 bool VideoViewerPage::on_key(const tk::KeyEvent& e)
 {
     if (!video_player_)
+    {
         return false;
+    }
     if (matches(ShortcutId::VideoPlayPause, e))
+    {
         do_play_or_pause();
+    }
     else if (matches(ShortcutId::VideoSeekBack, e))
     {
         // While loading / failed (or duration unknown) there is nothing to
         // seek: let the overlay use the arrow for gallery navigation instead.
         if (!seekable_())
+        {
             return false;
+        }
         seek_by_ms_(-5000);
     }
     else if (matches(ShortcutId::VideoSeekForward, e))
     {
         if (!seekable_())
+        {
             return false;
+        }
         seek_by_ms_(5000);
     }
     else if (matches(ShortcutId::VideoRestart, e))
+    {
         seek_by_ms_(-static_cast<std::int64_t>(video_player_->position_ms()));
+    }
     else
+    {
         return false;
+    }
     return true;
 }
 
 bool VideoViewerPage::seekable_() const
 {
     if (!video_player_ || is_loading_ || has_error_)
+    {
         return false;
+    }
     return video_player_->duration_ms() > 0 || duration_ms_ > 0;
 }
 
 void VideoViewerPage::seek_by_ms_(std::int64_t delta_ms)
 {
     if (!video_player_)
+    {
         return;
-    const std::uint64_t dur = video_player_->duration_ms() > 0
-                                  ? video_player_->duration_ms()
-                                  : duration_ms_;
+    }
+    const std::uint64_t dur =
+        video_player_->duration_ms() > 0 ? video_player_->duration_ms() : duration_ms_;
     if (dur == 0)
+    {
         return;
+    }
     std::int64_t target = static_cast<std::int64_t>(video_player_->position_ms()) + delta_ms;
     std::int64_t limit = static_cast<std::int64_t>(dur);
     if (is_streaming_ && stream_total_size_ > 0)

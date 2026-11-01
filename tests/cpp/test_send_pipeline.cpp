@@ -25,21 +25,35 @@ struct Harness
     std::vector<std::string> sent; // "<room>:<label>:<prepared>"
 
     SendPipeline pipeline{SendPipeline::Hooks{
-        [this](std::function<void()> fn) { prepares.push_back(std::move(fn)); },
-        [this](std::function<void()> fn) { sends.push_back(std::move(fn)); },
-        [](std::function<void()> fn) { fn(); },
+        [this](std::function<void()> fn)
+        {
+            prepares.push_back(std::move(fn));
+        },
+        [this](std::function<void()> fn)
+        {
+            sends.push_back(std::move(fn));
+        },
+        [](std::function<void()> fn)
+        {
+            fn();
+        },
         [this](int ms, std::function<void()> fn)
         {
             REQUIRE(ms == SendPipeline::kBusyDelayMs);
             timers.push_back(std::move(fn));
         },
-        [this](const std::string& room, bool busy) { busy_events.emplace_back(room, busy); },
+        [this](const std::string& room, bool busy)
+        {
+            busy_events.emplace_back(room, busy);
+        },
     }};
 
     SendPipeline::Send recorder(const std::string& room, const std::string& label)
     {
         return [this, room, label](const std::string& prepared)
-        { sent.push_back(room + ":" + label + ":" + prepared); };
+        {
+            sent.push_back(room + ":" + label + ":" + prepared);
+        };
     }
 
     // Run the FIFO `&mut` worker until it is empty (a send's completion may
@@ -59,14 +73,15 @@ struct Harness
         auto t = std::move(timers);
         timers.clear();
         for (auto& fn : t)
+        {
             fn();
+        }
     }
 };
 
 } // namespace
 
-TEST_CASE("SendPipeline sends without a prepare step go straight to the worker",
-          "[send_pipeline]")
+TEST_CASE("SendPipeline sends without a prepare step go straight to the worker", "[send_pipeline]")
 {
     Harness h;
     h.pipeline.submit("!a", nullptr, h.recorder("!a", "one"));
@@ -83,7 +98,10 @@ TEST_CASE("SendPipeline counts a throwing send as done and keeps the room moving
 {
     Harness h;
     h.pipeline.submit("!a", nullptr,
-                      [](const std::string&) { throw std::runtime_error("boom"); });
+                      [](const std::string&)
+                      {
+                          throw std::runtime_error("boom");
+                      });
     h.pipeline.submit("!a", nullptr, h.recorder("!a", "two"));
     REQUIRE(h.sends.size() == 2);
     h.drain_sends();
@@ -96,7 +114,13 @@ TEST_CASE("SendPipeline counts a throwing send as done and keeps the room moving
 TEST_CASE("SendPipeline passes the prepare result to the send", "[send_pipeline]")
 {
     Harness h;
-    h.pipeline.submit("!a", [] { return std::string("PREVIEWS"); }, h.recorder("!a", "one"));
+    h.pipeline.submit(
+        "!a",
+        []
+        {
+            return std::string("PREVIEWS");
+        },
+        h.recorder("!a", "one"));
     REQUIRE(h.sends.empty());
     REQUIRE(h.prepares.size() == 1);
     h.prepares[0]();
@@ -108,9 +132,21 @@ TEST_CASE("SendPipeline passes the prepare result to the send", "[send_pipeline]
 TEST_CASE("SendPipeline keeps per-room order behind a slow prepare", "[send_pipeline]")
 {
     Harness h;
-    h.pipeline.submit("!a", [] { return std::string("P1"); }, h.recorder("!a", "first"));
+    h.pipeline.submit(
+        "!a",
+        []
+        {
+            return std::string("P1");
+        },
+        h.recorder("!a", "first"));
     h.pipeline.submit("!a", nullptr, h.recorder("!a", "second"));
-    h.pipeline.submit("!a", [] { return std::string("P3"); }, h.recorder("!a", "third"));
+    h.pipeline.submit(
+        "!a",
+        []
+        {
+            return std::string("P3");
+        },
+        h.recorder("!a", "third"));
 
     // Nothing may go out while the head is still preparing.
     REQUIRE(h.sends.empty());
@@ -128,7 +164,13 @@ TEST_CASE("SendPipeline keeps per-room order behind a slow prepare", "[send_pipe
 TEST_CASE("SendPipeline rooms do not wait for each other", "[send_pipeline]")
 {
     Harness h;
-    h.pipeline.submit("!a", [] { return std::string("P"); }, h.recorder("!a", "slow"));
+    h.pipeline.submit(
+        "!a",
+        []
+        {
+            return std::string("P");
+        },
+        h.recorder("!a", "slow"));
     h.pipeline.submit("!b", nullptr, h.recorder("!b", "fast"));
     REQUIRE(h.sends.size() == 1);
     h.drain_sends();
@@ -138,11 +180,16 @@ TEST_CASE("SendPipeline rooms do not wait for each other", "[send_pipeline]")
     REQUIRE(h.sent == std::vector<std::string>{"!b:fast:", "!a:slow:P"});
 }
 
-TEST_CASE("SendPipeline reports busy only after the delay, idle when done",
-          "[send_pipeline]")
+TEST_CASE("SendPipeline reports busy only after the delay, idle when done", "[send_pipeline]")
 {
     Harness h;
-    h.pipeline.submit("!a", [] { return std::string(); }, h.recorder("!a", "one"));
+    h.pipeline.submit(
+        "!a",
+        []
+        {
+            return std::string();
+        },
+        h.recorder("!a", "one"));
     REQUIRE(h.timers.size() == 1);
     REQUIRE_FALSE(h.pipeline.is_busy("!a"));
     REQUIRE(h.busy_events.empty());
@@ -182,9 +229,17 @@ TEST_CASE("SendPipeline stale timer from an earlier burst is ignored", "[send_pi
     h.timers.clear();
 
     // Burst 2 starts and is still in flight when burst 1's timer fires.
-    h.pipeline.submit("!a", [] { return std::string(); }, h.recorder("!a", "two"));
+    h.pipeline.submit(
+        "!a",
+        []
+        {
+            return std::string();
+        },
+        h.recorder("!a", "two"));
     for (auto& fn : stale)
+    {
         fn();
+    }
     REQUIRE_FALSE(h.pipeline.is_busy("!a"));
     REQUIRE(h.busy_events.empty());
 

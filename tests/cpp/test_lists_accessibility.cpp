@@ -33,8 +33,8 @@ namespace lists_a11y_test
 tesseract::RoomInfo lists_a11y_room(std::string id, std::string name, std::string topic = {})
 {
     tesseract::RoomInfo r;
-    r.id    = std::move(id);
-    r.name  = std::move(name);
+    r.id = std::move(id);
+    r.name = std::move(name);
     r.topic = std::move(topic);
     return r;
 }
@@ -45,10 +45,18 @@ class ListsA11ySubtreeAdapter : public ListAdapter, public ListAdapterAccessibil
 {
 public:
     bool extra_first = false; // prepend a node to row 1's subtree
-    bool hide_row_1  = false; // expose row 1 as Role::None
-    std::size_t count() const override { return 3; }
-    float measure_row_height(std::size_t, LayoutCtx&, float) override { return 20; }
-    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override {}
+    bool hide_row_1 = false;  // expose row 1 as Role::None
+    std::size_t count() const override
+    {
+        return 3;
+    }
+    float measure_row_height(std::size_t, LayoutCtx&, float) override
+    {
+        return 20;
+    }
+    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
     Role access_role_for_row(std::size_t i) const override
     {
         return (hide_row_1 && i == 1) ? Role::None : Role::ListItem;
@@ -63,17 +71,23 @@ public:
         if (extra_first && i == 1)
         {
             AccessNode n;
-            n.role     = Role::Link;
-            n.name     = "new link";
-            n.activate = [] { return true; };
+            n.role = Role::Link;
+            n.name = "new link";
+            n.activate = []
+            {
+                return true;
+            };
             out.push_back(std::move(n));
         }
         for (int k = 0; k < 2; ++k)
         {
             AccessNode n;
-            n.role     = Role::Button;
-            n.name     = "row " + std::to_string(i) + " action " + std::to_string(k);
-            n.activate = [] { return true; };
+            n.role = Role::Button;
+            n.name = "row " + std::to_string(i) + " action " + std::to_string(k);
+            n.activate = []
+            {
+                return true;
+            };
             out.push_back(std::move(n));
         }
         return out;
@@ -87,8 +101,7 @@ using lists_a11y_test::ListsA11ySubtreeAdapter;
 using access_test::find_named;
 using access_test::find_prefix;
 
-TEST_CASE("subtree nodes get distinct, stable identities",
-         "[tk][access_tree][accessibility]")
+TEST_CASE("subtree nodes get distinct, stable identities", "[tk][access_tree][accessibility]")
 {
     auto list = create_root_widget<ListView>(nullptr);
     ListsA11ySubtreeAdapter ad;
@@ -114,24 +127,30 @@ TEST_CASE("subtree nodes get distinct, stable identities",
     AccessNode again = build_access_tree(list.get());
     std::vector<std::pair<Widget*, int>> second_pass;
     for (const auto& row : again.children)
+    {
         for (const auto& sub : row.children)
+        {
             second_pass.emplace_back(sub.widget, sub.row_index);
+        }
+    }
     CHECK(first_pass == second_pass);
 }
 
 TEST_CASE("RoomDirectoryView results are list items that select on activate",
-         "[roomdirectory][accessibility]")
+          "[roomdirectory][accessibility]")
 {
     auto v = create_root_widget<RoomDirectoryView>(nullptr);
     std::uint64_t id = 0;
     v->on_search_requested = [&](std::uint64_t rid, const std::string&, const std::string&)
-    { id = rid; };
+    {
+        id = rid;
+    };
     v->open();
     tesseract::RoomDirectoryEntry e;
-    e.room_id        = "!a:s";
-    e.name           = "Rust";
-    e.topic          = "Crabs";
-    e.join_rule      = "public";
+    e.room_id = "!a:s";
+    e.name = "Rust";
+    e.topic = "Crabs";
+    e.join_rule = "public";
     e.joined_members = 3;
     v->set_results(id, {e}, false);
 
@@ -145,19 +164,26 @@ TEST_CASE("RoomDirectoryView results are list items that select on activate",
     CHECK(invoke_default_action(*row));
 
     tree = build_access_tree(v.get());
-    row  = find_named(tree, "Rust");
+    row = find_named(tree, "Rust");
     REQUIRE(row != nullptr);
     CHECK(row->state.selected);
 }
 
 TEST_CASE("SpaceAddRoomList rows are add buttons, disabled without permission",
-         "[space][accessibility]")
+          "[space][accessibility]")
 {
     auto v = create_root_widget<SpaceAddRoomList>(nullptr);
-    v->set_rooms_provider([] { return std::vector<tesseract::RoomInfo>{lists_a11y_room("!r:s", "Lobby")}; });
+    v->set_rooms_provider(
+        []
+        {
+            return std::vector<tesseract::RoomInfo>{lists_a11y_room("!r:s", "Lobby")};
+        });
     v->refresh();
     std::string added;
-    v->on_add_requested = [&](std::string rid) { added = std::move(rid); };
+    v->on_add_requested = [&](std::string rid)
+    {
+        added = std::move(rid);
+    };
 
     AccessNode tree = build_access_tree(v.get());
     const AccessNode* row = find_named(tree, "Add Lobby to space");
@@ -170,19 +196,19 @@ TEST_CASE("SpaceAddRoomList rows are add buttons, disabled without permission",
     v->set_can_manage(false);
     added.clear();
     tree = build_access_tree(v.get());
-    row  = find_named(tree, "Add Lobby to space");
+    row = find_named(tree, "Add Lobby to space");
     REQUIRE(row != nullptr);
     CHECK(row->state.disabled);
     CHECK_FALSE(invoke_default_action(*row));
     CHECK(added.empty());
 }
 
-TEST_CASE("SpaceChildRoomGrid cells are named rooms with a remove hint",
-         "[space][accessibility]")
+TEST_CASE("SpaceChildRoomGrid cells are named rooms with a remove hint", "[space][accessibility]")
 {
     auto v = create_root_widget<SpaceChildRoomGrid>(nullptr);
     v->on_remove_requested = [](std::string) {};
-    v->set_children({{lists_a11y_room("!a:s", "General", "Chat"), true}, {lists_a11y_room("!b:s", ""), false}});
+    v->set_children(
+        {{lists_a11y_room("!a:s", "General", "Chat"), true}, {lists_a11y_room("!b:s", ""), false}});
 
     AccessNode tree = build_access_tree(v.get());
     const AccessNode* cell = find_named(tree, "General");
@@ -194,8 +220,7 @@ TEST_CASE("SpaceChildRoomGrid cells are named rooms with a remove hint",
     CHECK(find_named(tree, "Loading\xe2\x80\xa6") != nullptr);
 }
 
-TEST_CASE("ReceiptGridPopup names each reader under a 'Read by' group",
-         "[receipts][accessibility]")
+TEST_CASE("ReceiptGridPopup names each reader under a 'Read by' group", "[receipts][accessibility]")
 {
     auto v = create_root_widget<ReceiptGridPopup>(nullptr);
     v->set_entries({{"@a:s", "Alice", "", 0}, {"@b:s", "", "", 0}});
@@ -209,11 +234,15 @@ TEST_CASE("ReceiptGridPopup names each reader under a 'Read by' group",
 }
 
 TEST_CASE("ForwardRoomPicker is a modal dialog of lists_a11y_room checkboxes",
-         "[forward][accessibility]")
+          "[forward][accessibility]")
 {
     auto v = create_root_widget<ForwardRoomPicker>(nullptr);
-    v->set_rooms_provider([]
-    { return std::vector<tesseract::RoomInfo>{lists_a11y_room("!a:s", "Alpha"), lists_a11y_room("!b:s", "Beta")}; });
+    v->set_rooms_provider(
+        []
+        {
+            return std::vector<tesseract::RoomInfo>{lists_a11y_room("!a:s", "Alpha"),
+                                                    lists_a11y_room("!b:s", "Beta")};
+        });
     v->open("!src:s");
 
     AccessNode tree = build_access_tree(v.get());
@@ -231,7 +260,10 @@ TEST_CASE("ForwardRoomPicker is a modal dialog of lists_a11y_room checkboxes",
     CHECK(beta->state.checked);
 
     bool closed = false;
-    v->on_close = [&] { closed = true; };
+    v->on_close = [&]
+    {
+        closed = true;
+    };
     const AccessNode* cancel = find_named(tree, "Cancel");
     REQUIRE(cancel != nullptr);
     CHECK(invoke_default_action(*cancel));
@@ -239,7 +271,7 @@ TEST_CASE("ForwardRoomPicker is a modal dialog of lists_a11y_room checkboxes",
 }
 
 TEST_CASE("a subtree node keeps its key when a sibling is inserted before it",
-         "[tk][access_tree][accessibility]")
+          "[tk][access_tree][accessibility]")
 {
     auto list = create_root_widget<ListView>(nullptr);
     ListsA11ySubtreeAdapter ad;
@@ -272,14 +304,21 @@ TEST_CASE("item positions count only exposed rows", "[tk][access_tree][accessibi
 }
 
 TEST_CASE("ForwardRoomPicker can't be confirmed twice or escaped mid-forward",
-         "[forward][accessibility]")
+          "[forward][accessibility]")
 {
     auto v = create_root_widget<ForwardRoomPicker>(nullptr);
-    v->set_rooms_provider([]
-    { return std::vector<tesseract::RoomInfo>{lists_a11y_room("!a:s", "Alpha")}; });
+    v->set_rooms_provider(
+        []
+        {
+            return std::vector<tesseract::RoomInfo>{lists_a11y_room("!a:s", "Alpha")};
+        });
     v->open("!src:s");
     int fired = 0;
-    v->on_confirmed = [&](std::vector<std::string>) { ++fired; v->set_forwarding(1); };
+    v->on_confirmed = [&](std::vector<std::string>)
+    {
+        ++fired;
+        v->set_forwarding(1);
+    };
     AccessNode tree = build_access_tree(v.get());
     const AccessNode* alpha = find_named(tree, "Alpha");
     REQUIRE(alpha != nullptr);

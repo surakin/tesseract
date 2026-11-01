@@ -60,8 +60,7 @@ TEST_CASE("SideTabView starts with selected_idx == -1", "[tk][side_tab_view]")
     CHECK(tabs.selected_idx() == -1);
 }
 
-TEST_CASE("SideTabView first tab auto-selected on add_tab",
-          "[tk][side_tab_view]")
+TEST_CASE("SideTabView first tab auto-selected on add_tab", "[tk][side_tab_view]")
 {
     auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
     SideTabView& tabs = *tabs_owner;
@@ -69,8 +68,7 @@ TEST_CASE("SideTabView first tab auto-selected on add_tab",
     CHECK(tabs.selected_idx() == 0);
 }
 
-TEST_CASE("SideTabView select fires on_tab_selected callback",
-          "[tk][side_tab_view]")
+TEST_CASE("SideTabView select fires on_tab_selected callback", "[tk][side_tab_view]")
 {
     auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
     SideTabView& tabs = *tabs_owner;
@@ -126,8 +124,7 @@ TEST_CASE("SideTabView select out-of-range is a no-op", "[tk][side_tab_view]")
     CHECK(fired == -99);             // callback never called
 }
 
-TEST_CASE("SideTabView tab_visible defaults to true for every added tab",
-          "[tk][side_tab_view]")
+TEST_CASE("SideTabView tab_visible defaults to true for every added tab", "[tk][side_tab_view]")
 {
     auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
     SideTabView& tabs = *tabs_owner;
@@ -151,8 +148,7 @@ TEST_CASE("SideTabView tab_visible reflects set_tab_visible", "[tk][side_tab_vie
     CHECK(tabs.tab_visible(1));
 }
 
-TEST_CASE("SideTabView tab_visible out-of-range returns false",
-          "[tk][side_tab_view]")
+TEST_CASE("SideTabView tab_visible out-of-range returns false", "[tk][side_tab_view]")
 {
     auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);
     SideTabView& tabs = *tabs_owner;
@@ -161,8 +157,7 @@ TEST_CASE("SideTabView tab_visible out-of-range returns false",
     CHECK_FALSE(tabs.tab_visible(5));
 }
 
-TEST_CASE("SideTabView measure and paint do not crash with two tabs",
-          "[tk][side_tab_view]")
+TEST_CASE("SideTabView measure and paint do not crash with two tabs", "[tk][side_tab_view]")
 {
     TkSideTabViewStage st;
     auto tabs_owner = tk::create_root_widget<SideTabView>(nullptr);

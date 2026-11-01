@@ -92,24 +92,24 @@ private:
     void rebuild_keyword_rows_();
     void try_submit_keyword_();
 
-    tk::CheckButton* notif_cb_        = nullptr; // row 1
+    tk::CheckButton* notif_cb_ = nullptr;        // row 1
     tk::CheckButton* hide_content_cb_ = nullptr; // row 2
-    tk::CheckButton* previews_cb_     = nullptr; // row 3
+    tk::CheckButton* previews_cb_ = nullptr;     // row 3
 
-    SettingsGroup*    mentions_group_       = nullptr;
-    tk::SwitchButton* mentions_switch_      = nullptr;
+    SettingsGroup* mentions_group_ = nullptr;
+    tk::SwitchButton* mentions_switch_ = nullptr;
     tk::SwitchButton* room_mentions_switch_ = nullptr;
-    tk::SwitchButton* all_messages_switch_  = nullptr;
+    tk::SwitchButton* all_messages_switch_ = nullptr;
     tk::SwitchButton* notify_on_keywords_switch_ = nullptr;
-    tk::Label*        mentions_loading_label_ = nullptr;
+    tk::Label* mentions_loading_label_ = nullptr;
 
-    tk::TextField* keyword_field_    = nullptr;
-    tk::Button*    keyword_add_btn_  = nullptr;
-    KeywordFlow*   keyword_flow_     = nullptr; // owned by mentions_group_
-    tk::Label*     keyword_error_label_ = nullptr;
+    tk::TextField* keyword_field_ = nullptr;
+    tk::Button* keyword_add_btn_ = nullptr;
+    KeywordFlow* keyword_flow_ = nullptr; // owned by mentions_group_
+    tk::Label* keyword_error_label_ = nullptr;
 
-    std::vector<std::string>    keywords_;
-    std::vector<KeywordChip*>   keyword_chips_; // borrowed; owned by keyword_flow_
+    std::vector<std::string> keywords_;
+    std::vector<KeywordChip*> keyword_chips_; // borrowed; owned by keyword_flow_
     bool mentions_loading_ = false;
 };
 

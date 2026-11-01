@@ -63,11 +63,10 @@ struct Color
 
     static constexpr Color rgb(std::uint32_t hex)
     {
-        return {std::uint8_t((hex >> 16) & 0xff),
-                std::uint8_t((hex >> 8) & 0xff), std::uint8_t(hex & 0xff), 255};
+        return {std::uint8_t((hex >> 16) & 0xff), std::uint8_t((hex >> 8) & 0xff),
+                std::uint8_t(hex & 0xff), 255};
     }
-    static constexpr Color rgba(std::uint8_t r, std::uint8_t g, std::uint8_t b,
-                                std::uint8_t a)
+    static constexpr Color rgba(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a)
     {
         return {r, g, b, a};
     }
@@ -87,9 +86,7 @@ struct Color
         auto mix = [ct](std::uint8_t x, std::uint8_t y)
         {
             return static_cast<std::uint8_t>(static_cast<float>(x) +
-                                             (static_cast<float>(y) -
-                                              static_cast<float>(x)) *
-                                                 ct);
+                                             (static_cast<float>(y) - static_cast<float>(x)) * ct);
         };
         return {mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), mix(a.a, b.a)};
     }
@@ -101,7 +98,10 @@ struct Color
     // four toolchains (pre-C++23 constexpr math support varies).
     static constexpr Color from_hsl(float h, float s, float l)
     {
-        auto fabs_ = [](float x) { return x < 0.0f ? -x : x; };
+        auto fabs_ = [](float x)
+        {
+            return x < 0.0f ? -x : x;
+        };
         const float c = (1.0f - fabs_(2.0f * l - 1.0f)) * s;
         const float hp = h / 60.0f; // 0..6
         const int seg = static_cast<int>(hp);
@@ -110,12 +110,36 @@ struct Color
         float r1 = 0, g1 = 0, b1 = 0;
         switch (seg)
         {
-        case 0: r1 = c; g1 = x; b1 = 0; break;
-        case 1: r1 = x; g1 = c; b1 = 0; break;
-        case 2: r1 = 0; g1 = c; b1 = x; break;
-        case 3: r1 = 0; g1 = x; b1 = c; break;
-        case 4: r1 = x; g1 = 0; b1 = c; break;
-        default: r1 = c; g1 = 0; b1 = x; break;
+        case 0:
+            r1 = c;
+            g1 = x;
+            b1 = 0;
+            break;
+        case 1:
+            r1 = x;
+            g1 = c;
+            b1 = 0;
+            break;
+        case 2:
+            r1 = 0;
+            g1 = c;
+            b1 = x;
+            break;
+        case 3:
+            r1 = 0;
+            g1 = x;
+            b1 = c;
+            break;
+        case 4:
+            r1 = x;
+            g1 = 0;
+            b1 = c;
+            break;
+        default:
+            r1 = c;
+            g1 = 0;
+            b1 = x;
+            break;
         }
         const float m = l - c / 2.0f;
         auto to_byte = [m](float v)
@@ -133,18 +157,18 @@ struct Color
 // role's weight + size.
 enum class FontRole
 {
-    Small,          // base−3 regular  — hint text
-    Caption,        // base−1 regular  — section labels, secondary metadata
-    Body,           // base+1 regular  — message body
-    SenderName,     // base   semibold — message sender row
-    Timestamp,      // base−2 regular  — HH:MM right-side footer
-    SidebarName,    // base+1 semibold — room name in the room list
-    SidebarPreview, // base−1 regular  — last-message preview
-    UnreadBadge,    // base−1 semibold — number inside the accent pill
-    Title,          // base+3 semibold — room header
-    UiSemibold,     // base−1 semibold — button label
-    BigEmoji,       // base×2 regular   — emoji-only message body
-    InlineEmoji,    // (base+1)×5/4 regular — emoji within mixed-text body
+    Small,             // base−3 regular  — hint text
+    Caption,           // base−1 regular  — section labels, secondary metadata
+    Body,              // base+1 regular  — message body
+    SenderName,        // base   semibold — message sender row
+    Timestamp,         // base−2 regular  — HH:MM right-side footer
+    SidebarName,       // base+1 semibold — room name in the room list
+    SidebarPreview,    // base−1 regular  — last-message preview
+    UnreadBadge,       // base−1 semibold — number inside the accent pill
+    Title,             // base+3 semibold — room header
+    UiSemibold,        // base−1 semibold — button label
+    BigEmoji,          // base×2 regular   — emoji-only message body
+    InlineEmoji,       // (base+1)×5/4 regular — emoji within mixed-text body
     InlineCustomEmoji, // (base+1)×5/4 regular — custom-emoticon image boxes
                        // (TextSpan::is_image, MSC2545) within mixed-text
                        // bodies. Deliberately independent of InlineEmoji:
@@ -152,9 +176,9 @@ enum class FontRole
                        // currently a same-as-body no-op "pending tuning"
                        // (see font_role_pt below), while custom emoji are
                        // meant to render larger starting now.
-    EmojiPickerCell,// base+9 regular  — emoji picker grid cells
-    ReactionEmoji,  // base+3 regular  — emoji glyph inside reaction chips
-    ReactionText,   // ReactionEmoji×4/5 regular — text run beside/instead of emoji in a reaction chip
+    EmojiPickerCell,   // base+9 regular  — emoji picker grid cells
+    ReactionEmoji,     // base+3 regular  — emoji glyph inside reaction chips
+    ReactionText, // ReactionEmoji×4/5 regular — text run beside/instead of emoji in a reaction chip
 };
 
 // ── Shared FontRole + avatar policy (canvas_common.cpp) ────────────────────
@@ -268,14 +292,12 @@ inline std::string fold_hard_breaks_utf8(std::string_view in)
             out += ' ';
             i += 1;
         }
-        else if (c == 0xC2 && i + 1 < in.size() &&
-                 static_cast<unsigned char>(in[i + 1]) == 0x85)
+        else if (c == 0xC2 && i + 1 < in.size() && static_cast<unsigned char>(in[i + 1]) == 0x85)
         {
             out += ' '; // U+0085 NEL
             i += 2;
         }
-        else if (c == 0xE2 && i + 2 < in.size() &&
-                 static_cast<unsigned char>(in[i + 1]) == 0x80 &&
+        else if (c == 0xE2 && i + 2 < in.size() && static_cast<unsigned char>(in[i + 1]) == 0x80 &&
                  (static_cast<unsigned char>(in[i + 2]) == 0xA8 ||
                   static_cast<unsigned char>(in[i + 2]) == 0xA9))
         {
@@ -307,7 +329,9 @@ public:
     // rebuilt on the next paint, keeping the base pixels. Called by the image
     // GC on images nothing has painted recently. UI thread only, never during
     // paint. Backends without such caches keep the default no-op.
-    virtual void trim_derived() const {}
+    virtual void trim_derived() const
+    {
+    }
 };
 
 // Shared handle to a decoded image. The image cache hands these out so many
@@ -321,12 +345,9 @@ using ImageRef = std::shared_ptr<Image>;
 class AnimatedImage
 {
 public:
-    AnimatedImage(std::vector<std::unique_ptr<Image>> frames,
-                  std::vector<int> delays_ms)
-        : frames_(std::move(frames))
-        , delays_ms_(std::move(delays_ms))
-        , next_tp_(std::chrono::steady_clock::now() +
-                   std::chrono::milliseconds(delays_ms_[0]))
+    AnimatedImage(std::vector<std::unique_ptr<Image>> frames, std::vector<int> delays_ms)
+        : frames_(std::move(frames)), delays_ms_(std::move(delays_ms)),
+          next_tp_(std::chrono::steady_clock::now() + std::chrono::milliseconds(delays_ms_[0]))
     {
         assert(!frames_.empty());
         assert(frames_.size() == delays_ms_.size());
@@ -338,8 +359,7 @@ public:
         while (now >= next_tp_)
         {
             cur_idx_ = (cur_idx_ + 1) % frames_.size();
-            next_tp_ +=
-                std::chrono::milliseconds(delays_ms_[cur_idx_]);
+            next_tp_ += std::chrono::milliseconds(delays_ms_[cur_idx_]);
         }
         return *frames_[cur_idx_];
     }
@@ -347,28 +367,40 @@ public:
     int ms_until_next_frame() const
     {
         using ms = std::chrono::milliseconds;
-        const auto rem = std::chrono::duration_cast<ms>(
-                             next_tp_ - std::chrono::steady_clock::now())
-                             .count();
+        const auto rem =
+            std::chrono::duration_cast<ms>(next_tp_ - std::chrono::steady_clock::now()).count();
         return static_cast<int>(std::max(ms::rep{1}, rem));
     }
 
-    int width() const { return frames_[0]->width(); }
-    int height() const { return frames_[0]->height(); }
-    int frame_count() const { return static_cast<int>(frames_.size()); }
+    int width() const
+    {
+        return frames_[0]->width();
+    }
+    int height() const
+    {
+        return frames_[0]->height();
+    }
+    int frame_count() const
+    {
+        return static_cast<int>(frames_.size());
+    }
 
     std::size_t memory_bytes() const
     {
         std::size_t total = 0;
         for (const auto& f : frames_)
+        {
             total += f->memory_bytes();
+        }
         return total;
     }
 
     void trim_derived() const
     {
         for (const auto& f : frames_)
+        {
             f->trim_derived();
+        }
     }
 
 private:
@@ -410,16 +442,14 @@ public:
     // Highlight rects for the UTF-8 byte range [start_byte, end_byte).
     // May return multiple rects for multi-line selections. Returns empty
     // when the backend does not implement this or the range is empty.
-    virtual std::vector<Rect> selection_rects(int /*start_byte*/,
-                                              int /*end_byte*/) const
+    virtual std::vector<Rect> selection_rects(int /*start_byte*/, int /*end_byte*/) const
     {
         return {};
     }
 
     // Plain UTF-8 text for the range [start_byte, end_byte) as rendered.
     // Used to put the selected substring onto the clipboard.
-    virtual std::string text_range(int /*start_byte*/,
-                                   int /*end_byte*/) const
+    virtual std::string text_range(int /*start_byte*/, int /*end_byte*/) const
     {
         return {};
     }
@@ -451,20 +481,20 @@ struct TextSpan
     bool bold = false;
     bool semibold = false;
     bool italic = false;
-    bool code = false; // render in monospace (inline `code` or fenced block)
+    bool code = false;       // render in monospace (inline `code` or fenced block)
     bool code_block = false; // part of a fenced ```block``` (vs inline code)
     bool strikethrough = false;
     bool spoiler = false;
     // Explicit foreground colour for this run (syntax-highlighted code, or a
     // mention's accent text). When has_color is false, backends paint with the
     // draw_text() colour.
-    bool  has_color = false;
+    bool has_color = false;
     Color color{};
     // Mention pill: an intentional mention (matrix.to user link or @room). The
     // run keeps its `url` for hit-testing but is drawn without the link
     // underline; `background` is filled as a rounded pill behind the text.
-    bool  is_mention = false;
-    bool  has_background = false;
+    bool is_mention = false;
+    bool has_background = false;
     Color background{};
     // Which kind of pill this mention renders as (Generic when is_mention is
     // false). See tk::pill.h for the shared measure/paint helpers that use
@@ -472,7 +502,7 @@ struct TextSpan
     PillKind pill_kind = PillKind::Generic;
     // True for emoji grapheme clusters within mixed text/emoji spans.
     // Backends render these runs at FontRole::InlineEmoji size (~125% body).
-    bool  is_emoji_run = false;
+    bool is_emoji_run = false;
     // An MSC2545 inline custom emoticon (<img data-mx-emoticon>) parsed by
     // html_spans.cpp — a leaf run with no text content of its own (`text`
     // left empty; `image_mxc`/`image_alt` carry the source and fallback
@@ -486,7 +516,7 @@ struct TextSpan
     // than trying to fit arbitrarily-wide alt text into a small image box.
     // `image_alt` (":shortcode:") is used for plain-text/clipboard
     // extraction in place of the placeholder glyph, never for painting.
-    bool        is_image = false;
+    bool is_image = false;
     std::string image_mxc;
     std::string image_alt;
 };
@@ -496,10 +526,9 @@ struct TextSpan
 // so the backends take their cheap single-line path for it.
 inline bool is_plain(const TextSpan& s)
 {
-    return s.url.empty() && !s.has_color && !s.has_background && !s.bold &&
-           !s.semibold && !s.italic && !s.code && !s.code_block &&
-           !s.strikethrough && !s.spoiler && !s.is_mention && !s.is_emoji_run &&
-           !s.is_image;
+    return s.url.empty() && !s.has_color && !s.has_background && !s.bold && !s.semibold &&
+           !s.italic && !s.code && !s.code_block && !s.strikethrough && !s.spoiler &&
+           !s.is_mention && !s.is_emoji_run && !s.is_image;
 }
 
 class Canvas; // defined below; CanvasFactory::OffscreenSurface refers to it
@@ -512,13 +541,12 @@ class CanvasFactory
 public:
     virtual ~CanvasFactory() = default;
 
-    virtual std::unique_ptr<Image>
-    decode_image(std::span<const std::uint8_t> bytes) = 0;
+    virtual std::unique_ptr<Image> decode_image(std::span<const std::uint8_t> bytes) = 0;
 
     // Create an Image from a raw RGBA8888 pixel buffer (stride = w * 4).
     // Returns nullptr on backends that don't implement this (default).
-    virtual std::unique_ptr<Image>
-    create_image_rgba(const std::uint8_t* /*pixels*/, int /*w*/, int /*h*/)
+    virtual std::unique_ptr<Image> create_image_rgba(const std::uint8_t* /*pixels*/, int /*w*/,
+                                                     int /*h*/)
     {
         return nullptr;
     }
@@ -527,8 +555,7 @@ public:
     // using a high-quality multi-pass filter (box/bicubic). Returns nullptr
     // when the image already fits or the backend doesn't override this
     // (caller should keep the original in that case).
-    virtual std::unique_ptr<Image>
-    scale_image(const Image& /*src*/, int /*max_w*/, int /*max_h*/)
+    virtual std::unique_ptr<Image> scale_image(const Image& /*src*/, int /*max_w*/, int /*max_h*/)
     {
         return nullptr;
     }
@@ -538,8 +565,7 @@ public:
     // Returns nullptr for static (single-frame) images, on decode failure,
     // or when the backend does not override this method.
     virtual std::unique_ptr<AnimatedImage>
-    decode_animated_image(std::span<const std::uint8_t> /*bytes*/,
-                          int /*max_px*/)
+    decode_animated_image(std::span<const std::uint8_t> /*bytes*/, int /*max_px*/)
     {
         return nullptr;
     }
@@ -549,22 +575,22 @@ public:
     // is_emoji_run, is_image, ...) select the formatting. Every backend fully
     // implements this; a one-element span list where `is_plain(spans[0])` is
     // taken through the same cheap single-line path `build_text` used to have.
-    virtual std::unique_ptr<TextLayout>
-    build_rich_text(std::span<const TextSpan> spans, const TextStyle&) = 0;
+    virtual std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
+                                                        const TextStyle&) = 0;
 
     // Lay out a plain string. Non-virtual shim over `build_rich_text`: folds
     // hard breaks for a single-line style, and routes an emoji-bearing string
     // through emoji-run segmentation so inline emoji size at
     // `FontRole::InlineEmoji`. All ~250 call sites are unchanged; the ~28
     // genuinely-rich callers use `build_rich_text` directly.
-    std::unique_ptr<TextLayout> build_text(std::string_view utf8,
-                                           const TextStyle& s)
+    std::unique_ptr<TextLayout> build_text(std::string_view utf8, const TextStyle& s)
     {
         TextSpan whole;
-        whole.text =
-            s.wrap ? std::string(utf8) : tk::fold_hard_breaks_utf8(utf8);
+        whole.text = s.wrap ? std::string(utf8) : tk::fold_hard_breaks_utf8(utf8);
         if (!s.monospace && tk::text_has_emoji(whole.text))
+        {
             return build_rich_text(tk::segment_emoji_runs(whole), s);
+        }
         const TextSpan one[]{std::move(whole)};
         return build_rich_text({one, 1}, s);
     }
@@ -580,8 +606,7 @@ public:
     // and `measure()`/`ascent()` should describe exactly what gets drawn so
     // hand-centering (`bounds + (size - measure()) / 2`) stays correct on
     // every backend.
-    std::unique_ptr<TextLayout> build_glyph(std::string_view utf8,
-                                            const TextStyle& s)
+    std::unique_ptr<TextLayout> build_glyph(std::string_view utf8, const TextStyle& s)
     {
         TextSpan whole;
         whole.text = tk::fold_hard_breaks_utf8(utf8);
@@ -622,8 +647,8 @@ public:
     // render_pill_bitmap() returns nullptr, and insert_mention() falls back
     // to plain text exactly as it already does when insert_mention() itself
     // is unimplemented).
-    virtual std::unique_ptr<OffscreenSurface> create_offscreen(
-        Size /*logical_size*/, float /*scale_factor*/)
+    virtual std::unique_ptr<OffscreenSurface> create_offscreen(Size /*logical_size*/,
+                                                               float /*scale_factor*/)
     {
         return nullptr;
     }
@@ -643,8 +668,7 @@ public:
     virtual void fill_rect(Rect, Color) = 0;
     virtual void fill_rounded_rect(Rect, float radius, Color) = 0;
     virtual void stroke_rect(Rect, Color, float width = 1.0f) = 0;
-    virtual void stroke_rounded_rect(Rect, float radius, Color,
-                                     float width = 1.0f) = 0;
+    virtual void stroke_rounded_rect(Rect, float radius, Color, float width = 1.0f) = 0;
     virtual void draw_line(Point from, Point to, Color, float width = 1.0f) = 0;
 
     virtual void draw_image(const Image&, Rect dst) = 0;
@@ -656,9 +680,8 @@ public:
     // The Qt6 override wraps the caller's buffer in a non-owning QImage and
     // calls QPainter::drawImage() directly — zero extra allocation, no
     // scaled_for() pre-filter, avoiding cache thrash on video frame updates.
-    virtual bool draw_rgba_pixels(const std::uint8_t* /*pixels*/,
-                                  std::uint32_t /*w*/, std::uint32_t /*h*/,
-                                  Rect /*dst*/)
+    virtual bool draw_rgba_pixels(const std::uint8_t* /*pixels*/, std::uint32_t /*w*/,
+                                  std::uint32_t /*h*/, Rect /*dst*/)
     {
         return false;
     }
@@ -674,11 +697,9 @@ public:
     // fallback (macOS already draws everything at cubic quality) ignore it.
     // Every current backend implements this; the default returns false as a safety
     // net for future backends that may not yet override it.
-    virtual bool draw_bgra_premult_pixels(const std::uint8_t* /*pixels*/,
-                                          std::uint32_t /*w*/, std::uint32_t /*h*/,
-                                          Rect /*dst*/,
-                                          bool /*flip_h*/ = false,
-                                          bool /*high_quality*/ = false)
+    virtual bool draw_bgra_premult_pixels(const std::uint8_t* /*pixels*/, std::uint32_t /*w*/,
+                                          std::uint32_t /*h*/, Rect /*dst*/,
+                                          bool /*flip_h*/ = false, bool /*high_quality*/ = false)
     {
         return false;
     }
@@ -687,16 +708,14 @@ public:
     // (stretched, not cropped), so callers must pass a square image or go
     // through draw_avatar (views/media_utils.h), which crops. Diameter is
     // logical pixels.
-    virtual void draw_circle_image(const Image&, Point centre,
-                                   float diameter) = 0;
+    virtual void draw_circle_image(const Image&, Point centre, float diameter) = 0;
 
     // Initials-fallback avatar — backend renders initials_of(`name`) (or
     // `name` itself with AvatarText::Literal), uppercased, centred in a
     // filled circle. Lives on the canvas because each backend already owns
     // the font path the initials need.
-    void draw_initials_circle(std::string_view name, Point centre,
-                              float diameter, Color bg, Color fg,
-                              AvatarText text = AvatarText::Initials)
+    void draw_initials_circle(std::string_view name, Point centre, float diameter, Color bg,
+                              Color fg, AvatarText text = AvatarText::Initials)
     {
         draw_initials_circle_(name, centre, diameter, bg, fg, text);
     }
@@ -734,9 +753,8 @@ public:
 protected:
     // Backend hook behind draw_initials_circle (kept non-virtual so its
     // default argument can't diverge between overrides).
-    virtual void draw_initials_circle_(std::string_view name, Point centre,
-                                       float diameter, Color bg, Color fg,
-                                       AvatarText text) = 0;
+    virtual void draw_initials_circle_(std::string_view name, Point centre, float diameter,
+                                       Color bg, Color fg, AvatarText text) = 0;
 };
 
 // RAII for Canvas clip pushes: pushes in the constructor and calls pop_clip()
@@ -753,7 +771,10 @@ public:
     {
         canvas_.push_clip_rounded_rect(rect, radius);
     }
-    ~ClipScope() { canvas_.pop_clip(); }
+    ~ClipScope()
+    {
+        canvas_.pop_clip();
+    }
     ClipScope(const ClipScope&) = delete;
     ClipScope& operator=(const ClipScope&) = delete;
 
@@ -769,7 +790,10 @@ public:
     {
         canvas_.push_opacity(alpha);
     }
-    ~OpacityScope() { canvas_.pop_opacity(); }
+    ~OpacityScope()
+    {
+        canvas_.pop_opacity();
+    }
     OpacityScope(const OpacityScope&) = delete;
     OpacityScope& operator=(const OpacityScope&) = delete;
 

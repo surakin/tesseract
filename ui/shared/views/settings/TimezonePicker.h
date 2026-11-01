@@ -28,10 +28,10 @@ protected:
     std::string entry_display_(std::size_t index) const override;
 
 private:
-    static constexpr float kFieldH  = 28.0f;
-    static constexpr float kRowH    = 28.0f;
-    static constexpr float kWidth   = 260.0f;
-    static constexpr int   kMaxRows = 8;
+    static constexpr float kFieldH = 28.0f;
+    static constexpr float kRowH = 28.0f;
+    static constexpr float kWidth = 260.0f;
+    static constexpr int kMaxRows = 8;
 };
 
 } // namespace tesseract::views

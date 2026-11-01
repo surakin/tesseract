@@ -26,35 +26,30 @@ namespace
 // render thread calls the block while the destructor is running.
 struct PlaybackState
 {
-    std::mutex          mu;
-    std::deque<float>   ring;
-    bool                stopped = false;
+    std::mutex mu;
+    std::deque<float> ring;
+    bool stopped = false;
 };
 
 class AudioPlaybackMacOS : public tk::AudioPlayback
 {
 public:
-    AudioPlaybackMacOS()
-        : state_(std::make_shared<PlaybackState>())
+    AudioPlaybackMacOS() : state_(std::make_shared<PlaybackState>())
     {
         engine_ = [[AVAudioEngine alloc] init];
 
-        AVAudioFormat* fmt =
-            [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
-                                            sampleRate:48000
-                                              channels:1
-                                           interleaved:YES];
+        AVAudioFormat* fmt = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
+                                                              sampleRate:48000
+                                                                channels:1
+                                                             interleaved:YES];
 
         auto state = state_; // shared ownership captured by the block
         src_ = [[AVAudioSourceNode alloc]
             initWithFormat:fmt
-               renderBlock:^AUAudioUnitStatus(
-                   BOOL*                 isSilence,
-                   const AudioTimeStamp* /*timestamp*/,
-                   AVAudioFrameCount     frameCount,
-                   AudioBufferList*      outputData) {
-                   float* dst =
-                       static_cast<float*>(outputData->mBuffers[0].mData);
+               renderBlock:^AUAudioUnitStatus(BOOL* isSilence, const AudioTimeStamp* /*timestamp*/,
+                                              AVAudioFrameCount frameCount,
+                                              AudioBufferList* outputData) {
+                   float* dst = static_cast<float*>(outputData->mBuffers[0].mData);
                    std::lock_guard<std::mutex> lk(state->mu);
                    if (state->stopped)
                    {
@@ -63,8 +58,7 @@ public:
                        return noErr;
                    }
                    const std::size_t n =
-                       std::min(static_cast<std::size_t>(frameCount),
-                                state->ring.size());
+                       std::min(static_cast<std::size_t>(frameCount), state->ring.size());
                    for (std::size_t i = 0; i < n; ++i)
                    {
                        dst[i] = state->ring.front();
@@ -72,8 +66,7 @@ public:
                    }
                    if (n < frameCount)
                    {
-                       std::memset(dst + n, 0,
-                                   (frameCount - n) * sizeof(float));
+                       std::memset(dst + n, 0, (frameCount - n) * sizeof(float));
                        *isSilence = (n == 0) ? YES : NO;
                    }
                    return noErr;
@@ -91,19 +84,19 @@ public:
             {
                 AudioDeviceID dev_id = static_cast<AudioDeviceID>(std::stoul(pref));
                 AudioUnit au = engine_.outputNode.audioUnit;
-                AudioUnitSetProperty(au,
-                                     kAudioOutputUnitProperty_CurrentDevice,
-                                     kAudioUnitScope_Global,
-                                     0, &dev_id, sizeof(dev_id));
+                AudioUnitSetProperty(au, kAudioOutputUnitProperty_CurrentDevice,
+                                     kAudioUnitScope_Global, 0, &dev_id, sizeof(dev_id));
             }
-            catch (...) {} // ignore conversion errors — fall back to default
+            catch (...)
+            {
+            } // ignore conversion errors — fall back to default
         }
 
         NSError* err = nil;
         if (![engine_ startAndReturnError:&err])
         {
             engine_ = nil;
-            src_    = nil;
+            src_ = nil;
         }
     }
 
@@ -119,30 +112,34 @@ public:
             }
             [engine_ stop];
             engine_ = nil;
-            src_    = nil;
+            src_ = nil;
         }
     }
 
-    void push_frame(const std::int16_t* samples,
-                    std::size_t         sample_count,
-                    std::uint32_t       /*sample_rate*/,
-                    std::uint32_t       /*num_channels*/) override
+    void push_frame(const std::int16_t* samples, std::size_t sample_count,
+                    std::uint32_t /*sample_rate*/, std::uint32_t /*num_channels*/) override
     {
         std::lock_guard<std::mutex> lk(state_->mu);
         if (state_->stopped)
+        {
             return;
+        }
         // Cap to ~500ms at 48kHz to prevent unbounded growth.
         const std::size_t kMaxSamples = 24000;
         if (state_->ring.size() + sample_count > kMaxSamples)
+        {
             return;
+        }
         for (std::size_t i = 0; i < sample_count; ++i)
+        {
             state_->ring.push_back(samples[i] / 32768.0f);
+        }
     }
 
 private:
     std::shared_ptr<PlaybackState> state_;
-    AVAudioEngine* __strong        engine_ = nil;
-    AVAudioSourceNode* __strong    src_    = nil;
+    AVAudioEngine* __strong engine_ = nil;
+    AVAudioSourceNode* __strong src_ = nil;
 };
 
 } // namespace

@@ -54,8 +54,7 @@ std::string serialize(const PrefsData& p, const std::string& base_json = {});
 /// order. When no tabs are open the active room is used as the sole open room
 /// (so the layout always round-trips). PrefsData carries only these two fields,
 /// so this fully reconstructs what to persist — no prior load is needed.
-PrefsData room_layout(const std::string&              last_room,
-                      const std::vector<std::string>& open_room_ids);
+PrefsData room_layout(const std::string& last_room, const std::vector<std::string>& open_room_ids);
 
 /// `p` with the room-layout fields forgotten (active room, open tabs, recent
 /// rooms); every other field is kept. Used when the layout is reset but the
@@ -66,7 +65,7 @@ PrefsData without_layout(PrefsData p);
 /// case-insensitively, trimmed to `kMaxDirectoryServers`. An empty `server`
 /// leaves the list unchanged.
 std::vector<std::string> add_directory_server(std::vector<std::string> saved,
-                                              const std::string&       server);
+                                              const std::string& server);
 
 /// The servers the room browser offers: `saved` first, then `homeserver` and
 /// the built-in defaults (activematrixrooms.com, matrixrooms.info) that are
@@ -74,7 +73,7 @@ std::vector<std::string> add_directory_server(std::vector<std::string> saved,
 /// Defaults drop off the end once enough servers have been saved. An empty
 /// `homeserver` is skipped.
 std::vector<std::string> directory_server_choices(const std::vector<std::string>& saved,
-                                                  const std::string&              homeserver);
+                                                  const std::string& homeserver);
 
 } // namespace Prefs
 

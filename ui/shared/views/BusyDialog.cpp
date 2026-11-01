@@ -20,8 +20,8 @@ void BusyDialog::open(std::string title, std::string body)
     const bool was_open = open_;
 
     title_ = std::move(title);
-    body_  = std::move(body);
-    open_  = true;
+    body_ = std::move(body);
+    open_ = true;
     set_visible(true);
 
     title_layout_.reset();
@@ -55,20 +55,18 @@ void BusyDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     backdrop_rect_ = bounds;
 
-    const float card_h = kCardPad * 2 + kTitleH +
-                         (body_.empty() ? 0.0f : (kTitleGap + kBodyH)) +
-                         kBarGap + kBarH;
-    const float card_w    = std::min(kCardW, bounds.w);
+    const float card_h =
+        kCardPad * 2 + kTitleH + (body_.empty() ? 0.0f : (kTitleGap + kBodyH)) + kBarGap + kBarH;
+    const float card_w = std::min(kCardW, bounds.w);
     const float clamped_h = std::min(card_h, bounds.h);
-    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f,
-                  bounds.y + (bounds.h - clamped_h) * 0.5f,
+    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f, bounds.y + (bounds.h - clamped_h) * 0.5f,
                   card_w, clamped_h};
 
     if (progress_)
     {
-        progress_->arrange(lc, {card_rect_.x + kCardPad,
-                                card_rect_.y + card_rect_.h - kCardPad - kBarH,
-                                card_rect_.w - kCardPad * 2.0f, kBarH});
+        progress_->arrange(lc,
+                           {card_rect_.x + kCardPad, card_rect_.y + card_rect_.h - kCardPad - kBarH,
+                            card_rect_.w - kCardPad * 2.0f, kBarH});
     }
 }
 
@@ -79,7 +77,7 @@ void BusyDialog::paint_before_children(tk::PaintCtx& ctx)
         return;
     }
 
-    auto&       cv  = ctx.canvas;
+    auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
     cv.fill_rect(backdrop_rect_, tk::Color{0, 0, 0, 120});
@@ -88,13 +86,13 @@ void BusyDialog::paint_before_children(tk::PaintCtx& ctx)
 
     const float text_x = card_rect_.x + kCardPad;
     const float text_w = card_rect_.w - kCardPad * 2.0f;
-    float       y      = card_rect_.y + kCardPad;
+    float y = card_rect_.y + kCardPad;
 
     if (!title_layout_)
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Title;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Title;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         title_layout_ = ctx.factory.build_text(title_, st);
     }
@@ -110,11 +108,11 @@ void BusyDialog::paint_before_children(tk::PaintCtx& ctx)
         if (!body_layout_)
         {
             tk::TextStyle st{};
-            st.role       = tk::FontRole::Body;
-            st.wrap       = true;
-            st.max_width  = text_w;
+            st.role = tk::FontRole::Body;
+            st.wrap = true;
+            st.max_width = text_w;
             st.max_height = kBodyH;
-            body_layout_  = ctx.factory.build_text(body_, st);
+            body_layout_ = ctx.factory.build_text(body_, st);
         }
         if (body_layout_)
         {

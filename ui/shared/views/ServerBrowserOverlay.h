@@ -52,10 +52,16 @@ public:
 
     void open();
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     void set_state(State s);
-    State state() const { return state_; }
+    State state() const
+    {
+        return state_;
+    }
     // Replaces the offered servers, in display order, and switches to Ready.
     void set_servers(std::vector<Entry> servers);
     // Names the list's provider in the footer link; an empty url hides it.
@@ -74,8 +80,7 @@ public:
 
     // Public servers first, then the rest; each group shuffled with `rng` so
     // no server always lands on top.
-    static std::vector<Entry> arrange_for_display(std::vector<Entry> servers,
-                                                  std::mt19937& rng);
+    static std::vector<Entry> arrange_for_display(std::vector<Entry> servers, std::mt19937& rng);
 
     // Filter state, for tests and the search field. A server matches when
     // every whitespace-separated word of `query` is a case-insensitive
@@ -96,9 +101,18 @@ public:
     // accessors and hides the native text controls it covers.
     std::function<void()> on_layout_changed;
 
-    tk::TextField* search_field() const { return search_field_; }
-    tk::ScrollView* scroll_view() const { return scroll_; }
-    tk::Button* close_button() const { return close_btn_; }
+    tk::TextField* search_field() const
+    {
+        return search_field_;
+    }
+    tk::ScrollView* scroll_view() const
+    {
+        return scroll_;
+    }
+    tk::Button* close_button() const
+    {
+        return close_btn_;
+    }
 
     // Shadow (Widget::set_visible is non-virtual) that also hides the native
     // search field.
@@ -106,17 +120,23 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_key_down(const tk::KeyEvent& event) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-    void     on_theme_changed(const tk::Theme& t) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_key_down(const tk::KeyEvent& event) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void on_theme_changed(const tk::Theme& t) override;
 
-    tk::Role access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override;
-    bool access_modal() const override { return open_ && visible(); }
+    bool access_modal() const override
+    {
+        return open_ && visible();
+    }
 
 private:
     // Rebuilds the card column for the current state / filter.
@@ -133,11 +153,11 @@ private:
     bool open_registration_only_ = false;
     std::string source_url_;
 
-    tk::TextField*  search_field_ = nullptr; // owned via add_child (null without a Host)
+    tk::TextField* search_field_ = nullptr; // owned via add_child (null without a Host)
     tk::CheckButton* open_only_check_ = nullptr;
     tk::ScrollView* scroll_ = nullptr;
-    tk::Button*     close_btn_ = nullptr;
-    tk::Button*     source_link_ = nullptr;
+    tk::Button* close_btn_ = nullptr;
+    tk::Button* source_link_ = nullptr;
 
     // Favicons: bytes wait in pending_icons_ for the next arrange() (the only
     // place with a decoder); icon_images_ keeps the decoded images alive for the
@@ -153,15 +173,15 @@ private:
     tk::CachedTextLayout title_layout_;
     float title_w_ = -1.0f;
 
-    static constexpr float kCardMaxW  = 960.0f;
-    static constexpr float kCardMaxH  = 720.0f;
-    static constexpr float kMargin    = 24.0f;
-    static constexpr float kCardPad   = 20.0f;
-    static constexpr float kTitleH    = 28.0f;
-    static constexpr float kFieldH    = 34.0f;
-    static constexpr float kCheckH    = 28.0f;
-    static constexpr float kGap       = 12.0f;
-    static constexpr float kBtnH      = 36.0f;
+    static constexpr float kCardMaxW = 960.0f;
+    static constexpr float kCardMaxH = 720.0f;
+    static constexpr float kMargin = 24.0f;
+    static constexpr float kCardPad = 20.0f;
+    static constexpr float kTitleH = 28.0f;
+    static constexpr float kFieldH = 34.0f;
+    static constexpr float kCheckH = 28.0f;
+    static constexpr float kGap = 12.0f;
+    static constexpr float kBtnH = 36.0f;
 };
 
 } // namespace tesseract::views

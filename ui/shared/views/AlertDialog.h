@@ -27,9 +27,9 @@ public:
     struct Options
     {
         std::string title;
-        std::string body;                      // optional; may be empty
-        std::string primary_label   = "OK";
-        std::string secondary_label;           // empty = no secondary button
+        std::string body; // optional; may be empty
+        std::string primary_label = "OK";
+        std::string secondary_label; // empty = no secondary button
     };
 
     AlertDialog();
@@ -37,11 +37,13 @@ public:
 
     // Show the dialog. `secondary_cb` may be null when no secondary button is
     // needed. A new open() while already shown replaces the contents.
-    void open(Options opts,
-              std::function<void()> primary_cb,
+    void open(Options opts, std::function<void()> primary_cb,
               std::function<void()> secondary_cb = {});
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     // Fires when the dialog opens or closes so the host can re-query native
     // overlay rects (e.g. hide the compose textarea while the dialog is up).
@@ -49,16 +51,19 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
     // Backdrop clicks are intentionally ignored — the user must choose an
     // action. on_pointer_down still consumes events so nothing behind leaks.
-    bool     on_pointer_down(tk::Point local) override;
+    bool on_pointer_down(tk::Point local) override;
 
     // Accessibility: a modal Dialog named by its (canvas-painted) title and
     // described by its body; the buttons attach under it. While open,
     // build_access_tree hides everything behind it.
-    tk::Role access_role() const override { return tk::Role::Dialog; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Dialog;
+    }
     std::string access_name() const override
     {
         return opts_.title.empty() ? opts_.body : opts_.title;
@@ -67,7 +72,10 @@ public:
     {
         return opts_.title.empty() ? std::string() : opts_.body;
     }
-    bool access_modal() const override { return open_ && visible(); }
+    bool access_modal() const override
+    {
+        return open_ && visible();
+    }
 
 private:
     bool open_ = false;
@@ -77,7 +85,7 @@ private:
     std::function<void()> secondary_cb_;
 
     // Child buttons — owned via add_child, raw pointers borrowed back.
-    tk::Button* primary_btn_   = nullptr;
+    tk::Button* primary_btn_ = nullptr;
     tk::Button* secondary_btn_ = nullptr;
 
     // Layout rects (world-space, updated each arrange()).
@@ -88,13 +96,13 @@ private:
     tk::CachedTextLayout title_layout_;
     tk::CachedTextLayout body_layout_;
 
-    static constexpr float kCardW    = 360.0f;
-    static constexpr float kCardPad  = 20.0f;
-    static constexpr float kBtnH     = 36.0f;
-    static constexpr float kBtnGap   = 8.0f;
-    static constexpr float kTitleH   = 22.0f;
+    static constexpr float kCardW = 360.0f;
+    static constexpr float kCardPad = 20.0f;
+    static constexpr float kBtnH = 36.0f;
+    static constexpr float kBtnGap = 8.0f;
+    static constexpr float kTitleH = 22.0f;
     static constexpr float kTitleGap = 12.0f;
-    static constexpr float kBodyGap  = 20.0f;
+    static constexpr float kBodyGap = 20.0f;
 };
 
 } // namespace tesseract::views

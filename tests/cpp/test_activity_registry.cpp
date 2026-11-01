@@ -12,8 +12,12 @@ namespace
 tesseract::ActivityEntry find(const ActivityRegistry& r, const std::string& name)
 {
     for (auto& e : r.snapshot())
+    {
         if (e.name == name)
+        {
             return e;
+        }
+    }
     FAIL("entry not found: " << name);
     return {};
 }
@@ -22,7 +26,11 @@ tesseract::ActivityEntry find(const ActivityRegistry& r, const std::string& name
 TEST_CASE("ActivityRegistry: scope marks running then idle", "[activity]")
 {
     std::int64_t t = 100;
-    ActivityRegistry r([&] { return t; });
+    ActivityRegistry r(
+        [&]
+        {
+            return t;
+        });
     {
         auto s = r.begin("job", "G", "periodic");
         CHECK(find(r, "job").state == ActivityState::Running);
@@ -52,11 +60,15 @@ TEST_CASE("ActivityRegistry: concurrent scopes stack", "[activity]")
 TEST_CASE("ActivityRegistry: error is sticky until next begin or clear", "[activity]")
 {
     ActivityRegistry r;
-    { auto s = r.begin("job", "G", "one-shot"); }
+    {
+        auto s = r.begin("job", "G", "one-shot");
+    }
     r.set_error("job", "boom");
     CHECK(find(r, "job").state == ActivityState::Error);
     CHECK(find(r, "job").detail == "boom");
-    { auto s = r.begin("job", "G", "one-shot"); }
+    {
+        auto s = r.begin("job", "G", "one-shot");
+    }
     CHECK(find(r, "job").state == ActivityState::Idle);
     r.set_error("job", "again");
     r.set_error("job", std::nullopt);
@@ -66,9 +78,15 @@ TEST_CASE("ActivityRegistry: error is sticky until next begin or clear", "[activ
 TEST_CASE("ActivityRegistry: detail shown and snapshot sorted by group then name", "[activity]")
 {
     ActivityRegistry r;
-    { auto s = r.begin("b", "Z", "loop"); }
-    { auto s = r.begin("a", "Z", "loop"); }
-    { auto s = r.begin("c", "A", "loop"); }
+    {
+        auto s = r.begin("b", "Z", "loop");
+    }
+    {
+        auto s = r.begin("a", "Z", "loop");
+    }
+    {
+        auto s = r.begin("c", "A", "loop");
+    }
     r.set_detail("a", "12 rooms");
     auto snap = r.snapshot();
     REQUIRE(snap.size() == 3);

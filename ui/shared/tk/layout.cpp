@@ -27,16 +27,14 @@ struct AxisOps
     {
         return vertical ? Size{cross, main} : Size{main, cross};
     }
-    Rect pack_rect(float main_origin, float main_size, float cross_origin,
-                   float cross_size, Rect parent) const
+    Rect pack_rect(float main_origin, float main_size, float cross_origin, float cross_size,
+                   Rect parent) const
     {
         if (vertical)
         {
-            return {parent.x + cross_origin, parent.y + main_origin, cross_size,
-                    main_size};
+            return {parent.x + cross_origin, parent.y + main_origin, cross_size, main_size};
         }
-        return {parent.x + main_origin, parent.y + cross_origin, main_size,
-                cross_size};
+        return {parent.x + main_origin, parent.y + cross_origin, main_size, cross_size};
     }
     float main_pad_lo(Edges e) const
     {
@@ -81,8 +79,7 @@ Size FlexBox::measure(LayoutCtx& ctx, Size constraints)
             ++visible_count;
         }
     }
-    float total_spacing =
-        visible_count > 1 ? spacing_ * (visible_count - 1) : 0.0f;
+    float total_spacing = visible_count > 1 ? spacing_ * (visible_count - 1) : 0.0f;
 
     float used_main = 0;
     float max_cross_seen = 0;
@@ -102,14 +99,11 @@ Size FlexBox::measure(LayoutCtx& ctx, Size constraints)
     }
     used_main += total_spacing;
 
-    float content_cross = avail_cross > 0
-                              ? std::min(max_cross_seen, avail_cross)
-                              : max_cross_seen;
+    float content_cross = avail_cross > 0 ? std::min(max_cross_seen, avail_cross) : max_cross_seen;
     // Both axes include padding in the reported size — otherwise the
     // parent thinks the box is smaller than it really is and the parent
     // arrange clips off our padding (children overflow the box).
-    return ax.pack(std::min(used_main, avail_main) + pad_main,
-                   content_cross + pad_cross);
+    return ax.pack(std::min(used_main, avail_main) + pad_main, content_cross + pad_cross);
 }
 
 void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
@@ -122,10 +116,10 @@ void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
     float pad_cross_lo = ax.cross_pad_lo(padding_);
     float pad_cross_hi = ax.cross_pad_hi(padding_);
 
-    float inner_main_size = std::max(0.0f, ax.main(Size{bounds.w, bounds.h}) -
-                                               pad_main_lo - pad_main_hi);
-    float inner_cross_size = std::max(0.0f, ax.cross(Size{bounds.w, bounds.h}) -
-                                                pad_cross_lo - pad_cross_hi);
+    float inner_main_size =
+        std::max(0.0f, ax.main(Size{bounds.w, bounds.h}) - pad_main_lo - pad_main_hi);
+    float inner_cross_size =
+        std::max(0.0f, ax.cross(Size{bounds.w, bounds.h}) - pad_cross_lo - pad_cross_hi);
 
     // First pass: measure non-flex children + count flex children.
     std::vector<Size> measured;
@@ -153,15 +147,13 @@ void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
         measured.push_back(s);
     }
 
-    float total_spacing =
-        visible_count > 1 ? spacing_ * (visible_count - 1) : 0.0f;
-    float flex_pool =
-        std::max(0.0f, inner_main_size - fixed_main_total - total_spacing);
+    float total_spacing = visible_count > 1 ? spacing_ * (visible_count - 1) : 0.0f;
+    float flex_pool = std::max(0.0f, inner_main_size - fixed_main_total - total_spacing);
     float flex_each = flex_count > 0 ? flex_pool / flex_count : 0;
 
     // Main-axis start offset for the first child.
-    float leftover = std::max(0.0f, inner_main_size - fixed_main_total -
-                                        total_spacing - flex_each * flex_count);
+    float leftover =
+        std::max(0.0f, inner_main_size - fixed_main_total - total_spacing - flex_each * flex_count);
     float gap_extra = 0; // per-child gap above the natural spacing
     float origin_main = pad_main_lo;
     switch (main_align_)
@@ -199,12 +191,10 @@ void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
             continue;
         }
 
-        float my_main =
-            ch->layout_hints().fill_main ? flex_each : ax.main(measured[i]);
-        float my_cross =
-            ch->layout_hints().fill_cross || cross_align_ == Cross::Stretch
-                ? inner_cross_size
-                : std::min(ax.cross(measured[i]), inner_cross_size);
+        float my_main = ch->layout_hints().fill_main ? flex_each : ax.main(measured[i]);
+        float my_cross = ch->layout_hints().fill_cross || cross_align_ == Cross::Stretch
+                             ? inner_cross_size
+                             : std::min(ax.cross(measured[i]), inner_cross_size);
 
         float cross_origin = pad_cross_lo;
         switch (cross_align_)
@@ -221,8 +211,7 @@ void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
             break; // cross size already = inner_cross_size
         }
 
-        Rect child_bounds =
-            ax.pack_rect(cursor, my_main, cross_origin, my_cross, bounds);
+        Rect child_bounds = ax.pack_rect(cursor, my_main, cross_origin, my_cross, bounds);
         ch->arrange(ctx, child_bounds);
 
         cursor += my_main + spacing_ + gap_extra;
@@ -231,8 +220,7 @@ void FlexBox::arrange(LayoutCtx& ctx, Rect bounds)
 
 Size FixedBox::measure(LayoutCtx&, Size constraints)
 {
-    return {clamp_constraint(size_.w, constraints.w),
-            clamp_constraint(size_.h, constraints.h)};
+    return {clamp_constraint(size_.w, constraints.w), clamp_constraint(size_.h, constraints.h)};
 }
 
 Size Stack::measure(LayoutCtx& ctx, Size constraints)
@@ -247,8 +235,7 @@ Size Stack::measure(LayoutCtx& ctx, Size constraints)
             out.h = std::max(out.h, s.h);
         }
     }
-    return {clamp_constraint(out.w, constraints.w),
-            clamp_constraint(out.h, constraints.h)};
+    return {clamp_constraint(out.w, constraints.w), clamp_constraint(out.h, constraints.h)};
 }
 
 void Stack::arrange(LayoutCtx& ctx, Rect bounds)

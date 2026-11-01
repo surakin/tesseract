@@ -80,8 +80,8 @@ public:
         std::function<void(std::function<void()>)> post_to_ui;
     };
 
-    MentionController(tk::TextArea* text_area, tesseract::Client* client,
-                      MentionPopup* popup, Hooks hooks);
+    MentionController(tk::TextArea* text_area, tesseract::Client* client, MentionPopup* popup,
+                      Hooks hooks);
     ~MentionController();
 
     // Returns true if an `@`-prefix was handled (popup shown or member fetch

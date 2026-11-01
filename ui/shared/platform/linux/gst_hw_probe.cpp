@@ -32,82 +32,109 @@
 #include <unistd.h>
 #include <vector>
 
-namespace tk::gst {
+namespace tk::gst
+{
 
 void ensure_gst_init()
 {
     static std::once_flag flag;
-    std::call_once(flag, [] {
-        gst_init(nullptr, nullptr);
-        // AV_LOG_QUIET = -8; silence FFmpeg/libav noise emitted via gst-libav.
-        // gst_init doesn't load plugins eagerly, so libavutil isn't in the
-        // process yet — dlopen it directly with versioned fallbacks.
-        //
-        // Crash sentinel: create a file before the call; delete it on success.
-        // If the process crashes inside av_log_set_level, the file survives and
-        // the next run finds it and skips suppression entirely.
-        //
-        // Prefer XDG_RUNTIME_DIR (mode 0700 — only this user can write there,
-        // so no symlink attack is possible). Fall back to /tmp with a uid suffix.
-        // In both cases use lstat (no symlink follow) for the existence check,
-        // O_CREAT|O_EXCL|O_NOFOLLOW for creation, and lstat-then-unlink for
-        // removal, so a symlink planted by another user at the path is always
-        // refused rather than followed.
-        const char* xdg = getenv("XDG_RUNTIME_DIR");
-        const std::string sentinel = xdg
-            ? std::string(xdg) + "/tesseract-avlog"
-            : "/tmp/tesseract-avlog-" + std::to_string(getuid());
+    std::call_once(flag,
+                   []
+                   {
+                       gst_init(nullptr, nullptr);
+                       // AV_LOG_QUIET = -8; silence FFmpeg/libav noise emitted via gst-libav.
+                       // gst_init doesn't load plugins eagerly, so libavutil isn't in the
+                       // process yet — dlopen it directly with versioned fallbacks.
+                       //
+                       // Crash sentinel: create a file before the call; delete it on success.
+                       // If the process crashes inside av_log_set_level, the file survives and
+                       // the next run finds it and skips suppression entirely.
+                       //
+                       // Prefer XDG_RUNTIME_DIR (mode 0700 — only this user can write there,
+                       // so no symlink attack is possible). Fall back to /tmp with a uid suffix.
+                       // In both cases use lstat (no symlink follow) for the existence check,
+                       // O_CREAT|O_EXCL|O_NOFOLLOW for creation, and lstat-then-unlink for
+                       // removal, so a symlink planted by another user at the path is always
+                       // refused rather than followed.
+                       const char* xdg = getenv("XDG_RUNTIME_DIR");
+                       const std::string sentinel =
+                           xdg ? std::string(xdg) + "/tesseract-avlog"
+                               : "/tmp/tesseract-avlog-" + std::to_string(getuid());
 
-        struct stat st;
-        if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
-            return;
+                       struct stat st;
+                       if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+                       {
+                           return;
+                       }
 
-        int fd = ::open(sentinel.c_str(),
-                        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-        if (fd >= 0)
-            ::close(fd);
+                       int fd =
+                           ::open(sentinel.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+                       if (fd >= 0)
+                       {
+                           ::close(fd);
+                       }
 
-        void* sym = dlsym(RTLD_DEFAULT, "av_log_set_level");
-        if (!sym) {
-            static const char* const kNames[] = {
-                "libavutil.so",    // unversioned (dev package)
-                "libavutil.so.60", // FFmpeg 8.x
-                "libavutil.so.59", // FFmpeg 7.x
-                "libavutil.so.58", // FFmpeg 6.x
-                "libavutil.so.57", // FFmpeg 5.x
-                "libavutil.so.56", // FFmpeg 4.x
-            };
-            for (const char* name : kNames) {
-                if (void* h = dlopen(name, RTLD_LAZY | RTLD_GLOBAL)) {
-                    sym = dlsym(h, "av_log_set_level");
-                    if (sym)
-                        break;
-                }
-            }
-        }
-        if (sym)
-            reinterpret_cast<void(*)(int)>(sym)(-8);
+                       void* sym = dlsym(RTLD_DEFAULT, "av_log_set_level");
+                       if (!sym)
+                       {
+                           static const char* const kNames[] = {
+                               "libavutil.so",    // unversioned (dev package)
+                               "libavutil.so.60", // FFmpeg 8.x
+                               "libavutil.so.59", // FFmpeg 7.x
+                               "libavutil.so.58", // FFmpeg 6.x
+                               "libavutil.so.57", // FFmpeg 5.x
+                               "libavutil.so.56", // FFmpeg 4.x
+                           };
+                           for (const char* name : kNames)
+                           {
+                               if (void* h = dlopen(name, RTLD_LAZY | RTLD_GLOBAL))
+                               {
+                                   sym = dlsym(h, "av_log_set_level");
+                                   if (sym)
+                                   {
+                                       break;
+                                   }
+                               }
+                           }
+                       }
+                       if (sym)
+                       {
+                           reinterpret_cast<void (*)(int)>(sym)(-8);
+                       }
 
-        if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
-            ::unlink(sentinel.c_str());
-    });
+                       if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+                       {
+                           ::unlink(sentinel.c_str());
+                       }
+                   });
 }
 
-namespace {
+namespace
+{
 
 // Hardware decoder element names to probe.  Only factories that are actually
 // installed (gst_element_factory_find succeeds) are recorded in the cache, so
 // a future plugin install is detected automatically on the next TTL expiry.
 static const char* const kHwDecoders[] = {
     // VA-API (Intel / AMD / Mesa)
-    "vaapih264dec", "vaapih265dec", "vaapimpeg2dec",
-    "vaapivp8dec",  "vaapivp9dec",  "vaapiav1dec",
+    "vaapih264dec",
+    "vaapih265dec",
+    "vaapimpeg2dec",
+    "vaapivp8dec",
+    "vaapivp9dec",
+    "vaapiav1dec",
     // NVDEC (gst-plugins-bad NVIDIA)
-    "nvh264dec",    "nvh265dec",    "nvvp8dec",    "nvvp9dec",   "nvav1dec",
+    "nvh264dec",
+    "nvh265dec",
+    "nvvp8dec",
+    "nvvp9dec",
+    "nvav1dec",
     // VDPAU
-    "vdpauh264dec", "vdpaumpeg2dec",
+    "vdpauh264dec",
+    "vdpaumpeg2dec",
     // CUDA decode
-    "cudah264dec",  "cudah265dec",
+    "cudah264dec",
+    "cudah265dec",
 };
 
 constexpr std::int64_t kTtlSeconds = 7 * 24 * 3600; // 7 days
@@ -119,7 +146,8 @@ constexpr std::int64_t kTtlSeconds = 7 * 24 * 3600; // 7 days
 //   ...
 // Entries for factories that are not installed are omitted entirely.
 
-struct ProbeResult {
+struct ProbeResult
+{
     std::vector<std::string> broken; // installed but failed READY transition
     bool valid = false;              // true when cache was read successfully
 };
@@ -138,8 +166,14 @@ ProbeResult read_cache(const std::string& path)
         return r;
     }
     std::int64_t ts = 0;
-    try { ts = std::stoll(line); }
-    catch (...) { return r; }
+    try
+    {
+        ts = std::stoll(line);
+    }
+    catch (...)
+    {
+        return r;
+    }
 
     const std::int64_t now = static_cast<std::int64_t>(std::time(nullptr));
     if (now - ts > kTtlSeconds)
@@ -157,8 +191,7 @@ ProbeResult read_cache(const std::string& path)
     return r;
 }
 
-void write_cache(const std::string& path,
-                 const std::vector<std::string>& working,
+void write_cache(const std::string& path, const std::vector<std::string>& working,
                  const std::vector<std::string>& broken)
 {
     // Written beside the cache and renamed over it, so an instance reading the
@@ -172,8 +205,14 @@ void write_cache(const std::string& path,
             return;
         }
         f << static_cast<std::int64_t>(std::time(nullptr)) << '\n';
-        for (const auto& name : working) { f << '+' << name << '\n'; }
-        for (const auto& name : broken)  { f << '-' << name << '\n'; }
+        for (const auto& name : working)
+        {
+            f << '+' << name << '\n';
+        }
+        for (const auto& name : broken)
+        {
+            f << '-' << name << '\n';
+        }
         f.close();
         if (!f)
         {
@@ -238,8 +277,7 @@ void apply_hw_decoder_cache(const std::string& cache_dir)
             continue;
         }
 
-        const GstStateChangeReturn ret =
-            gst_element_set_state(el, GST_STATE_READY);
+        const GstStateChangeReturn ret = gst_element_set_state(el, GST_STATE_READY);
         // Always return to NULL before freeing.
         gst_element_set_state(el, GST_STATE_NULL);
         gst_object_unref(el);

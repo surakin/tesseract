@@ -19,7 +19,7 @@ std::uint64_t RoomSwitchGateKeeper::begin_room_switch()
 
     Gate g;
     g.epoch = epoch_;
-    gate_   = std::move(g);
+    gate_ = std::move(g);
 
     // Dependencies are collected on the first paint (the visible band needs a
     // measure pass). Arm the timeout fallback now so a slow / offline network
@@ -27,31 +27,30 @@ std::uint64_t RoomSwitchGateKeeper::begin_room_switch()
     if (post_delayed_)
     {
         std::weak_ptr<bool> walive = alive_;
-        std::uint64_t       ep     = epoch_;
-        post_delayed_(
-            kTimeoutMs,
-            [this, walive, ep]()
-            {
-                auto live = walive.lock();
-                if (!live || !*live)
-                {
-                    return;
-                }
-                if (!gate_ || gate_->epoch != ep)
-                {
-                    return;
-                }
-                // Mark evaluated so a first paint that hasn't run yet (window
-                // occluded / paint delayed past the deadline) won't re-derive
-                // and re-arm `pending` in evaluate() — the one-shot timeout
-                // would otherwise be lost and the list stay hidden.
-                gate_->evaluated = true;
-                gate_->pending.clear(); // force reveal next paint
-                if (request_repaint_)
-                {
-                    request_repaint_();
-                }
-            });
+        std::uint64_t ep = epoch_;
+        post_delayed_(kTimeoutMs,
+                      [this, walive, ep]()
+                      {
+                          auto live = walive.lock();
+                          if (!live || !*live)
+                          {
+                              return;
+                          }
+                          if (!gate_ || gate_->epoch != ep)
+                          {
+                              return;
+                          }
+                          // Mark evaluated so a first paint that hasn't run yet (window
+                          // occluded / paint delayed past the deadline) won't re-derive
+                          // and re-arm `pending` in evaluate() — the one-shot timeout
+                          // would otherwise be lost and the list stay hidden.
+                          gate_->evaluated = true;
+                          gate_->pending.clear(); // force reveal next paint
+                          if (request_repaint_)
+                          {
+                              request_repaint_();
+                          }
+                      });
     }
     return epoch_;
 }
@@ -62,12 +61,12 @@ void RoomSwitchGateKeeper::reset_within_switch()
     {
         return; // ordinary backfill on an already-revealed room: stay inactive
     }
-    const bool        focused = gate_->focused;
-    const std::string fid     = gate_->focus_event_id;
+    const bool focused = gate_->focused;
+    const std::string fid = gate_->focus_event_id;
     begin_room_switch(); // bumps epoch, fresh Gate, re-arms the 400ms timeout
     if (focused)
     {
-        gate_->focused        = true;
+        gate_->focused = true;
         gate_->focus_event_id = fid;
     }
 }
@@ -78,7 +77,7 @@ void RoomSwitchGateKeeper::set_focus_event(const std::string& focus_event_id)
     {
         return;
     }
-    gate_->focused        = true;
+    gate_->focused = true;
     gate_->focus_event_id = focus_event_id;
 }
 
@@ -87,8 +86,7 @@ bool RoomSwitchGateKeeper::dep_satisfied(const MessageRowData& m) const
     return pending_keys_for(m).empty();
 }
 
-std::vector<std::string>
-RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
+std::vector<std::string> RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
 {
     using K = MessageRowData::Kind;
     std::vector<std::string> pending;
@@ -100,8 +98,8 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
     // decode in place without reflow. Don't hold the whole list invisible
     // waiting for that decode; only wait when the height is genuinely unknown.
     const bool media_dims_known =
-        (m.kind == K::Image || m.kind == K::Sticker || m.kind == K::Video) &&
-        m.media_w > 0 && m.media_h > 0;
+        (m.kind == K::Image || m.kind == K::Sticker || m.kind == K::Video) && m.media_w > 0 &&
+        m.media_h > 0;
     if (!media_dims_known)
     {
         switch (m.kind)
@@ -110,13 +108,14 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
         case K::Sticker:
         {
             const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
-            const std::string wait_key =
-                look ? look->fetch_token() : std::string{};
+            const std::string wait_key = look ? look->fetch_token() : std::string{};
             if (!wait_key.empty() && image_provider_)
             {
                 const tk::Image* im = image_provider_(wait_key);
                 if (!im || im->width() <= 0 || im->height() <= 0)
+                {
                     pending.push_back(wait_key);
+                }
             }
             break;
         }
@@ -129,7 +128,9 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
             {
                 const tk::Image* im = image_provider_(m.thumbnail->fetch_token());
                 if (!im || im->width() <= 0 || im->height() <= 0)
+                {
                     pending.push_back(m.thumbnail->fetch_token());
+                }
             }
             break;
         case K::Text:
@@ -143,8 +144,8 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
             // so a bundled-present row's height is already final — never gate on
             // it (a matched_url-only entry's homeserver fetch pops in later,
             // anchored, like a slow legacy preview).
-            if (!m.bundled_previews_present && !m.first_url.empty() &&
-                preview_provider_ && !preview_provider_(m.first_url))
+            if (!m.bundled_previews_present && !m.first_url.empty() && preview_provider_ &&
+                !preview_provider_(m.first_url))
             {
                 pending.push_back(m.first_url);
             }
@@ -185,8 +186,7 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
     // reasoning already used by notify_image_ready's emoticon_match.
     if ((m.kind == K::Text || m.kind == K::Notice || m.kind == K::Emote ||
          m.kind == K::Unhandled) &&
-        !m.formatted_body.empty() &&
-        m.formatted_body.find("data-mx-emoticon") != std::string::npos)
+        !m.formatted_body.empty() && m.formatted_body.find("data-mx-emoticon") != std::string::npos)
     {
         for (const auto& sp : html_to_spans(m.formatted_body))
         {
@@ -201,15 +201,17 @@ RoomSwitchGateKeeper::pending_keys_for(const MessageRowData& m) const
     // Drop keys that are known to never resolve soon (see FailedProvider).
     if (failed_provider_)
     {
-        std::erase_if(pending, [this](const std::string& k)
-                      { return failed_provider_(k); });
+        std::erase_if(pending,
+                      [this](const std::string& k)
+                      {
+                          return failed_provider_(k);
+                      });
     }
     return pending;
 }
 
 void RoomSwitchGateKeeper::evaluate(
-    const std::function<void(
-        const std::function<void(const MessageRowData&)>&)>& scan)
+    const std::function<void(const std::function<void(const MessageRowData&)>&)>& scan)
 {
     if (!gate_ || gate_->evaluated)
     {
@@ -250,8 +252,8 @@ bool RoomSwitchGateKeeper::try_reveal()
     {
         return false;
     }
-    const bool        focused = gate_->focused;
-    const std::string fid     = gate_->focus_event_id;
+    const bool focused = gate_->focused;
+    const std::string fid = gate_->focus_event_id;
     gate_.reset();
     // Heights are already final for this frame (ensure_measured ran before we
     // got here and every gated dependency is resolved). Just re-pin the scroll
@@ -261,12 +263,16 @@ bool RoomSwitchGateKeeper::try_reveal()
     if (focused && !fid.empty())
     {
         if (scroll_to_event_)
+        {
             scroll_to_event_(fid);
+        }
     }
     else
     {
         if (scroll_to_bottom_)
+        {
             scroll_to_bottom_();
+        }
     }
     return true;
 }

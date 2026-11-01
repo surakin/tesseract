@@ -17,15 +17,17 @@ constexpr float kMinH = 24.0f;
 } // namespace
 
 Slider::Slider(double min, double max, double step)
-    : min_(min), max_(std::max(min, max)), step_(step), page_step_(step * 10.0),
-      value_(min), limit_(std::max(min, max)), buffered_(min - 1.0)
+    : min_(min), max_(std::max(min, max)), step_(step), page_step_(step * 10.0), value_(min),
+      limit_(std::max(min, max)), buffered_(min - 1.0)
 {
 }
 
 double Slider::clamp_(double v) const
 {
     if (!std::isfinite(v))
+    {
         return min_;
+    }
     return std::clamp(v, min_, std::max(min_, std::min(limit_, max_)));
 }
 
@@ -83,7 +85,9 @@ float Slider::frac_(double v) const
 {
     const double span = max_ - min_;
     if (!(span > 0.0))
+    {
         return 0.0f;
+    }
     return static_cast<float>(std::clamp((v - min_) / span, 0.0, 1.0));
 }
 
@@ -91,7 +95,9 @@ double Slider::value_at_(float local_x) const
 {
     const float travel = bounds_.w - kThumbD;
     if (!(travel > 0.0f))
+    {
         return min_;
+    }
     const float f = std::clamp((local_x - kThumbD * 0.5f) / travel, 0.0f, 1.0f);
     return clamp_(min_ + static_cast<double>(f) * (max_ - min_));
 }
@@ -104,7 +110,8 @@ Size Slider::measure(LayoutCtx&, Size constraints)
 void Slider::paint(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
-    const Colors c = colors_.value_or(Colors{pal.border, pal.subtle_pressed, pal.accent, pal.accent});
+    const Colors c =
+        colors_.value_or(Colors{pal.border, pal.subtle_pressed, pal.accent, pal.accent});
     const float alpha_fade = enabled_ ? 1.0f : 0.5f;
     auto fade = [&](Color col)
     {
@@ -122,13 +129,16 @@ void Slider::paint(PaintCtx& ctx)
     {
         const float bw = travel * frac_(buffered_);
         if (bw > 0.0f)
+        {
             ctx.canvas.fill_rounded_rect({track.x, track.y, bw, track.h}, kTrackH * 0.5f,
                                          fade(c.buffered));
+        }
     }
     const float fx = travel * frac_(value_);
     if (fx > 0.0f)
-        ctx.canvas.fill_rounded_rect({track.x, track.y, fx, track.h}, kTrackH * 0.5f,
-                                     fade(c.fill));
+    {
+        ctx.canvas.fill_rounded_rect({track.x, track.y, fx, track.h}, kTrackH * 0.5f, fade(c.fill));
+    }
 
     const Rect thumb{x0 + fx - kThumbD * 0.5f, cy - kThumbD * 0.5f, kThumbD, kThumbD};
     ctx.canvas.fill_rounded_rect(thumb, kThumbD * 0.5f, fade(c.thumb));
@@ -141,16 +151,22 @@ void Slider::apply_user_(double v, bool commit)
     {
         value_ = nv;
         if (on_changed)
+        {
             on_changed(value_);
+        }
     }
     if (commit && on_committed)
+    {
         on_committed(value_);
+    }
 }
 
 bool Slider::on_pointer_down(Point local)
 {
     if (!enabled_)
+    {
         return false;
+    }
     dragging_ = true;
     apply_user_(value_at_(local.x), false);
     return true;
@@ -159,14 +175,18 @@ bool Slider::on_pointer_down(Point local)
 void Slider::on_pointer_drag(Point local)
 {
     if (!enabled_ || !dragging_)
+    {
         return;
+    }
     apply_user_(value_at_(local.x), false);
 }
 
 void Slider::on_pointer_up(Point local, bool /*inside_self*/)
 {
     if (!dragging_)
+    {
         return;
+    }
     dragging_ = false;
     if (enabled_)
     {
@@ -177,7 +197,9 @@ void Slider::on_pointer_up(Point local, bool /*inside_self*/)
 bool Slider::on_key_down(const KeyEvent& e)
 {
     if (!enabled_ || !keyboard_focusable_ || !has_focus())
+    {
         return false;
+    }
     switch (e.key)
     {
     case Key::Left:
@@ -209,13 +231,17 @@ void Slider::set_enabled(bool enabled)
 {
     Widget::set_enabled(enabled);
     if (!enabled)
+    {
         dragging_ = false;
+    }
 }
 
 void Slider::on_effective_visibility_changed_(bool now_visible)
 {
     if (!now_visible)
+    {
         dragging_ = false;
+    }
 }
 
 AccessValue Slider::access_value() const
@@ -226,7 +252,9 @@ AccessValue Slider::access_value() const
 bool Slider::access_set_value(double value)
 {
     if (!enabled_)
+    {
         return false;
+    }
     apply_user_(value, true);
     return true;
 }

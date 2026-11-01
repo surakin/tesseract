@@ -45,8 +45,7 @@ MessageRowData own_text()
 
 struct BubblesLayoutGuard
 {
-    tesseract::Settings::MessageLayout prev =
-        tesseract::Settings::instance().message_layout;
+    tesseract::Settings::MessageLayout prev = tesseract::Settings::instance().message_layout;
     bool prev_own_avatar = tesseract::Settings::instance().bubbles_show_own_avatar;
     BubblesLayoutGuard()
     {
@@ -73,8 +72,7 @@ void open_room_for_bubbles(RoomView& view)
 
 } // namespace
 
-TEST_CASE("Thread panel states toggle the main list's side-panel flag",
-          "[tk][view][room][thread]")
+TEST_CASE("Thread panel states toggle the main list's side-panel flag", "[tk][view][room][thread]")
 {
     auto surface = TestSurface::create(1000, 700);
     auto owner = tk::create_root_widget<RoomView>(nullptr);
@@ -93,8 +91,7 @@ TEST_CASE("Thread panel states toggle the main list's side-panel flag",
     CHECK_FALSE(view.message_list()->side_panel_open());
 }
 
-TEST_CASE("Room info panel toggles the main list's side-panel flag",
-          "[tk][view][room]")
+TEST_CASE("Room info panel toggles the main list's side-panel flag", "[tk][view][room]")
 {
     auto surface = TestSurface::create(1000, 700);
     auto owner = tk::create_root_widget<RoomView>(nullptr);

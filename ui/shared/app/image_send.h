@@ -18,7 +18,8 @@ using EncodeForSendFn =
     std::function<tk::EncodedImage(const std::uint8_t* data, std::size_t len, bool compress)>;
 
 // image_metadata_strippable(), injected for tests.
-using StrippableFn = std::function<bool(std::span<const std::uint8_t> bytes, std::string_view mime)>;
+using StrippableFn =
+    std::function<bool(std::span<const std::uint8_t> bytes, std::string_view mime)>;
 
 struct PreparedImage
 {

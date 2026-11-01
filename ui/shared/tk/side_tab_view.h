@@ -77,8 +77,8 @@ public:
     std::string tab_label(int idx) const
     {
         return idx >= 0 && static_cast<std::size_t>(idx) < tabs_.size()
-            ? tabs_[static_cast<std::size_t>(idx)].label
-            : std::string{};
+                   ? tabs_[static_cast<std::size_t>(idx)].label
+                   : std::string{};
     }
 
     // Optional callback fired when the selection changes.
@@ -96,7 +96,10 @@ public:
     bool on_wheel(Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Test-only inspection of the scroll math.
-    float scroll_y_for_testing() const { return scroll_y_; }
+    float scroll_y_for_testing() const
+    {
+        return scroll_y_;
+    }
 
 private:
     // Visual constants.
@@ -141,10 +144,19 @@ private:
     // silently switch its selection on a stray Up/Down meant elsewhere.
     bool on_key_down(const KeyEvent& e) override
     {
-        if (!has_focus()) return false;
-        if (e.key != Key::Up && e.key != Key::Down) return false;
+        if (!has_focus())
+        {
+            return false;
+        }
+        if (e.key != Key::Up && e.key != Key::Down)
+        {
+            return false;
+        }
         const int n = static_cast<int>(tabs_.size());
-        if (n == 0) return false;
+        if (n == 0)
+        {
+            return false;
+        }
         const int delta = (e.key == Key::Down) ? 1 : -1;
         int idx = selected_idx_;
         for (int step = 0; step < n; ++step)
@@ -168,8 +180,7 @@ private:
     {
         constexpr float kFocusRingInset = 2.0f;
         const Rect ring{bounds_.x + kFocusRingInset, bounds_.y + kFocusRingInset,
-                        kSidebarWidth - kFocusRingInset * 2.0f,
-                        bounds_.h - kFocusRingInset * 2.0f};
+                        kSidebarWidth - kFocusRingInset * 2.0f, bounds_.h - kFocusRingInset * 2.0f};
         paint_focus_ring(ctx, ring);
     }
 
@@ -183,12 +194,14 @@ private:
     }
 
     // ── tk::WidgetRowAccessibility ──────────────────────────────────────
-    std::size_t access_row_count() const override { return tabs_.size(); }
+    std::size_t access_row_count() const override
+    {
+        return tabs_.size();
+    }
     Role access_role_for_widget_row(std::size_t index) const override
     {
         // Hidden tabs (set_tab_visible(false)) contribute no node.
-        return (index < tabs_.size() && tabs_[index].visible) ? Role::Tab
-                                                             : Role::None;
+        return (index < tabs_.size() && tabs_[index].visible) ? Role::Tab : Role::None;
     }
     std::string access_name_for_widget_row(std::size_t index) const override
     {
@@ -203,14 +216,19 @@ private:
     bool access_activate_widget_row(std::size_t index) override
     {
         if (index >= tabs_.size() || !tabs_[index].visible)
+        {
             return false;
+        }
         select(static_cast<int>(index)); // fires on_tab_selected
         return true;
     }
     // Per-tab rect isn't retained (button_y() is a paint-local lambda);
     // names + activation still work. TODO(a11y): extract button_y to a
     // member and return the real rect.
-    Rect access_rect_for_widget_row(std::size_t) const override { return {}; }
+    Rect access_rect_for_widget_row(std::size_t) const override
+    {
+        return {};
+    }
 
     // Return the tab index whose button spans `local_y` (widget-local),
     // or -1 when outside any tab.

@@ -14,10 +14,8 @@ using tesseract::views::SpaceChildRoomGrid;
 namespace
 {
 
-SpaceChildRoomGrid::ChildRoomEntry scg_entry(const std::string& id,
-                                             const std::string& name,
-                                             bool joined = true,
-                                             const std::string& topic = "")
+SpaceChildRoomGrid::ChildRoomEntry scg_entry(const std::string& id, const std::string& name,
+                                             bool joined = true, const std::string& topic = "")
 {
     SpaceChildRoomGrid::ChildRoomEntry e;
     e.info.id = id;
@@ -29,16 +27,17 @@ SpaceChildRoomGrid::ChildRoomEntry scg_entry(const std::string& id,
 
 struct ScgStage : vt::Stage
 {
-    std::unique_ptr<SpaceChildRoomGrid> grid =
-        tk::create_root_widget<SpaceChildRoomGrid>(&host);
+    std::unique_ptr<SpaceChildRoomGrid> grid = tk::create_root_widget<SpaceChildRoomGrid>(&host);
     ScgStage()
     {
-        grid->set_children({scg_entry("!a:x", "Alpha", true, "topic a"),
-                            scg_entry("!b:x", "Beta"),
+        grid->set_children({scg_entry("!a:x", "Alpha", true, "topic a"), scg_entry("!b:x", "Beta"),
                             scg_entry("!u:x", "", false)});
         run();
     }
-    void run() { mount(*grid, {0, 0, 520, 300}); }
+    void run()
+    {
+        mount(*grid, {0, 0, 520, 300});
+    }
 };
 
 } // namespace
@@ -49,18 +48,22 @@ TEST_CASE("SpaceChildRoomGrid exposes one GridCell per child",
     ScgStage s;
     auto names = vt::all_names(*s.grid);
     auto has = [&](const std::string& n)
-    { return std::find(names.begin(), names.end(), n) != names.end(); };
+    {
+        return std::find(names.begin(), names.end(), n) != names.end();
+    };
     CHECK(has("Alpha"));
     CHECK(has("Beta"));
     CHECK(has("Loading\xe2\x80\xa6")); // un-joined child awaiting its summary
 }
 
-TEST_CASE("SpaceChildRoomGrid asks for an unjoined child's summary once",
-          "[tk][view][space_grid]")
+TEST_CASE("SpaceChildRoomGrid asks for an unjoined child's summary once", "[tk][view][space_grid]")
 {
     ScgStage s;
     std::vector<std::string> asked;
-    s.grid->on_unjoined_summary_needed = [&](std::string id) { asked.push_back(id); };
+    s.grid->on_unjoined_summary_needed = [&](std::string id)
+    {
+        asked.push_back(id);
+    };
     s.grid->set_children({scg_entry("!u:x", "", false)});
     s.run();
     s.run(); // repaint: not asked again
@@ -70,13 +73,19 @@ TEST_CASE("SpaceChildRoomGrid asks for an unjoined child's summary once",
     CHECK(asked.size() == 2);
 }
 
-TEST_CASE("SpaceChildRoomGrid requests avatars missing from the provider",
-          "[tk][view][space_grid]")
+TEST_CASE("SpaceChildRoomGrid requests avatars missing from the provider", "[tk][view][space_grid]")
 {
     ScgStage s;
     std::vector<std::string> needed;
-    s.grid->set_avatar_provider([](const std::string&) -> const tk::Image* { return nullptr; });
-    s.grid->on_room_avatar_needed = [&](const tesseract::RoomInfo& r) { needed.push_back(r.id); };
+    s.grid->set_avatar_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
+    s.grid->on_room_avatar_needed = [&](const tesseract::RoomInfo& r)
+    {
+        needed.push_back(r.id);
+    };
     auto e = scg_entry("!a:x", "Alpha");
     e.info.avatar_url = "mxc://x/a";
     s.grid->set_children({e});
@@ -90,7 +99,10 @@ TEST_CASE("SpaceChildRoomGrid Delete removes the selected child when "
 {
     ScgStage s;
     std::vector<std::string> removed;
-    s.grid->on_remove_requested = [&](std::string id) { removed.push_back(id); };
+    s.grid->on_remove_requested = [&](std::string id)
+    {
+        removed.push_back(id);
+    };
 
     // Click the first cell (8px padding, 220x48 cells) to select + focus it.
     s.host.dispatch_pointer_down({60, 30});
@@ -125,7 +137,10 @@ TEST_CASE("SpaceChildRoomGrid drops add rooms only with the right payload",
 {
     ScgStage s;
     std::string added;
-    s.grid->on_room_dropped_for_add = [&](std::string id) { added = id; };
+    s.grid->on_room_dropped_for_add = [&](std::string id)
+    {
+        added = id;
+    };
     CHECK_FALSE(s.grid->on_drag_enter({1, 1}, tk::DragPayload("nope", std::string("x"))));
     CHECK(s.grid->on_drag_enter({1, 1}, tk::DragPayload("space_room_id", std::string("!q:x"))));
     s.grid->on_drag_over({2, 2}, tk::DragPayload("space_room_id", std::string("!q:x")));
@@ -136,7 +151,8 @@ TEST_CASE("SpaceChildRoomGrid drops add rooms only with the right payload",
     CHECK_FALSE(s.grid->on_drop({1, 1}, tk::DragPayload("space_room_id", 7)));
     CHECK_FALSE(s.grid->on_drop({1, 1}, tk::DragPayload("x", std::string("y"))));
     s.grid->set_can_manage(false);
-    CHECK_FALSE(s.grid->on_drag_enter({1, 1}, tk::DragPayload("space_room_id", std::string("!q:x"))));
+    CHECK_FALSE(
+        s.grid->on_drag_enter({1, 1}, tk::DragPayload("space_room_id", std::string("!q:x"))));
 }
 
 TEST_CASE("SpaceChildRoomGrid dragging a cell begins a host drag; hover "

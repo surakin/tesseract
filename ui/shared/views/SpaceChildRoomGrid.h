@@ -29,8 +29,7 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(SpaceChildRoomGrid)
 
 public:
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
 
     struct ChildRoomEntry
     {
@@ -43,7 +42,10 @@ public:
     void set_children(std::vector<ChildRoomEntry> children);
     void set_avatar_provider(AvatarProvider p);
     void set_can_manage(bool v);
-    bool can_manage() const { return can_manage_; }
+    bool can_manage() const
+    {
+        return can_manage_;
+    }
 
     // ── Callbacks ────────────────────────────────────────────────────────
     // Fired (at most once per room_id per set_children() call) for a child
@@ -58,8 +60,8 @@ public:
     std::function<void(const tesseract::RoomInfo&)> on_room_avatar_needed;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
     bool on_drag_enter(tk::Point local, const tk::DragPayload& payload) override;
     void on_drag_over(tk::Point local, const tk::DragPayload& payload) override;

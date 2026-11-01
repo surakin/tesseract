@@ -20,8 +20,7 @@ tk::PillSpec make_spec(std::string text, tk::PillKind kind = tk::PillKind::User)
 
 } // namespace
 
-TEST_CASE("tk::measure_pill never exceeds the caller's line height",
-          "[tk][pill]")
+TEST_CASE("tk::measure_pill never exceeds the caller's line height", "[tk][pill]")
 {
     auto surface = TestSurface::create(200, 60);
     auto spec = make_spec("Alice");
@@ -41,43 +40,37 @@ TEST_CASE("tk::measure_pill uses a true stadium radius", "[tk][pill]")
     CHECK(tk::pill_radius_for_height(m.height) == m.radius);
 }
 
-TEST_CASE("tk::measure_pill grows wider with a leading image than without",
-          "[tk][pill]")
+TEST_CASE("tk::measure_pill grows wider with a leading image than without", "[tk][pill]")
 {
     auto surface = TestSurface::create(200, 60);
     auto no_image = make_spec("Alice");
-    auto no_image_metrics =
-        tk::measure_pill(surface->factory(), no_image, 14.0f, 4.0f);
+    auto no_image_metrics = tk::measure_pill(surface->factory(), no_image, 14.0f, 4.0f);
 
     // Use a fallback glyph to force a leading visual without needing a real
     // decoded image — measure_pill only checks whether a visual is present.
     auto with_glyph = make_spec("Alice");
     with_glyph.fallback_glyph = "@";
-    auto with_glyph_metrics =
-        tk::measure_pill(surface->factory(), with_glyph, 14.0f, 4.0f);
+    auto with_glyph_metrics = tk::measure_pill(surface->factory(), with_glyph, 14.0f, 4.0f);
 
     CHECK(with_glyph_metrics.image_side > 0.0f);
     CHECK(no_image_metrics.image_side == 0.0f);
     CHECK(with_glyph_metrics.width > no_image_metrics.width);
 }
 
-TEST_CASE("tk::render_pill_bitmap produces a bitmap sized to its own metrics",
-          "[tk][pill]")
+TEST_CASE("tk::render_pill_bitmap produces a bitmap sized to its own metrics", "[tk][pill]")
 {
     auto surface = TestSurface::create(200, 60);
     auto spec = make_spec("Alice");
     auto m = tk::measure_pill(surface->factory(), spec, 14.0f, 4.0f);
 
-    auto bitmap =
-        tk::render_pill_bitmap(surface->factory(), spec, 14.0f, 4.0f, 1.0f);
+    auto bitmap = tk::render_pill_bitmap(surface->factory(), spec, 14.0f, 4.0f, 1.0f);
     REQUIRE(bitmap != nullptr);
     // Allow for float->int rounding in the offscreen surface's pixel size.
     CHECK(std::abs(bitmap->width() - static_cast<int>(m.width)) <= 1);
     CHECK(std::abs(bitmap->height() - static_cast<int>(m.height)) <= 1);
 }
 
-TEST_CASE("tk::render_pill_bitmap draws the pill's background colour",
-          "[tk][pill]")
+TEST_CASE("tk::render_pill_bitmap draws the pill's background colour", "[tk][pill]")
 {
     auto surface = TestSurface::create(200, 60);
     // No text at all: render_pill_bitmap also draws the label on top of the
@@ -86,8 +79,7 @@ TEST_CASE("tk::render_pill_bitmap draws the pill's background colour",
     auto spec = make_spec("");
     spec.bg = tk::Color::rgba(0x11, 0x22, 0x33, 0xFF);
 
-    auto bitmap =
-        tk::render_pill_bitmap(surface->factory(), spec, 14.0f, 4.0f, 1.0f);
+    auto bitmap = tk::render_pill_bitmap(surface->factory(), spec, 14.0f, 4.0f, 1.0f);
     REQUIRE(bitmap != nullptr);
 
     // Draw the rendered bitmap onto the test surface (over a known-white
@@ -96,8 +88,7 @@ TEST_CASE("tk::render_pill_bitmap draws the pill's background colour",
     // corners, actually took the background colour rather than staying
     // whatever the surface's own clear colour was.
     surface->canvas().draw_image(
-        *bitmap, {0, 0, static_cast<float>(bitmap->width()),
-                  static_cast<float>(bitmap->height())});
+        *bitmap, {0, 0, static_cast<float>(bitmap->width()), static_cast<float>(bitmap->height())});
     tk::Color px = surface->read_pixel(bitmap->width() / 2, bitmap->height() / 2);
     CHECK(px.r == spec.bg.r);
     CHECK(px.g == spec.bg.g);
@@ -110,8 +101,7 @@ namespace
 // Mirrors MessageListView::substitute_image_placeholders: an is_image span's
 // text becomes exactly one U+FFFC once html_spans.cpp's empty-text mention
 // leaf is prepared for layout.
-tk::TextSpan make_pill_placeholder_span(std::string label,
-                                        tk::PillKind kind = tk::PillKind::User)
+tk::TextSpan make_pill_placeholder_span(std::string label, tk::PillKind kind = tk::PillKind::User)
 {
     tk::TextSpan sp;
     sp.is_image = true;
@@ -140,15 +130,14 @@ TEST_CASE("a mention pill span reserves width proportional to its label, "
     // painting a fixed-size box, not the real variable-width pill bitmap.
     auto surface = TestSurface::create(400, 60);
     tk::TextSpan shortp = make_pill_placeholder_span("Al");
-    tk::TextSpan longp =
-        make_pill_placeholder_span("Alexandria The Magnificent Third");
+    tk::TextSpan longp = make_pill_placeholder_span("Alexandria The Magnificent Third");
     const tk::TextSpan short_arr[] = {shortp};
     const tk::TextSpan long_arr[] = {longp};
 
-    auto short_layout = surface->factory().build_rich_text(
-        short_arr, tk::TextStyle{.role = tk::FontRole::Body});
-    auto long_layout = surface->factory().build_rich_text(
-        long_arr, tk::TextStyle{.role = tk::FontRole::Body});
+    auto short_layout =
+        surface->factory().build_rich_text(short_arr, tk::TextStyle{.role = tk::FontRole::Body});
+    auto long_layout =
+        surface->factory().build_rich_text(long_arr, tk::TextStyle{.role = tk::FontRole::Body});
     REQUIRE(short_layout != nullptr);
     REQUIRE(long_layout != nullptr);
     CHECK(long_layout->measure().w > short_layout->measure().w * 2.0f);
@@ -164,8 +153,7 @@ TEST_CASE("a single-line ellipsis layout with a wide mention pill stays "
     auto surface = TestSurface::create(400, 60);
     tk::TextSpan lead;
     lead.text = "hey ";
-    tk::TextSpan pill =
-        make_pill_placeholder_span("Alexandria The Magnificent Third");
+    tk::TextSpan pill = make_pill_placeholder_span("Alexandria The Magnificent Third");
     tk::TextSpan tail;
     tail.text = " did you see the thing I posted yesterday about the release";
     const tk::TextSpan spans[] = {lead, pill, tail};
@@ -199,14 +187,12 @@ TEST_CASE("a mention pill's byte range still hit-tests to its box after a "
     auto layout = surface->factory().build_rich_text(spans, st);
     REQUIRE(layout != nullptr);
     const int start = static_cast<int>(lead.text.size());
-    auto rects = layout->selection_rects(
-        start, start + static_cast<int>(pill.text.size()));
+    auto rects = layout->selection_rects(start, start + static_cast<int>(pill.text.size()));
     REQUIRE(rects.size() == 1);
     CHECK(rects[0].w > 40.0f); // the pill's reserved box, not a space glyph
 }
 
-TEST_CASE("a mention pill wrapped to the next line reports exactly one box",
-          "[tk][pill][canvas]")
+TEST_CASE("a mention pill wrapped to the next line reports exactly one box", "[tk][pill][canvas]")
 {
     // paint_span_images draws one pill bitmap per selection rect; a stray
     // zero-width rect at the end of the previous line paints a second copy
@@ -214,8 +200,7 @@ TEST_CASE("a mention pill wrapped to the next line reports exactly one box",
     auto surface = TestSurface::create(400, 200);
     tk::TextSpan lead;
     lead.text = "some words that fill most of the line ";
-    tk::TextSpan pill =
-        make_pill_placeholder_span("Alexandria The Magnificent");
+    tk::TextSpan pill = make_pill_placeholder_span("Alexandria The Magnificent");
     tk::TextSpan tail;
     tail.text = " end";
     const tk::TextSpan spans[] = {lead, pill, tail};
@@ -227,8 +212,7 @@ TEST_CASE("a mention pill wrapped to the next line reports exactly one box",
     REQUIRE(layout != nullptr);
     REQUIRE(layout->line_count() >= 2);
     const int start = static_cast<int>(lead.text.size());
-    auto rects = layout->selection_rects(
-        start, start + static_cast<int>(pill.text.size()));
+    auto rects = layout->selection_rects(start, start + static_cast<int>(pill.text.size()));
     REQUIRE(rects.size() == 1);
     CHECK(rects[0].w > 40.0f);
 }
@@ -238,21 +222,22 @@ TEST_CASE("a mention pill span does not inflate the surrounding line's height",
 {
     auto surface = TestSurface::create(400, 60);
 
-    const tk::TextSpan plain_text[] = {[] {
-        tk::TextSpan sp;
-        sp.text = "hello ";
-        return sp;
-    }()};
-    auto plain_layout = surface->factory().build_rich_text(
-        plain_text, tk::TextStyle{.role = tk::FontRole::Body});
+    const tk::TextSpan plain_text[] = {[]
+                                       {
+                                           tk::TextSpan sp;
+                                           sp.text = "hello ";
+                                           return sp;
+                                       }()};
+    auto plain_layout =
+        surface->factory().build_rich_text(plain_text, tk::TextStyle{.role = tk::FontRole::Body});
     REQUIRE(plain_layout != nullptr);
 
     tk::TextSpan text_part;
     text_part.text = "hello ";
     tk::TextSpan pill_part = make_pill_placeholder_span("Alice");
     const tk::TextSpan mixed[] = {text_part, pill_part};
-    auto mixed_layout = surface->factory().build_rich_text(
-        mixed, tk::TextStyle{.role = tk::FontRole::Body});
+    auto mixed_layout =
+        surface->factory().build_rich_text(mixed, tk::TextStyle{.role = tk::FontRole::Body});
     REQUIRE(mixed_layout != nullptr);
 
     // Allow a hair of float slop; must not be *meaningfully* taller.
@@ -281,8 +266,7 @@ TEST_CASE("a wrapped (multi-line) row's pill renders at the same width it "
 
     tk::TextSpan text_part;
     text_part.text = "vos tenes forma de cambiar ";
-    tk::TextSpan pill_part =
-        make_pill_placeholder_span("Alejandro Sztrajman (WA)");
+    tk::TextSpan pill_part = make_pill_placeholder_span("Alejandro Sztrajman (WA)");
     const tk::TextSpan spans[] = {text_part, pill_part};
 
     tk::TextStyle style{.role = tk::FontRole::Body};
@@ -302,15 +286,18 @@ TEST_CASE("a wrapped (multi-line) row's pill renders at the same width it "
     // reserved box, not necessarily rects[0].
     const tk::Rect* reserved = &rects[0];
     for (const auto& r : rects)
+    {
         if (r.w > reserved->w)
+        {
             reserved = &r;
+        }
+    }
     const float reserved_w = reserved->w;
 
     // The fix: stable metrics from a throwaway single-line measurement,
     // independent of how many lines this particular row wraps to.
     float ascent = 12.0f, descent = 4.0f;
-    if (auto m = surface->factory().build_text(
-            " ", tk::TextStyle{.role = tk::FontRole::Body}))
+    if (auto m = surface->factory().build_text(" ", tk::TextStyle{.role = tk::FontRole::Body}))
     {
         ascent = m->ascent();
         descent = std::max(0.0f, m->measure().h - ascent);
@@ -322,8 +309,7 @@ TEST_CASE("a wrapped (multi-line) row's pill renders at the same width it "
     spec.reserve_leading_visual = true;
     spec.bg = pill_part.background;
     spec.fg = pill_part.color;
-    auto bitmap = tk::render_pill_bitmap(surface->factory(), spec, ascent,
-                                         descent, 1.0f);
+    auto bitmap = tk::render_pill_bitmap(surface->factory(), spec, ascent, descent, 1.0f);
     REQUIRE(bitmap != nullptr);
 
     // Within a pixel of what was actually reserved — not off by a factor of
@@ -352,8 +338,8 @@ TEST_CASE("clicking anywhere across a mention pill's width hits its link, "
     pill_part.url = "https://matrix.to/#/@alejandro:example.org";
     const tk::TextSpan spans[] = {pill_part};
 
-    auto layout = surface->factory().build_rich_text(
-        spans, tk::TextStyle{.role = tk::FontRole::Body});
+    auto layout =
+        surface->factory().build_rich_text(spans, tk::TextStyle{.role = tk::FontRole::Body});
     REQUIRE(layout != nullptr);
 
     auto rects = layout->selection_rects(0, static_cast<int>(pill_part.text.size()));

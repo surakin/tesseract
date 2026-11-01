@@ -84,7 +84,6 @@ public:
     }
 
 protected:
-
     struct ThumbGeom
     {
         float track_top, track_h, thumb_h, thumb_top;

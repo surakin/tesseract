@@ -30,18 +30,18 @@ inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r)
 inline Client::QrGrantBitmap from_ffi(const tesseract_ffi::QrGrantBitmap& r)
 {
     return {
-        .ok      = r.ok,
+        .ok = r.ok,
         .message = std::string(r.message),
-        .pixels  = std::vector<uint8_t>(r.pixels.begin(), r.pixels.end()),
-        .side    = r.side,
+        .pixels = std::vector<uint8_t>(r.pixels.begin(), r.pixels.end()),
+        .side = r.side,
     };
 }
 
 inline Client::QrGrantAuth from_ffi(const tesseract_ffi::QrGrantAuth& r)
 {
     return {
-        .ok               = r.ok,
-        .message          = std::string(r.message),
+        .ok = r.ok,
+        .message = std::string(r.message),
         .verification_uri = std::string(r.verification_uri),
     };
 }
@@ -51,9 +51,13 @@ inline VerificationSas from_ffi(const tesseract_ffi::VerificationSas& s)
     VerificationSas out;
     out.emojis.reserve(s.emojis.size());
     for (const auto& e : s.emojis)
+    {
         out.emojis.push_back({std::string(e.symbol), std::string(e.description)});
+    }
     for (size_t i = 0; i < out.decimals.size(); ++i)
+    {
         out.decimals[i] = s.decimals[i];
+    }
     return out;
 }
 
@@ -65,16 +69,16 @@ inline SearchIndexStats from_ffi(const tesseract_ffi::SearchIndexStats& s)
 inline ActivityEntry from_ffi(const tesseract_ffi::ActivityEntry& e)
 {
     return {
-        .name             = std::string(e.name),
-        .group            = std::string(e.group),
-        .kind             = std::string(e.kind),
-        .state            = e.state == 1   ? ActivityState::Running
-                            : e.state == 2 ? ActivityState::Error
-                                           : ActivityState::Idle,
-        .run_count        = e.run_count,
-        .last_started_ms  = e.last_started_ms,
+        .name = std::string(e.name),
+        .group = std::string(e.group),
+        .kind = std::string(e.kind),
+        .state = e.state == 1   ? ActivityState::Running
+                 : e.state == 2 ? ActivityState::Error
+                                : ActivityState::Idle,
+        .run_count = e.run_count,
+        .last_started_ms = e.last_started_ms,
         .last_finished_ms = e.last_finished_ms,
-        .detail           = std::string(e.detail),
+        .detail = std::string(e.detail),
     };
 }
 
@@ -130,9 +134,8 @@ inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p)
 
 inline ImagePack from_ffi(const tesseract_ffi::ImagePackFfi& p)
 {
-    PackSourceKind kind = (std::string(p.source_kind) == "room")
-                              ? PackSourceKind::Room
-                              : PackSourceKind::User;
+    PackSourceKind kind =
+        (std::string(p.source_kind) == "room") ? PackSourceKind::Room : PackSourceKind::User;
     return {
         .id = std::string(p.id),
         .display_name = std::string(p.display_name),
@@ -182,21 +185,51 @@ inline ParamSchema parse_param_schema(const nlohmann::json& j)
     {
         out.kind = ParamSchemaKind::Primitive;
         const auto t = j.value("type", std::string());
-        if (t == "string") out.primitive_type = ParamPrimitiveType::String;
-        else if (t == "integer") out.primitive_type = ParamPrimitiveType::Integer;
-        else if (t == "boolean") out.primitive_type = ParamPrimitiveType::Boolean;
-        else if (t == "user_id") out.primitive_type = ParamPrimitiveType::UserId;
-        else if (t == "server_name") out.primitive_type = ParamPrimitiveType::ServerName;
-        else if (t == "room_alias") out.primitive_type = ParamPrimitiveType::RoomAlias;
-        else out.kind = ParamSchemaKind::Invalid;
+        if (t == "string")
+        {
+            out.primitive_type = ParamPrimitiveType::String;
+        }
+        else if (t == "integer")
+        {
+            out.primitive_type = ParamPrimitiveType::Integer;
+        }
+        else if (t == "boolean")
+        {
+            out.primitive_type = ParamPrimitiveType::Boolean;
+        }
+        else if (t == "user_id")
+        {
+            out.primitive_type = ParamPrimitiveType::UserId;
+        }
+        else if (t == "server_name")
+        {
+            out.primitive_type = ParamPrimitiveType::ServerName;
+        }
+        else if (t == "room_alias")
+        {
+            out.primitive_type = ParamPrimitiveType::RoomAlias;
+        }
+        else
+        {
+            out.kind = ParamSchemaKind::Invalid;
+        }
     }
     else if (schema_type == "object")
     {
         out.kind = ParamSchemaKind::Object;
         const auto t = j.value("type", std::string());
-        if (t == "room_id") out.object_type = ParamObjectType::RoomId;
-        else if (t == "event_id") out.object_type = ParamObjectType::EventId;
-        else out.kind = ParamSchemaKind::Invalid;
+        if (t == "room_id")
+        {
+            out.object_type = ParamObjectType::RoomId;
+        }
+        else if (t == "event_id")
+        {
+            out.object_type = ParamObjectType::EventId;
+        }
+        else
+        {
+            out.kind = ParamSchemaKind::Invalid;
+        }
     }
     else if (schema_type == "array")
     {
@@ -224,10 +257,22 @@ inline ParamSchema parse_param_schema(const nlohmann::json& j)
         out.kind = ParamSchemaKind::Literal;
         out.literal_value_json = j.contains("value") ? j["value"].dump() : std::string("null");
         const auto t = j.value("literal_type", std::string());
-        if (t == "string") out.literal_type = ParamLiteralType::String;
-        else if (t == "integer") out.literal_type = ParamLiteralType::Integer;
-        else if (t == "boolean") out.literal_type = ParamLiteralType::Boolean;
-        else out.kind = ParamSchemaKind::Invalid;
+        if (t == "string")
+        {
+            out.literal_type = ParamLiteralType::String;
+        }
+        else if (t == "integer")
+        {
+            out.literal_type = ParamLiteralType::Integer;
+        }
+        else if (t == "boolean")
+        {
+            out.literal_type = ParamLiteralType::Boolean;
+        }
+        else
+        {
+            out.kind = ParamSchemaKind::Invalid;
+        }
     }
     else
     {
@@ -302,34 +347,34 @@ inline PinnedEvent from_ffi(const tesseract_ffi::PinnedEvent& p)
 inline RoomPermissions from_ffi(const tesseract_ffi::RoomPowerLevelsFfi& p)
 {
     return RoomPermissions{
-        .default_role       = p.default_role,
-        .send_messages      = p.send_messages,
-        .invite_users       = p.invite_users,
-        .change_settings    = p.change_settings,
-        .kick_users         = p.kick_users,
-        .ban_users          = p.ban_users,
-        .remove_messages    = p.remove_messages,
-        .notify_everyone    = p.notify_everyone,
+        .default_role = p.default_role,
+        .send_messages = p.send_messages,
+        .invite_users = p.invite_users,
+        .change_settings = p.change_settings,
+        .kick_users = p.kick_users,
+        .ban_users = p.ban_users,
+        .remove_messages = p.remove_messages,
+        .notify_everyone = p.notify_everyone,
         .change_permissions = p.change_permissions,
-        .start_calls        = p.start_calls,
-        .join_calls         = p.join_calls,
+        .start_calls = p.start_calls,
+        .join_calls = p.join_calls,
     };
 }
 
 inline tesseract_ffi::RoomPowerLevelsFfi to_ffi(const RoomPermissions& p)
 {
     return tesseract_ffi::RoomPowerLevelsFfi{
-        .default_role       = p.default_role,
-        .send_messages      = p.send_messages,
-        .invite_users       = p.invite_users,
-        .change_settings    = p.change_settings,
-        .kick_users         = p.kick_users,
-        .ban_users          = p.ban_users,
-        .remove_messages    = p.remove_messages,
-        .notify_everyone    = p.notify_everyone,
+        .default_role = p.default_role,
+        .send_messages = p.send_messages,
+        .invite_users = p.invite_users,
+        .change_settings = p.change_settings,
+        .kick_users = p.kick_users,
+        .ban_users = p.ban_users,
+        .remove_messages = p.remove_messages,
+        .notify_everyone = p.notify_everyone,
         .change_permissions = p.change_permissions,
-        .start_calls        = p.start_calls,
-        .join_calls         = p.join_calls,
+        .start_calls = p.start_calls,
+        .join_calls = p.join_calls,
     };
 }
 
@@ -338,18 +383,20 @@ inline tesseract_ffi::RoomCreateOptionsFfi to_ffi(const RoomCreateOptions& o)
     rust::Vec<rust::String> invite;
     invite.reserve(o.invite.size());
     for (const auto& id : o.invite)
+    {
         invite.push_back(id);
+    }
 
     return tesseract_ffi::RoomCreateOptionsFfi{
-        .name                  = o.name,
-        .topic                 = o.topic,
+        .name = o.name,
+        .topic = o.topic,
         .room_alias_local_part = o.room_alias_local_part,
-        .visibility            = o.visibility,
-        .encrypted             = o.encrypted,
-        .is_space              = o.is_space,
-        .is_call_room          = o.is_call_room,
-        .invite                = std::move(invite),
-        .invite_reason         = o.invite_reason,
+        .visibility = o.visibility,
+        .encrypted = o.encrypted,
+        .is_space = o.is_space,
+        .is_call_room = o.is_call_room,
+        .invite = std::move(invite),
+        .invite_reason = o.invite_reason,
     };
 }
 
@@ -358,51 +405,53 @@ inline tesseract_ffi::RoomExportOptionsFfi to_ffi(const RoomExportOptions& o)
     rust::Vec<rust::String> labels;
     labels.reserve(o.labels.size());
     for (const auto& l : o.labels)
+    {
         labels.push_back(l);
+    }
 
     return tesseract_ffi::RoomExportOptionsFfi{
-        .out_path             = utf8_lossy(o.out_path), // a folder name can be arbitrary bytes
-        .format                = o.format,
-        .include_images        = o.include_images,
-        .zip_output            = o.zip_output,
-        .stop_at_ts_ms          = o.stop_at_ts_ms,
-        .window_events          = o.window_events,
-        .labels                 = std::move(labels),
-        .resume_from_event_id   = o.resume_from_event_id,
+        .out_path = utf8_lossy(o.out_path), // a folder name can be arbitrary bytes
+        .format = o.format,
+        .include_images = o.include_images,
+        .zip_output = o.zip_output,
+        .stop_at_ts_ms = o.stop_at_ts_ms,
+        .window_events = o.window_events,
+        .labels = std::move(labels),
+        .resume_from_event_id = o.resume_from_event_id,
     };
 }
 
 inline RoomExportProgress from_ffi(const tesseract_ffi::RoomExportProgressFfi& p)
 {
     return RoomExportProgress{
-        .request_id         = p.request_id,
-        .room_id            = std::string(p.room_id),
-        .events_written     = p.events_written,
-        .bytes_written      = p.bytes_written,
-        .oldest_ts_ms       = p.oldest_ts_ms,
-        .newest_ts_ms       = p.newest_ts_ms,
+        .request_id = p.request_id,
+        .room_id = std::string(p.room_id),
+        .events_written = p.events_written,
+        .bytes_written = p.bytes_written,
+        .oldest_ts_ms = p.oldest_ts_ms,
+        .newest_ts_ms = p.newest_ts_ms,
         .room_created_ts_ms = p.room_created_ts_ms,
-        .stop_at_ts_ms      = p.stop_at_ts_ms,
-        .images_downloaded  = p.images_downloaded,
-        .images_skipped     = p.images_skipped,
-        .images_failed      = p.images_failed,
-        .reached_start      = p.reached_start,
-        .finalizing         = p.finalizing,
-        .assembly_done      = p.assembly_done,
-        .assembly_total     = p.assembly_total,
+        .stop_at_ts_ms = p.stop_at_ts_ms,
+        .images_downloaded = p.images_downloaded,
+        .images_skipped = p.images_skipped,
+        .images_failed = p.images_failed,
+        .reached_start = p.reached_start,
+        .finalizing = p.finalizing,
+        .assembly_done = p.assembly_done,
+        .assembly_total = p.assembly_total,
     };
 }
 
 inline RoomExportCheckpoint from_ffi(const tesseract_ffi::RoomExportCheckpointFfi& c)
 {
     return RoomExportCheckpoint{
-        .exists          = c.exists,
-        .room_id         = std::string(c.room_id),
-        .out_path        = std::string(c.out_path),
-        .format          = std::string(c.format),
+        .exists = c.exists,
+        .room_id = std::string(c.room_id),
+        .out_path = std::string(c.out_path),
+        .format = std::string(c.format),
         .oldest_event_id = std::string(c.oldest_event_id),
-        .oldest_ts_ms    = c.oldest_ts_ms,
-        .events_written  = c.events_written,
+        .oldest_ts_ms = c.oldest_ts_ms,
+        .events_written = c.events_written,
         .updated_at_secs = c.updated_at_secs,
     };
 }
@@ -410,17 +459,17 @@ inline RoomExportCheckpoint from_ffi(const tesseract_ffi::RoomExportCheckpointFf
 inline RoomOwnPowerLevel from_ffi(const tesseract_ffi::RoomOwnPowerLevelFfi& p)
 {
     return RoomOwnPowerLevel{
-        .level                  = p.level,
-        .has_explicit_override  = p.has_explicit_override,
+        .level = p.level,
+        .has_explicit_override = p.has_explicit_override,
     };
 }
 
 inline RoomSecurityState from_ffi(const tesseract_ffi::RoomSecurityStateFfi& s)
 {
     return RoomSecurityState{
-        .is_encrypted       = s.is_encrypted,
-        .join_rule          = std::string(s.join_rule),
-        .guest_access       = s.guest_access,
+        .is_encrypted = s.is_encrypted,
+        .join_rule = std::string(s.join_rule),
+        .guest_access = s.guest_access,
         .history_visibility = std::string(s.history_visibility),
     };
 }
@@ -429,35 +478,43 @@ inline ServerInfo from_ffi(const tesseract_ffi::ServerInfoFfi& s)
 {
     ServerInfo out; // defaults stand in for "not fetched" when !s.ok
     if (!s.ok)
+    {
         return out;
+    }
     out.homeserver_url = std::string(s.homeserver_url);
     for (const auto& v : s.spec_versions)
+    {
         out.spec_versions.push_back({static_cast<int>(v.major), static_cast<int>(v.minor)});
+    }
     out.supports_msc3030 = s.supports_msc3030;
     // MSC3030 (Jump to Date) was stabilised in spec v1.6.
     for (const auto& sv : out.spec_versions)
+    {
         if (sv.at_least(1, 6))
         {
             out.supports_msc3030 = true;
             break;
         }
-    out.can_change_password     = s.can_change_password;
-    out.can_set_displayname     = s.can_set_displayname;
-    out.can_set_avatar          = s.can_set_avatar;
+    }
+    out.can_change_password = s.can_change_password;
+    out.can_set_displayname = s.can_set_displayname;
+    out.can_set_avatar = s.can_set_avatar;
     out.supports_profile_fields = s.supports_profile_fields;
-    out.profile_fields_enabled  = s.profile_fields_enabled;
-    out.preview_url_enabled     = s.preview_url_enabled;
-    out.supports_qr_grant       = s.supports_qr_grant;
-    out.supports_calls          = s.supports_calls;
-    out.default_room_version    = std::string(s.default_room_version);
-    out.profile_fields_stable   = s.profile_fields_stable;
-    out.supports_invite_reason  = s.supports_invite_reason;
-    out.supports_mutual_rooms   = s.supports_mutual_rooms;
-    out.server_name             = std::string(s.server_name);
-    out.server_version          = std::string(s.server_version);
-    out.upload_size_limit       = s.upload_size_limit;
+    out.profile_fields_enabled = s.profile_fields_enabled;
+    out.preview_url_enabled = s.preview_url_enabled;
+    out.supports_qr_grant = s.supports_qr_grant;
+    out.supports_calls = s.supports_calls;
+    out.default_room_version = std::string(s.default_room_version);
+    out.profile_fields_stable = s.profile_fields_stable;
+    out.supports_invite_reason = s.supports_invite_reason;
+    out.supports_mutual_rooms = s.supports_mutual_rooms;
+    out.server_name = std::string(s.server_name);
+    out.server_version = std::string(s.server_version);
+    out.upload_size_limit = s.upload_size_limit;
     for (const auto& f : s.login_flows)
+    {
         out.login_flows.emplace_back(std::string(f));
+    }
     return out;
 }
 
@@ -468,9 +525,9 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .name = std::string(r.name),
         .topic = std::string(r.topic),
         .notification_count = r.notification_count,
-        .highlight_count    = r.highlight_count,
-        .unread_count       = r.unread_count,
-        .muted              = r.muted,
+        .highlight_count = r.highlight_count,
+        .unread_count = r.unread_count,
+        .muted = r.muted,
         .is_direct = r.is_direct,
         .avatar_url = std::string(r.avatar_url),
         .dm_avatar_url = std::string(r.dm_avatar_url),
@@ -527,52 +584,55 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
 inline InviteInfo from_ffi(const tesseract_ffi::InviteInfo& i)
 {
     return {
-        .room_id               = std::string(i.room_id),
-        .room_name             = std::string(i.room_name),
-        .room_avatar_url       = std::string(i.room_avatar_url),
-        .room_topic            = std::string(i.room_topic),
-        .is_direct             = i.is_direct,
-        .inviter_user_id       = std::string(i.inviter_user_id),
-        .inviter_display_name  = std::string(i.inviter_display_name),
-        .inviter_avatar_url    = std::string(i.inviter_avatar_url),
-        .invited_at_ts         = i.invited_at_ts,
-        .reason                = std::string(i.reason),
+        .room_id = std::string(i.room_id),
+        .room_name = std::string(i.room_name),
+        .room_avatar_url = std::string(i.room_avatar_url),
+        .room_topic = std::string(i.room_topic),
+        .is_direct = i.is_direct,
+        .inviter_user_id = std::string(i.inviter_user_id),
+        .inviter_display_name = std::string(i.inviter_display_name),
+        .inviter_avatar_url = std::string(i.inviter_avatar_url),
+        .invited_at_ts = i.invited_at_ts,
+        .reason = std::string(i.reason),
     };
 }
 
 inline KnockedRoomInfo from_ffi(const tesseract_ffi::KnockedRoomInfo& i)
 {
     return {
-        .room_id         = std::string(i.room_id),
-        .room_name       = std::string(i.room_name),
+        .room_id = std::string(i.room_id),
+        .room_name = std::string(i.room_name),
         .room_avatar_url = std::string(i.room_avatar_url),
-        .room_topic      = std::string(i.room_topic),
-        .knocked_at_ts   = i.knocked_at_ts,
-        .reason          = std::string(i.reason),
+        .room_topic = std::string(i.room_topic),
+        .knocked_at_ts = i.knocked_at_ts,
+        .reason = std::string(i.reason),
     };
 }
 
 inline KnockRequestInfo from_ffi(const tesseract_ffi::KnockRequestInfo& i)
 {
     return {
-        .room_id      = std::string(i.room_id),
-        .user_id      = std::string(i.user_id),
+        .room_id = std::string(i.room_id),
+        .user_id = std::string(i.user_id),
         .display_name = std::string(i.display_name),
-        .avatar_url   = std::string(i.avatar_url),
-        .reason       = std::string(i.reason),
+        .avatar_url = std::string(i.avatar_url),
+        .reason = std::string(i.reason),
         .timestamp_ts = i.timestamp_ts,
     };
 }
 
 /// Build a MediaSource from the split url/encrypted_json pair carried over
 /// the FFI.  Returns nullptr when url is empty (= absent source).
-inline MediaSourceRef make_source(rust::Str url,
-                                                       rust::Str enc_json)
+inline MediaSourceRef make_source(rust::Str url, rust::Str enc_json)
 {
     if (url.empty())
+    {
         return nullptr;
+    }
     if (enc_json.empty())
+    {
         return MediaSource::plain(std::string(url));
+    }
     return MediaSource::encrypted(std::string(url), std::string(enc_json));
 }
 
@@ -603,7 +663,9 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
         out.count = r.count;
         out.reacted_by_me = r.reacted_by_me;
         if (!r.source_url.empty())
+        {
             out.source = MediaSource::plain(std::string(r.source_url));
+        }
         out.senders.reserve(r.senders.size());
         for (const auto& s : r.senders)
         {
@@ -664,7 +726,9 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.pending_recoverable = e.pending_recoverable;
     ev.pending_txn_id = std::string(e.pending_txn_id);
     for (const auto& u : e.pending_error_users)
+    {
         ev.pending_error_users.emplace_back(std::string(u));
+    }
 }
 
 /// Map the stable discriminant produced by Rust's `membership_action_str`
@@ -673,25 +737,82 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
 /// 19 known strings) is `Joined` — a safe default rather than a crash.
 inline MembershipAction parse_membership_action(const std::string& s)
 {
-    if (s == "joined") return MembershipAction::Joined;
-    if (s == "left") return MembershipAction::Left;
-    if (s == "banned") return MembershipAction::Banned;
-    if (s == "unbanned") return MembershipAction::Unbanned;
-    if (s == "kicked") return MembershipAction::Kicked;
-    if (s == "invited") return MembershipAction::Invited;
-    if (s == "kicked_and_banned") return MembershipAction::KickedAndBanned;
-    if (s == "invitation_accepted") return MembershipAction::InvitationAccepted;
-    if (s == "invitation_rejected") return MembershipAction::InvitationRejected;
-    if (s == "invitation_revoked") return MembershipAction::InvitationRevoked;
-    if (s == "knocked") return MembershipAction::Knocked;
-    if (s == "knock_accepted") return MembershipAction::KnockAccepted;
-    if (s == "knock_retracted") return MembershipAction::KnockRetracted;
-    if (s == "knock_denied") return MembershipAction::KnockDenied;
-    if (s == "avatar_changed") return MembershipAction::AvatarChanged;
-    if (s == "avatar_removed") return MembershipAction::AvatarRemoved;
-    if (s == "display_name_changed") return MembershipAction::DisplayNameChanged;
-    if (s == "display_name_removed") return MembershipAction::DisplayNameRemoved;
-    if (s == "profile_changed") return MembershipAction::ProfileChanged;
+    if (s == "joined")
+    {
+        return MembershipAction::Joined;
+    }
+    if (s == "left")
+    {
+        return MembershipAction::Left;
+    }
+    if (s == "banned")
+    {
+        return MembershipAction::Banned;
+    }
+    if (s == "unbanned")
+    {
+        return MembershipAction::Unbanned;
+    }
+    if (s == "kicked")
+    {
+        return MembershipAction::Kicked;
+    }
+    if (s == "invited")
+    {
+        return MembershipAction::Invited;
+    }
+    if (s == "kicked_and_banned")
+    {
+        return MembershipAction::KickedAndBanned;
+    }
+    if (s == "invitation_accepted")
+    {
+        return MembershipAction::InvitationAccepted;
+    }
+    if (s == "invitation_rejected")
+    {
+        return MembershipAction::InvitationRejected;
+    }
+    if (s == "invitation_revoked")
+    {
+        return MembershipAction::InvitationRevoked;
+    }
+    if (s == "knocked")
+    {
+        return MembershipAction::Knocked;
+    }
+    if (s == "knock_accepted")
+    {
+        return MembershipAction::KnockAccepted;
+    }
+    if (s == "knock_retracted")
+    {
+        return MembershipAction::KnockRetracted;
+    }
+    if (s == "knock_denied")
+    {
+        return MembershipAction::KnockDenied;
+    }
+    if (s == "avatar_changed")
+    {
+        return MembershipAction::AvatarChanged;
+    }
+    if (s == "avatar_removed")
+    {
+        return MembershipAction::AvatarRemoved;
+    }
+    if (s == "display_name_changed")
+    {
+        return MembershipAction::DisplayNameChanged;
+    }
+    if (s == "display_name_removed")
+    {
+        return MembershipAction::DisplayNameRemoved;
+    }
+    if (s == "profile_changed")
+    {
+        return MembershipAction::ProfileChanged;
+    }
     return MembershipAction::Joined;
 }
 
@@ -701,9 +822,18 @@ inline MembershipAction parse_membership_action(const std::string& s)
 /// (matches the Rust-side fallback for unknown/custom MSC4274 itemtypes).
 inline GalleryItem::Kind parse_gallery_item_kind(const std::string& s)
 {
-    if (s == "m.image") return GalleryItem::Kind::Image;
-    if (s == "m.video") return GalleryItem::Kind::Video;
-    if (s == "m.audio") return GalleryItem::Kind::Audio;
+    if (s == "m.image")
+    {
+        return GalleryItem::Kind::Image;
+    }
+    if (s == "m.video")
+    {
+        return GalleryItem::Kind::Video;
+    }
+    if (s == "m.audio")
+    {
+        return GalleryItem::Kind::Audio;
+    }
     return GalleryItem::Kind::File;
 }
 
@@ -736,11 +866,10 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<ImageEvent>();
         assign_base(*ev, e);
-        ev->source    = make_source(e.source_url, e.source_encrypted_json);
-        ev->thumbnail = make_source(e.image_thumbnail_url,
-                                    e.image_thumbnail_encrypted_json);
-        ev->width    = e.width;
-        ev->height   = e.height;
+        ev->source = make_source(e.source_url, e.source_encrypted_json);
+        ev->thumbnail = make_source(e.image_thumbnail_url, e.image_thumbnail_encrypted_json);
+        ev->width = e.width;
+        ev->height = e.height;
         ev->filename = std::string(e.image_filename);
         ev->mime_type = std::string(e.image_mime);
         ev->blurhash = std::string(e.blurhash);
@@ -752,14 +881,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<StickerEvent>();
         assign_base(*ev, e);
-        ev->source    = make_source(e.source_url, e.source_encrypted_json);
-        ev->thumbnail = make_source(e.image_thumbnail_url,
-                                    e.image_thumbnail_encrypted_json);
-        ev->width    = e.width;
-        ev->height   = e.height;
-        ev->blurhash  = std::string(e.blurhash);
+        ev->source = make_source(e.source_url, e.source_encrypted_json);
+        ev->thumbnail = make_source(e.image_thumbnail_url, e.image_thumbnail_encrypted_json);
+        ev->width = e.width;
+        ev->height = e.height;
+        ev->blurhash = std::string(e.blurhash);
         ev->info_json = std::string(e.sticker_info_json);
-        ev->animated  = e.image_animated;
+        ev->animated = e.image_animated;
         return ev;
     }
 
@@ -781,8 +909,8 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<FileEvent>();
         assign_base(*ev, e);
-        ev->source    = make_source(e.file_url, e.file_encrypted_json);
-        ev->filename  = std::string(e.file_filename);
+        ev->source = make_source(e.file_url, e.file_encrypted_json);
+        ev->filename = std::string(e.file_filename);
         ev->mime_type = std::string(e.file_mime);
         ev->file_size = e.file_size;
         return ev;
@@ -792,11 +920,11 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<AudioEvent>();
         assign_base(*ev, e);
-        ev->source     = make_source(e.audio_url, e.audio_encrypted_json);
-        ev->mime_type  = std::string(e.audio_mime);
+        ev->source = make_source(e.audio_url, e.audio_encrypted_json);
+        ev->mime_type = std::string(e.audio_mime);
         ev->duration_ms = e.audio_duration_ms;
-        ev->filename   = std::string(e.file_name);
-        ev->file_size  = e.file_size;
+        ev->filename = std::string(e.file_name);
+        ev->file_size = e.file_size;
         return ev;
     }
 
@@ -804,8 +932,8 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<VoiceEvent>();
         assign_base(*ev, e);
-        ev->source     = make_source(e.audio_url, e.audio_encrypted_json);
-        ev->mime_type  = std::string(e.audio_mime);
+        ev->source = make_source(e.audio_url, e.audio_encrypted_json);
+        ev->mime_type = std::string(e.audio_mime);
         ev->duration_ms = e.audio_duration_ms;
         ev->waveform.reserve(e.audio_waveform.size());
         for (uint16_t amp : e.audio_waveform)
@@ -819,20 +947,19 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
     {
         auto ev = std::make_unique<VideoEvent>();
         assign_base(*ev, e);
-        ev->source    = make_source(e.source_url, e.source_encrypted_json);
-        ev->thumbnail = make_source(e.video_thumbnail_url,
-                                    e.video_thumbnail_encrypted_json);
-        ev->mime_type    = std::string(e.video_mime);
-        ev->width        = e.width;
-        ev->height       = e.height;
-        ev->duration_ms  = e.video_duration_ms;
-        ev->filename     = std::string(e.image_filename);
-        ev->autoplay     = e.video_autoplay;
-        ev->loop         = e.video_loop;
-        ev->no_audio     = e.video_no_audio;
+        ev->source = make_source(e.source_url, e.source_encrypted_json);
+        ev->thumbnail = make_source(e.video_thumbnail_url, e.video_thumbnail_encrypted_json);
+        ev->mime_type = std::string(e.video_mime);
+        ev->width = e.width;
+        ev->height = e.height;
+        ev->duration_ms = e.video_duration_ms;
+        ev->filename = std::string(e.image_filename);
+        ev->autoplay = e.video_autoplay;
+        ev->loop = e.video_loop;
+        ev->no_audio = e.video_no_audio;
         ev->hide_controls = e.video_hide_controls;
-        ev->gif          = e.video_gif;
-        ev->blurhash     = std::string(e.blurhash);
+        ev->gif = e.video_gif;
+        ev->blurhash = std::string(e.blurhash);
         return ev;
     }
 
@@ -977,7 +1104,9 @@ std::vector<T> ffi_vec(const rust::Vec<U>& src)
     std::vector<T> out;
     out.reserve(src.size());
     for (const auto& x : src)
+    {
         out.push_back(from_ffi(x));
+    }
     return out;
 }
 

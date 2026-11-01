@@ -35,7 +35,9 @@ std::size_t skip_gif_sub_blocks(std::span<const std::uint8_t> b, std::size_t pos
     {
         const std::size_t len = b[pos];
         if (len == 0)
+        {
             return pos + 1;
+        }
         pos += 1 + len;
     }
     return kNpos;
@@ -46,16 +48,22 @@ std::size_t skip_gif_sub_blocks(std::span<const std::uint8_t> b, std::size_t pos
 bool gif_has_multiple_frames(std::span<const std::uint8_t> b)
 {
     if (b.size() < 13)
+    {
         return false;
+    }
     std::size_t pos = 13; // 6-byte signature + 7-byte logical screen descriptor
     if (b[10] & 0x80)
+    {
         pos += std::size_t{3} << ((b[10] & 0x07) + 1); // global colour table
+    }
     int frames = 0;
     while (pos < b.size())
     {
         const std::uint8_t tag = b[pos];
         if (tag == 0x3B) // trailer
+        {
             break;
+        }
         if (tag == 0x21) // extension: label + sub-blocks
         {
             pos = skip_gif_sub_blocks(b, pos + 2);
@@ -63,19 +71,30 @@ bool gif_has_multiple_frames(std::span<const std::uint8_t> b)
         else if (tag == 0x2C) // image descriptor
         {
             if (++frames >= 2)
+            {
                 return true;
+            }
             if (pos + 10 > b.size())
+            {
                 break;
+            }
             const std::uint8_t packed = b[pos + 9];
             pos += 10;
             if (packed & 0x80)
+            {
                 pos += std::size_t{3} << ((packed & 0x07) + 1); // local colour table
-            pos = pos + 1 <= b.size() ? skip_gif_sub_blocks(b, pos + 1) : kNpos; // LZW min code size
+            }
+            pos =
+                pos + 1 <= b.size() ? skip_gif_sub_blocks(b, pos + 1) : kNpos; // LZW min code size
         }
         else
+        {
             break; // malformed
+        }
         if (pos == kNpos)
+        {
             break;
+        }
     }
     return false;
 }
@@ -95,12 +114,18 @@ bool apng_is_animated(std::span<const std::uint8_t> b)
     {
         const std::size_t len = rd_be32(b, pos);
         if (has_prefix(b, "acTL", pos + 4))
+        {
             return pos + 12 <= b.size() && rd_be32(b, pos + 8) > 1;
+        }
         if (has_prefix(b, "IDAT", pos + 4) || has_prefix(b, "IEND", pos + 4))
+        {
             return false;
+        }
         const std::size_t next = pos + 12 + len; // len + type + data + crc
         if (next <= pos)
+        {
             return false;
+        }
         pos = next;
     }
     return false;
@@ -111,20 +136,30 @@ bool apng_is_animated(std::span<const std::uint8_t> b)
 bool avif_is_sequence(std::span<const std::uint8_t> b)
 {
     if (b.size() < 16 || !has_prefix(b, "ftyp", 4))
+    {
         return false;
+    }
     const std::size_t box = std::min<std::size_t>(rd_be32(b, 0), b.size());
     if (has_prefix(b, "avis", 8))
+    {
         return true;
+    }
     for (std::size_t at = 16; at + 4 <= box; at += 4) // compatible brands follow the minor version
+    {
         if (has_prefix(b, "avis", at))
+        {
             return true;
+        }
+    }
     return false;
 }
 
 bool mime_rules_out(std::string_view mime)
 {
     if (mime.empty() || mime.starts_with("image/") || mime == "application/octet-stream")
+    {
         return false;
+    }
     return true;
 }
 
@@ -133,15 +168,25 @@ bool mime_rules_out(std::string_view mime)
 bool is_animated_image(std::span<const std::uint8_t> bytes, std::string_view mime)
 {
     if (bytes.size() < 4 || mime_rules_out(mime))
+    {
         return false;
+    }
     if (has_prefix(bytes, "GIF8"))
+    {
         return gif_has_multiple_frames(bytes);
+    }
     if (has_prefix(bytes, "RIFF"))
+    {
         return webp_is_animated(bytes);
+    }
     if (bytes.size() > 8 && std::memcmp(bytes.data(), "\x89PNG\r\n\x1a\n", 8) == 0)
+    {
         return apng_is_animated(bytes);
+    }
     if (avif_is_sequence(bytes))
+    {
         return true;
+    }
     return is_jxl_animated(bytes);
 }
 

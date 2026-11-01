@@ -18,11 +18,14 @@ TEST_CASE("sdk_text decodes preview, decryption and pin codes", "[sdk_text]")
     CHECK(localize("\x01poll\x01Lunch?") == "(poll) Lunch?");
     CHECK(localize("\x01utd_unknown") == "🔒 Unable to decrypt");
     CHECK(localize("\x01pin_added") == "pinned a message");
-    CHECK(localize("\x01pin_added_n\x01" "3") == "pinned 3 messages");
-    CHECK(localize("\x01pin_removed_n\x01" "2") == "unpinned 2 messages");
+    CHECK(localize("\x01pin_added_n\x01"
+                   "3") == "pinned 3 messages");
+    CHECK(localize("\x01pin_removed_n\x01"
+                   "2") == "unpinned 2 messages");
 }
 
 TEST_CASE("sdk_text shows an unknown code by its name", "[sdk_text]")
 {
-    CHECK(localize("\x01" "from_the_future") == "from_the_future");
+    CHECK(localize("\x01"
+                   "from_the_future") == "from_the_future");
 }

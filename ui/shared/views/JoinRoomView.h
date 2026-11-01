@@ -57,8 +57,7 @@ public:
         Error,   // lookup or join failed
     };
 
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
     // Resets to State::Idle, prefills the alias field, and requests native
@@ -136,8 +135,8 @@ public:
     // requires knocking (see wants_knock_()) and the user clicks the
     // relabelled "Request to Join" button. `reason` is the optional
     // single-line reason field's text, or empty.
-    std::function<void(const std::string& room_id_or_alias,
-                       const std::string& reason)> on_knock_requested;
+    std::function<void(const std::string& room_id_or_alias, const std::string& reason)>
+        on_knock_requested;
     // Fired when the user clicks "Cancel" / "✕".
     std::function<void()> on_cancel;
     // Fired from close() (Cancel, Escape, outside click, or programmatic).
@@ -215,7 +214,7 @@ private:
 
     // Layout rects (world-space, valid after arrange()).
     tk::Rect preview_card_rect_{};
-    tk::Rect topic_rect_{};  // world-space rect of the topic text block
+    tk::Rect topic_rect_{}; // world-space rect of the topic text block
 
     // Measured height of the avatar-row info column (name + join-rule pill +
     // member count), computed in arrange() and consumed by paint() to
@@ -224,11 +223,11 @@ private:
     float preview_info_h_ = 0.0f;
 
     // Cached topic layout and its source spans (rebuilt on set_preview).
-    tk::CachedTextLayout    topic_layout_;
-    std::vector<tk::TextSpan>          topic_spans_;
+    tk::CachedTextLayout topic_layout_;
+    std::vector<tk::TextSpan> topic_spans_;
     // Keyboard stand-in for the preview topic's links (placed in paint(),
     // where topic_rect_ is computed).
-    tk::KeyboardTarget*                topic_target_ = nullptr;
+    tk::KeyboardTarget* topic_target_ = nullptr;
 
     std::string press_link_url_;
     std::string hover_link_url_;

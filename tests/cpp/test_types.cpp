@@ -71,11 +71,10 @@ TEST_CASE("RoomInfo default-initialised fields", "[types]")
     CHECK(r.effective_avatar_url().empty());
 }
 
-TEST_CASE("RoomInfo::effective_avatar_url prefers room avatar over DM fallback",
-          "[types]")
+TEST_CASE("RoomInfo::effective_avatar_url prefers room avatar over DM fallback", "[types]")
 {
     tesseract::RoomInfo r{};
-    r.avatar_url    = "mxc://example.org/room";
+    r.avatar_url = "mxc://example.org/room";
     r.dm_avatar_url = "mxc://example.org/user";
     CHECK(r.effective_avatar_url() == "mxc://example.org/room");
 }
@@ -184,17 +183,17 @@ TEST_CASE("ImageEvent thumbnail defaults null", "[types]")
 TEST_CASE("ImageEvent thumbnail is settable independently of source", "[types]")
 {
     tesseract::ImageEvent ev{};
-    ev.source    = tesseract::MediaSource::plain("mxc://example.org/full");
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/full");
     ev.thumbnail = tesseract::MediaSource::plain("mxc://example.org/thumb");
 
-    CHECK(ev.source->mxc_url()    == "mxc://example.org/full");
+    CHECK(ev.source->mxc_url() == "mxc://example.org/full");
     CHECK(ev.thumbnail->mxc_url() == "mxc://example.org/thumb");
 }
 
 TEST_CASE("PlainMediaSource: fetch_token equals mxc_url", "[types][mediasource]")
 {
     auto s = tesseract::MediaSource::plain("mxc://example.org/abc");
-    CHECK(s->mxc_url()    == "mxc://example.org/abc");
+    CHECK(s->mxc_url() == "mxc://example.org/abc");
     CHECK(s->fetch_token() == "mxc://example.org/abc");
     CHECK_FALSE(s->is_encrypted());
 }
@@ -204,7 +203,7 @@ TEST_CASE("EncryptedMediaSource: fetch_token returns JSON blob, mxc_url returns 
 {
     const std::string json = R"({"url":"mxc://example.org/cipher","key":"secret"})";
     auto s = tesseract::MediaSource::encrypted("mxc://example.org/cipher", json);
-    CHECK(s->mxc_url()    == "mxc://example.org/cipher");
+    CHECK(s->mxc_url() == "mxc://example.org/cipher");
     CHECK(s->fetch_token() == json);
     CHECK(s->is_encrypted());
 }
@@ -324,10 +323,10 @@ TEST_CASE("StickerEvent thumbnail defaults null", "[types]")
 TEST_CASE("StickerEvent thumbnail is settable independently of source", "[types]")
 {
     tesseract::StickerEvent ev{};
-    ev.source    = tesseract::MediaSource::plain("mxc://example.org/sticker-full");
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/sticker-full");
     ev.thumbnail = tesseract::MediaSource::plain("mxc://example.org/sticker-thumb");
 
-    CHECK(ev.source->mxc_url()    == "mxc://example.org/sticker-full");
+    CHECK(ev.source->mxc_url() == "mxc://example.org/sticker-full");
     CHECK(ev.thumbnail->mxc_url() == "mxc://example.org/sticker-thumb");
 }
 
@@ -375,8 +374,7 @@ TEST_CASE("VoiceEvent fields round-trip", "[types][voice]")
     CHECK(ev.type == tesseract::EventType::Voice);
 }
 
-TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)",
-          "[types][voice]")
+TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)", "[types][voice]")
 {
     // Missing MSC1767 waveform → empty vector; the UI renders flat bars.
     tesseract::VoiceEvent ev{};
@@ -386,8 +384,7 @@ TEST_CASE("VoiceEvent with empty waveform is valid (placeholder)",
     CHECK(ev.duration_ms == 3000u);
 }
 
-TEST_CASE("VoiceEvent carries reactions like other Event subtypes",
-          "[types][voice][reactions]")
+TEST_CASE("VoiceEvent carries reactions like other Event subtypes", "[types][voice][reactions]")
 {
     tesseract::VoiceEvent ev{};
     ev.reactions.push_back({"🔥", 2, true, nullptr, {"@alice", "@bob"}});
@@ -419,22 +416,21 @@ TEST_CASE("AudioEvent default-initialised fields", "[types][audio]")
 TEST_CASE("AudioEvent fields round-trip", "[types][audio]")
 {
     tesseract::AudioEvent ev{};
-    ev.event_id    = "$audio-evt:example.org";
-    ev.room_id     = "!room:example.org";
-    ev.sender      = "@alice:example.org";
-    ev.body        = "song.mp3";
-    ev.timestamp   = 1700000001000ull;
-    ev.source      = tesseract::MediaSource::encrypted(
-                         "mxc://example.org/abc123",
-                         R"({"url":"mxc://example.org/abc123"})");
-    ev.mime_type   = "audio/mpeg";
+    ev.event_id = "$audio-evt:example.org";
+    ev.room_id = "!room:example.org";
+    ev.sender = "@alice:example.org";
+    ev.body = "song.mp3";
+    ev.timestamp = 1700000001000ull;
+    ev.source = tesseract::MediaSource::encrypted("mxc://example.org/abc123",
+                                                  R"({"url":"mxc://example.org/abc123"})");
+    ev.mime_type = "audio/mpeg";
     ev.duration_ms = 183000;
-    ev.filename    = "song.mp3";
-    ev.file_size   = 4567890;
+    ev.filename = "song.mp3";
+    ev.file_size = 4567890;
 
     CHECK(ev.type == tesseract::EventType::Audio);
     CHECK(ev.source != nullptr);
-    CHECK(ev.source->mxc_url()    == "mxc://example.org/abc123");
+    CHECK(ev.source->mxc_url() == "mxc://example.org/abc123");
     CHECK(ev.source->fetch_token() == R"({"url":"mxc://example.org/abc123"})");
     CHECK(ev.source->is_encrypted());
     CHECK(ev.mime_type == "audio/mpeg");
@@ -443,20 +439,18 @@ TEST_CASE("AudioEvent fields round-trip", "[types][audio]")
     CHECK(ev.file_size == 4567890u);
 }
 
-TEST_CASE("AudioEvent with zero duration is valid (unknown length)",
-          "[types][audio]")
+TEST_CASE("AudioEvent with zero duration is valid (unknown length)", "[types][audio]")
 {
     // Senders may omit duration from m.audio info; the player queries the
     // backend after loading.
     tesseract::AudioEvent ev{};
-    ev.source   = tesseract::MediaSource::plain("mxc://example.org/x");
+    ev.source = tesseract::MediaSource::plain("mxc://example.org/x");
     ev.filename = "clip.aac";
     CHECK(ev.duration_ms == 0u);
     CHECK(ev.type == tesseract::EventType::Audio);
 }
 
-TEST_CASE("AudioEvent carries reactions like other Event subtypes",
-          "[types][audio][reactions]")
+TEST_CASE("AudioEvent carries reactions like other Event subtypes", "[types][audio][reactions]")
 {
     tesseract::AudioEvent ev{};
     ev.reactions.push_back({"🎵", 3, false, nullptr, {"@alice", "@bob", "@carol"}});
@@ -502,8 +496,7 @@ TEST_CASE("Reaction field assignment round-trips values", "[types][reactions]")
     CHECK(r.senders.size() == static_cast<size_t>(r.count));
 }
 
-TEST_CASE("MSC 4027 custom reaction source is accessible via MediaSource",
-          "[types][reactions]")
+TEST_CASE("MSC 4027 custom reaction source is accessible via MediaSource", "[types][reactions]")
 {
     tesseract::Reaction r{
         .key = ":partyparrot:",
@@ -537,8 +530,7 @@ TEST_CASE("Event base type carries reactions", "[types][reactions]")
     CHECK(ev.reactions[1].senders.front() == "@bob:example.org");
 }
 
-TEST_CASE("Reactions live on every Event subtype (base field)",
-          "[types][reactions]")
+TEST_CASE("Reactions live on every Event subtype (base field)", "[types][reactions]")
 {
     // Each subtype should carry its own reaction list since the field is on
     // the base. Sanity-check that subtype-specific fields don't shadow it.
@@ -635,8 +627,7 @@ TEST_CASE("RedactedEvent carries sender identity", "[types]")
 // The wire-level u8 codes must stay in sync with `BACKUP_STATE_*` in
 // sdk/src/client.rs and the conversion in client/src/ffi_convert.h.
 
-TEST_CASE("BackupState enum values match the FFI wire encoding",
-          "[types][recovery]")
+TEST_CASE("BackupState enum values match the FFI wire encoding", "[types][recovery]")
 {
     CHECK(static_cast<uint8_t>(tesseract::BackupState::Unknown) == 0);
     CHECK(static_cast<uint8_t>(tesseract::BackupState::Disabled) == 1);
@@ -674,8 +665,7 @@ TEST_CASE("BackupProgress fields are settable", "[types][recovery]")
 // `client/src/event_handler_bridge.cpp`. Any drift means
 // `on_room_list_state` would silently misclassify states.
 
-TEST_CASE("RoomListState enum values match the FFI wire encoding",
-          "[types][sync]")
+TEST_CASE("RoomListState enum values match the FFI wire encoding", "[types][sync]")
 {
     CHECK(static_cast<uint8_t>(tesseract::RoomListState::Init) == 0);
     CHECK(static_cast<uint8_t>(tesseract::RoomListState::SettingUp) == 1);
@@ -685,8 +675,7 @@ TEST_CASE("RoomListState enum values match the FFI wire encoding",
     CHECK(static_cast<uint8_t>(tesseract::RoomListState::Terminated) == 5);
 }
 
-TEST_CASE("RoomListState bridge clamps unknown codes back to Init",
-          "[types][sync]")
+TEST_CASE("RoomListState bridge clamps unknown codes back to Init", "[types][sync]")
 {
     // The bridge in event_handler_bridge.cpp clamps out-of-range codes
     // back to Init so the C++ side never sees an invalid enum even if a
@@ -694,8 +683,7 @@ TEST_CASE("RoomListState bridge clamps unknown codes back to Init",
     // behaviour in by exercising the same cast the bridge performs.
     auto clamp = [](uint8_t code)
     {
-        return (code <=
-                static_cast<uint8_t>(tesseract::RoomListState::Terminated))
+        return (code <= static_cast<uint8_t>(tesseract::RoomListState::Terminated))
                    ? static_cast<tesseract::RoomListState>(code)
                    : tesseract::RoomListState::Init;
     };
@@ -716,8 +704,7 @@ TEST_CASE("needs_recovery is false when not logged in", "[client][recovery]")
     CHECK_FALSE(c.needs_recovery());
 }
 
-TEST_CASE("recover fails with 'not logged in' before login",
-          "[client][recovery]")
+TEST_CASE("recover fails with 'not logged in' before login", "[client][recovery]")
 {
     tesseract::Client c;
     auto r = c.recover("some-key");
@@ -734,8 +721,7 @@ TEST_CASE("recover rejects empty key before login", "[client][recovery]")
     CHECK_FALSE(static_cast<bool>(r));
 }
 
-TEST_CASE("backup_state starts in Unknown with zero counters",
-          "[client][recovery]")
+TEST_CASE("backup_state starts in Unknown with zero counters", "[client][recovery]")
 {
     tesseract::Client c;
     auto p = c.backup_state();
@@ -770,15 +756,13 @@ TEST_CASE("get_avatar_url is empty when not logged in", "[client][identity]")
 // tesseract::Client::get_event_source ("Copy event source")
 // ---------------------------------------------------------------------------
 
-TEST_CASE("get_event_source is empty when not logged in",
-          "[client][event_source]")
+TEST_CASE("get_event_source is empty when not logged in", "[client][event_source]")
 {
     tesseract::Client c;
     CHECK(c.get_event_source("!room:example.org", "$event").empty());
 }
 
-TEST_CASE("get_event_source is empty for a malformed room or event id",
-          "[client][event_source]")
+TEST_CASE("get_event_source is empty for a malformed room or event id", "[client][event_source]")
 {
     tesseract::Client c;
     CHECK(c.get_event_source("not-a-room-id", "$event").empty());

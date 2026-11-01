@@ -40,15 +40,30 @@ struct TlShell : tesseract::test::TestShellBase
     {
         delayed.emplace_back(ms, std::move(fn));
     }
-    void request_relayout_() override { ++relayouts; }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
     void update_typing_bar_(const std::string& t, bool v) override
     {
         typing.emplace_back(t, v);
     }
-    void stop_anim_tick_() override { ++anim_stops; }
-    void repaint_anim_frame_() override { ++anim_repaints; }
-    void stop_inflight_tick_() override { ++inflight_stops; }
-    void on_rooms_updated_() override { ++rooms_updated; }
+    void stop_anim_tick_() override
+    {
+        ++anim_stops;
+    }
+    void repaint_anim_frame_() override
+    {
+        ++anim_repaints;
+    }
+    void stop_inflight_tick_() override
+    {
+        ++inflight_stops;
+    }
+    void on_rooms_updated_() override
+    {
+        ++rooms_updated;
+    }
     void prep_row_media_(const tesseract::Event& ev, bool) override
     {
         prepped.push_back(ev.event_id);
@@ -59,7 +74,9 @@ struct TlShell : tesseract::test::TestShellBase
         auto pending = std::move(delayed);
         delayed.clear();
         for (auto& [ms, fn] : pending)
+        {
             fn();
+        }
     }
 
     std::vector<std::pair<int, std::function<void()>>> delayed;
@@ -139,9 +156,8 @@ struct TlShell : tesseract::test::TestShellBase
     using ShellBase::tick_anim_;
 };
 
-std::unique_ptr<tesseract::Event> tl_ev(const std::string& id,
-                                     const std::string& thread = "",
-                                     const std::string& reply_to = "")
+std::unique_ptr<tesseract::Event> tl_ev(const std::string& id, const std::string& thread = "",
+                                        const std::string& reply_to = "")
 {
     auto e = std::make_unique<tesseract::Event>();
     e->event_id = id;
@@ -157,7 +173,9 @@ tesseract::EventList tl_list(std::initializer_list<const char*> ids)
 {
     tesseract::EventList l;
     for (auto* i : ids)
+    {
         l.push_back(tl_ev(i));
+    }
     return l;
 }
 
@@ -181,25 +199,27 @@ struct TlMainFixture
         s.active_account_->user_id = "@me:x";
         s.my_user_id_ = "@me:x";
         s.main_room_pane_ = std::make_unique<tesseract::RoomPane>(
-            tesseract::RoomPane::Deps{
-                .shell = &s, .repaint = [] {}, .relayout = [] {}},
-            "!r:x");
+            tesseract::RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, "!r:x");
         s.main_room_pane_->attach({.room_view = view.get()});
     }
-    tesseract::views::MessageListView* ml() { return view->message_list(); }
+    tesseract::views::MessageListView* ml()
+    {
+        return view->message_list();
+    }
     std::vector<std::string> ids()
     {
         std::vector<std::string> v;
         for (const auto& m : ml()->messages())
+        {
             v.push_back(m.event_id);
+        }
         return v;
     }
 };
 
 } // namespace
 
-TEST_CASE("build_rows_ skips null events and preps media for the tail only",
-          "[shell][timeline]")
+TEST_CASE("build_rows_ skips null events and preps media for the tail only", "[shell][timeline]")
 {
     TlMainFixture f;
     tesseract::EventList snap;
@@ -236,8 +256,7 @@ TEST_CASE("push_paginate_result_ clears in-flight and records history end",
     f.view->set_paginating(true);
     f.s.push_paginate_result_("!r:x", false, "@other:x");
     CHECK(f.ml()->paginating());
-    CHECK(f.s.other_account_pagination_.at("@other:x").at("!r:x").in_flight ==
-          false);
+    CHECK(f.s.other_account_pagination_.at("@other:x").at("!r:x").in_flight == false);
 }
 
 TEST_CASE("handle_paginate_result_ui_: unknown id is ignored, backward result "
@@ -430,8 +449,7 @@ TEST_CASE("tick_anim_ stops with nothing animated and runs while paginating",
     CHECK(f.s.inflight_stops == 1);
 }
 
-TEST_CASE("timeline reset populates the shown room and ignores others",
-          "[shell][timeline][reset]")
+TEST_CASE("timeline reset populates the shown room and ignores others", "[shell][timeline][reset]")
 {
     TlMainFixture f;
     f.s.handle_timeline_reset_ui_("!other:x", tl_list({"$x"}));
@@ -446,8 +464,7 @@ TEST_CASE("timeline reset populates the shown room and ignores others",
     CHECK(f.ids().size() == 4);
 }
 
-TEST_CASE("insert / update / remove keep the main list in step",
-          "[shell][timeline][edit]")
+TEST_CASE("insert / update / remove keep the main list in step", "[shell][timeline][edit]")
 {
     TlMainFixture f;
     f.s.handle_timeline_reset_ui_("!r:x", tl_list({"$a", "$c"}));
@@ -474,8 +491,7 @@ TEST_CASE("insert / update / remove keep the main list in step",
     CHECK(f.ml()->messages()[0].body == "edited");
 }
 
-TEST_CASE("reply updates resolve the quote and mark the reply ready",
-          "[shell][timeline][edit]")
+TEST_CASE("reply updates resolve the quote and mark the reply ready", "[shell][timeline][edit]")
 {
     TlMainFixture f;
     f.s.handle_timeline_reset_ui_("!r:x", tl_list({"$a"}));
@@ -493,8 +509,7 @@ TEST_CASE("prepend and append batches add rows in order", "[shell][timeline][bat
     CHECK(f.ids() == std::vector<std::string>{"$o1", "$o2", "$m"});
 
     f.s.handle_messages_appended_ui_("!r:x", tl_list({"$n1", "$n2"}));
-    CHECK(f.ids() ==
-          std::vector<std::string>{"$o1", "$o2", "$m", "$n1", "$n2"});
+    CHECK(f.ids() == std::vector<std::string>{"$o1", "$o2", "$m", "$n1", "$n2"});
 
     // In-thread batches and unrelated rooms are ignored.
     tesseract::EventList thread;
@@ -554,8 +569,7 @@ TEST_CASE("thread events only reach the thread view for the open thread",
     CHECK(empty);
 }
 
-TEST_CASE("concrete thread appliers tolerate a missing thread view",
-          "[shell][timeline][thread]")
+TEST_CASE("concrete thread appliers tolerate a missing thread view", "[shell][timeline][thread]")
 {
     TlShell s;
     s.apply_thread_messages_("$r", {}, true);
@@ -566,8 +580,7 @@ TEST_CASE("concrete thread appliers tolerate a missing thread view",
     CHECK(s.relayouts == 0);
 }
 
-TEST_CASE("apply_threads_list_ drives the header threads button",
-          "[shell][timeline][thread]")
+TEST_CASE("apply_threads_list_ drives the header threads button", "[shell][timeline][thread]")
 {
     TlMainFixture f;
     tesseract::ThreadInfo t;
@@ -608,8 +621,7 @@ TEST_CASE("typing notices format once and reach the typing bar only for the "
     CHECK(f.s.typing.size() == 2);
 }
 
-TEST_CASE("compose typing state only changes on empty/non-empty edges",
-          "[shell][timeline][typing]")
+TEST_CASE("compose typing state only changes on empty/non-empty edges", "[shell][timeline][typing]")
 {
     TlMainFixture f;
     f.s.handle_compose_text_changed_("");

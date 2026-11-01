@@ -51,12 +51,12 @@ using RemoteActions = QList<RemoteAction>;
 // decoding fails, so IconName is left set as a safety net regardless.
 struct IconData
 {
-    int        width = 0;
-    int        height = 0;
-    int        rowstride = 0;
-    bool       hasAlpha = false;
-    int        bitsPerSample = 0;
-    int        channels = 0;
+    int width = 0;
+    int height = 0;
+    int rowstride = 0;
+    bool hasAlpha = false;
+    int bitsPerSample = 0;
+    int channels = 0;
     QByteArray data;
 };
 
@@ -75,8 +75,7 @@ Q_DECLARE_METATYPE(IconData)
 QDBusArgument& operator<<(QDBusArgument& arg, const RemoteMatch& m)
 {
     arg.beginStructure();
-    arg << m.id << m.text << m.iconName << m.type << m.relevance
-        << m.properties;
+    arg << m.id << m.text << m.iconName << m.type << m.relevance << m.properties;
     arg.endStructure();
     return arg;
 }
@@ -84,8 +83,7 @@ QDBusArgument& operator<<(QDBusArgument& arg, const RemoteMatch& m)
 const QDBusArgument& operator>>(const QDBusArgument& arg, RemoteMatch& m)
 {
     arg.beginStructure();
-    arg >> m.id >> m.text >> m.iconName >> m.type >> m.relevance
-        >> m.properties;
+    arg >> m.id >> m.text >> m.iconName >> m.type >> m.relevance >> m.properties;
     arg.endStructure();
     return arg;
 }
@@ -109,8 +107,8 @@ const QDBusArgument& operator>>(const QDBusArgument& arg, RemoteAction& a)
 QDBusArgument& operator<<(QDBusArgument& arg, const IconData& d)
 {
     arg.beginStructure();
-    arg << d.width << d.height << d.rowstride << d.hasAlpha << d.bitsPerSample
-        << d.channels << d.data;
+    arg << d.width << d.height << d.rowstride << d.hasAlpha << d.bitsPerSample << d.channels
+        << d.data;
     arg.endStructure();
     return arg;
 }
@@ -118,8 +116,8 @@ QDBusArgument& operator<<(QDBusArgument& arg, const IconData& d)
 const QDBusArgument& operator>>(const QDBusArgument& arg, IconData& d)
 {
     arg.beginStructure();
-    arg >> d.width >> d.height >> d.rowstride >> d.hasAlpha >>
-        d.bitsPerSample >> d.channels >> d.data;
+    arg >> d.width >> d.height >> d.rowstride >> d.hasAlpha >> d.bitsPerSample >> d.channels >>
+        d.data;
     arg.endStructure();
     return arg;
 }
@@ -142,26 +140,31 @@ constexpr int kIconDataSize = 32;
 // Cache lookup only — Match() must answer synchronously, so a miss (avatar
 // never rendered yet elsewhere in the app) just leaves properties without
 // "icon-data", falling back to the themed iconName already set below.
-QVariant avatar_icon_data(tesseract::AccountManager& account_manager,
-                          const std::string& avatar_url)
+QVariant avatar_icon_data(tesseract::AccountManager& account_manager, const std::string& avatar_url)
 {
     if (avatar_url.empty())
+    {
         return {};
-    const auto bytes = account_manager.media_disk_cache().load(
-        tk::CacheKey::thumbnail(avatar_url, tesseract::visual::kAvatarCacheSize,
-                                tesseract::visual::kAvatarCacheSize));
+    }
+    const auto bytes = account_manager.media_disk_cache().load(tk::CacheKey::thumbnail(
+        avatar_url, tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize));
     if (bytes.empty())
+    {
         return {};
+    }
 
     QImage img;
     if (!img.loadFromData(reinterpret_cast<const uchar*>(bytes.data()),
                           static_cast<int>(bytes.size())))
+    {
         return {};
+    }
     img = img.convertToFormat(QImage::Format_RGBA8888)
-              .scaled(kIconDataSize, kIconDataSize, Qt::KeepAspectRatio,
-                      Qt::SmoothTransformation);
+              .scaled(kIconDataSize, kIconDataSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     if (img.isNull())
+    {
         return {};
+    }
 
     IconData d;
     d.width = img.width();
@@ -205,12 +208,12 @@ public slots:
             m.iconName = r.kind == tesseract::SearchBackend::ResultKind::Room
                              ? QStringLiteral("tesseract-matrix")
                              : QStringLiteral("avatar-default");
-            const QVariant icon_data =
-                avatar_icon_data(*account_manager_, r.avatar_url);
+            const QVariant icon_data = avatar_icon_data(*account_manager_, r.avatar_url);
             if (icon_data.isValid())
+            {
                 m.properties[QStringLiteral("icon-data")] = icon_data;
-            const bool exact_prefix =
-                m.text.startsWith(searchTerm, Qt::CaseInsensitive);
+            }
+            const bool exact_prefix = m.text.startsWith(searchTerm, Qt::CaseInsensitive);
             m.type = exact_prefix ? kExactMatch : kPossibleMatch;
             m.relevance = exact_prefix ? 1.0 : 0.5;
             out.push_back(std::move(m));
@@ -221,9 +224,8 @@ public slots:
     void Run(const QString& matchId, const QString& /*actionId*/)
     {
         const std::string id = matchId.toStdString();
-        const auto kind = id.starts_with('@')
-                              ? tesseract::SearchBackend::ResultKind::Contact
-                              : tesseract::SearchBackend::ResultKind::Room;
+        const auto kind = id.starts_with('@') ? tesseract::SearchBackend::ResultKind::Contact
+                                              : tesseract::SearchBackend::ResultKind::Room;
         account_manager_->search_backend().activate(id, kind);
     }
 
@@ -248,8 +250,7 @@ struct QtKRunnerPlugin::Impl
     {
         if (host)
         {
-            QDBusConnection::sessionBus().unregisterObject(
-                QStringLiteral("/krunner"));
+            QDBusConnection::sessionBus().unregisterObject(QStringLiteral("/krunner"));
             delete host;
             QDBusConnection::sessionBus().interface()->unregisterService(
                 QStringLiteral("org.tesseract.qt"));
@@ -267,20 +268,17 @@ QtKRunnerPlugin::QtKRunnerPlugin(tesseract::AccountManager& account_manager)
     qDBusRegisterMetaType<IconData>();
 
     auto reg = QDBusConnection::sessionBus().interface()->registerService(
-        QStringLiteral("org.tesseract.qt"),
-        QDBusConnectionInterface::DontQueueService,
+        QStringLiteral("org.tesseract.qt"), QDBusConnectionInterface::DontQueueService,
         QDBusConnectionInterface::DontAllowReplacement);
-    if (!reg.isValid() ||
-        reg.value() != QDBusConnectionInterface::ServiceRegistered)
+    if (!reg.isValid() || reg.value() != QDBusConnectionInterface::ServiceRegistered)
     {
         return;
     }
 
     impl_->host = new QObject();
     new KRunner1Adaptor(impl_->host, &account_manager);
-    if (!QDBusConnection::sessionBus().registerObject(
-            QStringLiteral("/krunner"), impl_->host,
-            QDBusConnection::ExportAdaptors))
+    if (!QDBusConnection::sessionBus().registerObject(QStringLiteral("/krunner"), impl_->host,
+                                                      QDBusConnection::ExportAdaptors))
     {
         delete impl_->host;
         impl_->host = nullptr;

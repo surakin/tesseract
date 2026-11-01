@@ -37,14 +37,36 @@ public:
         playing_ = false;
         ++stop_count;
     }
-    void seek(std::uint64_t) override {}
-    void set_playback_rate(float) override {}
-    float playback_rate() const override { return 1.0f; }
-    std::uint64_t position_ms() const override { return 0; }
-    std::uint64_t duration_ms() const override { return 0; }
-    bool is_playing() const override { return playing_; }
-    const tk::Image* current_frame() const override { return nullptr; }
-    std::size_t memory_bytes() const override { return memory; }
+    void seek(std::uint64_t) override
+    {
+    }
+    void set_playback_rate(float) override
+    {
+    }
+    float playback_rate() const override
+    {
+        return 1.0f;
+    }
+    std::uint64_t position_ms() const override
+    {
+        return 0;
+    }
+    std::uint64_t duration_ms() const override
+    {
+        return 0;
+    }
+    bool is_playing() const override
+    {
+        return playing_;
+    }
+    const tk::Image* current_frame() const override
+    {
+        return nullptr;
+    }
+    std::size_t memory_bytes() const override
+    {
+        return memory;
+    }
 
     // Streaming: opt-in so the default fake keeps the buffering fallback.
     bool begin_stream(std::string_view, std::uint64_t) override
@@ -59,7 +81,10 @@ public:
     {
         fed_bytes += size;
     }
-    void end_stream() override { ++end_stream_count; }
+    void end_stream() override
+    {
+        ++end_stream_count;
+    }
 
     bool playing_ = false;
     int play_count = 0;
@@ -105,12 +130,30 @@ public:
         last_seek = ms;
         ++seek_count;
     }
-    void set_playback_rate(float r) override { rate = r; }
-    float playback_rate() const override { return rate; }
-    std::uint64_t position_ms() const override { return position; }
-    std::uint64_t duration_ms() const override { return duration; }
-    bool is_playing() const override { return playing_; }
-    bool reached_end() const override { return ended; }
+    void set_playback_rate(float r) override
+    {
+        rate = r;
+    }
+    float playback_rate() const override
+    {
+        return rate;
+    }
+    std::uint64_t position_ms() const override
+    {
+        return position;
+    }
+    std::uint64_t duration_ms() const override
+    {
+        return duration;
+    }
+    bool is_playing() const override
+    {
+        return playing_;
+    }
+    bool reached_end() const override
+    {
+        return ended;
+    }
 
     // Simulates a backend decode / playback failure.
     void fail()

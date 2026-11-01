@@ -43,12 +43,15 @@ TEST_CASE("every referenced media key is installed", "[screenshot]")
             CHECK(installed(keys, m.sender_avatar_url));
             CHECK(installed(keys, m.membership_target_avatar_url));
             if (m.in_reply_to_image_source)
-                CHECK(installed(keys,
-                                m.in_reply_to_image_source->fetch_token()));
+            {
+                CHECK(installed(keys, m.in_reply_to_image_source->fetch_token()));
+            }
             for (const auto& rr : m.read_receipts)
+            {
                 CHECK(installed(keys, rr.avatar_url));
+            }
             if (m.kind == Kind::Image)
-                {
+            {
                 REQUIRE(m.source);
                 CHECK(installed(keys, m.source->fetch_token()));
             }
@@ -57,7 +60,9 @@ TEST_CASE("every referenced media key is installed", "[screenshot]")
     check_rows(f.messages);
     check_rows(f.thread_messages);
     for (const auto& mem : f.members)
+    {
         CHECK(installed(keys, mem.avatar_url));
+    }
 }
 
 TEST_CASE("install_assets decodes every asset", "[screenshot]")
@@ -76,9 +81,11 @@ TEST_CASE("fixture is internally consistent", "[screenshot]")
 {
     const auto f = make_fixture();
 
-    const auto root = std::find_if(
-        f.messages.begin(), f.messages.end(),
-        [&](const auto& m) { return m.event_id == f.thread_root_id; });
+    const auto root = std::find_if(f.messages.begin(), f.messages.end(),
+                                   [&](const auto& m)
+                                   {
+                                       return m.event_id == f.thread_root_id;
+                                   });
     REQUIRE(root != f.messages.end());
     CHECK(root->is_thread_root);
     REQUIRE_FALSE(f.thread_messages.empty());
@@ -88,15 +95,22 @@ TEST_CASE("fixture is internally consistent", "[screenshot]")
     for (const auto& m : f.messages)
     {
         if (!m.has_reply())
+        {
             continue;
+        }
         INFO(m.event_id);
         CHECK(std::any_of(f.messages.begin(), f.messages.end(),
                           [&](const auto& o)
-                          { return o.event_id == m.in_reply_to_id; }));
+                          {
+                              return o.event_id == m.in_reply_to_id;
+                          }));
     }
 
     CHECK(std::any_of(f.rooms.begin(), f.rooms.end(),
-                      [&](const auto& r) { return r.id == f.selected_room_id; }));
+                      [&](const auto& r)
+                      {
+                          return r.id == f.selected_room_id;
+                      }));
     CHECK(f.rooms.size() == 10);
     CHECK(f.members.size() >= 6);
     CHECK_FALSE(f.typing_names.empty());

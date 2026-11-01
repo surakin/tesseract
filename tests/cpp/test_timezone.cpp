@@ -31,5 +31,7 @@ TEST_CASE("system_timezone: resolves to a zone the offset lookup knows", "[timez
 {
     const std::string tz = tk::system_timezone();
     if (!tz.empty())
+    {
         CHECK(tk::timezone_utc_offset_minutes(tz, std::chrono::system_clock::now()).has_value());
+    }
 }

@@ -23,8 +23,7 @@ TEST_CASE("notifying room shows a count pill", "[roomlist][unread]")
     CHECK(unread_style_for(1, 0, 0, false) == UnreadStyle::Count);
 }
 
-TEST_CASE("quiet unread (no notification, not muted) shows a dot",
-          "[roomlist][unread]")
+TEST_CASE("quiet unread (no notification, not muted) shows a dot", "[roomlist][unread]")
 {
     CHECK(unread_style_for(0, 0, 4, false) == UnreadStyle::Dot);
     CHECK(unread_style_for(0, 0, 1, false) == UnreadStyle::Dot);

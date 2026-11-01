@@ -30,15 +30,14 @@ public:
     static constexpr float kButtonSize = 34.0f;
     static constexpr float kGap = 2.0f;
     static constexpr float kPadding = 4.0f;
-    static constexpr float kWidth =
-        kButtonSize * 6 + kGap * 5 + kPadding * 2;
+    static constexpr float kWidth = kButtonSize * 6 + kGap * 5 + kPadding * 2;
     static constexpr float kHeight = kButtonSize + kPadding * 2;
 
     /// Show the tones of `glyph` (base or toned), highlighting `current`,
     /// next to `anchor` (the pressed cell's world rect) and inside `limits`
     /// (the picker's world rect).
-    void open(std::string_view glyph, tesseract::emoji::SkinTone current,
-              tk::Rect anchor, tk::Rect limits);
+    void open(std::string_view glyph, tesseract::emoji::SkinTone current, tk::Rect anchor,
+              tk::Rect limits);
     void close();
     bool is_open() const
     {

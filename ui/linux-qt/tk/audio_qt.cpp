@@ -45,8 +45,7 @@ public:
                          {
                              fire_progress();
                          });
-        QObject::connect(&player_, &QMediaPlayer::playbackStateChanged,
-                         &player_,
+        QObject::connect(&player_, &QMediaPlayer::playbackStateChanged, &player_,
                          [this](QMediaPlayer::PlaybackState s)
                          {
                              if (s == QMediaPlayer::StoppedState)
@@ -97,8 +96,7 @@ public:
         player_.setSourceDevice(nullptr);
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view /*mime*/) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view /*mime*/) override
     {
         reached_end_ = false;
         player_.stop();
@@ -109,8 +107,7 @@ public:
         // a fresh load.
         player_.setSourceDevice(nullptr);
         buffer_.close();
-        bytes_ = QByteArray(reinterpret_cast<const char*>(data),
-                            static_cast<int>(size));
+        bytes_ = QByteArray(reinterpret_cast<const char*>(data), static_cast<int>(size));
         buffer_.setBuffer(&bytes_);
         buffer_.open(QIODevice::ReadOnly);
         player_.setSourceDevice(&buffer_);

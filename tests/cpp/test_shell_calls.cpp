@@ -38,14 +38,17 @@ struct CallShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
@@ -114,9 +117,10 @@ struct CallShell : tesseract::test::TestShellBase
 // Counts the frames the shell lets through to the speaker.
 struct CountingPlayback : tk::AudioPlayback
 {
-    explicit CountingPlayback(std::shared_ptr<int> n) : frames(std::move(n)) {}
-    void push_frame(const std::int16_t*, std::size_t, std::uint32_t,
-                    std::uint32_t) override
+    explicit CountingPlayback(std::shared_ptr<int> n) : frames(std::move(n))
+    {
+    }
+    void push_frame(const std::int16_t*, std::size_t, std::uint32_t, std::uint32_t) override
     {
         ++*frames;
     }
@@ -148,8 +152,7 @@ TEST_CASE("start_call without a client does nothing", "[shell][calls]")
     CHECK(s.status.empty());
 }
 
-TEST_CASE("start_call reports a failed join and leaves no session behind",
-          "[shell][calls]")
+TEST_CASE("start_call reports a failed join and leaves no session behind", "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
@@ -170,8 +173,7 @@ TEST_CASE("start_call is ignored while a call is already active", "[shell][calls
     CHECK(s.status.empty());
 }
 
-TEST_CASE("participant events build the roster of the call they belong to",
-          "[shell][calls]")
+TEST_CASE("participant events build the roster of the call they belong to", "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
@@ -224,8 +226,7 @@ TEST_CASE("a session end for another call, or for none, is ignored", "[shell][ca
     CHECK(s.status.empty());
 }
 
-TEST_CASE("a session end before any participant joined is accepted",
-          "[shell][calls]")
+TEST_CASE("a session end before any participant joined is accepted", "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
@@ -235,8 +236,7 @@ TEST_CASE("a session end before any participant joined is accepted",
     CHECK(s.status.empty()); // normal end reasons are silent
 }
 
-TEST_CASE("a late end of a hung-up call does not end the call started after it",
-          "[shell][calls]")
+TEST_CASE("a late end of a hung-up call does not end the call started after it", "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
@@ -275,20 +275,19 @@ TEST_CASE("an end tagged with another account is not this call's", "[shell][call
     s.event_account_.clear();
 }
 
-TEST_CASE("a call that could not be set up ends with the reason shown",
-          "[shell][calls]")
+TEST_CASE("a call that could not be set up ends with the reason shown", "[shell][calls]")
 {
     tesseract::Client c;
     CallShell s;
     shell_calls_install_session(s, c, "!r:x", 8);
-    s.handle_rtc_session_ended_ui_(8, std::string(tesseract::kRtcStartFailedReason) + "room not found");
+    s.handle_rtc_session_ended_ui_(8, std::string(tesseract::kRtcStartFailedReason) +
+                                          "room not found");
     CHECK(s.call_session_ == nullptr);
     REQUIRE(s.status.size() == 1);
     CHECK(s.status[0] == "Call failed: room not found");
 }
 
-TEST_CASE("normal end reasons are silent; failures are explained",
-          "[shell][calls]")
+TEST_CASE("normal end reasons are silent; failures are explained", "[shell][calls]")
 {
     struct Case
     {
@@ -335,8 +334,8 @@ TEST_CASE("a session end with no session is a no-op", "[shell][calls]")
 {
     CallShell s;
     CHECK_NOTHROW(s.handle_rtc_session_ended_ui_(1, "hangup"));
-    CHECK_NOTHROW(s.handle_rtc_video_frame_ui_(
-        1, "p", 1, 1, std::make_shared<std::vector<std::uint8_t>>(4)));
+    CHECK_NOTHROW(
+        s.handle_rtc_video_frame_ui_(1, "p", 1, 1, std::make_shared<std::vector<std::uint8_t>>(4)));
 }
 
 TEST_CASE("only the current call's audio is played", "[shell][calls]")
@@ -383,8 +382,7 @@ TEST_CASE("no audio is played once the call has ended", "[shell][calls]")
     }
 }
 
-TEST_CASE("end_call tears the session down and resets overlay state",
-          "[shell][calls]")
+TEST_CASE("end_call tears the session down and resets overlay state", "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
@@ -456,8 +454,7 @@ struct BannerFixture
 };
 } // namespace
 
-TEST_CASE("an in-progress call shows the join banner in the room",
-          "[shell][calls][banner]")
+TEST_CASE("an in-progress call shows the join banner in the room", "[shell][calls][banner]")
 {
     BannerFixture f;
     f.s.refresh_call_banners_();
@@ -475,8 +472,7 @@ TEST_CASE("an active invite adds Decline to the call banner", "[shell][calls][ba
     CHECK(f.app->room_view()->call_banner_decline_visible());
 }
 
-TEST_CASE("declining clears the pending invite and the Decline button",
-          "[shell][calls][banner]")
+TEST_CASE("declining clears the pending invite and the Decline button", "[shell][calls][banner]")
 {
     BannerFixture f;
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
@@ -551,8 +547,7 @@ TEST_CASE("an expired invite leaves the other pending one alone", "[shell][calls
     BannerFixture f;
     f.s.handle_rtc_invitation_ui_("!call:x", "call#default", "@alice:x", "video", 60000, "$ring");
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
-    f.s.invites("!call:x")[0].expires =
-        std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    f.s.invites("!call:x")[0].expires = std::chrono::steady_clock::now() - std::chrono::seconds(1);
     f.s.refresh_call_banners_();
     REQUIRE(f.s.invites("!call:x").size() == 1);
     CHECK(f.s.invites("!call:x")[0].event_id == "$inv");
@@ -583,8 +578,7 @@ TEST_CASE("declining answers the MatrixRTC invite first and the legacy ring too"
           std::vector<std::string>{"$inv", "$ring"});
     // A ring with no MatrixRTC invite beside it is still an m.rtc.notification
     // event a decline can reference.
-    CHECK(CallShell::call_invite_decline_targets_({both[0]}) ==
-          std::vector<std::string>{"$ring"});
+    CHECK(CallShell::call_invite_decline_targets_({both[0]}) == std::vector<std::string>{"$ring"});
     // Nothing without an id; the same id never twice.
     const std::vector<Pending> odd{{"", "m.call#room", "@a:x", later},
                                    {"$x", "m.call#room", "@a:x", later},
@@ -606,7 +600,10 @@ TEST_CASE("showing or hiding Decline relayouts the room view", "[shell][calls][b
     BannerFixture f;
     f.s.refresh_call_banners_(); // the banner is up without an invite
     int layouts = 0;
-    f.app->room_view()->on_layout_changed = [&] { ++layouts; };
+    f.app->room_view()->on_layout_changed = [&]
+    {
+        ++layouts;
+    };
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
     CHECK(layouts >= 1);
     const int after_show = layouts;
@@ -614,8 +611,7 @@ TEST_CASE("showing or hiding Decline relayouts the room view", "[shell][calls][b
     CHECK(layouts > after_show);
 }
 
-TEST_CASE("an invite without an event id or lifetime offers no Decline",
-          "[shell][calls][banner]")
+TEST_CASE("an invite without an event id or lifetime offers no Decline", "[shell][calls][banner]")
 {
     BannerFixture f;
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "");
@@ -636,8 +632,7 @@ TEST_CASE("an expired invite no longer offers Decline", "[shell][calls][banner]"
     CHECK(f.s.pending_call_invites_.empty());
 }
 
-TEST_CASE("an invite shows the banner before the call roster has members",
-          "[shell][calls][banner]")
+TEST_CASE("an invite shows the banner before the call roster has members", "[shell][calls][banner]")
 {
     BannerFixture f;
     f.s.rooms_[0].call_members.clear();
@@ -677,8 +672,7 @@ TEST_CASE("the banner is hidden when calls are unsupported or the room is empty"
     CHECK_FALSE(f.app->room_view()->call_banner_visible());
 }
 
-TEST_CASE("the banner is hidden for a bridged room unless overridden",
-          "[shell][calls][banner]")
+TEST_CASE("the banner is hidden for a bridged room unless overridden", "[shell][calls][banner]")
 {
     BannerFixture f;
     f.s.rooms_[0].is_bridged = true;
@@ -695,8 +689,7 @@ TEST_CASE("the banner is hidden in the room the user is already calling from",
           "[shell][calls][banner]")
 {
     BannerFixture f;
-    f.s.call_session_ =
-        std::make_unique<CallSession>(&f.client, "!call:x", "slot", 3);
+    f.s.call_session_ = std::make_unique<CallSession>(&f.client, "!call:x", "slot", 3);
     f.s.refresh_call_banners_();
     CHECK_FALSE(f.app->room_view()->call_banner_visible());
 }
@@ -725,8 +718,7 @@ TEST_CASE("an invite from a caller the banner does not list offers no Decline",
     CHECK(f.s.invites("!call:x").size() == 1);
 }
 
-TEST_CASE("with no call members the banner lists every inviting caller",
-          "[shell][calls][banner]")
+TEST_CASE("with no call members the banner lists every inviting caller", "[shell][calls][banner]")
 {
     using Pending = CallShell::PendingCallInvite;
     const auto later = std::chrono::steady_clock::now() + std::chrono::seconds(60);
@@ -749,7 +741,8 @@ TEST_CASE("two accounts in one room keep separate invites", "[shell][calls][bann
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$mine");
     {
         CallShell::EventAccountScope other(f.s, "@other:x");
-        f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$theirs");
+        f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000,
+                                      "$theirs");
     }
     CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 1);
     CHECK(f.s.invite_entries_of("@other:x", "!call:x") == 1);
@@ -774,7 +767,8 @@ TEST_CASE("signing an account out forgets its invites and the banner rosters",
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$mine");
     {
         CallShell::EventAccountScope other(f.s, "@other:x");
-        f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$theirs");
+        f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000,
+                                      "$theirs");
     }
     REQUIRE(f.s.call_banner_rosters_.count("!call:x") == 1);
     f.s.drop_call_invites_of_account_("@other:x");
@@ -783,8 +777,7 @@ TEST_CASE("signing an account out forgets its invites and the banner rosters",
     CHECK(f.s.call_banner_rosters_.empty());
 }
 
-TEST_CASE("invites of a room the account no longer has are dropped",
-          "[shell][calls][banner]")
+TEST_CASE("invites of a room the account no longer has are dropped", "[shell][calls][banner]")
 {
     BannerFixture f;
     f.s.my_user_id_ = "@me:x";
@@ -812,8 +805,8 @@ TEST_CASE("pending invites are capped across rooms, dropping the soonest to expi
     {
         // Each later invite lives a little longer than the one before.
         s.handle_rtc_invitation_ui_("!room" + std::to_string(n) + ":x", "m.call#room",
-                                    "@c" + std::to_string(n) + ":x", "video",
-                                    60000 + n * 1000, "$i" + std::to_string(n));
+                                    "@c" + std::to_string(n) + ":x", "video", 60000 + n * 1000,
+                                    "$i" + std::to_string(n));
     }
     std::size_t total = 0;
     for (const auto& [key, list] : s.pending_call_invites_)

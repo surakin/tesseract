@@ -21,8 +21,7 @@ struct TkDevicesSectionStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -36,8 +35,7 @@ struct TkDevicesSectionStage
 
 tesseract::Client::Device make_device(
     std::string id, std::string name, bool is_current,
-    tesseract::Client::DeviceVerification verif =
-        tesseract::Client::DeviceVerification::Unknown)
+    tesseract::Client::DeviceVerification verif = tesseract::Client::DeviceVerification::Unknown)
 {
     tesseract::Client::Device d;
     d.id = std::move(id);
@@ -51,8 +49,7 @@ tesseract::Client::Device make_device(
 
 } // namespace
 
-TEST_CASE("DevicesSection: loading state paints without crash",
-          "[devices][section]")
+TEST_CASE("DevicesSection: loading state paints without crash", "[devices][section]")
 {
     TkDevicesSectionStage st;
     DevicesSection sec;
@@ -60,8 +57,7 @@ TEST_CASE("DevicesSection: loading state paints without crash",
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
 
-TEST_CASE("DevicesSection: empty list paints without crash",
-          "[devices][section]")
+TEST_CASE("DevicesSection: empty list paints without crash", "[devices][section]")
 {
     TkDevicesSectionStage st;
     DevicesSection sec;
@@ -76,8 +72,7 @@ TEST_CASE("DevicesSection: populated list with mixed states paints without crash
     DevicesSection sec;
     sec.set_current_device_id("DEVCURR");
     sec.set_devices({
-        make_device("DEVCURR", "My Phone", true,
-                    tesseract::Client::DeviceVerification::Verified),
+        make_device("DEVCURR", "My Phone", true, tesseract::Client::DeviceVerification::Verified),
         make_device("DEVOLD", "Old Laptop", false,
                     tesseract::Client::DeviceVerification::Unverified),
         make_device("DEVUNK", "", false),
@@ -99,8 +94,7 @@ TEST_CASE("DevicesSection: set_current_device_id flips is_current on cached rows
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
 
-TEST_CASE("DevicesSection: enter and clear UIA state transitions paint",
-          "[devices][section]")
+TEST_CASE("DevicesSection: enter and clear UIA state transitions paint", "[devices][section]")
 {
     TkDevicesSectionStage st;
     DevicesSection sec;
@@ -109,16 +103,15 @@ TEST_CASE("DevicesSection: enter and clear UIA state transitions paint",
     });
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 
-    sec.enter_uia_state("DEVA", "https://hs/_matrix/client/v3/auth/m.login.sso/fallback/web?session=xyz",
-                        "xyz");
+    sec.enter_uia_state(
+        "DEVA", "https://hs/_matrix/client/v3/auth/m.login.sso/fallback/web?session=xyz", "xyz");
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 
     sec.clear_uia_state("DEVA");
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
 
-TEST_CASE("DevicesSection: per-device busy + error state paint without crash",
-          "[devices][section]")
+TEST_CASE("DevicesSection: per-device busy + error state paint without crash", "[devices][section]")
 {
     TkDevicesSectionStage st;
     DevicesSection sec;
@@ -133,8 +126,7 @@ TEST_CASE("DevicesSection: per-device busy + error state paint without crash",
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
 
-TEST_CASE("DevicesSection: state setters on unknown device id are no-ops",
-          "[devices][section]")
+TEST_CASE("DevicesSection: state setters on unknown device id are no-ops", "[devices][section]")
 {
     TkDevicesSectionStage st;
     DevicesSection sec;
@@ -158,15 +150,13 @@ TEST_CASE("DevicesSection: wheel scrolls when content exceeds viewport",
     for (int i = 0; i < 20; ++i)
     {
         devs.push_back(
-            make_device("DEV" + std::to_string(i),
-                        "Device " + std::to_string(i), false));
+            make_device("DEV" + std::to_string(i), "Device " + std::to_string(i), false));
     }
     sec.set_devices(std::move(devs));
     // Tiny viewport so the content overflows.
     st.run(sec, {0.0f, 0.0f, 640.0f, 240.0f});
 
-    INFO("content_height = " << sec.content_height_for_testing()
-                              << ", viewport = 240");
+    INFO("content_height = " << sec.content_height_for_testing() << ", viewport = 240");
     REQUIRE(sec.content_height_for_testing() > 240.0f);
 
     // First wheel down should consume the event and move scroll_y_ forward.
@@ -202,8 +192,7 @@ TEST_CASE("DevicesSection: wheel is a no-op when content fits the viewport",
     REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, -120.0f) == false);
 }
 
-TEST_CASE("url_destination_host names the host a sign-in page opens on",
-          "[devices][uia]")
+TEST_CASE("url_destination_host names the host a sign-in page opens on", "[devices][uia]")
 {
     using tesseract::views::url_destination_host;
     CHECK(url_destination_host("https://matrix.example.org/_matrix/client/r0/login") ==

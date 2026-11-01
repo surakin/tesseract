@@ -48,7 +48,9 @@ MessageRowData long_text(const std::string& id, bool own = false)
 {
     std::string body;
     for (int i = 0; i < 60; ++i)
+    {
         body += "lorem ipsum dolor sit amet ";
+    }
     MessageRowData r;
     r.kind = MessageRowData::Kind::Text;
     r.event_id = id;
@@ -180,7 +182,9 @@ TEST_CASE("message list column: a membership avatar click lands in the centred c
     v.set_messages({membership("$m", "@bob:x")}, false);
     std::string clicked;
     v.on_sender_clicked = [&](const std::string& uid, const std::string&, const std::string&)
-    { clicked = uid; };
+    {
+        clicked = uid;
+    };
     st.run(v, 1600);
 
     const tk::Rect row = v.row_world_rect(0);
@@ -198,8 +202,7 @@ TEST_CASE("message list column: a membership avatar click lands in the centred c
     CHECK(clicked == "@bob:x");
 }
 
-TEST_CASE("message list column: day separators keep the full width",
-          "[message_list][column]")
+TEST_CASE("message list column: day separators keep the full width", "[message_list][column]")
 {
     ColumnStage st;
     MessageListView plain;

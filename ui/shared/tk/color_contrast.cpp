@@ -19,8 +19,7 @@ float srgb_channel_to_linear(std::uint8_t byte)
 
 float relative_luminance(Color c)
 {
-    return 0.2126f * srgb_channel_to_linear(c.r) +
-           0.7152f * srgb_channel_to_linear(c.g) +
+    return 0.2126f * srgb_channel_to_linear(c.r) + 0.7152f * srgb_channel_to_linear(c.g) +
            0.0722f * srgb_channel_to_linear(c.b);
 }
 
@@ -39,8 +38,7 @@ Color composite_over(Color fg, Color bg)
     auto mix = [alpha](std::uint8_t f, std::uint8_t b)
     {
         return static_cast<std::uint8_t>(static_cast<float>(f) * alpha +
-                                          static_cast<float>(b) * (1.0f - alpha) +
-                                          0.5f);
+                                         static_cast<float>(b) * (1.0f - alpha) + 0.5f);
     };
     return {mix(fg.r, bg.r), mix(fg.g, bg.g), mix(fg.b, bg.b), 255};
 }
