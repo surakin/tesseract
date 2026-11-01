@@ -46,8 +46,12 @@ BreakConstructorInitializers: BeforeColon
 AlwaysBreakTemplateDeclarations: Yes
 
 # Behavior-safety: do not reorder includes (platform #if-guarded groups
-# rely on order) and do not reflow hand-wrapped comments.
+# rely on order), do not reorder using-declarations, do not split string
+# literals (grep and translation lookups need them whole), and do not reflow
+# hand-wrapped comments.
 SortIncludes: Never
+SortUsingDeclarations: Never
+BreakStringLiterals: false
 ReflowComments: false
 
 ---
@@ -84,5 +88,7 @@ AlwaysBreakTemplateDeclarations: Yes
 ObjCBlockIndentWidth: 4
 
 SortIncludes: Never
+SortUsingDeclarations: Never
+BreakStringLiterals: false
 ReflowComments: false
 ...
