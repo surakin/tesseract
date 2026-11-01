@@ -166,7 +166,9 @@ UI that doesn't already match.
    `gtk-application-prefer-dark-theme` setting (GTK),
    `win32::theme::current_mode()` (Win32), and
    `NSApp.effectiveAppearance` (macOS) — and feeds it into the same
-   shared selection.
+   shared selection. When the shell's `os_high_contrast_()` reports OS
+   high-contrast colours (Windows only so far),
+   `tk::make_high_contrast_theme()` replaces both the mode and the accent.
 
 ## Colour token table
 

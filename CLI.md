@@ -4,7 +4,7 @@
 tesseract [OPTIONS] [MATRIX-URI]
 ```
 
-The same options work on every platform. The executable is `tesseract` on Linux, `tesseract.exe` on Windows, and `Tesseract.app/Contents/MacOS/Tesseract` on macOS.
+The same options work on every platform. The executable is `tesseract-matrix` (Qt) or `tesseract-matrix-gtk` (GTK) in installed Linux packages, because `tesseract` is the OCR tool on most distributions. It is `tesseract.exe` on Windows, and `Tesseract.app/Contents/MacOS/Tesseract` on macOS. A binary built from source is still named `tesseract`. Below, `tesseract` stands for whichever name applies.
 
 | Option | Meaning |
 | ------ | ------- |

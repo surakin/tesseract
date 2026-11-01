@@ -161,8 +161,8 @@ All presets live in `CMakePresets.json`:
 `windows-debug`, `windows-release`, `windows-xwin-debug`,
 `windows-xwin-release` (Linux host, see above), `linux-debug`, `linux-release`,
 `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
-`macos-appkit-arm64-appstore` (Mac App Store, below),
-`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
+`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`,
+`macos-appkit-appstore` (universal Mac App Store, below).
 
 The `linux-*` presets configure and build both the GTK4 and Qt6 UIs from a
 single configure (`TESSERACT_UI=linux`), producing
@@ -179,13 +179,22 @@ and install/package a single Linux backend instead of both.
 
 ## Mac App Store
 
-`-DTESSERACT_MAC_APP_STORE=ON` (or the `macos-appkit-arm64-appstore` preset,
-arm64 only) builds the sandboxed App Store edition: App Sandbox entitlements
+`-DTESSERACT_MAC_APP_STORE=ON` (or the `macos-appkit-appstore` preset, a
+universal arm64 + x86_64 build) builds the sandboxed App Store edition: App Sandbox entitlements
 (`ui/macos/Tesseract-AppStore.entitlements.in`), App Store signing, no
 self-update checks, and a one-time move of an existing DMG install's data into
 the sandbox container (`ui/macos/container-migration.plist`; the data is moved,
 so a DMG install on the same Mac starts empty afterwards). It cannot be combined
 with `TESSERACT_ENABLE_CRASH_HANDLER`.
+
+The universal preset needs both Rust targets (`rustup target add
+aarch64-apple-darwin x86_64-apple-darwin`). One build tree holds both
+architectures: Corrosion builds the arm64 Rust archive, a custom target builds
+the x86_64 one, and the two are `lipo`'d together
+(`cmake/MacUniversal.cmake`), so expect roughly double the disk footprint of a
+single-arch build. CMake also fetches libopus (v1.5.2, so configure needs
+network access) and builds it per architecture into a universal dylib, which
+keeps its minimum macOS at the deployment target.
 
 Cache variables:
 
@@ -241,6 +250,10 @@ link order.
   cache of a superseded configuration (any env/flag change starts a fresh
   one). `-DTESSERACT_CARGO_INCREMENTAL=ON` turns it back on for faster
   rebuilds while iterating on `sdk/src/*.rs`.
+- **Rust LTO** is off by default. `-DTESSERACT_RUST_LTO=ON` builds the Rust
+  SDK crate with fat LTO in release builds, cutting its archive from ~800 MB
+  to ~100 MB per copy at the cost of a much slower, more memory-hungry Rust
+  build.
 - **Compressed debug info** (Linux): object files build with `-gz=zlib` and
   executables link with `--compress-debug-sections=zlib`. Every UI and test
   executable carries the whole Rust archive's debug info, so this roughly
@@ -252,12 +265,21 @@ link order.
 
 ### CI Rust cache
 
-Every workflow job caches its Cargo output with `Swatinem/rust-cache` and
-`cache-on-failure: true`, so a run that fails after the Rust build (C++,
-packaging, signing) still saves it for the next attempt. A saved key is never
-overwritten: a cache from a run that failed mid-Rust stays partial until
-`Cargo.lock`, the toolchain or the job changes, and cargo rebuilds what's
-missing. Jobs cancelled by `package.yml`'s cancel-on-failure step may not save.
+Every workflow job that builds Rust caches its Cargo output with
+`Swatinem/rust-cache`. A failed job saves nothing, so a cache never holds the
+output of a half-finished build. The key is the job id (or `shared-key`), the
+toolchain and a hash of `Cargo.lock`; a saved key is never overwritten, and a
+new `Cargo.lock` falls back to the latest cache of the same job.
+
+A run can only restore caches saved on its own ref or on the default branch
+(`development`), so PRs and tag builds start from whatever `development` holds.
+`prime-rust-cache.yml` runs nightly on `development` and builds only the Rust
+SDK (`cargo-build_tesseract_sdk_ffi`, no C++) for every build type that uses
+the cache, to keep that cache warm. Its jobs mirror their consumers' job ids or
+`shared-key`, `workspaces` target dir, toolchain and CMake configure arguments;
+the key only matches when all of these do, so update it together with any of
+`compile-check.yml`, `package.yml`, `build-platform.yml` and `test.yml`.
+`update-screenshots.yml` uses its own keys and is not primed.
 
 ### Feature options
 
@@ -266,6 +288,14 @@ encryption setup dialog for accounts without recovery. With it on, Tesseract
 sets recovery up by itself, keeps the key in the OS secure storage until the
 user saves it, reminds them to save it, and unlocks a re-signed-in device with
 the stored key.
+
+`-DTESSERACT_ENABLE_REQUEST_LOG=ON` (default `OFF`) compiles in a debugging
+aid, the homeserver request timing log (the Rust `request_log` Cargo feature,
+which the option drives). It stays inert until the app is launched with
+`TESSERACT_REQUEST_LOG=1` (writes `request_timings.log` beside the account
+stores) or `TESSERACT_REQUEST_LOG=<file>`: one line per request (time, method,
+endpoint, status, duration, requests in flight, sizes) and a per-endpoint
+summary every 10 s.
 
 `-DTESSERACT_ENABLE_SERVER_BROWSER=OFF` (default `ON`) removes the login view's
 "Find a server" browser, the community homeserver list it fetches, and the

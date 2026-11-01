@@ -133,7 +133,7 @@ Continue directly from the spike — two shells sharing one adapter is the stron
 
 Can run in a separate session/track with no ordering dependency on the AT-tree work:
 - Keyboard-only operability audit — verify every interactive path is reachable via `next_focusable()`/Tab and has a visible focus ring (`paint_own_focus_ring()` already exists). **Done 2026-10-04** (audit + remediation, see CHANGES.md): popup/modal focus scoping, `Key::Menu`/Shift+F10 context menus, keyboard paging, focus tooltips, date-picker focus zones, the timeline cursor, Ctrl+I / Ctrl+, entry points, plus two reusable pieces for custom-painted views — `tk::KeyboardTarget` (pointer-transparent focus stand-in for a painted click area) and `tk::RowKeyboardCursor` (arrow/Enter operation over a widget's `WidgetRowAccessibility` rows). Remaining: live keyboard-only walkthrough per platform.
-- High-contrast theming — extend the existing `Theme::light()`/`dark()` factory with a high-contrast variant.
+- High-contrast theming — **Done on Windows 2026-10-29**: `ShellBase::os_high_contrast_()` reports the OS colours and `tk::make_high_contrast_theme()` builds the palette, overriding the in-app theme and accent. Remaining: the macOS, Qt and GTK hooks.
 - Reduced-motion — audit `Animator`/`AnimImageCache`/animated-image decode paths for an app-settings toggle.
 - Text scaling is already shipped (v0.8.5) — spot-check only.
 
