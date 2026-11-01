@@ -936,8 +936,7 @@ pub(crate) fn forwarded_snippet_from_event_json(json: &str) -> Option<(String, S
         return None;
     }
     let shown = msc4553::display_event(&event)?;
-    let content: RoomMessageEventContent =
-        serde_json::from_value(shown["content"].clone()).ok()?;
+    let content: RoomMessageEventContent = serde_json::from_value(shown["content"].clone()).ok()?;
     Some((
         message_snippet(&content.msgtype),
         message_snippet_html(&content.msgtype),
@@ -2289,9 +2288,7 @@ pub(super) async fn timeline_item_to_ffi(
         Some(summary) => {
             let count = summary.num_replies as u64;
             let (name, body, _formatted, ts) = match &summary.latest_event {
-                TimelineDetails::Ready(embedded) => {
-                    embedded_event_preview(room, embedded).await
-                }
+                TimelineDetails::Ready(embedded) => embedded_event_preview(room, embedded).await,
                 _ => (String::new(), String::new(), String::new(), 0u64),
             };
             (true, count, name, body, ts)
@@ -3506,7 +3503,11 @@ mod forward_tests {
 
     #[test]
     fn only_text_that_may_be_a_fallback_is_looked_up() {
-        let msg = |v: Value| serde_json::from_value::<RoomMessageEventContent>(v).unwrap().msgtype;
+        let msg = |v: Value| {
+            serde_json::from_value::<RoomMessageEventContent>(v)
+                .unwrap()
+                .msgtype
+        };
         assert!(may_be_forward_fallback(&msg(
             json!({ "msgtype": "m.text", "body": "Forwarded from Bob - view original message: x" })
         )));

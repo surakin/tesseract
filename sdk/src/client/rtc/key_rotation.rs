@@ -42,7 +42,11 @@ pub type Sessions = HashMap<Member, String>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RotationAction {
     /// Send the key (base64 raw material, `index`) to these `(user, device)`s.
-    Send { index: u8, key_b64: SecretString, to: Vec<Member> },
+    Send {
+        index: u8,
+        key_b64: SecretString,
+        to: Vec<Member>,
+    },
     /// Start encrypting our media with this key.
     Activate { index: u8, raw_key: SecretKey },
 }
@@ -72,7 +76,11 @@ impl ActivationGate {
 
     /// The activation to apply now, if its key is settled (`settled(index)`)
     /// or the wait is over.
-    pub fn release(&mut self, settled: impl Fn(u8) -> bool, now: Instant) -> Option<(u8, SecretKey)> {
+    pub fn release(
+        &mut self,
+        settled: impl Fn(u8) -> bool,
+        now: Instant,
+    ) -> Option<(u8, SecretKey)> {
         let (index, _, give_up_at) = self.held.as_ref()?;
         if settled(*index) || now >= *give_up_at {
             return self.held.take().map(|(i, k, _)| (i, k));
@@ -112,19 +120,35 @@ impl KeyRotator {
     pub fn new(members: Sessions, now: Instant) -> Self {
         let mgr = E2eeManager::new();
         let (active_index, active_b64) = (mgr.own_index(), mgr.own_key_b64());
-        Self { mgr, active_index, active_b64, members, last_rotation: now, activate_at: None, dirty: false }
+        Self {
+            mgr,
+            active_index,
+            active_b64,
+            members,
+            last_rotation: now,
+            activate_at: None,
+            dirty: false,
+        }
     }
 
     /// The key in use from the start: `(index, base64, raw)`.
     pub fn initial(&self) -> (u8, SecretString, SecretKey) {
-        (self.mgr.own_index(), self.mgr.own_key_b64(), self.mgr.own_secret_key())
+        (
+            self.mgr.own_index(),
+            self.mgr.own_key_b64(),
+            self.mgr.own_secret_key(),
+        )
     }
 
     fn rotate(&mut self, now: Instant) -> RotationAction {
         let (index, key_b64) = self.mgr.rotate();
         self.last_rotation = now;
         self.activate_at = Some(now + ACTIVATION_DELAY);
-        RotationAction::Send { index, key_b64, to: sorted(&self.members) }
+        RotationAction::Send {
+            index,
+            key_b64,
+            to: sorted(&self.members),
+        }
     }
 
     /// A rotation has been made and not confirmed as in use yet.
@@ -183,7 +207,11 @@ impl KeyRotator {
         // Someone left: the remaining members get a new key.
         if self.rotation_pending() {
             self.dirty = true;
-            return if joined.is_empty() { Vec::new() } else { self.keys_for_joiners(&joined) };
+            return if joined.is_empty() {
+                Vec::new()
+            } else {
+                self.keys_for_joiners(&joined)
+            };
         }
         let mut out = vec![self.rotate(now)];
         if !joined.is_empty() {
@@ -209,7 +237,9 @@ impl KeyRotator {
                 raw_key: self.mgr.own_secret_key(),
             });
         }
-        if !self.rotation_pending() && now.saturating_duration_since(self.last_rotation) >= PERIODIC_ROTATION {
+        if !self.rotation_pending()
+            && now.saturating_duration_since(self.last_rotation) >= PERIODIC_ROTATION
+        {
             out.push(self.rotate(now));
         }
         out
@@ -232,7 +262,10 @@ impl KeyRotator {
 
     /// The next instant `poll` has work to do.
     pub fn next_deadline(&self) -> Option<Instant> {
-        Some(self.activate_at.unwrap_or(self.last_rotation + PERIODIC_ROTATION))
+        Some(
+            self.activate_at
+                .unwrap_or(self.last_rotation + PERIODIC_ROTATION),
+        )
     }
 }
 
@@ -300,7 +333,10 @@ mod tests {
         let now = t0 + Duration::from_secs(60);
         let acts = r.on_members_changed(&set(&["@a:x"]), now);
         assert_eq!(sends(&acts), vec![(1, vec![m("@a:x")])]);
-        assert!(activations(&acts).is_empty(), "must not use the new key yet");
+        assert!(
+            activations(&acts).is_empty(),
+            "must not use the new key yet"
+        );
         assert!(r.poll(now + Duration::from_secs(4)).is_empty());
         let later = r.poll(now + ACTIVATION_DELAY);
         assert_eq!(activations(&later), vec![1]);
@@ -319,7 +355,10 @@ mod tests {
         // The window ends: key 1 goes live and ONE more rotation covers both leavers.
         let end = r.poll(now + ACTIVATION_DELAY);
         assert_eq!(activations(&end), vec![1]);
-        assert!(sends(&end).is_empty(), "the second rotation waits for the first to be in use");
+        assert!(
+            sends(&end).is_empty(),
+            "the second rotation waits for the first to be in use"
+        );
         let more = r.activated(1, now + ACTIVATION_DELAY);
         assert_eq!(sends(&more), vec![(2, vec![m("@a:x")])]);
         assert_eq!(activations(&r.poll(now + ACTIVATION_DELAY * 2)), vec![2]);
@@ -333,7 +372,10 @@ mod tests {
         let mut r = KeyRotator::new(set(&["@a:x"]), t0);
         let acts = r.on_members_changed(&set(&["@a:x", "@b:x"]), t0 + Duration::from_secs(3));
         assert_eq!(sends(&acts), vec![(0, vec![m("@b:x")])]);
-        assert!(r.poll(t0 + Duration::from_secs(60)).is_empty(), "nothing is pending");
+        assert!(
+            r.poll(t0 + Duration::from_secs(60)).is_empty(),
+            "nothing is pending"
+        );
     }
 
     #[test]
@@ -355,7 +397,10 @@ mod tests {
         r.on_members_changed(&set(&["@a:x"]), now); // b leaves: key 1 pending
         let acts = r.on_members_changed(&set(&["@a:x", "@c:x"]), now + Duration::from_secs(2));
         // The key in use first (so it can read us now), then the one coming.
-        assert_eq!(sends(&acts), vec![(0, vec![m("@c:x")]), (1, vec![m("@c:x")])]);
+        assert_eq!(
+            sends(&acts),
+            vec![(0, vec![m("@c:x")]), (1, vec![m("@c:x")])]
+        );
     }
 
     #[test]
@@ -366,7 +411,10 @@ mod tests {
         r.on_members_changed(&set(&["@a:x"]), now);
         r.poll(now + ACTIVATION_DELAY);
         r.activated(1, now + ACTIVATION_DELAY);
-        let acts = r.on_members_changed(&set(&["@a:x", "@c:x"]), now + ACTIVATION_DELAY + Duration::from_secs(1));
+        let acts = r.on_members_changed(
+            &set(&["@a:x", "@c:x"]),
+            now + ACTIVATION_DELAY + Duration::from_secs(1),
+        );
         assert_eq!(sends(&acts), vec![(1, vec![m("@c:x")])]);
     }
 
@@ -381,7 +429,10 @@ mod tests {
         assert_eq!(activations(&r.poll(now + ACTIVATION_DELAY)), vec![1]);
         let held = now + ACTIVATION_DELAY + Duration::from_secs(1);
         let acts = r.on_members_changed(&set(&["@a:x", "@c:x"]), held);
-        assert_eq!(sends(&acts), vec![(0, vec![m("@c:x")]), (1, vec![m("@c:x")])]);
+        assert_eq!(
+            sends(&acts),
+            vec![(0, vec![m("@c:x")]), (1, vec![m("@c:x")])]
+        );
         assert_eq!(r.live_indices(), vec![0, 1]);
         // Once the caller has put key 1 to use, key 1 alone is enough.
         r.activated(1, held);
@@ -398,9 +449,18 @@ mod tests {
         r.on_members_changed(&set(&["@a:x", "@b:x"]), now);
         r.poll(now + ACTIVATION_DELAY);
         let held = now + ACTIVATION_DELAY + Duration::from_secs(1);
-        assert!(sends(&r.on_members_changed(&set(&["@a:x"]), held)).is_empty(), "no rotation while one is pending");
-        assert!(r.poll(held + Duration::from_secs(1)).is_empty(), "the activation is asked for once");
-        assert_eq!(sends(&r.activated(1, held + Duration::from_secs(2))), vec![(2, vec![m("@a:x")])]);
+        assert!(
+            sends(&r.on_members_changed(&set(&["@a:x"]), held)).is_empty(),
+            "no rotation while one is pending"
+        );
+        assert!(
+            r.poll(held + Duration::from_secs(1)).is_empty(),
+            "the activation is asked for once"
+        );
+        assert_eq!(
+            sends(&r.activated(1, held + Duration::from_secs(2))),
+            vec![(2, vec![m("@a:x")])]
+        );
     }
 
     #[test]
@@ -424,7 +484,11 @@ mod tests {
         // A full interval later the leave rotation is still not in use: no second key is made.
         assert!(sends(&r.poll(now + PERIODIC_ROTATION)).is_empty());
         r.activated(1, now + PERIODIC_ROTATION);
-        assert_eq!(sends(&r.poll(now + PERIODIC_ROTATION)).len(), 1, "and then it is due");
+        assert_eq!(
+            sends(&r.poll(now + PERIODIC_ROTATION)).len(),
+            1,
+            "and then it is due"
+        );
     }
 
     #[test]
@@ -444,7 +508,12 @@ mod tests {
             }
         }
         // Delivery never settles: the gate still lets go in time.
-        assert!(g.release(|_| false, asked + MAX_ACTIVATION_WAIT - Duration::from_millis(1)).is_none());
+        assert!(g
+            .release(
+                |_| false,
+                asked + MAX_ACTIVATION_WAIT - Duration::from_millis(1)
+            )
+            .is_none());
         assert!(g.release(|_| false, asked + MAX_ACTIVATION_WAIT).is_some());
     }
 
@@ -455,8 +524,14 @@ mod tests {
         let now = t0 + Duration::from_secs(60);
         let acts = r.on_members_changed(&set(&["@a:x", "@c:x"]), now);
         // The leaver is excluded from the new key; the joiner gets it plus the old one.
-        assert_eq!(sends(&acts), vec![(1, vec![m("@a:x"), m("@c:x")]), (0, vec![m("@c:x")])]);
-        assert!(r.poll(now + Duration::from_secs(1)).is_empty(), "full activation delay");
+        assert_eq!(
+            sends(&acts),
+            vec![(1, vec![m("@a:x"), m("@c:x")]), (0, vec![m("@c:x")])]
+        );
+        assert!(
+            r.poll(now + Duration::from_secs(1)).is_empty(),
+            "full activation delay"
+        );
         assert_eq!(activations(&r.poll(now + ACTIVATION_DELAY)), vec![1]);
     }
 
@@ -466,10 +541,16 @@ mod tests {
         let mut r = KeyRotator::new(set(&["@a:x", "@b:x"]), t0);
         let now = t0 + Duration::from_secs(60);
         let acts = r.on_members_changed(&restarted(set(&["@a:x", "@b:x"]), "@b:x"), now);
-        assert_eq!(sends(&acts), vec![(0, vec![m("@b:x")])], "only the restarted device, the key in use");
+        assert_eq!(
+            sends(&acts),
+            vec![(0, vec![m("@b:x")])],
+            "only the restarted device, the key in use"
+        );
         assert!(r.poll(now + ACTIVATION_DELAY).is_empty(), "nothing rotates");
         // The same session reported again is not a join.
-        assert!(r.on_members_changed(&restarted(set(&["@a:x", "@b:x"]), "@b:x"), now).is_empty());
+        assert!(r
+            .on_members_changed(&restarted(set(&["@a:x", "@b:x"]), "@b:x"), now)
+            .is_empty());
     }
 
     #[test]
@@ -478,8 +559,14 @@ mod tests {
         let mut r = KeyRotator::new(set(&["@a:x", "@b:x", "@c:x"]), t0);
         let now = t0 + Duration::from_secs(60);
         r.on_members_changed(&set(&["@a:x", "@b:x"]), now); // c leaves: key 1 pending
-        let acts = r.on_members_changed(&restarted(set(&["@a:x", "@b:x"]), "@b:x"), now + Duration::from_secs(1));
-        assert_eq!(sends(&acts), vec![(0, vec![m("@b:x")]), (1, vec![m("@b:x")])]);
+        let acts = r.on_members_changed(
+            &restarted(set(&["@a:x", "@b:x"]), "@b:x"),
+            now + Duration::from_secs(1),
+        );
+        assert_eq!(
+            sends(&acts),
+            vec![(0, vec![m("@b:x")]), (1, vec![m("@b:x")])]
+        );
     }
 
     #[test]
@@ -502,8 +589,14 @@ mod tests {
         g.hold(3, Secret::new([7; 32]), t0);
         assert_eq!(g.deadline(), Some(t0 + MAX_ACTIVATION_WAIT));
         assert!(g.release(|_| false, t0 + Duration::from_secs(1)).is_none());
-        assert_eq!(g.release(|i| i == 3, t0 + Duration::from_secs(2)), Some((3, Secret::new([7; 32]))));
-        assert!(g.release(|_| true, t0 + Duration::from_secs(3)).is_none(), "released once");
+        assert_eq!(
+            g.release(|i| i == 3, t0 + Duration::from_secs(2)),
+            Some((3, Secret::new([7; 32])))
+        );
+        assert!(
+            g.release(|_| true, t0 + Duration::from_secs(3)).is_none(),
+            "released once"
+        );
         assert!(g.deadline().is_none());
     }
 
@@ -512,8 +605,16 @@ mod tests {
         let t0 = Instant::now();
         let mut g = ActivationGate::default();
         g.hold(1, Secret::new([1; 32]), t0);
-        assert!(g.release(|_| false, t0 + MAX_ACTIVATION_WAIT - Duration::from_millis(1)).is_none());
-        assert_eq!(g.release(|_| false, t0 + MAX_ACTIVATION_WAIT), Some((1, Secret::new([1; 32]))));
+        assert!(g
+            .release(
+                |_| false,
+                t0 + MAX_ACTIVATION_WAIT - Duration::from_millis(1)
+            )
+            .is_none());
+        assert_eq!(
+            g.release(|_| false, t0 + MAX_ACTIVATION_WAIT),
+            Some((1, Secret::new([1; 32])))
+        );
     }
 
     #[test]
@@ -522,14 +623,19 @@ mod tests {
         let mut g = ActivationGate::default();
         g.hold(1, Secret::new([1; 32]), t0);
         g.hold(2, Secret::new([2; 32]), t0 + Duration::from_secs(1));
-        assert_eq!(g.release(|_| true, t0 + Duration::from_secs(2)), Some((2, Secret::new([2; 32]))));
+        assert_eq!(
+            g.release(|_| true, t0 + Duration::from_secs(2)),
+            Some((2, Secret::new([2; 32])))
+        );
     }
 
     #[test]
     fn periodic_rotation_fires_after_interval() {
         let t0 = Instant::now();
         let mut r = KeyRotator::new(set(&["@a:x"]), t0);
-        assert!(r.poll(t0 + PERIODIC_ROTATION - Duration::from_secs(1)).is_empty());
+        assert!(r
+            .poll(t0 + PERIODIC_ROTATION - Duration::from_secs(1))
+            .is_empty());
         let acts = r.poll(t0 + PERIODIC_ROTATION);
         assert_eq!(sends(&acts), vec![(1, vec![m("@a:x")])]);
         assert!(r.next_deadline().is_some());

@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-
 use anyhow::Context;
 use matrix_sdk::Room;
 use parking_lot::Mutex as PLMutex;
@@ -16,26 +15,27 @@ use tracing::{info, warn};
 
 use super::{
     e2ee::{
-        decode_frame_key, recheck_device_id, ClientKeySender, KeyDelivery, ParkedKey, ParkedKeys, RateLimiter, Recheck,
-        Secret, SecretString,
+        decode_frame_key, recheck_device_id, ClientKeySender, KeyDelivery, ParkedKey, ParkedKeys,
+        RateLimiter, Recheck, Secret, SecretString,
     },
+    identity::{classify_identity, IdentityShape},
     key_rotation::{ActivationGate, KeyRotator, RotationAction, Sessions},
     livekit_room::{LiveKitRoom, MemberTransports, PrimaryEnded, SharedKeys},
     members::{desired_sfus, transport_map, JoinCheck, LkFocus},
     mrtc_membership::{
-        can_send_member_event, can_send_slot, encryption_flipped_mid_call, others_may_be_present, SlotWatch,
-        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, plan_slot, send_invite,
-        should_write_member_events, withdraw_invite, JoinParams, LeaveCode, MrtcMembership, SlotPlan,
+        can_send_member_event, can_send_slot, encryption_flipped_mid_call,
+        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, others_may_be_present,
+        plan_slot, send_invite, should_write_member_events, withdraw_invite, JoinParams, LeaveCode,
+        MrtcMembership, SlotPlan, SlotWatch,
     },
-    slots::{
-        hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot, read_slot_state, read_slot_state_keyed,
-        stale_own_members,
-    },
-    identity::{classify_identity, IdentityShape},
     sfu_set::{SfuContext, SfuSet},
     signaling::{
         self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
         DelayedRestart,
+    },
+    slots::{
+        hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot,
+        read_slot_state, read_slot_state_keyed, stale_own_members,
     },
     transport::{fetch_livekit_jwt, fetch_livekit_service_url, livekit_room_alias},
     RtcParticipantInfo,
@@ -393,7 +393,10 @@ async fn send_legacy_leave(signals: &dyn Signals, member_id: &str) -> bool {
     for attempt in 0..2 {
         match signals.legacy_leave(member_id).await {
             Ok(()) => return true,
-            Err(e) => warn!("rtc: legacy call-member leave failed (attempt {}): {e}", attempt + 1),
+            Err(e) => warn!(
+                "rtc: legacy call-member leave failed (attempt {}): {e}",
+                attempt + 1
+            ),
         }
         if attempt == 0 {
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -465,7 +468,11 @@ async fn hang_up(
 ) -> bool {
     announced.shutdown();
     connection.stop_media();
-    let withdraw = async { tokio::time::timeout(limit, announced.withdraw(code, why)).await.is_ok() };
+    let withdraw = async {
+        tokio::time::timeout(limit, announced.withdraw(code, why))
+            .await
+            .is_ok()
+    };
     let (delivered, ()) = tokio::join!(withdraw, connection.disconnect());
     delivered
 }
@@ -505,7 +512,14 @@ impl SetupGuard {
     /// The setup failed on a path that can wait for its cleanup.
     async fn fail(mut self, code: LeaveCode, why: &str) {
         self.armed = false;
-        hang_up(&self.announced, &*self.connection, code, Some(why), SETUP_CLEANUP_LIMIT).await;
+        hang_up(
+            &self.announced,
+            &*self.connection,
+            code,
+            Some(why),
+            SETUP_CLEANUP_LIMIT,
+        )
+        .await;
     }
 }
 
@@ -562,7 +576,9 @@ pub async fn start_call(
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> anyhow::Result<RtcSession> {
     use matrix_sdk::ruma::{
-        events::{call::member::CallMemberEventContent, room::member::SyncRoomMemberEvent, SyncStateEvent},
+        events::{
+            call::member::CallMemberEventContent, room::member::SyncRoomMemberEvent, SyncStateEvent,
+        },
         MilliSecondsSinceUnixEpoch,
     };
 
@@ -646,7 +662,9 @@ pub async fn start_call(
         &initial_members,
         Some((join_ts, &local_focus)),
     ));
-    member_transports.identities().replace(hashed_identities(&initial_members));
+    member_transports
+        .identities()
+        .replace(hashed_identities(&initial_members));
 
     // OpenID token → JWT
     let openid = get_openid_token(client).await?;
@@ -668,7 +686,10 @@ pub async fn start_call(
     // Now that the SFU's WebSocket URL is known, a member that names only that
     // URL as its transport can be recognised as being on our SFU.
     local_focus.sfu_url = Some(lk_transport.server_url.clone());
-    member_transports.replace(transport_map(&initial_members, Some((join_ts, &local_focus))));
+    member_transports.replace(transport_map(
+        &initial_members,
+        Some((join_ts, &local_focus)),
+    ));
 
     // ── E2EE negotiation ────────────────────────────────────────────────────
     // Only enable frame encryption when the Matrix room is encrypted.
@@ -764,7 +785,9 @@ pub async fn start_call(
         )
         .await
         {
-            guard.fail(LeaveCode::TransportError, "could not announce the call").await;
+            guard
+                .fail(LeaveCode::TransportError, "could not announce the call")
+                .await;
             return Err(e);
         }
     }
@@ -904,7 +927,9 @@ pub async fn start_call(
     {
         Ok(lk) => Arc::new(lk),
         Err(e) => {
-            guard.fail(LeaveCode::TransportError, "could not connect to the SFU").await;
+            guard
+                .fail(LeaveCode::TransportError, "could not connect to the SFU")
+                .await;
             return Err(e);
         }
     };
@@ -961,7 +986,12 @@ pub async fn start_call(
         }
         .await;
         if let Err(e) = resent {
-            guard.fail(LeaveCode::TransportError, "could not update the call membership").await;
+            guard
+                .fail(
+                    LeaveCode::TransportError,
+                    "could not update the call membership",
+                )
+                .await;
             return Err(e);
         }
         // The membership under the wrong identity would otherwise stay as a ghost.
@@ -994,7 +1024,10 @@ pub async fn start_call(
 
     // ── Our frame key ─────────────────────────────────────────────────────
     let e2ee = Arc::new(PLMutex::new(KeyRotator::new(
-        initial_members.iter().map(|m| (m.key(), m.session_tag())).collect(),
+        initial_members
+            .iter()
+            .map(|m| (m.key(), m.session_tag()))
+            .collect(),
         Instant::now(),
     )));
     // Keys go out from a worker of their own, never from the call's setup or
@@ -1011,8 +1044,7 @@ pub async fn start_call(
         // Set our own key first so the FrameCryptor can start encrypting
         // before we broadcast (avoids sending the key before frames are ready).
         sfus.primary.set_own_frame_key(raw.as_slice(), idx as i32);
-        let recipients: Vec<(String, String)> =
-            initial_members.iter().map(|m| m.key()).collect();
+        let recipients: Vec<(String, String)> = initial_members.iter().map(|m| m.key()).collect();
         delivery.enqueue(&recipients, idx, &key_b64);
     }
 
@@ -1029,12 +1061,14 @@ pub async fn start_call(
     ));
 
     let member_tx_h = member_tx.clone();
-    let member_handle = room.add_event_handler(move |_ev: SyncStateEvent<signaling::CallMemberRawEventContent>| {
-        let tx = member_tx_h.clone();
-        async move {
-            let _ = tx.try_send(());
-        }
-    });
+    let member_handle = room.add_event_handler(
+        move |_ev: SyncStateEvent<signaling::CallMemberRawEventContent>| {
+            let tx = member_tx_h.clone();
+            async move {
+                let _ = tx.try_send(());
+            }
+        },
+    );
     let member_guard = client.event_handler_drop_guard(member_handle);
     // A kick, ban or leave is an m.room.member change, not a call.member one: wake
     // the loop on those too, so the user stops receiving keys and the leave rotation
@@ -1145,7 +1179,10 @@ fn primary_ended(announced: &Arc<Announced>, holder: &Arc<PLMutex<Option<Arc<Sfu
             set.disconnect_all().await;
         }
         announced
-            .withdraw(LeaveCode::TransportError, Some("lost the connection to the SFU"))
+            .withdraw(
+                LeaveCode::TransportError,
+                Some("lost the connection to the SFU"),
+            )
             .await;
     });
     true
@@ -1187,7 +1224,9 @@ pub async fn end_call(session: &RtcSession) {
     )
     .await;
     if !delivered {
-        warn!("rtc: taking back the call's announcements is taking long; finishing in the background");
+        warn!(
+            "rtc: taking back the call's announcements is taking long; finishing in the background"
+        );
     }
     info!("rtc: left the call after {:?}", t0.elapsed());
 }
@@ -1283,7 +1322,9 @@ fn evaluate_key_event(
     if c.room_id != expected_room {
         return Err(format!("for another room ({})", c.room_id));
     }
-    let (index, key_b64) = c.media_key_parts().ok_or_else(|| "carries no key".to_owned())?;
+    let (index, key_b64) = c
+        .media_key_parts()
+        .ok_or_else(|| "carries no key".to_owned())?;
     match &c.member_id {
         Some(id) => {
             // Member ids are visible to everyone, so another user may have
@@ -1317,7 +1358,11 @@ fn evaluate_key_event(
             check_key_event_fields(expected_room, &legacy, Some(Some(device)))?;
         }
     }
-    Ok(AcceptedKey { device: device.to_owned(), index, key_b64 })
+    Ok(AcceptedKey {
+        device: device.to_owned(),
+        index,
+        key_b64,
+    })
 }
 
 /// Why a frame-key event was not accepted.
@@ -1337,11 +1382,15 @@ fn device_not_known_yet(
     sender_device: Option<Option<&str>>,
     state: Option<&matrix_sdk::deserialized_responses::VerificationState>,
 ) -> bool {
-    use matrix_sdk::deserialized_responses::{DeviceLinkProblem, VerificationLevel, VerificationState};
+    use matrix_sdk::deserialized_responses::{
+        DeviceLinkProblem, VerificationLevel, VerificationState,
+    };
     matches!(sender_device, Some(None))
         || matches!(
             state,
-            Some(VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::MissingDevice)))
+            Some(VerificationState::Unverified(VerificationLevel::None(
+                DeviceLinkProblem::MissingDevice
+            )))
         )
 }
 
@@ -1353,14 +1402,23 @@ fn judge_key_event(
     expected_room: &str,
     c: &crate::client::rtc::model::MediaKeyContent,
     sender: &str,
-    info: Option<(Option<&str>, &matrix_sdk::deserialized_responses::VerificationState)>,
+    info: Option<(
+        Option<&str>,
+        &matrix_sdk::deserialized_responses::VerificationState,
+    )>,
     members: &[crate::client::rtc::members::CallMember],
     exclude_insecure: bool,
 ) -> Result<AcceptedKey, KeyRejection> {
     let not_yet = device_not_known_yet(info.map(|(d, _)| d), info.map(|(_, s)| s));
-    let reject = |why: String| if not_yet { KeyRejection::Retry(why) } else { KeyRejection::Final(why) };
-    let accepted =
-        evaluate_key_event(expected_room, c, sender, info.map(|(d, _)| d), members).map_err(reject)?;
+    let reject = |why: String| {
+        if not_yet {
+            KeyRejection::Retry(why)
+        } else {
+            KeyRejection::Final(why)
+        }
+    };
+    let accepted = evaluate_key_event(expected_room, c, sender, info.map(|(d, _)| d), members)
+        .map_err(reject)?;
     if let Some((_, state)) = info {
         check_device_trusted(state, exclude_insecure).map_err(reject)?;
     }
@@ -1379,7 +1437,12 @@ fn accept_key_event(
         room.room_id().as_str(),
         content,
         sender.as_str(),
-        info.map(|i| (i.sender_device.as_deref().map(|d| d.as_str()), &i.verification_state)),
+        info.map(|i| {
+            (
+                i.sender_device.as_deref().map(|d| d.as_str()),
+                &i.verification_state,
+            )
+        }),
         members,
         crate::client::identity::exclude_insecure_devices(),
     )
@@ -1404,11 +1467,17 @@ fn cheap_key_checks(
     if content.room_id != expected_room {
         return Err(format!("for another room ({})", content.room_id));
     }
-    let (_, key_b64) = content.media_key_parts().ok_or_else(|| "carries no key".to_owned())?;
+    let (_, key_b64) = content
+        .media_key_parts()
+        .ok_or_else(|| "carries no key".to_owned())?;
     if key_b64.len() > MAX_KEY_B64_LEN {
         return Err(format!("key is {} characters long", key_b64.len()));
     }
-    if content.member_id.as_ref().is_some_and(|id| id.len() > MAX_MEMBER_ID_LEN) {
+    if content
+        .member_id
+        .as_ref()
+        .is_some_and(|id| id.len() > MAX_MEMBER_ID_LEN)
+    {
         return Err("member id is too long".to_owned());
     }
     Ok(())
@@ -1438,7 +1507,11 @@ fn classify_sender<E: std::fmt::Display>(
 /// The sender must be joined to the room: anything else could inject keys
 /// from outsiders.
 async fn sender_is_joined(room: &Room, sender: &matrix_sdk::ruma::UserId) -> SenderJoin {
-    classify_sender(room.get_member(sender).await.map(|m| m.map(|m| m.membership().clone())))
+    classify_sender(
+        room.get_member(sender)
+            .await
+            .map(|m| m.map(|m| m.membership().clone())),
+    )
 }
 
 /// The verification state of a device we now know, the way the crypto layer
@@ -1470,11 +1543,17 @@ async fn refreshed_encryption_info(
     info: &matrix_sdk::deserialized_responses::EncryptionInfo,
 ) -> Option<matrix_sdk::deserialized_responses::EncryptionInfo> {
     use matrix_sdk::deserialized_responses::AlgorithmInfo;
-    let AlgorithmInfo::OlmV1Curve25519AesSha2 { curve25519_public_key_base64: curve } = &info.algorithm_info
+    let AlgorithmInfo::OlmV1Curve25519AesSha2 {
+        curve25519_public_key_base64: curve,
+    } = &info.algorithm_info
     else {
         return None;
     };
-    let devices = client.encryption().get_user_devices(&info.sender).await.ok()?;
+    let devices = client
+        .encryption()
+        .get_user_devices(&info.sender)
+        .await
+        .ok()?;
     let device = devices
         .devices()
         .find(|d| d.curve25519_key().is_some_and(|k| k.to_base64() == *curve))?;
@@ -1537,9 +1616,18 @@ impl KeyCtx {
             own_user,
             own_device,
             wake,
-            ignored_warns: Arc::new(PLMutex::new(RateLimiter::new(IGNORED_KEY_WARN_INTERVAL, LIMITER_SENDERS))),
-            parked_notes: Arc::new(PLMutex::new(RateLimiter::new(IGNORED_KEY_WARN_INTERVAL, LIMITER_SENDERS))),
-            device_queries: Arc::new(PLMutex::new(RateLimiter::new(DEVICE_QUERY_INTERVAL, LIMITER_SENDERS))),
+            ignored_warns: Arc::new(PLMutex::new(RateLimiter::new(
+                IGNORED_KEY_WARN_INTERVAL,
+                LIMITER_SENDERS,
+            ))),
+            parked_notes: Arc::new(PLMutex::new(RateLimiter::new(
+                IGNORED_KEY_WARN_INTERVAL,
+                LIMITER_SENDERS,
+            ))),
+            device_queries: Arc::new(PLMutex::new(RateLimiter::new(
+                DEVICE_QUERY_INTERVAL,
+                LIMITER_SENDERS,
+            ))),
         }
     }
 
@@ -1559,7 +1647,11 @@ impl KeyCtx {
     /// Ask the homeserver for the devices of `sender` (once in a while), then
     /// have the parked keys judged again.
     fn query_devices_of(&self, sender: &matrix_sdk::ruma::UserId) {
-        if !self.device_queries.lock().allow(sender.as_str(), Instant::now()) {
+        if !self
+            .device_queries
+            .lock()
+            .allow(sender.as_str(), Instant::now())
+        {
             return;
         }
         let client = self.room.client();
@@ -1627,9 +1719,14 @@ impl KeyCtx {
         at: Instant,
     ) {
         use matrix_sdk::deserialized_responses::AlgorithmInfo;
-        let AlgorithmInfo::OlmV1Curve25519AesSha2 { curve25519_public_key_base64: curve } = &info.algorithm_info
+        let AlgorithmInfo::OlmV1Curve25519AesSha2 {
+            curve25519_public_key_base64: curve,
+        } = &info.algorithm_info
         else {
-            self.warn_ignored(sender.as_str(), "sender device is unknown and cannot be looked up");
+            self.warn_ignored(
+                sender.as_str(),
+                "sender device is unknown and cannot be looked up",
+            );
             return;
         };
         if self.note_parked(sender.as_str()) {
@@ -1674,7 +1771,9 @@ async fn handle_key_event(
     // write the identity table, and the older read must not win.
     let stamp = ctx.shared.identities().stamp();
     let members = read_all_live_members(&ctx.room, &ctx.own_user, &ctx.own_device).await;
-    ctx.shared.identities().replace_stamped(stamp, hashed_identities(&members));
+    ctx.shared
+        .identities()
+        .replace_stamped(stamp, hashed_identities(&members));
     match accept_key_event(&ctx.room, &sender_id, &content, info.as_ref(), &members) {
         Ok(accepted) => ctx.apply_or_park(&sender, accepted, &members),
         Err(KeyRejection::Retry(why)) => {
@@ -1700,10 +1799,15 @@ async fn recheck_parked_keys(ctx: &KeyCtx, members: &[crate::client::rtc::member
     let client = ctx.room.client();
     for (parked_at, key) in waiting {
         let Some(recheck) = key.recheck else { continue };
-        let Ok(sender_id) = matrix_sdk::ruma::UserId::parse(&key.user_id) else { continue };
+        let Ok(sender_id) = matrix_sdk::ruma::UserId::parse(&key.user_id) else {
+            continue;
+        };
         let Some(info) = refreshed_encryption_info(&client, &recheck.info).await else {
             ctx.parked.lock().park(
-                ParkedKey { recheck: Some(recheck), ..key },
+                ParkedKey {
+                    recheck: Some(recheck),
+                    ..key
+                },
                 parked_at,
             );
             continue;
@@ -1716,18 +1820,42 @@ async fn recheck_parked_keys(ctx: &KeyCtx, members: &[crate::client::rtc::member
             }
             SenderJoin::Unknown(why) => {
                 // A failed lookup says nothing: judge it again at the next pass.
-                tracing::debug!("e2ee: {why}; keeping the key from {} to judge again", key.user_id);
-                ctx.parked.lock().park(ParkedKey { recheck: Some(recheck), ..key }, parked_at);
+                tracing::debug!(
+                    "e2ee: {why}; keeping the key from {} to judge again",
+                    key.user_id
+                );
+                ctx.parked.lock().park(
+                    ParkedKey {
+                        recheck: Some(recheck),
+                        ..key
+                    },
+                    parked_at,
+                );
                 continue;
             }
         }
-        match accept_key_event(&ctx.room, &sender_id, &recheck.content, Some(&info), members) {
+        match accept_key_event(
+            &ctx.room,
+            &sender_id,
+            &recheck.content,
+            Some(&info),
+            members,
+        ) {
             Ok(accepted) => {
-                tracing::debug!("e2ee: judged the key from {} now that its device is known", key.user_id);
+                tracing::debug!(
+                    "e2ee: judged the key from {} now that its device is known",
+                    key.user_id
+                );
                 ctx.apply_or_park(&key.user_id, accepted, members);
             }
             Err(KeyRejection::Retry(_)) => {
-                ctx.parked.lock().park(ParkedKey { recheck: Some(recheck), ..key }, parked_at);
+                ctx.parked.lock().park(
+                    ParkedKey {
+                        recheck: Some(recheck),
+                        ..key
+                    },
+                    parked_at,
+                );
             }
             Err(KeyRejection::Final(why)) => ctx.warn_ignored(&key.user_id, &why),
         }
@@ -1857,7 +1985,12 @@ fn spawn_membership_task(
 }
 
 /// Hand the rotator's decisions on: keys to the delivery worker, activations to the gate.
-fn apply_key_actions(actions: Vec<RotationAction>, delivery: &KeyDelivery, gate: &mut ActivationGate, now: Instant) {
+fn apply_key_actions(
+    actions: Vec<RotationAction>,
+    delivery: &KeyDelivery,
+    gate: &mut ActivationGate,
+    now: Instant,
+) {
     for action in actions {
         match action {
             RotationAction::Send { index, key_b64, to } => delivery.enqueue(&to, index, &key_b64),
@@ -1875,8 +2008,11 @@ fn release_gate(
     sfus: &Arc<SfuSet>,
 ) {
     let now = Instant::now();
-    let Some((index, raw_key)) = gate.release(|i| delivery.settled(i), now) else { return };
-    sfus.primary.set_own_frame_key(raw_key.as_slice(), index as i32);
+    let Some((index, raw_key)) = gate.release(|i| delivery.settled(i), now) else {
+        return;
+    };
+    sfus.primary
+        .set_own_frame_key(raw_key.as_slice(), index as i32);
     let (more, live) = {
         let mut rotator = e2ee.lock();
         let more = rotator.activated(index, now);
@@ -1976,11 +2112,17 @@ async fn reconcile_loop(
         }
         // A leave the watch asked for that did not go out is asked for again on
         // every pass (`has_left` is set by the attempt, not by the delivery).
-        if let Some(m) = mrtc.as_ref().filter(|m| !m.has_left() || slot_watch.leave_due()) {
+        if let Some(m) = mrtc
+            .as_ref()
+            .filter(|m| !m.has_left() || slot_watch.leave_due())
+        {
             let slot = read_slot_state(&room).await;
-            if let Some((code, why)) =
-                slot_watch.observe(&slot, m.encrypted_at_join(), room.encryption_state().is_encrypted(), Instant::now())
-            {
+            if let Some((code, why)) = slot_watch.observe(
+                &slot,
+                m.encrypted_at_join(),
+                room.encryption_state().is_encrypted(),
+                Instant::now(),
+            ) {
                 if m.leave(code, Some(why)).await {
                     slot_watch.delivered();
                 }
@@ -1993,7 +2135,9 @@ async fn reconcile_loop(
         // key for a member who is already connected matches nobody.
         let hashed = hashed_identities(&members);
         let have_hashed = !hashed.is_empty();
-        member_transports.identities().replace_stamped(stamp, hashed);
+        member_transports
+            .identities()
+            .replace_stamped(stamp, hashed);
         if have_hashed {
             sfus.apply_all_keys();
         }
@@ -2003,7 +2147,10 @@ async fn reconcile_loop(
             .lock()
             .take_for(&current.iter().cloned().collect::<Vec<_>>(), Instant::now());
         for k in released {
-            info!("e2ee: applying parked key from {}/{}", k.user_id, k.device_id);
+            info!(
+                "e2ee: applying parked key from {}/{}",
+                k.user_id, k.device_id
+            );
             sfus.apply_key(&k.user_id, &k.device_id, k.index, k.raw_key);
         }
         // Keys whose sending device was not known when they arrived.
@@ -2054,7 +2201,9 @@ async fn reconcile_loop(
 
 /// Register a handler for MSC3401 `org.matrix.msc3401.call.member` events.
 /// Element Web uses this format.
-pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) -> matrix_sdk::event_handler::EventHandlerHandle {
+pub fn register_msc3401_invitation_handler(
+    client: &matrix_sdk::Client,
+) -> matrix_sdk::event_handler::EventHandlerHandle {
     use matrix_sdk::ruma::events::SyncStateEvent;
 
     let client_clone = client.clone();
@@ -2062,13 +2211,16 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) -> matri
         move |ev: SyncStateEvent<signaling::CallMemberRawEventContent>, room: Room| {
             let client = client_clone.clone();
             async move {
-                let (Some(own_user), Some(own_device)) =
-                    (client.user_id().map(|u| u.to_owned()), client.device_id().map(|d| d.to_owned()))
-                else {
+                let (Some(own_user), Some(own_device)) = (
+                    client.user_id().map(|u| u.to_owned()),
+                    client.device_id().map(|d| d.to_owned()),
+                ) else {
                     return;
                 };
                 let room_id = room.room_id().to_string();
-                let SyncStateEvent::Original(o) = &ev else { return };
+                let SyncStateEvent::Original(o) = &ev else {
+                    return;
+                };
 
                 // A leave (empty content), a membership whose lifetime has passed
                 // and our own device are not live invitations. The expiry also
@@ -2088,7 +2240,10 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) -> matri
                     return;
                 }
                 // An ignored user's call does not ring.
-                if super::sticky::ignored_users(&client).await.contains(o.sender.as_str()) {
+                if super::sticky::ignored_users(&client)
+                    .await
+                    .contains(o.sender.as_str())
+                {
                     return;
                 }
                 let slot_id = super::members::call_id_of(&content);
@@ -2158,7 +2313,10 @@ pub fn register_rtc_notification_handler(
                 // (the stable notification event does not carry caller device_id)
 
                 // An ignored user's call does not ring (the sticky path has the same rule).
-                if super::sticky::ignored_users(&client).await.contains(&sender) {
+                if super::sticky::ignored_users(&client)
+                    .await
+                    .contains(&sender)
+                {
                     return;
                 }
                 // The same event may also be a sticky invite the sticky-map
@@ -2223,7 +2381,10 @@ pub fn register_rtc_notification_handler(
                 let room_id = room.room_id().to_string();
 
                 // An ignored user's call does not ring (the sticky path has the same rule).
-                if super::sticky::ignored_users(&client).await.contains(&sender) {
+                if super::sticky::ignored_users(&client)
+                    .await
+                    .contains(&sender)
+                {
                     return;
                 }
                 // The same event may also be a sticky invite the sticky-map
@@ -2415,13 +2576,24 @@ mod key_event_tests {
         serde_json::from_value(v).unwrap()
     }
 
-    fn mrtc_member(user: &str, device: &str, member_id: &str) -> crate::client::rtc::members::CallMember {
+    fn mrtc_member(
+        user: &str,
+        device: &str,
+        member_id: &str,
+    ) -> crate::client::rtc::members::CallMember {
         use crate::client::rtc::members::{CallMember, MemberSource};
         CallMember {
-            user_id: user.into(), device_id: device.into(), state_key: member_id.into(),
+            user_id: user.into(),
+            device_id: device.into(),
+            state_key: member_id.into(),
             joined_at: matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now(),
-            focus_selection: "multi_sfu".into(), foci_preferred: vec![], member_id: member_id.into(),
-            source: MemberSource::MatrixRtc, intent: None, capabilities: None, claimed_at_ms: None,
+            focus_selection: "multi_sfu".into(),
+            foci_preferred: vec![],
+            member_id: member_id.into(),
+            source: MemberSource::MatrixRtc,
+            intent: None,
+            capabilities: None,
+            claimed_at_ms: None,
         }
     }
 
@@ -2435,47 +2607,100 @@ mod key_event_tests {
     #[test]
     fn stable_shape_from_the_member_s_own_device_is_accepted() {
         let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
-        let ok = evaluate_key_event("!r:x.org", &stable("!r:x.org", "mid1"), "@a:x.org", Some(Some("DEV")), &members).unwrap();
-        assert_eq!((ok.device.as_str(), ok.index, ok.key_b64.as_str()), ("DEV", 4, "AAAA"));
+        let ok = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@a:x.org",
+            Some(Some("DEV")),
+            &members,
+        )
+        .unwrap();
+        assert_eq!(
+            (ok.device.as_str(), ok.index, ok.key_b64.as_str()),
+            ("DEV", 4, "AAAA")
+        );
     }
 
     #[test]
     fn a_squatted_member_id_does_not_block_the_real_owner() {
         // Mallory published a member event with the victim's (visible) member id.
-        let members = vec![mrtc_member("@mallory:x.org", "M", "mid1"), mrtc_member("@a:x.org", "DEV", "mid1")];
-        let ok = evaluate_key_event("!r:x.org", &stable("!r:x.org", "mid1"), "@a:x.org", Some(Some("DEV")), &members).unwrap();
+        let members = vec![
+            mrtc_member("@mallory:x.org", "M", "mid1"),
+            mrtc_member("@a:x.org", "DEV", "mid1"),
+        ];
+        let ok = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@a:x.org",
+            Some(Some("DEV")),
+            &members,
+        )
+        .unwrap();
         assert_eq!(ok.device, "DEV");
         // ...and Mallory's own key under that id still only works from Mallory's device.
-        let e = evaluate_key_event("!r:x.org", &stable("!r:x.org", "mid1"), "@mallory:x.org", Some(Some("OTHER")), &members).unwrap_err();
+        let e = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@mallory:x.org",
+            Some(Some("OTHER")),
+            &members,
+        )
+        .unwrap_err();
         assert!(e.contains("another device"), "{e}");
     }
 
     #[test]
     fn stable_shape_for_another_users_member_id_is_rejected() {
         let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
-        let e = evaluate_key_event("!r:x.org", &stable("!r:x.org", "mid1"), "@mallory:x.org", Some(Some("DEV")), &members).unwrap_err();
+        let e = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@mallory:x.org",
+            Some(Some("DEV")),
+            &members,
+        )
+        .unwrap_err();
         assert!(e.contains("another user"), "{e}");
     }
 
     #[test]
     fn stable_shape_from_a_different_device_than_the_member_event_is_rejected() {
         let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
-        let e = evaluate_key_event("!r:x.org", &stable("!r:x.org", "mid1"), "@a:x.org", Some(Some("OTHER")), &members).unwrap_err();
+        let e = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@a:x.org",
+            Some(Some("OTHER")),
+            &members,
+        )
+        .unwrap_err();
         assert!(e.contains("another device"), "{e}");
     }
 
     #[test]
     fn stable_shape_with_an_unseen_member_id_is_left_to_parking() {
-        let ok = evaluate_key_event("!r:x.org", &stable("!r:x.org", "unseen"), "@a:x.org", Some(Some("DEV")), &[]).unwrap();
+        let ok = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "unseen"),
+            "@a:x.org",
+            Some(Some("DEV")),
+            &[],
+        )
+        .unwrap();
         assert_eq!(ok.device, "DEV");
     }
 
     #[test]
     fn stable_shape_still_needs_encryption_and_the_right_room() {
         let c = stable("!r:x.org", "m");
-        assert_eq!(evaluate_key_event("!r:x.org", &c, "@a:x.org", None, &[]).unwrap_err(), "sent unencrypted");
+        assert_eq!(
+            evaluate_key_event("!r:x.org", &c, "@a:x.org", None, &[]).unwrap_err(),
+            "sent unencrypted"
+        );
         assert!(evaluate_key_event("!r:x.org", &c, "@a:x.org", Some(None), &[]).is_err());
-        assert!(evaluate_key_event("!other:x.org", &c, "@a:x.org", Some(Some("DEV")), &[]).is_err());
+        assert!(
+            evaluate_key_event("!other:x.org", &c, "@a:x.org", Some(Some("DEV")), &[]).is_err()
+        );
     }
 
     #[test]
@@ -2542,7 +2767,9 @@ mod key_event_tests {
 
     // ── Judging a key whose sending device may not be known yet ────────────────
 
-    use matrix_sdk::deserialized_responses::{DeviceLinkProblem, VerificationLevel, VerificationState};
+    use matrix_sdk::deserialized_responses::{
+        DeviceLinkProblem, VerificationLevel, VerificationState,
+    };
 
     fn missing() -> VerificationState {
         VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::MissingDevice))
@@ -2554,37 +2781,64 @@ mod key_event_tests {
         strict: bool,
     ) -> Result<AcceptedKey, KeyRejection> {
         let c = stable("!r:x.org", "unseen");
-        judge_key_event("!r:x.org", &c, "@a:x.org", Some((device, state)), &[], strict)
+        judge_key_event(
+            "!r:x.org",
+            &c,
+            "@a:x.org",
+            Some((device, state)),
+            &[],
+            strict,
+        )
     }
 
     #[test]
     fn a_key_from_a_device_not_known_yet_is_worth_judging_again() {
         // Strict or not, the verdict has to wait for the device.
         for strict in [true, false] {
-            assert!(matches!(judge(None, &missing(), strict), Err(KeyRejection::Retry(_))), "strict={strict}");
+            assert!(
+                matches!(judge(None, &missing(), strict), Err(KeyRejection::Retry(_))),
+                "strict={strict}"
+            );
         }
         assert!(device_not_known_yet(Some(None), None));
         assert!(device_not_known_yet(Some(Some("DEV")), Some(&missing())));
-        assert!(!device_not_known_yet(Some(Some("DEV")), Some(&VerificationState::Verified)));
+        assert!(!device_not_known_yet(
+            Some(Some("DEV")),
+            Some(&VerificationState::Verified)
+        ));
         assert!(!device_not_known_yet(None, None), "unencrypted is final");
     }
 
     #[test]
     fn a_known_device_that_is_not_trusted_is_rejected_outright() {
         let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
-        assert!(matches!(judge(Some("DEV"), &unsigned, true), Err(KeyRejection::Final(_))));
+        assert!(matches!(
+            judge(Some("DEV"), &unsigned, true),
+            Err(KeyRejection::Final(_))
+        ));
         let violation = VerificationState::Unverified(VerificationLevel::VerificationViolation);
-        assert!(matches!(judge(Some("DEV"), &violation, true), Err(KeyRejection::Final(_))));
+        assert!(matches!(
+            judge(Some("DEV"), &violation, true),
+            Err(KeyRejection::Final(_))
+        ));
         let mismatched = VerificationState::Unverified(VerificationLevel::MismatchedSender);
-        assert!(matches!(judge(Some("DEV"), &mismatched, true), Err(KeyRejection::Final(_))));
+        assert!(matches!(
+            judge(Some("DEV"), &mismatched, true),
+            Err(KeyRejection::Final(_))
+        ));
     }
 
     #[test]
     fn an_insecure_source_is_final() {
-        let insecure = VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::InsecureSource));
+        let insecure = VerificationState::Unverified(VerificationLevel::None(
+            DeviceLinkProblem::InsecureSource,
+        ));
         // Not a device we are waiting to learn about: this will not get better.
         assert!(!device_not_known_yet(Some(Some("DEV")), Some(&insecure)));
-        assert!(matches!(judge(Some("DEV"), &insecure, true), Err(KeyRejection::Final(_))));
+        assert!(matches!(
+            judge(Some("DEV"), &insecure, true),
+            Err(KeyRejection::Final(_))
+        ));
     }
 
     #[test]
@@ -2621,8 +2875,14 @@ mod key_event_tests {
     #[test]
     fn a_device_found_later_is_judged_by_how_the_crypto_layer_states_it() {
         use VerificationLevel::*;
-        assert_eq!(verification_state_for_device(true, false, false), VerificationState::Verified);
-        assert_eq!(verification_state_for_device(true, true, true), VerificationState::Verified);
+        assert_eq!(
+            verification_state_for_device(true, false, false),
+            VerificationState::Verified
+        );
+        assert_eq!(
+            verification_state_for_device(true, true, true),
+            VerificationState::Verified
+        );
         assert_eq!(
             verification_state_for_device(false, true, false),
             VerificationState::Unverified(UnverifiedIdentity)
@@ -2636,9 +2896,16 @@ mod key_event_tests {
             VerificationState::Unverified(UnsignedDevice)
         );
         // ...so strict mode takes the first two kinds and refuses the rest.
-        assert!(check_device_trusted(&verification_state_for_device(false, true, false), true).is_ok());
-        assert!(check_device_trusted(&verification_state_for_device(false, true, true), true).is_err());
-        assert!(check_device_trusted(&verification_state_for_device(false, false, false), true).is_err());
+        assert!(
+            check_device_trusted(&verification_state_for_device(false, true, false), true).is_ok()
+        );
+        assert!(
+            check_device_trusted(&verification_state_for_device(false, true, true), true).is_err()
+        );
+        assert!(
+            check_device_trusted(&verification_state_for_device(false, false, false), true)
+                .is_err()
+        );
     }
 
     // ── Checks before the room is read ─────────────────────────────────────────
@@ -2647,10 +2914,18 @@ mod key_event_tests {
     fn cheap_checks_turn_away_bad_events_without_the_room() {
         let ok = stable("!r:x.org", "m");
         assert!(cheap_key_checks("!r:x.org", &ok, true).is_ok());
-        assert_eq!(cheap_key_checks("!r:x.org", &ok, false).unwrap_err(), "sent unencrypted");
-        assert!(cheap_key_checks("!other:x.org", &ok, true).unwrap_err().contains("another room"));
+        assert_eq!(
+            cheap_key_checks("!r:x.org", &ok, false).unwrap_err(),
+            "sent unencrypted"
+        );
+        assert!(cheap_key_checks("!other:x.org", &ok, true)
+            .unwrap_err()
+            .contains("another room"));
         let none = media(serde_json::json!({ "room_id": "!r:x.org", "member_id": "m" }));
-        assert_eq!(cheap_key_checks("!r:x.org", &none, true).unwrap_err(), "carries no key");
+        assert_eq!(
+            cheap_key_checks("!r:x.org", &none, true).unwrap_err(),
+            "carries no key"
+        );
     }
 
     #[test]
@@ -2659,7 +2934,9 @@ mod key_event_tests {
             "room_id": "!r:x.org", "member_id": "m",
             "media_key": { "index": 1, "key": "A".repeat(MAX_KEY_B64_LEN + 1) }
         }));
-        assert!(cheap_key_checks("!r:x.org", &long_key, true).unwrap_err().contains("characters"));
+        assert!(cheap_key_checks("!r:x.org", &long_key, true)
+            .unwrap_err()
+            .contains("characters"));
         let long_id = media(serde_json::json!({
             "room_id": "!r:x.org", "member_id": "m".repeat(MAX_MEMBER_ID_LEN + 1),
             "media_key": { "index": 1, "key": "AAAA" }
@@ -2690,23 +2967,45 @@ mod sender_membership_tests {
 
     #[test]
     fn only_a_definite_answer_rules_a_sender_out() {
-        assert_eq!(classify_sender::<String>(Ok(Some(MembershipState::Join))), SenderJoin::Joined);
-        for gone in [MembershipState::Leave, MembershipState::Ban, MembershipState::Invite] {
-            assert_eq!(classify_sender::<String>(Ok(Some(gone))), SenderJoin::NotJoined);
+        assert_eq!(
+            classify_sender::<String>(Ok(Some(MembershipState::Join))),
+            SenderJoin::Joined
+        );
+        for gone in [
+            MembershipState::Leave,
+            MembershipState::Ban,
+            MembershipState::Invite,
+        ] {
+            assert_eq!(
+                classify_sender::<String>(Ok(Some(gone))),
+                SenderJoin::NotJoined
+            );
         }
         assert_eq!(classify_sender::<String>(Ok(None)), SenderJoin::NotJoined);
         // A failed request is not "not joined": the parked key must survive it.
-        assert!(matches!(classify_sender(Err("timed out")), SenderJoin::Unknown(_)));
+        assert!(matches!(
+            classify_sender(Err("timed out")),
+            SenderJoin::Unknown(_)
+        ));
     }
 
     #[test]
     fn a_profile_change_does_not_wake_the_reconcile_loop_but_a_kick_does() {
         use MembershipState::{Ban, Invite, Join, Leave};
-        assert!(!membership_event_matters(&Join, Some(&Join)), "a new display name");
-        assert!(membership_event_matters(&Leave, Some(&Join)), "a leave or a kick");
+        assert!(
+            !membership_event_matters(&Join, Some(&Join)),
+            "a new display name"
+        );
+        assert!(
+            membership_event_matters(&Leave, Some(&Join)),
+            "a leave or a kick"
+        );
         assert!(membership_event_matters(&Ban, Some(&Join)));
         assert!(membership_event_matters(&Join, Some(&Invite)), "a join");
-        assert!(membership_event_matters(&Join, None), "no previous state to compare with");
+        assert!(
+            membership_event_matters(&Join, None),
+            "no previous state to compare with"
+        );
     }
 }
 
@@ -2764,10 +3063,16 @@ mod announced_tests {
             let fail = take_one(&self.legacy_failures);
             let hang = self.hang_first_legacy.swap(false, Ordering::SeqCst);
             if hang {
-                self.log.lock().unwrap().push(format!("legacy-leave {member_id} (hung)"));
+                self.log
+                    .lock()
+                    .unwrap()
+                    .push(format!("legacy-leave {member_id} (hung)"));
                 std::future::pending::<()>().await;
             }
-            self.log.lock().unwrap().push(format!("legacy-leave {member_id}{}", if fail { " (failed)" } else { "" }));
+            self.log.lock().unwrap().push(format!(
+                "legacy-leave {member_id}{}",
+                if fail { " (failed)" } else { "" }
+            ));
             if fail {
                 anyhow::bail!("offline");
             }
@@ -2775,7 +3080,10 @@ mod announced_tests {
         }
 
         async fn cancel_delayed(&self, delay_id: &str) {
-            self.log.lock().unwrap().push(format!("cancel-delayed {delay_id}"));
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("cancel-delayed {delay_id}"));
         }
 
         async fn call_answered(&self) -> bool {
@@ -2784,7 +3092,10 @@ mod announced_tests {
 
         async fn withdraw_invite(&self) -> anyhow::Result<()> {
             let fail = take_one(&self.invite_failures);
-            self.log.lock().unwrap().push(format!("withdraw-invite{}", if fail { " (failed)" } else { "" }));
+            self.log.lock().unwrap().push(format!(
+                "withdraw-invite{}",
+                if fail { " (failed)" } else { "" }
+            ));
             if fail {
                 anyhow::bail!("offline");
             }
@@ -2797,7 +3108,11 @@ mod announced_tests {
     #[async_trait::async_trait]
     impl StickySink for LogSticky {
         async fn send(&self, _t: &str, content: Value, _d: Duration) -> anyhow::Result<()> {
-            let kind = if content["member"]["membership"] == "leave" { "sticky-leave" } else { "sticky-join" };
+            let kind = if content["member"]["membership"] == "leave" {
+                "sticky-leave"
+            } else {
+                "sticky-join"
+            };
             self.0.lock().unwrap().push(kind.to_owned());
             Ok(())
         }
@@ -2846,7 +3161,13 @@ mod announced_tests {
         a.withdraw(LeaveCode::Leave, None).await;
         assert_eq!(
             entries(&log),
-            ["legacy-leave id1", "legacy-leave id2", "cancel-delayed delay9", "sticky-leave", "withdraw-invite"]
+            [
+                "legacy-leave id1",
+                "legacy-leave id2",
+                "cancel-delayed delay9",
+                "sticky-leave",
+                "withdraw-invite"
+            ]
         );
         assert!(a.delay_id.lock().is_none());
     }
@@ -2861,7 +3182,11 @@ mod announced_tests {
         let first = entries(&log);
         a.withdraw(LeaveCode::Leave, None).await;
         a.withdraw(LeaveCode::SlotClosed, Some("again")).await;
-        assert_eq!(entries(&log), first, "end_call then drop sends nothing twice");
+        assert_eq!(
+            entries(&log),
+            first,
+            "end_call then drop sends nothing twice"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -2881,7 +3206,11 @@ mod announced_tests {
         a.withdraw(LeaveCode::Leave, None).await;
         assert_eq!(
             entries(&log)[2..],
-            ["legacy-leave id1 (failed)", "legacy-leave id1", "cancel-delayed delay9"]
+            [
+                "legacy-leave id1 (failed)",
+                "legacy-leave id1",
+                "cancel-delayed delay9"
+            ]
         );
         a.withdraw(LeaveCode::Leave, None).await;
         assert_eq!(entries(&log).len(), 5, "delivered: nothing more");
@@ -2894,12 +3223,19 @@ mod announced_tests {
         a.joined_legacy("id1");
         a.invited();
         signals.hang_first_legacy.store(true, Ordering::SeqCst);
-        let cut = tokio::time::timeout(END_CALL_WITHDRAW_TIMEOUT, a.withdraw(LeaveCode::Leave, None)).await;
+        let cut = tokio::time::timeout(
+            END_CALL_WITHDRAW_TIMEOUT,
+            a.withdraw(LeaveCode::Leave, None),
+        )
+        .await;
         assert!(cut.is_err(), "end_call stops waiting");
         assert_eq!(entries(&log), ["legacy-leave id1 (hung)"]);
         // The session's drop asks again and completes every part.
         a.withdraw(LeaveCode::Leave, None).await;
-        assert_eq!(entries(&log)[1..], ["legacy-leave id1", "sticky-leave", "withdraw-invite"]);
+        assert_eq!(
+            entries(&log)[1..],
+            ["legacy-leave id1", "sticky-leave", "withdraw-invite"]
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -2908,11 +3244,17 @@ mod announced_tests {
         a.invited();
         signals.answered.store(true, Ordering::SeqCst);
         a.withdraw(LeaveCode::Leave, None).await;
-        assert!(entries(&log).is_empty(), "an answered call keeps its ring record");
+        assert!(
+            entries(&log).is_empty(),
+            "an answered call keeps its ring record"
+        );
 
         let (a, log, _) = fake(0, 0);
         a.withdraw(LeaveCode::Leave, None).await;
-        assert!(entries(&log).is_empty(), "no invite was sent, none is withdrawn");
+        assert!(
+            entries(&log).is_empty(),
+            "no invite was sent, none is withdrawn"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -2922,7 +3264,10 @@ mod announced_tests {
         a.withdraw(LeaveCode::Leave, None).await;
         a.withdraw(LeaveCode::Leave, None).await;
         a.withdraw(LeaveCode::Leave, None).await;
-        assert_eq!(entries(&log), ["withdraw-invite (failed)", "withdraw-invite"]);
+        assert_eq!(
+            entries(&log),
+            ["withdraw-invite (failed)", "withdraw-invite"]
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -2940,7 +3285,11 @@ mod announced_tests {
         a.joined_legacy("wrong");
         a.joined_legacy("right");
         a.leave_legacy_identity("wrong").await;
-        assert_eq!(a.legacy_ids.lock().clone(), ["wrong", "right"], "both sends failed");
+        assert_eq!(
+            a.legacy_ids.lock().clone(),
+            ["wrong", "right"],
+            "both sends failed"
+        );
         a.leave_legacy_identity("wrong").await;
         assert_eq!(a.legacy_ids.lock().clone(), ["right"]);
         assert_eq!(entries(&log).len(), 3);
@@ -2952,7 +3301,10 @@ mod announced_tests {
         assert!(a.open_for_join().await.is_some());
         a.close();
         assert!(a.is_closed());
-        assert!(a.open_for_join().await.is_none(), "the heartbeat must not send a join");
+        assert!(
+            a.open_for_join().await.is_none(),
+            "the heartbeat must not send a join"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -3001,7 +3353,10 @@ mod announced_tests {
 
         let late = tokio::spawn(std::future::pending::<()>());
         a.register_task(late.abort_handle());
-        assert!(late.await.unwrap_err().is_cancelled(), "registered after the close");
+        assert!(
+            late.await.unwrap_err().is_cancelled(),
+            "registered after the close"
+        );
         let late_reconcile = tokio::spawn(std::future::pending::<()>());
         a.register_reconcile(late_reconcile.abort_handle());
         assert!(late_reconcile.await.unwrap_err().is_cancelled());
@@ -3070,7 +3425,10 @@ mod announced_tests {
         assert!(hang_up(&a, &conn, LeaveCode::Leave, None, END_CALL_WITHDRAW_TIMEOUT).await);
         let e = entries(&log);
         assert_eq!(e[0], "stop-media (call closed: true, after 0ns)");
-        assert!(e.contains(&"legacy-leave id1".to_owned()) && e.contains(&"disconnect after 0ns".to_owned()));
+        assert!(
+            e.contains(&"legacy-leave id1".to_owned())
+                && e.contains(&"disconnect after 0ns".to_owned())
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -3125,9 +3483,17 @@ mod announced_tests {
             announced: Arc::clone(&a),
             started: tokio::time::Instant::now(),
         }));
-        guard.fail(LeaveCode::TransportError, "could not update the call membership").await;
+        guard
+            .fail(
+                LeaveCode::TransportError,
+                "could not update the call membership",
+            )
+            .await;
         let e = entries(&log);
-        assert!(e.contains(&"disconnect after 0ns".to_owned()) && e.contains(&"legacy-leave id1".to_owned()));
+        assert!(
+            e.contains(&"disconnect after 0ns".to_owned())
+                && e.contains(&"legacy-leave id1".to_owned())
+        );
         // And nothing is repeated by a second cleanup.
         let before = e.len();
         a.withdraw(LeaveCode::Leave, None).await;
@@ -3150,7 +3516,9 @@ mod announced_tests {
             std::future::pending::<()>().await;
             guard.defuse();
         };
-        assert!(tokio::time::timeout(Duration::from_secs(75), setup).await.is_err());
+        assert!(tokio::time::timeout(Duration::from_secs(75), setup)
+            .await
+            .is_err());
         tokio::time::sleep(Duration::from_millis(1)).await;
         let e = entries(&log);
         assert!(e.iter().any(|l| l.starts_with("stop-media")), "{e:?}");

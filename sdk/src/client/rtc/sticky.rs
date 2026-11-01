@@ -9,11 +9,14 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::time::{Duration, Instant};
 
-use matrix_sdk_base::sticky::{StickyEvent, StickyKey};
 use matrix_sdk::{
-    ruma::{api::error::ErrorKind, events::ignored_user_list::IgnoredUserListEventContent, OwnedRoomId, UInt},
+    ruma::{
+        api::error::ErrorKind, events::ignored_user_list::IgnoredUserListEventContent, OwnedRoomId,
+        UInt,
+    },
     Client, Room,
 };
+use matrix_sdk_base::sticky::{StickyEvent, StickyKey};
 use serde_json::Value;
 use tracing::debug;
 
@@ -49,15 +52,17 @@ pub struct StickyEntry {
 
 impl StickyEntry {
     pub fn end_ms(&self) -> u64 {
-        self.start_ms.saturating_add(self.duration_ms.min(MAX_STICKY_MS))
+        self.start_ms
+            .saturating_add(self.duration_ms.min(MAX_STICKY_MS))
     }
 
     /// A sticky event whose content holds only the sticky key removes the
     /// entry it replaces (MSC4354 "removing entries").
     pub fn is_withdrawal(&self) -> bool {
-        self.content
-            .as_object()
-            .is_some_and(|o| o.keys().all(|k| k == "sticky_key" || k == "msc4354_sticky_key"))
+        self.content.as_object().is_some_and(|o| {
+            o.keys()
+                .all(|k| k == "sticky_key" || k == "msc4354_sticky_key")
+        })
     }
 }
 
@@ -100,7 +105,8 @@ fn entry_from_sticky_event(e: &StickyEvent) -> Option<StickyEntry> {
         &json,
         expires_ms,
         info.is_some(),
-        info.and_then(|i| i.sender_device.as_ref()).map(|d| d.to_string()),
+        info.and_then(|i| i.sender_device.as_ref())
+            .map(|d| d.to_string()),
     )
 }
 
@@ -122,7 +128,9 @@ struct Cached {
 
 impl<K> Default for EntryCache<K> {
     fn default() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
 }
 
@@ -140,7 +148,11 @@ impl<K: Hash + Eq> EntryCache<K> {
         for (key, event_id, expires_ms, payload) in live {
             let cached = match self.map.remove(&key) {
                 Some(c) if c.event_id == event_id && c.expires_ms == expires_ms => c,
-                _ => Cached { entry: parse(&payload), event_id, expires_ms },
+                _ => Cached {
+                    entry: parse(&payload),
+                    event_id,
+                    expires_ms,
+                },
             };
             out.extend(cached.entry.clone());
             next.insert(key, cached);
@@ -175,7 +187,10 @@ pub fn live_entries(room: &Room) -> Vec<StickyEntry> {
             (e.key.clone(), e.event_id.to_string(), expires_ms, e)
         });
     let id = (
-        room.client().user_id().map(|u| u.to_string()).unwrap_or_default(),
+        room.client()
+            .user_id()
+            .map(|u| u.to_string())
+            .unwrap_or_default(),
         room.room_id().to_string(),
     );
     let mut caches = entry_caches().lock();
@@ -198,13 +213,18 @@ pub struct PassGate {
 
 impl PassGate {
     pub fn new(min_interval: Duration) -> Self {
-        Self { min_interval, last_pass: None }
+        Self {
+            min_interval,
+            last_pass: None,
+        }
     }
 
     /// How long to wait, from `now`, before the pass an update asks for.
     pub fn delay(&self, now: Instant) -> Duration {
         match self.last_pass {
-            Some(last) => self.min_interval.saturating_sub(now.saturating_duration_since(last)),
+            Some(last) => self
+                .min_interval
+                .saturating_sub(now.saturating_duration_since(last)),
             None => Duration::ZERO,
         }
     }
@@ -222,7 +242,9 @@ const INVITE_PASS_INTERVAL: Duration = Duration::from_millis(250);
 /// alone; cheap enough to ask of every room.
 pub async fn room_has_call_members(room: &Room) -> bool {
     !live_entries(room).is_empty()
-        || !super::members::read_call_members(room, None, super::members::JoinCheck::Cached).await.is_empty()
+        || !super::members::read_call_members(room, None, super::members::JoinCheck::Cached)
+            .await
+            .is_empty()
 }
 
 /// The homeserver definitely did not take a sticky event (it does not support
@@ -251,7 +273,11 @@ fn refuses_sticky(kind: Option<&ErrorKind>) -> bool {
 
 /// The user ids the account ignores, read from the local store (no request).
 pub async fn ignored_users(client: &Client) -> HashSet<String> {
-    match client.account().account_data::<IgnoredUserListEventContent>().await {
+    match client
+        .account()
+        .account_data::<IgnoredUserListEventContent>()
+        .await
+    {
         Ok(Some(raw)) => raw
             .deserialize()
             .map(|c| c.ignored_users.keys().map(|u| u.to_string()).collect())
@@ -270,8 +296,15 @@ pub async fn send_sticky(
     content: Value,
     duration: std::time::Duration,
 ) -> anyhow::Result<matrix_sdk::ruma::OwnedEventId> {
-    if !room.client().supports_sticky_events().await.unwrap_or(false) {
-        return Err(StickyUnsupported("the homeserver does not support sticky events".to_owned()).into());
+    if !room
+        .client()
+        .supports_sticky_events()
+        .await
+        .unwrap_or(false)
+    {
+        return Err(
+            StickyUnsupported("the homeserver does not support sticky events".to_owned()).into(),
+        );
     }
     let duration = clamp_sticky(duration);
     let sent = room
@@ -291,7 +324,10 @@ pub async fn send_sticky(
 
 /// A sticky duration the server will accept: at least 1 ms, at most one hour.
 pub fn clamp_sticky(d: std::time::Duration) -> std::time::Duration {
-    d.clamp(std::time::Duration::from_millis(1), std::time::Duration::from_millis(MAX_STICKY_MS))
+    d.clamp(
+        std::time::Duration::from_millis(1),
+        std::time::Duration::from_millis(MAX_STICKY_MS),
+    )
 }
 
 /// Announce active invites as the SDK's sticky maps change: one task per
@@ -375,7 +411,10 @@ mod tests {
     #[test]
     fn the_sdk_expiry_decides_how_long_the_entry_lives() {
         let e = entry_from_parts(&member_event(), 1_300_000, true, Some("DEV".into())).unwrap();
-        assert_eq!((e.start_ms, e.duration_ms, e.end_ms()), (1_000_000, 300_000, 1_300_000));
+        assert_eq!(
+            (e.start_ms, e.duration_ms, e.end_ms()),
+            (1_000_000, 300_000, 1_300_000)
+        );
         assert!(e.was_encrypted);
         assert_eq!(e.sender_device.as_deref(), Some("DEV"));
         assert_eq!((e.sender.as_str(), e.sticky_key.as_str()), ("@a:x", "mid"));
@@ -407,15 +446,25 @@ mod tests {
     fn key_only_content_is_a_withdrawal() {
         let mut ev = member_event();
         ev["content"] = json!({"sticky_key": "mid"});
-        assert!(entry_from_parts(&ev, 2_000_000, false, None).unwrap().is_withdrawal());
-        assert!(!entry_from_parts(&member_event(), 2_000_000, false, None).unwrap().is_withdrawal());
+        assert!(entry_from_parts(&ev, 2_000_000, false, None)
+            .unwrap()
+            .is_withdrawal());
+        assert!(!entry_from_parts(&member_event(), 2_000_000, false, None)
+            .unwrap()
+            .is_withdrawal());
     }
 
     fn entry(id: &str) -> StickyEntry {
         StickyEntry {
-            event_id: id.into(), sender: "@a:x".into(), event_type: MEMBER_TYPE.into(),
-            sticky_key: "k".into(), start_ms: 0, duration_ms: 1000,
-            was_encrypted: false, sender_device: None, content: json!({}),
+            event_id: id.into(),
+            sender: "@a:x".into(),
+            event_type: MEMBER_TYPE.into(),
+            sticky_key: "k".into(),
+            start_ms: 0,
+            duration_ms: 1000,
+            was_encrypted: false,
+            sender_device: None,
+            content: json!({}),
         }
     }
 
@@ -428,7 +477,14 @@ mod tests {
         };
         let mut cache = EntryCache::<String>::default();
         for _ in 0..3 {
-            let live = (0..100).map(|i| (format!("k{i}"), format!("$e{i}"), 5_000u64, format!("$e{i}")));
+            let live = (0..100).map(|i| {
+                (
+                    format!("k{i}"),
+                    format!("$e{i}"),
+                    5_000u64,
+                    format!("$e{i}"),
+                )
+            });
             assert_eq!(cache.collect(live, parse).len(), 100);
         }
         assert_eq!(parses.get(), 100, "later reads come from the cache");
@@ -460,7 +516,13 @@ mod tests {
     fn entries_that_left_the_live_set_leave_the_cache() {
         let mut cache = EntryCache::<&str>::default();
         let parse = |id: &String| Some(entry(id));
-        cache.collect([("a", "$a".to_owned(), 1, "$a".to_owned()), ("b", "$b".to_owned(), 1, "$b".to_owned())], parse);
+        cache.collect(
+            [
+                ("a", "$a".to_owned(), 1, "$a".to_owned()),
+                ("b", "$b".to_owned(), 1, "$b".to_owned()),
+            ],
+            parse,
+        );
         assert!(!cache.is_empty());
         let out = cache.collect(std::iter::empty::<(&str, String, u64, String)>(), parse);
         assert!(out.is_empty());
@@ -476,7 +538,9 @@ mod tests {
         };
         let mut cache = EntryCache::<&str>::default();
         for _ in 0..3 {
-            assert!(cache.collect([("k", "$a".to_owned(), 1, ())], parse).is_empty());
+            assert!(cache
+                .collect([("k", "$a".to_owned(), 1, ())], parse)
+                .is_empty());
         }
         assert_eq!(parses.get(), 1);
     }
@@ -485,7 +549,11 @@ mod tests {
     fn a_burst_of_updates_gets_one_pass_per_interval() {
         let mut gate = PassGate::new(Duration::from_millis(250));
         let t0 = Instant::now();
-        assert_eq!(gate.delay(t0), Duration::ZERO, "the first pass is not held back");
+        assert_eq!(
+            gate.delay(t0),
+            Duration::ZERO,
+            "the first pass is not held back"
+        );
         gate.ran(t0);
         // An update 100 ms later waits out the rest of the interval...
         let t1 = t0 + Duration::from_millis(100);
@@ -494,15 +562,24 @@ mod tests {
         assert_eq!(gate.delay(t0 + Duration::from_millis(250)), Duration::ZERO);
         assert_eq!(gate.delay(t0 + Duration::from_secs(5)), Duration::ZERO);
         gate.ran(t0 + Duration::from_millis(250));
-        assert_eq!(gate.delay(t0 + Duration::from_millis(300)), Duration::from_millis(200));
+        assert_eq!(
+            gate.delay(t0 + Duration::from_millis(300)),
+            Duration::from_millis(200)
+        );
     }
 
     #[test]
     fn duration_is_clamped_to_one_hour() {
         let e = StickyEntry {
-            event_id: "$a".into(), sender: "@a:x".into(), event_type: MEMBER_TYPE.into(),
-            sticky_key: "k".into(), start_ms: 0, duration_ms: 10 * MAX_STICKY_MS,
-            was_encrypted: false, sender_device: None, content: json!({}),
+            event_id: "$a".into(),
+            sender: "@a:x".into(),
+            event_type: MEMBER_TYPE.into(),
+            sticky_key: "k".into(),
+            start_ms: 0,
+            duration_ms: 10 * MAX_STICKY_MS,
+            was_encrypted: false,
+            sender_device: None,
+            content: json!({}),
         };
         assert_eq!(e.end_ms(), MAX_STICKY_MS);
     }
@@ -514,7 +591,9 @@ mod tests {
         // Context added on the way up does not hide it.
         assert!(is_sticky_unsupported(&refused.context("decline")));
         // A timeout or a server error may have stored the event: not a refusal.
-        assert!(!is_sticky_unsupported(&anyhow::anyhow!("send sticky x: timed out")));
+        assert!(!is_sticky_unsupported(&anyhow::anyhow!(
+            "send sticky x: timed out"
+        )));
         assert!(refuses_sticky(Some(&ErrorKind::Unrecognized)));
         assert!(refuses_sticky(Some(&ErrorKind::Forbidden)));
         assert!(!refuses_sticky(Some(&ErrorKind::Unknown)));
@@ -525,7 +604,13 @@ mod tests {
     fn sticky_durations_are_clamped_to_what_servers_accept() {
         use std::time::Duration;
         assert_eq!(clamp_sticky(Duration::ZERO), Duration::from_millis(1));
-        assert_eq!(clamp_sticky(Duration::from_secs(90)), Duration::from_secs(90));
-        assert_eq!(clamp_sticky(Duration::from_secs(10 * 3600)), Duration::from_secs(3600));
+        assert_eq!(
+            clamp_sticky(Duration::from_secs(90)),
+            Duration::from_secs(90)
+        );
+        assert_eq!(
+            clamp_sticky(Duration::from_secs(10 * 3600)),
+            Duration::from_secs(3600)
+        );
     }
 }

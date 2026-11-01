@@ -10,7 +10,9 @@ use sha2::{Digest, Sha256};
 
 fn derive(a: &str, b: &str) -> String {
     // A two-string array always serializes; the fallback is unreachable.
-    let canonical = to_canonical_value([a, b]).map(|v| v.to_string()).unwrap_or_default();
+    let canonical = to_canonical_value([a, b])
+        .map(|v| v.to_string())
+        .unwrap_or_default();
     Base64Unpadded::encode_string(&Sha256::digest(canonical.as_bytes()))
 }
 
@@ -37,7 +39,12 @@ pub enum IdentityShape {
 }
 
 /// Classify the identity the SFU gave us against the id we published.
-pub fn classify_identity(identity: &str, user_id: &str, device_id: &str, member_id: &str) -> IdentityShape {
+pub fn classify_identity(
+    identity: &str,
+    user_id: &str,
+    device_id: &str,
+    member_id: &str,
+) -> IdentityShape {
     if identity == livekit_participant_identity(user_id, member_id) {
         IdentityShape::Hashed
     } else if identity == format!("{user_id}:{device_id}") {
@@ -143,19 +150,34 @@ mod tests {
     #[test]
     fn the_connected_identity_is_checked_against_the_published_member_id() {
         let hashed = livekit_participant_identity("@a:x", "mid");
-        assert_eq!(classify_identity(&hashed, "@a:x", "D", "mid"), IdentityShape::Hashed);
-        assert_eq!(classify_identity("@a:x:D", "@a:x", "D", "mid"), IdentityShape::Legacy);
+        assert_eq!(
+            classify_identity(&hashed, "@a:x", "D", "mid"),
+            IdentityShape::Hashed
+        );
+        assert_eq!(
+            classify_identity("@a:x:D", "@a:x", "D", "mid"),
+            IdentityShape::Legacy
+        );
         // The hash of a different id (the token was requested under another one).
         let other = livekit_participant_identity("@a:x", "other");
-        assert_eq!(classify_identity(&other, "@a:x", "D", "mid"), IdentityShape::Unexpected);
-        assert_eq!(classify_identity("", "@a:x", "D", "mid"), IdentityShape::Unexpected);
+        assert_eq!(
+            classify_identity(&other, "@a:x", "D", "mid"),
+            IdentityShape::Unexpected
+        );
+        assert_eq!(
+            classify_identity("", "@a:x", "D", "mid"),
+            IdentityShape::Unexpected
+        );
     }
 
     #[test]
     fn identity_map_resolves_and_replaces() {
         let m = IdentityMap::default();
         assert_eq!(m.resolve("x"), None);
-        m.replace(HashMap::from([("x".to_owned(), ("@a:x".to_owned(), "D".to_owned()))]));
+        m.replace(HashMap::from([(
+            "x".to_owned(),
+            ("@a:x".to_owned(), "D".to_owned()),
+        )]));
         assert_eq!(m.resolve("x"), Some(("@a:x".to_owned(), "D".to_owned())));
         m.replace(HashMap::new());
         assert_eq!(m.resolve("x"), None);
@@ -169,10 +191,26 @@ mod tests {
         // starts after it, reads, and installs a snapshot with a new member.
         let slow = m.stamp();
         let fast = m.stamp();
-        assert!(m.replace_stamped(fast, HashMap::from([("new".to_owned(), owner("@n:x")), ("old".to_owned(), owner("@o:x"))])));
+        assert!(m.replace_stamped(
+            fast,
+            HashMap::from([
+                ("new".to_owned(), owner("@n:x")),
+                ("old".to_owned(), owner("@o:x"))
+            ])
+        ));
         // The slow one lands later with the picture from before the join.
-        assert!(!m.replace_stamped(slow, HashMap::from([("old".to_owned(), owner("@o:x")), ("gone".to_owned(), owner("@g:x"))])));
-        assert_eq!(m.resolve("new"), Some(owner("@n:x")), "the newer snapshot's member stays");
+        assert!(!m.replace_stamped(
+            slow,
+            HashMap::from([
+                ("old".to_owned(), owner("@o:x")),
+                ("gone".to_owned(), owner("@g:x"))
+            ])
+        ));
+        assert_eq!(
+            m.resolve("new"),
+            Some(owner("@n:x")),
+            "the newer snapshot's member stays"
+        );
         assert_eq!(m.resolve("old"), Some(owner("@o:x")));
         // It may still add what the newer one does not know yet (a read that
         // finished later but was stamped earlier), which the next replace clears.
@@ -187,9 +225,15 @@ mod tests {
     fn the_newest_snapshot_replaces_and_removes() {
         let m = IdentityMap::default();
         let first = m.stamp();
-        assert!(m.replace_stamped(first, HashMap::from([("a".to_owned(), ("@a:x".to_owned(), "D".to_owned()))])));
+        assert!(m.replace_stamped(
+            first,
+            HashMap::from([("a".to_owned(), ("@a:x".to_owned(), "D".to_owned()))])
+        ));
         let second = m.stamp();
-        assert!(m.replace_stamped(second, HashMap::from([("b".to_owned(), ("@b:x".to_owned(), "D".to_owned()))])));
+        assert!(m.replace_stamped(
+            second,
+            HashMap::from([("b".to_owned(), ("@b:x".to_owned(), "D".to_owned()))])
+        ));
         assert_eq!(m.resolve("a"), None);
         assert!(m.resolve("b").is_some());
     }

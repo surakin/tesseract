@@ -1162,7 +1162,8 @@ impl Drop for ClientFfi {
             self.rtc_teardown
                 .spawn(&handle, async move { rtc_ffi::wait_for(Some(setup)).await });
         }
-        self.rt.block_on(self.rtc_teardown.finish(std::time::Duration::from_secs(10)));
+        self.rt
+            .block_on(self.rtc_teardown.finish(std::time::Duration::from_secs(10)));
         // Drop SDK objects that call Handle::current() in their Drop impls
         // (SqliteStateStore via matrix_sdk::Client, Timeline) with the runtime
         // handle in TLS.  Without enter() here, dropping pending_login_client_
@@ -2416,11 +2417,15 @@ pub(super) async fn rebuild_image_packs(
             (room_id_str.clone(), state_key.clone(), fetched, local)
         });
     }
-    let subscribed_results: Vec<(String, String, Option<crate::image_packs::ImagePack>, PackCache)> =
-        futures_util::stream::iter(subscribed_futs)
-            .buffered(PACK_FETCH_CONCURRENCY)
-            .collect()
-            .await;
+    let subscribed_results: Vec<(
+        String,
+        String,
+        Option<crate::image_packs::ImagePack>,
+        PackCache,
+    )> = futures_util::stream::iter(subscribed_futs)
+        .buffered(PACK_FETCH_CONCURRENCY)
+        .collect()
+        .await;
     for (room_id_str, state_key, fetched, local) in subscribed_results {
         http_cache.extend(local);
         let (room_id_str, state_key) = (room_id_str.as_str(), state_key.as_str());
@@ -3516,11 +3521,14 @@ pub(super) async fn build_room_info_unfiltered(
         let own_device = client.device_id();
         // Every live legacy membership, ours included, read from the raw
         // events (ruma's typed model drops those of newer clients).
-        let all = rtc::members::read_call_members(room, None, rtc::members::JoinCheck::Cached).await;
+        let all =
+            rtc::members::read_call_members(room, None, rtc::members::JoinCheck::Cached).await;
         // Users the account ignores do not make a call show up. Read from the
         // store only when the room has a call member to judge.
         let mrtc = match (own_user, own_device) {
-            (Some(u), Some(d)) => rtc::slots::read_mrtc_members(room, u, d, rtc::members::JoinCheck::Cached).await,
+            (Some(u), Some(d)) => {
+                rtc::slots::read_mrtc_members(room, u, d, rtc::members::JoinCheck::Cached).await
+            }
             _ => Vec::new(),
         };
         let ignored = if all.is_empty() && mrtc.is_empty() {

@@ -520,14 +520,16 @@ impl ClientFfi {
                     // the rooms that failed.
                     let next_at = {
                         let map = retry.lock();
-                        failed.iter().filter_map(|r| map.get(r.as_str()).map(|e| e.next_at)).min()
+                        failed
+                            .iter()
+                            .filter_map(|r| map.get(r.as_str()).map(|e| e.next_at))
+                            .min()
                     };
                     if let Some(t) = next_at {
                         tokio::time::sleep_until(tokio::time::Instant::from_std(t)).await;
                     }
                     todo = failed;
                 }
-
             })
             .abort_handle();
 
@@ -600,14 +602,19 @@ impl ClientFfi {
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
 
         let handle = self.rt.spawn(async move {
-            let _job = super::activity::begin("bridge-status-check", "Backfill", super::activity::JobKind::OneShot);
+            let _job = super::activity::begin(
+                "bridge-status-check",
+                "Backfill",
+                super::activity::JobKind::OneShot,
+            );
             let mut uncached = uncached;
             loop {
                 // Fetch all rooms in parallel — room state is independent,
                 // no ordering needed.
                 #[allow(clippy::type_complexity)]
-                let mut joinset: tokio::task::JoinSet<Option<(matrix_sdk::ruma::OwnedRoomId, BridgeStatus)>> =
-                    tokio::task::JoinSet::new();
+                let mut joinset: tokio::task::JoinSet<
+                    Option<(matrix_sdk::ruma::OwnedRoomId, BridgeStatus)>,
+                > = tokio::task::JoinSet::new();
                 // Full room state can be tens of megabytes per room, so only a few
                 // lookups run at once.
                 let permits = Arc::new(tokio::sync::Semaphore::new(BRIDGE_CHECK_CONCURRENCY));
@@ -926,7 +933,12 @@ async fn newest_event_timestamp_ms(client: &Client, room_id: &OwnedRoomId) -> an
 
     let mut filtered = MessagesOptions::backward();
     filtered.limit = matrix_sdk::ruma::uint!(1);
-    filtered.filter.types = Some(ACTIVITY_EVENT_TYPES.iter().map(|t| (*t).to_owned()).collect());
+    filtered.filter.types = Some(
+        ACTIVITY_EVENT_TYPES
+            .iter()
+            .map(|t| (*t).to_owned())
+            .collect(),
+    );
     if let Some(ts) = newest(room.messages(filtered).await?) {
         return Ok(ts);
     }
@@ -2479,7 +2491,8 @@ mod backfill_ts_reset_tests {
     }
 
     fn rows(c: &Connection) -> i64 {
-        c.query_row("SELECT COUNT(*) FROM backfill_ts", [], |r| r.get(0)).unwrap()
+        c.query_row("SELECT COUNT(*) FROM backfill_ts", [], |r| r.get(0))
+            .unwrap()
     }
 
     #[test]
@@ -2487,7 +2500,8 @@ mod backfill_ts_reset_tests {
         let c = conn();
         reset_backfill_ts_once(&c);
         assert_eq!(rows(&c), 0);
-        c.execute("INSERT INTO backfill_ts VALUES ('!c:x', 3)", []).unwrap();
+        c.execute("INSERT INTO backfill_ts VALUES ('!c:x', 3)", [])
+            .unwrap();
         reset_backfill_ts_once(&c);
         assert_eq!(rows(&c), 1, "a second run must not clear again");
     }

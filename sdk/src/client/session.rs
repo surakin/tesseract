@@ -420,10 +420,13 @@ impl ClientFfi {
         // never retroactively given one.
         let key = *self.store_key.get_or_insert_with(oauth::generate_store_key);
 
-        match self
-            .rt
-            .block_on(oauth::begin(&hs, &path, register_account, user_id_hint, &key))
-        {
+        match self.rt.block_on(oauth::begin(
+            &hs,
+            &path,
+            register_account,
+            user_id_hint,
+            &key,
+        )) {
             Ok(begin) => {
                 let auth_url = begin.auth_url;
                 let redirect_uri = begin.redirect_uri;

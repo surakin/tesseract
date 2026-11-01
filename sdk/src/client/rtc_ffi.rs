@@ -1,8 +1,8 @@
 // MatrixRTC FFI methods on ClientFfi.
 
 use super::{err, ok, ClientFfi};
-use crate::ffi::RtcStartResult;
 use crate::client::rtc::{RtcEventSink, RtcSession};
+use crate::ffi::RtcStartResult;
 use parking_lot::Mutex;
 use std::future::Future;
 use std::sync::Arc;
@@ -229,12 +229,18 @@ impl<S: CallMedia> CallState<S> {
 /// Whatever is still going down is gone: a pending hang-up, then the call that
 /// was active. Each wait is bounded, so a teardown that hangs delays the next
 /// call by seconds, never for good.
-async fn finish_previous<S, End, EndFut>(pending: Option<JoinHandle<()>>, old: Option<Box<S>>, end: End)
-where
+async fn finish_previous<S, End, EndFut>(
+    pending: Option<JoinHandle<()>>,
+    old: Option<Box<S>>,
+    end: End,
+) where
     End: FnOnce(Box<S>) -> EndFut,
     EndFut: Future<Output = ()>,
 {
-    if tokio::time::timeout(TEARDOWN_WAIT, wait_for(pending)).await.is_err() {
+    if tokio::time::timeout(TEARDOWN_WAIT, wait_for(pending))
+        .await
+        .is_err()
+    {
         tracing::warn!("rtc: the previous call's teardown is still running; going ahead");
     }
     if let Some(old) = old {
@@ -300,7 +306,9 @@ fn report_start_failure(
     tracing::warn!("rtc: starting call {id} failed: {why}");
     match sink() {
         Some(sink) => sink.on_session_ended(id, &format!("{START_FAILED}{why}")),
-        None => tracing::warn!("rtc: no event sink to tell that call {id} failed; the UI will not hear of it"),
+        None => tracing::warn!(
+            "rtc: no event sink to tell that call {id} failed; the UI will not hear of it"
+        ),
     }
 }
 
@@ -318,7 +326,12 @@ impl ClientFfi {
     /// the connection and the announcements run on the runtime, so neither the
     /// UI thread nor the FFI lock waits for them. A call that cannot be set up
     /// ends with a session-ended event (see [`START_FAILED`]).
-    pub fn rtc_start_call(&mut self, room_id: &str, slot_id: &str, audio_only: bool) -> RtcStartResult {
+    pub fn rtc_start_call(
+        &mut self,
+        room_id: &str,
+        slot_id: &str,
+        audio_only: bool,
+    ) -> RtcStartResult {
         // Install the rustls crypto provider once per process. livekit's TLS
         // stack uses rustls but cannot auto-select a provider when both
         // aws-lc-rs and ring are present in the dep tree; we pin aws-lc-rs to
@@ -370,8 +383,9 @@ impl ClientFfi {
                 let _finished = finished_tx;
                 let (pending, previous) = thread_leftovers.lock().take().unwrap_or_default();
                 // The UI is told at the moment of the failure, to the sink registered then.
-                let failure_sink =
-                    move || crate::client::rtc::sink_for_client(&sink_client).or_else(|| sink.clone());
+                let failure_sink = move || {
+                    crate::client::rtc::sink_for_client(&sink_client).or_else(|| sink.clone())
+                };
                 let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     worker_handle.block_on(async {
                         let cancelled = {
@@ -389,7 +403,8 @@ impl ClientFfi {
                                 within_deadline(
                                     SETUP_DEADLINE,
                                     crate::client::rtc::session::start_call(
-                                        &client, &http, &room_id, &slot_id, audio_only, session_id, &cancelled,
+                                        &client, &http, &room_id, &slot_id, audio_only, session_id,
+                                        &cancelled,
                                     ),
                                 )
                             },
@@ -404,13 +419,23 @@ impl ClientFfi {
                                     drop(session);
                                 }
                             }
-                            Err(e) => report_start_failure(&state, &failure_sink, session_id, &e.to_string()),
+                            Err(e) => report_start_failure(
+                                &state,
+                                &failure_sink,
+                                session_id,
+                                &e.to_string(),
+                            ),
                         }
                     })
                 }));
                 if ran.is_err() {
                     // A panic in the setup is a failed call, not a crash of the client.
-                    report_start_failure(&state, &failure_sink, session_id, "starting the call failed unexpectedly");
+                    report_start_failure(
+                        &state,
+                        &failure_sink,
+                        session_id,
+                        "starting the call failed unexpectedly",
+                    );
                 }
             });
         if let Err(e) = spawned {
@@ -457,7 +482,8 @@ impl ClientFfi {
                 drop(session);
             });
         } else if setup.is_some() {
-            self.rtc_teardown.spawn(&handle, async move { wait_for(setup).await });
+            self.rtc_teardown
+                .spawn(&handle, async move { wait_for(setup).await });
         }
     }
 
@@ -487,7 +513,8 @@ impl ClientFfi {
         if setup_left {
             // It stops at its next step (the call is no longer its own); the
             // client's drop gives it a moment to, before the runtime goes.
-            self.rtc_teardown.spawn(&handle, async move { wait_for(setup).await });
+            self.rtc_teardown
+                .spawn(&handle, async move { wait_for(setup).await });
         }
     }
 
@@ -510,7 +537,10 @@ impl ClientFfi {
     fn call_permission(
         &self,
         room_id: &str,
-        check: fn(&matrix_sdk::ruma::events::room::power_levels::RoomPowerLevels, &matrix_sdk::ruma::UserId) -> bool,
+        check: fn(
+            &matrix_sdk::ruma::events::room::power_levels::RoomPowerLevels,
+            &matrix_sdk::ruma::UserId,
+        ) -> bool,
     ) -> bool {
         use matrix_sdk::ruma::OwnedRoomId;
 
@@ -712,7 +742,10 @@ mod teardown_tests {
                 .await
                 .expect("a panicked teardown must not hang the waiter");
         });
-        assert!(ran.load(Ordering::SeqCst), "the next teardown ran after the panicked one");
+        assert!(
+            ran.load(Ordering::SeqCst),
+            "the next teardown ran after the panicked one"
+        );
     }
 
     #[test]
@@ -738,7 +771,10 @@ mod teardown_tests {
             },
         ));
         assert_eq!(out, 7);
-        assert_eq!(*log.lock().unwrap(), vec!["teardown", "end old call", "start"]);
+        assert_eq!(
+            *log.lock().unwrap(),
+            vec!["teardown", "end old call", "start"]
+        );
     }
 
     #[test]
@@ -791,10 +827,24 @@ mod teardown_tests {
         assert!(state.session().is_none(), "not up yet");
         assert!(state.install(5, Fake::default()).is_ok());
         let log = state.session().unwrap().muted.lock().unwrap().clone();
-        assert_eq!(log, ["audio true", "video false"], "only the latest request of each kind");
+        assert_eq!(
+            log,
+            ["audio true", "video false"],
+            "only the latest request of each kind"
+        );
         // Live from now on: forwarded at once.
         state.set_video_muted(true);
-        assert_eq!(state.session().unwrap().muted.lock().unwrap().last().unwrap(), "video true");
+        assert_eq!(
+            state
+                .session()
+                .unwrap()
+                .muted
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap(),
+            "video true"
+        );
     }
 
     #[test]
@@ -809,7 +859,10 @@ mod teardown_tests {
         // Replaced by a newer start.
         state.begin(2);
         state.begin(3);
-        assert!(state.install(2, Fake::default()).is_err(), "setup 2 is stale");
+        assert!(
+            state.install(2, Fake::default()).is_err(),
+            "setup 2 is stale"
+        );
         assert!(state.install(3, Fake::default()).is_ok());
         // The call is up: a setup that finishes late cannot displace it.
         assert!(state.install(3, Fake::default()).is_err());
@@ -849,9 +902,17 @@ mod teardown_tests {
         state.lock().begin(9);
         let sink = Arc::new(Sink::default());
         let (first, second) = (sink.clone(), sink.clone());
-        report_start_failure(&state, || Some(first as Arc<dyn RtcEventSink>), 9, "room not found");
+        report_start_failure(
+            &state,
+            || Some(first as Arc<dyn RtcEventSink>),
+            9,
+            "room not found",
+        );
         report_start_failure(&state, || Some(second as Arc<dyn RtcEventSink>), 9, "again");
-        assert_eq!(*sink.0.lock().unwrap(), vec![(9, "start_failed:room not found".to_owned())]);
+        assert_eq!(
+            *sink.0.lock().unwrap(),
+            vec![(9, "start_failed:room not found".to_owned())]
+        );
     }
 
     #[test]
@@ -859,7 +920,12 @@ mod teardown_tests {
         let state: SharedCall = Default::default();
         state.lock().begin(4);
         // A hung-up setup failing is not news: the sink is not even looked up.
-        report_start_failure(&state, || panic!("no lookup for a stale failure"), 3, "stale");
+        report_start_failure(
+            &state,
+            || panic!("no lookup for a stale failure"),
+            3,
+            "stale",
+        );
         assert!(state.lock().is_setting_up(4));
         // No sink at the moment of the failure: the call is still over.
         report_start_failure(&state, || None, 4, "no sink");
@@ -882,12 +948,21 @@ mod teardown_tests {
     #[tokio::test(start_paused = true)]
     async fn a_setup_that_hangs_is_given_up_at_its_deadline() {
         let t0 = tokio::time::Instant::now();
-        let hung = within_deadline(SETUP_DEADLINE, std::future::pending::<anyhow::Result<u8>>()).await;
+        let hung =
+            within_deadline(SETUP_DEADLINE, std::future::pending::<anyhow::Result<u8>>()).await;
         assert!(hung.is_err());
         assert_eq!(t0.elapsed(), SETUP_DEADLINE);
         // A setup in time, with either outcome, passes through.
-        assert_eq!(within_deadline(SETUP_DEADLINE, async { Ok(5u8) }).await.unwrap(), 5);
-        let failed = within_deadline(SETUP_DEADLINE, async { anyhow::bail!("no sfu") as anyhow::Result<u8> }).await;
+        assert_eq!(
+            within_deadline(SETUP_DEADLINE, async { Ok(5u8) })
+                .await
+                .unwrap(),
+            5
+        );
+        let failed = within_deadline(SETUP_DEADLINE, async {
+            anyhow::bail!("no sfu") as anyhow::Result<u8>
+        })
+        .await;
         assert_eq!(failed.unwrap_err().to_string(), "no sfu");
     }
 
@@ -903,7 +978,11 @@ mod teardown_tests {
         )
         .await;
         assert_eq!(out, 1);
-        assert_eq!(t0.elapsed(), TEARDOWN_WAIT + OLD_CALL_WAIT, "each wait is bounded");
+        assert_eq!(
+            t0.elapsed(),
+            TEARDOWN_WAIT + OLD_CALL_WAIT,
+            "each wait is bounded"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -913,7 +992,10 @@ mod teardown_tests {
         let mut slow = Some(tokio::spawn(async {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }));
-        assert!(setup_gave_up(&mut slow, STARTING_WAIT).await, "15 s is not enough");
+        assert!(
+            setup_gave_up(&mut slow, STARTING_WAIT).await,
+            "15 s is not enough"
+        );
         // Still ours to hand on, and it does finish.
         wait_for(slow).await;
         let mut quick = Some(tokio::spawn(async {}));

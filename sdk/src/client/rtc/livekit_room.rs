@@ -17,7 +17,9 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::RtcParticipantInfo;
-use crate::client::rtc::{audio_mix::RemoteAudioMixer, e2ee::SecretBytes, identity::IdentityMap, RtcEventSink};
+use crate::client::rtc::{
+    audio_mix::RemoteAudioMixer, e2ee::SecretBytes, identity::IdentityMap, RtcEventSink,
+};
 
 use livekit::{
     e2ee::{
@@ -73,11 +75,21 @@ struct PendingDevice {
 }
 
 impl PendingKeys {
-    pub fn insert(&mut self, user: &str, device: &str, index: i32, key: SecretBytes, now: std::time::Instant) {
+    pub fn insert(
+        &mut self,
+        user: &str,
+        device: &str,
+        index: i32,
+        key: SecretBytes,
+        now: std::time::Instant,
+    ) {
         let d = self
             .devices
             .entry((user.to_owned(), device.to_owned()))
-            .or_insert_with(|| PendingDevice { by_index: HashMap::new(), last_live_at: now });
+            .or_insert_with(|| PendingDevice {
+                by_index: HashMap::new(),
+                last_live_at: now,
+            });
         d.by_index.insert(index, key);
         d.last_live_at = now;
     }
@@ -152,9 +164,13 @@ impl SharedKeys {
         index: i32,
         raw_key: SecretBytes,
     ) {
-        self.pending
-            .lock()
-            .insert(sender_user_id, sender_device_id, index, raw_key, std::time::Instant::now());
+        self.pending.lock().insert(
+            sender_user_id,
+            sender_device_id,
+            index,
+            raw_key,
+            std::time::Instant::now(),
+        );
     }
 
     /// Drop the keys of devices that are no longer in the call (see
@@ -168,7 +184,9 @@ impl SharedKeys {
                 live.contains(&(user.to_owned(), device.to_owned()))
             }
         };
-        self.pending.lock().retain_live(is_live, std::time::Instant::now());
+        self.pending
+            .lock()
+            .retain_live(is_live, std::time::Instant::now());
     }
 
     /// Apply every stored key to the participants currently in `room`.
@@ -226,7 +244,12 @@ fn key_owner_matches(identity: &str, user_id: &str, device_id: &str) -> bool {
     }
 }
 
-fn identity_owner_matches(identities: &IdentityMap, identity: &str, user_id: &str, device_id: &str) -> bool {
+fn identity_owner_matches(
+    identities: &IdentityMap,
+    identity: &str,
+    user_id: &str,
+    device_id: &str,
+) -> bool {
     key_owner_matches(identity, user_id, device_id)
         || identities
             .resolve(identity)
@@ -331,7 +354,8 @@ impl FilteredSink {
 
     fn ok(&self, participant_id: &str) -> bool {
         !self.members.is_ended()
-            && (participant_id == self.local_identity || self.members.allows(&self.sfu_url, participant_id))
+            && (participant_id == self.local_identity
+                || self.members.allows(&self.sfu_url, participant_id))
     }
 }
 
@@ -497,8 +521,8 @@ impl LiveKitRoom {
             // reference, enabling echo cancellation. AudioProcessingOptions::default()
             // enables AEC, NS, and AGC. Capture is handled entirely by the platform
             // ADM â€” no manual PCM injection needed.
-            let platform_audio =
-                PlatformAudio::new().map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
+            let platform_audio = PlatformAudio::new()
+                .map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
             platform_audio
                 .configure_audio_processing(AudioProcessingOptions::default())
                 .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
@@ -520,7 +544,8 @@ impl LiveKitRoom {
             livekit::rtc_engine::lk_runtime::LkRuntime::instance()
                 .pc_factory()
                 .set_adm_playout_enabled(false);
-            let local_audio = LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
+            let local_audio =
+                LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
             // dtx=false: always send audio packets even during silence.
             // red=false: send plain Opus instead of RED; some SFUs fail to forward
             //   RED audio to subscribers when the subscriber's codec is Opus-only.
@@ -564,7 +589,12 @@ impl LiveKitRoom {
                 .local_participant()
                 .publish_track(LocalTrack::Video(local_video), video_opts_pub)
                 .await?;
-            Ok((platform_audio, video_source, audio_publication, video_publication))
+            Ok((
+                platform_audio,
+                video_source,
+                audio_publication,
+                video_publication,
+            ))
         }
         .await;
         let (platform_audio, video_source, audio_publication, video_publication) = match published {
@@ -1082,7 +1112,10 @@ fn spawn_event_task(
                     // ParticipantConnected for these pre-existing participants.
                     for (participant, _pubs) in &participants_with_tracks {
                         if let Some(ref s) = sink {
-                            s.on_participant_joined(session_id, participant_info(participant, &shared.identities));
+                            s.on_participant_joined(
+                                session_id,
+                                participant_info(participant, &shared.identities),
+                            );
                         }
                         // Apply any stored E2EE keys for this participant.
                         apply_pending_for(
@@ -1115,7 +1148,10 @@ fn spawn_event_task(
                 RoomEvent::ParticipantConnected(p) => {
                     info!("rtc: participant connected: {}", p.identity());
                     if let Some(ref s) = sink {
-                        s.on_participant_joined(session_id, participant_info(&p, &shared.identities));
+                        s.on_participant_joined(
+                            session_id,
+                            participant_info(&p, &shared.identities),
+                        );
                     }
                     apply_pending_for(
                         &shared.key_provider,
@@ -1143,7 +1179,10 @@ fn spawn_event_task(
                     // (0 pubs), so is_video_muted=true and the tile shows an avatar
                     // even though frames are arriving. Refreshing here fixes that.
                     if let Some(ref s) = sink {
-                        s.on_participant_updated(session_id, participant_info(&participant, &shared.identities));
+                        s.on_participant_updated(
+                            session_id,
+                            participant_info(&participant, &shared.identities),
+                        );
                     }
                     let pid = participant.identity().as_str().to_owned();
                     match track {
@@ -1235,7 +1274,10 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(session_id, participant_info(&rp, &shared.identities));
+                            s.on_participant_updated(
+                                session_id,
+                                participant_info(&rp, &shared.identities),
+                            );
                         } else if identity == room.local_participant().identity() {
                             s.on_participant_updated(
                                 session_id,
@@ -1248,7 +1290,10 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(session_id, participant_info(&rp, &shared.identities));
+                            s.on_participant_updated(
+                                session_id,
+                                participant_info(&rp, &shared.identities),
+                            );
                         } else if identity == room.local_participant().identity() {
                             s.on_participant_updated(
                                 session_id,
@@ -1263,7 +1308,10 @@ fn spawn_event_task(
                     // so is_screen_sharing recomputes to false and the ":screen"
                     // tile is removed, even if a TrackMuted event was missed.
                     if let Some(ref s) = sink {
-                        s.on_participant_updated(session_id, participant_info(&participant, &shared.identities));
+                        s.on_participant_updated(
+                            session_id,
+                            participant_info(&participant, &shared.identities),
+                        );
                     }
                 }
                 RoomEvent::Reconnecting => {
@@ -1502,24 +1550,40 @@ mod participant_filter_tests {
 
     #[test]
     fn hashed_publisher_is_allowed_on_its_sfu() {
-        let id = crate::client::rtc::identity::livekit_participant_identity("@b:matrix.org", "mid1");
+        let id =
+            crate::client::rtc::identity::livekit_participant_identity("@b:matrix.org", "mid1");
         let m = members(&[("@b:matrix.org", "DEV", "https://sfu.matrix.org")]);
-        m.identities().replace(HashMap::from([(id.clone(), ("@b:matrix.org".to_owned(), "DEV".to_owned()))]));
+        m.identities().replace(HashMap::from([(
+            id.clone(),
+            ("@b:matrix.org".to_owned(), "DEV".to_owned()),
+        )]));
         assert!(m.allows("https://sfu.matrix.org", &id));
-        assert!(!m.allows("https://sfu.gnomos.org", &id), "subscribe-only copy elsewhere");
+        assert!(
+            !m.allows("https://sfu.gnomos.org", &id),
+            "subscribe-only copy elsewhere"
+        );
     }
 
     #[test]
     fn unknown_hashed_identity_is_still_a_phantom() {
         let m = members(&[]);
-        m.identities().replace(HashMap::from([("known".to_owned(), ("@b:x".to_owned(), "D".to_owned()))]));
-        assert!(!m.allows("https://sfu.a", "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"));
+        m.identities().replace(HashMap::from([(
+            "known".to_owned(),
+            ("@b:x".to_owned(), "D".to_owned()),
+        )]));
+        assert!(!m.allows(
+            "https://sfu.a",
+            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"
+        ));
     }
 
     #[test]
     fn keys_reach_a_hashed_participant() {
         let shared = SharedKeys::new();
-        shared.identities().replace(HashMap::from([("hashedid".to_owned(), ("@b:x".to_owned(), "PHONE".to_owned()))]));
+        shared.identities().replace(HashMap::from([(
+            "hashedid".to_owned(),
+            ("@b:x".to_owned(), "PHONE".to_owned()),
+        )]));
         assert!(shared.owner_matches("hashedid", "@b:x", "PHONE"));
         assert!(!shared.owner_matches("hashedid", "@b:x", "LAPTOP"));
         assert!(!shared.owner_matches("otherid", "@b:x", "PHONE"));
@@ -1795,7 +1859,10 @@ mod helper_tests {
         assert_eq!(phone.len(), 2);
         assert_eq!(**phone[&0], vec![4]);
         assert_eq!(**phone[&1], vec![2]);
-        assert_eq!(**by_device[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0], vec![3]);
+        assert_eq!(
+            **by_device[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0],
+            vec![3]
+        );
     }
 
     #[test]
@@ -1830,10 +1897,17 @@ mod helper_tests {
         assert_eq!(p.len(), 1, "a single omission must not delete the key");
         // Listed again: the absence clock starts over.
         p.retain_live(live, t0 + hour + std::time::Duration::from_secs(31));
-        p.retain_live(nobody, t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE - std::time::Duration::from_secs(1));
+        p.retain_live(
+            nobody,
+            t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE
+                - std::time::Duration::from_secs(1),
+        );
         assert_eq!(p.len(), 1);
         // Gone for the whole grace period.
-        p.retain_live(nobody, t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE);
+        p.retain_live(
+            nobody,
+            t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE,
+        );
         assert_eq!(p.len(), 0);
     }
 
@@ -1841,7 +1915,9 @@ mod helper_tests {
     fn retain_members_treats_a_deviceless_key_as_every_device_of_the_user() {
         let keys = SharedKeys::new();
         keys.store("@c:x", "", 0, key(3));
-        keys.pending.lock().retain_live(|_, _| false, std::time::Instant::now() + PENDING_KEY_GRACE);
+        keys.pending
+            .lock()
+            .retain_live(|_, _| false, std::time::Instant::now() + PENDING_KEY_GRACE);
         assert_eq!(keys.pending.lock().len(), 0);
         keys.store("@c:x", "", 0, key(3));
         keys.retain_members(&[("@c:x".to_owned(), "D".to_owned())].into_iter().collect());
@@ -2010,6 +2086,9 @@ mod key_provider_pin_tests {
     /// upgrade that changes the default fails here instead of on the wire.
     #[test]
     fn default_ratchet_salt_matches_msc4195() {
-        assert_eq!(KeyProviderOptions::default().ratchet_salt, b"LKFrameEncryptionKey".to_vec());
+        assert_eq!(
+            KeyProviderOptions::default().ratchet_salt,
+            b"LKFrameEncryptionKey".to_vec()
+        );
     }
 }

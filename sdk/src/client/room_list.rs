@@ -701,9 +701,9 @@ impl ClientFfi {
         // MSC4196: private rooms start with calls enabled (an open m.call slot).
         // Not for public rooms, and a space is not somewhere to hold a call.
         if opts.visibility != "public" && !opts.is_space {
-            initial_state.push(crate::client::rtc::mrtc_membership::slot_initial_state_event(
-                opts.encrypted,
-            ));
+            initial_state.push(
+                crate::client::rtc::mrtc_membership::slot_initial_state_event(opts.encrypted),
+            );
         }
 
         let (visibility, preset) = if opts.visibility == "public" {
@@ -2336,7 +2336,8 @@ impl ClientFfi {
             ))
             .map(|v| i64::from(*v))
             .unwrap_or_else(|| i64::from(pl.state_default));
-        let (start_calls, join_calls) = call_permission_levels(&pl.events, i64::from(pl.state_default));
+        let (start_calls, join_calls) =
+            call_permission_levels(&pl.events, i64::from(pl.state_default));
         crate::ffi::RoomPowerLevelsFfi {
             default_role: i64::from(pl.users_default),
             send_messages: i64::from(pl.events_default),
@@ -3448,8 +3449,14 @@ fn apply_power_level_levels(
         to_int(levels.change_permissions)?,
     );
     let start_calls_level = to_int(levels.start_calls)?;
-    pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), start_calls_level);
-    pl.events.insert(TimelineEventType::from("org.matrix.msc4143.rtc.slot"), start_calls_level);
+    pl.events.insert(
+        TimelineEventType::from("org.matrix.msc3401.call"),
+        start_calls_level,
+    );
+    pl.events.insert(
+        TimelineEventType::from("org.matrix.msc4143.rtc.slot"),
+        start_calls_level,
+    );
     let join_calls_level = to_int(levels.join_calls)?;
     pl.events.insert(
         TimelineEventType::from("org.matrix.msc4143.rtc.member"),
@@ -3471,7 +3478,10 @@ fn apply_power_level_levels(
 /// level the tab shows is the level that is enforced. The tab writes both
 /// families, so rooms it has edited agree either way.
 fn call_permission_levels(
-    events: &std::collections::BTreeMap<matrix_sdk::ruma::events::TimelineEventType, matrix_sdk::ruma::Int>,
+    events: &std::collections::BTreeMap<
+        matrix_sdk::ruma::events::TimelineEventType,
+        matrix_sdk::ruma::Int,
+    >,
     state_default: i64,
 ) -> (i64, i64) {
     use matrix_sdk::ruma::events::TimelineEventType;
@@ -3589,11 +3599,16 @@ mod create_room_tests {
         // The encryption event first, then the call slot.
         assert_eq!(initial_state.len(), 2);
         assert_eq!(initial_state[0]["type"], "m.room.encryption");
-        assert_eq!(initial_state[0]["content"]["algorithm"], "m.megolm.v1.aes-sha2");
+        assert_eq!(
+            initial_state[0]["content"]["algorithm"],
+            "m.megolm.v1.aes-sha2"
+        );
         assert_eq!(initial_state[1]["type"], "org.matrix.msc4143.rtc.slot");
     }
 
-    fn slot_events(request: &matrix_sdk::ruma::api::client::room::create_room::v3::Request) -> Vec<serde_json::Value> {
+    fn slot_events(
+        request: &matrix_sdk::ruma::api::client::room::create_room::v3::Request,
+    ) -> Vec<serde_json::Value> {
         request
             .initial_state
             .iter()
@@ -3635,7 +3650,10 @@ mod create_room_tests {
     fn call_rooms_get_the_slot_too() {
         let mut o = opts(vec![], "");
         o.is_call_room = true;
-        assert_eq!(slot_events(&ClientFfi::build_create_room_request(&o, true).unwrap()).len(), 1);
+        assert_eq!(
+            slot_events(&ClientFfi::build_create_room_request(&o, true).unwrap()).len(),
+            1
+        );
     }
 
     #[test]
@@ -3752,31 +3770,59 @@ mod room_power_levels_tests {
     fn call_levels_follow_the_legacy_events_the_gate_reads() {
         let mut pl = server_content();
         // MatrixRTC types alone do not set the levels shown: they are not enforced.
-        for (k, v) in [("org.matrix.msc4143.rtc.slot", 25), ("org.matrix.msc4143.rtc.member", 10)] {
+        for (k, v) in [
+            ("org.matrix.msc4143.rtc.slot", 25),
+            ("org.matrix.msc4143.rtc.member", 10),
+        ] {
             pl.events.insert(TimelineEventType::from(k), v.into());
         }
-        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (50, 50));
-        for (k, v) in [("org.matrix.msc3401.call", 30), ("org.matrix.msc3401.call.member", 10)] {
+        assert_eq!(
+            call_permission_levels(&pl.events, i64::from(pl.state_default)),
+            (50, 50)
+        );
+        for (k, v) in [
+            ("org.matrix.msc3401.call", 30),
+            ("org.matrix.msc3401.call.member", 10),
+        ] {
             pl.events.insert(TimelineEventType::from(k), v.into());
         }
-        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (30, 10));
+        assert_eq!(
+            call_permission_levels(&pl.events, i64::from(pl.state_default)),
+            (30, 10)
+        );
     }
 
     #[test]
     fn starting_a_call_needs_at_least_the_level_of_joining_it() {
         let mut pl = server_content();
-        pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), 10.into());
-        pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call.member"), 40.into());
-        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (40, 40));
+        pl.events.insert(
+            TimelineEventType::from("org.matrix.msc3401.call"),
+            10.into(),
+        );
+        pl.events.insert(
+            TimelineEventType::from("org.matrix.msc3401.call.member"),
+            40.into(),
+        );
+        assert_eq!(
+            call_permission_levels(&pl.events, i64::from(pl.state_default)),
+            (40, 40)
+        );
     }
 
     #[test]
     fn call_levels_fall_back_to_the_state_default() {
         let mut pl = server_content();
-        pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), 40.into());
+        pl.events.insert(
+            TimelineEventType::from("org.matrix.msc3401.call"),
+            40.into(),
+        );
         let (start, join) = call_permission_levels(&pl.events, i64::from(pl.state_default));
         assert_eq!(join, i64::from(pl.state_default));
-        assert_eq!(start, i64::from(pl.state_default), "joining needs 50, so starting does too");
+        assert_eq!(
+            start,
+            i64::from(pl.state_default),
+            "joining needs 50, so starting does too"
+        );
     }
 
     #[test]
@@ -3789,7 +3835,10 @@ mod room_power_levels_tests {
         for k in ["org.matrix.msc3401.call", "org.matrix.msc4143.rtc.slot"] {
             assert_eq!(event_level(&pl, k), 20, "{k}");
         }
-        for k in ["org.matrix.msc3401.call.member", "org.matrix.msc4143.rtc.member"] {
+        for k in [
+            "org.matrix.msc3401.call.member",
+            "org.matrix.msc4143.rtc.member",
+        ] {
             assert_eq!(event_level(&pl, k), 5, "{k}");
         }
     }

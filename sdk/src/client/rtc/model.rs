@@ -92,7 +92,11 @@ pub struct CallApplication {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intent: Option<String>,
     /// `audio` / `video` (reference implementation).
-    #[serde(default, rename = "m.call.intent", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "m.call.intent",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub m_call_intent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<String>>,
@@ -163,7 +167,9 @@ impl MemberContent {
     }
 
     pub fn sticky_key(&self) -> Option<&str> {
-        self.sticky_key.as_deref().or(self.msc4354_sticky_key.as_deref())
+        self.sticky_key
+            .as_deref()
+            .or(self.msc4354_sticky_key.as_deref())
     }
 }
 
@@ -330,7 +336,10 @@ mod tests {
         }))
         .unwrap();
         assert!(c.is_join(), "membership defaults to join");
-        assert_eq!(c.application.as_ref().unwrap().intent(), Some(CallIntent::Video));
+        assert_eq!(
+            c.application.as_ref().unwrap().intent(),
+            Some(CallIntent::Video)
+        );
         assert_eq!(c.sticky_key(), Some("m"));
     }
 
@@ -413,7 +422,10 @@ mod tests {
             "media_key": { "index": 3, "key": "AAAA" }
         }))
         .unwrap();
-        assert_eq!(c.media_key_parts(), Some((3, SecretString::new("AAAA".to_owned()))));
+        assert_eq!(
+            c.media_key_parts(),
+            Some((3, SecretString::new("AAAA".to_owned())))
+        );
     }
 
     #[test]
@@ -425,13 +437,21 @@ mod tests {
             "session": { "call_id": "", "application": "m.call", "scope": "m.room" }
         }))
         .unwrap();
-        assert_eq!(c.media_key_parts(), Some((7, SecretString::new("BBBB".to_owned()))));
+        assert_eq!(
+            c.media_key_parts(),
+            Some((7, SecretString::new("BBBB".to_owned())))
+        );
         assert!(c.member_id.is_none());
     }
 
     #[test]
     fn transport_kind_variants() {
-        for k in ["livekit", "m.livekit", "msc4195.livekit", "org.matrix.msc4195.livekit"] {
+        for k in [
+            "livekit",
+            "m.livekit",
+            "msc4195.livekit",
+            "org.matrix.msc4195.livekit",
+        ] {
             assert!(transport_is_livekit(k), "{k}");
         }
         for k in ["", "webrtc", "livekit2", "notlivekit"] {
@@ -441,8 +461,14 @@ mod tests {
 
     #[test]
     fn sticky_key_is_read_from_either_name() {
-        assert_eq!(sticky_key_of(&json!({"sticky_key": "a"})).as_deref(), Some("a"));
-        assert_eq!(sticky_key_of(&json!({"msc4354_sticky_key": "b"})).as_deref(), Some("b"));
+        assert_eq!(
+            sticky_key_of(&json!({"sticky_key": "a"})).as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            sticky_key_of(&json!({"msc4354_sticky_key": "b"})).as_deref(),
+            Some("b")
+        );
         assert_eq!(sticky_key_of(&json!({"x": 1})), None);
     }
 }

@@ -251,7 +251,9 @@ fn evict_from_biggest_holder(entries: &mut Parked, owner: impl Fn(&ParkedKey) ->
     for (_, k) in entries.iter() {
         *counts.entry(owner(k)).or_default() += 1;
     }
-    let Some(most) = counts.values().max().copied() else { return };
+    let Some(most) = counts.values().max().copied() else {
+        return;
+    };
     let victim = entries
         .iter()
         .enumerate()
@@ -281,7 +283,8 @@ impl ParkedKeys {
             self.park_recheck(key, now);
             return;
         }
-        self.entries.retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
+        self.entries
+            .retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
         let same = |k: &ParkedKey| k.user_id == key.user_id && k.device_id == key.device_id;
         // Per sender: drop its oldest key.
         if self.entries.iter().filter(|(_, k)| same(k)).count() >= PER_SENDER_CAP {
@@ -291,14 +294,17 @@ impl ParkedKeys {
         }
         // Overall: drop the oldest key of whoever holds the most.
         if self.entries.len() >= PARK_CAP {
-            evict_from_biggest_holder(&mut self.entries, |k| (k.user_id.as_str(), k.device_id.as_str()));
+            evict_from_biggest_holder(&mut self.entries, |k| {
+                (k.user_id.as_str(), k.device_id.as_str())
+            });
         }
         self.entries.push((now, key));
     }
 
     /// `at` is when the event first arrived (a re-parked one keeps its time).
     fn park_recheck(&mut self, key: ParkedKey, at: std::time::Instant) {
-        self.rechecks.retain(|(t, _)| at.saturating_duration_since(*t) <= PARK_TTL);
+        self.rechecks
+            .retain(|(t, _)| at.saturating_duration_since(*t) <= PARK_TTL);
         let same_user = |k: &ParkedKey| k.user_id == key.user_id;
         if self.rechecks.iter().filter(|(_, k)| same_user(k)).count() >= PER_USER_RECHECK_CAP {
             if let Some(i) = oldest_of(&self.rechecks, same_user) {
@@ -314,11 +320,18 @@ impl ParkedKeys {
     /// Remove and return the parked keys whose sender is in `members`
     /// (`(user_id, device_id)`); expired ones are dropped. Keys waiting for
     /// their sending device to become known are not members' keys yet and stay.
-    pub fn take_for(&mut self, members: &[(String, String)], now: std::time::Instant) -> Vec<ParkedKey> {
-        self.entries.retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
+    pub fn take_for(
+        &mut self,
+        members: &[(String, String)],
+        now: std::time::Instant,
+    ) -> Vec<ParkedKey> {
+        self.entries
+            .retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
         let mut released = Vec::new();
         self.entries.retain(|(_, k)| {
-            let member = members.iter().any(|(u, d)| *u == k.user_id && *d == k.device_id);
+            let member = members
+                .iter()
+                .any(|(u, d)| *u == k.user_id && *d == k.device_id);
             if member {
                 released.push(k.clone());
             }
@@ -331,7 +344,10 @@ impl ParkedKeys {
     /// known, each with the time it was parked; expired ones are dropped. A key
     /// that is still not decided goes back with [`Self::park`] and that time, so
     /// waiting does not extend its life.
-    pub fn take_rechecks(&mut self, now: std::time::Instant) -> Vec<(std::time::Instant, ParkedKey)> {
+    pub fn take_rechecks(
+        &mut self,
+        now: std::time::Instant,
+    ) -> Vec<(std::time::Instant, ParkedKey)> {
         let mut out = std::mem::take(&mut self.rechecks);
         out.retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
         out
@@ -350,7 +366,11 @@ impl RateLimiter {
     /// `cap` bounds the keys remembered; past it, new keys are refused until
     /// old ones have aged out.
     pub fn new(interval: std::time::Duration, cap: usize) -> Self {
-        Self { interval, cap, last: Default::default() }
+        Self {
+            interval,
+            cap,
+            last: Default::default(),
+        }
     }
 
     pub fn allow(&mut self, key: &str, now: std::time::Instant) -> bool {
@@ -359,7 +379,8 @@ impl RateLimiter {
             Some(_) => {}
             None if self.last.len() >= self.cap => {
                 let interval = self.interval;
-                self.last.retain(|_, t| now.saturating_duration_since(*t) < interval);
+                self.last
+                    .retain(|_, t| now.saturating_duration_since(*t) < interval);
                 if self.last.len() >= self.cap {
                     return false;
                 }
@@ -418,13 +439,26 @@ pub fn key_event_content<'a>(
     now_ms: u64,
 ) -> KeyEventContent<'a> {
     KeyEventContent {
-        keys: KeyBody { key: key_b64, index },
+        keys: KeyBody {
+            key: key_b64,
+            index,
+        },
         room_id,
-        member: KeyMember { claimed_device_id: our_device_id, id: lk_identity },
-        session: KeySession { call_id: "", application: "m.call", scope: "m.room" },
+        member: KeyMember {
+            claimed_device_id: our_device_id,
+            id: lk_identity,
+        },
+        session: KeySession {
+            call_id: "",
+            application: "m.call",
+            scope: "m.room",
+        },
         sent_ts: now_ms,
         member_id: mrtc_member_id,
-        media_key: mrtc_member_id.map(|_| KeyBody { key: key_b64, index }),
+        media_key: mrtc_member_id.map(|_| KeyBody {
+            key: key_b64,
+            index,
+        }),
     }
 }
 
@@ -451,9 +485,13 @@ pub fn delivery_outcome(matching: usize, failed: usize, withheld: usize) -> Deli
         // The devices that can get the key did; the rest never will.
         Delivery::Delivered
     } else if failed == withheld {
-        Delivery::Withheld(format!("{withheld} of {matching} device(s) are not trusted to get the key"))
+        Delivery::Withheld(format!(
+            "{withheld} of {matching} device(s) are not trusted to get the key"
+        ))
     } else {
-        Delivery::Failed(format!("{failed} of {matching} device(s) did not get the key"))
+        Delivery::Failed(format!(
+            "{failed} of {matching} device(s) did not get the key"
+        ))
     }
 }
 
@@ -527,10 +565,14 @@ pub async fn send_frame_key_to_user(
     if devices.is_empty() {
         // A member whose device is gone costs one query per interval, not one per attempt.
         if !may_query() {
-            tracing::debug!("e2ee: no cached device for {matrix_user_id} ({device_filter:?}); asked recently");
+            tracing::debug!(
+                "e2ee: no cached device for {matrix_user_id} ({device_filter:?}); asked recently"
+            );
             return delivery_outcome(0, 0, 0);
         }
-        tracing::info!("e2ee: no cached device for {matrix_user_id} ({device_filter:?}); querying homeserver");
+        tracing::info!(
+            "e2ee: no cached device for {matrix_user_id} ({device_filter:?}); querying homeserver"
+        );
         if let Err(e) = client.encryption().request_user_identity(uid).await {
             tracing::debug!("e2ee: /keys/query for {matrix_user_id} failed: {e}");
         }
@@ -638,7 +680,9 @@ pub enum Recorded {
     RetryIn(std::time::Duration),
     /// A round of attempts ended without success (`rounds` of them so far); the
     /// key stays owed and the next round starts after [`GIVEN_UP_RETRY`].
-    GaveUp { rounds: u32 },
+    GaveUp {
+        rounds: u32,
+    },
     /// It will never be delivered (withheld by our policy): no more tries.
     Final,
     /// The entry was replaced or dropped meanwhile.
@@ -670,12 +714,24 @@ impl PendingDeliveries {
     /// Owe `index` to `to`, due now. A key already owed for the same recipient
     /// and index is replaced (a new session starts from scratch); a send of the
     /// replaced one that is still running is stale when it ends.
-    pub fn enqueue(&mut self, to: &[Recipient], index: u8, key_b64: &SecretString, now: std::time::Instant) {
+    pub fn enqueue(
+        &mut self,
+        to: &[Recipient],
+        index: u8,
+        key_b64: &SecretString,
+        now: std::time::Instant,
+    ) {
         for r in to {
             self.seq += 1;
             self.owed.insert(
                 (r.clone(), index),
-                Owed { key_b64: key_b64.clone(), seq: self.seq, failures: 0, rounds: 0, next_try: now },
+                Owed {
+                    key_b64: key_b64.clone(),
+                    seq: self.seq,
+                    failures: 0,
+                    rounds: 0,
+                    next_try: now,
+                },
             );
         }
     }
@@ -688,7 +744,12 @@ impl PendingDeliveries {
             .owed
             .iter()
             .filter(|((to, _), o)| o.next_try <= now && !busy.contains_key(&to.0))
-            .map(|((to, index), o)| DeliveryJob { to: to.clone(), index: *index, key_b64: o.key_b64.clone(), seq: o.seq })
+            .map(|((to, index), o)| DeliveryJob {
+                to: to.clone(),
+                index: *index,
+                key_b64: o.key_b64.clone(),
+                seq: o.seq,
+            })
             .collect();
         jobs.sort_by(|a, b| (&a.to.0, a.seq, &a.to.1).cmp(&(&b.to.0, b.seq, &b.to.1)));
         for job in &jobs {
@@ -698,7 +759,12 @@ impl PendingDeliveries {
     }
 
     /// Book the outcome of a send.
-    pub fn record(&mut self, job: &DeliveryJob, outcome: &Delivery, now: std::time::Instant) -> Recorded {
+    pub fn record(
+        &mut self,
+        job: &DeliveryJob,
+        outcome: &Delivery,
+        now: std::time::Instant,
+    ) -> Recorded {
         if let Some(n) = self.busy.get_mut(&job.to.0) {
             *n = n.saturating_sub(1);
             if *n == 0 {
@@ -765,7 +831,9 @@ impl PendingDeliveries {
     /// only to those that cannot be reached (or never get it by our policy). A
     /// key is not put to use before.
     pub fn settled(&self, index: u8) -> bool {
-        self.owed.keys().all(|(to, i)| *i != index || self.unreachable.contains(to))
+        self.owed
+            .keys()
+            .all(|(to, i)| *i != index || self.unreachable.contains(to))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -793,13 +861,21 @@ pub struct ClientKeySender {
 }
 
 impl ClientKeySender {
-    pub fn new(client: matrix_sdk::Client, room_id: String, lk_identity: String, mrtc_member_id: Option<String>) -> Self {
+    pub fn new(
+        client: matrix_sdk::Client,
+        room_id: String,
+        lk_identity: String,
+        mrtc_member_id: Option<String>,
+    ) -> Self {
         Self {
             client,
             room_id,
             lk_identity,
             mrtc_member_id,
-            device_queries: parking_lot::Mutex::new(RateLimiter::new(DEVICE_QUERY_INTERVAL, DEVICE_QUERY_USERS)),
+            device_queries: parking_lot::Mutex::new(RateLimiter::new(
+                DEVICE_QUERY_INTERVAL,
+                DEVICE_QUERY_USERS,
+            )),
         }
     }
 }
@@ -858,7 +934,10 @@ impl KeyDelivery {
         if to.is_empty() {
             return;
         }
-        self.shared.pending.lock().enqueue(to, index, key_b64, clock_now());
+        self.shared
+            .pending
+            .lock()
+            .enqueue(to, index, key_b64, clock_now());
         self.shared.wake.notify_one();
     }
 
@@ -902,7 +981,11 @@ impl Drop for Outstanding {
         }
         let mut pending = self.shared.pending.lock();
         for job in &self.jobs[self.done..] {
-            pending.record(job, &Delivery::Failed("send interrupted".to_owned()), clock_now());
+            pending.record(
+                job,
+                &Delivery::Failed("send interrupted".to_owned()),
+                clock_now(),
+            );
         }
         drop(pending);
         self.shared.progress.notify_one();
@@ -910,7 +993,10 @@ impl Drop for Outstanding {
     }
 }
 
-async fn delivery_worker(shared: std::sync::Arc<DeliveryShared>, sender: std::sync::Arc<dyn KeySender>) {
+async fn delivery_worker(
+    shared: std::sync::Arc<DeliveryShared>,
+    sender: std::sync::Arc<dyn KeySender>,
+) {
     use std::sync::Arc;
     // Dropped with this task, which aborts the sends still running.
     let mut sends = tokio::task::JoinSet::new();
@@ -989,31 +1075,57 @@ mod tests {
             let raw = vec![7u8; len];
             let padded = Base64::encode_string(&raw);
             let unpadded = Base64Unpadded::encode_string(&raw);
-            assert_eq!(decode_frame_key(&padded).unwrap().as_slice(), raw.as_slice(), "len {len}");
-            assert_eq!(decode_frame_key(&unpadded).unwrap().as_slice(), raw.as_slice(), "len {len} unpadded");
+            assert_eq!(
+                decode_frame_key(&padded).unwrap().as_slice(),
+                raw.as_slice(),
+                "len {len}"
+            );
+            assert_eq!(
+                decode_frame_key(&unpadded).unwrap().as_slice(),
+                raw.as_slice(),
+                "len {len} unpadded"
+            );
         }
         for len in [0usize, 1, 15, 17, 24, 31, 33, 64] {
             let err = decode_frame_key(&Base64::encode_string(&vec![1u8; len])).unwrap_err();
             assert!(err.contains("16 or 32"), "len {len}: {err}");
         }
-        assert!(decode_frame_key("not base64 !!!").unwrap_err().contains("bad base64"));
+        assert!(decode_frame_key("not base64 !!!")
+            .unwrap_err()
+            .contains("bad base64"));
         assert!(decode_frame_key("").is_err());
     }
 
     #[test]
     fn peer_keys_in_the_url_safe_alphabet_are_accepted_too() {
         // Bytes whose encodings differ between the alphabets (`+/` against `-_`).
-        let raw: Vec<u8> = (0..32u8).map(|i| 0xfb ^ i.wrapping_mul(0x11)).chain([0xff, 0xfe]).take(32).collect();
+        let raw: Vec<u8> = (0..32u8)
+            .map(|i| 0xfb ^ i.wrapping_mul(0x11))
+            .chain([0xff, 0xfe])
+            .take(32)
+            .collect();
         assert!(Base64::encode_string(&raw).contains(['+', '/']));
         for len in [16usize, 32] {
             let raw = &raw[..len];
             let url = Base64Url::encode_string(raw);
             let url_unpadded = Base64UrlUnpadded::encode_string(raw);
-            assert_eq!(decode_frame_key(&url).unwrap().as_slice(), raw, "len {len} padded");
-            assert_eq!(decode_frame_key(&url_unpadded).unwrap().as_slice(), raw, "len {len} unpadded");
+            assert_eq!(
+                decode_frame_key(&url).unwrap().as_slice(),
+                raw,
+                "len {len} padded"
+            );
+            assert_eq!(
+                decode_frame_key(&url_unpadded).unwrap().as_slice(),
+                raw,
+                "len {len} unpadded"
+            );
         }
         // Still length-checked, and still refuses text that is in neither alphabet.
-        assert!(decode_frame_key(&Base64UrlUnpadded::encode_string(&[9u8; 24])).unwrap_err().contains("16 or 32"));
+        assert!(
+            decode_frame_key(&Base64UrlUnpadded::encode_string(&[9u8; 24]))
+                .unwrap_err()
+                .contains("16 or 32")
+        );
         assert!(decode_frame_key("ab+_cd").is_err(), "mixed alphabets");
     }
 
@@ -1174,7 +1286,9 @@ mod tests {
         let mut p = ParkedKeys::new();
         p.park(parked("@a:x", "DEV", 0), t0);
         let late = t0 + PARK_TTL + std::time::Duration::from_secs(1);
-        assert!(p.take_for(&[("@a:x".into(), "DEV".into())], late).is_empty());
+        assert!(p
+            .take_for(&[("@a:x".into(), "DEV".into())], late)
+            .is_empty());
     }
 
     #[test]
@@ -1217,9 +1331,20 @@ mod tests {
             .collect();
         let got = p.take_for(&all, t0);
         assert_eq!(got.len(), PARK_CAP, "the cap holds");
-        assert!(got.iter().any(|k| k.user_id == "@new:x"), "the newcomer was kept");
-        assert_eq!(got.iter().filter(|k| k.user_id == "@u0:x").count(), 1, "u0 lost one key");
-        assert_eq!(got.iter().find(|k| k.user_id == "@u0:x").unwrap().index, 1, "its oldest went");
+        assert!(
+            got.iter().any(|k| k.user_id == "@new:x"),
+            "the newcomer was kept"
+        );
+        assert_eq!(
+            got.iter().filter(|k| k.user_id == "@u0:x").count(),
+            1,
+            "u0 lost one key"
+        );
+        assert_eq!(
+            got.iter().find(|k| k.user_id == "@u0:x").unwrap().index,
+            1,
+            "its oldest went"
+        );
     }
 
     #[test]
@@ -1239,24 +1364,48 @@ mod tests {
         let got = p.take_for(&all, t0 + s(1000));
         assert_eq!(got.len(), PARK_CAP);
         let last = format!("@u{:02}:x", PARK_CAP - 1);
-        assert!(!got.iter().any(|k| k.user_id == last), "the oldest one made way");
+        assert!(
+            !got.iter().any(|k| k.user_id == last),
+            "the oldest one made way"
+        );
     }
 
     #[test]
     fn legacy_key_body_is_unchanged_without_a_matrixrtc_member() {
-        let v = serde_json::to_value(key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, None, 1234)).unwrap();
+        let v = serde_json::to_value(key_event_content(
+            "!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, None, 1234,
+        ))
+        .unwrap();
         assert_eq!(v["keys"], serde_json::json!({"key": "S0VZ", "index": 3}));
-        assert_eq!(v["member"], serde_json::json!({"claimed_device_id": "DEV", "id": "@a:x:DEV"}));
+        assert_eq!(
+            v["member"],
+            serde_json::json!({"claimed_device_id": "DEV", "id": "@a:x:DEV"})
+        );
         assert_eq!(v["session"]["application"], "m.call");
         assert!(v.get("member_id").is_none() && v.get("media_key").is_none());
     }
 
     #[test]
     fn a_matrixrtc_member_adds_the_stable_fields_next_to_the_legacy_ones() {
-        let v = serde_json::to_value(key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, Some("mid1"), 1234)).unwrap();
+        let v = serde_json::to_value(key_event_content(
+            "!r:x",
+            "@a:x:DEV",
+            "DEV",
+            "S0VZ",
+            3,
+            Some("mid1"),
+            1234,
+        ))
+        .unwrap();
         assert_eq!(v["member_id"], "mid1");
-        assert_eq!(v["media_key"], serde_json::json!({"key": "S0VZ", "index": 3}));
-        assert_eq!(v["keys"]["index"], 3, "reference-implementation clients still read keys/member");
+        assert_eq!(
+            v["media_key"],
+            serde_json::json!({"key": "S0VZ", "index": 3})
+        );
+        assert_eq!(
+            v["keys"]["index"], 3,
+            "reference-implementation clients still read keys/member"
+        );
         assert_eq!(v["room_id"], "!r:x");
     }
 
@@ -1321,7 +1470,10 @@ mod tests {
         let (at, key) = p.take_rechecks(later).remove(0);
         p.park(key, at);
         let late = t0 + PARK_TTL + std::time::Duration::from_secs(1);
-        assert!(p.take_rechecks(late).is_empty(), "waiting did not extend its life");
+        assert!(
+            p.take_rechecks(late).is_empty(),
+            "waiting did not extend its life"
+        );
     }
 
     #[test]
@@ -1330,15 +1482,31 @@ mod tests {
         let mut p = ParkedKeys::new();
         // One member with a fresh Olm identity per event, none of which ever uploads device keys.
         for i in 0..200 {
-            p.park(recheck_key("@spam:x", &format!("CURVE{i}")), t0 + std::time::Duration::from_millis(i));
+            p.park(
+                recheck_key("@spam:x", &format!("CURVE{i}")),
+                t0 + std::time::Duration::from_millis(i),
+            );
         }
-        p.park(recheck_key("@a:x", "A"), t0 + std::time::Duration::from_secs(1));
+        p.park(
+            recheck_key("@a:x", "A"),
+            t0 + std::time::Duration::from_secs(1),
+        );
         let out = p.take_rechecks(t0 + std::time::Duration::from_secs(1));
-        assert_eq!(out.iter().filter(|(_, k)| k.user_id == "@spam:x").count(), PER_USER_RECHECK_CAP);
+        assert_eq!(
+            out.iter().filter(|(_, k)| k.user_id == "@spam:x").count(),
+            PER_USER_RECHECK_CAP
+        );
         assert_eq!(out.iter().filter(|(_, k)| k.user_id == "@a:x").count(), 1);
         // The newest of the spammer's identities are the ones kept.
-        let kept: Vec<_> = out.iter().filter(|(_, k)| k.user_id == "@spam:x").map(|(at, _)| *at).collect();
-        assert!(kept.iter().all(|at| *at >= t0 + std::time::Duration::from_millis(200 - PER_USER_RECHECK_CAP as u64)));
+        let kept: Vec<_> = out
+            .iter()
+            .filter(|(_, k)| k.user_id == "@spam:x")
+            .map(|(at, _)| *at)
+            .collect();
+        assert!(kept
+            .iter()
+            .all(|at| *at
+                >= t0 + std::time::Duration::from_millis(200 - PER_USER_RECHECK_CAP as u64)));
     }
 
     #[test]
@@ -1354,10 +1522,18 @@ mod tests {
                 p.park(recheck_key(&format!("@r{u}:x"), &format!("C{u}-{i}")), t0);
             }
         }
-        let members: Vec<(String, String)> =
-            (0..(PARK_CAP - 1)).map(|i| (format!("@m{i}:x"), "DEV".to_owned())).collect();
-        assert_eq!(p.take_for(&members, t0).len(), PARK_CAP - 1, "every membership key is still there");
-        assert!(p.take_rechecks(t0).len() <= RECHECK_CAP, "rechecks have a budget of their own");
+        let members: Vec<(String, String)> = (0..(PARK_CAP - 1))
+            .map(|i| (format!("@m{i}:x"), "DEV".to_owned()))
+            .collect();
+        assert_eq!(
+            p.take_for(&members, t0).len(),
+            PARK_CAP - 1,
+            "every membership key is still there"
+        );
+        assert!(
+            p.take_rechecks(t0).len() <= RECHECK_CAP,
+            "rechecks have a budget of their own"
+        );
     }
 
     #[test]
@@ -1367,15 +1543,26 @@ mod tests {
         // Four users with 2 each, then one user filling the rest of the budget.
         for u in 0..4 {
             for i in 0..2 {
-                p.park(recheck_key(&format!("@honest{u}:x"), &format!("H{u}-{i}")), t0);
+                p.park(
+                    recheck_key(&format!("@honest{u}:x"), &format!("H{u}-{i}")),
+                    t0,
+                );
             }
         }
         for i in 0..(RECHECK_CAP + 10) {
-            p.park(recheck_key("@spam:x", &format!("S{i}")), t0 + std::time::Duration::from_millis(i as u64));
+            p.park(
+                recheck_key("@spam:x", &format!("S{i}")),
+                t0 + std::time::Duration::from_millis(i as u64),
+            );
         }
         let out = p.take_rechecks(t0 + std::time::Duration::from_secs(1));
         for u in 0..4 {
-            assert_eq!(out.iter().filter(|(_, k)| k.user_id == format!("@honest{u}:x")).count(), 2);
+            assert_eq!(
+                out.iter()
+                    .filter(|(_, k)| k.user_id == format!("@honest{u}:x"))
+                    .count(),
+                2
+            );
         }
         assert!(out.len() <= RECHECK_CAP);
     }
@@ -1389,7 +1576,10 @@ mod tests {
         let mut l = RateLimiter::new(s(10), 8);
         assert!(l.allow("@a:x", t0));
         assert!(!l.allow("@a:x", t0 + s(9)));
-        assert!(l.allow("@b:x", t0 + s(9)), "another sender has its own budget");
+        assert!(
+            l.allow("@b:x", t0 + s(9)),
+            "another sender has its own budget"
+        );
         assert!(l.allow("@a:x", t0 + s(10)));
         assert!(!l.allow("@a:x", t0 + s(11)));
     }
@@ -1419,7 +1609,11 @@ mod tests {
     #[test]
     fn outcomes_tell_a_missing_device_from_a_failed_send() {
         assert_eq!(delivery_outcome(1, 0, 0), Delivery::Delivered);
-        assert_eq!(delivery_outcome(0, 0, 0), Delivery::NoDevice, "no device is not success");
+        assert_eq!(
+            delivery_outcome(0, 0, 0),
+            Delivery::NoDevice,
+            "no device is not success"
+        );
         assert!(matches!(delivery_outcome(2, 1, 0), Delivery::Failed(_)));
     }
 
@@ -1432,7 +1626,10 @@ mod tests {
         assert!(matches!(delivery_outcome(3, 2, 1), Delivery::Failed(_)));
         assert!(withheld_by_policy(true, false));
         assert!(!withheld_by_policy(true, true));
-        assert!(!withheld_by_policy(false, false), "nothing is excluded when the policy is off");
+        assert!(
+            !withheld_by_policy(false, false),
+            "nothing is excluded when the policy is off"
+        );
     }
 
     #[test]
@@ -1442,7 +1639,10 @@ mod tests {
         p.enqueue(&[to("@a:x"), to("@b:x")], 3, &sk("KEY"), t0);
         let jobs = p.take_due(t0);
         assert_eq!(jobs.len(), 2);
-        assert!(p.take_due(t0).is_empty(), "in flight sends are not handed out twice");
+        assert!(
+            p.take_due(t0).is_empty(),
+            "in flight sends are not handed out twice"
+        );
         assert_eq!(p.record(&jobs[0], &Delivery::Delivered, t0), Recorded::Done);
         assert!(!p.is_empty());
         assert_eq!(p.record(&jobs[1], &Delivery::Delivered, t0), Recorded::Done);
@@ -1457,8 +1657,14 @@ mod tests {
         let mut now = t0;
         for wait in RETRY_BACKOFF {
             let job = p.take_due(now).pop().expect("due");
-            assert_eq!(p.record(&job, &Delivery::NoDevice, now), Recorded::RetryIn(wait));
-            assert!(p.take_due(now + wait - secs(1)).is_empty(), "not before the backoff");
+            assert_eq!(
+                p.record(&job, &Delivery::NoDevice, now),
+                Recorded::RetryIn(wait)
+            );
+            assert!(
+                p.take_due(now + wait - secs(1)).is_empty(),
+                "not before the backoff"
+            );
             assert_eq!(p.next_due(), Some(now + wait));
             now += wait;
         }
@@ -1501,7 +1707,10 @@ mod tests {
         let mut p = PendingDeliveries::new();
         p.enqueue(&[to("@a:x")], 1, &sk("KEY"), t0);
         let job = p.take_due(t0).pop().unwrap();
-        assert_eq!(p.record(&job, &Delivery::Withheld("untrusted".into()), t0), Recorded::Final);
+        assert_eq!(
+            p.record(&job, &Delivery::Withheld("untrusted".into()), t0),
+            Recorded::Final
+        );
         assert!(p.is_empty());
         assert!(p.settled(1));
     }
@@ -1526,7 +1735,10 @@ mod tests {
         let job = p.take_due(t0).pop().unwrap();
         p.record(&job, &Delivery::NoDevice, t0);
         let retry = p.take_due(t0 + secs(2)).pop().unwrap();
-        assert_eq!(p.record(&retry, &Delivery::Delivered, t0 + secs(2)), Recorded::Done);
+        assert_eq!(
+            p.record(&retry, &Delivery::Delivered, t0 + secs(2)),
+            Recorded::Done
+        );
         assert!(p.is_empty());
     }
 
@@ -1537,10 +1749,16 @@ mod tests {
         p.enqueue(&[to("@a:x")], 1, &sk("OLD"), t0);
         let old = p.take_due(t0).pop().unwrap();
         p.enqueue(&[to("@a:x")], 1, &sk("NEW"), t0 + secs(1));
-        assert_eq!(p.record(&old, &Delivery::Delivered, t0 + secs(2)), Recorded::Stale);
+        assert_eq!(
+            p.record(&old, &Delivery::Delivered, t0 + secs(2)),
+            Recorded::Stale
+        );
         let new = p.take_due(t0 + secs(1)).pop().unwrap();
         assert_eq!(new.key_b64.as_str(), "NEW");
-        assert_eq!(p.record(&new, &Delivery::Delivered, t0 + secs(2)), Recorded::Done);
+        assert_eq!(
+            p.record(&new, &Delivery::Delivered, t0 + secs(2)),
+            Recorded::Done
+        );
     }
 
     #[test]
@@ -1564,11 +1782,19 @@ mod tests {
         p.enqueue(&[to("@a:x")], 2, &sk("OTHER"), t0);
         assert!(!p.settled(1));
         let jobs = p.take_due(t0);
-        let job = |u: &str, i: u8| jobs.iter().find(|j| j.to == to(u) && j.index == i).unwrap().clone();
+        let job = |u: &str, i: u8| {
+            jobs.iter()
+                .find(|j| j.to == to(u) && j.index == i)
+                .unwrap()
+                .clone()
+        };
         p.record(&job("@a:x", 1), &Delivery::Delivered, t0);
         assert!(!p.settled(1), "@b has not got it");
         p.record(&job("@b:x", 1), &Delivery::NoDevice, t0);
-        assert!(!p.settled(1), "tried once is not delivered: a retry is pending");
+        assert!(
+            !p.settled(1),
+            "tried once is not delivered: a retry is pending"
+        );
         assert!(!p.settled(2), "another key's round is separate");
     }
 
@@ -1587,7 +1813,12 @@ mod tests {
         p.enqueue(&[to("@ghost:x"), to("@live:x")], 2, &sk("K2"), now);
         assert!(!p.settled(2), "@live has not got it yet");
         let jobs = p.take_due(now);
-        let job = |u: &str, i: u8| jobs.iter().find(|j| j.to == to(u) && j.index == i).unwrap().clone();
+        let job = |u: &str, i: u8| {
+            jobs.iter()
+                .find(|j| j.to == to(u) && j.index == i)
+                .unwrap()
+                .clone()
+        };
         p.record(&job("@live:x", 2), &Delivery::Delivered, now);
         assert!(p.settled(2), "only the unreachable ghost is left");
         // Reaching it again makes it count again.
@@ -1607,7 +1838,11 @@ mod tests {
         // The new key replaces nothing and is due, but @a is busy.
         p.enqueue(&[to("@a:x")], 2, &sk("K2"), t0);
         assert!(p.take_due(t0 + secs(1)).is_empty());
-        assert_eq!(p.next_due(), None, "nothing is due while @a is busy; its send reports back");
+        assert_eq!(
+            p.next_due(),
+            None,
+            "nothing is due while @a is busy; its send reports back"
+        );
         p.record(&first, &Delivery::Delivered, t0 + secs(1));
         let second = p.take_due(t0 + secs(1)).pop().unwrap();
         assert_eq!(second.index, 2);
@@ -1633,7 +1868,10 @@ mod tests {
         p.enqueue(&[to("@a:x")], 255, &sk("OLD"), t0);
         p.enqueue(&[to("@a:x")], 0, &sk("NEW"), t0);
         let jobs = p.take_due(t0);
-        assert_eq!(jobs.iter().map(|j| j.index).collect::<Vec<_>>(), vec![255, 0]);
+        assert_eq!(
+            jobs.iter().map(|j| j.index).collect::<Vec<_>>(),
+            vec![255, 0]
+        );
     }
 
     #[test]
@@ -1677,7 +1915,12 @@ mod tests {
 
         fn starts_for(&self, user: &str) -> Vec<std::time::Duration> {
             let t0 = self.started.lock().iter().map(|s| s.2).min().unwrap();
-            self.started.lock().iter().filter(|s| s.0 == user).map(|s| s.2 - t0).collect()
+            self.started
+                .lock()
+                .iter()
+                .filter(|s| s.0 == user)
+                .map(|s| s.2 - t0)
+                .collect()
         }
     }
 
@@ -1685,13 +1928,19 @@ mod tests {
     impl KeySender for FakeSender {
         async fn send(&self, to: &Recipient, index: u8, _key_b64: &str) -> Delivery {
             use std::sync::atomic::Ordering::SeqCst;
-            self.started.lock().push((to.0.clone(), index, tokio::time::Instant::now()));
+            self.started
+                .lock()
+                .push((to.0.clone(), index, tokio::time::Instant::now()));
             if self.hang.contains(&to.0) {
                 std::future::pending::<()>().await;
             }
             let blow_up = {
                 let mut users = self.panic_once.lock();
-                users.iter().position(|u| *u == to.0).map(|i| users.remove(i)).is_some()
+                users
+                    .iter()
+                    .position(|u| *u == to.0)
+                    .map(|i| users.remove(i))
+                    .is_some()
             };
             if blow_up {
                 panic!("the sender blew up");
@@ -1711,13 +1960,20 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_worker_retries_a_missing_device_until_it_shows_up() {
         let sender = std::sync::Arc::new(FakeSender::new());
-        sender.script.lock().insert("@a:x".into(), vec![Delivery::NoDevice, Delivery::NoDevice]);
+        sender
+            .script
+            .lock()
+            .insert("@a:x".into(), vec![Delivery::NoDevice, Delivery::NoDevice]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
         d.enqueue(&[to("@a:x")], 5, &sk("KEY"));
         assert!(!d.settled(5));
         tokio::time::sleep(secs(60)).await;
-        assert_eq!(sender.starts_for("@a:x"), vec![secs(0), secs(2), secs(7)], "2 s, then 5 s");
+        assert_eq!(
+            sender.starts_for("@a:x"),
+            vec![secs(0), secs(2), secs(7)],
+            "2 s, then 5 s"
+        );
         assert!(d.settled(5));
         assert!(d.shared.pending.lock().is_empty());
     }
@@ -1726,7 +1982,10 @@ mod tests {
     async fn the_worker_tries_again_after_a_minute_when_the_backoff_is_spent() {
         let sender = std::sync::Arc::new(FakeSender::new());
         // The sender was offline for a while: five failures, then it works.
-        sender.script.lock().insert("@a:x".into(), vec![Delivery::Failed("offline".into()); 5]);
+        sender
+            .script
+            .lock()
+            .insert("@a:x".into(), vec![Delivery::Failed("offline".into()); 5]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
         d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
@@ -1737,25 +1996,42 @@ mod tests {
             "first try plus four retries"
         );
         assert!(!d.shared.pending.lock().is_empty(), "still owed");
-        assert!(d.settled(1), "an unreachable recipient does not hold the key back");
+        assert!(
+            d.settled(1),
+            "an unreachable recipient does not hold the key back"
+        );
         tokio::time::sleep(secs(60)).await;
-        assert_eq!(sender.starts_for("@a:x").len(), 6, "one more try a minute after the last");
+        assert_eq!(
+            sender.starts_for("@a:x").len(),
+            6,
+            "one more try a minute after the last"
+        );
         assert!(d.shared.pending.lock().is_empty(), "delivered");
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_member_who_never_answers_is_tried_every_minute_until_they_leave() {
         let sender = std::sync::Arc::new(FakeSender::new());
-        sender.script.lock().insert("@a:x".into(), vec![Delivery::NoDevice; 100]);
+        sender
+            .script
+            .lock()
+            .insert("@a:x".into(), vec![Delivery::NoDevice; 100]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
         d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(400)).await;
-        assert!(sender.starts_for("@a:x").len() > 8, "tries went on after the first round");
+        assert!(
+            sender.starts_for("@a:x").len() > 8,
+            "tries went on after the first round"
+        );
         d.retain_recipients(&Default::default());
         let before = sender.starts_for("@a:x").len();
         tokio::time::sleep(secs(300)).await;
-        assert_eq!(sender.starts_for("@a:x").len(), before, "nothing after they left");
+        assert_eq!(
+            sender.starts_for("@a:x").len(),
+            before,
+            "nothing after they left"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1770,9 +2046,18 @@ mod tests {
         d.enqueue(&[to("@a:x")], 1, &sk("K1 again"));
         d.enqueue(&[to("@a:x")], 2, &sk("K2"));
         tokio::time::sleep(secs(20)).await;
-        assert_eq!(sender.most_running.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            sender
+                .most_running
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
         let order: Vec<u8> = sender.started.lock().iter().map(|s| s.1).collect();
-        assert_eq!(order, vec![1, 1, 2], "the replaced key is sent again, then the newer one");
+        assert_eq!(
+            order,
+            vec![1, 1, 2],
+            "the replaced key is sent again, then the newer one"
+        );
         assert!(d.shared.pending.lock().is_empty());
     }
 
@@ -1784,7 +2069,11 @@ mod tests {
         let _worker = d.spawn(sender.clone());
         d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(30)).await;
-        assert_eq!(sender.starts_for("@a:x").len(), 2, "the failed send was retried");
+        assert_eq!(
+            sender.starts_for("@a:x").len(),
+            2,
+            "the failed send was retried"
+        );
         assert!(d.shared.pending.lock().is_empty(), "and delivered");
     }
 
@@ -1800,7 +2089,9 @@ mod tests {
         tokio::time::sleep(secs(10)).await;
         assert!(d.settled(1));
         assert_eq!(
-            sender.most_running.load(std::sync::atomic::Ordering::SeqCst),
+            sender
+                .most_running
+                .load(std::sync::atomic::Ordering::SeqCst),
             MAX_CONCURRENT_SENDS
         );
         // 20 one-second sends, 8 at a time: three waves, not twenty seconds.
@@ -1818,16 +2109,29 @@ mod tests {
         let _worker = d.spawn(sender.clone());
         d.enqueue(&[to("@stuck:x"), to("@fine:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(1)).await;
-        assert!(!d.settled(1), "the stuck recipient has not been tried out yet");
+        assert!(
+            !d.settled(1),
+            "the stuck recipient has not been tried out yet"
+        );
         tokio::time::sleep(SEND_TIMEOUT * 3).await;
-        assert!(!d.settled(1), "a timeout is not a delivery: the key is still owed");
-        assert_eq!(sender.starts_for("@fine:x"), vec![secs(0)], "delivered at once, once");
+        assert!(
+            !d.settled(1),
+            "a timeout is not a delivery: the key is still owed"
+        );
+        assert_eq!(
+            sender.starts_for("@fine:x"),
+            vec![secs(0)],
+            "delivered at once, once"
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_member_who_left_is_not_retried() {
         let sender = std::sync::Arc::new(FakeSender::new());
-        sender.script.lock().insert("@a:x".into(), vec![Delivery::NoDevice; 10]);
+        sender
+            .script
+            .lock()
+            .insert("@a:x".into(), vec![Delivery::NoDevice; 10]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
         d.enqueue(&[to("@a:x")], 1, &sk("KEY"));

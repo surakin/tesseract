@@ -164,7 +164,14 @@ pub(crate) fn normalize_endpoint(path: &str) -> String {
         }
         if after_media > 0 {
             after_media -= 1;
-            out.push(if after_media == 1 { "{server}" } else { "{media}" }.into());
+            out.push(
+                if after_media == 1 {
+                    "{server}"
+                } else {
+                    "{media}"
+                }
+                .into(),
+            );
             continue;
         }
         if matches!(*seg, "download" | "thumbnail") && out.iter().any(|s| s == "media") {
@@ -274,7 +281,10 @@ where
             return;
         };
         self.shared.in_flight.fetch_sub(1, Ordering::Relaxed);
-        let dur_ms = data.start.map(|t| t.elapsed().as_secs_f64() * 1000.0).unwrap_or(0.0);
+        let dur_ms = data
+            .start
+            .map(|t| t.elapsed().as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
         let endpoint = normalize_endpoint(
             data.uri
                 .split_once("://")
@@ -284,7 +294,9 @@ where
         self.shared.total.fetch_add(1, Ordering::Relaxed);
         {
             let mut stats = self.shared.stats.lock();
-            let e = stats.entry(format!("{} {endpoint}", data.method)).or_default();
+            let e = stats
+                .entry(format!("{} {endpoint}", data.method))
+                .or_default();
             e.count += 1;
             e.total_ms += dur_ms;
             e.max_ms = e.max_ms.max(dur_ms);
@@ -295,7 +307,11 @@ where
             out,
             "{t_ms}\t{}\t{endpoint}\t{}\t{dur_ms:.0}\t{}\t{}\t{}",
             data.method,
-            if data.status.is_empty() { "-" } else { &data.status },
+            if data.status.is_empty() {
+                "-"
+            } else {
+                &data.status
+            },
             self.shared.in_flight.load(Ordering::Relaxed),
             data.req_bytes,
             data.resp_bytes,
@@ -356,12 +372,16 @@ mod tests {
         use tracing_subscriber::filter::{LevelFilter, Targets};
         use tracing_subscriber::prelude::*;
 
-        let path = std::env::temp_dir().join(format!("tesseract-reqlog-{}.log", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("tesseract-reqlog-{}.log", std::process::id()));
         let _ = std::fs::remove_file(&path);
         std::env::set_var("TESSERACT_REQUEST_LOG", &path);
         let layer = super::init(std::path::Path::new("/nonexistent")).expect("layer is installed");
-        let subscriber = tracing_subscriber::registry()
-            .with(layer.with_filter(Targets::new().with_target(super::SPAN_TARGET, LevelFilter::INFO)));
+        let subscriber =
+            tracing_subscriber::registry()
+                .with(layer.with_filter(
+                    Targets::new().with_target(super::SPAN_TARGET, LevelFilter::INFO),
+                ));
         tracing::subscriber::with_default(subscriber, || {
             let span = tracing::info_span!(
                 target: "matrix_sdk::http_client",
@@ -371,14 +391,20 @@ mod tests {
                 status = tracing::field::Empty,
             );
             span.record("method", tracing::field::debug(&"GET"))
-                .record("uri", "https://hs.example/_matrix/client/v3/rooms/%21r%3Ahs.example/messages")
+                .record(
+                    "uri",
+                    "https://hs.example/_matrix/client/v3/rooms/%21r%3Ahs.example/messages",
+                )
                 .record("status", 200u64);
             drop(span);
         });
         std::env::remove_var("TESSERACT_REQUEST_LOG");
         let log = std::fs::read_to_string(&path).unwrap();
         let _ = std::fs::remove_file(&path);
-        let line = log.lines().find(|l| !l.starts_with('#')).expect("a request line");
+        let line = log
+            .lines()
+            .find(|l| !l.starts_with('#'))
+            .expect("a request line");
         let cols: Vec<&str> = line.split('\t').collect();
         assert_eq!(cols[2], "/_matrix/client/v3/rooms/{id}/messages");
         assert_eq!(cols[3], "200");

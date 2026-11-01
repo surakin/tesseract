@@ -5,13 +5,16 @@
 use std::collections::HashSet;
 
 use matrix_sdk::{
-    ruma::{events::room::member::MembershipState, events::StateEventType, DeviceId, MilliSecondsSinceUnixEpoch, UInt, UserId},
+    ruma::{
+        events::room::member::MembershipState, events::StateEventType, DeviceId,
+        MilliSecondsSinceUnixEpoch, UInt, UserId,
+    },
     Room,
 };
 
 use super::members::{
-    read_live_members, senders_to_keep, usable_service_url, CallMember, JoinCheck, LkFocus, MemberSource, Participant,
-    SELECTION_MULTI_SFU,
+    read_live_members, senders_to_keep, usable_service_url, CallMember, JoinCheck, LkFocus,
+    MemberSource, Participant, SELECTION_MULTI_SFU,
 };
 use super::model::{
     transport_is_livekit, MemberContent, SlotContent, CALL_SLOT_ID, MEMBER_TYPE, SLOT_TYPE,
@@ -45,7 +48,11 @@ pub fn member_is_joined(
     // Encryption: required in encrypted rooms (event and slot), forbidden otherwise.
     if room_encrypted {
         // An encryption type we do not know cannot be joined (MSC4143).
-        e.was_encrypted && slot.encryption.as_ref().is_some_and(|enc| enc.kind == "m.per_member")
+        e.was_encrypted
+            && slot
+                .encryption
+                .as_ref()
+                .is_some_and(|enc| enc.kind == "m.per_member")
     } else {
         slot.encryption.is_none()
     }
@@ -115,7 +122,8 @@ pub fn call_member_from(e: &StickyEntry) -> Option<CallMember> {
 /// entry stays.
 pub fn dedupe_by_device(members: Vec<CallMember>) -> Vec<CallMember> {
     let mut out: Vec<CallMember> = Vec::with_capacity(members.len());
-    let mut at: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
+    let mut at: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
     for m in members {
         match at.get(&m.key()) {
             Some(&i) => {
@@ -141,7 +149,11 @@ pub fn merge_members(legacy: Vec<CallMember>, mrtc: Vec<CallMember>) -> Vec<Call
     for mut m in mrtc {
         if let Some(l) = legacy.iter().find(|l| l.key() == m.key()) {
             // Also when its transports name no JWT service we can reach (an SFU URL only).
-            if !m.foci_preferred.iter().any(|f| usable_service_url(&f.service_url)) {
+            if !m
+                .foci_preferred
+                .iter()
+                .any(|f| usable_service_url(&f.service_url))
+            {
                 m.foci_preferred = l.foci_preferred.clone();
             }
         }
@@ -202,7 +214,14 @@ pub fn live_mrtc_members(
             if !m.slot_id.eq_ignore_ascii_case(CALL_SLOT_ID) {
                 return None;
             }
-            if !member_is_joined(&m, e, slot, sender_in_room(&e.sender), room_encrypted, now_ms) {
+            if !member_is_joined(
+                &m,
+                e,
+                slot,
+                sender_in_room(&e.sender),
+                room_encrypted,
+                now_ms,
+            ) {
                 return None;
             }
             call_member_from(e)
@@ -230,7 +249,10 @@ pub enum SlotState {
 pub fn slot_state_of(events: &[(&'static str, serde_json::Value)]) -> (SlotState, &'static str) {
     let mut unreadable = false;
     for (key, v) in events {
-        match v.get("content").and_then(|c| serde_json::from_value::<SlotContent>(c.clone()).ok()) {
+        match v
+            .get("content")
+            .and_then(|c| serde_json::from_value::<SlotContent>(c.clone()).ok())
+        {
             Some(c) => return (SlotState::Present(c), key),
             None => unreadable = true,
         }
@@ -302,21 +324,38 @@ pub async fn read_mrtc_members(
     if entries.is_empty() {
         return Vec::new();
     }
-    let in_room = senders_to_keep(room, entries.iter().map(|e| e.sender.clone()).collect(), check).await;
+    let in_room = senders_to_keep(
+        room,
+        entries.iter().map(|e| e.sender.clone()).collect(),
+        check,
+    )
+    .await;
     let slot = read_slot(room).await;
     let encrypted = room.encryption_state().is_encrypted();
-    let mut members: Vec<CallMember> =
-        live_mrtc_members(&entries, slot.as_ref(), &|u| in_room.contains(u), encrypted, now)
-            .into_iter()
-            .filter(|m| !(m.user_id == own_user.as_str() && m.device_id == own_device.as_str()))
-            .collect();
-    let account = room.client().user_id().map(|u| u.to_string()).unwrap_or_default();
-    join_times().lock().stable(&account, room.room_id().as_str(), &mut members);
+    let mut members: Vec<CallMember> = live_mrtc_members(
+        &entries,
+        slot.as_ref(),
+        &|u| in_room.contains(u),
+        encrypted,
+        now,
+    )
+    .into_iter()
+    .filter(|m| !(m.user_id == own_user.as_str() && m.device_id == own_device.as_str()))
+    .collect();
+    let account = room
+        .client()
+        .user_id()
+        .map(|u| u.to_string())
+        .unwrap_or_default();
+    join_times()
+        .lock()
+        .stable(&account, room.room_id().as_str(), &mut members);
     members
 }
 
 fn join_times() -> &'static parking_lot::Mutex<JoinTimes> {
-    static JOIN_TIMES: std::sync::OnceLock<parking_lot::Mutex<JoinTimes>> = std::sync::OnceLock::new();
+    static JOIN_TIMES: std::sync::OnceLock<parking_lot::Mutex<JoinTimes>> =
+        std::sync::OnceLock::new();
     JOIN_TIMES.get_or_init(Default::default)
 }
 
@@ -327,7 +366,11 @@ pub fn forget_join_times(account: &str, room_id: &str) {
 
 /// Legacy and MatrixRTC members together, excluding our own device, whose
 /// senders are joined to the room (the member list is fetched if it must be).
-pub async fn read_all_live_members(room: &Room, own_user: &UserId, own_device: &DeviceId) -> Vec<CallMember> {
+pub async fn read_all_live_members(
+    room: &Room,
+    own_user: &UserId,
+    own_device: &DeviceId,
+) -> Vec<CallMember> {
     read_all_live_members_checked(room, own_user, own_device, JoinCheck::Strict).await
 }
 
@@ -345,7 +388,10 @@ pub async fn read_all_live_members_checked(
         // Legacy membership is a state event, which is never encrypted: those
         // members count in an encrypted room by the old protocol's rules (only
         // the sticky MatrixRTC ones must have arrived encrypted).
-        tracing::debug!("rtc: {} cleartext legacy call member(s) accepted in an encrypted room", legacy.len());
+        tracing::debug!(
+            "rtc: {} cleartext legacy call member(s) accepted in an encrypted room",
+            legacy.len()
+        );
     }
     let mrtc = read_mrtc_members(room, own_user, own_device, check).await;
     merge_members(legacy, mrtc)
@@ -354,7 +400,10 @@ pub async fn read_all_live_members_checked(
 /// A member's `joined_at` is the time of its newest sticky event, which moves
 /// forward with every refresh. Keep the first time each `member.id` was seen
 /// instead, and forget ids that are no longer live, so join order stays put.
-pub fn stable_join_times(cache: &mut std::collections::HashMap<String, u64>, members: &mut [CallMember]) {
+pub fn stable_join_times(
+    cache: &mut std::collections::HashMap<String, u64>,
+    members: &mut [CallMember],
+) {
     for m in members.iter_mut() {
         let seen = u64::from(m.joined_at.0);
         let first = *cache.entry(m.member_id.clone()).or_insert(seen);
@@ -396,19 +445,33 @@ impl JoinTimes {
     pub fn stable(&mut self, account: &str, room_id: &str, members: &mut [CallMember]) {
         let key = (account.to_owned(), room_id.to_owned());
         self.reads += 1;
-        let mut first_seen = self.rooms.remove(&key).map(|r| r.first_seen).unwrap_or_default();
+        let mut first_seen = self
+            .rooms
+            .remove(&key)
+            .map(|r| r.first_seen)
+            .unwrap_or_default();
         stable_join_times(&mut first_seen, members);
         if first_seen.is_empty() {
             return;
         }
         // The room is out of the map here, so a full map means making room.
         if self.rooms.len() >= Self::MAX_ROOMS {
-            let oldest = self.rooms.iter().min_by_key(|(_, r)| r.last_read).map(|(k, _)| k.clone());
+            let oldest = self
+                .rooms
+                .iter()
+                .min_by_key(|(_, r)| r.last_read)
+                .map(|(k, _)| k.clone());
             if let Some(oldest) = oldest {
                 self.rooms.remove(&oldest);
             }
         }
-        self.rooms.insert(key, RoomJoinTimes { first_seen, last_read: self.reads });
+        self.rooms.insert(
+            key,
+            RoomJoinTimes {
+                first_seen,
+                last_read: self.reads,
+            },
+        );
     }
 
     pub fn forget_room(&mut self, account: &str, room_id: &str) {
@@ -420,13 +483,16 @@ impl JoinTimes {
     }
 
     pub fn holds(&self, account: &str, room_id: &str) -> bool {
-        self.rooms.contains_key(&(account.to_owned(), room_id.to_owned()))
+        self.rooms
+            .contains_key(&(account.to_owned(), room_id.to_owned()))
     }
 }
 
 /// LiveKit identity -> `(user, device)` for the MatrixRTC members, whose
 /// identity is a hash of their user and `member.id` (MSC4195).
-pub fn hashed_identities(members: &[CallMember]) -> std::collections::HashMap<String, (String, String)> {
+pub fn hashed_identities(
+    members: &[CallMember],
+) -> std::collections::HashMap<String, (String, String)> {
     members
         .iter()
         .filter(|m| m.source == MemberSource::MatrixRtc)
@@ -492,7 +558,13 @@ mod tests {
         })
     }
 
-    fn entry(user: &str, content: serde_json::Value, encrypted: bool, start: u64, dur: u64) -> StickyEntry {
+    fn entry(
+        user: &str,
+        content: serde_json::Value,
+        encrypted: bool,
+        start: u64,
+        dur: u64,
+    ) -> StickyEntry {
         StickyEntry {
             event_id: "$e".into(),
             sender: user.into(),
@@ -506,56 +578,110 @@ mod tests {
         }
     }
 
-    fn joined(user: &str, e: &StickyEntry, slot: Option<&SlotContent>, in_room: bool, room_enc: bool) -> bool {
+    fn joined(
+        user: &str,
+        e: &StickyEntry,
+        slot: Option<&SlotContent>,
+        in_room: bool,
+        room_enc: bool,
+    ) -> bool {
         let m: MemberContent = serde_json::from_value(e.content.clone()).unwrap();
         member_is_joined(&m, e, slot, in_room, room_enc, NOW) && !user.is_empty()
     }
 
     #[test]
     fn open_slot_and_fresh_event_means_joined() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(joined("@a:x", &e, Some(&slot(true, true)), true, true));
     }
 
     #[test]
     fn closed_slot_means_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&slot(false, true)), true, true));
     }
 
     #[test]
     fn missing_slot_means_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, None, true, true));
     }
 
     #[test]
     fn sender_not_in_room_means_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&slot(true, true)), false, true));
     }
 
     #[test]
     fn expired_member_is_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 4_000_000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 4_000_000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&slot(true, true)), true, true));
     }
 
     #[test]
     fn cleartext_member_in_encrypted_room_is_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), false, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            false,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&slot(true, true)), true, true));
     }
 
     #[test]
     fn slot_without_encryption_in_encrypted_room_means_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&slot(true, false)), true, true));
     }
 
     #[test]
     fn slot_with_encryption_in_plain_room_means_left() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), false, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            false,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&slot(true, true)), true, false));
         assert!(joined("@a:x", &e, Some(&slot(true, false)), true, false));
     }
@@ -570,21 +696,39 @@ mod tests {
 
     #[test]
     fn call_member_takes_transport_and_intent() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         let m = call_member_from(&e).unwrap();
         assert_eq!((m.user_id.as_str(), m.device_id.as_str()), ("@a:x", "D"));
         assert_eq!(m.member_id, "mid1");
         assert_eq!(m.source, MemberSource::MatrixRtc);
         assert_eq!(m.focus_selection, "multi_sfu");
         assert_eq!(m.foci_preferred[0].service_url, "https://jwt.a.org");
-        assert_eq!(m.foci_preferred[0].sfu_url.as_deref(), Some("wss://sfu.a.org"));
+        assert_eq!(
+            m.foci_preferred[0].sfu_url.as_deref(),
+            Some("wss://sfu.a.org")
+        );
         assert_eq!(m.intent.as_deref(), Some("m.video"));
-        assert_eq!(m.capabilities.as_deref(), Some(&["m.render_audio".to_owned()][..]));
+        assert_eq!(
+            m.capabilities.as_deref(),
+            Some(&["m.render_audio".to_owned()][..])
+        );
     }
 
     #[test]
     fn device_falls_back_to_the_decrypting_device() {
-        let mut e = entry("@a:x", join_content("@a:x", None), true, NOW - 1000, 3_600_000);
+        let mut e = entry(
+            "@a:x",
+            join_content("@a:x", None),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         e.sender_device = Some("SENDERDEV".into());
         assert_eq!(call_member_from(&e).unwrap().device_id, "SENDERDEV");
     }
@@ -592,7 +736,13 @@ mod tests {
     #[test]
     fn the_sending_device_beats_a_different_claimed_one() {
         // An encrypted event from device REAL claiming to be device D.
-        let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let mut e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         e.sender_device = Some("REAL".into());
         assert_eq!(call_member_from(&e).unwrap().device_id, "REAL");
         // A claim that agrees is simply kept.
@@ -603,7 +753,13 @@ mod tests {
     #[test]
     fn an_uncheckable_claim_is_kept() {
         // Cleartext (or an unattributed sender device): nothing to compare with.
-        let e = entry("@a:x", join_content("@a:x", Some("D")), false, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            false,
+            NOW - 1000,
+            3_600_000,
+        );
         assert_eq!(call_member_from(&e).unwrap().device_id, "D");
         assert_eq!(member_device(Some("D"), None).as_deref(), Some("D"));
         assert_eq!(member_device(None, Some("S")).as_deref(), Some("S"));
@@ -613,9 +769,18 @@ mod tests {
     #[test]
     fn our_own_stale_join_is_matched_by_the_sending_device_not_the_claim() {
         // A join claiming to be another device but sent from this one is ours.
-        let mut e = entry("@me:x", join_content("@me:x", Some("OTHER")), true, NOW - 1_000, 300_000);
+        let mut e = entry(
+            "@me:x",
+            join_content("@me:x", Some("OTHER")),
+            true,
+            NOW - 1_000,
+            300_000,
+        );
         e.sender_device = Some("D".into());
-        assert_eq!(stale_own_members(&[e], "@me:x", "D", "current", NOW).len(), 1);
+        assert_eq!(
+            stale_own_members(&[e], "@me:x", "D", "current", NOW).len(),
+            1
+        );
     }
 
     #[test]
@@ -625,7 +790,10 @@ mod tests {
         let m = call_member_from(&entry("@a:x", c, true, NOW - 1000, 3_600_000)).unwrap();
         assert_eq!(m.foci_preferred.len(), 1);
         assert_eq!(m.foci_preferred[0].service_url, "");
-        assert_eq!(m.foci_preferred[0].sfu_url.as_deref(), Some("wss://sfu.a.org"));
+        assert_eq!(
+            m.foci_preferred[0].sfu_url.as_deref(),
+            Some("wss://sfu.a.org")
+        );
     }
 
     #[test]
@@ -634,12 +802,22 @@ mod tests {
         c["transports"]["published"][0] = json!({"type": "livekit", "url": "wss://sfu.a.org"});
         let mrtc = call_member_from(&entry("@a:x", c, true, NOW - 1000, 3_600_000)).unwrap();
         let legacy = CallMember {
-            user_id: "@a:x".into(), device_id: "D".into(), state_key: "_@a:x_D_m.call".into(),
-            joined_at: MilliSecondsSinceUnixEpoch::now(), focus_selection: "multi_sfu".into(),
+            user_id: "@a:x".into(),
+            device_id: "D".into(),
+            state_key: "_@a:x_D_m.call".into(),
+            joined_at: MilliSecondsSinceUnixEpoch::now(),
+            focus_selection: "multi_sfu".into(),
             foci_preferred: vec![LkFocus {
-                service_url: "https://jwt.a.org".into(), alias: "!r".into(), sfu_url: None, server_name: None,
+                service_url: "https://jwt.a.org".into(),
+                alias: "!r".into(),
+                sfu_url: None,
+                server_name: None,
             }],
-            member_id: "@a:x:D".into(), source: MemberSource::Legacy, intent: None, capabilities: None, claimed_at_ms: None,
+            member_id: "@a:x:D".into(),
+            source: MemberSource::Legacy,
+            intent: None,
+            capabilities: None,
+            claimed_at_ms: None,
         };
         let merged = merge_members(vec![legacy], vec![mrtc]);
         assert_eq!(merged.len(), 1);
@@ -651,7 +829,8 @@ mod tests {
 
     /// The slot events of the test, all under the default state key.
     fn state_of(events: &[serde_json::Value]) -> SlotState {
-        let keyed: Vec<(&'static str, serde_json::Value)> = events.iter().map(|v| (SLOT_KEYS[0], v.clone())).collect();
+        let keyed: Vec<(&'static str, serde_json::Value)> =
+            events.iter().map(|v| (SLOT_KEYS[0], v.clone())).collect();
         slot_state_of(&keyed).0
     }
 
@@ -683,7 +862,10 @@ mod tests {
         assert_eq!(key, "m.call#room");
         // Nothing readable: a new slot takes the MSC's key.
         assert_eq!(slot_state_of(&[]).1, CALL_SLOT_ID);
-        assert_eq!(slot_state_of(&[("m.call#ROOM", json!({"content": {}}))]).1, CALL_SLOT_ID);
+        assert_eq!(
+            slot_state_of(&[("m.call#ROOM", json!({"content": {}}))]).1,
+            CALL_SLOT_ID
+        );
     }
 
     #[test]
@@ -696,22 +878,38 @@ mod tests {
         assert_eq!(failed, Some(serde_json::Value::Null));
         assert_eq!(state_of(&[failed.unwrap()]), SlotState::Unreadable);
         // Not even JSON: unreadable too.
-        assert_eq!(slot_event_of_read::<()>(Ok(Some("not json".into()))), Some(serde_json::Value::Null));
+        assert_eq!(
+            slot_event_of_read::<()>(Ok(Some("not json".into()))),
+            Some(serde_json::Value::Null)
+        );
         // A good event passes through.
-        let ev = slot_event_of_read::<()>(Ok(Some(r#"{"content":{"status":"closed"}}"#.into()))).unwrap();
+        let ev = slot_event_of_read::<()>(Ok(Some(r#"{"content":{"status":"closed"}}"#.into())))
+            .unwrap();
         assert!(matches!(state_of(&[ev]), SlotState::Present(s) if !s.is_open()));
     }
 
     #[test]
     fn member_without_any_device_is_skipped() {
-        let mut e = entry("@a:x", join_content("@a:x", None), true, NOW - 1000, 3_600_000);
+        let mut e = entry(
+            "@a:x",
+            join_content("@a:x", None),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         e.sender_device = None;
         assert!(call_member_from(&e).is_none());
     }
 
     #[test]
     fn member_claiming_another_user_is_skipped() {
-        let e = entry("@a:x", join_content("@someone-else:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@someone-else:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(call_member_from(&e).is_none());
     }
 
@@ -730,7 +928,13 @@ mod tests {
             capabilities: None,
             claimed_at_ms: None,
         };
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         let mrtc = call_member_from(&e).unwrap();
         let merged = merge_members(vec![legacy], vec![mrtc]);
         assert_eq!(merged.len(), 1);
@@ -740,9 +944,17 @@ mod tests {
     #[test]
     fn legacy_only_and_mrtc_only_members_both_survive_merge() {
         let mk = |u: &str, d: &str, s: MemberSource| CallMember {
-            user_id: u.into(), device_id: d.into(), state_key: String::new(),
-            joined_at: MilliSecondsSinceUnixEpoch::now(), focus_selection: String::new(),
-            foci_preferred: vec![], member_id: String::new(), source: s, intent: None, capabilities: None, claimed_at_ms: None,
+            user_id: u.into(),
+            device_id: d.into(),
+            state_key: String::new(),
+            joined_at: MilliSecondsSinceUnixEpoch::now(),
+            focus_selection: String::new(),
+            foci_preferred: vec![],
+            member_id: String::new(),
+            source: s,
+            intent: None,
+            capabilities: None,
+            claimed_at_ms: None,
         };
         let merged = merge_members(
             vec![mk("@a:x", "D", MemberSource::Legacy)],
@@ -764,7 +976,10 @@ mod tests {
         let new = entry_with_id("@a:x", "new", "D", NOW - 5_000);
         let other = entry_with_id("@a:x", "phone", "P", NOW - 100_000);
         let s = slot(true, true);
-        for entries in [vec![old.clone(), new.clone(), other.clone()], vec![new, other, old]] {
+        for entries in [
+            vec![old.clone(), new.clone(), other.clone()],
+            vec![new, other, old],
+        ] {
             let got = live_mrtc_members(&entries, Some(&s), &|_| true, true, NOW);
             let mut ids: Vec<&str> = got.iter().map(|m| m.member_id.as_str()).collect();
             ids.sort();
@@ -780,8 +995,16 @@ mod tests {
             m.member_id = id.into();
             m
         };
-        let got = dedupe_by_device(vec![mk("a", "D", 5), mk("b", "E", 1), mk("c", "D", 9), mk("d", "E", 1)]);
-        assert_eq!(got.iter().map(|m| m.member_id.as_str()).collect::<Vec<_>>(), vec!["c", "b"]);
+        let got = dedupe_by_device(vec![
+            mk("a", "D", 5),
+            mk("b", "E", 1),
+            mk("c", "D", 9),
+            mk("d", "E", 1),
+        ]);
+        assert_eq!(
+            got.iter().map(|m| m.member_id.as_str()).collect::<Vec<_>>(),
+            vec!["c", "b"]
+        );
         assert!(dedupe_by_device(Vec::new()).is_empty());
     }
 
@@ -794,8 +1017,14 @@ mod tests {
             m
         };
         let merged = merge_members(
-            vec![mk("l1", 1, MemberSource::Legacy), mk("l2", 2, MemberSource::Legacy)],
-            vec![mk("r1", 3, MemberSource::MatrixRtc), mk("r2", 7, MemberSource::MatrixRtc)],
+            vec![
+                mk("l1", 1, MemberSource::Legacy),
+                mk("l2", 2, MemberSource::Legacy),
+            ],
+            vec![
+                mk("r1", 3, MemberSource::MatrixRtc),
+                mk("r2", 7, MemberSource::MatrixRtc),
+            ],
         );
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].member_id, "r2");
@@ -827,25 +1056,48 @@ mod tests {
 
     #[test]
     fn a_stale_join_without_a_device_is_matched_by_the_sending_device() {
-        let mut e = entry("@me:x", join_content("@me:x", None), true, NOW - 1_000, 300_000);
+        let mut e = entry(
+            "@me:x",
+            join_content("@me:x", None),
+            true,
+            NOW - 1_000,
+            300_000,
+        );
         e.sender_device = Some("D".into());
-        assert_eq!(stale_own_members(&[e.clone()], "@me:x", "D", "current", NOW).len(), 1);
+        assert_eq!(
+            stale_own_members(&[e.clone()], "@me:x", "D", "current", NOW).len(),
+            1
+        );
         assert!(stale_own_members(&[e], "@me:x", "OTHER", "current", NOW).is_empty());
     }
 
     fn cm(intent: Option<&str>, user: &str, at: u64) -> CallMember {
         CallMember {
-            user_id: user.into(), device_id: "D".into(), state_key: String::new(),
+            user_id: user.into(),
+            device_id: "D".into(),
+            state_key: String::new(),
             joined_at: MilliSecondsSinceUnixEpoch(UInt::new(at).unwrap()),
-            focus_selection: String::new(), foci_preferred: vec![], member_id: String::new(),
-            source: MemberSource::MatrixRtc, intent: intent.map(str::to_owned), capabilities: None, claimed_at_ms: None,
+            focus_selection: String::new(),
+            foci_preferred: vec![],
+            member_id: String::new(),
+            source: MemberSource::MatrixRtc,
+            intent: intent.map(str::to_owned),
+            capabilities: None,
+            claimed_at_ms: None,
         }
     }
 
     #[test]
     fn room_with_only_mrtc_members_has_participants_and_intent() {
-        let p = participants_from_members(&[cm(Some("m.video"), "@a:x", 5), cm(Some("audio"), "@b:x", 1), cm(None, "@c:x", 9)]);
-        assert_eq!(p.iter().map(|p| p.intent).collect::<Vec<_>>(), vec![Some("video"), Some("audio"), None]);
+        let p = participants_from_members(&[
+            cm(Some("m.video"), "@a:x", 5),
+            cm(Some("audio"), "@b:x", 1),
+            cm(None, "@c:x", 9),
+        ]);
+        assert_eq!(
+            p.iter().map(|p| p.intent).collect::<Vec<_>>(),
+            vec![Some("video"), Some("audio"), None]
+        );
         let (users, intent) = crate::client::rtc::members::summarize_participants(p);
         assert_eq!(users, vec!["@b:x", "@a:x", "@c:x"]);
         assert_eq!(intent, "video");
@@ -853,14 +1105,27 @@ mod tests {
 
     #[test]
     fn closed_slot_has_no_participants() {
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         let none = live_mrtc_members(&[e], Some(&slot(false, true)), &|_| true, true, NOW);
         assert!(none.is_empty());
     }
 
     #[test]
     fn hashed_identities_cover_matrixrtc_members_only() {
-        let mrtc = call_member_from(&entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000)).unwrap();
+        let mrtc = call_member_from(&entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        ))
+        .unwrap();
         let mut legacy = mrtc.clone();
         legacy.source = MemberSource::Legacy;
         legacy.user_id = "@b:x".into();
@@ -874,7 +1139,13 @@ mod tests {
     fn unknown_slot_encryption_type_is_not_joined() {
         let mut unknown = slot(true, true);
         unknown.encryption.as_mut().unwrap().kind = "m.something_new".into();
-        let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        let e = entry(
+            "@a:x",
+            join_content("@a:x", Some("D")),
+            true,
+            NOW - 1000,
+            3_600_000,
+        );
         assert!(!joined("@a:x", &e, Some(&unknown), true, true));
     }
 
@@ -922,7 +1193,13 @@ mod tests {
     #[test]
     fn rooms_without_live_members_are_not_kept_and_the_total_is_bounded() {
         let mk = |id: &str| {
-            let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, 1_000, 3_600_000);
+            let mut e = entry(
+                "@a:x",
+                join_content("@a:x", Some("D")),
+                true,
+                1_000,
+                3_600_000,
+            );
             e.content["member"]["id"] = serde_json::json!(id);
             call_member_from(&e).unwrap()
         };
@@ -945,7 +1222,13 @@ mod tests {
     #[test]
     fn a_full_map_evicts_the_room_read_longest_ago_and_only_for_a_room_with_members() {
         let mk = |id: &str| {
-            let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, 1_000, 3_600_000);
+            let mut e = entry(
+                "@a:x",
+                join_content("@a:x", Some("D")),
+                true,
+                1_000,
+                3_600_000,
+            );
             e.content["member"]["id"] = serde_json::json!(id);
             call_member_from(&e).unwrap()
         };

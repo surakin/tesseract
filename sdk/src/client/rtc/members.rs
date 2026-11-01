@@ -10,7 +10,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use matrix_sdk::ruma::{
     events::{
-        call::member::{ActiveFocus, Application, CallMemberEventContent, CallScope, Focus, MembershipData},
+        call::member::{
+            ActiveFocus, Application, CallMemberEventContent, CallScope, Focus, MembershipData,
+        },
         room::member::MembershipState,
     },
     DeviceId, MilliSecondsSinceUnixEpoch, UInt, UserId,
@@ -123,7 +125,10 @@ impl CallMember {
     pub fn session_tag(&self) -> String {
         match self.source {
             MemberSource::MatrixRtc => self.member_id.clone(),
-            MemberSource::Legacy => self.claimed_at_ms.unwrap_or(u64::from(self.joined_at.0)).to_string(),
+            MemberSource::Legacy => self
+                .claimed_at_ms
+                .unwrap_or(u64::from(self.joined_at.0))
+                .to_string(),
         }
     }
 }
@@ -157,7 +162,10 @@ pub fn sender_counts(membership: Option<&MembershipState>, check: JoinCheck) -> 
 /// The members whose sender is in `keep`: a kicked or banned user's call
 /// membership stays valid on its own until it expires, but is no call member.
 pub fn retain_senders(members: Vec<CallMember>, keep: &HashSet<String>) -> Vec<CallMember> {
-    members.into_iter().filter(|m| keep.contains(&m.user_id)).collect()
+    members
+        .into_iter()
+        .filter(|m| keep.contains(&m.user_id))
+        .collect()
 }
 
 /// What looking a sender up in the room gave.
@@ -227,25 +235,38 @@ impl VerdictCache {
         now: std::time::Instant,
         max_age: std::time::Duration,
     ) -> Option<bool> {
-        let (verdict, at) = self.map.get(&(account.to_owned(), room.to_owned(), sender.to_owned()))?;
+        let (verdict, at) =
+            self.map
+                .get(&(account.to_owned(), room.to_owned(), sender.to_owned()))?;
         (now.saturating_duration_since(*at) <= max_age).then_some(*verdict)
     }
 
-    pub fn set(&mut self, account: &str, room: &str, sender: &str, verdict: bool, now: std::time::Instant) {
+    pub fn set(
+        &mut self,
+        account: &str,
+        room: &str,
+        sender: &str,
+        verdict: bool,
+        now: std::time::Instant,
+    ) {
         if self.map.len() >= Self::CAP {
             // Expired entries go first; a full cache of fresh ones starts over.
-            self.map.retain(|_, (_, at)| now.saturating_duration_since(*at) <= VERDICT_TTL);
+            self.map
+                .retain(|_, (_, at)| now.saturating_duration_since(*at) <= VERDICT_TTL);
             if self.map.len() >= Self::CAP {
                 self.map.clear();
             }
         }
-        self.map
-            .insert((account.to_owned(), room.to_owned(), sender.to_owned()), (verdict, now));
+        self.map.insert(
+            (account.to_owned(), room.to_owned(), sender.to_owned()),
+            (verdict, now),
+        );
     }
 }
 
 fn verdicts() -> &'static std::sync::Mutex<VerdictCache> {
-    static VERDICTS: std::sync::OnceLock<std::sync::Mutex<VerdictCache>> = std::sync::OnceLock::new();
+    static VERDICTS: std::sync::OnceLock<std::sync::Mutex<VerdictCache>> =
+        std::sync::OnceLock::new();
     VERDICTS.get_or_init(Default::default)
 }
 
@@ -270,7 +291,9 @@ async fn lookup_sender(
                     Ok(m) => return SenderLookup::Known(membership(m)),
                     Err(e) => {
                         *fetch_ok = false;
-                        tracing::debug!("rtc: member list fetch failed ({e}); using the local store");
+                        tracing::debug!(
+                            "rtc: member list fetch failed ({e}); using the local store"
+                        );
                     }
                 }
             }
@@ -291,14 +314,20 @@ pub async fn senders_to_keep(
     let mut keep: HashSet<String> = HashSet::new();
     let mut seen: HashSet<String> = HashSet::new();
     let room_id = room.room_id().to_string();
-    let account = room.client().user_id().map(|u| u.to_string()).unwrap_or_default();
+    let account = room
+        .client()
+        .user_id()
+        .map(|u| u.to_string())
+        .unwrap_or_default();
     let max_age = verdict_max_age(check);
     let mut fetch_ok = true;
     for sender in senders {
         if !seen.insert(sender.clone()) {
             continue;
         }
-        let Ok(user) = UserId::parse(&sender) else { continue };
+        let Ok(user) = UserId::parse(&sender) else {
+            continue;
+        };
         let lookup = lookup_sender(room, &user, check, &mut fetch_ok).await;
         let previous = verdicts().lock().unwrap_or_else(|p| p.into_inner()).get(
             &account,
@@ -348,7 +377,9 @@ const DEFAULT_LEGACY_EXPIRES_MS: u64 = 4 * 3_600_000;
 /// and the same value other clients order by), up to [`MAX_LEGACY_AGE_MS`]
 /// before the event.
 pub fn legacy_join_ms(created_ms: Option<u64>, origin_ms: u64) -> u64 {
-    created_ms.map_or(origin_ms, |c| c.clamp(origin_ms.saturating_sub(MAX_LEGACY_AGE_MS), origin_ms))
+    created_ms.map_or(origin_ms, |c| {
+        c.clamp(origin_ms.saturating_sub(MAX_LEGACY_AGE_MS), origin_ms)
+    })
 }
 
 /// When a legacy membership started, for working out when its claimed lifetime
@@ -365,7 +396,10 @@ pub fn legacy_started_ms(created_ms: Option<u64>, origin_ms: u64) -> u64 {
 /// the event: our own refresh sets `expires` to the call's age plus four hours,
 /// so a long call's lifetime can exceed a day while its newest event is fresh.
 pub fn legacy_is_live(join_ms: u64, expires_ms: u64, origin_ms: u64, now_ms: u64) -> bool {
-    now_ms <= join_ms.saturating_add(expires_ms).min(origin_ms.saturating_add(MAX_LEGACY_EXPIRES_MS))
+    now_ms
+        <= join_ms
+            .saturating_add(expires_ms)
+            .min(origin_ms.saturating_add(MAX_LEGACY_EXPIRES_MS))
 }
 
 /// Whether a membership belongs to the room's default call: `scope` `m.room`
@@ -457,16 +491,23 @@ fn members_from_call_member_inner(
                 device_id: m.device_id().to_string(),
                 state_key: state_key.to_owned(),
                 joined_at: MilliSecondsSinceUnixEpoch(
-                    UInt::new(legacy_join_ms(m.created_ts().map(|t| u64::from(t.0)), u64::from(origin_server_ts.0)))
-                        .unwrap_or(UInt::MIN),
+                    UInt::new(legacy_join_ms(
+                        m.created_ts().map(|t| u64::from(t.0)),
+                        u64::from(origin_server_ts.0),
+                    ))
+                    .unwrap_or(UInt::MIN),
                 ),
                 focus_selection,
                 foci_preferred,
                 member_id: state_key.to_owned(),
                 source: MemberSource::Legacy,
                 intent: match m.call_intent() {
-                    Some(matrix_sdk::ruma::events::rtc::notification::CallIntent::Video) => Some("video".to_owned()),
-                    Some(matrix_sdk::ruma::events::rtc::notification::CallIntent::Audio) => Some("audio".to_owned()),
+                    Some(matrix_sdk::ruma::events::rtc::notification::CallIntent::Video) => {
+                        Some("video".to_owned())
+                    }
+                    Some(matrix_sdk::ruma::events::rtc::notification::CallIntent::Audio) => {
+                        Some("audio".to_owned())
+                    }
                     _ => None,
                 },
                 capabilities: None,
@@ -485,7 +526,11 @@ fn oldest_transport(
     let mut best: Option<(MilliSecondsSinceUnixEpoch, &str, &LkFocus)> =
         own.map(|(ts, f)| (ts, "", f));
     for m in members {
-        let Some(first) = m.foci_preferred.iter().find(|f| usable_service_url(&f.service_url)) else {
+        let Some(first) = m
+            .foci_preferred
+            .iter()
+            .find(|f| usable_service_url(&f.service_url))
+        else {
             continue;
         };
         let cand = (m.joined_at, m.state_key.as_str(), first);
@@ -573,7 +618,10 @@ pub fn without_ignored(members: Vec<CallMember>, ignored: &HashSet<String>) -> V
     if ignored.is_empty() {
         return members;
     }
-    members.into_iter().filter(|m| !ignored.contains(&m.user_id)).collect()
+    members
+        .into_iter()
+        .filter(|m| !ignored.contains(&m.user_id))
+        .collect()
 }
 
 /// One user with a live call membership, for the "call in progress" banner.
@@ -621,10 +669,19 @@ pub fn members_from_event_json(
 ) -> Vec<CallMember> {
     if let Ok(typed) = serde_json::from_value::<CallMemberEventContent>(content.clone()) {
         if !typed.memberships().is_empty() {
-            return members_from_call_member_inner(&typed, state_key, sender, origin_server_ts, exclude, now_ms);
+            return members_from_call_member_inner(
+                &typed,
+                state_key,
+                sender,
+                origin_server_ts,
+                exclude,
+                now_ms,
+            );
         }
     }
-    let Some(obj) = content.as_object() else { return Vec::new() };
+    let Some(obj) = content.as_object() else {
+        return Vec::new();
+    };
     if obj.get("application").and_then(serde_json::Value::as_str) != Some("m.call") {
         return Vec::new();
     }
@@ -643,8 +700,16 @@ pub fn members_from_event_json(
     let origin_ms = u64::from(origin_server_ts.0);
     let claimed_at_ms = obj.get("created_ts").and_then(serde_json::Value::as_u64);
     let base_ms = legacy_join_ms(claimed_at_ms, origin_ms);
-    let expires_ms = obj.get("expires").and_then(serde_json::Value::as_u64).unwrap_or(DEFAULT_LEGACY_EXPIRES_MS);
-    if !legacy_is_live(legacy_started_ms(claimed_at_ms, origin_ms), expires_ms, origin_ms, now_ms) {
+    let expires_ms = obj
+        .get("expires")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(DEFAULT_LEGACY_EXPIRES_MS);
+    if !legacy_is_live(
+        legacy_started_ms(claimed_at_ms, origin_ms),
+        expires_ms,
+        origin_ms,
+        now_ms,
+    ) {
         return Vec::new();
     }
     let foci_preferred = obj
@@ -657,7 +722,11 @@ pub fn members_from_event_json(
             let service_url = f.get("livekit_service_url")?.as_str()?.to_owned();
             (!service_url.is_empty()).then(|| LkFocus {
                 service_url,
-                alias: f.get("livekit_alias").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
+                alias: f
+                    .get("livekit_alias")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
                 sfu_url: None,
                 server_name: None,
             })
@@ -720,11 +789,16 @@ pub async fn read_call_members(
             RawAnySyncOrStrippedState::Sync(r) => r.json().get(),
             RawAnySyncOrStrippedState::Stripped(_) => continue,
         };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+            continue;
+        };
         let (Some(sender), Some(state_key), Some(origin)) = (
-            v.get("sender").and_then(serde_json::Value::as_str).and_then(|s| UserId::parse(s).ok()),
+            v.get("sender")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|s| UserId::parse(s).ok()),
             v.get("state_key").and_then(serde_json::Value::as_str),
-            v.get("origin_server_ts").and_then(serde_json::Value::as_u64),
+            v.get("origin_server_ts")
+                .and_then(serde_json::Value::as_u64),
         ) else {
             continue;
         };
@@ -741,7 +815,12 @@ pub async fn read_call_members(
     if members.is_empty() {
         return members;
     }
-    let keep = senders_to_keep(room, members.iter().map(|m| m.user_id.clone()).collect(), check).await;
+    let keep = senders_to_keep(
+        room,
+        members.iter().map(|m| m.user_id.clone()).collect(),
+        check,
+    )
+    .await;
     retain_senders(members, &keep)
 }
 
@@ -865,8 +944,18 @@ mod tests {
 
     #[test]
     fn oldest_membership_counts_our_own_membership() {
-        let all = one(content("D1", "oldest_membership", "https://sfu.b.org", None), "kb", "@b:b.org", 100);
-        let own = LkFocus { service_url: "https://sfu.a.org".into(), alias: "!r".into(), sfu_url: None, server_name: None };
+        let all = one(
+            content("D1", "oldest_membership", "https://sfu.b.org", None),
+            "kb",
+            "@b:b.org",
+            100,
+        );
+        let own = LkFocus {
+            service_url: "https://sfu.a.org".into(),
+            alias: "!r".into(),
+            sfu_url: None,
+            server_name: None,
+        };
         // we joined before b, so b (legacy) publishes on our SFU
         assert_eq!(
             transport_of(&all[0], &all, Some((ts(10), &own)))
@@ -997,21 +1086,41 @@ mod tests {
 
     fn rtc_member(user: &str, device: &str, foci: Vec<LkFocus>) -> CallMember {
         CallMember {
-            user_id: user.into(), device_id: device.into(), state_key: String::new(), joined_at: ts(1),
-            focus_selection: SELECTION_MULTI_SFU.into(), foci_preferred: foci, member_id: format!("m-{device}"),
-            source: MemberSource::MatrixRtc, intent: None, capabilities: None, claimed_at_ms: None,
+            user_id: user.into(),
+            device_id: device.into(),
+            state_key: String::new(),
+            joined_at: ts(1),
+            focus_selection: SELECTION_MULTI_SFU.into(),
+            foci_preferred: foci,
+            member_id: format!("m-{device}"),
+            source: MemberSource::MatrixRtc,
+            intent: None,
+            capabilities: None,
+            claimed_at_ms: None,
         }
     }
 
     fn focus(service: &str, sfu: Option<&str>) -> LkFocus {
-        LkFocus { service_url: service.into(), alias: String::new(), sfu_url: sfu.map(str::to_owned), server_name: None }
+        LkFocus {
+            service_url: service.into(),
+            alias: String::new(),
+            sfu_url: sfu.map(str::to_owned),
+            server_name: None,
+        }
     }
 
     #[test]
     fn service_urls_must_be_usable_http_urls() {
         assert!(usable_service_url("https://jwt.a.org"));
         assert!(usable_service_url("http://localhost:8080/sfu"));
-        for bad in ["", "   ", "jwt.a.org", "wss://sfu.a.org", "https://", "not a url"] {
+        for bad in [
+            "",
+            "   ",
+            "jwt.a.org",
+            "wss://sfu.a.org",
+            "https://",
+            "not a url",
+        ] {
             assert!(!usable_service_url(bad), "{bad:?}");
         }
     }
@@ -1020,9 +1129,16 @@ mod tests {
     fn a_url_only_transport_is_never_an_sfu_to_subscribe_to() {
         let m = rtc_member("@b:b.org", "D", vec![focus("", Some("wss://sfu.b.org"))]);
         assert!(transport_of(&m, &[m.clone()], None).is_none());
-        assert!(desired_sfus(&[m.clone()], None, "https://sfu.a.org").is_empty(), "no empty entry");
+        assert!(
+            desired_sfus(&[m.clone()], None, "https://sfu.a.org").is_empty(),
+            "no empty entry"
+        );
         // A usable second transport is picked instead of the useless first.
-        let both = rtc_member("@b:b.org", "D", vec![focus("", Some("wss://x")), focus("https://sfu.b.org", None)]);
+        let both = rtc_member(
+            "@b:b.org",
+            "D",
+            vec![focus("", Some("wss://x")), focus("https://sfu.b.org", None)],
+        );
         assert_eq!(desired_sfus(&[both], None, "https://sfu.a.org").len(), 1);
         // Garbage in the service URL is skipped as well.
         let junk = rtc_member("@b:b.org", "D", vec![focus("not a url", None)]);
@@ -1035,7 +1151,12 @@ mod tests {
         let mine = rtc_member("@b:b.org", "D", vec![focus("", Some("wss://sfu.a.org"))]);
         let elsewhere = rtc_member("@c:b.org", "E", vec![focus("", Some("wss://sfu.c.org"))]);
         let all = vec![mine.clone(), elsewhere.clone()];
-        assert_eq!(transport_of(&mine, &all, Some((ts(1), &own))).unwrap().service_url, "https://sfu.a.org");
+        assert_eq!(
+            transport_of(&mine, &all, Some((ts(1), &own)))
+                .unwrap()
+                .service_url,
+            "https://sfu.a.org"
+        );
         assert!(transport_of(&elsewhere, &all, Some((ts(1), &own))).is_none());
         assert!(desired_sfus(&all, Some((ts(1), &own)), "https://sfu.a.org").is_empty());
     }
@@ -1058,7 +1179,10 @@ mod tests {
             assert!(same_sfu_url(same, base), "{same:?}");
         }
         assert!(same_sfu_url("ws://sfu.a.org", "http://sfu.a.org:80/"));
-        assert!(same_sfu_url("wss://sfu.a.org/livekit/sfu", "https://sfu.a.org/livekit/sfu/"));
+        assert!(same_sfu_url(
+            "wss://sfu.a.org/livekit/sfu",
+            "https://sfu.a.org/livekit/sfu/"
+        ));
     }
 
     #[test]
@@ -1083,7 +1207,11 @@ mod tests {
     #[test]
     fn a_url_only_transport_matches_our_sfu_in_any_spelling() {
         let own = focus("https://jwt.a.org", Some("wss://sfu.a.org"));
-        for spelled in ["wss://sfu.a.org/", "wss://SFU.a.org:443", "https://sfu.a.org"] {
+        for spelled in [
+            "wss://sfu.a.org/",
+            "wss://SFU.a.org:443",
+            "https://sfu.a.org",
+        ] {
             let m = rtc_member("@b:b.org", "D", vec![focus("", Some(spelled))]);
             assert_eq!(
                 transport_of(&m, &[m.clone()], Some((ts(1), &own))).map(|f| f.service_url),
@@ -1101,10 +1229,20 @@ mod tests {
         let useless = rtc_member("@c:b.org", "E", vec![focus("", Some("wss://sfu.c.org"))]);
         let none_published = rtc_member("@d:b.org", "F", Vec::new());
         let ok = rtc_member("@b:b.org", "D", vec![focus("https://sfu.b.org", None)]);
-        let map = transport_map(&[useless.clone(), none_published.clone(), ok.clone()], Some((ts(1), &own)));
-        assert_eq!(map[&useless.key()], "", "matches no SFU, so nothing is attributed");
+        let map = transport_map(
+            &[useless.clone(), none_published.clone(), ok.clone()],
+            Some((ts(1), &own)),
+        );
+        assert_eq!(
+            map[&useless.key()],
+            "",
+            "matches no SFU, so nothing is attributed"
+        );
         assert_eq!(map[&ok.key()], "https://sfu.b.org");
-        assert!(!map.contains_key(&none_published.key()), "no transports at all: left out as before");
+        assert!(
+            !map.contains_key(&none_published.key()),
+            "no transports at all: left out as before"
+        );
     }
 
     #[test]
@@ -1113,7 +1251,10 @@ mod tests {
         let b = rtc_member("@b:x", "D", Vec::new());
         let ignored: HashSet<String> = ["@a:x".to_owned()].into();
         let left = without_ignored(vec![a.clone(), b.clone()], &ignored);
-        assert_eq!(left.iter().map(|m| m.user_id.as_str()).collect::<Vec<_>>(), vec!["@b:x"]);
+        assert_eq!(
+            left.iter().map(|m| m.user_id.as_str()).collect::<Vec<_>>(),
+            vec!["@b:x"]
+        );
         assert_eq!(without_ignored(vec![a, b], &HashSet::new()).len(), 2);
     }
 
@@ -1262,7 +1403,11 @@ mod tests {
         })
     }
 
-    fn json_members(content: serde_json::Value, origin: u64, exclude: Option<(&UserId, &DeviceId)>) -> Vec<CallMember> {
+    fn json_members(
+        content: serde_json::Value,
+        origin: u64,
+        exclude: Option<(&UserId, &DeviceId)>,
+    ) -> Vec<CallMember> {
         members_from_event_json(
             &content,
             "_@surak:example.org_PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw_m.call",
@@ -1281,7 +1426,10 @@ mod tests {
         assert_eq!(m.user_id, "@surak:example.org");
         assert_eq!(m.device_id, "PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw");
         assert_eq!(m.focus_selection, "multi_sfu");
-        assert_eq!(m.foci_preferred[0].service_url, "https://jwt.example.org/livekit/jwt");
+        assert_eq!(
+            m.foci_preferred[0].service_url,
+            "https://jwt.example.org/livekit/jwt"
+        );
         assert_eq!(m.intent.as_deref(), Some("video"));
         assert_eq!(m.source, MemberSource::Legacy);
     }
@@ -1329,8 +1477,18 @@ mod tests {
         // Written 25 hours ago: dead, whatever it claims.
         assert!(json_members(c.clone(), now_ms() - 25 * 3_600_000, None).is_empty());
         assert_eq!(json_members(c, now_ms() - 23 * 3_600_000, None).len(), 1);
-        assert!(legacy_is_live(0, u64::MAX, 100, 100 + MAX_LEGACY_EXPIRES_MS));
-        assert!(!legacy_is_live(0, u64::MAX, 100, 100 + MAX_LEGACY_EXPIRES_MS + 1));
+        assert!(legacy_is_live(
+            0,
+            u64::MAX,
+            100,
+            100 + MAX_LEGACY_EXPIRES_MS
+        ));
+        assert!(!legacy_is_live(
+            0,
+            u64::MAX,
+            100,
+            100 + MAX_LEGACY_EXPIRES_MS + 1
+        ));
     }
 
     #[test]
@@ -1361,7 +1519,10 @@ mod tests {
         let got = json_members(c, origin, None);
         assert_eq!(got.len(), 1, "live for a day after its event");
         assert_eq!(u64::from(got[0].joined_at.0), origin - MAX_LEGACY_AGE_MS);
-        assert_eq!(legacy_join_ms(Some(1_000), origin), origin - MAX_LEGACY_AGE_MS);
+        assert_eq!(
+            legacy_join_ms(Some(1_000), origin),
+            origin - MAX_LEGACY_AGE_MS
+        );
         assert_eq!(legacy_join_ms(Some(origin - 5), origin), origin - 5);
         assert_eq!(legacy_join_ms(Some(origin + 5), origin), origin);
     }
@@ -1399,13 +1560,15 @@ mod tests {
         assert!(json_members(c, now_ms(), None).is_empty());
         // The typed path is held to the same rule.
         let other_call = {
-            let mut j = serde_json::to_value(content("D1", "multi_sfu", "https://s", None)).unwrap();
+            let mut j =
+                serde_json::to_value(content("D1", "multi_sfu", "https://s", None)).unwrap();
             j["call_id"] = serde_json::json!("other");
             serde_json::from_value::<CallMemberEventContent>(j).unwrap()
         };
         assert!(one(other_call, "k", "@b:b.org", 1).is_empty());
         let user_scoped = {
-            let mut j = serde_json::to_value(content("D1", "multi_sfu", "https://s", None)).unwrap();
+            let mut j =
+                serde_json::to_value(content("D1", "multi_sfu", "https://s", None)).unwrap();
             j["scope"] = serde_json::json!("m.user");
             serde_json::from_value::<CallMemberEventContent>(j).unwrap()
         };
@@ -1415,13 +1578,21 @@ mod tests {
     #[test]
     fn a_typed_membership_cannot_use_a_future_created_ts_either() {
         let future = at_ms(now_ms() + 10 * 3_600_000);
-        let m = one(content("D1", "oldest_membership", "https://s", Some(future)), "k", "@b:b.org", 1);
+        let m = one(
+            content("D1", "oldest_membership", "https://s", Some(future)),
+            "k",
+            "@b:b.org",
+            1,
+        );
         assert_eq!(m[0].joined_at, ts(1), "the event's own time, not the claim");
     }
 
     #[test]
     fn empty_other_application_and_deviceless_content_is_ignored() {
-        assert!(json_members(serde_json::json!({}), now_ms(), None).is_empty(), "a leave");
+        assert!(
+            json_members(serde_json::json!({}), now_ms(), None).is_empty(),
+            "a leave"
+        );
         let mut other = phone_content();
         other["application"] = serde_json::json!("m.whiteboard");
         assert!(json_members(other, now_ms(), None).is_empty());
@@ -1436,7 +1607,10 @@ mod tests {
         let dev = owned_device_id!("PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw");
         assert!(json_members(phone_content(), now_ms(), Some((me, &dev))).is_empty());
         let other = owned_device_id!("SOMEOTHER");
-        assert_eq!(json_members(phone_content(), now_ms(), Some((me, &other))).len(), 1);
+        assert_eq!(
+            json_members(phone_content(), now_ms(), Some((me, &other))).len(),
+            1
+        );
     }
 
     #[test]
@@ -1450,12 +1624,20 @@ mod tests {
 
     #[test]
     fn call_id_is_read_from_either_membership_form() {
-        assert_eq!(call_id_of(&serde_json::json!({"call_id": "abc", "application": "m.call"})), "abc");
         assert_eq!(
-            call_id_of(&serde_json::json!({"memberships": [{"application": "m.call", "call_id": "xyz"}]})),
+            call_id_of(&serde_json::json!({"call_id": "abc", "application": "m.call"})),
+            "abc"
+        );
+        assert_eq!(
+            call_id_of(
+                &serde_json::json!({"memberships": [{"application": "m.call", "call_id": "xyz"}]})
+            ),
             "xyz"
         );
-        assert_eq!(call_id_of(&serde_json::json!({"memberships": [{"application": "m.call"}]})), "");
+        assert_eq!(
+            call_id_of(&serde_json::json!({"memberships": [{"application": "m.call"}]})),
+            ""
+        );
         assert_eq!(call_id_of(&serde_json::json!({})), "");
     }
 
@@ -1463,12 +1645,22 @@ mod tests {
 
     #[test]
     fn only_joined_senders_count_when_strict() {
-        assert!(sender_counts(Some(&MembershipState::Join), JoinCheck::Strict));
-        for gone in [MembershipState::Leave, MembershipState::Ban, MembershipState::Invite] {
+        assert!(sender_counts(
+            Some(&MembershipState::Join),
+            JoinCheck::Strict
+        ));
+        for gone in [
+            MembershipState::Leave,
+            MembershipState::Ban,
+            MembershipState::Invite,
+        ] {
             assert!(!sender_counts(Some(&gone), JoinCheck::Strict), "{gone:?}");
             assert!(!sender_counts(Some(&gone), JoinCheck::Cached), "{gone:?}");
         }
-        assert!(!sender_counts(None, JoinCheck::Strict), "an unknown sender gets no key");
+        assert!(
+            !sender_counts(None, JoinCheck::Strict),
+            "an unknown sender gets no key"
+        );
     }
 
     #[test]
@@ -1480,34 +1672,78 @@ mod tests {
     fn the_known_joined_check_drops_senders_the_store_does_not_know() {
         let joined = Some(MembershipState::Join);
         assert!(sender_counts(joined.as_ref(), JoinCheck::KnownJoined));
-        for gone in [MembershipState::Leave, MembershipState::Ban, MembershipState::Invite] {
-            assert!(!sender_counts(Some(&gone), JoinCheck::KnownJoined), "{gone:?}");
+        for gone in [
+            MembershipState::Leave,
+            MembershipState::Ban,
+            MembershipState::Invite,
+        ] {
+            assert!(
+                !sender_counts(Some(&gone), JoinCheck::KnownJoined),
+                "{gone:?}"
+            );
         }
-        assert!(!sender_counts(None, JoinCheck::KnownJoined), "missing from the store: no key");
+        assert!(
+            !sender_counts(None, JoinCheck::KnownJoined),
+            "missing from the store: no key"
+        );
         // A failed lookup with no earlier verdict is not joined either...
-        assert!(!judge_sender(&SenderLookup::Unknown, None, JoinCheck::KnownJoined));
-        assert!(!judge_sender(&SenderLookup::Known(None), None, JoinCheck::KnownJoined));
+        assert!(!judge_sender(
+            &SenderLookup::Unknown,
+            None,
+            JoinCheck::KnownJoined
+        ));
+        assert!(!judge_sender(
+            &SenderLookup::Known(None),
+            None,
+            JoinCheck::KnownJoined
+        ));
         // ...but still repeats a verdict the room gave earlier.
-        assert!(judge_sender(&SenderLookup::Unknown, Some(true), JoinCheck::KnownJoined));
-        assert!(!judge_sender(&SenderLookup::Unknown, Some(false), JoinCheck::KnownJoined));
+        assert!(judge_sender(
+            &SenderLookup::Unknown,
+            Some(true),
+            JoinCheck::KnownJoined
+        ));
+        assert!(!judge_sender(
+            &SenderLookup::Unknown,
+            Some(false),
+            JoinCheck::KnownJoined
+        ));
         // What the store does not know is never remembered as a verdict.
-        assert_eq!(lasting_verdict(&SenderLookup::Known(None), JoinCheck::KnownJoined), None);
-        assert_eq!(lasting_verdict(&SenderLookup::Unknown, JoinCheck::KnownJoined), None);
+        assert_eq!(
+            lasting_verdict(&SenderLookup::Known(None), JoinCheck::KnownJoined),
+            None
+        );
+        assert_eq!(
+            lasting_verdict(&SenderLookup::Unknown, JoinCheck::KnownJoined),
+            None
+        );
     }
 
     #[test]
     fn a_failed_lookup_repeats_the_last_verdict() {
         let unknown = SenderLookup::Unknown;
-        assert!(judge_sender(&unknown, Some(true), JoinCheck::Strict), "joined last time: still joined");
+        assert!(
+            judge_sender(&unknown, Some(true), JoinCheck::Strict),
+            "joined last time: still joined"
+        );
         assert!(!judge_sender(&unknown, Some(false), JoinCheck::Strict));
-        assert!(!judge_sender(&unknown, None, JoinCheck::Strict), "no earlier verdict: fail closed");
-        assert!(judge_sender(&unknown, None, JoinCheck::Cached), "the cheap read keeps what it cannot tell");
+        assert!(
+            !judge_sender(&unknown, None, JoinCheck::Strict),
+            "no earlier verdict: fail closed"
+        );
+        assert!(
+            judge_sender(&unknown, None, JoinCheck::Cached),
+            "the cheap read keeps what it cannot tell"
+        );
     }
 
     #[test]
     fn an_answer_from_the_room_beats_the_last_verdict() {
         let left = SenderLookup::Known(Some(MembershipState::Leave));
-        assert!(!judge_sender(&left, Some(true), JoinCheck::Strict), "a kicked member is out at once");
+        assert!(
+            !judge_sender(&left, Some(true), JoinCheck::Strict),
+            "a kicked member is out at once"
+        );
         let joined = SenderLookup::Known(Some(MembershipState::Join));
         assert!(judge_sender(&joined, Some(false), JoinCheck::Strict));
         let nobody = SenderLookup::Known(None);
@@ -1520,9 +1756,19 @@ mod tests {
         let ban = SenderLookup::Known(Some(MembershipState::Ban));
         assert_eq!(lasting_verdict(&join, JoinCheck::Strict), Some(true));
         assert_eq!(lasting_verdict(&ban, JoinCheck::Cached), Some(false));
-        assert_eq!(lasting_verdict(&SenderLookup::Known(None), JoinCheck::Strict), Some(false));
-        assert_eq!(lasting_verdict(&SenderLookup::Known(None), JoinCheck::Cached), None, "the store just does not know");
-        assert_eq!(lasting_verdict(&SenderLookup::Unknown, JoinCheck::Strict), None);
+        assert_eq!(
+            lasting_verdict(&SenderLookup::Known(None), JoinCheck::Strict),
+            Some(false)
+        );
+        assert_eq!(
+            lasting_verdict(&SenderLookup::Known(None), JoinCheck::Cached),
+            None,
+            "the store just does not know"
+        );
+        assert_eq!(
+            lasting_verdict(&SenderLookup::Unknown, JoinCheck::Strict),
+            None
+        );
     }
 
     #[test]
@@ -1535,7 +1781,11 @@ mod tests {
         c.set("@other:x", "!r1:x", "@a:x", false, t0);
         assert_eq!(c.get("@me:x", "!r1:x", "@a:x", t0, day), Some(true));
         assert_eq!(c.get("@me:x", "!r2:x", "@a:x", t0, day), Some(false));
-        assert_eq!(c.get("@other:x", "!r1:x", "@a:x", t0, day), Some(false), "another account's verdict");
+        assert_eq!(
+            c.get("@other:x", "!r1:x", "@a:x", t0, day),
+            Some(false),
+            "another account's verdict"
+        );
         assert_eq!(c.get("@third:x", "!r1:x", "@a:x", t0, day), None);
         assert_eq!(c.get("@me:x", "!r1:x", "@b:x", t0, day), None);
         for i in 0..(VerdictCache::CAP * 2) {
@@ -1556,8 +1806,15 @@ mod tests {
             let age = verdict_max_age(check);
             assert_eq!(age, KEY_VERDICT_TTL);
             assert_eq!(c.get("@me:x", "!r:x", "@a:x", later(59), age), Some(true));
-            assert_eq!(c.get("@me:x", "!r:x", "@a:x", later(61), age), None, "a member who left meanwhile");
-            assert!(!judge_sender(&SenderLookup::Unknown, None, check), "so the failed lookup fails closed");
+            assert_eq!(
+                c.get("@me:x", "!r:x", "@a:x", later(61), age),
+                None,
+                "a member who left meanwhile"
+            );
+            assert!(
+                !judge_sender(&SenderLookup::Unknown, None, check),
+                "so the failed lookup fails closed"
+            );
         }
         // The display read keeps the member for five minutes.
         let age = verdict_max_age(JoinCheck::Cached);
@@ -1574,9 +1831,24 @@ mod tests {
 
     #[test]
     fn a_kicked_users_live_membership_is_dropped() {
-        let mut all = one(content("D1", "multi_sfu", "https://s", None), "k1", "@kicked:b.org", 1);
-        all.extend(one(content("D2", "multi_sfu", "https://s", None), "k2", "@stays:b.org", 2));
-        all.extend(one(content("D3", "multi_sfu", "https://s", None), "k3", "@stays:b.org", 3));
+        let mut all = one(
+            content("D1", "multi_sfu", "https://s", None),
+            "k1",
+            "@kicked:b.org",
+            1,
+        );
+        all.extend(one(
+            content("D2", "multi_sfu", "https://s", None),
+            "k2",
+            "@stays:b.org",
+            2,
+        ));
+        all.extend(one(
+            content("D3", "multi_sfu", "https://s", None),
+            "k3",
+            "@stays:b.org",
+            3,
+        ));
         let keep: HashSet<String> = ["@stays:b.org".to_owned()].into();
         let left = retain_senders(all, &keep);
         assert_eq!(left.len(), 2);
@@ -1588,17 +1860,42 @@ mod tests {
 
     #[test]
     fn a_legacy_session_is_told_apart_by_its_creation_time() {
-        let first = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 20);
-        let again = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 99);
-        let restarted = one(content("D1", "multi_sfu", "https://s", Some(ts(500))), "same", "@b:b.org", 600);
+        let first = one(
+            content("D1", "multi_sfu", "https://s", Some(ts(10))),
+            "same",
+            "@b:b.org",
+            20,
+        );
+        let again = one(
+            content("D1", "multi_sfu", "https://s", Some(ts(10))),
+            "same",
+            "@b:b.org",
+            99,
+        );
+        let restarted = one(
+            content("D1", "multi_sfu", "https://s", Some(ts(500))),
+            "same",
+            "@b:b.org",
+            600,
+        );
         assert_eq!(first[0].key(), restarted[0].key(), "same user and device");
-        assert_eq!(first[0].session_tag(), again[0].session_tag(), "a refresh keeps created_ts");
+        assert_eq!(
+            first[0].session_tag(),
+            again[0].session_tag(),
+            "a refresh keeps created_ts"
+        );
         assert_ne!(first[0].session_tag(), restarted[0].session_tag());
     }
 
     #[test]
     fn a_matrixrtc_session_is_its_member_id() {
-        let mut m = one(content("D1", "multi_sfu", "https://s", None), "k", "@b:b.org", 1).remove(0);
+        let mut m = one(
+            content("D1", "multi_sfu", "https://s", None),
+            "k",
+            "@b:b.org",
+            1,
+        )
+        .remove(0);
         m.source = MemberSource::MatrixRtc;
         m.member_id = "mid-1".into();
         assert_eq!(m.session_tag(), "mid-1");
