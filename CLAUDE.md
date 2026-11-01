@@ -34,7 +34,7 @@ ui/{windows,macos,linux-qt,linux-gtk}/   thin native shells + their own tk/ back
   - Cohesive subsystems are being split into collaborators (`AccountManager`, `RoomPane`, `SendPipeline`, …; remaining cuts are under *Code health* in ROADMAP.md). When extracting, keep shell-read fields (`client_`, `account_manager_`, `main_room_pane_`, `rooms_`) on `ShellBase`, add no pure virtuals (use `std::function` hooks), and keep the shells and `tests/cpp/shell_test_double.h` compiling untouched.
 - **Shells (`ui/{windows,macos,linux-qt,linux-gtk}/`)**: own the window/menu/AX surface and mount `tk::*::Surface`s hosting shared views. Rust callbacks arrive on worker threads and reach the UI thread through `tk::Host::post_to_ui` (`QueuedConnection`, `g_idle_add`, `PostMessage`, `dispatch_async`).
 
-Two non-obvious entry points: `ui/shared/views/shortcut_registry.h` is the one table of keyboard shortcuts (shells bind global accelerators from it, views match with `matches()`, the shortcuts overlay lists it): add a shortcut there, never as a hand-written binding in a shell. Settings: `binder.bind(control, &Settings::field, SettingKey::X)` in `SettingsView`; add a `case` in `ShellBase::handle_setting_changed_` only for a side effect beyond saving.
+Two non-obvious entry points: `ui/shared/views/shortcut_registry.h` is the one table of keyboard shortcuts (shells bind global accelerators from it, views match with `matches()`, the shortcuts overlay lists it): add a shortcut there, never as a hand-written binding in a shell. Settings: `binder.bind(control, &Settings::field, SettingKey::X)` in `SettingsView`; for a side effect beyond saving, put per-window effects in `ShellBase::apply_setting_to_window_` and process-global ones in `ShellBase::handle_setting_changed_`.
 
 ## Roadmap and Changelog
 
@@ -99,7 +99,7 @@ dev_group->add_widget(std::make_unique<tk::Label>(tk::tr("Microphone")));
 - **Dates and sizes:** use `tk::format_date(tm, tk::tr("%B %-d, %Y"))` and `tk::format_size(bytes)`, not hand-rolled month tables or `" KB"` suffixes.
 - **Native shells translate through `tk::tr` too.** A bare `tr()` in a Qt `QObject` is `QObject::tr` (no translator installed) and GTK's `_()` is unbound gettext; both always return English. On macOS use `TkTr("…")`; on Win32 convert the `tk::tr` result to UTF-16.
 
-After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `de.po`, `es.po`, `fr.po`, `nb.po`, and `pseudo.po`). Strings added without `.po` entries silently fall back to English. The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails and lists what's missing, and it also flags bare `tr()` / `_()` calls in the shells.
+After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `de.po`, `es.po`, `fr.po`, `nb.po`, `uk.po`, and `pseudo.po`). Strings added without `.po` entries silently fall back to English. The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails and lists what's missing, and it also flags bare `tr()` / `_()` calls in the shells.
 
 ## Shared vs Platform Code
 

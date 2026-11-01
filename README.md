@@ -198,8 +198,10 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Linux: system-wide room/contact search via GNOME Shell search and KRunner; MPRIS media controls for voice/audio playback; installable via a self-hosted Flatpak repo (not Flathub — see [packaging/flatpak/README.md](packaging/flatpak/README.md)), plus DEB/RPM/AppImage/AUR
 - macOS: Now Playing integration for voice/audio playback; rooms and contacts indexed for Spotlight search; every keyboard-shortcut action (Settings, Add Room, Find, Search Your Messages, Go Back/Forward, Quick Switcher, Room Info, Cycle Recent Rooms, Keyboard Shortcuts) has an application menu-bar entry
 
-## Quick usage reference 
-#### All this is probably going to change, but it wasn't written anywhere.
+## Quick usage reference
+
+New to Tesseract or Matrix? Read the [user guide](docs/USER-GUIDE.md). The essentials:
+
 - Ctrl+/ (⌘/ on macOS) or F1 = list every keyboard shortcut (also in the user menu; Help menu on macOS)
 - Ctrl+click on room = open room in a tab
 - Ctrl+click on a room tab = open room in a separate window
@@ -261,7 +263,7 @@ Disclaimer: I have the same design talents as a brick, so even if I made my best
 
 ## Contributing
 
-I'm open to any kind of contribution, with only one caveat: UI parity. I did my best for the app to look more or less the same in all the platforms and I want to keep that.
+See [CONTRIBUTING.md](CONTRIBUTING.md) to get started, and the [documentation index](docs/README.md) and [developer guide](docs/DEVELOPING.md) for how the code is organised. I'm open to any kind of contribution, with only one caveat: UI parity. I did my best for the app to look more or less the same in all the platforms and I want to keep that.
 
 If you don't care about UI parity or are interested in only one platform, you're welcome to fork it and make it yours! That's the beauty of open source, isn't it?
 

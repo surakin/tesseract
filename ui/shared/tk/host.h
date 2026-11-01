@@ -61,7 +61,7 @@ enum class NavKey
 // A borrowed handle to a native text input control overlaid on top of
 // the canvas, positioned to align with a tk::Widget's rect. Caller
 // destroys to remove the overlay. Hosts back this with QLineEdit,
-// GtkEntry, Win32 EDIT, UITextField respectively.
+// GtkEntry, BetterText (Windows) and NSTextField respectively.
 class NativeTextField
 {
 public:

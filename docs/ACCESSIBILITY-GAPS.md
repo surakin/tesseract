@@ -1,6 +1,6 @@
 # Accessibility mapping gaps
 
-> Kept out of the repo on purpose (local working doc, not committed).
+> Working document: a running list of accessibility mapping gaps, updated as they are found and closed.
 
 > **2026-10-03:** every item below marked [confirmed open], the spot-check
 > queue, and the gaps found by the 2026-10-03 re-audit were closed in the

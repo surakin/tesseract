@@ -341,6 +341,8 @@ is an in-process language boundary, not an IPC or network service.
 | Authentication and persistence | [oauth.rs](../sdk/src/oauth.rs), [session.rs](../sdk/src/client/session.rs), [session_store.cpp](../client/src/session_store.cpp) |
 | Native calls | [CallSession.cpp](../client/src/CallSession.cpp), [rtc](../sdk/src/client/rtc/) |
 
+Deep dives: [TOOLKIT.md](TOOLKIT.md) (widgets, canvas, host, views), [SHELLS.md](SHELLS.md) (`ShellBase`, threads, platform shells) and [BRIDGE.md](BRIDGE.md) (the Rust core and the FFI). For how to make changes, see [DEVELOPING.md](DEVELOPING.md); the full list of docs is in the [index](README.md).
+
 CMake builds the C++ targets and uses Corrosion to build and link the Rust static
 library and generated bridge. See [BUILD.md](BUILD.md) for build configuration.
 The diagram renders in Markdown viewers with Mermaid support, including GitHub.
