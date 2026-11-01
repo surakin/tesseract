@@ -110,6 +110,25 @@ TEST_CASE("message actions: redacted and undecryptable rows", "[message_actions]
           std::vector{MessageActionId::Reply, MessageActionId::ReplyInThread});
 }
 
+TEST_CASE("message actions: developer mode can copy the source of undecryptable "
+          "and redacted rows",
+          "[message_actions]")
+{
+    MessageActionInputs in;
+    in.developer_mode = true;
+    in.utd = true;
+    CHECK(ids(build_message_actions(in)) ==
+          std::vector{MessageActionId::Reply, MessageActionId::CopyEventSource});
+
+    in.utd = false;
+    in.redacted = true;
+    CHECK(ids(build_message_actions(in)) ==
+          std::vector{MessageActionId::Reply, MessageActionId::CopyEventSource});
+
+    in.developer_mode = false;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::CopyEventSource));
+}
+
 TEST_CASE("message actions: a message already in a thread cannot start one",
           "[message_actions]")
 {
