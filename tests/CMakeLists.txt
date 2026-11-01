@@ -593,3 +593,16 @@ if(CARGO_FOR_TESTS)
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
 endif()
+
+# C++ sources match .clang-format (see tests/check_cxx_format.py). The script
+# requires the clang-format major version pinned in tests/clang-format-version;
+# run `git clang-format` (changed lines) or `clang-format -i <files>` to fix.
+find_program(CLANG_FORMAT_FOR_TESTS clang-format)
+if(Python3_Interpreter_FOUND AND CLANG_FORMAT_FOR_TESTS)
+    # Another clang-format major formats differently: skip rather than fail.
+    add_test(NAME cxx_format_check
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_cxx_format.py
+                ${CMAKE_SOURCE_DIR} --clang-format ${CLANG_FORMAT_FOR_TESTS}
+                --skip-wrong-version)
+    set_tests_properties(cxx_format_check PROPERTIES SKIP_RETURN_CODE 77)
+endif()
