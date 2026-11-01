@@ -27,6 +27,13 @@ class Surface;
 // Call once (e.g. from main()) before any accessible query can occur.
 void install_accessible_factory();
 
+// Surface registers itself once constructed and unregisters first thing in its
+// destructor. The factory answers only for registered surfaces, so it never
+// has to dynamic_cast a QObject that is still being built or already being
+// torn down (its vtable is not a Surface's then, and RTTI can crash).
+void register_accessible_surface(Surface* surface);
+void unregister_accessible_surface(Surface* surface);
+
 // Fires a QAccessible::Focus event on whichever AccessNode corresponds to
 // `now`, if any — called from tk::qt6::Host's on_focus_changed_() override
 // (ui/linux-qt/tk/host_qt.cpp), so ordinary tk-level Tab-focus moves (not

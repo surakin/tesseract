@@ -7,6 +7,8 @@ Tagged releases summarize all changes since the previous tag.
 
 - fix(calls): the call window follows the light or dark theme instead of always being black. Linux build, ctest 3825/3825; user-verified Qt6
 
+- fix(a11y): Tesseract no longer crashes on Linux (Qt6) while the window lays out text fields. Linux build; user-verified
+
 ## v0.9.6 — 2026-11-01
 
 ### Summary
