@@ -67,7 +67,7 @@
   <a class="back" href="index.html">&larr; Tesseract</a>
   <div class="panel">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: 2026-09-19</p>
+    <p class="updated">Last updated: 2026-11-02</p>
 
     <p>
       Tesseract is a Matrix chat client. It is not a hosted service: there is
@@ -116,6 +116,29 @@
       homeserver's own OAuth server.
     </p>
 
+    <h2>GIF search (Klipy)</h2>
+    <p>
+      When you search for GIFs (for example with <code>/gif</code>),
+      Tesseract sends your search terms directly to Klipy, the GIF provider,
+      together with a stable identifier made by hashing your Matrix user ID.
+      Your Matrix ID itself is not sent. The previews in the picker load from
+      Klipy's servers, which also see your IP address. A GIF you send is
+      uploaded to your homeserver like any other image, so the people who
+      receive it don't contact Klipy.
+    </p>
+
+    <h2>Maps (OpenStreetMap)</h2>
+    <p>
+      Maps for shared locations, and the map you use to pick a location to
+      share, are built from tiles downloaded directly from OpenStreetMap's
+      tile servers. Tiles load as soon as a location message is on screen.
+      These requests reveal your IP address and the part of the map being
+      shown, so for a location someone shared with you, roughly where that
+      location is. Downloaded tiles are cached on your device. A location
+      you share travels in the message itself, through your homeserver, like
+      any other message content.
+    </p>
+
     <h2>Microphone and camera</h2>
     <p>
       Tesseract only accesses your microphone or camera when you start or
@@ -140,6 +163,11 @@
       privacy practices govern the data your account sends to them. Check
       with your homeserver administrator if you have questions about how
       your homeserver handles your data.
+    </p>
+    <p>
+      Klipy and the OpenStreetMap Foundation, which runs OpenStreetMap's tile
+      servers, are independent third parties too. Their own privacy policies
+      govern the requests Tesseract sends them.
     </p>
 
     <h2>Children's privacy</h2>
