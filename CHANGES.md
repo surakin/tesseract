@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- build(macos): release builds ship a stripped binary with a separate dSYM, about a third smaller. Unverified, pending CI
 - ci(smoke): new `smoke.yml` runs each shell against a throwaway Synapse: sign-in, messages (plain and encrypted), session restore, sign-out. CI green on Linux, macOS and Windows
 - fix(gtk): closing a screen with text fields, such as the sign-in screen after signing in, no longer touches freed GTK widgets. Linux CI smoke test
 - fix(macos): signed-in sessions are stored in the login keychain, not in plaintext on disk, when the build lacks the data-protection keychain entitlement. macOS CI smoke test (ad-hoc signed build)

@@ -177,6 +177,30 @@ override (below) to install or package.
 Pass this alongside a `linux-*` preset (e.g. `-DTESSERACT_UI=qt6`) to build
 and install/package a single Linux backend instead of both.
 
+### macOS release stripping and symbolication
+
+Release builds on macOS compile with `-gline-tables-only` (C++ and Rust). After
+linking, `dsymutil` writes `<build>/ui/macos/Tesseract.app.dSYM`, then
+`strip -x` drops local symbols from `Tesseract.app/Contents/MacOS/Tesseract`
+(before codesigning, so the DMG ships the stripped binary). Keep the `.dSYM`
+for every build you distribute: it is the only way to symbolicate that build's
+crash reports. CI uploads it as `Tesseract-<version>-<arch>.dSYM.zip`. Pass
+`-DTESSERACT_MAC_STRIP=OFF` to keep the dSYM but skip stripping.
+
+The App Store `.pkg` additionally embeds Apple `.symbols` (generated from the
+dSYM with `xcrun symbols`) through `productbuild`'s undocumented
+`--symbolication` option, so App Store Connect can symbolicate crash reports
+itself. Keep the `.dSYM` anyway in case it doesn't.
+
+To symbolicate a crash log by hand, match the UUID (`dwarfdump -u`) and use
+the load address from the report header (or the crash log's binary image
+list):
+
+```bash
+atos -o Tesseract.app.dSYM/Contents/Resources/DWARF/Tesseract \
+     -arch arm64 -l <load address> <frame addresses>
+```
+
 ## Mac App Store
 
 `-DTESSERACT_MAC_APP_STORE=ON` (or the `macos-appkit-appstore` preset, a

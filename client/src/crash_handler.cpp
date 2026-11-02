@@ -32,6 +32,11 @@
 #include <sys/stat.h>
 #endif
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
+#endif
+
 namespace tesseract
 {
 
@@ -130,6 +135,45 @@ void prune_old_crash_files()
     }
 }
 
+#if defined(__APPLE__)
+// The shipped executable is stripped, so frames resolve only offline:
+//   atos -o Tesseract.app.dSYM/Contents/Resources/DWARF/Tesseract \
+//        -arch <arch> -l <load address> <frame addresses>
+// The dSYM is matched by UUID. Computed once at install time, never from the
+// signal handler.
+std::string main_image_description()
+{
+    const mach_header* mh = _dyld_get_image_header(0);
+    if (!mh || mh->magic != MH_MAGIC_64)
+    {
+        return {};
+    }
+    const auto* hdr = reinterpret_cast<const mach_header_64*>(mh);
+    const auto* cmd = reinterpret_cast<const load_command*>(hdr + 1);
+    char uuid_str[37] = {};
+    for (uint32_t i = 0; i < hdr->ncmds; ++i)
+    {
+        if (cmd->cmd == LC_UUID)
+        {
+            const auto* u = reinterpret_cast<const uuid_command*>(cmd);
+            std::snprintf(uuid_str, sizeof(uuid_str),
+                          "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X",
+                          u->uuid[0], u->uuid[1], u->uuid[2], u->uuid[3], u->uuid[4], u->uuid[5],
+                          u->uuid[6], u->uuid[7], u->uuid[8], u->uuid[9], u->uuid[10], u->uuid[11],
+                          u->uuid[12], u->uuid[13], u->uuid[14], u->uuid[15]);
+            break;
+        }
+        cmd = reinterpret_cast<const load_command*>(reinterpret_cast<const char*>(cmd) +
+                                                    cmd->cmdsize);
+    }
+    char buf[160];
+    std::snprintf(buf, sizeof(buf), "image-uuid: %s\nload-address: 0x%llx\nslide: 0x%llx\n",
+                  uuid_str, static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mh)),
+                  static_cast<unsigned long long>(_dyld_get_image_vmaddr_slide(0)));
+    return buf;
+}
+#endif
+
 void write_metadata_header(const fs::path& path)
 {
     std::ofstream f(path, std::ios::app);
@@ -142,6 +186,9 @@ void write_metadata_header(const fs::path& path)
       << "platform: " << platform_name() << "\n"
       << "pid: " << current_pid() << "\n"
       << "started: " << utc_timestamp_basic() << "\n"
+#if defined(__APPLE__)
+      << main_image_description()
+#endif
       << "---\n";
 }
 

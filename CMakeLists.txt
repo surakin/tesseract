@@ -325,6 +325,13 @@ if(UNIX AND NOT APPLE AND TESSERACT_ENABLE_CRASH_HANDLER)
     add_compile_options("$<$<CONFIG:Release>:-g1>")
 endif()
 
+# Apple Release builds keep line tables so ui/macos/CMakeLists.txt can bundle
+# them into a .dSYM (dsymutil) before stripping the shipped executable. Line
+# tables only: function names and file:line without full debug info's size.
+if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_compile_options("$<$<CONFIG:Release>:-gline-tables-only>")
+endif()
+
 # ---------------------------------------------------------------------------
 # Corrosion – bridges CMake and Cargo
 # ---------------------------------------------------------------------------
@@ -389,6 +396,13 @@ if(TESSERACT_RUST_LTO)
     corrosion_set_env_vars(tesseract_sdk_ffi
         CARGO_PROFILE_RELEASE_LTO=fat
         CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1)
+endif()
+# Rust side of the Apple Release dSYM (see the -gline-tables-only note above);
+# the universal build's second Rust slice inherits this through the target's
+# env-vars property.
+if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        CARGO_PROFILE_RELEASE_DEBUG=line-tables-only)
 endif()
 if(MSVC)
     corrosion_set_env_vars(tesseract_sdk_ffi AWS_LC_SYS_PREBUILT_NASM=1)

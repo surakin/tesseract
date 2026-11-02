@@ -380,6 +380,21 @@ jobs:
             fi
           done
 
+      # The shipped executable is stripped, so the dSYM is the only way to
+      # symbolicate its crash reports; fail unless both carry the same UUIDs
+      # (dwarfdump -u prints "UUID: <uuid> (<arch>) <path>"; compare uuid + arch).
+      - name: Verify dSYM matches executable
+        run: |
+          APP="build/macos-appkit-arm64-release/ui/macos/Tesseract.app"
+          exe_uuid="$(dwarfdump -u "$APP/Contents/MacOS/Tesseract" | awk '{print $2, $3}' | sort)"
+          dsym_uuid="$(dwarfdump -u "$APP.dSYM" | awk '{print $2, $3}' | sort)"
+          echo "$exe_uuid"
+          echo "$dsym_uuid"
+          if [ -z "$exe_uuid" ] || [ "$exe_uuid" != "$dsym_uuid" ]; then
+            echo "::error::dSYM UUIDs do not match the executable"
+            exit 1
+          fi
+
       - name: Package (CPack → DMG)
         run: cmake --build build/macos-appkit-arm64-release --target package
 
@@ -401,6 +416,20 @@ jobs:
           name: tesseract-macos-arm64
           path: build/macos-appkit-arm64-release/Tesseract-*.dmg
           if-no-files-found: error
+
+      - name: Zip dSYM
+        run: |
+          BUILD="build/macos-appkit-arm64-release"
+          NAME="$(basename "$(ls $BUILD/Tesseract-*.dmg | head -n 1)" .dmg)"
+          ditto -c -k --keepParent "$BUILD/ui/macos/Tesseract.app.dSYM" "$BUILD/$NAME.dSYM.zip"
+
+      - name: Upload dSYM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tesseract-macos-arm64-dsym
+          path: build/macos-appkit-arm64-release/Tesseract-*.dSYM.zip
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Delete temporary keychain
         if: always() && steps.sign_check.outputs.present == 'true'
@@ -528,6 +557,22 @@ jobs:
         if: steps.as_check.outputs.present == 'true'
         run: cmake --build build/macos-appkit-appstore --target appstore-pkg
 
+      # The shipped executable is stripped, so the dSYM is the only way to
+      # symbolicate its crash reports; fail unless both carry the same UUIDs
+      # (dwarfdump -u prints "UUID: <uuid> (<arch>) <path>"; compare uuid + arch).
+      - name: Verify dSYM matches executable
+        if: steps.as_check.outputs.present == 'true'
+        run: |
+          APP="build/macos-appkit-appstore/ui/macos/Tesseract.app"
+          exe_uuid="$(dwarfdump -u "$APP/Contents/MacOS/Tesseract" | awk '{print $2, $3}' | sort)"
+          dsym_uuid="$(dwarfdump -u "$APP.dSYM" | awk '{print $2, $3}' | sort)"
+          echo "$exe_uuid"
+          echo "$dsym_uuid"
+          if [ -z "$exe_uuid" ] || [ "$exe_uuid" != "$dsym_uuid" ]; then
+            echo "::error::dSYM UUIDs do not match the executable"
+            exit 1
+          fi
+
       - name: Check bundled libopus minimum macOS
         if: steps.as_check.outputs.present == 'true'
         run: |
@@ -548,6 +593,22 @@ jobs:
         with:
           name: tesseract-macos-appstore
           path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Zip dSYM
+        if: steps.as_check.outputs.present == 'true'
+        run: |
+          BUILD="build/macos-appkit-appstore"
+          NAME="$(basename "$(ls $BUILD/Tesseract-*-appstore.pkg | head -n 1)" .pkg)"
+          ditto -c -k --keepParent "$BUILD/ui/macos/Tesseract.app.dSYM" "$BUILD/$NAME.dSYM.zip"
+
+      - name: Upload dSYM artifact
+        if: steps.as_check.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: tesseract-macos-appstore-dsym
+          path: build/macos-appkit-appstore/Tesseract-*.dSYM.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -715,6 +776,21 @@ jobs:
             fi
           done
 
+      # The shipped executable is stripped, so the dSYM is the only way to
+      # symbolicate its crash reports; fail unless both carry the same UUIDs
+      # (dwarfdump -u prints "UUID: <uuid> (<arch>) <path>"; compare uuid + arch).
+      - name: Verify dSYM matches executable
+        run: |
+          APP="build/macos-appkit-x86_64-release/ui/macos/Tesseract.app"
+          exe_uuid="$(dwarfdump -u "$APP/Contents/MacOS/Tesseract" | awk '{print $2, $3}' | sort)"
+          dsym_uuid="$(dwarfdump -u "$APP.dSYM" | awk '{print $2, $3}' | sort)"
+          echo "$exe_uuid"
+          echo "$dsym_uuid"
+          if [ -z "$exe_uuid" ] || [ "$exe_uuid" != "$dsym_uuid" ]; then
+            echo "::error::dSYM UUIDs do not match the executable"
+            exit 1
+          fi
+
       - name: Package (CPack → DMG)
         run: cmake --build build/macos-appkit-x86_64-release --target package
 
@@ -736,6 +812,20 @@ jobs:
           name: tesseract-macos-x86_64
           path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
           if-no-files-found: error
+
+      - name: Zip dSYM
+        run: |
+          BUILD="build/macos-appkit-x86_64-release"
+          NAME="$(basename "$(ls $BUILD/Tesseract-*.dmg | head -n 1)" .dmg)"
+          ditto -c -k --keepParent "$BUILD/ui/macos/Tesseract.app.dSYM" "$BUILD/$NAME.dSYM.zip"
+
+      - name: Upload dSYM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tesseract-macos-x86_64-dsym
+          path: build/macos-appkit-x86_64-release/Tesseract-*.dSYM.zip
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Delete temporary keychain
         if: always() && steps.sign_check.outputs.present == 'true'
@@ -1094,6 +1184,8 @@ jobs:
             dist/tesseract-windows/Tesseract-*.exe
             dist/tesseract-macos-arm64/Tesseract-*.dmg
             dist/tesseract-macos-x86_64/Tesseract-*.dmg
+            dist/tesseract-macos-arm64-dsym/Tesseract-*.dSYM.zip
+            dist/tesseract-macos-x86_64-dsym/Tesseract-*.dSYM.zip
             dist/tesseract-linux-appimage/Tesseract-*.AppImage
             dist/tesseract-linux-deb/*.deb
             dist/tesseract-linux-rpm/*.rpm
