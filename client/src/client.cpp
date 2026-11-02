@@ -3299,6 +3299,12 @@ void Client::set_show_membership_events(bool enabled)
     impl_->ffi->set_show_membership_events(enabled);
 }
 
+void Client::set_show_unhandled_events(bool enabled)
+{
+    SH_FFI;
+    impl_->ffi->set_show_unhandled_events(enabled);
+}
+
 void Client::set_bundled_url_previews(bool enabled, bool direct)
 {
     SH_FFI;

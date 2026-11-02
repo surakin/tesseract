@@ -7051,3 +7051,12 @@ msgstr "Codeblock erweitern"
 
 msgid "Collapse code block"
 msgstr "Codeblock einklappen"
+
+msgid "Show unhandled events in the timeline"
+msgstr "Nicht behandelte Ereignisse in der Zeitleiste anzeigen"
+
+msgid "{0} sent an unhandled event: {1}"
+msgstr "{0} hat ein nicht behandeltes Ereignis gesendet: {1}"
+
+msgid "Unhandled event: {0}"
+msgstr "Nicht behandeltes Ereignis: {0}"

@@ -72,6 +72,7 @@ enum class SettingKey
     CheckForUpdates,
     Msc2545Compat,
     DeveloperMode,
+    ShowUnhandledEvents,
     CrashReporting,
     Proxy,
     Language,

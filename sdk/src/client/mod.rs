@@ -599,6 +599,10 @@ pub(super) struct TimelineHandle {
     /// Set to `true` before aborting the tasks so any in-flight emission that
     /// slips past the cooperative-cancellation window is silently dropped.
     pub(super) cancelled: Arc<AtomicBool>,
+    /// `ClientFfi::unhandled_generation` at build time. A live timeline built
+    /// under an older generation filtered events by a stale "show unhandled
+    /// events" value, so `subscribe_room` rebuilds it instead of reusing it.
+    pub(super) unhandled_generation: u64,
 }
 
 #[cfg(not(test))]
@@ -960,6 +964,13 @@ pub struct ClientFfi {
     /// visibility is decided (see `filter_membership` in `client::timeline`).
     /// Controlled by `set_show_membership_events`.
     pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Developer setting: surface events the timeline does not render as
+    /// single-line `dev.unhandled` rows. Controlled by
+    /// `set_show_unhandled_events`.
+    pub(super) show_unhandled_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Bumped whenever `show_unhandled_events` changes value; see
+    /// `TimelineHandle::unhandled_generation`.
+    pub(super) unhandled_generation: std::sync::atomic::AtomicU64,
     /// Sender-side MSC4095 bundled URL previews opt-in (via the homeserver's
     /// `/preview_url`). Set by `set_bundled_url_previews`; see
     /// `client::url_preview_gen`.
@@ -1520,6 +1531,8 @@ impl ClientFfi {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            unhandled_generation: std::sync::atomic::AtomicU64::new(0),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1640,6 +1653,8 @@ impl ClientFfi {
             http_client: reqwest::Client::new(),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            unhandled_generation: std::sync::atomic::AtomicU64::new(0),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1787,6 +1802,19 @@ impl ClientFfi {
     pub fn set_show_membership_events(&self, enabled: bool) {
         self.show_membership_events
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Test stub mirroring the production `set_show_unhandled_events`.
+    #[cfg(test)]
+    pub fn set_show_unhandled_events(&self, enabled: bool) {
+        if self
+            .show_unhandled_events
+            .swap(enabled, std::sync::atomic::Ordering::Relaxed)
+            != enabled
+        {
+            self.unhandled_generation
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
     }
 
     /// Enter or leave low power mode. Thread-safe. (Production impl lives
@@ -4848,6 +4876,24 @@ mod tests {
         assert!(c
             .presence_polling_enabled
             .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_show_unhandled_events_bumps_generation_on_change() {
+        let c = ClientFfi::new();
+        let generation = || {
+            c.unhandled_generation
+                .load(std::sync::atomic::Ordering::Acquire)
+        };
+        assert_eq!(generation(), 0);
+        c.set_show_unhandled_events(false);
+        assert_eq!(generation(), 0, "no change, no bump");
+        c.set_show_unhandled_events(true);
+        assert_eq!(generation(), 1);
+        c.set_show_unhandled_events(true);
+        assert_eq!(generation(), 1);
+        c.set_show_unhandled_events(false);
+        assert_eq!(generation(), 2);
     }
 
     #[test]

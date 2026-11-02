@@ -189,20 +189,22 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
 
     using K = tesseract::views::SettingKey;
     st.developer_mode = true;
+    st.show_unhandled_events = true;
     st.send_maps_urls_as_location = false;
     st.index_messages_for_search = true;
     st.show_room_join_leave_events = true;
     st.msc2545_legacy_compat = false;
     st.send_bundled_url_previews = true;
     st.fetch_url_previews_directly = true;
-    for (K k : {K::DeveloperMode, K::SendMapsAsLocation, K::IndexMessages, K::ShowMembershipEvents,
-                K::Msc2545Compat, K::BundledUrlPreviews})
+    for (K k : {K::DeveloperMode, K::ShowUnhandledEvents, K::SendMapsAsLocation, K::IndexMessages,
+                K::ShowMembershipEvents, K::Msc2545Compat, K::BundledUrlPreviews})
     {
         changed(s, k);
     }
 
     // Every key is persisted: flip the in-memory values, reload from disk.
     st.developer_mode = false;
+    st.show_unhandled_events = false;
     st.send_maps_urls_as_location = true;
     st.index_messages_for_search = false;
     st.show_room_join_leave_events = false;
@@ -211,6 +213,7 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.fetch_url_previews_directly = false;
     st.load_from_disk(tesseract::config_dir());
     CHECK(st.developer_mode);
+    CHECK(st.show_unhandled_events);
     CHECK_FALSE(st.send_maps_urls_as_location);
     CHECK(st.index_messages_for_search);
     CHECK(st.show_room_join_leave_events);

@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(timeline): a developer setting shows events the timeline doesn't render as one-line rows, with a Copy event source action. macOS release build, ctest 3805/3805; user-verified macOS
 - fix(calls): the call window follows the light or dark theme instead of always being black. Linux build, ctest 3825/3825; user-verified Qt6
 
 ## v0.9.7 — 2026-11-01

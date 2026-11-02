@@ -53,6 +53,9 @@ struct MessageActionInputs
     bool can_pin = false;
     bool is_pinned = false;
     bool developer_mode = false;
+    // A developer "unhandled event" row: only Copy event source applies, and it
+    // is offered whether or not developer mode is on.
+    bool unhandled = false;
     bool saveable_sticker = false; // a sticker not yet in the Saved Stickers pack
 };
 

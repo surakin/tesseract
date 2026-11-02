@@ -111,6 +111,7 @@ struct MessageRowData
         RoomTombstone, // m.room.tombstone state-event row ("X upgraded this room")
         Poll,          // m.poll.start (MSC3381)
         Gallery,       // m.gallery, MSC4274 inline media gallery
+        DevUnhandled,  // developer "show unhandled events" row; `body` is the event type
     };
 
     /// One item inside a Kind::Gallery row. Field vocabulary deliberately

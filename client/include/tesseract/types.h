@@ -35,6 +35,7 @@ enum class EventType
     RoomTombstone,    // m.room.tombstone: this room was upgraded to another
     Poll,             // MSC3381 poll start (appended: enum ints are pinned by tests)
     Gallery,          // m.gallery, MSC4274 inline media gallery
+    DevUnhandled,     // developer "show unhandled events" row; `body` is the event type
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -493,6 +494,18 @@ struct UnhandledEvent : public Event
     explicit UnhandledEvent(const std::string& t) : msg_type(t)
     {
         type = EventType::Unhandled;
+    }
+};
+
+/// Developer-mode row for an event the timeline does not render (the "Show
+/// unhandled events" setting). `body` carries the Matrix event type, with the
+/// state key appended in brackets for state events. Distinct from
+/// `UnhandledEvent`, which the shells drop.
+struct DevUnhandledEvent : public Event
+{
+    DevUnhandledEvent()
+    {
+        type = EventType::DevUnhandled;
     }
 };
 

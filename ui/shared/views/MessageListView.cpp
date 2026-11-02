@@ -843,6 +843,9 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     case tesseract::EventType::Unhandled:
         row.kind = Kind::Unhandled;
         break;
+    case tesseract::EventType::DevUnhandled:
+        row.kind = Kind::DevUnhandled; // `body` is the event type
+        break;
     case tesseract::EventType::DaySeparator:
         row.kind = Kind::DaySeparator;
         break;
@@ -1484,6 +1487,17 @@ std::string room_tombstone_phrase(const MessageRowData& m)
     return line;
 }
 
+// Phrase for a developer "unhandled event" row; `body` is the event type.
+std::string dev_unhandled_phrase(const MessageRowData& m)
+{
+    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    if (s.empty())
+    {
+        return tk::trf(tk::tr("Unhandled event: {0}"), {m.body});
+    }
+    return tk::trf(tk::tr("{0} sent an unhandled event: {1}"), {s, m.body});
+}
+
 // Build the "Alice, Bob and 3 others" style name list for a collapsed
 // membership-group summary.
 std::string membership_names_label(const std::vector<std::string>& names)
@@ -1640,7 +1654,7 @@ static bool is_virtual_event(MessageRowData::Kind k)
     using Kind = MessageRowData::Kind;
     return k == Kind::DaySeparator || k == Kind::ReadMarker || k == Kind::TimelineStart ||
            k == Kind::PinnedEvent || k == Kind::CallNotification || k == Kind::Membership ||
-           k == Kind::RoomName || k == Kind::RoomTombstone;
+           k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -2218,7 +2232,8 @@ public:
         {
             return kPinnedEventH;
         }
-        if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone)
+        if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone ||
+            m.kind == Kind::DevUnhandled)
         {
             return kPinnedEventH;
         }
@@ -2376,6 +2391,11 @@ public:
         if (m.kind == Kind::RoomTombstone)
         {
             paint_room_name_change(m, ctx, bounds, room_tombstone_phrase(m));
+            return;
+        }
+        if (m.kind == Kind::DevUnhandled)
+        {
+            paint_room_name_change(m, ctx, bounds, dev_unhandled_phrase(m));
             return;
         }
         if (m.kind == Kind::Membership)
@@ -3880,6 +3900,8 @@ public:
             return room_name_change_phrase(m);
         case Kind::RoomTombstone:
             return room_tombstone_phrase(m);
+        case Kind::DevUnhandled:
+            return dev_unhandled_phrase(m);
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -4682,6 +4704,7 @@ private:
         case Kind::Membership:
         case Kind::RoomName:
         case Kind::RoomTombstone:
+        case Kind::DevUnhandled:
             return tk::Role::StaticText;
         default:
             return tk::Role::ListItem;
@@ -5465,6 +5488,7 @@ private:
         case MessageRowData::Kind::Membership:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
+        case MessageRowData::Kind::DevUnhandled:
             return 0.0f;
         }
         return quote_h;
@@ -5931,6 +5955,7 @@ private:
         case MessageRowData::Kind::Membership:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
+        case MessageRowData::Kind::DevUnhandled:
             break;
         }
         return y;
@@ -11627,8 +11652,9 @@ bool MessageListView::on_right_click(tk::Point local)
         copy_selection();
         return true;
     }
-    if (is_virtual_event(messages_[static_cast<std::size_t>(idx)].kind) && !selection &&
-        context_link_url_.empty())
+    if (is_virtual_event(messages_[static_cast<std::size_t>(idx)].kind) &&
+        messages_[static_cast<std::size_t>(idx)].kind != MessageRowData::Kind::DevUnhandled &&
+        !selection && context_link_url_.empty())
     {
         return false;
     }
@@ -11655,6 +11681,7 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.can_pin = can_pin_;
     in.is_pinned = pinned_event_ids_.count(m.event_id) != 0;
     in.developer_mode = tesseract::Settings::instance().developer_mode;
+    in.unhandled = m.kind == Kind::DevUnhandled;
     in.saveable_sticker =
         m.kind == Kind::Sticker && m.source && on_save_sticker_requested &&
         !(is_sticker_saved && is_sticker_saved(m.source->mxc_url(), m.sticker_info_json));
@@ -14256,7 +14283,8 @@ bool MessageListView::on_key_down(const tk::KeyEvent& e)
             return true;
         }
         kbd_part_key_.clear(); // a vanished part never falls through to another
-        if (is_virtual_event(messages_[static_cast<std::size_t>(sel)].kind))
+        if (is_virtual_event(messages_[static_cast<std::size_t>(sel)].kind) &&
+            messages_[static_cast<std::size_t>(sel)].kind != MessageRowData::Kind::DevUnhandled)
         {
             kbd_toggle_membership_group_(sel);
             return true;

@@ -7053,3 +7053,12 @@ msgstr "Développer le bloc de code"
 
 msgid "Collapse code block"
 msgstr "Réduire le bloc de code"
+
+msgid "Show unhandled events in the timeline"
+msgstr "Afficher les événements non gérés dans la discussion"
+
+msgid "{0} sent an unhandled event: {1}"
+msgstr "{0} a envoyé un événement non géré : {1}"
+
+msgid "Unhandled event: {0}"
+msgstr "Événement non géré : {0}"

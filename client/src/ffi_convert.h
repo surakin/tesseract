@@ -1062,6 +1062,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "dev.unhandled")
+    {
+        auto ev = std::make_unique<DevUnhandledEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     if (msg_type == "m.gallery")
     {
         auto ev = std::make_unique<GalleryEvent>();

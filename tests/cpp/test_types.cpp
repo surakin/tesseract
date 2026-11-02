@@ -574,6 +574,15 @@ TEST_CASE("EventType enum values are correct", "[types]")
     CHECK(static_cast<int>(tesseract::EventType::Utd) == 15);
 }
 
+TEST_CASE("DevUnhandledEvent is a distinct, appended event type", "[types]")
+{
+    tesseract::DevUnhandledEvent ev{};
+    CHECK(ev.type == tesseract::EventType::DevUnhandled);
+    CHECK(tesseract::EventType::DevUnhandled != tesseract::EventType::Unhandled);
+    CHECK(static_cast<int>(tesseract::EventType::DevUnhandled) ==
+          static_cast<int>(tesseract::EventType::Gallery) + 1);
+}
+
 TEST_CASE("UtdEvent default-initialised fields", "[types]")
 {
     tesseract::UtdEvent ev{};

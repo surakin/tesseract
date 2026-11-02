@@ -67,10 +67,14 @@ impl ClientFfi {
             root_event_id: root.clone(),
         };
         let room_for_build = room.clone();
+        let unhandled_filter =
+            super::timeline::unhandled_event_filter(Arc::clone(&self.show_unhandled_events));
+        let unhandled_generation = self.unhandled_generation.load(Ordering::Acquire);
         let timeline = match self.rt.block_on(self.rt.spawn(async move {
             room_for_build
                 .timeline_builder()
                 .with_focus(focus)
+                .event_filter(unhandled_filter)
                 .build()
                 .await
         })) {
@@ -99,6 +103,7 @@ impl ClientFfi {
             self.search_index_ctx(),
             None,
             Arc::clone(&self.show_membership_events),
+            Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             false,
         );
@@ -125,6 +130,7 @@ impl ClientFfi {
                 abort_tasks: vec![abort, fetch_abort, paginate_abort],
                 is_focused: true,
                 cancelled,
+                unhandled_generation,
             },
         ) {
             prev.cancelled.store(true, Ordering::Release);

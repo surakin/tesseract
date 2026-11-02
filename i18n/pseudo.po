@@ -7462,3 +7462,14 @@ msgstr "[Expànd cödé blöckxx]"
 
 msgid "Collapse code block"
 msgstr "[Cöllàpsé cödé blöckxx]"
+
+msgid "Show unhandled events in the timeline"
+msgstr "[Shöw ùñhàñdléd évéñts ïñ thé tïmélïñéxxxxxxx]"
+
+#, c++-format
+msgid "{0} sent an unhandled event: {1}"
+msgstr "[{0} séñt àñ ùñhàñdléd évéñt: {1}xxxxxx]"
+
+#, c++-format
+msgid "Unhandled event: {0}"
+msgstr "[Ùñhàñdléd évéñt: {0}xxxx]"

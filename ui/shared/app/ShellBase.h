@@ -4699,6 +4699,13 @@ protected:
     // reflected immediately instead of waiting for the next room switch.
     void apply_show_membership_events_();
 
+    // Developer "Show unhandled events": pushes the effective value
+    // (developer_mode && show_unhandled_events) to every account's client and
+    // re-subscribes the open room and the active account's pop-out rooms so
+    // their timelines are rebuilt under the new filter. Callers invoke it only
+    // when the effective value changed.
+    void apply_show_unhandled_events_();
+
     // Sidebar user strip: avatar URL to show now — the user's own avatar in
     // the active room when it has one, else the account avatar. Called from
     // UserInfo's paint via set_avatar_url_provider; a cache read that kicks a
@@ -4744,6 +4751,10 @@ protected:
     // reflects the setting instead of defaulting to the Rust-side AtomicBool's
     // off default. A plain atomic store on the Rust side — non-blocking.
     void apply_membership_events_pref_(tesseract::Client& client);
+
+    // Pushes the effective "Show unhandled events" value to a freshly created
+    // account client (no re-subscribe: nothing is open yet).
+    void apply_unhandled_events_pref_(tesseract::Client& client);
 
     // Apply the persisted "Link previews" preferences to a freshly-restored
     // account's Rust client, alongside apply_membership_events_pref_.

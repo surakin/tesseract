@@ -8,6 +8,11 @@ namespace tesseract::views
 std::vector<MessageAction> build_message_actions(const MessageActionInputs& in)
 {
     std::vector<MessageAction> out;
+    if (in.unhandled)
+    {
+        out.push_back({MessageActionId::CopyEventSource, tk::tr("Copy event source"), kCopySvg});
+        return out;
+    }
     const bool reactable = !in.redacted && !in.utd;
 
     if (reactable)

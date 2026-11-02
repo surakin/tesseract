@@ -5415,3 +5415,12 @@ msgstr "Utvid kodeblokk"
 
 msgid "Collapse code block"
 msgstr "Skjul kodeblokk"
+
+msgid "Show unhandled events in the timeline"
+msgstr "Vis ubehandlede hendelser i tidslinjen"
+
+msgid "{0} sent an unhandled event: {1}"
+msgstr "{0} sendte en ubehandlet hendelse: {1}"
+
+msgid "Unhandled event: {0}"
+msgstr "Ubehandlet hendelse: {0}"

@@ -524,6 +524,35 @@ void ShellBase::apply_show_membership_events_()
     }
 }
 
+void ShellBase::apply_show_unhandled_events_()
+{
+    const auto& s = tesseract::Settings::instance();
+    const bool effective = s.developer_mode && s.show_unhandled_events;
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (sess && sess->client)
+        {
+            sess->client->set_show_unhandled_events(effective);
+        }
+    }
+    if (!client_)
+    {
+        return;
+    }
+    if (!current_room_id_.empty())
+    {
+        client_->subscribe_room(current_room_id_);
+    }
+    for (const auto& [room_id, window] : active_account_popouts_())
+    {
+        (void)window;
+        if (room_id != current_room_id_)
+        {
+            client_->subscribe_room(room_id);
+        }
+    }
+}
+
 void ShellBase::apply_msc2545_legacy_compat_()
 {
     // set_msc2545_legacy_compat synchronously rebuilds the image-pack cache
@@ -706,6 +735,20 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::ShowMembershipEvents:
         apply_show_membership_events_();
         break;
+    case K::DeveloperMode:
+        // The effective value is developer_mode && show_unhandled_events, so
+        // it only changes when the sub-option is on.
+        if (s.show_unhandled_events)
+        {
+            apply_show_unhandled_events_();
+        }
+        break;
+    case K::ShowUnhandledEvents:
+        if (s.developer_mode)
+        {
+            apply_show_unhandled_events_();
+        }
+        break;
     case K::AutoDetectTimezone:
         sync_detected_timezone_();
         break;
@@ -772,6 +815,16 @@ void ShellBase::apply_membership_events_pref_(tesseract::Client& client)
     if (tesseract::Settings::instance().show_room_join_leave_events)
     {
         client.set_show_membership_events(true);
+    }
+}
+
+void ShellBase::apply_unhandled_events_pref_(tesseract::Client& client)
+{
+    // Rust-side flag defaults to off; push only when the effective value is on.
+    const auto& s = tesseract::Settings::instance();
+    if (s.developer_mode && s.show_unhandled_events)
+    {
+        client.set_show_unhandled_events(true);
     }
 }
 

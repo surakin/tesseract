@@ -132,6 +132,22 @@ TEST_CASE("message actions: developer mode can copy the source of undecryptable 
     CHECK_FALSE(has(build_message_actions(in), MessageActionId::CopyEventSource));
 }
 
+TEST_CASE("message actions: an unhandled-event row offers only Copy event source",
+          "[message_actions]")
+{
+    MessageActionInputs in;
+    in.unhandled = true;
+    in.thread_button_visible = true;
+    in.can_thread = true;
+    in.can_redact_others = true;
+    in.can_pin = true;
+    in.developer_mode = false;
+    CHECK(ids(build_message_actions(in)) == std::vector{MessageActionId::CopyEventSource});
+
+    in.developer_mode = true;
+    CHECK(ids(build_message_actions(in)) == std::vector{MessageActionId::CopyEventSource});
+}
+
 TEST_CASE("message actions: a message already in a thread cannot start one", "[message_actions]")
 {
     MessageActionInputs in;

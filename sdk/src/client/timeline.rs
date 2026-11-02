@@ -15,7 +15,7 @@ use super::{err, ok, ClientFfi, SendHandler, TimelineHandle};
 use super::{err, ClientFfi};
 
 #[cfg(not(test))]
-use super::timeline_convert::timeline_item_to_ffi;
+use super::timeline_convert::timeline_item_to_ffi_opts;
 
 #[cfg(not(test))]
 use crate::ffi::TimelineEvent;
@@ -343,6 +343,61 @@ pub(super) fn filter_for_channel(
     }
 }
 
+/// True when an event of this type may be added to the timeline as an
+/// "unhandled event" row on top of `default_event_filter`. Reactions and
+/// redactions stay with the default logic, and so do the events matrix-sdk-ui
+/// folds into another item (poll responses/ends, beacon updates, call
+/// declines): they must never become rows of their own.
+pub(crate) fn extra_unhandled_type_ok(event_type: &str) -> bool {
+    !matches!(
+        event_type,
+        "m.reaction"
+            | "m.room.redaction"
+            | "m.poll.response"
+            | "m.poll.end"
+            | "org.matrix.msc3381.poll.response"
+            | "org.matrix.msc3381.poll.end"
+            | "m.beacon"
+            | "org.matrix.msc3672.beacon"
+            | "m.rtc.decline"
+            | "org.matrix.msc4310.rtc.decline"
+    )
+}
+
+/// Event filter for the timeline builders: matrix-sdk-ui's default, widened to
+/// every other event (except aggregations) while `show_unhandled` is on.
+#[cfg(not(test))]
+pub(super) fn unhandled_event_filter(
+    show_unhandled: Arc<AtomicBool>,
+) -> impl Fn(
+    &matrix_sdk::ruma::events::AnySyncTimelineEvent,
+    &matrix_sdk::ruma::room_version_rules::RoomVersionRules,
+) -> bool
+       + Send
+       + Sync
+       + 'static {
+    use matrix_sdk::ruma::events::{
+        room::message::Relation, AnyMessageLikeEventContent, AnySyncTimelineEvent,
+    };
+    move |ev, rules| {
+        if matrix_sdk_ui::timeline::default_event_filter(ev, rules) {
+            return true;
+        }
+        if !show_unhandled.load(Ordering::Relaxed) {
+            return false;
+        }
+        // Edits are folded into their target, never rows of their own.
+        if let AnySyncTimelineEvent::MessageLike(msg) = ev {
+            if let Some(AnyMessageLikeEventContent::RoomMessage(c)) = msg.original_content() {
+                if matches!(c.relates_to, Some(Relation::Replacement(_))) {
+                    return false;
+                }
+            }
+        }
+        extra_unhandled_type_ok(&ev.event_type().to_string())
+    }
+}
+
 // Runtime-toggleable visibility gate for membership-change rows, applied at
 // the same call sites as filter_for_channel so it participates in the
 // visible/visible_ids index bookkeeping for free (see visible_index_of).
@@ -416,6 +471,7 @@ pub(super) async fn collect_timeline_ops(
     room: &Room,
     me: Option<&UserId>,
     show_membership_events: &AtomicBool,
+    show_unhandled_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     search_index: &Option<super::search::SearchIndexCtx>,
@@ -426,6 +482,7 @@ pub(super) async fn collect_timeline_ops(
         return;
     }
     let show_membership = show_membership_events.load(Ordering::Relaxed);
+    let show_unhandled = show_unhandled_events.load(Ordering::Relaxed);
     match diff {
         VectorDiff::Append { values } => {
             // Collect all visible items from the Append batch into one
@@ -434,7 +491,7 @@ pub(super) async fn collect_timeline_ops(
             for item in values {
                 let ev = filter_membership(
                     filter_for_channel(
-                        timeline_item_to_ffi(&item, room_id, room, me).await,
+                        timeline_item_to_ffi_opts(&item, room_id, room, me, show_unhandled).await,
                         channel,
                     ),
                     show_membership,
@@ -462,7 +519,7 @@ pub(super) async fn collect_timeline_ops(
         VectorDiff::PushBack { value } => {
             let ev = filter_membership(
                 filter_for_channel(
-                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    timeline_item_to_ffi_opts(&value, room_id, room, me, show_unhandled).await,
                     channel,
                 ),
                 show_membership,
@@ -486,7 +543,7 @@ pub(super) async fn collect_timeline_ops(
         VectorDiff::PushFront { value } => {
             let ev = filter_membership(
                 filter_for_channel(
-                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    timeline_item_to_ffi_opts(&value, room_id, room, me, show_unhandled).await,
                     channel,
                 ),
                 show_membership,
@@ -516,7 +573,7 @@ pub(super) async fn collect_timeline_ops(
             let index = index.min(visible.len());
             let ev = filter_membership(
                 filter_for_channel(
-                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    timeline_item_to_ffi_opts(&value, room_id, room, me, show_unhandled).await,
                     channel,
                 ),
                 show_membership,
@@ -562,7 +619,7 @@ pub(super) async fn collect_timeline_ops(
             }
             let new_ev = filter_membership(
                 filter_for_channel(
-                    timeline_item_to_ffi(&value, room_id, room, me).await,
+                    timeline_item_to_ffi_opts(&value, room_id, room, me, show_unhandled).await,
                     channel,
                 ),
                 show_membership,
@@ -691,7 +748,7 @@ pub(super) async fn collect_timeline_ops(
             for item in &values {
                 let ev = filter_membership(
                     filter_for_channel(
-                        timeline_item_to_ffi(item, room_id, room, me).await,
+                        timeline_item_to_ffi_opts(item, room_id, room, me, show_unhandled).await,
                         channel,
                     ),
                     show_membership,
@@ -741,12 +798,14 @@ async fn refresh_receipts(
     room: &Room,
     me: Option<&UserId>,
     show_membership_events: &AtomicBool,
+    show_unhandled_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     chip_overrides: &super::thread::ThreadChipOverrides,
 ) {
     let items = tl.items().await;
     let show_membership = show_membership_events.load(Ordering::Relaxed);
+    let show_unhandled = show_unhandled_events.load(Ordering::Relaxed);
 
     // Collect all receipt-bearing updates first, then emit as a single batch
     // instead of N individual on_message_updated calls.
@@ -764,7 +823,10 @@ async fn refresh_receipts(
         }
 
         let ev = filter_membership(
-            filter_for_channel(timeline_item_to_ffi(item, room_id, room, me).await, channel),
+            filter_for_channel(
+                timeline_item_to_ffi_opts(item, room_id, room, me, show_unhandled).await,
+                channel,
+            ),
             show_membership,
             me,
         );
@@ -850,6 +912,7 @@ impl ClientFfi {
         index: Option<super::search::SearchIndexCtx>,
         room_media: Option<super::room_media_store::MediaCtx>,
         show_membership_events: Arc<AtomicBool>,
+        show_unhandled_events: Arc<AtomicBool>,
         chip_overrides: super::thread::ThreadChipOverrides,
         prewarm_cached: bool,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
@@ -919,10 +982,18 @@ impl ClientFfi {
                 let mut visible_ids: Vec<String> = Vec::with_capacity(initial_items.len());
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
                 let show_membership = show_membership_events.load(Ordering::Relaxed);
+                let show_unhandled = show_unhandled_events.load(Ordering::Relaxed);
                 for item in initial_items.iter() {
                     let ev = filter_membership(
                         filter_for_channel(
-                            timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await,
+                            timeline_item_to_ffi_opts(
+                                item,
+                                &rid,
+                                &room_clone,
+                                me.as_deref(),
+                                show_unhandled,
+                            )
+                            .await,
                             &ch,
                         ),
                         show_membership,
@@ -993,6 +1064,7 @@ impl ClientFfi {
                                     &room_clone,
                                     me.as_deref(),
                                     &show_membership_events,
+                                    &show_unhandled_events,
                                     &ch,
                                     &cancelled_stream,
                                     &index,
@@ -1026,6 +1098,7 @@ impl ClientFfi {
                                     &room_clone,
                                     me.as_deref(),
                                     &show_membership_events,
+                                    &show_unhandled_events,
                                     &ch,
                                     &cancelled_stream,
                                     &chip_overrides,
@@ -1094,7 +1167,14 @@ impl ClientFfi {
         {
             let mut guard = self.timelines.write();
             if let Some(existing) = guard.get_mut(&room_id) {
-                if !existing.is_focused && !existing.cancelled.load(Ordering::Acquire) {
+                // A timeline built before the "show unhandled events" toggle
+                // changed has already dropped (or kept) events under the old
+                // filter, so it must be rebuilt rather than reused.
+                if !existing.is_focused
+                    && !existing.cancelled.load(Ordering::Acquire)
+                    && existing.unhandled_generation
+                        == self.unhandled_generation.load(Ordering::Acquire)
+                {
                     // Cancel the OLD tasks' in-flight emissions before aborting:
                     // tokio abort is cooperative, so without this an old streaming
                     // task can emit one more VectorDiff (stale, pre-reset indices)
@@ -1119,6 +1199,7 @@ impl ClientFfi {
                         self.search_index_ctx(),
                         self.media_ctx(),
                         Arc::clone(&self.show_membership_events),
+                        Arc::clone(&self.show_unhandled_events),
                         Arc::clone(&self.thread_chip_overrides),
                         false,
                     );
@@ -1167,6 +1248,8 @@ impl ClientFfi {
         // still gets a large stack.
         let room_for_build = room.clone();
         let handle = self.rt.handle().clone();
+        let unhandled_filter = unhandled_event_filter(Arc::clone(&self.show_unhandled_events));
+        let unhandled_generation = self.unhandled_generation.load(Ordering::Acquire);
         let timeline = match self.rt.block_on(self.rt.spawn_blocking(move || {
             handle.block_on(async move {
                 room_for_build
@@ -1174,6 +1257,7 @@ impl ClientFfi {
                     .with_focus(TimelineFocus::Live {
                         hide_threaded_events: true,
                     })
+                    .event_filter(unhandled_filter)
                     .build()
                     .await
             })
@@ -1206,6 +1290,7 @@ impl ClientFfi {
             self.search_index_ctx(),
             self.media_ctx(),
             Arc::clone(&self.show_membership_events),
+            Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             true,
         );
@@ -1291,6 +1376,7 @@ impl ClientFfi {
                 abort_tasks,
                 is_focused: false,
                 cancelled,
+                unhandled_generation,
             },
         );
 
@@ -1874,11 +1960,14 @@ impl ClientFfi {
         // diff/send-queue tasks, and inherit the widened 8 MB stack.
         let room_for_build = room.clone();
         let handle = self.rt.handle().clone();
+        let unhandled_filter = unhandled_event_filter(Arc::clone(&self.show_unhandled_events));
+        let unhandled_generation = self.unhandled_generation.load(Ordering::Acquire);
         let timeline = match self.rt.block_on(self.rt.spawn_blocking(move || {
             handle.block_on(async move {
                 room_for_build
                     .timeline_builder()
                     .with_focus(focus)
+                    .event_filter(unhandled_filter)
                     .build()
                     .await
             })
@@ -1911,6 +2000,7 @@ impl ClientFfi {
             self.search_index_ctx(),
             self.media_ctx(),
             Arc::clone(&self.show_membership_events),
+            Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             false,
         );
@@ -1930,6 +2020,7 @@ impl ClientFfi {
                 abort_tasks,
                 is_focused: true,
                 cancelled,
+                unhandled_generation,
             },
         );
 
@@ -1939,6 +2030,36 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn subscribe_room_at(&self, _room_id: &str, _focus_event_id: &str) -> OpResult {
         err("not logged in")
+    }
+}
+
+#[cfg(test)]
+mod unhandled_filter_tests {
+    use super::extra_unhandled_type_ok;
+
+    #[test]
+    fn aggregations_and_redactions_stay_hidden() {
+        for t in [
+            "m.reaction",
+            "m.room.redaction",
+            "m.poll.response",
+            "m.poll.end",
+            "m.beacon",
+            "m.rtc.decline",
+        ] {
+            assert!(!extra_unhandled_type_ok(t), "{t}");
+        }
+    }
+
+    #[test]
+    fn custom_events_are_allowed() {
+        for t in [
+            "com.example.ping",
+            "m.room.topic",
+            "m.key.verification.done",
+        ] {
+            assert!(extra_unhandled_type_ok(t), "{t}");
+        }
     }
 }
 

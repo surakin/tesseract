@@ -6,7 +6,8 @@
 // stable/unstable event-type reads+writes for room packs and the
 // emote-rooms subscription list, plus whether the personal pack is loaded
 // at all), a "Developer" group with a developer-mode checkbox (off by
-// default; no behavior gated on it yet), and — only in builds compiled with
+// default; gates Copy event source) and a dependent "Show unhandled events in
+// the timeline" checkbox (greyed out while developer mode is off), and — only in builds compiled with
 // TESSERACT_CRASH_HANDLER_ENABLED (experimental, off by default) — a
 // "Diagnostics" group with a crash-reporting checkbox.
 
@@ -36,6 +37,7 @@ public:
 private:
     tk::CheckButton* legacy_compat_cb_ = nullptr;
     tk::CheckButton* developer_mode_cb_ = nullptr;
+    tk::CheckButton* show_unhandled_events_cb_ = nullptr;
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     tk::CheckButton* crash_reporting_cb_ = nullptr;
 #endif

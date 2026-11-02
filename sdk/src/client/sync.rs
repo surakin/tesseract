@@ -1460,6 +1460,23 @@ impl ClientFfi {
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Developer setting: render events the timeline does not otherwise
+    /// handle as single-line `dev.unhandled` rows. Thread-safe. matrix-sdk-ui
+    /// discards filtered events when they arrive, so a change bumps a
+    /// generation counter that makes the next `subscribe_room` rebuild the
+    /// live timeline instead of reusing it — callers should re-`subscribe_room`
+    /// the open room(s) after toggling.
+    pub fn set_show_unhandled_events(&self, enabled: bool) {
+        if self
+            .show_unhandled_events
+            .swap(enabled, std::sync::atomic::Ordering::Relaxed)
+            != enabled
+        {
+            self.unhandled_generation
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Recently-active rooms (image-pack fetch scope)
     // -----------------------------------------------------------------------

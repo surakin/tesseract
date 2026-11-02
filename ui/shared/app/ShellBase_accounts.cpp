@@ -467,6 +467,7 @@ ShellBase::finalize_login_blocking_(std::unique_ptr<tesseract::Client> pending_c
     }
     apply_search_indexing_pref_(*session->client);
     apply_membership_events_pref_(*session->client);
+    apply_unhandled_events_pref_(*session->client);
     apply_bundled_url_previews_pref_(*session->client);
     apply_msc2545_legacy_compat_pref_(*session->client);
     apply_low_power_pref_(*session->client);
@@ -2430,6 +2431,7 @@ void ShellBase::apply_account_prefs_(tesseract::Client& client)
 {
     apply_search_indexing_pref_(client);
     apply_membership_events_pref_(client);
+    apply_unhandled_events_pref_(client);
     apply_bundled_url_previews_pref_(client);
     apply_msc2545_legacy_compat_pref_(client);
     apply_low_power_pref_(client);

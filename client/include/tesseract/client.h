@@ -2266,6 +2266,12 @@ public:
     /// refresh it immediately.
     void set_show_membership_events(bool enabled);
 
+    /// Developer setting: surface events the timeline does not render as
+    /// `EventType::DevUnhandled` rows. Thread-safe. matrix-sdk-ui drops filtered
+    /// events on arrival, so after a change re-`subscribe_room` every open room
+    /// (the next subscribe rebuilds the timeline).
+    void set_show_unhandled_events(bool enabled);
+
     /// Configure sender-side MSC4095 bundled URL previews. `enabled` bundles
     /// previews of http(s) links into outgoing text messages, fetched via the
     /// homeserver's `/preview_url`; `direct` (only honoured with `enabled`)

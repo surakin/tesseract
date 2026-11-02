@@ -1622,12 +1622,72 @@ fn message_type_fields(
     Some(fields)
 }
 
+/// Body text of a developer "unhandled event" row: the event type, with the
+/// state key in brackets when the event is a state event with a non-empty key.
+pub(crate) fn dev_unhandled_body(event_type: &str, state_key: Option<&str>) -> String {
+    match state_key {
+        Some(key) if !key.is_empty() => format!("{event_type} [{key}]"),
+        _ => event_type.to_owned(),
+    }
+}
+
+/// A single-line `dev.unhandled` row for an event the timeline does not
+/// otherwise render. `None` when the item's event type cannot be determined.
+#[cfg(not(test))]
+fn dev_unhandled_event(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+    room_id: &str,
+) -> Option<TimelineEvent> {
+    let event_type = event_item.content().event_type_str()?;
+    let state_key = match event_item.content() {
+        TimelineItemContent::OtherState(state) => Some(state.state_key()),
+        TimelineItemContent::FailedToParseState { state_key, .. } => Some(state_key.as_str()),
+        _ => None,
+    };
+    let SenderProfileFfi {
+        sender_name,
+        sender_avatar_url,
+        sender_status_emoji,
+        sender_status_text,
+    } = sender_profile_ffi(event_item.sender_profile());
+    Some(TimelineEvent {
+        room_id: room_id.to_owned(),
+        msg_type: "dev.unhandled".to_owned(),
+        event_id: event_item
+            .event_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        sender: event_item.sender().to_string(),
+        sender_name,
+        sender_avatar_url,
+        sender_status_emoji,
+        sender_status_text,
+        body: dev_unhandled_body(&event_type, state_key),
+        timestamp: event_item.timestamp().get().into(),
+        ..ffi_event_defaults()
+    })
+}
+
 #[cfg(not(test))]
 pub(super) async fn timeline_item_to_ffi(
     item: &Arc<TimelineItem>,
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
+) -> Option<TimelineEvent> {
+    timeline_item_to_ffi_opts(item, room_id, room, me, false).await
+}
+
+/// `timeline_item_to_ffi`, optionally surfacing events the timeline does not
+/// render as `dev.unhandled` rows (the developer "Show unhandled events"
+/// setting) instead of dropping them.
+#[cfg(not(test))]
+pub(super) async fn timeline_item_to_ffi_opts(
+    item: &Arc<TimelineItem>,
+    room_id: &str,
+    room: &Room,
+    me: Option<&UserId>,
+    show_unhandled: bool,
 ) -> Option<TimelineEvent> {
     let event_item = match item.kind() {
         TimelineItemKind::Event(e) => e,
@@ -1752,8 +1812,14 @@ pub(super) async fn timeline_item_to_ffi(
                 });
             }
         }
-        // StateEventContentChange::Redacted: no content to diff — silently drop.
-        return None; // all other state events (and redacted pins) remain filtered
+        // StateEventContentChange::Redacted: no content to diff. All other
+        // state events (and redacted pins) stay filtered unless the developer
+        // "show unhandled events" setting is on.
+        return if show_unhandled {
+            dev_unhandled_event(event_item, room_id)
+        } else {
+            None
+        };
     }
 
     // m.room.member state events representing an actual membership
@@ -2262,7 +2328,14 @@ pub(super) async fn timeline_item_to_ffi(
             kind: MsgLikeKind::Message(msg),
             ..
         }) => msg,
-        _ => return None,
+        _ => {
+            // Custom message-like events, undeserialisable events, call invites.
+            return if show_unhandled {
+                dev_unhandled_event(event_item, room_id)
+            } else {
+                None
+            };
+        }
     };
 
     // MSC4553: a forward renders the content it carries (read from the original
@@ -2270,7 +2343,7 @@ pub(super) async fn timeline_item_to_ffi(
     // relation and mentions are ignored; the reply and thread data below come
     // from the forward event itself.
     let forward = original_forward(event_item, "m.room.message");
-    let mut msg_fields = forward
+    let Some(mut msg_fields) = forward
         .as_ref()
         .and_then(forwarded_message_fields)
         .or_else(|| {
@@ -2283,7 +2356,15 @@ pub(super) async fn timeline_item_to_ffi(
                 &|fallback| resanitized_formatted_body(event_item, fallback),
                 info.as_ref(),
             )
-        })?;
+        })
+    else {
+        // Unsupported msgtype.
+        return if show_unhandled {
+            dev_unhandled_event(event_item, room_id)
+        } else {
+            None
+        };
+    };
     if let Some(view) = &forward {
         let name = forwarded_sender_name(room, &view.forwarded).await;
         apply_forward(&mut msg_fields, &view.forwarded, name);
@@ -2373,6 +2454,28 @@ pub(super) async fn timeline_item_to_ffi(
         thread_latest_ts,
         ..msg_fields
     })
+}
+
+#[cfg(test)]
+mod dev_unhandled_tests {
+    use super::dev_unhandled_body;
+
+    #[test]
+    fn body_is_type_alone_without_state_key() {
+        assert_eq!(
+            dev_unhandled_body("com.example.ping", None),
+            "com.example.ping"
+        );
+        assert_eq!(dev_unhandled_body("m.room.topic", Some("")), "m.room.topic");
+    }
+
+    #[test]
+    fn body_appends_non_empty_state_key() {
+        assert_eq!(
+            dev_unhandled_body("m.space.child", Some("!abc:example.org")),
+            "m.space.child [!abc:example.org]"
+        );
+    }
 }
 
 #[cfg(test)]

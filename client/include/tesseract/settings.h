@@ -484,9 +484,15 @@ public:
     bool msc2545_legacy_compat = true;
 
     // Surfaced in Settings → About → Advanced → Developer. Off by default;
-    // no behavior gated on this yet — a foundation flag future
-    // developer-only features can check.
+    // gates the developer-only features (Copy event source, and the
+    // `show_unhandled_events` sub-option below).
     bool developer_mode = false;
+
+    // Developer sub-option under "Enable developer mode": show events the
+    // timeline does not render as single-line rows with a "Copy event source"
+    // action. Off by default; only effective while `developer_mode` is on
+    // (unchecking developer mode keeps this value).
+    bool show_unhandled_events = false;
 
     // When true, install a native crash handler + Rust panic hook
     // (tesseract::install_crash_handler / set_crash_reporting_enabled) that

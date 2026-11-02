@@ -4273,6 +4273,16 @@ pub mod ffi {
         /// the active room after toggling to refresh it immediately.
         fn set_show_membership_events(self: &ClientFfi, enabled: bool);
 
+        /// Developer setting: render events the timeline does not otherwise
+        /// handle (custom message-likes, unrendered state events, unsupported
+        /// msgtypes, unparseable events) as single-line `dev.unhandled` rows
+        /// whose `body` is the event type (state events with a state key append
+        /// ` [state_key]`). Thread-safe; any thread. matrix-sdk-ui drops
+        /// filtered events on arrival, so a change of value invalidates the
+        /// reusable live timelines: callers must re-`subscribe_room` every open
+        /// room afterwards, which then rebuilds the timeline.
+        fn set_show_unhandled_events(self: &ClientFfi, enabled: bool);
+
         /// Configure sender-side MSC4095 bundled URL previews. `enabled`
         /// previews http(s) links in outgoing `m.text` messages (sends,
         /// replies, thread messages, edits) via the homeserver's

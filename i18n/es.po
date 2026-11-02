@@ -7151,3 +7151,12 @@ msgstr "Expandir bloque de código"
 
 msgid "Collapse code block"
 msgstr "Contraer bloque de código"
+
+msgid "Show unhandled events in the timeline"
+msgstr "Mostrar eventos no gestionados en la cronología"
+
+msgid "{0} sent an unhandled event: {1}"
+msgstr "{0} envió un evento no gestionado: {1}"
+
+msgid "Unhandled event: {0}"
+msgstr "Evento no gestionado: {0}"

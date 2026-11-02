@@ -7633,3 +7633,12 @@ msgstr "Розгорнути блок коду"
 
 msgid "Collapse code block"
 msgstr "Згорнути блок коду"
+
+msgid "Show unhandled events in the timeline"
+msgstr "Показувати необроблені події в стрічці"
+
+msgid "{0} sent an unhandled event: {1}"
+msgstr "{0} надіслав(-ла) необроблену подію: {1}"
+
+msgid "Unhandled event: {0}"
+msgstr "Необроблена подія: {0}"

@@ -46,7 +46,21 @@ AdvancedSection::AdvancedSection(SettingBinder& binder)
     auto dev_cb =
         tk::create_widget<tk::CheckButton>(this, tk::tr("Enable developer mode"), s.developer_mode);
     developer_mode_cb_ = dev_group->add_widget(std::move(dev_cb));
-    binder.bind(developer_mode_cb_, &S::developer_mode, SettingKey::DeveloperMode);
+
+    auto unhandled_cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Show unhandled events in the timeline"), s.show_unhandled_events);
+    show_unhandled_events_cb_ = dev_group->add_widget(std::move(unhandled_cb));
+    show_unhandled_events_cb_->set_enabled(s.developer_mode);
+    binder.bind(show_unhandled_events_cb_, &S::show_unhandled_events,
+                SettingKey::ShowUnhandledEvents);
+
+    // Bound after the dependent checkbox exists: `local` greys it out live
+    // when developer mode is switched off (its saved value is kept).
+    binder.bind(developer_mode_cb_, &S::developer_mode, SettingKey::DeveloperMode,
+                [this](bool on)
+                {
+                    show_unhandled_events_cb_->set_enabled(on);
+                });
 
     auto* activity_group = add_group(tk::tr("Activity"));
     activity_group->add_widget(tk::create_widget<tk::Button>(
