@@ -247,57 +247,6 @@ jobs:
       - name: Build the Rust SDK only
         run: cmake --build build/linux-release --target cargo-build_tesseract_sdk_ffi
 
-  # Primes: compile-check.yml (windows-xwin).
-  windows-xwin:
-    name: Windows via xwin
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y ninja-build nsis gettext python3-venv
-          curl -fsSL https://apt.llvm.org/llvm.sh -o llvm.sh
-          sudo bash llvm.sh 20
-          sudo apt-get install -y lld-20
-
-      - name: Put unversioned LLVM tools on PATH
-        run: |
-          llvm_bin="$(ls -d /usr/lib/llvm-*/bin | sort -V | tail -n1)"
-          echo "$llvm_bin" >> "$GITHUB_PATH"
-          PATH="$llvm_bin:$PATH"
-          for t in clang-cl lld-link llvm-lib llvm-rc llvm-mt; do command -v "$t"; done
-
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> build/windows-xwin-release/cargo/build
-
-      - name: Cache xwin sysroot
-        id: xwin-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/xwin
-          key: xwin-${{ runner.os }}-${{ hashFiles('cmake/toolchains/xwin-setup.sh') }}
-
-      - name: Set up xwin sysroot
-        if: steps.xwin-cache.outputs.cache-hit != 'true'
-        run: cmake/toolchains/xwin-setup.sh --accept-license
-
-      - name: Configure (Release, xwin)
-        run: cmake --preset windows-xwin-release -DTESSERACT_BUILD_TESTS=OFF "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
-
-      - name: Build the Rust SDK only
-        run: cmake --build build/windows-xwin-release --target cargo-build_tesseract_sdk_ffi
-
   # Primes: test.yml (rust-and-i18n). `cargo test --no-run` compiles the same
   # test profile `cargo test` uses without running anything.
   rust-and-i18n:

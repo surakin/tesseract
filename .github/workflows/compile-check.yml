@@ -3,9 +3,6 @@
 # can be run by hand right before kicking off the real publish pipeline
 # (package.yml) to confirm nothing is broken anywhere.
 #
-# The opt-in windows-xwin job is the one exception: it also builds the NSIS
-# installer and uploads it, as a trial of Linux-hosted Windows packaging.
-#
 # Steps here mirror build-platform.yml's per-platform jobs with every
 # packaging step and packaging-only dependency removed. If you change
 # dependency installs or CMake flags in build-platform.yml/package.yml,
@@ -49,14 +46,6 @@ on:
         description: Linux (GTK4 + Qt6)
         type: boolean
         default: true
-      # Experiment: cross-compile Win32 from a Linux runner (clang-cl + xwin)
-      # and build the NSIS installer with native makensis, to compare cost and
-      # output against the native Windows job. Off by default. The installer
-      # is uploaded as an artifact for inspection (unsigned, test-only).
-      windows_xwin:
-        description: Windows cross-compiled on Linux (xwin) + NSIS installer
-        type: boolean
-        default: false
 
 concurrency:
   group: compile-check-${{ github.ref }}
@@ -277,74 +266,3 @@ jobs:
 
       - name: Build
         run: cmake --build build/linux-release
-
-  windows-xwin:
-    if: ${{ inputs.windows_xwin }}
-    name: Windows via xwin (compile + NSIS installer)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-
-    steps:
-      - uses: actions/checkout@v7
-
-      # The MSVC STL in the xwin sysroot needs clang >= 19 (yvals_core.h
-      # STL1000), newer than Ubuntu 24.04's default clang 18, so take LLVM
-      # from apt.llvm.org.
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y ninja-build nsis gettext python3-venv
-          curl -fsSL https://apt.llvm.org/llvm.sh -o llvm.sh
-          sudo bash llvm.sh 20
-          sudo apt-get install -y lld-20
-
-      # Ubuntu links only versioned names (clang-18, lld-link-18, ...) into
-      # /usr/bin; the unversioned clang-cl / lld-link / llvm-lib / llvm-rc /
-      # llvm-mt the toolchain file expects live in /usr/lib/llvm-N/bin.
-      - name: Put unversioned LLVM tools on PATH
-        run: |
-          llvm_bin="$(ls -d /usr/lib/llvm-*/bin | sort -V | tail -n1)"
-          echo "$llvm_bin" >> "$GITHUB_PATH"
-          PATH="$llvm_bin:$PATH"
-          for t in clang-cl lld-link llvm-lib llvm-rc llvm-mt; do command -v "$t"; done
-
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> build/windows-xwin-release/cargo/build
-
-      # Keyed on the setup script so a change to it refreshes the sysroot.
-      # Running the script accepts Microsoft's CRT/SDK license terms.
-      - name: Cache xwin sysroot
-        id: xwin-cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/xwin
-          key: xwin-${{ runner.os }}-${{ hashFiles('cmake/toolchains/xwin-setup.sh') }}
-
-      - name: Set up xwin sysroot
-        if: steps.xwin-cache.outputs.cache-hit != 'true'
-        run: cmake/toolchains/xwin-setup.sh --accept-license
-
-      # Tests are off: Catch2 discovery would try to run the Windows
-      # tesseract_tests.exe at build time, and the runner has no Wine.
-      - name: Configure (Release, xwin)
-        run: cmake --preset windows-xwin-release -DTESSERACT_BUILD_TESTS=OFF "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
-
-      - name: Build
-        run: cmake --build build/windows-xwin-release
-
-      - name: Package (CPack → NSIS)
-        run: cmake --build build/windows-xwin-release --target package
-
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: tesseract-windows-xwin
-          path: build/windows-xwin-release/Tesseract-*.exe
-          retention-days: 7
