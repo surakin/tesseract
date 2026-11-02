@@ -17,8 +17,9 @@ concurrency:
   group: screenshots-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Dependency installs and toolchain setup mirror compile-check.yml's jobs.
-# If you change those there, mirror the change here too.
+# Dependency installs and toolchain setup mirror build-platform.yml's and
+# compile-check.yml's jobs. If you change those there, mirror the change here
+# too.
 
 jobs:
   linux:
@@ -29,29 +30,39 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # libxtst-dev is a hard configure requirement (livekit-webrtc's
-      # screen-grab path links XTest).
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
+      # compile-check.yml's Linux list, plus xvfb/xauth for the virtual display.
       - name: Install build and display dependencies
         run: |
           sudo apt-get update -q
           sudo apt-get install -y \
             qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
             qt6-image-formats-plugins \
             libgtk-4-dev \
-            ninja-build libgl-dev libopus-dev \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libsecret-1-dev \
+            libwayland-dev \
             libxtst-dev \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-            xvfb xauth \
-            fonts-noto-color-emoji
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav \
+            fonts-noto-color-emoji \
+            xvfb xauth
 
-      - name: Expose opus to the Rust SDK build
+      - name: Expose opus to audiopus_sys
         run: |
           echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> "$GITHUB_ENV"
           echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> "$GITHUB_ENV"
           echo "OPUS_STATIC=1" >> "$GITHUB_ENV"
 
-      - name: Install Rust
+      - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust build artifacts
@@ -107,35 +118,74 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     continue-on-error: true
+    # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
+    # CMake, rustc and cc-built C dependencies.
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
       - uses: actions/checkout@v7
 
+      # Pin one Xcode so the compiler, linker and SDK match; the runner
+      # image's default moves with every update (see package.yml).
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_26.4.1.app"
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.4.1.app/Contents/Developer" >> "$GITHUB_ENV"
+          # A runner-level SDKROOT would make xcrun (and CMake, cc, rustc)
+          # keep using the Command Line Tools SDK; point it at Xcode's.
+          unset SDKROOT
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=$sdk" >> "$GITHUB_ENV"
+          xcodebuild -version
+          echo "SDKROOT=$sdk"
+
       # coreutils provides gtimeout for the capture step.
       - name: Install build dependencies
-        run: brew install resvg opus coreutils
+        run: brew install go resvg autoconf automake libtool coreutils
 
-      - name: Expose opus to audiopus_sys
+      # Homebrew's opus bottle targets the runner's own macOS, which dyld
+      # refuses to load on anything older; build it for the deployment target.
+      - name: Build opus from source (arm64)
         run: |
-          echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> "$GITHUB_ENV"
-          echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> "$GITHUB_ENV"
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT="$SDKROOT" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+            -DOPUS_BUILD_SHARED_LIBRARY=ON \
+            -DOPUS_BUILD_PROGRAMS=OFF \
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          # Lay opus.pc where Corrosion's PKG_CONFIG_PATH (…/pkgconfig) will find it.
+          mkdir -p opus-build/pkgconfig
+          cp opus-build/opus.pc opus-build/pkgconfig/
+          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable, aarch64 target)
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
-          # rust-objcopy (used to strip release binaries on Apple targets)
-          # needs the libLLVM.dylib that ships with this component.
+          # rust-objcopy (used by rustc to strip release binaries on Apple
+          # targets) dynamically links libLLVM.dylib, which only ships
+          # alongside this component — without it, stripping silently fails
+          # and debug info stays embedded in the shipped binary.
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
+          # Same key as prime-rust-cache.yml, which seeds this cache nightly.
+          shared-key: macos-arm64-xcode-26.4.1
 
       - name: Configure screenshot-only build
         run: >-
           cmake --preset macos-appkit-arm64-release
+          "-DCMAKE_OSX_SYSROOT=$SDKROOT"
+          "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib"
           -DTESSERACT_BUILD_TESTS=OFF
           -DTESSERACT_ENABLE_SCREENSHOT_MODE=ON
 
