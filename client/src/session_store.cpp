@@ -534,6 +534,8 @@ bool SessionStore::save_account(const std::string& user_id, const std::string& j
     // copy on the next load — e.g. restoring a refresh token that has since
     // been consumed. Drop it first; if it can't be dropped, the disk copy
     // isn't authoritative and the save must not report success.
+    std::fprintf(stderr, "[tesseract] OS credential store rejected the session; "
+                         "saving it to disk in plaintext.\n");
     SecretStore::remove(user_id);
     const bool written = atomic_write_file(account_dir(user_id) / "session.json", json);
     if (SecretStore::load(user_id))

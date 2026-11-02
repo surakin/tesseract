@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(macos): signed-in sessions are stored in the login keychain, not in plaintext on disk, when the build lacks the data-protection keychain entitlement. macOS CI smoke test (ad-hoc signed build)
 - privacy(gif): Mac App Store builds send one fixed hashed Klipy customer ID instead of a hash of your Matrix ID. Rust unit tests
 - docs(privacy): the privacy policy now says what GIF search sends to Klipy and what map tiles reveal to OpenStreetMap. Docs only
 - feat(timeline): a developer setting shows events the timeline doesn't render as one-line rows, with a Copy event source action. macOS release build, ctest 3805/3805; user-verified macOS
