@@ -4877,9 +4877,14 @@ void RoomPane::wire_gif_hooks_(views::GifController::Hooks& hooks)
     {
         return tesseract::Settings::instance().gif_api_key;
     };
+    // Non-empty overrides Klipy's customer_id; empty means the hashed MXID.
     hooks.client_key = []() -> std::string
     {
-        return "tesseract";
+#ifdef TESSERACT_MAC_APP_STORE_ENABLED
+        return "tesseract-mac-app-store";
+#else
+        return {};
+#endif
     };
     hooks.clear_composer = [this]
     {

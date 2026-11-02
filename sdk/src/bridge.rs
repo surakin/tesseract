@@ -3824,7 +3824,8 @@ pub mod ffi {
         /// Search the configured GIF provider (Klipy) for `query`, returning at
         /// most `limit` results via `on_gif_results(request_id, …)` (or
         /// `on_gif_search_failed`). Non-blocking; runs on a worker thread.
-        /// `api_key` / `client_key` come from app settings.
+        /// `api_key` comes from app settings; a non-empty `client_key` is hashed
+        /// into the Klipy customer_id in place of the MXID.
         fn gif_search_async(
             self: &ClientFfi,
             request_id: u64,

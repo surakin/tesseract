@@ -161,6 +161,9 @@ if(TESSERACT_MAC_APP_STORE)
         message(FATAL_ERROR
             "TESSERACT_MAC_APP_STORE cannot be combined with TESSERACT_ENABLE_CRASH_HANDLER")
     endif()
+    # C++ only: GIF search sends one fixed Klipy customer_id instead of a
+    # per-user hash (RoomPane).
+    add_compile_definitions(TESSERACT_MAC_APP_STORE_ENABLED)
 endif()
 
 # Route the process allocator through jemalloc. Linux-only (see the usage site

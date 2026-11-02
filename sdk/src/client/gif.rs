@@ -354,18 +354,19 @@ impl ClientFfi {
         client_key: &str,
         limit: u32,
     ) {
-        // The `client_key` hook is no longer used for identity: Klipy's
-        // customer_id is derived from the logged-in user's MXID, SHA-256 hashed
-        // so the raw matrix identity never leaves the device — only a stable
-        // pseudonymous token reaches Klipy.
-        let _ = client_key;
+        // Klipy's customer_id is a SHA-256 hash, so the raw matrix identity
+        // never leaves the device. It hashes the MXID, unless a non-empty
+        // `client_key` replaces it (Mac App Store builds send no per-user token).
         let handler = self.handler.clone();
-        let customer_id = self
-            .client
-            .as_ref()
-            .and_then(|c| c.user_id().map(|u| u.to_string()))
-            .map(|mxid| hashed_customer_id(&mxid))
-            .unwrap_or_default();
+        let customer_id = if client_key.is_empty() {
+            self.client
+                .as_ref()
+                .and_then(|c| c.user_id().map(|u| u.to_string()))
+                .map(|mxid| hashed_customer_id(&mxid))
+                .unwrap_or_default()
+        } else {
+            hashed_customer_id(client_key)
+        };
         let provider = KlipyProvider::new(api_key.to_owned(), customer_id);
         let url = provider.search_url(query, limit);
         let http = self.http_client.clone();
