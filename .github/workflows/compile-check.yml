@@ -1,6 +1,7 @@
 # Compile-only sanity check across all platforms: no packaging, no artifact
-# upload. Meant to be run by hand right before kicking off the real publish
-# pipeline (package.yml) to confirm nothing is broken anywhere.
+# upload. Runs on pushes and pull requests (docs-only changes skip it), and
+# can be run by hand right before kicking off the real publish pipeline
+# (package.yml) to confirm nothing is broken anywhere.
 #
 # The opt-in windows-xwin job is the one exception: it also builds the NSIS
 # installer and uploads it, as a trial of Linux-hosted Windows packaging.
@@ -13,8 +14,28 @@
 name: Compile Check
 
 on:
+  # Docs-only changes don't run it (a push or PR runs it if any file falls
+  # outside these patterns).
+  push:
+    branches: [main, development, 'review-*']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'screenshots/**'
+      - 'stats/**'
+      - 'LICENSE*'
+      - 'THIRD-PARTY-LICENSES'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'screenshots/**'
+      - 'stats/**'
+      - 'LICENSE*'
+      - 'THIRD-PARTY-LICENSES'
   workflow_dispatch:
-    # Untick a platform to skip its job. All three are on by default.
+    # Untick a platform to skip its job. All three are on by default, and
+    # always run on push and pull_request (which have no inputs).
     inputs:
       windows:
         description: Windows
@@ -43,7 +64,7 @@ concurrency:
 
 jobs:
   windows:
-    if: ${{ inputs.windows }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.windows }}
     name: Windows (compile only)
     runs-on: windows-latest
     timeout-minutes: 60
@@ -112,7 +133,7 @@ jobs:
   # (fail-fast off, so one failing doesn't cancel the other). If this works out,
   # package.yml's and build-platform.yml's macOS jobs can follow the same shape.
   macos:
-    if: ${{ inputs.macos }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.macos }}
     name: macOS ${{ matrix.arch }} (compile only)
     runs-on: macos-latest
     timeout-minutes: 60
@@ -195,7 +216,7 @@ jobs:
         run: cmake --build build/macos-appkit-${{ matrix.arch }}-release
 
   linux:
-    if: ${{ inputs.linux }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.linux }}
     name: Linux GTK4 + Qt6 (compile only)
     runs-on: ubuntu-24.04
     timeout-minutes: 90

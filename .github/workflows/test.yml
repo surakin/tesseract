@@ -10,7 +10,16 @@
 name: Tests
 
 on:
+  # Docs-only PRs don't run it (a PR runs it if any file falls outside these
+  # patterns).
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'screenshots/**'
+      - 'stats/**'
+      - 'LICENSE*'
+      - 'THIRD-PARTY-LICENSES'
   workflow_dispatch:
 
 concurrency:

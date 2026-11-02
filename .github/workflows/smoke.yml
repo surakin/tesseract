@@ -18,9 +18,16 @@
 name: Smoke Test
 
 on:
-  push:
-    branches: [main, development, 'review-*']
+  # Pull requests and manual runs only; push runs are off for now. Docs-only
+  # PRs don't run it (a PR runs it if any file falls outside these patterns).
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'screenshots/**'
+      - 'stats/**'
+      - 'LICENSE*'
+      - 'THIRD-PARTY-LICENSES'
   workflow_dispatch:
 
 permissions:
