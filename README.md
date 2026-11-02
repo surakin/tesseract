@@ -1,4 +1,6 @@
-# Tesseract
+# Tesseract [![Tests](https://github.com/surakin/tesseract/actions/workflows/test.yml/badge.svg)](https://github.com/surakin/tesseract/actions/workflows/test.yml)[![Compile Check](https://github.com/surakin/tesseract/actions/workflows/compile-check.yml/badge.svg)](https://github.com/surakin/tesseract/actions/workflows/compile-check.yml)[![Smoke Test](https://github.com/surakin/tesseract/actions/workflows/smoke.yml/badge.svg)](https://github.com/surakin/tesseract/actions/workflows/smoke.yml)
+
+
 
 > The native desktop Matrix client you always wanted.
 
