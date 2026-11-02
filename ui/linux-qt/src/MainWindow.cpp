@@ -554,6 +554,10 @@ public:
     bool save_png(const std::string& filename) override
     {
         const QString path = QDir(dir_).filePath(QString::fromStdString(filename));
+        if (auto external = tesseract::screenshot::capture_externally(path.toStdString()))
+        {
+            return *external;
+        }
         if (window_.grab().save(path, "PNG"))
         {
             return true;
@@ -593,7 +597,8 @@ void MainWindow::captureScreenshots(const std::string& output_dir)
     refresh_user_strip_();
 
     show_main_content_();
-    resize(1100, 768);
+    const auto [width, height] = tesseract::screenshot::capture_content_size();
+    resize(width, height);
 
     const QString dir = QString::fromStdString(output_dir);
     if (!QDir().mkpath(dir))

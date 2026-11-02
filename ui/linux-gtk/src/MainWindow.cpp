@@ -1026,6 +1026,11 @@ protected:
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 bool MainWindow::save_screenshot_(const char* filename)
 {
+    if (auto external =
+            tesseract::screenshot::capture_externally((screenshot_dir_ / filename).string()))
+    {
+        return *external;
+    }
     GdkPaintable* paintable = gtk_widget_paintable_new(window_);
     GtkSnapshot* snapshot = gtk_snapshot_new();
     const int width = gtk_widget_get_width(window_);
@@ -1102,7 +1107,8 @@ void MainWindow::start_screenshot_mode()
     show_rooms(rooms_);
     refresh_user_strip_();
     show_main_content_();
-    gtk_window_set_default_size(GTK_WINDOW(window_), 1100, 768);
+    const auto [width, height] = tesseract::screenshot::capture_content_size();
+    gtk_window_set_default_size(GTK_WINDOW(window_), width, height);
 
     std::error_code ec;
     std::filesystem::create_directories(screenshot_dir_, ec);

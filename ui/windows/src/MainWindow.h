@@ -210,6 +210,8 @@ private:
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     void start_screenshot_mode_();
     bool save_screenshot_(const wchar_t* filename);
+    /// The invisible resize borders around the frame DWM draws.
+    bool screenshot_invisible_border_(RECT& out) const;
     // ScreenshotHost adapter; nested so it can reach the private hooks.
     class Win32ScreenshotHost;
 #endif

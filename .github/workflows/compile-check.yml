@@ -14,7 +14,7 @@ on:
   # Docs-only changes don't run it (a push or PR runs it if any file falls
   # outside these patterns).
   push:
-    branches: [main, development, 'review-*']
+    branches: [main, development]
     paths-ignore:
       - '**.md'
       - 'docs/**'

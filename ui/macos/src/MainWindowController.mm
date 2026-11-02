@@ -196,7 +196,9 @@ private:
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 - (BOOL)_saveScreenshotToPath:(NSString*)path
 {
-    NSView* view = self.window.contentView;
+    // The content view's superview is the window's frame view, which also
+    // draws the title bar and its buttons.
+    NSView* view = self.window.contentView.superview ?: self.window.contentView;
     [view layoutSubtreeIfNeeded];
     [view displayIfNeeded];
     NSRect bounds = view.bounds;
@@ -238,10 +240,13 @@ private:
         NSLog(@"Could not load screenshot assets");
         std::exit(EXIT_FAILURE);
     }
-    // 16:10, the Mac App Store's screenshot ratio: captured at the backing
-    // scale this is 1440x900 (1x) or 2880x1800 (2x), both accepted sizes.
+    // The whole frame, title bar included: at the backing scale this is
+    // 1440x900 (1x) or 2880x1800 (2x), both sizes the Mac App Store accepts.
     ((TesseractScreenshotWindow*)self.window).unconstrained = YES;
-    [self.window setContentSize:NSMakeSize(1440, 900)];
+    NSRect frame = self.window.frame;
+    frame.size =
+        NSMakeSize(tesseract::screenshot::kCaptureWidth, tesseract::screenshot::kCaptureHeight);
+    [self.window setFrame:frame display:YES];
     [self.window makeKeyAndOrderFront:self];
 
     _screenshotHost = std::make_unique<MacScreenshotHost>(self, directory);

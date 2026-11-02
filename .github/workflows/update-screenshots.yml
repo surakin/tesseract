@@ -1,14 +1,25 @@
+# Regenerates the app screenshots on every platform from the deterministic
+# screenshot fixture and commits them to screenshots/ on the branch it runs
+# on. Manual runs only.
+
 name: Update App Screenshots
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'ui/**'
-      - 'client/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - '.github/workflows/update-screenshots.yml'
+    # Untick a platform to skip its job (its screenshots stay as they are).
+    inputs:
+      linux:
+        description: Linux (Qt6 + GTK4)
+        type: boolean
+        default: true
+      macos:
+        description: macOS (AppKit)
+        type: boolean
+        default: true
+      windows:
+        description: Windows (Win32)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -23,6 +34,7 @@ concurrency:
 
 jobs:
   linux:
+    if: ${{ inputs.linux }}
     name: Generate Qt6 and GTK4 screenshots
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -33,7 +45,9 @@ jobs:
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
 
-      # compile-check.yml's Linux list, plus xvfb/xauth for the virtual display.
+      # compile-check.yml's Linux list, plus a headless Wayland compositor
+      # (labwc, with swaybg and wlr-randr, framing windows with the Greybird
+      # Openbox theme) and grim to capture its windows, frame included.
       - name: Install build and display dependencies
         run: |
           sudo apt-get update -q
@@ -54,7 +68,7 @@ jobs:
             gstreamer1.0-plugins-good \
             gstreamer1.0-libav \
             fonts-noto-color-emoji \
-            xvfb xauth
+            labwc swaybg wlr-randr grim greybird-gtk-theme
 
       - name: Expose opus to audiopus_sys
         run: |
@@ -90,10 +104,10 @@ jobs:
           QT_SCALE_FACTOR: '1'
         run: |
           mkdir -p generated-screenshots
-          timeout 60s xvfb-run -a -s '-screen 0 1440x1000x24' \
+          timeout 180s dbus-run-session -- scripts/ci/screenshots/wayland_session.sh \
             build/linux-release/ui/linux-qt/tesseract \
             "--screenshot-dir=$PWD/generated-screenshots"
-          timeout 60s dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24' \
+          timeout 180s dbus-run-session -- scripts/ci/screenshots/wayland_session.sh \
             build/linux-release/ui/linux-gtk/tesseract \
             "--screenshot-dir=$PWD/generated-screenshots"
           for prefix in qt6 gtk4; do
@@ -104,8 +118,10 @@ jobs:
               done
             done
           done
+          python3 scripts/ci/screenshots/check_size.py generated-screenshots
 
       - name: Upload refreshed screenshots
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-screenshots
@@ -114,10 +130,10 @@ jobs:
           retention-days: 14
 
   appkit:
-    name: Generate AppKit screenshots (best effort)
+    if: ${{ inputs.macos }}
+    name: Generate AppKit screenshots
     runs-on: macos-latest
     timeout-minutes: 60
-    continue-on-error: true
     # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
     # CMake, rustc and cc-built C dependencies.
     env:
@@ -207,6 +223,7 @@ jobs:
               test -s "generated-screenshots/mac-$scene-$theme.png"
             done
           done
+          python3 scripts/ci/screenshots/check_size.py generated-screenshots
 
       - name: Upload refreshed screenshots
         uses: actions/upload-artifact@v7
@@ -217,10 +234,10 @@ jobs:
           retention-days: 14
 
   windows:
-    name: Generate Win32 screenshots (best effort)
+    if: ${{ inputs.windows }}
+    name: Generate Win32 screenshots
     runs-on: windows-latest
     timeout-minutes: 60
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v7
@@ -276,6 +293,14 @@ jobs:
       - name: Build Win32 app
         run: cmake --build build/windows-release --target tesseract_win32
 
+      # The runner's display is 1024x768. Windows stops repainting the part of
+      # a window that's off-screen, so make room for the 1440x900 capture.
+      - name: Raise the display resolution
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Get-CimInstance Win32_VideoController |
+            Select-Object CurrentHorizontalResolution, CurrentVerticalResolution
+
       # Tesseract.exe is a GUI-subsystem binary, so the shell doesn't wait for
       # it; Start-Process -PassThru + Wait-Process gives the same 60 s bound
       # the other jobs get from timeout/gtimeout.
@@ -302,6 +327,8 @@ jobs:
               throw "$name was not generated"
             }
           }
+          python scripts/ci/screenshots/check_size.py $out
+          if ($LASTEXITCODE -ne 0) { throw 'Screenshots have the wrong size' }
 
       - name: Upload refreshed screenshots
         uses: actions/upload-artifact@v7
@@ -310,3 +337,40 @@ jobs:
           path: generated-screenshots/*.png
           if-no-files-found: error
           retention-days: 14
+
+  # Commits the new images to screenshots/ on the branch the run used.
+  # Platforms left unticked keep their current files; a failed platform
+  # stops it, so a partial set never lands.
+  commit:
+    name: Commit the new screenshots
+    needs: [linux, appkit, windows]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download the new screenshots
+        uses: actions/download-artifact@v8
+        with:
+          pattern: tesseract-*-screenshots
+          path: screenshots
+          merge-multiple: true
+
+      - name: Commit and push
+        run: |
+          rm -f screenshots/debug-*.png
+          git add screenshots/*.png
+          if git diff --cached --quiet; then
+            echo "Screenshots are unchanged."
+            exit 0
+          fi
+          git diff --cached --stat
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "docs(screenshots): refresh the app screenshots" \
+                     -m "Generated by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} from ${GITHUB_SHA}."
+          git push origin "HEAD:${GITHUB_REF_NAME}"

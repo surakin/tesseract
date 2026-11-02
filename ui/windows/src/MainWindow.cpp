@@ -50,6 +50,7 @@
 #include <utility>
 #include <chrono>
 #include <ctime>
+#include <cstdio>
 #include <cwchar>
 #include <filesystem>
 #include <string>
@@ -2327,9 +2328,30 @@ void MainWindow::start_screenshot_mode_()
     refresh_user_strip_();
     show_main_content_();
 
-    // A fixed physical window size makes output stable on the 96-DPI hosted
-    // runner while remaining large enough to exercise the desktop layout.
-    SetWindowPos(hwnd_, nullptr, 0, 0, 1100, 768, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    // A fixed physical size makes output stable on the 96-DPI hosted runner
+    // (the workflow raises its display to 1920x1080 so the window fits:
+    // Windows doesn't repaint the off-screen part of a window). The visible
+    // frame, title bar included, is the capture size at the screen's top
+    // left; the window rect adds the invisible resize borders around it.
+    const UINT dpi = GetDpiForWindow(hwnd_);
+    const int border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
+                       GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    RECT pad{border, 0, border, border};
+    const auto place = [this, &pad]
+    {
+        SetWindowPos(hwnd_, nullptr, -pad.left, -pad.top,
+                     tesseract::screenshot::kCaptureWidth + pad.left + pad.right,
+                     tesseract::screenshot::kCaptureHeight + pad.top + pad.bottom,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    };
+    place();
+    // DWM knows the real borders once the window has a frame; prefer them.
+    if (screenshot_invisible_border_(pad))
+    {
+        place();
+    }
+    // Park the pointer off the window so no hover state shows in the images.
+    SetCursorPos(GetSystemMetrics(SM_CXSCREEN) - 1, GetSystemMetrics(SM_CYSCREEN) - 1);
 
     std::error_code ec;
     std::filesystem::create_directories(screenshot_dir_, ec);
@@ -2343,32 +2365,75 @@ void MainWindow::start_screenshot_mode_()
     start_screenshot_director_(*screenshot_host_, "win", 500);
 }
 
-bool MainWindow::save_screenshot_(const wchar_t* filename)
+bool MainWindow::screenshot_invisible_border_(RECT& out) const
 {
-    RECT rect{};
-    if (!GetWindowRect(hwnd_, &rect))
+    RECT window{};
+    RECT visible{};
+    if (!GetWindowRect(hwnd_, &window) ||
+        FAILED(
+            DwmGetWindowAttribute(hwnd_, DWMWA_EXTENDED_FRAME_BOUNDS, &visible, sizeof(visible))))
     {
         return false;
     }
-    const int width = rect.right - rect.left;
-    const int height = rect.bottom - rect.top;
-    if (width <= 0 || height <= 0)
+    const RECT border{visible.left - window.left, visible.top - window.top,
+                      window.right - visible.right, window.bottom - visible.bottom};
+    if (border.left < 0 || border.top < 0 || border.right < 0 || border.bottom < 0)
     {
+        return false;
+    }
+    out = border;
+    return true;
+}
+
+bool MainWindow::save_screenshot_(const wchar_t* filename)
+{
+    // The whole window, cropped to the frame DWM draws (title bar included,
+    // invisible resize borders excluded).
+    RECT window{};
+    if (!GetWindowRect(hwnd_, &window))
+    {
+        return false;
+    }
+    RECT border{};
+    screenshot_invisible_border_(border);
+    const int full_width = window.right - window.left;
+    const int full_height = window.bottom - window.top;
+    const int width = full_width - border.left - border.right;
+    const int height = full_height - border.top - border.bottom;
+    if (width != tesseract::screenshot::kCaptureWidth ||
+        height != tesseract::screenshot::kCaptureHeight)
+    {
+        wchar_t message[128];
+        swprintf(message, 128, L"Tesseract screenshot: visible frame is %dx%d, expected %dx%d\n",
+                 width, height, tesseract::screenshot::kCaptureWidth,
+                 tesseract::screenshot::kCaptureHeight);
+        OutputDebugStringW(message);
+        fwprintf(stderr, L"%ls", message);
         return false;
     }
 
     HDC window_dc = GetWindowDC(hwnd_);
+    HDC full_dc = window_dc ? CreateCompatibleDC(window_dc) : nullptr;
     HDC memory_dc = window_dc ? CreateCompatibleDC(window_dc) : nullptr;
+    HBITMAP full = full_dc ? CreateCompatibleBitmap(window_dc, full_width, full_height) : nullptr;
     HBITMAP bitmap = memory_dc ? CreateCompatibleBitmap(window_dc, width, height) : nullptr;
-    if (!window_dc || !memory_dc || !bitmap)
+    if (!window_dc || !full_dc || !memory_dc || !full || !bitmap)
     {
         if (bitmap)
         {
             DeleteObject(bitmap);
         }
+        if (full)
+        {
+            DeleteObject(full);
+        }
         if (memory_dc)
         {
             DeleteDC(memory_dc);
+        }
+        if (full_dc)
+        {
+            DeleteDC(full_dc);
         }
         if (window_dc)
         {
@@ -2377,13 +2442,22 @@ bool MainWindow::save_screenshot_(const wchar_t* filename)
         return false;
     }
 
-    HGDIOBJ previous = SelectObject(memory_dc, bitmap);
-    BOOL painted = PrintWindow(hwnd_, memory_dc, PW_RENDERFULLCONTENT);
+    HGDIOBJ previous_full = SelectObject(full_dc, full);
+    BOOL painted = PrintWindow(hwnd_, full_dc, PW_RENDERFULLCONTENT);
     if (!painted)
     {
-        painted = BitBlt(memory_dc, 0, 0, width, height, window_dc, 0, 0, SRCCOPY | CAPTUREBLT);
+        painted =
+            BitBlt(full_dc, 0, 0, full_width, full_height, window_dc, 0, 0, SRCCOPY | CAPTUREBLT);
+    }
+    HGDIOBJ previous = SelectObject(memory_dc, bitmap);
+    if (painted)
+    {
+        painted = BitBlt(memory_dc, 0, 0, width, height, full_dc, border.left, border.top, SRCCOPY);
     }
     SelectObject(memory_dc, previous);
+    SelectObject(full_dc, previous_full);
+    DeleteObject(full);
+    DeleteDC(full_dc);
 
     bool saved = false;
     if (painted)
