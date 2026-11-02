@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # libxtst-dev is a hard configure requirement (livekit-webrtc's
       # screen-grab path links XTest).
@@ -95,7 +95,7 @@ jobs:
           done
 
       - name: Upload refreshed screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-screenshots
           path: generated-screenshots/*.png
@@ -109,7 +109,7 @@ jobs:
     continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # coreutils provides gtimeout for the capture step.
       - name: Install build dependencies
@@ -159,7 +159,7 @@ jobs:
           done
 
       - name: Upload refreshed screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-appkit-screenshots
           path: generated-screenshots/*.png
@@ -173,7 +173,7 @@ jobs:
     continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -187,7 +187,7 @@ jobs:
       # hand that exact interpreter to CMake below.
       - name: Set up Python (icon generation)
         id: python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -254,7 +254,7 @@ jobs:
           }
 
       - name: Upload refreshed screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-windows-screenshots
           path: generated-screenshots/*.png

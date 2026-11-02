@@ -25,7 +25,7 @@ jobs:
     name: Build & validate manifest (offline)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -82,7 +82,7 @@ jobs:
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
 
       - name: Cache flatpak-builder state
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .flatpak-builder
           key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'packaging/flatpak/cargo-sources.json', 'Cargo.lock') }}
@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload built tree (manual runs only)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flatpak-build-dir
           path: build-dir/files

@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -85,7 +85,7 @@ jobs:
               -DTESSERACT_ENABLE_JEMALLOC=OFF
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang

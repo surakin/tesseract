@@ -78,7 +78,7 @@ jobs:
     environment: ${{ inputs.windows_sign && 'signing' || '' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -94,7 +94,7 @@ jobs:
       # (3.14 in the hosted toolcache), which has no resvg_py installed.
       - name: Set up Python (icon generation)
         id: python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -123,7 +123,7 @@ jobs:
       - name: Cache ssign
         if: ${{ inputs.windows_sign }}
         id: ssign_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~\.cargo\bin\ssign.exe
           key: ssign-0.1.8-${{ runner.os }}
@@ -139,7 +139,7 @@ jobs:
       # that checksum so most runs never touch the release URL, and the
       # download retries because GitHub release downloads intermittently 500.
       - name: Cache gettext download
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}\gettext.zip
           key: gettext-2b999bc37b56fa052ff98578e9cb188152009f634e3a66aa8ff263a016e9c466
@@ -232,7 +232,7 @@ jobs:
           if ($bad) { throw "signature verification failed" }
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-windows
           path: build/windows-release/Tesseract-*.exe
@@ -253,7 +253,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -406,7 +406,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-macos-arm64
           path: build/macos-appkit-arm64-release/Tesseract-*.dmg
@@ -431,7 +431,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -583,7 +583,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-macos-x86_64
           path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
@@ -616,7 +616,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -735,7 +735,7 @@ jobs:
 
       - name: Upload App Store pkg artifact
         if: steps.as_check.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-macos-appstore
           path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
@@ -798,7 +798,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -850,7 +850,7 @@ jobs:
 
       - name: Upload DEB artifact
         if: ${{ inputs.linux_packages }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-deb
           path: build/linux-release/*.deb
@@ -858,7 +858,7 @@ jobs:
 
       - name: Upload RPM artifact
         if: ${{ inputs.linux_packages }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-rpm
           path: build/linux-release/*.rpm
@@ -926,7 +926,7 @@ jobs:
 
       - name: Upload AppImage artifact
         if: ${{ inputs.linux_appimage }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-appimage
           path: Tesseract-*.AppImage
@@ -946,7 +946,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Deploy docs/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
@@ -972,7 +972,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -1063,7 +1063,7 @@ jobs:
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
 
       - name: Cache flatpak-builder state
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .flatpak-builder
           key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'Cargo.lock') }}
@@ -1096,7 +1096,7 @@ jobs:
 
       - name: Upload Flatpak bundle artifact
         if: ${{ inputs.flatpak_publish }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-flatpak-bundle
           path: tesseract-v*.flatpak

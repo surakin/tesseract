@@ -19,7 +19,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -35,7 +35,7 @@ jobs:
       # (3.14 in the hosted toolcache), which has no resvg_py installed.
       - name: Set up Python (icon generation)
         id: python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -54,7 +54,7 @@ jobs:
       # that checksum so most runs never touch the release URL, and the
       # download retries because GitHub release downloads intermittently 500.
       - name: Cache gettext download
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}\gettext.zip
           key: gettext-2b999bc37b56fa052ff98578e9cb188152009f634e3a66aa8ff263a016e9c466
@@ -115,7 +115,7 @@ jobs:
 
       - name: Cache ssign
         id: ssign_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~\.cargo\bin\ssign.exe
           key: ssign-0.1.8-${{ runner.os }}
@@ -182,7 +182,7 @@ jobs:
           if ($bad) { throw "signature verification failed" }
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-windows
           path: build/windows-release/Tesseract-*.exe
@@ -198,7 +198,7 @@ jobs:
       # the maximum retention — it has to outlive the time the pre-release
       # spends being tested.
       - name: Upload Store MSIX artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-msix-store
           path: build/windows-release/msix/Tesseract-store-x64.msix
@@ -240,7 +240,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The runner image's default Xcode / Command Line Tools move with every
       # image update, and a linker older than its SDK fails on the new .tbd
@@ -396,7 +396,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-macos-arm64
           path: build/macos-appkit-arm64-release/Tesseract-*.dmg
@@ -443,7 +443,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The `secrets` context can't be read in an `if:`; check presence here
       # and gate the remaining steps on this step's output (see the Windows
@@ -544,7 +544,7 @@ jobs:
 
       - name: Upload App Store pkg artifact
         if: steps.as_check.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-macos-appstore
           path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
@@ -576,7 +576,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The runner image's default Xcode / Command Line Tools move with every
       # image update, and a linker older than its SDK fails on the new .tbd
@@ -731,7 +731,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-macos-x86_64
           path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
@@ -762,7 +762,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -813,14 +813,14 @@ jobs:
         run: cmake --build build/linux-release --target package
 
       - name: Upload DEB artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-deb
           path: build/linux-release/*.deb
           if-no-files-found: error
 
       - name: Upload RPM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-rpm
           path: build/linux-release/*.rpm
@@ -890,7 +890,7 @@ jobs:
             --output appimage
 
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-linux-appimage
           path: Tesseract-*.AppImage
@@ -920,7 +920,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The tag is the only source of truth for what's being published;
       # project() must already agree with it, or the manifest/metainfo below
@@ -1014,7 +1014,7 @@ jobs:
           echo "FLATPAK_GPG_PASSPHRASE=$FLATPAK_GPG_PASSPHRASE" >> "$GITHUB_ENV"
 
       - name: Cache flatpak-builder state
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .flatpak-builder
           key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'Cargo.lock') }}
@@ -1054,7 +1054,7 @@ jobs:
             io.github.surakin.Tesseract
 
       - name: Upload Flatpak bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tesseract-flatpak-bundle
           path: tesseract-v*.flatpak
@@ -1082,12 +1082,12 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
       - name: Create release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           prerelease: true
           files: |
