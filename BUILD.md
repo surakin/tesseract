@@ -64,7 +64,8 @@ No Go or Perl toolchain is needed (see the note under the Linux prerequisites ab
 
 By default the app and DMG are ad-hoc signed. Cache variables (ui/macos/CMakeLists.txt):
 
-- `TESSERACT_MAC_CODESIGN_IDENTITY`: e.g. `Developer ID Application: Name (TEAMID)`. Signs the app with the hardened runtime and `ui/macos/Tesseract.entitlements`, and the DMG. The entitlements grant microphone, camera and location, which the hardened runtime otherwise blocks.
+- `TESSERACT_MAC_CODESIGN_IDENTITY`: e.g. `Developer ID Application: Name (TEAMID)`. Signs the app with the hardened runtime and `ui/macos/Tesseract.entitlements.in`, and the DMG. The entitlements grant microphone, camera and location, which the hardened runtime otherwise blocks.
+- `TESSERACT_MAC_DEVID_PROVISIONING_PROFILE`: Developer ID `.provisionprofile` embedded in the bundle. Needs the identity above and `TESSERACT_MAC_TEAM_ID`, which then add the `application-identifier` and team entitlements. Without it the DMG has no data-protection keychain access and keeps sessions in the login keychain, which the App Store edition cannot read; with it both editions share one keychain and sessions carry over.
 - `TESSERACT_MAC_NOTARIZE_PROFILE`: `notarytool` keychain profile; enables the `notarize` target and requires the identity above.
 - `TESSERACT_MAC_NOTARIZE_KEYCHAIN`: optional keychain file holding that profile (`--keychain`); empty = default keychain.
 
@@ -177,6 +178,30 @@ override (below) to install or package.
 Pass this alongside a `linux-*` preset (e.g. `-DTESSERACT_UI=qt6`) to build
 and install/package a single Linux backend instead of both.
 
+### macOS release stripping and symbolication
+
+Release builds on macOS compile with `-gline-tables-only` (C++ and Rust). After
+linking, `dsymutil` writes `<build>/ui/macos/Tesseract.app.dSYM`, then
+`strip -x` drops local symbols from `Tesseract.app/Contents/MacOS/Tesseract`
+(before codesigning, so the DMG ships the stripped binary). Keep the `.dSYM`
+for every build you distribute: it is the only way to symbolicate that build's
+crash reports. CI uploads it as `Tesseract-<version>-<arch>.dSYM.zip`. Pass
+`-DTESSERACT_MAC_STRIP=OFF` to keep the dSYM but skip stripping.
+
+The App Store `.pkg` additionally embeds Apple `.symbols` (generated from the
+dSYM with `xcrun symbols`) through `productbuild`'s undocumented
+`--symbolication` option, so App Store Connect can symbolicate crash reports
+itself. Keep the `.dSYM` anyway in case it doesn't.
+
+To symbolicate a crash log by hand, match the UUID (`dwarfdump -u`) and use
+the load address from the report header (or the crash log's binary image
+list):
+
+```bash
+atos -o Tesseract.app.dSYM/Contents/Resources/DWARF/Tesseract \
+     -arch arm64 -l <load address> <frame addresses>
+```
+
 ## Mac App Store
 
 `-DTESSERACT_MAC_APP_STORE=ON` (or the `macos-appkit-appstore` preset, a
@@ -201,7 +226,7 @@ Cache variables:
 - `TESSERACT_MAC_APPSTORE_APP_IDENTITY`: "Apple Distribution: Foo (TEAMID)".
 - `TESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY`: "3rd Party Mac Developer Installer: Foo (TEAMID)".
 - `TESSERACT_MAC_PROVISIONING_PROFILE`: path to the `.provisionprofile`, embedded in the bundle.
-- `TESSERACT_MAC_TEAM_ID`: prefix of the `application-identifier` entitlement.
+- `TESSERACT_MAC_TEAM_ID`: prefix of the `application-identifier` entitlement (also used by the DMG build, see above).
 - `TESSERACT_MAC_BUILD_NUMBER`: `CFBundleVersion`; App Store Connect rejects a repeated one (default: the project version).
 
 With none of the identities set, the build signs ad-hoc with the sandbox
@@ -303,6 +328,11 @@ summary every 10 s.
 which the option drives). "Create an account" with an empty homeserver
 field then goes straight to the default homeserver (matrix.org).
 
+`-DTESSERACT_ENABLE_SMOKE_MODE=ON` (default `OFF`; needs
+`TESSERACT_ENABLE_LEGACY_LOGIN=ON`) adds the `--smoke-test=<result.json>`
+launch option used by the smoke workflow, see [Smoke test](#smoke-test). Keep
+it off for release builds.
+
 ### Unity builds and precompiled headers
 
 `-DTESSERACT_UNITY_BUILD=OFF` (default `ON`) disables CMake's unity build
@@ -327,3 +357,44 @@ block, and the two Qt6 files that `#include` their own AUTOMOC-generated
   bridge + client lib) with the same `WHOLE_ARCHIVE` pattern as the UI targets.
 
 See [CLAUDE.md](../CLAUDE.md) for the day-to-day configure/build/test command loop.
+
+### Smoke test
+
+`.github/workflows/smoke.yml` runs the real app against a throwaway Synapse:
+each shell is launched three times on one isolated profile. Phase `fresh`
+signs in with a password, syncs, shows a message another user sent, sends a
+reply in a plain room and another in an encrypted room; the server confirms the
+plain reply arrived, the encrypted one arrived only as `m.room.encrypted`, and
+the app registered one device. Phase `restore` starts without credentials and
+must come back signed in from the stored session, exchange a new ping and
+reply, then sign out; the server confirms the device is gone. Phase
+`signed-out` must show the login view and stay signed out. After `fresh`,
+`run.py` also requires every `session.json` in the profile to hold only the
+`{"v":2}` marker, so a session that fell back to plaintext instead of the OS
+secret store fails the run. The Linux job turns the accessibility bridge on
+and unlocks a real keyring (`linux_session.sh`). All three jobs gate. The app
+only accepts `https://` homeservers, so CI makes a throwaway CA
+(`make_ca.py`), trusts it in the OS store and serves Synapse with a
+certificate it signed.
+
+- App side: build with `-DTESSERACT_ENABLE_SMOKE_MODE=ON`;
+  `ui/shared/app/SmokeDirector.h` runs the steps of the phase picked by
+  `TESSERACT_SMOKE_PHASE` (`fresh` by default, `restore`, `signed-out`) and
+  writes `{ok, failed_step, error, step_ms}` to the `--smoke-test=` file.
+  Inputs come from `TESSERACT_SMOKE_HOMESERVER`, `_USER`, `_PASSWORD`
+  (`fresh` only), `_ROOM_ID`, `_PING`, `_PONG` and, for `fresh`,
+  `_E2EE_ROOM_ID` and `_E2EE_PONG`.
+- Server side: `scripts/ci/smoke/` (Python standard library only, Synapse pinned
+  in `requirements.txt`): `synapse_up.py` starts Synapse, `run.py` seeds a user
+  and rooms, runs one shell through the three phases and checks the server
+  after each. `--isolate` keeps the app off a real profile: `xdg` / `windows`
+  point its config/data/cache variables into the work dir; `profile` (macOS)
+  uses `--profile=` instead, since a relocated `HOME` leaves macOS without a
+  login keychain and the first keychain write blocks on a dialog.
+- To try it by hand, follow the steps in `smoke.yml`'s Linux job: make the CA,
+  trust it (`update-ca-certificates` / `security add-trusted-cert` /
+  `certutil -addstore Root`), start Synapse, then run `run.py ... -- <app>`.
+  Linux and macOS run Synapse natively; Windows runs it inside WSL2, with WSL's
+  firewall and localhost relay turned off and a `netsh` port proxy from
+  `127.0.0.1:8448` to the distro, and Synapse and the app in one step so the
+  distro stays up.
