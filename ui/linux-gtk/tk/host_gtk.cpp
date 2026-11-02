@@ -3172,6 +3172,12 @@ public:
     {
         return root_.get();
     }
+    // Destroys the widget tree while the GTK widgets it overlays are still
+    // alive (see Surface::~Surface).
+    void release_root()
+    {
+        root_.reset();
+    }
     const Theme& theme() const override
     {
         return *theme_;
@@ -4172,6 +4178,11 @@ Surface::~Surface()
     GtkWidget* overlay = host_ ? host_->overlay() : nullptr;
     if (host_)
     {
+        // Widget tree first: native text fields remove their GtkText from
+        // `overlay` and disconnect its signals in their destructors, so the
+        // overlay and its children must still exist. The unref below
+        // finalizes them.
+        host_->release_root();
         host_->detach_widgets();
     }
     if (overlay)
