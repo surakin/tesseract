@@ -1698,4 +1698,32 @@ void LoginView::show_offline_error(std::function<void()> retry_cb)
                  });
 }
 
+void LoginView::show_missing_session_notice(const std::vector<std::string>& user_ids)
+{
+    if (!alert_ || user_ids.empty())
+    {
+        return;
+    }
+    std::string joined;
+    for (const auto& uid : user_ids)
+    {
+        if (!joined.empty())
+        {
+            joined += ", ";
+        }
+        joined += uid;
+    }
+    AlertDialog::Options opts;
+    opts.title = tk::tr("Sign In Again");
+    opts.body = tk::trf(
+        tk::trn("The saved sign-in for {0} could not be found on this computer, so you need to "
+                "sign in again. Have your recovery key ready to restore your message history.",
+                "The saved sign-ins for {0} could not be found on this computer, so you need to "
+                "sign in again. Have your recovery keys ready to restore your message history.",
+                static_cast<long>(user_ids.size())),
+        {joined});
+    opts.primary_label = tk::tr("OK");
+    alert_->open(std::move(opts), {});
+}
+
 } // namespace tesseract::views

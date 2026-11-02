@@ -7572,3 +7572,14 @@ msgstr ""
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr ""
+
+#: ui/shared/views/LoginView.cpp
+msgid "Sign In Again"
+msgstr ""
+
+#: ui/shared/views/LoginView.cpp
+#, c++-format
+msgid "The saved sign-in for {0} could not be found on this computer, so you need to sign in again. Have your recovery key ready to restore your message history."
+msgid_plural "The saved sign-ins for {0} could not be found on this computer, so you need to sign in again. Have your recovery keys ready to restore your message history."
+msgstr[0] ""
+msgstr[1] ""

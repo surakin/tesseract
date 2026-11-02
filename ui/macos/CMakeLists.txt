@@ -278,7 +278,33 @@ set(TESSERACT_MAC_NOTARIZE_PROFILE "" CACHE STRING
     "notarytool keychain profile name — empty = no notarization")
 set(TESSERACT_MAC_NOTARIZE_KEYCHAIN "" CACHE STRING
     "keychain file holding the notarytool profile (passed as --keychain) — empty = default keychain")
-set(_tesseract_entitlements "${CMAKE_CURRENT_SOURCE_DIR}/Tesseract.entitlements")
+set(TESSERACT_MAC_TEAM_ID "" CACHE STRING
+    "Apple developer team id (prefix of the application-identifier entitlement); used by the App Store build and by the DMG build when a Developer ID provisioning profile is set")
+set(TESSERACT_MAC_DEVID_PROVISIONING_PROFILE "" CACHE FILEPATH
+    "Developer ID .provisionprofile embedded in the DMG build; with TESSERACT_MAC_TEAM_ID it grants the application-identifier entitlement so the DMG and App Store editions share the data-protection keychain")
+
+# The DMG build claims the identity entitlements only when it can back them with
+# an embedded Developer ID profile: a hardened-runtime app claiming
+# application-identifier without a matching profile is killed at launch by AMFI.
+set(_devid_ids "")
+set(_devid_profile FALSE)
+if(NOT TESSERACT_MAC_APP_STORE AND TESSERACT_MAC_DEVID_PROVISIONING_PROFILE)
+    if(NOT TESSERACT_MAC_CODESIGN_IDENTITY OR NOT TESSERACT_MAC_TEAM_ID)
+        message(FATAL_ERROR
+            "TESSERACT_MAC_DEVID_PROVISIONING_PROFILE needs TESSERACT_MAC_CODESIGN_IDENTITY "
+            "and TESSERACT_MAC_TEAM_ID: an app claiming application-identifier without a "
+            "matching embedded profile is killed at launch, and ad-hoc signing cannot use "
+            "a Developer ID profile.")
+    endif()
+    set(_devid_profile TRUE)
+    set(_devid_ids
+"    <key>com.apple.application-identifier</key><string>${TESSERACT_MAC_TEAM_ID}.im.gnomos.tesseract</string>
+    <key>com.apple.developer.team-identifier</key><string>${TESSERACT_MAC_TEAM_ID}</string>")
+endif()
+set(TESSERACT_MAC_DEVID_ENTITLEMENT_IDS "${_devid_ids}")
+set(_tesseract_entitlements "${CMAKE_CURRENT_BINARY_DIR}/Tesseract.entitlements")
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Tesseract.entitlements.in"
+               "${_tesseract_entitlements}" @ONLY)
 
 # Copy libopus into Contents/Frameworks and rewrite all install-name references so
 # the bundle is self-contained and works on machines without Homebrew.
@@ -306,8 +332,6 @@ if(TESSERACT_MAC_APP_STORE)
         "Installer identity for the .pkg (e.g. '3rd Party Mac Developer Installer: Foo (TEAMID)')")
     set(TESSERACT_MAC_PROVISIONING_PROFILE "" CACHE FILEPATH
         "Path to the Mac App Store .provisionprofile embedded in the bundle")
-    set(TESSERACT_MAC_TEAM_ID "" CACHE STRING
-        "Apple developer team id (prefix of the application-identifier entitlement)")
 
     target_compile_definitions(tesseract_macos PRIVATE TESSERACT_MAC_APP_STORE)
 
@@ -363,9 +387,21 @@ else()
 # permission requests. Uses the real identity when one is configured, ad-hoc otherwise.
 # --deep covers Contents/Frameworks/ so libopus.dylib is signed alongside the exe.
 # With a real identity the app is signed with the hardened runtime (required for
-# notarization) and the entitlements in Tesseract.entitlements: the hardened
+# notarization) and the entitlements in Tesseract.entitlements.in: the hardened
 # runtime blocks microphone, camera and location unless they are granted there.
 # The build-dir and installed signatures use the same options so they match.
+# With TESSERACT_MAC_DEVID_PROVISIONING_PROFILE the profile is embedded first and the
+# entitlements add the application/team identifiers, so the DMG and App Store
+# editions share one data-protection keychain.
+if(_devid_profile)
+    add_custom_command(TARGET tesseract_macos POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${TESSERACT_MAC_DEVID_PROVISIONING_PROFILE}"
+            "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/embedded.provisionprofile"
+        COMMENT "Embedding the Developer ID provisioning profile"
+        VERBATIM
+    )
+endif()
 if(TESSERACT_MAC_CODESIGN_IDENTITY)
     set(_tesseract_sign_id "${TESSERACT_MAC_CODESIGN_IDENTITY}")
     set(_tesseract_sign_opts --options runtime --entitlements "${_tesseract_entitlements}")

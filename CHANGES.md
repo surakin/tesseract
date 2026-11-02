@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(macos): a DMG install's sessions carry over to the App Store edition when the DMG is built with a Developer ID provisioning profile. User-verified macOS (DMG → TestFlight)
+- feat(ui): the sign-in screen explains when a saved sign-in could not be found on this computer. Linux build + ctest
 - build(macos): release builds ship a stripped binary with a separate dSYM, about a third smaller. Unverified, pending CI
 - ci(smoke): new `smoke.yml` runs each shell against a throwaway Synapse: sign-in, messages (plain and encrypted), session restore, sign-out. CI green on Linux, macOS and Windows
 - fix(gtk): closing a screen with text fields, such as the sign-in screen after signing in, no longer touches freed GTK widgets. Linux CI smoke test

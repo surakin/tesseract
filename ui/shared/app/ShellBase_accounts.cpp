@@ -96,6 +96,7 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
         auto loaded = tesseract::SessionStore::load_account_with_key(uid);
         if (!loaded)
         {
+            io.missing_session_user_ids.push_back(uid);
             continue;
         }
 
@@ -164,6 +165,7 @@ ShellBase::RestoreResult ShellBase::finish_restore_accounts_ui_(RestoreIOResult&
     result.any_restore_failed = io.any_restore_failed;
     result.restore_error = io.restore_error;
     result.network_unavailable = io.network_unavailable;
+    result.missing_session_user_ids = std::move(io.missing_session_user_ids);
 
     for (auto& acc : io.accounts)
     {
@@ -877,6 +879,10 @@ void ShellBase::show_login_after_restore_(const RestoreResult& restore, std::fun
         {
             login_view_->show_restore_error(restore.restore_error, std::move(retry));
         }
+    }
+    else if (!restore.missing_session_user_ids.empty() && login_view_)
+    {
+        login_view_->show_missing_session_notice(restore.missing_session_user_ids);
     }
 }
 

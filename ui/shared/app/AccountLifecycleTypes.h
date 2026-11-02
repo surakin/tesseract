@@ -33,6 +33,9 @@ struct RestoreResult
     // show_restore_error() so raw backend detail isn't shown for a plain
     // "you're offline" case.
     bool network_unavailable = false;
+    // Accounts the index lists but whose saved session couldn't be loaded
+    // (e.g. it lives in a keychain this build can't read).
+    std::vector<std::string> missing_session_user_ids;
     std::string active_uid; // uid to make active (empty when none)
 };
 
@@ -72,6 +75,8 @@ struct RestoreIOResult
     // See RestoreResult::network_unavailable above — same meaning,
     // computed here and copied through by finish_restore_accounts_ui_().
     bool network_unavailable = false;
+    // See RestoreResult::missing_session_user_ids.
+    std::vector<std::string> missing_session_user_ids;
     std::string active_user_id_hint; // index.active_user_id (may name an
                                      // account that failed to restore)
 };

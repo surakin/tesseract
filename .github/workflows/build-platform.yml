@@ -365,12 +365,21 @@ jobs:
         env:
           SIGNING: ${{ steps.sign_check.outputs.present }}
           CODESIGN_IDENTITY: ${{ vars.TESSERACT_MAC_CODESIGN_IDENTITY }}
+          TEAM_ID: ${{ vars.TESSERACT_MAC_TEAM_ID }}
+          DEVID_PROFILE_B64: ${{ secrets.TESSERACT_MAC_DEVID_PROVISIONING_PROFILE_B64 }}
         run: |
           SIGN_ARGS=()
           if [ "$SIGNING" = "true" ]; then
             SIGN_ARGS=("-DTESSERACT_MAC_CODESIGN_IDENTITY=$CODESIGN_IDENTITY"
                        "-DTESSERACT_MAC_NOTARIZE_PROFILE=tesseract-notary"
                        "-DTESSERACT_MAC_NOTARIZE_KEYCHAIN=$KEYCHAIN_PATH")
+            if [ -n "$DEVID_PROFILE_B64" ] && [ -n "$TEAM_ID" ]; then
+              printf '%s' "$DEVID_PROFILE_B64" | base64 --decode > "$RUNNER_TEMP/tesseract-devid.provisionprofile"
+              SIGN_ARGS+=("-DTESSERACT_MAC_DEVID_PROVISIONING_PROFILE=$RUNNER_TEMP/tesseract-devid.provisionprofile"
+                          "-DTESSERACT_MAC_TEAM_ID=$TEAM_ID")
+            else
+              echo "::notice::No Developer ID provisioning profile (secret TESSERACT_MAC_DEVID_PROVISIONING_PROFILE_B64 / variable TESSERACT_MAC_TEAM_ID): this DMG stores sessions in the login keychain, not shared with the App Store edition."
+            fi
           fi
           cmake --preset macos-appkit-arm64-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF "${SIGN_ARGS[@]}"
           # Diagnostic: where does a Command Line Tools path enter the link?
@@ -542,12 +551,21 @@ jobs:
         env:
           SIGNING: ${{ steps.sign_check.outputs.present }}
           CODESIGN_IDENTITY: ${{ vars.TESSERACT_MAC_CODESIGN_IDENTITY }}
+          TEAM_ID: ${{ vars.TESSERACT_MAC_TEAM_ID }}
+          DEVID_PROFILE_B64: ${{ secrets.TESSERACT_MAC_DEVID_PROVISIONING_PROFILE_B64 }}
         run: |
           SIGN_ARGS=()
           if [ "$SIGNING" = "true" ]; then
             SIGN_ARGS=("-DTESSERACT_MAC_CODESIGN_IDENTITY=$CODESIGN_IDENTITY"
                        "-DTESSERACT_MAC_NOTARIZE_PROFILE=tesseract-notary"
                        "-DTESSERACT_MAC_NOTARIZE_KEYCHAIN=$KEYCHAIN_PATH")
+            if [ -n "$DEVID_PROFILE_B64" ] && [ -n "$TEAM_ID" ]; then
+              printf '%s' "$DEVID_PROFILE_B64" | base64 --decode > "$RUNNER_TEMP/tesseract-devid.provisionprofile"
+              SIGN_ARGS+=("-DTESSERACT_MAC_DEVID_PROVISIONING_PROFILE=$RUNNER_TEMP/tesseract-devid.provisionprofile"
+                          "-DTESSERACT_MAC_TEAM_ID=$TEAM_ID")
+            else
+              echo "::notice::No Developer ID provisioning profile (secret TESSERACT_MAC_DEVID_PROVISIONING_PROFILE_B64 / variable TESSERACT_MAC_TEAM_ID): this DMG stores sessions in the login keychain, not shared with the App Store edition."
+            fi
           fi
           cmake --preset macos-appkit-x86_64-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF "${SIGN_ARGS[@]}"
           # Diagnostic: where does a Command Line Tools path enter the link?

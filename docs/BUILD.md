@@ -64,7 +64,8 @@ No Go or Perl toolchain is needed (see the note under the Linux prerequisites ab
 
 By default the app and DMG are ad-hoc signed. Cache variables (ui/macos/CMakeLists.txt):
 
-- `TESSERACT_MAC_CODESIGN_IDENTITY`: e.g. `Developer ID Application: Name (TEAMID)`. Signs the app with the hardened runtime and `ui/macos/Tesseract.entitlements`, and the DMG. The entitlements grant microphone, camera and location, which the hardened runtime otherwise blocks.
+- `TESSERACT_MAC_CODESIGN_IDENTITY`: e.g. `Developer ID Application: Name (TEAMID)`. Signs the app with the hardened runtime and `ui/macos/Tesseract.entitlements.in`, and the DMG. The entitlements grant microphone, camera and location, which the hardened runtime otherwise blocks.
+- `TESSERACT_MAC_DEVID_PROVISIONING_PROFILE`: Developer ID `.provisionprofile` embedded in the bundle. Needs the identity above and `TESSERACT_MAC_TEAM_ID`, which then add the `application-identifier` and team entitlements. Without it the DMG has no data-protection keychain access and keeps sessions in the login keychain, which the App Store edition cannot read; with it both editions share one keychain and sessions carry over.
 - `TESSERACT_MAC_NOTARIZE_PROFILE`: `notarytool` keychain profile; enables the `notarize` target and requires the identity above.
 - `TESSERACT_MAC_NOTARIZE_KEYCHAIN`: optional keychain file holding that profile (`--keychain`); empty = default keychain.
 
@@ -225,7 +226,7 @@ Cache variables:
 - `TESSERACT_MAC_APPSTORE_APP_IDENTITY`: "Apple Distribution: Foo (TEAMID)".
 - `TESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY`: "3rd Party Mac Developer Installer: Foo (TEAMID)".
 - `TESSERACT_MAC_PROVISIONING_PROFILE`: path to the `.provisionprofile`, embedded in the bundle.
-- `TESSERACT_MAC_TEAM_ID`: prefix of the `application-identifier` entitlement.
+- `TESSERACT_MAC_TEAM_ID`: prefix of the `application-identifier` entitlement (also used by the DMG build, see above).
 - `TESSERACT_MAC_BUILD_NUMBER`: `CFBundleVersion`; App Store Connect rejects a repeated one (default: the project version).
 
 With none of the identities set, the build signs ad-hoc with the sandbox

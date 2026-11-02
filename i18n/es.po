@@ -7160,3 +7160,12 @@ msgstr "{0} envió un evento no gestionado: {1}"
 
 msgid "Unhandled event: {0}"
 msgstr "Evento no gestionado: {0}"
+
+msgid "Sign In Again"
+msgstr "Inicia sesión de nuevo"
+
+#, c++-format
+msgid "The saved sign-in for {0} could not be found on this computer, so you need to sign in again. Have your recovery key ready to restore your message history."
+msgid_plural "The saved sign-ins for {0} could not be found on this computer, so you need to sign in again. Have your recovery keys ready to restore your message history."
+msgstr[0] "No se encontró en este equipo el inicio de sesión guardado de {0}, así que debes iniciar sesión de nuevo. Ten a mano tu clave de recuperación para restaurar tu historial de mensajes."
+msgstr[1] "No se encontraron en este equipo los inicios de sesión guardados de {0}, así que debes iniciar sesión de nuevo. Ten a mano tus claves de recuperación para restaurar tu historial de mensajes."

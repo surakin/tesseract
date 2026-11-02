@@ -335,6 +335,10 @@ public:
     /// re-runs the whole restore flow, including a fresh connectivity probe.
     void show_offline_error(std::function<void()> retry_cb);
 
+    /// Single-button notice for accounts the index lists but whose saved
+    /// sign-in could not be found, so the user knows to sign in again.
+    void show_missing_session_notice(const std::vector<std::string>& user_ids);
+
     // -----------------------------------------------------------------------
     // Runtime control
     // -----------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 #include "app/ShellBase.h"
 #include <tesseract/paths.h>
+#include <tesseract/session_store.h>
 
 #include <chrono>
 #include <condition_variable>
@@ -302,4 +303,30 @@ TEST_CASE("restore_all_accounts_async_ leaves the status line alone when an "
     REQUIRE(done_called);
     REQUIRE(s.sync_texts_.size() == 1);
     CHECK(s.sync_texts_[0] == "Restoring session…");
+}
+
+TEST_CASE("restore_all_accounts_async_ reports indexed accounts whose saved session is missing",
+          "[shell][restore-async]")
+{
+    RestoreDirFixture dir_fixture;
+    tesseract::SessionStore::AccountIndex idx;
+    idx.user_ids = {"@ghost:example.org"};
+    idx.active_user_id = "@ghost:example.org";
+    REQUIRE(tesseract::SessionStore::save_index(idx));
+
+    RestoreAsyncShell s;
+    RestoreAsyncShell::RestoreResult result;
+    bool done_called = false;
+    s.restore_all_accounts_async_(
+        [&](RestoreAsyncShell::RestoreResult r)
+        {
+            done_called = true;
+            result = std::move(r);
+        });
+    s.wait_and_drain(std::chrono::seconds(5));
+
+    REQUIRE(done_called);
+    CHECK_FALSE(result.any_accounts);
+    REQUIRE(result.missing_session_user_ids.size() == 1);
+    CHECK(result.missing_session_user_ids[0] == "@ghost:example.org");
 }

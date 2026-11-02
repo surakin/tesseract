@@ -281,3 +281,17 @@ TEST_CASE("LoginView settings button shows only on the first-login form",
     lv.set_mode(LoginView::Mode::AddAccount);
     CHECK_FALSE(lv.settings_visible());
 }
+
+TEST_CASE("LoginView show_missing_session_notice is safe to call repeatedly",
+          "[tk][view][login][alert]")
+{
+    StubHost host;
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
+    lv.set_relayout([] {});
+    lv.finish_init();
+
+    lv.show_missing_session_notice({});
+    lv.show_missing_session_notice({"@ghost:example.org"});
+    lv.show_missing_session_notice({"@a:x", "@b:x"});
+}
