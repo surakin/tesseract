@@ -24,7 +24,14 @@ class FakeVideoCapture : public tk::VideoCapture
 public:
     Error start_error = Error::None;
     bool running = false;
+    // The factory's count of running captures; outlives this capture, so a
+    // test can check it after the view has destroyed the capture.
+    int* running_count = nullptr;
 
+    ~FakeVideoCapture() override
+    {
+        stop();
+    }
     void start() override
     {
         clear_error_();
@@ -33,10 +40,18 @@ public:
             report_error_(start_error);
             return;
         }
+        if (!running && running_count)
+        {
+            ++*running_count;
+        }
         running = true;
     }
     void stop() override
     {
+        if (running && running_count)
+        {
+            --*running_count;
+        }
         running = false;
     }
     void set_callback(FrameCallback) override
@@ -53,7 +68,9 @@ public:
 // factory on scope exit.
 struct FakeFactory
 {
+    // Raw pointers: only valid while their owner still holds the capture.
     std::vector<FakeVideoCapture*> created;
+    int running = 0;
     Error next_start_error = Error::None;
     bool no_device = false;
 
@@ -68,6 +85,7 @@ struct FakeFactory
                 }
                 auto c = std::make_unique<FakeVideoCapture>();
                 c->start_error = next_start_error;
+                c->running_count = &running;
                 created.push_back(c.get());
                 return c;
             });
@@ -223,7 +241,9 @@ TEST_CASE("call lobby releases the camera before the call starts", "[call_lobby]
     lobby.on_join = [&](const std::string&, const std::string&, bool, bool, bool)
     {
         joined = true;
-        camera_running_during_join = !factory.created.empty() && factory.created.front()->running;
+        // The lobby has already destroyed its capture here, so ask the
+        // factory rather than reading the freed object.
+        camera_running_during_join = factory.running != 0;
     };
 
     lobby.open("!room:x", "call#default", false);
