@@ -1,18 +1,24 @@
 //! OAuth 2.0 / Matrix Authentication Service login flow.
 //!
-//! The desktop client follows the "loopback redirect" pattern from RFC 8252:
+//! Two redirect modes (`RedirectMode`), both from RFC 8252:
 //!
-//!  1. `begin()` discovers the homeserver, builds the client metadata,
-//!     stands up a loopback HTTP listener on 127.0.0.1:<random_port> via
-//!     matrix-sdk's `LocalServerBuilder` and asks the SDK for an authorisation
-//!     URL with that redirect URI.
-//!  2. The C++ side opens the URL in the user's default browser.
-//!  3. `await_slice()` awaits the browser's GET to the loopback listener, in
-//!     short slices (see `ClientFfi::oauth_await_slice`).
-//!     The SDK's `LocalServerRedirectHandle` captures the query string and we
-//!     hand it to `OAuth::finish_login`, which performs the token exchange and
-//!     persists the session inside the SDK's sqlite store.
-//!  4. `cancel()` shuts the listener down so a stalled flow can be aborted.
+//!  * `Loopback`: `begin()` stands up an HTTP listener on 127.0.0.1:<random_port>
+//!    via matrix-sdk's `LocalServerBuilder`; the browser's GET to it is the
+//!    callback.
+//!  * `External`: no listener. The redirect is the private-use URI
+//!    `EXTERNAL_REDIRECT_URI` and the app hands the callback URL back through
+//!    `deliver_callback()` (e.g. from a system web-auth session).
+//!
+//! The flow:
+//!
+//!  1. `begin()` discovers the homeserver, builds the client metadata and asks
+//!     the SDK for an authorisation URL with the mode's redirect URI.
+//!  2. The C++ side opens the URL in a browser or web-auth session.
+//!  3. `await_slice()` awaits the callback, in short slices (see
+//!     `ClientFfi::oauth_await_slice`), and hands it to `OAuth::finish_login`,
+//!     which performs the token exchange and persists the session inside the
+//!     SDK's sqlite store.
+//!  4. `cancel()` ends the wait so a stalled flow can be aborted.
 
 use anyhow::{anyhow, Context as _};
 use matrix_sdk::{
@@ -26,8 +32,8 @@ use matrix_sdk::{
     media::MediaRetentionPolicy,
     utils::{
         local_server::{
-            LocalServerBuilder, LocalServerIpAddress, LocalServerResponse,
-            LocalServerShutdownHandle,
+            LocalServerBuilder, LocalServerIpAddress, LocalServerRedirectHandle,
+            LocalServerResponse, LocalServerShutdownHandle,
         },
         UrlOrQuery,
     },
@@ -192,11 +198,110 @@ pub(crate) fn build_sdk_http_client() -> matrix_sdk::reqwest::Client {
         .unwrap_or_else(|_| matrix_sdk::reqwest::Client::new())
 }
 
-/// The half-built client and the redirect-await handle, consumed once by
-/// the first `await_slice`.
+/// Where the authorisation server sends the browser back to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RedirectMode {
+    /// A loopback HTTP listener on a random port (RFC 8252 section 7.3).
+    Loopback,
+    /// A private-use URI scheme; the app delivers the callback URL itself.
+    External,
+}
+
+/// Redirect URI for `RedirectMode::External`: the reverse-DNS of `CLIENT_URI`'s
+/// host as the scheme (RFC 8252 section 7.1), with a single-slash path.
+pub const EXTERNAL_REDIRECT_URI: &str = "io.github.surakin:/callback";
+
+/// The receiving half of the redirect, consumed once by the wait.
+enum RedirectSource {
+    Loopback(LocalServerRedirectHandle),
+    External(tokio::sync::oneshot::Receiver<Url>),
+}
+
+/// The cancelling/delivering half of the redirect, kept on the `PendingFlow`.
+#[derive(Clone)]
+enum RedirectCancel {
+    Loopback(LocalServerShutdownHandle),
+    External(std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<Url>>>>),
+}
+
+impl RedirectSource {
+    fn external() -> (RedirectSource, RedirectCancel) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        (
+            RedirectSource::External(rx),
+            RedirectCancel::External(std::sync::Arc::new(std::sync::Mutex::new(Some(tx)))),
+        )
+    }
+}
+
+/// Hand an externally-received callback URL to the waiting flow. A URL that is
+/// not this app's redirect is rejected without consuming the flow.
+fn deliver_to(cancel: &RedirectCancel, url: &str) -> anyhow::Result<()> {
+    let RedirectCancel::External(sender) = cancel else {
+        anyhow::bail!("this sign-in does not accept a delivered callback");
+    };
+    let parsed = Url::parse(url).context("callback url")?;
+    let expected = Url::parse(EXTERNAL_REDIRECT_URI).expect("EXTERNAL_REDIRECT_URI is valid");
+    if parsed.scheme() != expected.scheme()
+        || parsed.host().is_some()
+        || parsed.path() != expected.path()
+    {
+        anyhow::bail!("not the sign-in callback url");
+    }
+    let tx = sender
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| anyhow!("sign-in callback already delivered or flow cancelled"))?;
+    tx.send(parsed)
+        .map_err(|_| anyhow!("sign-in is no longer waiting for a callback"))
+}
+
+/// End the wait: shut the listener down, or drop the callback sender.
+fn cancel_source(cancel: &RedirectCancel) {
+    match cancel {
+        RedirectCancel::Loopback(handle) => handle.clone().shutdown(),
+        RedirectCancel::External(sender) => {
+            sender.lock().unwrap().take();
+        }
+    }
+}
+
+/// Waits for the redirect, bounded so a login the user walked away from must not
+/// hold the flow forever.
+async fn await_redirect(source: RedirectSource) -> anyhow::Result<UrlOrQuery> {
+    const CANCELLED: &str = "oauth flow cancelled or redirect server error";
+    match source {
+        RedirectSource::Loopback(handle) => {
+            let shutdown = handle.shutdown_handle();
+            match tokio::time::timeout(OAUTH_CALLBACK_TIMEOUT, handle).await {
+                Ok(q) => q
+                    .map(|q| UrlOrQuery::Query(q.0))
+                    .ok_or_else(|| anyhow!(CANCELLED)),
+                Err(_) => {
+                    // Free the loopback port now rather than when the flow is dropped.
+                    shutdown.shutdown();
+                    Err(anyhow!(TIMED_OUT))
+                }
+            }
+        }
+        RedirectSource::External(rx) => {
+            match tokio::time::timeout(OAUTH_CALLBACK_TIMEOUT, rx).await {
+                Ok(Ok(url)) => Ok(UrlOrQuery::Url(url)),
+                Ok(Err(_closed)) => Err(anyhow!(CANCELLED)),
+                Err(_) => Err(anyhow!(TIMED_OUT)),
+            }
+        }
+    }
+}
+
+const TIMED_OUT: &str = "the sign-in in the browser was not completed in time; start again";
+
+/// The half-built client and the redirect source, consumed once by the first
+/// `await_slice`.
 struct PendingFlowState {
     client: Client,
-    redirect_handle: matrix_sdk::utils::local_server::LocalServerRedirectHandle,
+    source: RedirectSource,
 }
 
 /// State carried between `begin` and the end of the browser wait.
@@ -217,10 +322,10 @@ pub struct PendingFlow {
     /// by the separate, non-blocking `oauth_commit` step (see
     /// `ClientFfi::oauth_commit`) that stores it on `ClientFfi`.
     finished: std::sync::Mutex<Option<Client>>,
-    /// Shutdown handle cloned from `redirect_handle`; used by `cancel()`.
-    /// Cheaply `Clone` and never mutated after construction, so it needs no
-    /// lock of its own.
-    pub shutdown_handle: LocalServerShutdownHandle,
+    /// Cancels the wait (`cancel()`) and, in external mode, receives the
+    /// delivered callback (`deliver_callback()`). Cheaply `Clone` and never
+    /// replaced after construction, so it needs no lock of its own.
+    cancel: RedirectCancel,
 }
 
 /// Output of `begin`.
@@ -355,27 +460,45 @@ pub(crate) async fn build_configured_client(
     Ok(client)
 }
 
-/// Phase 1 — bind the loopback socket, register the client, build the auth URL.
+/// Phase 1 — set up the redirect (loopback socket or external URI), register
+/// the client, build the auth URL.
 pub async fn begin(
     homeserver: &str,
     sqlite_path: &std::path::Path,
     register: bool,
     user_id_hint: &str,
     store_key: &[u8; 32],
+    mode: RedirectMode,
 ) -> anyhow::Result<BeginResult> {
-    // 1. Bind a loopback redirect server on a random port. We need the port
+    // 1. Loopback: bind a redirect server on a random port. We need the port
     //    before asking the SDK to embed it in the redirect URI, so spawn the
-    //    server first.
-    let (base_url, redirect_handle) = LocalServerBuilder::new()
-        .ip_address(LocalServerIpAddress::Localhostv4)
-        .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
-        .spawn()
-        .await
-        .context("bind loopback redirect server")?;
-    let shutdown_handle = redirect_handle.shutdown_handle();
-
-    let mut redirect_url = base_url.clone();
-    redirect_url.set_path("callback");
+    //    server first. External: a fixed private-use URI, nothing to bind.
+    let (redirect_url, source, cancel) = match mode {
+        RedirectMode::Loopback => {
+            let (base_url, redirect_handle) = LocalServerBuilder::new()
+                .ip_address(LocalServerIpAddress::Localhostv4)
+                .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
+                .spawn()
+                .await
+                .context("bind loopback redirect server")?;
+            let cancel = RedirectCancel::Loopback(redirect_handle.shutdown_handle());
+            let mut redirect_url = base_url;
+            redirect_url.set_path("callback");
+            (
+                redirect_url,
+                RedirectSource::Loopback(redirect_handle),
+                cancel,
+            )
+        }
+        RedirectMode::External => {
+            let (source, cancel) = RedirectSource::external();
+            (
+                Url::parse(EXTERNAL_REDIRECT_URI).context("external redirect uri")?,
+                source,
+                cancel,
+            )
+        }
+    };
     let redirect_uri = redirect_url.to_string();
 
     // 2. Build the SDK client.
@@ -391,7 +514,9 @@ pub async fn begin(
     //    port to receive the browser's callback, so only this registered
     //    copy has it stripped.
     let mut registered_redirect_uri = redirect_url.clone();
-    let _ = registered_redirect_uri.set_port(None);
+    if mode == RedirectMode::Loopback {
+        let _ = registered_redirect_uri.set_port(None);
+    }
 
     let metadata = ClientMetadata {
         client_name: Some(Localized::new("Tesseract".to_owned(), [])),
@@ -447,50 +572,32 @@ pub async fn begin(
         auth_url: auth_data.url.to_string(),
         redirect_uri,
         flow: PendingFlow {
-            pending: std::sync::Mutex::new(Some(PendingFlowState {
-                client,
-                redirect_handle,
-            })),
+            pending: std::sync::Mutex::new(Some(PendingFlowState { client, source })),
             waiter: std::sync::Mutex::new(None),
             finished: std::sync::Mutex::new(None),
-            shutdown_handle,
+            cancel,
         },
     })
 }
 
-/// How long the loopback redirect is awaited before the sign-in gives up.
+/// How long the redirect (loopback hit or app-delivered callback) is awaited before the sign-in gives up.
 const OAUTH_CALLBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 /// How long one slice of the browser wait may take before control returns to the
 /// caller. Kept short so a writer queued on the FFI lock is never held for long.
 pub const OAUTH_WAIT_SLICE: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// Phase 2 — await the browser's loopback redirect, then ask the SDK to
+/// Phase 2 — await the browser's redirect (loopback hit or app-delivered callback), then ask the SDK to
 /// finalise the login, and return the authenticated client. This is the
 /// background task that `await_slice` polls.
 async fn finish_redirect(state: PendingFlowState) -> anyhow::Result<Client> {
-    let PendingFlowState {
-        client,
-        redirect_handle,
-    } = state;
-    let shutdown_handle = redirect_handle.shutdown_handle();
+    let PendingFlowState { client, source } = state;
 
-    // Bounded: a login the user walked away from must not hold the flow forever.
-    let query = match tokio::time::timeout(OAUTH_CALLBACK_TIMEOUT, redirect_handle).await {
-        Ok(q) => q,
-        Err(_) => {
-            // Free the loopback port now rather than when the flow is dropped.
-            shutdown_handle.shutdown();
-            return Err(anyhow!(
-                "the sign-in in the browser was not completed in time; start again"
-            ));
-        }
-    }
-    .ok_or_else(|| anyhow!("oauth flow cancelled or redirect server error"))?;
+    let callback = await_redirect(source).await?;
 
     client
         .oauth()
-        .finish_login(UrlOrQuery::Query(query.0))
+        .finish_login(callback)
         .await
         .context("oauth finish_login")?;
 
@@ -576,9 +683,16 @@ pub(crate) async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Trip the cancel flag; the redirect server shuts down immediately.
+/// End the wait: the loopback server shuts down, or the external callback
+/// channel closes.
 pub fn cancel(flow: &PendingFlow) {
-    flow.shutdown_handle.clone().shutdown();
+    cancel_source(&flow.cancel);
+}
+
+/// Hand the callback URL received by the app (external mode) to the waiting
+/// flow. Fails for a loopback flow, a foreign URL, or a repeat delivery.
+pub fn deliver_callback(flow: &PendingFlow, url: &str) -> anyhow::Result<()> {
+    deliver_to(&flow.cancel, url)
 }
 
 /// Best-effort check whether `homeserver` allows account registration via the
@@ -888,15 +1002,15 @@ mod pending_flow_tests {
             .build()
             .await
             .unwrap();
-        let shutdown_handle = redirect_handle.shutdown_handle();
+        let cancel = RedirectCancel::Loopback(redirect_handle.shutdown_handle());
         let flow = PendingFlow {
             pending: std::sync::Mutex::new(Some(PendingFlowState {
                 client,
-                redirect_handle,
+                source: RedirectSource::Loopback(redirect_handle),
             })),
             waiter: std::sync::Mutex::new(None),
             finished: std::sync::Mutex::new(None),
-            shutdown_handle,
+            cancel,
         };
         (flow, base_url)
     }
@@ -984,8 +1098,96 @@ mod pending_flow_tests {
                 .as_nanos()
         ));
         let _ = std::fs::create_dir_all(&dir);
-        let res = begin("not a valid homeserver \0", &dir, false, "", &[3u8; 32]).await;
+        let res = begin(
+            "not a valid homeserver \0",
+            &dir,
+            false,
+            "",
+            &[3u8; 32],
+            RedirectMode::Loopback,
+        )
+        .await;
         assert!(res.is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod external_redirect_tests {
+    use super::*;
+    use matrix_sdk::utils::local_server::{LocalServerBuilder, LocalServerIpAddress};
+
+    async fn dummy_shutdown_handle() -> LocalServerShutdownHandle {
+        let (_base, handle) = LocalServerBuilder::new()
+            .ip_address(LocalServerIpAddress::Localhostv4)
+            .spawn()
+            .await
+            .unwrap();
+        handle.shutdown_handle()
+    }
+
+    #[test]
+    fn external_redirect_uri_is_reverse_dns_of_client_uri() {
+        let host = Url::parse(CLIENT_URI)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_owned();
+        let reversed: Vec<&str> = host.split('.').rev().collect();
+        let uri = Url::parse(EXTERNAL_REDIRECT_URI).unwrap();
+        assert_eq!(uri.scheme(), reversed.join("."));
+        assert_eq!(uri.path(), "/callback");
+        assert!(uri.host().is_none());
+    }
+
+    #[tokio::test]
+    async fn external_deliver_completes_wait() {
+        let (source, cancel) = RedirectSource::external();
+        let flow_cancel = cancel.clone();
+        deliver_to(&cancel, "io.github.surakin:/callback?code=abc&state=xyz").unwrap();
+        let got = await_redirect(source).await.unwrap();
+        assert!(matches!(got, UrlOrQuery::Url(u) if u.query() == Some("code=abc&state=xyz")));
+        drop(flow_cancel);
+    }
+
+    #[tokio::test]
+    async fn external_cancel_ends_wait() {
+        let (source, cancel) = RedirectSource::external();
+        cancel_source(&cancel);
+        let err = await_redirect(source).await.unwrap_err();
+        assert!(format!("{err:#}").contains("cancelled"));
+    }
+
+    #[test]
+    fn deliver_rejects_foreign_url_and_keeps_flow() {
+        let (_source, cancel) = RedirectSource::external();
+        assert!(deliver_to(&cancel, "matrix:r/room:example.org").is_err());
+        assert!(deliver_to(&cancel, "io.github.surakin:/other?code=a").is_err());
+        assert!(deliver_to(&cancel, "io.github.surakin://evil/callback?code=a").is_err());
+        assert!(deliver_to(&cancel, "io.github.surakin:/callback?code=a&state=b").is_ok());
+    }
+
+    #[test]
+    fn deliver_accepts_error_redirect() {
+        let (_source, cancel) = RedirectSource::external();
+        assert!(deliver_to(
+            &cancel,
+            "io.github.surakin:/callback?error=access_denied&state=s"
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn deliver_twice_fails() {
+        let (_source, cancel) = RedirectSource::external();
+        deliver_to(&cancel, "io.github.surakin:/callback?code=a&state=b").unwrap();
+        assert!(deliver_to(&cancel, "io.github.surakin:/callback?code=a&state=b").is_err());
+    }
+
+    #[tokio::test]
+    async fn deliver_to_loopback_flow_fails() {
+        // A loopback flow has nothing to deliver to; the browser hits the listener.
+        let cancel = RedirectCancel::Loopback(dummy_shutdown_handle().await);
+        assert!(deliver_to(&cancel, "io.github.surakin:/callback?code=a").is_err());
     }
 }

@@ -7482,3 +7482,7 @@ msgid "The saved sign-in for {0} could not be found on this computer, so you nee
 msgid_plural "The saved sign-ins for {0} could not be found on this computer, so you need to sign in again. Have your recovery keys ready to restore your message history."
 msgstr[0] "[Thé sàvéd sïgñ-ïñ för {0} çöùld ñöt bé föùñd öñ thïs çömpùtér, sö yöù ñééd tö sïgñ ïñ àgàïñ. Hàvé yöùr réçövéry kéy réàdy tö réstöré yöùr méssàgé hïstöry.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 msgstr[1] "[Thé sàvéd sïgñ-ïñs för {0} çöùld ñöt bé föùñd öñ thïs çömpùtér, sö yöù ñééd tö sïgñ ïñ àgàïñ. Hàvé yöùr réçövéry kéys réàdy tö réstöré yöùr méssàgé hïstöry.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/LoginView.cpp
+msgid "The sign-in window could not be opened."
+msgstr "[Thé sïgñ-ïñ wïñdöw çöùld ñöt bé öpéñédxxxxxxx]"

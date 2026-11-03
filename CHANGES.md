@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(macos): sign-in opens in the system sign-in window instead of using a local listener. Linux release build, ctest 3842/3842, user-verified macOS
 - fix(macos): a DMG install's sessions carry over to the App Store edition when the DMG is built with a Developer ID provisioning profile. User-verified macOS (DMG → TestFlight)
 - feat(ui): the sign-in screen explains when a saved sign-in could not be found on this computer. Linux build + ctest
 - build(macos): release builds ship a stripped binary with a separate dSYM, about a third smaller. Unverified, pending CI

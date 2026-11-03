@@ -7169,3 +7169,7 @@ msgid "The saved sign-in for {0} could not be found on this computer, so you nee
 msgid_plural "The saved sign-ins for {0} could not be found on this computer, so you need to sign in again. Have your recovery keys ready to restore your message history."
 msgstr[0] "No se encontró en este equipo el inicio de sesión guardado de {0}, así que debes iniciar sesión de nuevo. Ten a mano tu clave de recuperación para restaurar tu historial de mensajes."
 msgstr[1] "No se encontraron en este equipo los inicios de sesión guardados de {0}, así que debes iniciar sesión de nuevo. Ten a mano tus claves de recuperación para restaurar tu historial de mensajes."
+
+#: ui/shared/views/LoginView.cpp
+msgid "The sign-in window could not be opened."
+msgstr "No se pudo abrir la ventana de inicio de sesión."

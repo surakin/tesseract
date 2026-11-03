@@ -743,6 +743,15 @@ void ShellBase::ensure_login_view_()
         {
             open_login_url_or_show_(*v, url);
         });
+    v->set_web_auth(
+        [this]
+        {
+            return web_auth_session_available_ui_();
+        },
+        [this](const std::string& auth_url, const std::string& scheme, views::WebAuthDone done)
+        {
+            return start_web_auth_session_ui_(auth_url, scheme, std::move(done));
+        });
     v->set_on_success(
         [this]
         {

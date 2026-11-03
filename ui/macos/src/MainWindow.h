@@ -214,6 +214,13 @@ protected:
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
     void on_tray_unread_changed_(bool has_unread, bool has_highlight) override;
     void on_dock_badge_changed_(uint64_t count) override;
+    bool web_auth_session_available_ui_() const override
+    {
+        return true;
+    }
+    std::function<void()> start_web_auth_session_ui_(const std::string& auth_url,
+                                                     const std::string& callback_scheme,
+                                                     views::WebAuthDone done) override;
     void ingest_tile_media_(const tk::CacheKey& key, std::vector<std::uint8_t> bytes) override;
     void decode_video_first_frame_(std::vector<std::uint8_t> bytes,
                                    std::function<void(std::vector<std::uint8_t>)> done) override;

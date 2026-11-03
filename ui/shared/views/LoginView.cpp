@@ -737,6 +737,7 @@ void LoginView::set_client(tesseract::Client* c)
     // and stopped touching the old client_ before the alias changes.
     if (state_ == State::Waiting && client_ && client_ != c)
     {
+        end_web_auth_();
         cancelled_.store(true);
         client_->cancel_oauth();
         join_worker_();
@@ -754,6 +755,7 @@ void LoginView::shutdown()
     ++icon_gen_;
 #endif
     ++registration_gen_;
+    end_web_auth_();
     cancelled_.store(true);
     if (client_)
     {
@@ -765,6 +767,7 @@ void LoginView::shutdown()
 void LoginView::reset()
 {
     ++discovery_gen_;
+    end_web_auth_();
     cancelled_.store(true);
     if (client_)
     {
@@ -863,10 +866,13 @@ void LoginView::start_oauth_(bool register_account)
     }
 
     auto* c = client_; // snapshot: set_client() may race with this worker
+    const bool external = web_auth_start_ && web_auth_available_ && web_auth_available_();
     worker_ = std::thread(
-        [this, hs, c, register_account, user_id_hint]
+        [this, hs, c, register_account, user_id_hint, external]
         {
-            auto flow = c->begin_oauth(hs, register_account, user_id_hint);
+            auto flow = c->begin_oauth(hs, register_account, user_id_hint,
+                                       external ? tesseract::Client::OAuthRedirect::External
+                                                : tesseract::Client::OAuthRedirect::Loopback);
             if (cancelled_.load())
             {
                 return;
@@ -874,9 +880,10 @@ void LoginView::start_oauth_(bool register_account)
             bool ok = static_cast<bool>(flow);
             std::string payload = ok ? flow.auth_url : flow.message;
             post_to_ui_(
-                [this, ok, payload = std::move(payload)]
+                [this, ok, external, payload = std::move(payload),
+                 redirect_uri = std::move(flow.redirect_uri)]
                 {
-                    begin_completed_(ok, payload);
+                    begin_completed_(ok, payload, redirect_uri, external);
                 });
         });
 }
@@ -1175,7 +1182,13 @@ void LoginView::hs_changed_(const std::string& text)
     }
 }
 
-void LoginView::begin_completed_(bool ok, std::string url)
+void LoginView::begin_completed_for_test_(bool ok, std::string url, std::string redirect_uri)
+{
+    begin_completed_(ok, std::move(url), std::move(redirect_uri),
+                     static_cast<bool>(web_auth_start_));
+}
+
+void LoginView::begin_completed_(bool ok, std::string url, std::string redirect_uri, bool external)
 {
     join_worker_();
     if (!ok)
@@ -1190,7 +1203,25 @@ void LoginView::begin_completed_(bool ok, std::string url)
         return;
     }
 
-    if (open_browser_)
+    if (external && web_auth_start_)
+    {
+        const uint32_t gen = ++web_auth_generation_;
+        auto done = [this, gen](WebAuthResult r)
+        {
+            if (gen != web_auth_generation_)
+            {
+                return; // cancelled or superseded
+            }
+            on_web_auth_done_(std::move(r));
+        };
+        auto cancel = web_auth_start_(url, callback_scheme(redirect_uri), std::move(done));
+        if (gen != web_auth_generation_)
+        {
+            return; // done ran synchronously and already ended the attempt
+        }
+        web_auth_cancel_ = std::move(cancel);
+    }
+    else if (open_browser_)
     {
         open_browser_(url);
     }
@@ -1201,6 +1232,10 @@ void LoginView::begin_completed_(bool ok, std::string url)
 
     cancelled_.store(false);
     auto* c = client_;
+    if (!c)
+    {
+        return;
+    }
     worker_ = std::thread(
         [this, c]
         {
@@ -1219,9 +1254,53 @@ void LoginView::begin_completed_(bool ok, std::string url)
         });
 }
 
+void LoginView::on_web_auth_done_(WebAuthResult r)
+{
+    switch (r.outcome)
+    {
+    case WebAuthResult::Outcome::Callback:
+    {
+        tesseract::Result res;
+        if (client_)
+        {
+            res = client_->deliver_oauth_callback(r.url);
+        }
+        else
+        {
+            res.message = tk::tr("The sign-in window could not be opened.");
+        }
+        if (!res)
+        {
+            teardown_attempt_();
+            set_status(tk::trf(tk::tr("Sign-in failed: {0}"), {res.message}), true);
+        }
+        break;
+    }
+    case WebAuthResult::Outcome::Cancelled:
+        cancel_();
+        break;
+    case WebAuthResult::Outcome::Failed:
+        teardown_attempt_();
+        set_status(tk::tr("The sign-in window could not be opened."), true);
+        break;
+    }
+}
+
+void LoginView::end_web_auth_()
+{
+    ++web_auth_generation_;
+    auto cancel = std::move(web_auth_cancel_);
+    web_auth_cancel_ = nullptr;
+    if (cancel)
+    {
+        cancel();
+    }
+}
+
 void LoginView::await_completed_(bool ok, std::string err)
 {
     join_worker_();
+    end_web_auth_(); // the sheet may still be up (e.g. the flow timed out)
     if (ok)
     {
         if (on_success_)
@@ -1241,6 +1320,16 @@ void LoginView::await_completed_(bool ok, std::string err)
 
 void LoginView::cancel_()
 {
+    teardown_attempt_();
+    if (on_cancel_done_)
+    {
+        on_cancel_done_();
+    }
+}
+
+void LoginView::teardown_attempt_()
+{
+    end_web_auth_();
     cancelled_.store(true);
     if (client_)
     {
@@ -1256,10 +1345,6 @@ void LoginView::cancel_()
         hs_field_->set_enabled(true);
     }
     relayout_();
-    if (on_cancel_done_)
-    {
-        on_cancel_done_();
-    }
 }
 
 void LoginView::update_oauth_availability_(bool available)

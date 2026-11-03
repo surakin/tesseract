@@ -156,6 +156,13 @@ public:
     // Authentication (OAuth 2.0 / Matrix Authentication Service)
     // ------------------------------------------------------------------
 
+    /// How the OAuth browser redirect reaches the app.
+    enum class OAuthRedirect
+    {
+        Loopback,
+        External
+    };
+
     struct OAuthFlow
     {
         bool ok = false;
@@ -225,8 +232,14 @@ public:
     /// true (OIDC prompt=create). Returns the auth URL to open in a browser.
     /// A full Matrix ID in `user_id_hint` asks the server to prefill the
     /// username (ignored for registration or when malformed).
+    /// `redirect` External expects the app to feed the callback URL to
+    /// `deliver_oauth_callback` instead of using the loopback listener.
     OAuthFlow begin_oauth(const std::string& homeserver, bool register_account = false,
-                          const std::string& user_id_hint = {});
+                          const std::string& user_id_hint = {},
+                          OAuthRedirect redirect = OAuthRedirect::Loopback);
+
+    /// Hand the browser's private-use-scheme redirect URL to an External-mode flow.
+    Result deliver_oauth_callback(const std::string& url);
 
     /// Best-effort: does `homeserver` advertise OIDC registration support?
     /// Blocks the calling thread — invoke from a worker thread.

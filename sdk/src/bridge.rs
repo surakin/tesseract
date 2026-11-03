@@ -2422,13 +2422,21 @@ pub mod ffi {
         /// Begin the OAuth login (or, when `register_account` is true,
         /// registration via OIDC prompt=create) flow. Returns the auth URL to
         /// open in a browser. A non-empty `user_id_hint` (a full Matrix ID) is sent as
-        /// the MSC4198 login hint so the server can prefill the username.
+        /// the MSC4198 login hint so the server can prefill the username. With
+        /// `external_redirect` the redirect is a private-use-scheme URI whose
+        /// callback the app delivers via `oauth_deliver_callback`, instead of a
+        /// loopback listener.
         fn oauth_begin(
             self: &mut ClientFfi,
             homeserver: &str,
             register_account: bool,
             user_id_hint: &str,
+            external_redirect: bool,
         ) -> OAuthBegin;
+
+        /// Hand the browser's private-use-scheme redirect to an External-mode
+        /// flow. Fast; callable while a wait slice is in progress.
+        fn oauth_deliver_callback(self: &ClientFfi, url: &str) -> OpResult;
 
         /// Best-effort: does `homeserver` advertise OIDC registration support
         /// (`prompt_values_supported` contains `create`)? Blocks — worker thread.
@@ -2438,7 +2446,7 @@ pub mod ffi {
         /// (authorization-server metadata is fetchable)? Blocks — worker thread.
         fn homeserver_supports_oauth(self: &ClientFfi, homeserver: &str) -> bool;
 
-        /// One slice of the browser's loopback-redirect wait. Returns `pending`
+        /// One slice of the browser-redirect wait (loopback hit or app-delivered callback). Returns `pending`
         /// until the browser answers or the flow fails. The C++ side calls it in
         /// a loop, releasing the shared lock between calls. `&ClientFfi` (not
         /// `&mut`) so `oauth_cancel` can run concurrently — see the comment on

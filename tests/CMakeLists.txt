@@ -74,6 +74,7 @@ add_executable(tesseract_tests
     cpp/test_tk_user_profile_panel.cpp
     cpp/test_tk_account_picker.cpp
     cpp/test_tk_login_view.cpp
+    cpp/test_web_auth.cpp
     cpp/test_server_browser.cpp
     cpp/test_tk_sticker_picker.cpp
     cpp/test_image_pack_order.cpp

@@ -10,6 +10,7 @@
 #import "MacRelaunchHandoff.h"
 #import "MacPowerMonitor.h"
 #import "MacScreenLock.h"
+#import "MacWebAuthSession.h"
 #import "RoomWindowController.h"
 #import "AuxWindowController.h"
 #import "CallWindowController.h"
@@ -310,6 +311,13 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     {
         tray_->set_unread(has_unread, has_highlight);
     }
+}
+
+std::function<void()> MainWindow::start_web_auth_session_ui_(const std::string& auth_url,
+                                                             const std::string& callback_scheme,
+                                                             views::WebAuthDone done)
+{
+    return start_web_auth_session(ctrl_.window, auth_url, callback_scheme, std::move(done));
 }
 
 void MainWindow::on_dock_badge_changed_(uint64_t count)

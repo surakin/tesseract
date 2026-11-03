@@ -121,6 +121,10 @@ msgstr ""
 msgid "Sign-in failed: {0}"
 msgstr ""
 
+#: ui/shared/views/LoginView.cpp:1270
+msgid "The sign-in window could not be opened."
+msgstr ""
+
 #: ui/linux-gtk/src/MainWindow.cpp:3131 ui/linux-qt/src/MainWindow.cpp:3098
 #: ui/windows/src/MainWindow.cpp:6473
 msgid "Choose a folder for the exported history"

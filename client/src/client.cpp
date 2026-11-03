@@ -158,10 +158,11 @@ std::vector<uint8_t> Client::store_key() const
 }
 
 Client::OAuthFlow Client::begin_oauth(const std::string& homeserver, bool register_account,
-                                      const std::string& user_id_hint)
+                                      const std::string& user_id_hint, OAuthRedirect redirect)
 {
     MUT_FFI;
-    auto r = impl_->ffi->oauth_begin(homeserver, register_account, user_id_hint);
+    auto r = impl_->ffi->oauth_begin(homeserver, register_account, user_id_hint,
+                                     redirect == OAuthRedirect::External);
     return OAuthFlow{
         .ok = r.ok,
         .message = std::string(r.message),
@@ -222,6 +223,13 @@ Result Client::await_oauth()
     }
     MUT_FFI;
     return from_ffi(impl_->ffi->oauth_commit());
+}
+
+Result Client::deliver_oauth_callback(const std::string& url)
+{
+    // SH_FFI: runs between await slices, like cancel_oauth().
+    SH_FFI;
+    return from_ffi(impl_->ffi->oauth_deliver_callback(url));
 }
 
 void Client::cancel_oauth()

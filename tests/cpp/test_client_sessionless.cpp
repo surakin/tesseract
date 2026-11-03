@@ -108,6 +108,14 @@ TEST_CASE("sessionless Client: list and value queries come back empty", "[client
     CHECK_FALSE(c.paginate_room_threads(kRoom).ok);
 }
 
+TEST_CASE("deliver_oauth_callback without a flow fails cleanly", "[client][oauth]")
+{
+    tesseract::Client c;
+    auto r = c.deliver_oauth_callback("io.github.surakin:/callback?code=a&state=b");
+    CHECK_FALSE(r.ok);
+    CHECK_FALSE(r.message.empty());
+}
+
 TEST_CASE("sessionless Client: fire-and-forget calls are harmless no-ops", "[client][sessionless]")
 {
     Client c;

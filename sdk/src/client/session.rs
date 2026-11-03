@@ -395,6 +395,7 @@ impl ClientFfi {
         homeserver: &str,
         register_account: bool,
         user_id_hint: &str,
+        external_redirect: bool,
     ) -> OAuthBegin {
         if let Some(prev) = self.oauth_flow.take() {
             oauth::cancel(&prev);
@@ -426,6 +427,11 @@ impl ClientFfi {
             register_account,
             user_id_hint,
             &key,
+            if external_redirect {
+                oauth::RedirectMode::External
+            } else {
+                oauth::RedirectMode::Loopback
+            },
         )) {
             Ok(begin) => {
                 let auth_url = begin.auth_url;
@@ -526,6 +532,18 @@ impl ClientFfi {
                 ok("")
             }
             None => err("oauth flow has not finished successfully yet"),
+        }
+    }
+
+    /// Hand the browser's private-use-scheme redirect to an External-mode
+    /// flow. Fast; callable while a wait slice is in progress.
+    pub fn oauth_deliver_callback(&self, url: &str) -> OpResult {
+        let Some(flow) = self.oauth_flow.as_ref() else {
+            return err("no oauth flow in progress; call oauth_begin first");
+        };
+        match oauth::deliver_callback(flow, url) {
+            Ok(()) => ok(""),
+            Err(e) => err(format!("{e:#}")),
         }
     }
 

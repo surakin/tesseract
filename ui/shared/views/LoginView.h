@@ -16,6 +16,7 @@
 #include "tk/layout.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
+#include "web_auth.h"
 
 #include <atomic>
 #include <chrono>
@@ -41,8 +42,9 @@ protected:
 public:
     ~LoginView() override
     {
-        // A joinable worker_ would std::terminate the process.
-        if (worker_.joinable())
+        // A joinable worker_ would std::terminate the process; a live web-auth
+        // session must also be ended (it can exist without a worker).
+        if (worker_.joinable() || web_auth_cancel_)
         {
             shutdown();
         }
@@ -82,6 +84,12 @@ public:
     }
 
     bool cancel_visible() const;
+
+    /// The visible status line, "" when hidden.
+    std::string status_text() const
+    {
+        return status_lbl_ && status_lbl_->visible() ? status_lbl_->text() : std::string{};
+    }
 
     bool sign_in_visible() const
     {
@@ -242,6 +250,22 @@ public:
     void set_open_browser(std::function<void(const std::string&)> fn)
     {
         open_browser_ = std::move(fn);
+    }
+
+    /// Optional system web-auth sheet (macOS). When `available()` is true the
+    /// sign-in uses an external redirect and `start` presents the page,
+    /// instead of the loopback listener plus the system browser.
+    void set_web_auth(std::function<bool()> available, WebAuthStart start)
+    {
+        web_auth_available_ = std::move(available);
+        web_auth_start_ = std::move(start);
+    }
+
+    // Test helpers: reach the post-begin_oauth step and the Cancel button.
+    void begin_completed_for_test_(bool ok, std::string url, std::string redirect_uri);
+    void simulate_cancel_click()
+    {
+        cancel_();
     }
 
     void set_on_begin_oauth(std::function<void()> fn)
@@ -413,9 +437,15 @@ private:
     void probe_oauth_support_(const std::string& base_url);
     void update_oauth_availability_(bool available);
     void hs_changed_(const std::string& text);
-    void begin_completed_(bool ok, std::string url);
+    void begin_completed_(bool ok, std::string url, std::string redirect_uri, bool external);
+    void on_web_auth_done_(WebAuthResult r);
+    // Invalidate the pending web-auth callback and cancel its session.
+    void end_web_auth_();
     void await_completed_(bool ok, std::string err);
     void cancel_();
+    /// Teardown half of cancel_(): ends the web-auth session and the await
+    /// worker and returns to the form, without firing on_cancel_done_.
+    void teardown_attempt_();
     void join_worker_();
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -432,6 +462,10 @@ private:
     std::function<void(std::function<void()>)> run_async_;
     std::function<void()> relayout_;
     std::function<void(const std::string&)> open_browser_;
+    std::function<bool()> web_auth_available_;
+    WebAuthStart web_auth_start_;
+    std::function<void()> web_auth_cancel_;
+    uint32_t web_auth_generation_ = 0;
 
     // Controller state
     tesseract::Client* client_ = nullptr;

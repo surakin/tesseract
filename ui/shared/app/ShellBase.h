@@ -2166,6 +2166,20 @@ protected:
     // Open the sign-in URL in the system browser; false when that failed (the
     // login view then shows the URL). Default: Client::open_in_browser.
     virtual bool open_login_url_ui_(const std::string& url);
+    // macOS: sign in through the system web-auth sheet instead of a loopback listener.
+    virtual bool web_auth_session_available_ui_() const
+    {
+        return false;
+    }
+    virtual std::function<void()> start_web_auth_session_ui_(const std::string& auth_url,
+                                                             const std::string& callback_scheme,
+                                                             views::WebAuthDone done)
+    {
+        (void)auth_url;
+        (void)callback_scheme;
+        (void)done;
+        return {};
+    }
     // Open `url` through open_login_url_ui_(); when that fails, show the URL
     // in the login view so the user can open it by hand.
     void open_login_url_or_show_(views::LoginView& view, const std::string& url);

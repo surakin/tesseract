@@ -73,6 +73,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MacPowerMonitor.mm
     src/MacAutostart.h
     src/MacAutostart.mm
+    src/MacWebAuthSession.h
+    src/MacWebAuthSession.mm
     src/MacRelaunchHandoff.h
     src/MacRelaunchHandoff.mm
     src/RoomWindowController.h
@@ -256,6 +258,7 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework MediaPlayer"              # src/MacNowPlaying.mm
     "-framework CoreSpotlight"            # src/MacSpotlightSearch.mm
     "-framework SystemConfiguration"      # tk/host_macos.mm is_network_available()
+    "-framework AuthenticationServices"   # src/MacWebAuthSession.mm
     "-framework IOKit"                    # src/MacPowerMonitor.mm (IOPowerSources)
 )
 if(TESSERACT_LD_NO_WARN_DUPLICATE_LIBRARIES)

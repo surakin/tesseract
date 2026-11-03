@@ -2,6 +2,7 @@
 
 #include "tk/canvas.h"
 #include "tk/theme.h"
+#include "tk/i18n.h"
 #include "views/LoginView.h"
 #include "tk_test_host.h"
 #include "tk_test_surface.h"
@@ -294,4 +295,92 @@ TEST_CASE("LoginView show_missing_session_notice is safe to call repeatedly",
     lv.show_missing_session_notice({});
     lv.show_missing_session_notice({"@ghost:example.org"});
     lv.show_missing_session_notice({"@a:x", "@b:x"});
+}
+
+TEST_CASE("LoginView web auth: done is not called after cancel", "[tk][view][login][oauth]")
+{
+    using tesseract::views::WebAuthDone;
+    using tesseract::views::WebAuthResult;
+
+    TkLoginViewStage st;
+    StubHost host;
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
+    lv.set_mode(LoginView::Mode::AddAccount);
+    lv.set_relayout([] {});
+
+    bool started = false;
+    bool cancelled = false;
+    int cancel_calls = 0;
+    WebAuthDone recorded_done;
+    lv.set_web_auth(
+        []
+        {
+            return true;
+        },
+        [&](const std::string&, const std::string& scheme, WebAuthDone done)
+        {
+            started = true;
+            CHECK(scheme == "io.github.surakin");
+            recorded_done = std::move(done);
+            return std::function<void()>(
+                [&]
+                {
+                    cancelled = true;
+                    ++cancel_calls;
+                });
+        });
+
+    lv.begin_completed_for_test_(true, "https://auth/x", "io.github.surakin:/callback");
+    CHECK(started);
+
+    lv.simulate_cancel_click();
+    CHECK(cancelled);
+    CHECK(lv.state() == LoginView::State::Form);
+
+    REQUIRE(recorded_done);
+    recorded_done({WebAuthResult::Outcome::Callback, "io.github.surakin:/callback?code=a"});
+    CHECK(lv.state() == LoginView::State::Form);
+    CHECK(lv.status_text().empty());
+    CHECK(cancel_calls == 1);
+}
+
+TEST_CASE("LoginView web auth: a failed sheet keeps the error on the form",
+          "[tk][view][login][oauth]")
+{
+    using tesseract::views::WebAuthDone;
+    using tesseract::views::WebAuthResult;
+
+    TkLoginViewStage st;
+    StubHost host;
+    auto lv_owner = tk::create_root_widget<LoginView>(&host);
+    LoginView& lv = *lv_owner;
+    lv.set_mode(LoginView::Mode::AddAccount);
+    lv.set_relayout([] {});
+
+    bool cancel_done = false;
+    lv.set_on_cancel_done(
+        [&]
+        {
+            cancel_done = true;
+        });
+    WebAuthDone recorded_done;
+    lv.set_web_auth(
+        []
+        {
+            return true;
+        },
+        [&](const std::string&, const std::string&, WebAuthDone done)
+        {
+            recorded_done = std::move(done);
+            return std::function<void()>([] {});
+        });
+
+    lv.begin_completed_for_test_(true, "https://auth/x", "io.github.surakin:/callback");
+    REQUIRE(recorded_done);
+    recorded_done({WebAuthResult::Outcome::Failed, ""});
+
+    CHECK_FALSE(cancel_done);
+    CHECK(lv.state() == LoginView::State::Form);
+    CHECK(lv.status_text() == tk::tr("The sign-in window could not be opened."));
 }
