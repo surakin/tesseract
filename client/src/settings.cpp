@@ -387,6 +387,11 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
                              : (layout == "irc")   ? MessageLayout::Irc
                                                    : MessageLayout::Classic;
             bubbles_show_own_avatar = j.value("bubbles_show_own_avatar", true);
+            const auto alignment = j.find("system_message_timeline_alignment");
+            system_message_timeline_alignment =
+                alignment != j.end() && alignment->is_string() && *alignment == "center"
+                    ? SystemMessageTimelineAlignment::Center
+                    : SystemMessageTimelineAlignment::Left;
             timeline_column_pct = 100;
             if (auto it = j.find("timeline_column_pct"); it != j.end() && it->is_number_integer())
             {
@@ -560,6 +565,9 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
                           : message_layout == MessageLayout::Irc   ? "irc"
                                                                    : "classic";
     j["bubbles_show_own_avatar"] = bubbles_show_own_avatar;
+    j["system_message_timeline_alignment"] =
+        system_message_timeline_alignment == SystemMessageTimelineAlignment::Center ? "center"
+                                                                                    : "left";
     j["timeline_column_pct"] = timeline_column_pct;
     j["timeline_column_anchor"] =
         timeline_column_anchor == TimelineColumnAnchor::Center ? "center" : "left";

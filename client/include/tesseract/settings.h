@@ -89,6 +89,15 @@ public:
     // bubbles (right gutter, first row of a run). Default on.
     bool bubbles_show_own_avatar = true;
 
+    // Bubbles layout only: alignment of system messages. Live-applied.
+    enum class SystemMessageTimelineAlignment
+    {
+        Left,
+        Center
+    };
+    SystemMessageTimelineAlignment system_message_timeline_alignment =
+        SystemMessageTimelineAlignment::Left;
+
     // ── Timeline content column ─────────────────────────────────────
     // Width of the column message rows lay out in, as a percentage of the
     // room timeline (clamped 30..100; 100 = the whole width, the default), and where it

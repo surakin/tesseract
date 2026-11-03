@@ -162,6 +162,26 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
             bubbles_own_avatar_cb_ = opts->add_child(std::move(cb));
             binder.bind(bubbles_own_avatar_cb_, &S::bubbles_show_own_avatar,
                         SettingKey::BubblesOwnAvatar);
+            using A = S::SystemMessageTimelineAlignment;
+            opts->add_child(tk::create_widget<tk::Label>(
+                this, tk::tr("Position of system messages in the timeline")));
+            auto alignment = tk::create_widget<tk::ComboBox>(this);
+            alignment->set_options({
+                {tk::tr("Left"), "left"},
+                {tk::tr("Centered"), "center"},
+            });
+            system_message_timeline_alignment_combo_ = opts->add_child(std::move(alignment));
+            binder.bind<A>(system_message_timeline_alignment_combo_,
+                           &S::system_message_timeline_alignment,
+                           SettingKey::SystemMessageTimelineAlignment,
+                           {{A::Left, "left"}, {A::Center, "center"}});
+            auto help = tk::create_widget<tk::Label>(
+                this,
+                tk::tr("Applies to joins, leaves, invites, bans, and changes to profiles and room "
+                       "settings."),
+                tk::FontRole::Small);
+            help->set_wrap(true);
+            opts->add_child(std::move(help));
             opts->set_visible(s.message_layout == ML::Bubbles);
             layout_options_bubbles_ = column->add_child(std::move(opts));
         }

@@ -89,11 +89,65 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     CHECK(s.check("Group inactive rooms")->checked());
 }
 
+TEST_CASE("AppearanceSection: the system-message alignment dropdown writes Settings "
+          "and reports its key",
+          "[tk][view][appearance]")
+{
+    AsStage s;
+    using A = Settings::SystemMessageTimelineAlignment;
+    auto& st = Settings::instance();
+    st.message_layout = Settings::MessageLayout::Bubbles;
+    st.system_message_timeline_alignment = A::Left;
+    s.binder.reload();
+
+    const auto combos = vt::find_all<tk::ComboBox>(*s.sec);
+    REQUIRE(combos.size() == 5);
+    auto* alignment = combos[2];
+    CHECK(alignment->selected_value() == "left");
+    CHECK(alignment->access_name() == "Left");
+    CHECK(alignment->parent()->visible());
+    bool has_title = false;
+    bool has_help = false;
+    for (auto* label : vt::find_all<tk::Label>(*s.sec))
+    {
+        has_title |= label->access_name() == "Position of system messages in the timeline";
+        has_help |= label->access_name() ==
+                    "Applies to joins, leaves, invites, bans, and changes to profiles and room "
+                    "settings.";
+    }
+    CHECK(has_title);
+    CHECK(has_help);
+
+    alignment->on_changed("center");
+    CHECK(st.system_message_timeline_alignment == A::Center);
+    CHECK(s.keys == std::vector<SettingKey>{SettingKey::SystemMessageTimelineAlignment});
+    alignment->on_changed("left");
+    CHECK(st.system_message_timeline_alignment == A::Left);
+    CHECK(s.keys.size() == 2);
+
+    // reload() pushes the stored value back without reporting.
+    s.keys.clear();
+    st.system_message_timeline_alignment = A::Center;
+    s.binder.reload();
+    CHECK(s.keys.empty());
+    CHECK(alignment->selected_value() == "center");
+    CHECK(alignment->access_name() == "Centered");
+
+    for (auto layout : {Settings::MessageLayout::Classic, Settings::MessageLayout::Irc})
+    {
+        st.message_layout = layout;
+        s.binder.reload();
+        CHECK_FALSE(alignment->parent()->visible());
+        CHECK(st.system_message_timeline_alignment == A::Center);
+    }
+}
+
 TEST_CASE("AppearanceSection combos map to settings enums", "[tk][view][appearance]")
 {
     AsStage s;
     auto combos = vt::find_all<tk::ComboBox>(*s.sec);
-    REQUIRE(combos.size() == 4); // accent, message layout, timeline position, inactive period
+    // Accent, message layout, system-message alignment, timeline position, inactive period.
+    REQUIRE(combos.size() == 5);
 
     auto& st = Settings::instance();
     std::vector<Settings::ThemeAccent> accents;
@@ -119,11 +173,11 @@ TEST_CASE("AppearanceSection combos map to settings enums", "[tk][view][appearan
                                                           Settings::MessageLayout::Irc,
                                                           Settings::MessageLayout::Classic});
 
-    combos[2]->on_changed("center");
+    combos[3]->on_changed("center");
     CHECK(st.timeline_column_anchor == Settings::TimelineColumnAnchor::Center);
-    combos[2]->on_changed("left");
+    combos[3]->on_changed("left");
 
-    combos[3]->on_changed("90");
+    combos[4]->on_changed("90");
     CHECK(st.inactive_room_threshold_days == 90);
 
     st.theme_accent = Settings::ThemeAccent::Violet;
@@ -132,8 +186,8 @@ TEST_CASE("AppearanceSection combos map to settings enums", "[tk][view][appearan
     s.binder.reload();
     CHECK(combos[0]->selected_value() == "violet");
     CHECK(combos[1]->selected_value() == "irc");
-    CHECK(combos[2]->selected_value() == "left");
-    CHECK(combos[3]->selected_value() == "30");
+    CHECK(combos[3]->selected_value() == "left");
+    CHECK(combos[4]->selected_value() == "30");
     s.run();
 }
 

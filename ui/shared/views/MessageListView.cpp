@@ -5090,8 +5090,8 @@ private:
         }
     }
 
-    void paint_centered_membership_text_(const std::string& text, tk::PaintCtx& ctx,
-                                         tk::Rect bounds) const
+    void paint_centered_system_message_text_(const std::string& text, tk::PaintCtx& ctx,
+                                             tk::Rect bounds) const
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
@@ -5111,8 +5111,8 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
-    void paint_centered_membership_line_(const MessageRowData& m, tk::PaintCtx& ctx,
-                                         tk::Rect bounds) const
+    void paint_centered_system_message_line_(const MessageRowData& m, tk::PaintCtx& ctx,
+                                             tk::Rect bounds) const
     {
         if (!m.pronoun_resolved &&
             m.membership_action == tesseract::MembershipAction::KnockRetracted &&
@@ -5121,11 +5121,11 @@ private:
             owner_.on_member_pronoun_needed(m.membership_target_user_id);
         }
 
-        paint_centered_membership_text_(membership_expanded_phrase(m), ctx, bounds);
+        paint_centered_system_message_text_(membership_expanded_phrase(m), ctx, bounds);
     }
 
-    void paint_centered_membership_summary_(std::size_t start, std::size_t end, tk::PaintCtx& ctx,
-                                            tk::Rect bounds) const
+    void paint_centered_system_message_summary_(std::size_t start, std::size_t end,
+                                                tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         float y = bounds.y;
         for (const auto& run : membership_group_actions(start, end))
@@ -5141,8 +5141,8 @@ private:
                 owner_.on_member_pronoun_needed(first.membership_target_user_id);
             }
 
-            paint_centered_membership_text_(membership_run_phrase(owner_.messages_, run), ctx,
-                                            {bounds.x, y, bounds.w, kPinnedEventH});
+            paint_centered_system_message_text_(membership_run_phrase(owner_.messages_, run), ctx,
+                                                {bounds.x, y, bounds.w, kPinnedEventH});
             y += kPinnedEventH;
         }
     }
@@ -8215,13 +8215,23 @@ public:
     bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
                                const Adapter& ad) const override
     {
-        ad.paint_centered_membership_line_(m, ctx, bounds);
+        if (tesseract::Settings::instance().system_message_timeline_alignment !=
+            tesseract::Settings::SystemMessageTimelineAlignment::Center)
+        {
+            return false;
+        }
+        ad.paint_centered_system_message_line_(m, ctx, bounds);
         return true;
     }
     bool paint_membership_summary(std::size_t start, std::size_t end, tk::PaintCtx& ctx,
                                   tk::Rect bounds, const Adapter& ad) const override
     {
-        ad.paint_centered_membership_summary_(start, end, ctx, bounds);
+        if (tesseract::Settings::instance().system_message_timeline_alignment !=
+            tesseract::Settings::SystemMessageTimelineAlignment::Center)
+        {
+            return false;
+        }
+        ad.paint_centered_system_message_summary_(start, end, ctx, bounds);
         return true;
     }
 };

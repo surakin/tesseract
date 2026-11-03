@@ -6453,6 +6453,18 @@ msgstr "Beim Bestätigen ist etwas schiefgelaufen. Bitte versuche es erneut."
 msgid "Show my name and avatar"
 msgstr "Meinen Namen und Avatar anzeigen"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Position of system messages in the timeline"
+msgstr "Position der Systemnachrichten in der Zeitleiste"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:174
+msgid ""
+"Applies to joins, leaves, invites, bans, and changes to profiles and room "
+"settings."
+msgstr ""
+"Gilt für Beitritte, Austritte, Einladungen, Sperrungen sowie Änderungen an "
+"Profilen und Chateinstellungen."
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "Du hast keine Berechtigung, Anrufen in diesem Raum beizutreten."
