@@ -185,8 +185,13 @@ linking, `dsymutil` writes `<build>/ui/macos/Tesseract.app.dSYM`, then
 `strip -x` drops local symbols from `Tesseract.app/Contents/MacOS/Tesseract`
 (before codesigning, so the DMG ships the stripped binary). Keep the `.dSYM`
 for every build you distribute: it is the only way to symbolicate that build's
-crash reports. CI uploads it as `Tesseract-<version>-<arch>.dSYM.zip`. Pass
-`-DTESSERACT_MAC_STRIP=OFF` to keep the dSYM but skip stripping.
+crash reports. CI uploads it as `Tesseract-<version>-<arch>.dSYM.zip`.
+
+Both steps are controlled by `TESSERACT_MAC_STRIP`, which defaults to ON only
+under GitHub Actions. Local builds make no dSYM and keep the executable
+unstripped; pass `-DTESSERACT_MAC_STRIP=ON` to get CI's behaviour. An existing
+build directory keeps its cached value, so reconfigure it with
+`-DTESSERACT_MAC_STRIP=OFF` if it was configured before this default changed.
 
 The App Store `.pkg` additionally embeds Apple `.symbols` (generated from the
 dSYM with `xcrun symbols`) through `productbuild`'s undocumented

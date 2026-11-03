@@ -179,23 +179,27 @@ set_target_properties(tesseract_macos PROPERTIES
 # crash report from that exact build), then strip -x drops the local symbols
 # from the shipped executable. This must be declared before the codesign
 # POST_BUILD commands below, since stripping invalidates a signature; the DMG
-# install copies this already-stripped bundle. TESSERACT_MAC_STRIP=OFF keeps
-# the dSYM but leaves the executable unstripped. Frameworks/libopus is left alone.
+# install copies this already-stripped bundle. Frameworks/libopus is left alone.
+#
+# Only distributed builds need this, so it defaults to ON under GitHub Actions
+# and OFF elsewhere: local builds keep the unstripped executable, which lldb
+# symbolicates through the debug map. The two steps go together because a
+# strip without a dSYM loses the symbols for good.
+if(DEFINED ENV{GITHUB_ACTIONS})
+    set(_mac_strip_default ON)
+else()
+    set(_mac_strip_default OFF)
+endif()
 option(TESSERACT_MAC_STRIP
-    "Strip the macOS Release executable after generating its .dSYM"
-    ON)
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    "Generate a .dSYM for the macOS Release executable, then strip it"
+    ${_mac_strip_default})
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND TESSERACT_MAC_STRIP)
     add_custom_command(TARGET tesseract_macos POST_BUILD
         COMMAND dsymutil $<TARGET_BUNDLE_CONTENT_DIR:tesseract_macos>/MacOS/Tesseract
                 -o $<TARGET_BUNDLE_DIR:tesseract_macos>.dSYM
-        COMMENT "Generating dSYM for crash symbolication"
+        COMMAND strip -x $<TARGET_BUNDLE_CONTENT_DIR:tesseract_macos>/MacOS/Tesseract
+        COMMENT "Generating dSYM and stripping Tesseract executable"
         VERBATIM)
-    if(TESSERACT_MAC_STRIP)
-        add_custom_command(TARGET tesseract_macos POST_BUILD
-            COMMAND strip -x $<TARGET_BUNDLE_CONTENT_DIR:tesseract_macos>/MacOS/Tesseract
-            COMMENT "Stripping Tesseract executable"
-            VERBATIM)
-    endif()
 endif()
 
 # opus: audiopus_sys (the Rust crate) emits a link-lib=opus directive that
