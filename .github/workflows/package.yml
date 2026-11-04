@@ -467,11 +467,15 @@ jobs:
   # Variables: TESSERACT_MAC_APPSTORE_APP_IDENTITY, _INSTALLER_IDENTITY (full
   # certificate names), TESSERACT_MAC_TEAM_ID.
   # Skipped (not failed) when the certificate secrets are missing.
+  #
+  # Independent of the GitHub Release: the release job doesn't wait for it or
+  # ship its .pkg, and unlike the other jobs it doesn't cancel the run when it
+  # fails. continue-on-error keeps a failure from marking the whole run failed,
+  # which publish-release.yml's Microsoft Store job needs to find this run.
   # ---------------------------------------------------------------------------
   macos-appstore:
-    # Disabled until the Mac App Store build is ready; remove this line to re-enable.
-    if: false
     name: macOS universal (Mac App Store pkg)
+    continue-on-error: true
     runs-on: macos-latest
     # Holds the App Store certificates, profile and identity variables.
     environment: appstore
@@ -481,7 +485,6 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     permissions:
       contents: read
-      actions: write
 
     steps:
       - uses: actions/checkout@v7
@@ -627,12 +630,6 @@ jobs:
       - name: Remove signing keychain
         if: always() && steps.as_check.outputs.present == 'true'
         run: security delete-keychain "$RUNNER_TEMP/appstore.keychain-db" || true
-
-      - name: Cancel workflow run on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
   # macOS x86_64 (Intel) — DragNDrop DMG (signing secrets: see macos-arm64 above)

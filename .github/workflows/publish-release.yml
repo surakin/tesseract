@@ -290,9 +290,7 @@ jobs:
   # ---------------------------------------------------------------------------
   appstore:
     name: Mac App Store upload
-    # Disabled until the Mac App Store build is ready (see package.yml);
-    # restore `github.event_name == 'release' || inputs.appstore` to re-enable.
-    if: false
+    if: github.event_name == 'release' || inputs.appstore
     runs-on: macos-latest
     # Holds the App Store Connect API key and TESSERACT_MAC_APPSTORE_APPLE_ID.
     environment: appstore
@@ -331,7 +329,7 @@ jobs:
           echo "Using package.yml run $run_id"
           if ! gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
                  --name tesseract-macos-appstore --dir appstore; then
-            echo "::error::Couldn't download tesseract-macos-appstore from run $run_id; it may have expired (90-day retention) or the signing secrets were missing"
+            echo "::error::Couldn't download tesseract-macos-appstore from run $run_id; it may have expired (90-day retention), the signing secrets were missing, or the macos-appstore job failed"
             exit 1
           fi
           ls appstore/Tesseract-*-appstore.pkg
