@@ -1,5 +1,7 @@
 #include "text_area.h"
 
+#include "caret_blink.h"
+
 #include <algorithm>
 
 namespace tk
@@ -570,7 +572,7 @@ void TextArea::paint(PaintCtx& ctx)
     }
     // See TextField::paint's identical canvas-owned-caret block — same
     // rationale, mirrored here for TextArea.
-    if (area_->caret_owned_by_canvas() && area_->caret_blink_visible())
+    if (area_->caret_owned_by_canvas() && caret_drawn(area_->caret_blink_visible(), has_focus()))
     {
         Rect cr = area_->caret_rect();
         if (cr.h > 0.0f)

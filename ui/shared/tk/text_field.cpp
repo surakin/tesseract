@@ -1,5 +1,7 @@
 #include "text_field.h"
 
+#include "caret_blink.h"
+
 #include <algorithm>
 
 namespace tk
@@ -426,7 +428,7 @@ void TextField::paint(PaintCtx& ctx)
     // design (that's what lets the blink timer skip recapturing the whole
     // control just to toggle this). A minimum 1-DIP width guards against a
     // backend reporting a technically-zero-width caret rect.
-    if (field_->caret_owned_by_canvas() && field_->caret_blink_visible())
+    if (field_->caret_owned_by_canvas() && caret_drawn(field_->caret_blink_visible(), has_focus()))
     {
         Rect cr = field_->caret_rect();
         if (cr.h > 0.0f)

@@ -306,6 +306,7 @@ add_executable(tesseract_tests
     cpp/test_tk_room_media_view_grid.cpp
     cpp/test_tk_participant_tile.cpp
     cpp/test_tk_toast.cpp
+    cpp/test_tk_caret_blink.cpp
     cpp/test_timeline_media_controller.cpp
     cpp/test_media_playback_hub.cpp
     cpp/test_status_links.cpp

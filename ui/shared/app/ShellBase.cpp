@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/shell_helpers.h"
+#include "tk/caret_blink.h"
 #include "views/MainAppWidget.h"
 #include "views/SettingsView.h"
 #include <tesseract/open_media.h>
@@ -494,6 +495,9 @@ bool ShellBase::seed_screenshot_fixture_(tk::CanvasFactory& factory)
     {
         return false;
     }
+
+    // A blinking caret lands on or off at random; keep it solid in the images.
+    tk::set_caret_blink_enabled(false);
 
     screenshot_fixture_ = screenshot::make_fixture();
     const auto& f = screenshot_fixture_;
