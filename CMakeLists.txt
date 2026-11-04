@@ -389,10 +389,14 @@ endif()
 # codegen unit cuts the Rust part to ~100 MB but makes release Rust builds
 # much slower and hungrier for RAM, so it's opt-in for disk-constrained
 # machines rather than set in Cargo.toml for every build. Release only.
-option(TESSERACT_RUST_LTO
-    "Fat LTO for the Rust SDK crate in release builds (much smaller archive, slower build)"
-    OFF)
-if(TESSERACT_RUST_LTO)
+set(TESSERACT_RUST_LTO OFF CACHE STRING
+    "Rust SDK crate LTO in release builds: OFF, ON (fat, smallest, slowest) or thin (1 codegen unit, parallel across crates)")
+set_property(CACHE TESSERACT_RUST_LTO PROPERTY STRINGS OFF ON thin)
+if(TESSERACT_RUST_LTO STREQUAL "thin")
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        CARGO_PROFILE_RELEASE_LTO=thin
+        CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1)
+elseif(TESSERACT_RUST_LTO)
     corrosion_set_env_vars(tesseract_sdk_ffi
         CARGO_PROFILE_RELEASE_LTO=fat
         CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1)

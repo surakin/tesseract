@@ -111,7 +111,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64",
         "Rust_CARGO_TARGET": "aarch64-apple-darwin",
-        "TESSERACT_MAC_APP_STORE": "ON"
+        "TESSERACT_MAC_APP_STORE": "ON",
+        "TESSERACT_RUST_LTO": "thin"
       }
     }
   ],
