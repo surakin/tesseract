@@ -1,7 +1,11 @@
 #include "app/ScreenshotDirector.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
+#include <system_error>
 #include <utility>
 
 #ifndef _WIN32
@@ -53,6 +57,24 @@ std::optional<bool> capture_externally(const std::string& path)
 #endif
 }
 
+namespace
+{
+
+bool same_contents(const std::filesystem::path& a, const std::filesystem::path& b)
+{
+    std::ifstream fa(a, std::ios::binary);
+    std::ifstream fb(b, std::ios::binary);
+    if (!fa || !fb)
+    {
+        return false;
+    }
+    return std::equal(std::istreambuf_iterator<char>(fa), std::istreambuf_iterator<char>(),
+                      std::istreambuf_iterator<char>(fb), std::istreambuf_iterator<char>()) &&
+           fb.peek() == std::ifstream::traits_type::eof();
+}
+
+} // namespace
+
 std::string screenshot_filename(std::string_view prefix, std::string_view scene,
                                 ScreenshotTheme theme)
 {
@@ -97,22 +119,80 @@ void ScreenshotDirector::step_()
     const auto theme = dark ? ScreenshotTheme::Dark : ScreenshotTheme::Light;
     host_.apply_theme(theme);
     host_.refresh();
-    host_.run_after(
-        settle_ms_,
-        [this, scene, dark, theme]
-        {
-            if (!host_.save_png(screenshot_filename(prefix_, scenes_[scene].name, theme)))
-            {
-                host_.finish(false);
-                return;
-            }
-            if (dark && scenes_[scene].teardown)
-            {
-                scenes_[scene].teardown();
-            }
-            ++index_;
-            step_();
-        });
+    host_.run_after(settle_ms_,
+                    [this, scene, dark, theme]
+                    {
+                        const auto name = screenshot_filename(prefix_, scenes_[scene].name, theme);
+                        if (!host_.save_png(name))
+                        {
+                            host_.finish(false);
+                            return;
+                        }
+                        check_stable_(name, 1, scene, dark);
+                    });
+}
+
+void ScreenshotDirector::check_stable_(std::string name, int attempt, std::size_t scene, bool dark)
+{
+    const auto dir = host_.output_dir();
+    if (dir.empty())
+    {
+        advance_(scene, dark);
+        return;
+    }
+    host_.run_after(kStableCheckMs,
+                    [this, name = std::move(name), attempt, scene, dark, dir]
+                    {
+                        const std::string check = "check-" + name;
+                        if (!host_.save_png(check))
+                        {
+                            host_.finish(false);
+                            return;
+                        }
+                        const auto saved = dir / name;
+                        const auto checked = dir / check;
+                        std::error_code ec;
+                        if (same_contents(saved, checked))
+                        {
+                            std::filesystem::remove(checked, ec);
+                            if (attempt > 1)
+                            {
+                                std::fprintf(stderr, "screenshot %s settled after %d checks\n",
+                                             name.c_str(), attempt);
+                            }
+                            advance_(scene, dark);
+                            return;
+                        }
+                        if (attempt >= kMaxStableChecks)
+                        {
+                            std::fprintf(stderr, "screenshot %s still changing after %d checks\n",
+                                         name.c_str(), attempt);
+                            std::filesystem::remove(checked, ec);
+                            host_.finish(false);
+                            return;
+                        }
+                        // Keep the newer frame as the one the next check compares against.
+                        std::filesystem::rename(checked, saved, ec);
+                        if (ec)
+                        {
+                            std::fprintf(stderr,
+                                         "screenshot %s: could not replace the saved frame: %s\n",
+                                         name.c_str(), ec.message().c_str());
+                            host_.finish(false);
+                            return;
+                        }
+                        check_stable_(name, attempt + 1, scene, dark);
+                    });
+}
+
+void ScreenshotDirector::advance_(std::size_t scene, bool dark)
+{
+    if (dark && scenes_[scene].teardown)
+    {
+        scenes_[scene].teardown();
+    }
+    ++index_;
+    step_();
 }
 
 } // namespace tesseract::screenshot

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -43,6 +44,14 @@ struct ScreenshotHost : StepHost
     /// Relayout + schedule a repaint after a scene or theme change.
     virtual void refresh() = 0;
     virtual bool save_png(const std::string& filename) = 0;
+    /// The directory save_png writes into. When set, the director saves each
+    /// capture again after a short wait and accepts it only once both files
+    /// are identical, so a frame still animating or not yet painted is
+    /// retried instead of saved. Empty (the default) skips that check.
+    virtual std::filesystem::path output_dir() const
+    {
+        return {};
+    }
 };
 
 struct Scene
@@ -57,7 +66,8 @@ std::string screenshot_filename(std::string_view prefix, std::string_view scene,
                                 ScreenshotTheme theme);
 
 /// Steps scenes × {light, dark}: setup, then per theme apply/refresh/wait/
-/// save, then teardown. Stops at the first failed save.
+/// save (repeated until two saves match, see ScreenshotHost::output_dir),
+/// then teardown. Stops at the first failed save or a frame that never settles.
 class ScreenshotDirector
 {
 public:
@@ -68,11 +78,18 @@ public:
 
 private:
     void step_();
+    /// Re-saves `name` as "check-<name>" after kStableCheckMs and compares the
+    /// two files; on a mismatch keeps the newer one and tries again.
+    void check_stable_(std::string name, int attempt, std::size_t scene, bool dark);
+    /// Runs the scene teardown after a dark capture, then the next capture.
+    void advance_(std::size_t scene, bool dark);
 
     ScreenshotHost& host_;
     std::vector<Scene> scenes_;
     std::string prefix_;
     int settle_ms_;
+    static constexpr int kStableCheckMs = 150;
+    static constexpr int kMaxStableChecks = 20;
     std::size_t index_ = 0; // capture index: scene = index_/2, theme = index_%2
 };
 

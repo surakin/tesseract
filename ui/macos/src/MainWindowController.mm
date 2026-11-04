@@ -56,6 +56,10 @@ public:
         NSLog(@"Could not save screenshot: %@", path);
         return false;
     }
+    std::filesystem::path output_dir() const override
+    {
+        return std::filesystem::path([directory_ fileSystemRepresentation]);
+    }
 
 private:
     __weak MainWindowController* controller_;

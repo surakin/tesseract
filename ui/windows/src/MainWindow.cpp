@@ -2316,6 +2316,10 @@ public:
         OutputDebugStringW(L"Tesseract screenshot: failed to save image\n");
         return false;
     }
+    std::filesystem::path output_dir() const override
+    {
+        return window_.screenshot_dir_;
+    }
 };
 
 void MainWindow::start_screenshot_mode_()

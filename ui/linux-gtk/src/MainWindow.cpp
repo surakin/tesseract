@@ -1081,6 +1081,10 @@ public:
     {
         return window_.save_screenshot_(filename.c_str());
     }
+    std::filesystem::path output_dir() const override
+    {
+        return window_.screenshot_dir();
+    }
 };
 
 } // namespace

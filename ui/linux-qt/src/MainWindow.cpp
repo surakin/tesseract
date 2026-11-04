@@ -565,6 +565,10 @@ public:
         qCritical("Could not save screenshot: %s", qPrintable(path));
         return false;
     }
+    std::filesystem::path output_dir() const override
+    {
+        return std::filesystem::path(dir_.toStdString());
+    }
 
 private:
     MainWindow& window_;

@@ -109,6 +109,10 @@ public:
     void apply_screenshot_theme_(bool dark);
     void refresh_for_screenshot_();
     bool save_screenshot_(const char* filename);
+    const std::filesystem::path& screenshot_dir() const
+    {
+        return screenshot_dir_;
+    }
 #endif
 
 #ifdef TESSERACT_SMOKE_MODE_ENABLED
