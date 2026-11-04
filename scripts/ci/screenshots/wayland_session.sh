@@ -84,6 +84,13 @@ export GSK_RENDERER=cairo
 export TESSERACT_SCREENSHOT_CAPTURE="$here/grab.sh"
 unset DISPLAY
 
+# Default to Noto Sans with Noto Color Emoji right behind it, as on a KDE
+# desktop (see fonts.conf). fontconfig only loads conf.d files whose name starts
+# with digits.
+fontconf="${XDG_CONFIG_HOME:-$HOME/.config}/fontconfig/conf.d"
+mkdir -p "$fontconf"
+cp "$here/fonts.conf" "$fontconf/05-tesseract-screenshots.conf"
+
 dump_logs() {
     echo "--- labwc.log ---" >&2
     cat "$runtime/labwc.log" >&2
