@@ -2373,6 +2373,7 @@ impl ClientFfi {
                     // per-item captions.
                     caption: None,
                     thumbnail,
+                    extra_content: None,
                 });
             }
 
@@ -2884,8 +2885,8 @@ impl ClientFfi {
                 .flatten()
                 .and_then(|raw| raw.deserialize().ok())
                 .map(|ev| ev.content.event_id)?;
-            let ts_ms = match room.event_cache().await {
-                Ok((cache, _handles)) => cache
+            let ts_ms = match super::room_event_cache(&room).await {
+                Some((cache, _handles)) => cache
                     .find_event(&event_id)
                     .await
                     .ok()
@@ -2893,7 +2894,7 @@ impl ClientFfi {
                     .and_then(|ev| ev.timestamp())
                     .map(|ts| u64::from(ts.get()))
                     .unwrap_or(0),
-                Err(_) => 0,
+                None => 0,
             };
             Some(crate::ffi::FullyReadMarkerFfi {
                 event_id: event_id.to_string(),
@@ -2926,7 +2927,7 @@ impl ClientFfi {
             return 0;
         };
         let fut = async {
-            let (cache, _handles) = room.event_cache().await.ok()?;
+            let (cache, _handles) = super::room_event_cache(&room).await?;
             cache
                 .rfind_map_event_in_memory_by(|ev| {
                     is_dated_content_event(ev).then(|| ev.timestamp().map(|ts| u64::from(ts.get())))

@@ -289,21 +289,6 @@ impl ClientFfi {
         let handler = Arc::new(Mutex::new(SendHandler(handler)));
         self.handler = Some(Arc::clone(&handler));
 
-        // Subscribe the event cache before SyncService starts so every sync
-        // response is persisted to SQLite from the very first update.
-        // subscribe() is synchronous but internally calls tokio::task::spawn,
-        // so it must be called within the runtime context.
-        let _rt_guard = self.rt.enter();
-        if let Err(e) = client.event_cache().subscribe() {
-            tracing::error!("event cache subscribe failed: {e}");
-            {
-                let guard = handler.lock();
-                guard.on_error("event_cache_init", &e.to_string(), false);
-            }
-            return;
-        }
-        drop(_rt_guard);
-
         // Session refresh watcher.
         {
             let h = Arc::clone(&handler);
@@ -480,7 +465,11 @@ impl ClientFfi {
             // source for that fix: filtered below to rooms that currently
             // have pins, it's the trigger that makes the already-correct
             // (post-fix) `resolve_pinned_event` actually get re-run.
-            let mut generic_updates_rx = client.event_cache().subscribe_to_room_generic_updates();
+            // The event cache is always enabled, so `None` is not expected; if it
+            // ever happens the listener simply never fires.
+            let mut generic_updates_rx = client
+                .event_cache()
+                .map(|ec| ec.subscribe_to_room_generic_updates());
             let mut stop_rx_rooms = stop_rx.clone();
             let packs_cache = Arc::clone(&self.image_packs);
             let write_pending = Arc::clone(&self.user_pack_write_pending);
@@ -668,7 +657,12 @@ impl ClientFfi {
                                 emit_snapshot(&cache, &previews, &h);
                             }
                         }
-                        result = generic_updates_rx.recv() => {
+                        result = async {
+                            match generic_updates_rx.as_mut() {
+                                Some(rx) => rx.recv().await,
+                                None => std::future::pending().await,
+                            }
+                        } => {
                             use tokio::sync::broadcast::error::RecvError as GenericRecvError;
                             let room_id = match result {
                                 Ok(update) => update.room_id,

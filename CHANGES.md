@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- build: matrix-rust-sdk fork moved to upstream main of 2026-10-25 (`50801276e`), keeping ruma at 0.17.2. cargo 1601/1601
 - feat(macos): sign-in opens in the system sign-in window instead of using a local listener. Linux release build, ctest 3842/3842, user-verified macOS
 - fix(macos): a DMG install's sessions carry over to the App Store edition when the DMG is built with a Developer ID provisioning profile. User-verified macOS (DMG → TestFlight)
 - feat(ui): the sign-in screen explains when a saved sign-in could not be found on this computer. Linux build + ctest

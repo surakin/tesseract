@@ -961,7 +961,7 @@ pub(crate) async fn forwarded_snippet(
     if !may_be_forward_fallback(msgtype) {
         return None;
     }
-    let (cache, _handles) = room.event_cache().await.ok()?;
+    let (cache, _handles) = super::room_event_cache(room).await?;
     let ev = cache.find_event(event_id).await.ok().flatten()?;
     forwarded_snippet_from_event_json(ev.raw().json().get())
 }
@@ -2149,7 +2149,10 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 (
                     a.id.clone(),
                     a.text.clone(),
-                    r.votes.get(&a.id).cloned().unwrap_or_default(),
+                    r.votes
+                        .get(&a.id)
+                        .map(|v| v.iter().map(|u| u.to_string()).collect())
+                        .unwrap_or_default(),
                 )
             })
             .collect();

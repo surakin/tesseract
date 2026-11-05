@@ -320,6 +320,17 @@ pub(super) fn parse_room_id(id: &str) -> Result<OwnedRoomId, OpResult> {
         .map_err(|e| err(format!("invalid room id: {e}")))
 }
 
+/// The room's event cache, or `None` when the client has no event cache or
+/// the room's cache can't be opened.
+pub(super) async fn room_event_cache(
+    room: &matrix_sdk::Room,
+) -> Option<(
+    matrix_sdk::event_cache::RoomEventCache,
+    std::sync::Arc<matrix_sdk::event_cache::EventCacheDropHandles>,
+)> {
+    room.client().event_cache()?.room(room.room_id()).await.ok()
+}
+
 #[cfg(not(test))]
 pub(super) fn require_room(
     client: &Client,

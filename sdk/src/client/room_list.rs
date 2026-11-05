@@ -4,6 +4,7 @@
 //! Split out of `client.rs` in the modularization refactor; behavior unchanged.
 
 use super::{err, ok, ClientFfi};
+use std::future::IntoFuture;
 
 use crate::ffi::OpResult;
 
@@ -2958,7 +2959,10 @@ impl ClientFfi {
 
         let result = if mxc_uri.is_empty() {
             self.rt
-                .block_on(room.send_state_event_raw("m.room.avatar", "", serde_json::json!({})))
+                .block_on(
+                    room.send_state_event_raw("m.room.avatar", "", serde_json::json!({}))
+                        .into_future(),
+                )
                 .map(|_| ())
         } else {
             let mxc: OwnedMxcUri = match mxc_uri.try_into() {

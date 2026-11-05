@@ -58,8 +58,10 @@ impl ClientFfi {
             Err(e) => return fail(e.to_string()),
         };
 
-        let approval_url = match handle.auth_type() {
-            CrossSigningResetAuthType::OAuth(info) => info.approval_url.to_string(),
+        let (approval_url, auth_data) = match handle.auth_type() {
+            CrossSigningResetAuthType::OAuth(info) => {
+                (info.approval_url.to_string(), info.as_auth_data())
+            }
             // This client authenticates only via OAuth/OIDC; a password-based
             // UIA reset flow isn't wired. Bail rather than half-complete.
             CrossSigningResetAuthType::Uiaa(_) => {
@@ -76,7 +78,7 @@ impl ClientFfi {
 
         // Poll for the user's browser approval off the FFI mutex.
         self.rt.spawn(async move {
-            let res = handle.auth(None).await;
+            let res = handle.auth(auth_data).await;
             {
                 let g = handler.lock();
                 match res {

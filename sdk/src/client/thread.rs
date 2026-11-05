@@ -64,7 +64,7 @@ impl ClientFfi {
             return err("room not found");
         };
         let focus = TimelineFocus::Thread {
-            root_event_id: root.clone(),
+            thread_id: root.clone(),
         };
         let room_for_build = room.clone();
         let unhandled_filter =
@@ -1051,8 +1051,7 @@ async fn apply_thread_chips(
                 // the room timeline to gain a duplicate row.
                 let server_count = match room.event(&item.root_event.event_id, None).await {
                     Ok(fetched) => fetched
-                        .thread_summary
-                        .summary()
+                        .thread_summary()
                         .map(|s| s.num_replies as u64)
                         .unwrap_or_else(|| item.num_replies as u64),
                     // Network/decryption failure — fall back to the
