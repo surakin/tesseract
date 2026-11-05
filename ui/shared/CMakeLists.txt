@@ -473,6 +473,11 @@ if(TESSERACT_ENABLE_SCREENSHOT_MODE)
         app/ScreenshotDirector.cpp
         app/ScreenshotFixture.h
         app/ScreenshotFixture.cpp)
+
+    # Where the fixture's real image files live.
+    set_source_files_properties(app/ScreenshotFixture.cpp PROPERTIES
+        COMPILE_DEFINITIONS "TESSERACT_SCREENSHOT_ASSETS_DIR=\"${CMAKE_SOURCE_DIR}/scripts/ci/screenshots/assets\""
+        SKIP_UNITY_BUILD_INCLUSION ON)
 endif()
 
 if(TESSERACT_ENABLE_SMOKE_MODE)

@@ -3,6 +3,8 @@
 #include "tk/image_sniff.h"
 #include <tesseract/session_store.h>
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <system_error>
 
 namespace tesseract
@@ -28,7 +30,7 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
                                s->deliver_(std::move(disk));
                                return;
                            }
-                           if (!client_)
+                           if (!client_ && !s->screenshot_local())
                            {
                                s->erase_inflight_();
                                return;
@@ -96,6 +98,43 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
                        });
                });
 }
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+bool ShellBase::screenshot_local_media_url_(const std::string& url) const
+{
+    return screenshot_local_media_ && screenshot::local_media_path(url).has_value();
+}
+
+bool ShellBase::serve_screenshot_media_(std::uint64_t request_id, const std::string& url)
+{
+    if (!screenshot_local_media_)
+    {
+        return false;
+    }
+    auto path = screenshot::local_media_path(url);
+    if (!path)
+    {
+        return false;
+    }
+    run_async_("screenshot-media-read",
+               [this, request_id, path = std::move(*path)]
+               {
+                   // A read failure delivers empty bytes, like a failed download.
+                   std::vector<std::uint8_t> bytes;
+                   if (std::ifstream in(path, std::ios::binary); in)
+                   {
+                       bytes.assign(std::istreambuf_iterator<char>(in),
+                                    std::istreambuf_iterator<char>());
+                   }
+                   post_to_ui_alive_(
+                       [this, request_id, bytes = std::move(bytes)]() mutable
+                       {
+                           handle_media_ready_ui_(request_id, std::move(bytes));
+                       });
+               });
+    return true;
+}
+#endif
 
 void ShellBase::note_media_fetch_failed_(const std::string& key,
                                          const std::shared_ptr<AccountSession>& sess)
@@ -677,13 +716,22 @@ void ShellBase::fetch_media_pipeline_(std::string cache_key, tk::CacheKey disk_k
     {
         spec.priority_key = cache_key;
     }
-    spec.load_disk_ = [this, disk_key]
+    // Local screenshot files never touch the on-disk media cache.
+    const bool local_media =
+        screenshot_local_media_url_(source) || screenshot_local_media_url_(cache_key);
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    spec.screenshot_local_ = local_media;
+#endif
+    spec.load_disk_ = [this, disk_key, local_media]() -> std::vector<std::uint8_t>
     {
-        return load_media_bytes_(disk_key);
+        return local_media ? std::vector<std::uint8_t>{} : load_media_bytes_(disk_key);
     };
-    spec.store_disk_ = [this, disk_key](const std::vector<std::uint8_t>& b)
+    spec.store_disk_ = [this, disk_key, local_media](const std::vector<std::uint8_t>& b)
     {
-        store_media_bytes_(disk_key, b);
+        if (!local_media)
+        {
+            store_media_bytes_(disk_key, b);
+        }
     };
     spec.erase_inflight_ = [this, inflight_key]
     {
@@ -703,6 +751,10 @@ void ShellBase::fetch_media_pipeline_(std::string cache_key, tk::CacheKey disk_k
         const auto prio = media_fetch_failed_.count(cache_key)
                               ? tesseract::Client::MediaPriority::Backoff
                               : tesseract::Client::MediaPriority::Normal;
+        if (serve_screenshot_media_(id, source) || serve_screenshot_media_(id, cache_key))
+        {
+            return;
+        }
         client_->fetch_media_async(id, group_id, kind, source, w, h, animated, prio);
     };
     // The account the fetch is issued for: its back-off belongs to that account.
@@ -798,8 +850,12 @@ std::vector<std::uint8_t> ShellBase::voice_bytes_or_fetch_(const std::string& to
                     on_ready();
                 }
             });
-        client_->fetch_media_async(id, /*group_id=*/0, tesseract::Client::MediaReqKind::SourceFull,
-                                   token, 0, 0, false);
+        if (!serve_screenshot_media_(id, token))
+        {
+            client_->fetch_media_async(id, /*group_id=*/0,
+                                       tesseract::Client::MediaReqKind::SourceFull, token, 0, 0,
+                                       false);
+        }
     }
     return {};
 }

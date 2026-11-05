@@ -514,7 +514,9 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     {
         return;
     }
-    if (!client_)
+    // Local screenshot files skip the disk cache and need no client.
+    const bool local = screenshot_local_media_url_(url);
+    if (!client_ && !local)
     {
         viewer_fullres_in_flight_.erase(fkey);
         return;
@@ -524,11 +526,11 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     // does not cancel an open lightbox). Decode at the large viewer bound OFF
     // the UI thread, then store + relayout everywhere.
     run_async_(
-        [this, url, fkey, fckey]() mutable
+        [this, url, fkey, fckey, local]() mutable
         {
-            auto disk = load_media_bytes_(fckey);
+            auto disk = local ? std::vector<std::uint8_t>{} : load_media_bytes_(fckey);
             post_to_ui_alive_(
-                [this, url, fkey, disk = std::move(disk)]() mutable
+                [this, url, fkey, local, disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
                     {
@@ -536,7 +538,7 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
                                                   /*persist=*/false);
                         return;
                     }
-                    if (!client_)
+                    if (!client_ && !local)
                     {
                         viewer_fullres_in_flight_.erase(fkey);
                         return;
@@ -544,7 +546,7 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
                     auto sess = active_account_;
                     auto id = begin_media_req_(
                         /*group_id=*/0,
-                        [this, url, fkey, sess](std::vector<std::uint8_t>&& net)
+                        [this, url, fkey, sess, local](std::vector<std::uint8_t>&& net)
                         {
                             if (net.empty())
                             {
@@ -554,16 +556,19 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
                             }
                             note_media_fetch_ok_(fkey, sess);
                             decode_fullres_and_store_(url, fkey, std::move(net),
-                                                      /*persist=*/true);
+                                                      /*persist=*/!local);
                         },
                         // on_cancel: free the dedup key so a re-open re-requests.
                         [this, fkey]
                         {
                             viewer_fullres_in_flight_.erase(fkey);
                         });
-                    client_->fetch_media_async(id, /*group_id=*/0,
-                                               tesseract::Client::MediaReqKind::SourceFull, url,
-                                               /*w=*/0, /*h=*/0, /*animated=*/false);
+                    if (!serve_screenshot_media_(id, url))
+                    {
+                        client_->fetch_media_async(id, /*group_id=*/0,
+                                                   tesseract::Client::MediaReqKind::SourceFull, url,
+                                                   /*w=*/0, /*h=*/0, /*animated=*/false);
+                    }
                 });
         });
 }
@@ -1151,15 +1156,18 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
     {
         return;
     }
+    // Local screenshot files skip the disk cache and need no client.
+    const bool local = screenshot_local_media_url_(url);
     // io pool: read the disk cache. On a hit, decode+finalize directly. On a
     // miss, issue a non-blocking network download (bulk lane, group 0 — picker
     // images aren't room-scoped) and decode+finalize on completion.
     run_async_(
-        [this, url, is_sticker]() mutable
+        [this, url, is_sticker, local]() mutable
         {
-            auto disk = load_media_bytes_(tk::CacheKey::media(url));
+            auto disk =
+                local ? std::vector<std::uint8_t>{} : load_media_bytes_(tk::CacheKey::media(url));
             post_to_ui_alive_(
-                [this, url, is_sticker, disk = std::move(disk)]() mutable
+                [this, url, is_sticker, local, disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
                     {
@@ -1167,7 +1175,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
                                                     /*persist=*/false);
                         return;
                     }
-                    if (!client_)
+                    if (!client_ && !local)
                     {
                         (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
                             .erase(url);
@@ -1175,7 +1183,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
                     }
                     auto id = begin_media_req_(
                         /*group_id=*/0,
-                        [this, url, is_sticker](std::vector<std::uint8_t>&& net)
+                        [this, url, is_sticker, local](std::vector<std::uint8_t>&& net)
                         {
                             if (net.empty())
                             {
@@ -1184,11 +1192,14 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
                                 return;
                             }
                             decode_and_finalize_picker_(url, is_sticker, std::move(net),
-                                                        /*persist=*/true);
+                                                        /*persist=*/!local);
                         });
-                    client_->fetch_media_async(id, /*group_id=*/0,
-                                               tesseract::Client::MediaReqKind::SourceFull, url, 0,
-                                               0, false);
+                    if (!serve_screenshot_media_(id, url))
+                    {
+                        client_->fetch_media_async(id, /*group_id=*/0,
+                                                   tesseract::Client::MediaReqKind::SourceFull, url,
+                                                   0, 0, false);
+                    }
                 });
         });
 }
@@ -1475,9 +1486,12 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
                                     });
                             });
                     });
-                client_->fetch_media_async(id, /*group_id=*/0,
-                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                                           false);
+                if (!serve_screenshot_media_(id, src))
+                {
+                    client_->fetch_media_async(id, /*group_id=*/0,
+                                               tesseract::Client::MediaReqKind::SourceFull, src, 0,
+                                               0, false);
+                }
             }
         }
     }
@@ -1493,9 +1507,12 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
                 // the bytes (playback re-reads from the warmed cache).
                 auto id = begin_media_req_(
                     /*group_id=*/0, [](std::vector<std::uint8_t>&&) {});
-                client_->fetch_media_async(id, /*group_id=*/0,
-                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                                           false);
+                if (!serve_screenshot_media_(id, src))
+                {
+                    client_->fetch_media_async(id, /*group_id=*/0,
+                                               tesseract::Client::MediaReqKind::SourceFull, src, 0,
+                                               0, false);
+                }
             }
         }
     }
@@ -1680,9 +1697,12 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
                                     });
                             });
                     });
-                client_->fetch_media_async(id, /*group_id=*/0,
-                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                                           false);
+                if (!serve_screenshot_media_(id, src))
+                {
+                    client_->fetch_media_async(id, /*group_id=*/0,
+                                               tesseract::Client::MediaReqKind::SourceFull, src, 0,
+                                               0, false);
+                }
             }
         }
     }
@@ -1695,9 +1715,12 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
             {
                 auto id = begin_media_req_(
                     /*group_id=*/0, [](std::vector<std::uint8_t>&&) {});
-                client_->fetch_media_async(id, /*group_id=*/0,
-                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                                           false);
+                if (!serve_screenshot_media_(id, src))
+                {
+                    client_->fetch_media_async(id, /*group_id=*/0,
+                                               tesseract::Client::MediaReqKind::SourceFull, src, 0,
+                                               0, false);
+                }
             }
         }
     }

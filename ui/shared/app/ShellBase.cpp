@@ -491,10 +491,7 @@ ShellBase::~ShellBase()
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 bool ShellBase::seed_screenshot_fixture_(tk::CanvasFactory& factory)
 {
-    if (!screenshot::install_assets(factory, account_manager_.thumbnail_cache()))
-    {
-        return false;
-    }
+    screenshot_local_media_ = true;
 
     // A blinking caret lands on or off at random; keep it solid in the images.
     tk::set_caret_blink_enabled(false);
@@ -506,6 +503,8 @@ bool ShellBase::seed_screenshot_fixture_(tk::CanvasFactory& factory)
     my_avatar_url_ = f.avatar_url;
     rooms_ = f.rooms;
     current_room_id_ = f.selected_room_id;
+    // As a room switch would: the room's media requests are dropped otherwise.
+    active_media_group_ = media_group_for_room_(current_room_id_);
 
     main_app_->show_room();
     main_app_->room_list_view()->set_rooms(rooms_);

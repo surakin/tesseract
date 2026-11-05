@@ -4356,10 +4356,9 @@ protected:
     }
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    /// Screenshot mode: install the fixture's assets, then seed shell state
-    /// and the shared views from it. Returns false when an asset fails to
-    /// decode (the caller exits non-zero).
-    bool seed_screenshot_fixture_(tk::CanvasFactory& factory);
+    /// Screenshot mode: seed shell state and the shared views from the
+    /// fixture and start serving its local media files. `factory` is unused.
+    bool seed_screenshot_fixture_([[maybe_unused]] tk::CanvasFactory& factory);
     /// Screenshot mode: build the scene table and start capturing through
     /// `host`, which must outlive the run.
     void start_screenshot_director_(screenshot::ScreenshotHost& host, std::string prefix,
@@ -4371,7 +4370,24 @@ private:
     screenshot::Fixture screenshot_fixture_;
     std::unique_ptr<screenshot::ScreenshotDirector> screenshot_director_;
 
+    // Set once the fixture is seeded; mxc://<absolute path> URLs are then read
+    // from disk instead of fetched.
+    bool screenshot_local_media_ = false;
+    bool screenshot_local_media_url_(const std::string& url) const;
+    // Reads the file for `url` on the io pool and completes request `request_id`
+    // with its bytes. False (nothing done) when `url` is not a served local file.
+    bool serve_screenshot_media_(std::uint64_t request_id, const std::string& url);
+
 protected:
+#else
+    static bool screenshot_local_media_url_(const std::string&)
+    {
+        return false;
+    }
+    static bool serve_screenshot_media_(std::uint64_t, const std::string&)
+    {
+        return false;
+    }
 #endif
 
 #ifdef TESSERACT_SMOKE_MODE_ENABLED

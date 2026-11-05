@@ -105,6 +105,18 @@ struct MediaFetchSpec
     // media_key_to_req_ so a visible-row scroll can re-prioritize it. Empty
     // for fetches not tied to a visible row (e.g. map tiles).
     std::string priority_key;
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    // Screenshot mode: served from a local file, so no client_ is needed.
+    bool screenshot_local_ = false;
+#endif
+    bool screenshot_local() const
+    {
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+        return screenshot_local_;
+#else
+        return false;
+#endif
+    }
 };
 
 // Shared state for one frame's prefetch batch. Lives only for the

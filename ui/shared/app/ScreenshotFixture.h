@@ -4,15 +4,12 @@
 
 #include <tesseract/types.h>
 
+#include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
-
-namespace tk
-{
-class CanvasFactory;
-class PixmapCache;
-} // namespace tk
 
 namespace tesseract::screenshot
 {
@@ -41,11 +38,8 @@ struct Fixture
 /// Build the fixed, network-free conversation used by CI screenshots.
 Fixture make_fixture();
 
-/// Decode the fixture's checked-in avatar and media assets into the normal
-/// thumbnail cache. Returns false if any source asset is missing or invalid.
-bool install_assets(tk::CanvasFactory& factory, tk::PixmapCache& cache);
-
-/// Cache keys (`tk::CacheKey::media(key)`) that install_assets() stores.
-std::vector<std::string> installed_asset_keys();
+/// A path for `mxc://<absolute path>` URLs, which the fixture uses to point at
+/// real files on disk. Ordinary `mxc://server/media-id` URLs give nullopt.
+std::optional<std::filesystem::path> local_media_path(std::string_view url);
 
 } // namespace tesseract::screenshot

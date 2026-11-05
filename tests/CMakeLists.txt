@@ -349,6 +349,9 @@ if(NOT TESSERACT_ENABLE_SCREENSHOT_MODE)
     target_sources(tesseract_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/ui/shared/app/ScreenshotDirector.cpp
         ${CMAKE_SOURCE_DIR}/ui/shared/app/ScreenshotFixture.cpp)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/ui/shared/app/ScreenshotFixture.cpp PROPERTIES
+        COMPILE_DEFINITIONS "TESSERACT_SCREENSHOT_ASSETS_DIR=\"${CMAKE_SOURCE_DIR}/scripts/ci/screenshots/assets\""
+        SKIP_UNITY_BUILD_INCLUSION ON)
 endif()
 
 # Smoke-mode sources are only in tesseract_app when the mode is ON.
