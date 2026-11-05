@@ -85,7 +85,7 @@ encoding_rs    = "0.8"
 # Optional "package the export as a single .zip" mode for room-history export
 # (sdk/src/client/history_export/zip.rs). Deflate only — no need for the
 # heavier bzip2/zstd/lzma codecs this crate also supports.
-zip            = { version = "2", default-features = false, features = ["deflate"] }
+zip            = { version = "9", default-features = false, features = ["deflate"] }
 
 # MatrixRTC native voice/video calls (livekit/libwebrtc).
 # livekit and webrtc-sys are exact-pinned together: webrtc-sys has a history
