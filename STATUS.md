@@ -2785,7 +2785,7 @@ The shared UI code builds as four static libraries, each linking the previous: `
 
 ## Internationalisation
 
-- One mechanism on every platform: `tk::tr` / `trn` / `trf` look strings up in gettext `.mo` catalogs compiled from `i18n/*.po` (English, Spanish, French, German, plus a pseudo-locale for QA). Shared views and all four shells use it; macOS wraps it as `TkTr()`. Qt's `QObject::tr` and GTK's `gettext` are not used.
+- One mechanism on every platform: `tk::tr` / `trn` / `trf` look strings up in gettext `.mo` catalogs compiled from `i18n/*.po` (English, Spanish, French, German, Norwegian Bokmål, Ukrainian, plus a pseudo-locale for QA). Shared views and all four shells use it; macOS wraps it as `TkTr()`. Qt's `QObject::tr` and GTK's `gettext` are not used.
 - Language picked in Settings → Language (Auto follows the OS); "Restart now" relaunches into it.
 - `tk::N_` marks literal tables translated at display time; `tk::format_date` formats dates from a translatable strftime-style pattern (so locales can reorder day and month) with catalog month/weekday names; `tk::format_size` gives translated byte units.
 - The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails when a marked string is missing from any `.po`, or when a shell calls a bare `tr()` / `_()`.

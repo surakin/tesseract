@@ -190,6 +190,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - In-flight request indicator in the status bar
 - Low power mode (Auto / On / Off) — pauses background work (backfill, prefetch, cache GC, search indexing) while keeping sync live
 - Light / dark / system themes
+- Translated into German, Spanish, French, Norwegian Bokmål and Ukrainian; pick the language under Settings → Language (Auto follows the OS)
 - Server info (software, spec range, supported features, what you may change) under Settings → Server
 - Configurable fonts (base size, UI and monospace families, per-category overrides) and a compact room list, under Settings → Appearance
 - Open images, videos and files in the system's default viewer (opt-in, Settings → Media)
@@ -257,7 +258,7 @@ The app is mostly complete and can be used for existing accounts and new account
 
 There are a few things missing here and there, but I plan to add them as soon as I can.
 
-Also I don't speak as many languages as I would like to, so translations are a bit lagging behind. I'll do something about that, when I learn how. Stay tuned.
+Also I don't speak as many languages as I would like to, so translations (German, Spanish, French, Norwegian Bokmål and Ukrainian so far) are a bit lagging behind. I'll do something about that, when I learn how. Stay tuned.
 
 Disclaimer: I have the same design talents as a brick, so even if I made my best effort to make it look good, I'm sure there is a lot of room for improvement.
 
