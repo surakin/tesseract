@@ -18,16 +18,24 @@
 name: Smoke Test
 
 on:
-  # Pull requests and manual runs only; push runs are off for now. Docs-only
-  # PRs don't run it (a PR runs it if any file falls outside these patterns).
+  # Pull requests and manual runs only; push runs are off for now. Only changes
+  # to what the build reads, the smoke scripts and this workflow run it.
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'screenshots/**'
-      - 'stats/**'
-      - 'LICENSE*'
-      - 'THIRD-PARTY-LICENSES'
+    paths:
+      - 'client/**'
+      - 'sdk/**'
+      - 'ui/**'
+      - 'third_party/**'
+      - 'corrosion/**'
+      - 'cmake/**'
+      - 'i18n/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/ci/smoke/**'
+      - '.github/actions/**'
+      - '.github/workflows/smoke.yml'
   workflow_dispatch:
 
 permissions:

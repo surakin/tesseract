@@ -10,16 +10,27 @@
 name: Tests
 
 on:
-  # Docs-only PRs don't run it (a PR runs it if any file falls outside these
-  # patterns).
+  # Only changes to what the tests build or read run it: the sources and tests,
+  # the build scripts, the translations, the formatting configs (checked by a
+  # ctest) and this workflow.
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'screenshots/**'
-      - 'stats/**'
-      - 'LICENSE*'
-      - 'THIRD-PARTY-LICENSES'
+    paths:
+      - 'client/**'
+      - 'sdk/**'
+      - 'ui/**'
+      - 'tests/**'
+      - 'third_party/**'
+      - 'corrosion/**'
+      - 'cmake/**'
+      - 'i18n/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.clang-format'
+      - '.clang-format-ignore'
+      - '.github/actions/**'
+      - '.github/workflows/test.yml'
   workflow_dispatch:
 
 concurrency:

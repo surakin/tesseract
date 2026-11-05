@@ -1,5 +1,5 @@
 # Compile-only sanity check across all platforms: no packaging, no artifact
-# upload. Runs on pushes and pull requests (docs-only changes skip it), and
+# upload. Runs on pushes and pull requests that touch what the build reads, and
 # can be run by hand right before kicking off the real publish pipeline
 # (package.yml) to confirm nothing is broken anywhere.
 #
@@ -11,25 +11,39 @@
 name: Compile Check
 
 on:
-  # Docs-only changes don't run it (a push or PR runs it if any file falls
-  # outside these patterns).
+  # Only changes to what the build reads run it: the sources, the build
+  # scripts, the translations (compiled into the build) and this workflow.
   push:
     branches: [main, development]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'screenshots/**'
-      - 'stats/**'
-      - 'LICENSE*'
-      - 'THIRD-PARTY-LICENSES'
+    paths:
+      - 'client/**'
+      - 'sdk/**'
+      - 'ui/**'
+      - 'third_party/**'
+      - 'corrosion/**'
+      - 'cmake/**'
+      - 'i18n/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/actions/**'
+      - '.github/workflows/compile-check.yml'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'screenshots/**'
-      - 'stats/**'
-      - 'LICENSE*'
-      - 'THIRD-PARTY-LICENSES'
+    paths:
+      - 'client/**'
+      - 'sdk/**'
+      - 'ui/**'
+      - 'third_party/**'
+      - 'corrosion/**'
+      - 'cmake/**'
+      - 'i18n/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/actions/**'
+      - '.github/workflows/compile-check.yml'
   workflow_dispatch:
     # Untick a platform to skip its job. All three are on by default, and
     # always run on push and pull_request (which have no inputs).
