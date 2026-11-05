@@ -5,15 +5,62 @@
 # tests/clang-format-version (formatting differs between major versions).
 # Both checks always run so a failure in one does not hide the other.
 #
-# Pull requests, pushes to main/development and manual runs run it.
+# Pull requests, pushes to main/development and manual runs run it. Pushes and
+# pull requests only trigger it when they touch a file the checks read: the
+# C/C++/ObjC extensions of tests/check_cxx_format.py, Rust sources, the
+# formatting configs and pinned version, the Cargo manifests (cargo fmt -p
+# resolves the crate through them) and this workflow. third_party/ is skipped
+# by the C++ check, so changes there don't trigger it either.
 
 name: Code style
 
 on:
   pull_request:
+    paths:
+      - '**.c'
+      - '**.cc'
+      - '**.cpp'
+      - '**.cxx'
+      - '**.h'
+      - '**.hh'
+      - '**.hpp'
+      - '**.m'
+      - '**.mm'
+      - '**.rs'
+      - '!third_party/**'
+      - '.clang-format'
+      - '.clang-format-ignore'
+      - 'tests/clang-format-version'
+      - 'tests/check_cxx_format.py'
+      - '**/rustfmt.toml'
+      - '**/.rustfmt.toml'
+      - 'Cargo.toml'
+      - 'sdk/Cargo.toml'
+      - '.github/workflows/style.yml'
   workflow_dispatch:
   push:
     branches: [main, development]
+    paths:
+      - '**.c'
+      - '**.cc'
+      - '**.cpp'
+      - '**.cxx'
+      - '**.h'
+      - '**.hh'
+      - '**.hpp'
+      - '**.m'
+      - '**.mm'
+      - '**.rs'
+      - '!third_party/**'
+      - '.clang-format'
+      - '.clang-format-ignore'
+      - 'tests/clang-format-version'
+      - 'tests/check_cxx_format.py'
+      - '**/rustfmt.toml'
+      - '**/.rustfmt.toml'
+      - 'Cargo.toml'
+      - 'sdk/Cargo.toml'
+      - '.github/workflows/style.yml'
 
 concurrency:
   group: style-${{ github.ref }}
