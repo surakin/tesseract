@@ -1,0 +1,3 @@
+# Owners are requested for review on every pull request that touches their
+# files; the last matching pattern wins.
+* @surakin
