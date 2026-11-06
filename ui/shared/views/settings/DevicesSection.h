@@ -112,7 +112,7 @@ public:
 private:
     class DeviceRow;  // defined in DevicesSection.cpp
     class DeviceList; // scrollable, height-capped container for the rows
-    void rebuild_(); // re-populate the children from devices_
+    void rebuild_();  // re-populate the children from devices_
 
     bool loading_ = false;
     std::string current_device_id_;
