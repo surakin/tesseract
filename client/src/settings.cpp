@@ -210,7 +210,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         index_messages_for_search = j.value("index_messages_for_search", false);
         check_for_updates = j.value("check_for_updates", true);
         show_room_join_leave_events = j.value("show_room_join_leave_events", false);
-        show_deleted_messages = j.value("show_deleted_messages", false);
+        show_deleted_messages = j.value("show_deleted_messages", true);
         show_sender_status_in_timeline = j.value("show_sender_status_in_timeline", false);
         show_sender_timezone_in_timeline = j.value("show_sender_timezone_in_timeline", false);
         auto_detect_timezone = j.value("auto_detect_timezone", false);

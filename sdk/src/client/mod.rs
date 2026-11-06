@@ -982,8 +982,8 @@ pub struct ClientFfi {
     /// Bumped whenever `show_unhandled_events` changes value; see
     /// `TimelineHandle::unhandled_generation`.
     pub(super) unhandled_generation: std::sync::atomic::AtomicU64,
-    /// When `false` (the default), redacted (deleted) events, which would
-    /// render as an `m.redacted` tombstone, are filtered out of room and
+    /// When `true` (the default), redacted (deleted) events render as an
+    /// `m.redacted` tombstone; when `false` they are filtered out of room and
     /// thread timelines. Controlled by `set_show_redacted_events`.
     pub(super) show_redacted_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Sender-side MSC4095 bundled URL previews opt-in (via the homeserver's
@@ -1548,7 +1548,7 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unhandled_generation: std::sync::atomic::AtomicU64::new(0),
-            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1671,7 +1671,7 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unhandled_generation: std::sync::atomic::AtomicU64::new(0),
-            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -4949,16 +4949,16 @@ mod tests {
     #[test]
     fn set_show_redacted_events_roundtrips() {
         let c = ClientFfi::new();
-        assert!(!c
-            .show_redacted_events
-            .load(std::sync::atomic::Ordering::Relaxed));
-        c.set_show_redacted_events(true);
         assert!(c
             .show_redacted_events
             .load(std::sync::atomic::Ordering::Relaxed));
-        assert!(c.visibility_flags().snapshot().redacted);
         c.set_show_redacted_events(false);
         assert!(!c
+            .show_redacted_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!c.visibility_flags().snapshot().redacted);
+        c.set_show_redacted_events(true);
+        assert!(c
             .show_redacted_events
             .load(std::sync::atomic::Ordering::Relaxed));
     }
@@ -4967,16 +4967,17 @@ mod tests {
     fn visibility_flags_track_the_live_settings() {
         let c = ClientFfi::new();
         let flags = c.visibility_flags();
-        assert_eq!(flags.snapshot(), timeline_convert::RowVisibility::default());
+        // Deleted messages are shown by default; the other rows are hidden.
+        let initial = flags.snapshot();
+        assert!(!initial.membership && initial.redacted && !initial.unhandled);
         c.set_show_membership_events(true);
-        c.set_show_redacted_events(true);
         c.set_show_unhandled_events(true);
-        // The handles were taken before the toggles: they share the live values.
-        let on = flags.snapshot();
-        assert!(on.membership && on.redacted && on.unhandled);
         c.set_show_redacted_events(false);
-        let off = flags.snapshot();
-        assert!(off.membership && !off.redacted && off.unhandled);
+        // The handles were taken before the toggles: they share the live values.
+        let changed = flags.snapshot();
+        assert!(changed.membership && !changed.redacted && changed.unhandled);
+        c.set_show_redacted_events(true);
+        assert!(flags.snapshot().redacted);
     }
 
     #[test]

@@ -851,11 +851,9 @@ void ShellBase::apply_unhandled_events_pref_(tesseract::Client& client)
 
 void ShellBase::apply_deleted_messages_pref_(tesseract::Client& client)
 {
-    // Rust-side default is false; push only when the preference is on.
-    if (tesseract::Settings::instance().show_deleted_messages)
-    {
-        client.set_show_redacted_events(true);
-    }
+    // The Rust-side default is true; push the preference so an account whose
+    // user turned it off hides deleted messages from its first subscription.
+    client.set_show_redacted_events(tesseract::Settings::instance().show_deleted_messages);
 }
 
 void ShellBase::apply_bundled_url_previews_pref_(tesseract::Client& client)

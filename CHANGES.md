@@ -96,7 +96,7 @@ Tagged releases summarize all changes since the previous tag.
 - chore(ci): the manually-run test workflow adds an AddressSanitizer build and a keyring for the keychain tests. YAML parse only
 - feat(ui): right-clicking a message offers the same actions as its hover toolbar. Linux Qt6 build
 - chore(ci): the Flatpak job retries its source and runtime downloads, so a transient crates.io or Flathub error no longer cancels the release run. YAML parse only
-- feat(ui): a "Show deleted messages" option in Settings → Messages shows deleted messages in the timeline; they are hidden by default. Linux build
+- feat(ui): a "Show deleted messages" option in Settings → Messages lets you hide deleted messages from the timeline. Linux build
 
 ## v0.9.5 — 2026-10-26
 

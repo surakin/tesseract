@@ -4310,7 +4310,7 @@ pub mod ffi {
         /// room afterwards, which then rebuilds the timeline.
         fn set_show_unhandled_events(self: &ClientFfi, enabled: bool);
         /// Show or hide redacted (deleted) event rows in room and thread
-        /// timelines; off by default. Same refresh rule as
+        /// timelines; on by default. Same refresh rule as
         /// `set_show_membership_events`.
         fn set_show_redacted_events(self: &ClientFfi, enabled: bool);
 
