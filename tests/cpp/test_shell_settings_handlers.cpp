@@ -197,9 +197,9 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.msc2545_legacy_compat = false;
     st.send_bundled_url_previews = true;
     st.fetch_url_previews_directly = true;
-    for (K k : {K::DeveloperMode, K::ShowUnhandledEvents, K::SendMapsAsLocation,
-                K::AutoReplaceEmoticons, K::IndexMessages, K::ShowMembershipEvents,
-                K::Msc2545Compat, K::BundledUrlPreviews})
+    for (K k :
+         {K::DeveloperMode, K::ShowUnhandledEvents, K::SendMapsAsLocation, K::AutoReplaceEmoticons,
+          K::IndexMessages, K::ShowMembershipEvents, K::Msc2545Compat, K::BundledUrlPreviews})
     {
         changed(s, k);
     }
