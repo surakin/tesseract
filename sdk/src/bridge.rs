@@ -695,6 +695,8 @@ pub mod ffi {
         /// render inline formatting (bold/italic/code/links) instead of the raw
         /// markdown-ish plain body.
         in_reply_to_formatted_body: String,
+        /// True when the replied-to message was redacted (deleted).
+        in_reply_to_deleted: bool,
         /// mxc:// URI of the replied-to image thumbnail (or full-res when no
         /// thumbnail exists). Non-empty only when the reply target is an m.image
         /// event whose content is present in the local cache.

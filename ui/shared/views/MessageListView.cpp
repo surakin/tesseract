@@ -659,7 +659,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.in_reply_to_id = ev.in_reply_to_id;
     row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
     row.in_reply_to_formatted_body = ev.in_reply_to_formatted_body;
-    row.in_reply_to_deleted = sdk_text::is_code(ev.in_reply_to_body, "deleted");
+    row.in_reply_to_deleted = ev.in_reply_to_deleted;
     // Collapse newlines to spaces: the quote card has a fixed height and no
     // clip rect, so hard line-breaks in a multiline original message cause
     // the text to render outside the card bounds.

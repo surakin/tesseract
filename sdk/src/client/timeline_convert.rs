@@ -131,6 +131,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         in_reply_to_sender_name: String::new(),
         in_reply_to_body: String::new(),
         in_reply_to_formatted_body: String::new(),
+        in_reply_to_deleted: false,
         in_reply_to_image_url: String::new(),
         in_reply_to_image_encrypted_json: String::new(),
         is_edited: false,
@@ -1097,6 +1098,24 @@ pub(super) fn reply_image_source(
         },
         _ => (String::new(), String::new()),
     }
+}
+
+/// Whether the event this one replies to was redacted (deleted). False when
+/// it is not a reply, or the replied-to item is not in the local cache.
+#[cfg(not(test))]
+pub(super) fn reply_target_redacted(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+) -> bool {
+    let Some(details) = event_item.content().in_reply_to() else {
+        return false;
+    };
+    matches!(
+        &details.event,
+        TimelineDetails::Ready(replied) if matches!(
+            &replied.content,
+            TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Redacted, .. })
+        )
+    )
 }
 
 /// Extract (event_id, sender_display_name, body_snippet, image_url,
@@ -2218,6 +2237,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
         ) = extract_in_reply_to(room, event_item).await;
+        let in_reply_to_deleted = reply_target_redacted(event_item);
         // MSC3440 thread metadata — mirrors the m.room.message branch below.
         // Without this, a sticker sent as a thread reply (or thread root)
         // converts with an empty thread_root_id regardless of its actual
@@ -2264,6 +2284,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_sender_name,
             in_reply_to_body,
             in_reply_to_formatted_body,
+            in_reply_to_deleted,
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
             pending_state: pending_state.clone(),
@@ -2324,6 +2345,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
         ) = extract_in_reply_to(room, event_item).await;
+        let in_reply_to_deleted = reply_target_redacted(event_item);
         let thread_root_id = event_item
             .content()
             .thread_root()
@@ -2369,6 +2391,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_sender_name,
             in_reply_to_body,
             in_reply_to_formatted_body,
+            in_reply_to_deleted,
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
             pending_state: pending_state.clone(),
@@ -2552,6 +2575,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
     ) = extract_in_reply_to(room, event_item).await;
+    let in_reply_to_deleted = reply_target_redacted(event_item);
 
     let reactions = collect_reactions(event_item, room, me).await;
     let read_receipts = collect_read_receipts(event_item, room, me).await;
@@ -2602,6 +2626,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         in_reply_to_sender_name,
         in_reply_to_body,
         in_reply_to_formatted_body,
+        in_reply_to_deleted,
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
         is_edited: forward.is_none() && msg_content.is_edited(),
