@@ -352,3 +352,63 @@ TEST_CASE("membership_avatar_hit tests the single-line target avatar", "[message
     CHECK_FALSE(membership_avatar_hit(rect, {cx, cy + 30.0f}));
     CHECK_FALSE(membership_avatar_hit(rect, {cx + 150.0f, cy}));
 }
+
+TEST_CASE("update_member_profile leaves a per-message profile alone", "[message_list][profile]")
+{
+    using tesseract::views::MessageListView;
+    MessageListView view;
+    MessageRowData r = text_row("$1");
+    r.sender = "@me:x";
+    r.sender_name = "Me";
+    r.sender_avatar_url = "mxc://x/old";
+    r.profile_id = "cat-id";
+    r.profile_name = "cat";
+    r.profile_avatar_set = true;
+    r.profile_avatar_key = "mxc://x/cat";
+    view.set_messages({r});
+
+    view.update_member_profile("@me:x", std::string("Me!"), std::string("mxc://x/new"));
+    const auto& m = view.messages()[0];
+    CHECK(m.sender_name == "Me!");
+    CHECK(m.sender_avatar_url == "mxc://x/new");
+    CHECK(m.profile_id == "cat-id");
+    CHECK(m.profile_name == "cat");
+    CHECK(m.profile_avatar_set);
+    CHECK(m.profile_avatar_key == "mxc://x/cat");
+    CHECK(m.display_name() == "cat");
+    CHECK(m.display_avatar_key() == "mxc://x/cat");
+    CHECK(m.member_label() == "Me!");
+}
+
+TEST_CASE("make_row_data picks the per-message profile avatar key", "[message_list][profile]")
+{
+    auto row_for = [](bool set, const std::string& url, const std::string& enc)
+    {
+        tesseract::Event ev;
+        ev.event_id = "$a";
+        ev.sender = "@alice:server";
+        ev.sender_name = "Alice";
+        ev.sender_avatar_url = "mxc://x/alice";
+        ev.body = "hi";
+        ev.profile_id = "cat-id";
+        ev.profile_name = "cat";
+        ev.profile_avatar_set = set;
+        ev.profile_avatar_url = url;
+        ev.profile_avatar_encrypted_json = enc;
+        return make_row_data(ev, "@me:server");
+    };
+
+    // Inherit: the member's avatar.
+    CHECK(row_for(false, "", "").display_avatar_key() == "mxc://x/alice");
+    // Plain url.
+    CHECK(row_for(true, "mxc://x/cat", "").display_avatar_key() == "mxc://x/cat");
+    // Encrypted source: the JSON token wins over the url.
+    CHECK(row_for(true, "mxc://x/cat", "{\"url\":\"mxc://x/cat\"}").display_avatar_key() ==
+          "{\"url\":\"mxc://x/cat\"}");
+    // Set but empty: cleared (initials), not the member's avatar.
+    CHECK(row_for(true, "", "").display_avatar_key().empty());
+    // No profile: always the member's avatar.
+    tesseract::Event plain;
+    plain.sender_avatar_url = "mxc://x/alice";
+    CHECK(make_row_data(plain, "@me:server").display_avatar_key() == "mxc://x/alice");
+}

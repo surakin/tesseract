@@ -817,6 +817,22 @@ pub mod ffi {
         forwarded_event_id: String,
         /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
         forwarded_origin_ts: i64,
+        // ----- MSC4144 per-message profiles -----
+        /// The `id` of the event's per-message profile; empty when it has none
+        /// (or an invalid one). The UI groups consecutive messages by it.
+        profile_id: String,
+        /// The profile's display name, bidi overrides removed; empty when the
+        /// profile gives none (the UI then shows the member's name).
+        profile_name: String,
+        /// True when the profile sets an avatar, including an empty one that
+        /// clears it (`profile_avatar_url` and `_encrypted_json` both empty:
+        /// initials of the profile name). False: show the member's avatar.
+        profile_avatar_set: bool,
+        /// The profile avatar's `mxc://` URI, plain or encrypted.
+        profile_avatar_url: String,
+        /// MediaSource JSON of an encrypted profile avatar; empty for a plain
+        /// one.
+        profile_avatar_encrypted_json: String,
     }
 
     /// Outcome of an asynchronous SDK operation.

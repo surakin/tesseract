@@ -14,7 +14,7 @@ use crate::ffi::{ReactionGroup, ReadReceipt};
 // be imported unconditionally — under `cfg(test)` they resolve to the
 // pure-Rust stubs in `crate::ffi`.
 use crate::ffi::{TimelineEvent, UrlPreviewFfi};
-use crate::msc::msc4553;
+use crate::msc::{msc4144, msc4553};
 use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventContent};
 use matrix_sdk::ruma::events::sticker::StickerEventContent;
 
@@ -177,6 +177,11 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         forwarded_room_id: String::new(),
         forwarded_event_id: String::new(),
         forwarded_origin_ts: 0,
+        profile_id: String::new(),
+        profile_name: String::new(),
+        profile_avatar_set: false,
+        profile_avatar_url: String::new(),
+        profile_avatar_encrypted_json: String::new(),
     }
 }
 
@@ -445,6 +450,7 @@ fn map_bundled_url_previews(
 pub(super) fn resanitized_formatted_body(
     event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
     fallback: String,
+    strip_profile_fallback: bool,
 ) -> String {
     let Some(raw) = event_item.latest_json() else {
         return fallback;
@@ -452,32 +458,42 @@ pub(super) fn resanitized_formatted_body(
     let Ok(json) = serde_json::from_str::<serde_json::Value>(raw.json().get()) else {
         return fallback;
     };
-    resanitized_formatted_body_from_json(&json, fallback)
+    resanitized_formatted_body_from_json(&json, fallback, strip_profile_fallback)
+}
+
+/// The JSON pointer to the content an event shows. For a replacement
+/// (`m.replace`) event, `latest_json()` is the *edit* event, whose top-level
+/// `content` is only a legacy fallback for clients that don't understand
+/// edits; the real content lives under `content["m.new_content"]`.
+fn display_content_ptr(json: &serde_json::Value) -> &'static str {
+    let is_replacement = json
+        .pointer("/content/m.relates_to/rel_type")
+        .and_then(|v| v.as_str())
+        == Some("m.replace");
+    if is_replacement {
+        "/content/m.new_content"
+    } else {
+        "/content"
+    }
 }
 
 /// JSON-pointer logic for `resanitized_formatted_body`, split out so it can
 /// be unit-tested without constructing an `EventTimelineItem`.
 ///
-/// For a replacement (`m.replace`) event, `latest_json()` is the *edit*
-/// event, whose top-level `content.format`/`content.formatted_body` are only
-/// a legacy fallback for clients that don't understand edits — and
 /// ruma-events' `make_replacement_body()` unconditionally stamps a synthetic
-/// `"* "` HTML fallback there even for plain-text edits with no real HTML.
-/// The real content lives under `content["m.new_content"]`, so replacements
-/// must read from there instead of the top level.
+/// `"* "` HTML fallback on the top level of an edit, even for plain-text
+/// edits with no real HTML, so replacements read from `m.new_content` (see
+/// [`display_content_ptr`]).
+///
+/// `strip_profile_fallback` cuts the MSC4144 `data-mx-profile-fallback`
+/// element out of the raw HTML first: the sanitizer drops the marker
+/// attribute, which would leave the text behind.
 pub(super) fn resanitized_formatted_body_from_json(
     json: &serde_json::Value,
     fallback: String,
+    strip_profile_fallback: bool,
 ) -> String {
-    let is_replacement = json
-        .pointer("/content/m.relates_to/rel_type")
-        .and_then(|v| v.as_str())
-        == Some("m.replace");
-    let content_ptr = if is_replacement {
-        "/content/m.new_content"
-    } else {
-        "/content"
-    };
+    let content_ptr = display_content_ptr(json);
     let is_html = json
         .pointer(&format!("{content_ptr}/format"))
         .and_then(|f| f.as_str())
@@ -492,7 +508,13 @@ pub(super) fn resanitized_formatted_body_from_json(
     let remove_reply_fallback = json
         .pointer("/content/m.relates_to/m.in_reply_to")
         .is_some();
-    crate::html_sanitize::sanitize_formatted_body(raw_html, remove_reply_fallback)
+    let stripped = strip_profile_fallback
+        .then(|| msc4144::strip_html_fallback(raw_html))
+        .flatten();
+    crate::html_sanitize::sanitize_formatted_body(
+        stripped.as_deref().unwrap_or(raw_html),
+        remove_reply_fallback,
+    )
 }
 
 /// Parse a `geo:lat,lon` or `geo:lat,lon,alt` URI.
@@ -1135,6 +1157,96 @@ pub(crate) fn apply_forward(
     fields.forwarded_room_id = valid(&fwd.room_id, |s| RoomId::parse(s).is_ok());
     fields.forwarded_event_id = valid(&fwd.event_id, |s| EventId::parse(s).is_ok());
     fields.forwarded_origin_ts = fwd.origin_server_ts.filter(|ts| *ts > 0).unwrap_or(0);
+}
+
+// ---------------------------------------------------------------------------
+// MSC4144 per-message profiles
+// ---------------------------------------------------------------------------
+
+/// A per-message profile and whether its fallback text is to be cut from the
+/// body, for the content an event shows.
+pub(crate) struct ProfileView {
+    pub profile: msc4144::Profile,
+    pub strip_fallback: bool,
+    /// The event replies to another, so its body may still start with the
+    /// `> <@user> ...` reply fallback.
+    pub is_reply: bool,
+}
+
+/// The profile of the latest content in an event's JSON (an edit's
+/// `m.new_content`, so an edit can change or remove it).
+pub(crate) fn profile_from_json(json: &serde_json::Value) -> Option<ProfileView> {
+    let content = json.pointer(display_content_ptr(json))?;
+    let profile = msc4144::parse(content)?;
+    let strip_fallback = msc4144::strips_fallback(content, &profile);
+    let is_reply = json
+        .pointer("/content/m.relates_to/m.in_reply_to")
+        .is_some();
+    Some(ProfileView {
+        profile,
+        strip_fallback,
+        is_reply,
+    })
+}
+
+/// The profile of a timeline item, from its latest JSON. Parses the JSON only
+/// when it mentions a profile key at all.
+#[cfg(not(test))]
+fn latest_profile(event_item: &matrix_sdk_ui::timeline::EventTimelineItem) -> Option<ProfileView> {
+    let raw = event_item.latest_json()?.json().get();
+    if !msc4144::might_have_profile(raw) {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_str(raw).ok()?;
+    profile_from_json(&json)
+}
+
+/// `body` without the profile's `"{name}: "` prefix. A reply's body can still
+/// start with the `> <@user> ...` reply fallback; the prefix follows that.
+fn strip_profile_body(body: &str, name: &str, is_reply: bool) -> Option<String> {
+    if let Some(rest) = msc4144::strip_plain_fallback(body, name) {
+        return Some(rest.to_owned());
+    }
+    if !is_reply {
+        return None;
+    }
+    let after_reply = super::strip_plain_reply_fallback(body);
+    if after_reply.len() == body.len() {
+        return None;
+    }
+    msc4144::strip_plain_fallback(after_reply, name).map(str::to_owned)
+}
+
+/// Cut the profile's fallback prefix from `fields.body`.
+fn strip_profile_fallback_body(fields: &mut TimelineEvent, view: &ProfileView) {
+    let Some(name) = view.profile.displayname.as_deref() else {
+        return;
+    };
+    if let Some(body) = strip_profile_body(&fields.body, name, view.is_reply) {
+        fields.body = body;
+    }
+}
+
+/// Fill the profile fields of `fields`. The name goes through the same bidi
+/// cleanup as any sender-supplied name.
+pub(crate) fn apply_profile(fields: &mut TimelineEvent, profile: &msc4144::Profile) {
+    use matrix_sdk::ruma::events::room::MediaSource;
+    use msc4144::ProfileAvatar;
+    fields.profile_id = profile.id.clone();
+    fields.profile_name = profile
+        .displayname
+        .as_deref()
+        .map(crate::text_utils::strip_bidi_overrides)
+        .unwrap_or_default();
+    fields.profile_avatar_set = !matches!(profile.avatar, ProfileAvatar::Inherit);
+    (
+        fields.profile_avatar_url,
+        fields.profile_avatar_encrypted_json,
+    ) = match &profile.avatar {
+        ProfileAvatar::Inherit | ProfileAvatar::Clear => (String::new(), String::new()),
+        ProfileAvatar::Mxc(url) => (url.clone(), String::new()),
+        ProfileAvatar::Encrypted(file) => split_source(&MediaSource::Encrypted(file.clone())),
+    };
 }
 
 /// The sanitized HTML `formatted_body` of raw message `content`; empty when
@@ -2051,6 +2163,10 @@ pub(super) async fn timeline_item_to_ffi_opts(
             let name = forwarded_sender_name(room, &view.forwarded).await;
             apply_forward(&mut fields, &view.forwarded, name);
         }
+        // MSC4144: a sticker has no fallback text to cut.
+        if let Some(view) = latest_profile(event_item) {
+            apply_profile(&mut fields, &view.profile);
+        }
         let SenderProfileFfi {
             sender_name,
             sender_avatar_url,
@@ -2346,6 +2462,10 @@ pub(super) async fn timeline_item_to_ffi_opts(
     // relation and mentions are ignored; the reply and thread data below come
     // from the forward event itself.
     let forward = original_forward(event_item, "m.room.message");
+    // MSC4144: the profile of the latest content, so an edit can change it.
+    // A forward shows the original's content, which has no fallback to cut.
+    let profile = latest_profile(event_item);
+    let strip_profile = forward.is_none() && profile.as_ref().is_some_and(|p| p.strip_fallback);
     let Some(mut msg_fields) = forward
         .as_ref()
         .and_then(forwarded_message_fields)
@@ -2356,7 +2476,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             };
             message_type_fields(
                 msg_content.msgtype(),
-                &|fallback| resanitized_formatted_body(event_item, fallback),
+                &|fallback| resanitized_formatted_body(event_item, fallback, strip_profile),
                 info.as_ref(),
             )
         })
@@ -2371,6 +2491,12 @@ pub(super) async fn timeline_item_to_ffi_opts(
     if let Some(view) = &forward {
         let name = forwarded_sender_name(room, &view.forwarded).await;
         apply_forward(&mut msg_fields, &view.forwarded, name);
+    }
+    if let Some(view) = &profile {
+        if strip_profile {
+            strip_profile_fallback_body(&mut msg_fields, view);
+        }
+        apply_profile(&mut msg_fields, &view.profile);
     }
 
     let SenderProfileFfi {
@@ -2725,7 +2851,7 @@ mod resanitized_formatted_body_tests {
                 "formatted_body": "<b>hi</b><img src=\"https://evil.example/x.png\"><script>x()</script>"
             }
         });
-        let out = resanitized_formatted_body_from_json(&json, String::new());
+        let out = resanitized_formatted_body_from_json(&json, String::new(), false);
         assert!(out.contains("<b>hi</b>"), "{out}");
         assert!(!out.contains("evil.example"), "{out}");
         assert!(!out.contains("<script"), "{out}");
@@ -2750,7 +2876,7 @@ mod resanitized_formatted_body_tests {
             }
         });
         assert_eq!(
-            resanitized_formatted_body_from_json(&json, String::new()),
+            resanitized_formatted_body_from_json(&json, String::new(), false),
             ""
         );
     }
@@ -2774,7 +2900,7 @@ mod resanitized_formatted_body_tests {
             }
         });
         assert_eq!(
-            resanitized_formatted_body_from_json(&json, String::new()),
+            resanitized_formatted_body_from_json(&json, String::new(), false),
             "<p>edited body</p>"
         );
     }
@@ -2791,7 +2917,7 @@ mod resanitized_formatted_body_tests {
             }
         });
         assert_eq!(
-            resanitized_formatted_body_from_json(&json, String::new()),
+            resanitized_formatted_body_from_json(&json, String::new(), false),
             "<p>edited body</p>"
         );
     }
@@ -2808,7 +2934,7 @@ mod resanitized_formatted_body_tests {
             }
         });
         assert_eq!(
-            resanitized_formatted_body_from_json(&json, "fallback".to_owned()),
+            resanitized_formatted_body_from_json(&json, "fallback".to_owned(), false),
             "fallback"
         );
     }
@@ -3728,5 +3854,232 @@ mod media_caption_tests {
         }));
         assert_eq!(f.body, "clip");
         assert_eq!(f.formatted_body, "");
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::{
+        apply_profile, message_type_fields, profile_from_json,
+        resanitized_formatted_body_from_json, strip_profile_fallback_body,
+    };
+    use crate::ffi::TimelineEvent;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+    use serde_json::{json, Value};
+
+    const HTML: &str = "org.matrix.custom.html";
+    const STABLE: &str = "m.per_message_profile";
+
+    fn text_event(content: Value) -> Value {
+        json!({ "type": "m.room.message", "sender": "@bot:x", "content": content })
+    }
+
+    fn edit_event(new_content: Value) -> Value {
+        json!({
+            "type": "m.room.message",
+            "sender": "@bot:x",
+            "content": {
+                "msgtype": "m.text",
+                "body": "* ignored",
+                "m.new_content": new_content,
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        })
+    }
+
+    /// What the message path produces for the message `json`: the event's FFI
+    /// fields with the profile applied and its fallback cut.
+    fn convert(json: &Value) -> TimelineEvent {
+        let view = profile_from_json(json);
+        let strip = view.as_ref().is_some_and(|v| v.strip_fallback);
+        let content_ptr = if json["content"]["m.new_content"].is_object() {
+            "/content/m.new_content"
+        } else {
+            "/content"
+        };
+        let content: RoomMessageEventContent =
+            serde_json::from_value(json.pointer(content_ptr).unwrap().clone()).unwrap();
+        let mut fields = message_type_fields(
+            &content.msgtype,
+            &|fallback| resanitized_formatted_body_from_json(json, fallback, strip),
+            None,
+        )
+        .unwrap();
+        if let Some(view) = &view {
+            if strip {
+                strip_profile_fallback_body(&mut fields, view);
+            }
+            apply_profile(&mut fields, &view.profile);
+        }
+        fields
+    }
+
+    #[test]
+    fn text_fallback_is_cut_from_body_and_html() {
+        let json = text_event(json!({
+            "msgtype": "m.text",
+            "body": "cat: hi",
+            "format": HTML,
+            "formatted_body": "<strong data-mx-profile-fallback>cat: </strong>hi <b>there</b>",
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true,
+                      "avatar_url": "mxc://x/cat" }
+        }));
+        let f = convert(&json);
+        assert_eq!(f.body, "hi");
+        assert_eq!(f.formatted_body, "hi <b>there</b>");
+        assert_eq!(f.profile_id, "cat");
+        assert_eq!(f.profile_name, "cat");
+        assert!(f.profile_avatar_set);
+        assert_eq!(f.profile_avatar_url, "mxc://x/cat");
+        assert_eq!(f.profile_avatar_encrypted_json, "");
+    }
+
+    #[test]
+    fn the_html_fallback_is_cut_before_sanitizing() {
+        // The sanitizer drops the marker attribute, so cutting afterwards
+        // would leave "cat: " behind.
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "cat: hi", "format": HTML,
+            "formatted_body": "<strong data-mx-profile-fallback>cat: </strong>hi",
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true }
+        }));
+        assert_eq!(
+            resanitized_formatted_body_from_json(&json, String::new(), true),
+            "hi"
+        );
+        let kept = resanitized_formatted_body_from_json(&json, String::new(), false);
+        assert!(kept.contains("cat: "), "{kept}");
+    }
+
+    #[test]
+    fn nothing_is_cut_without_has_fallback() {
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "cat: hi",
+            STABLE: { "id": "cat", "displayname": "cat" }
+        }));
+        let f = convert(&json);
+        assert_eq!(f.body, "cat: hi");
+        assert_eq!(f.profile_name, "cat");
+    }
+
+    #[test]
+    fn a_body_without_the_prefix_is_left_alone() {
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "Cat: hi",
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true }
+        }));
+        assert_eq!(convert(&json).body, "Cat: hi");
+    }
+
+    #[test]
+    fn a_caption_is_cut_but_a_file_name_is_not() {
+        let caption = text_event(json!({
+            "msgtype": "m.image", "body": "cat: look", "filename": "a.png",
+            "url": "mxc://x/y",
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true }
+        }));
+        assert_eq!(convert(&caption).body, "look");
+
+        let file_name = text_event(json!({
+            "msgtype": "m.image", "body": "cat: a.png", "url": "mxc://x/y",
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true }
+        }));
+        let f = convert(&file_name);
+        assert_eq!(f.body, "cat: a.png");
+        assert_eq!(f.profile_id, "cat");
+    }
+
+    #[test]
+    fn a_reply_prefix_is_found_after_the_reply_fallback() {
+        let json = text_event(json!({
+            "msgtype": "m.text",
+            "body": "> <@alice:x> quoted\n\ncat: hi",
+            "m.relates_to": { "m.in_reply_to": { "event_id": "$prev" } },
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true }
+        }));
+        assert_eq!(convert(&json).body, "hi");
+        // Not a reply: a quote-looking body is not touched.
+        let json = text_event(json!({
+            "msgtype": "m.text",
+            "body": "> <@alice:x> quoted\n\ncat: hi",
+            STABLE: { "id": "cat", "displayname": "cat", "has_fallback": true }
+        }));
+        assert_eq!(convert(&json).body, "> <@alice:x> quoted\n\ncat: hi");
+    }
+
+    #[test]
+    fn an_edit_can_change_the_profile() {
+        let json = edit_event(json!({
+            "msgtype": "m.text", "body": "dog: hi again",
+            STABLE: { "id": "dog", "displayname": "dog", "has_fallback": true }
+        }));
+        let f = convert(&json);
+        assert_eq!(f.profile_id, "dog");
+        assert_eq!(f.body, "hi again");
+    }
+
+    #[test]
+    fn an_edit_can_remove_the_profile() {
+        // A profile on the edit's top level is not the edit's content.
+        let mut json = edit_event(json!({ "msgtype": "m.text", "body": "hi" }));
+        json["content"][STABLE] = json!({ "id": "cat", "displayname": "cat" });
+        assert!(profile_from_json(&json).is_none());
+        let f = convert(&json);
+        assert_eq!(f.profile_id, "");
+        assert_eq!(f.body, "hi");
+    }
+
+    #[test]
+    fn an_invalid_profile_renders_normally() {
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "cat: hi",
+            STABLE: { "id": "", "displayname": "cat", "has_fallback": true }
+        }));
+        let f = convert(&json);
+        assert_eq!(f.body, "cat: hi");
+        assert_eq!(f.profile_id, "");
+        assert!(!f.profile_avatar_set);
+    }
+
+    #[test]
+    fn apply_profile_fills_the_fields() {
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "hi",
+            STABLE: { "id": "c", "displayname": "Ca\u{202e}t", "avatar_url": "" }
+        }));
+        let f = convert(&json);
+        assert_eq!(f.profile_id, "c");
+        assert_eq!(f.profile_name, "Cat");
+        // Cleared: set, with nothing to fetch.
+        assert!(f.profile_avatar_set);
+        assert_eq!(f.profile_avatar_url, "");
+        assert_eq!(f.profile_avatar_encrypted_json, "");
+
+        // No avatar given: inherit.
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "hi", STABLE: { "id": "c" }
+        }));
+        let f = convert(&json);
+        assert_eq!(f.profile_name, "");
+        assert!(!f.profile_avatar_set);
+    }
+
+    #[test]
+    fn an_encrypted_avatar_carries_its_media_source_json() {
+        let json = text_event(json!({
+            "msgtype": "m.text", "body": "hi",
+            STABLE: { "id": "c", "avatar_file": {
+                "url": "mxc://x/enc",
+                "key": { "kty": "oct", "key_ops": ["encrypt", "decrypt"], "alg": "A256CTR",
+                         "k": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "ext": true },
+                "iv": "AAAAAAAAAAAAAAAAAAAAAA", "hashes": { "sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, "v": "v2"
+            } }
+        }));
+        let f = convert(&json);
+        assert!(f.profile_avatar_set);
+        assert_eq!(f.profile_avatar_url, "mxc://x/enc");
+        let source: Value = serde_json::from_str(&f.profile_avatar_encrypted_json).unwrap();
+        assert_eq!(source["file"]["url"], "mxc://x/enc");
+        assert_eq!(source["file"]["iv"], "AAAAAAAAAAAAAAAAAAAAAA");
     }
 }

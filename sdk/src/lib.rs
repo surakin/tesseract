@@ -371,6 +371,11 @@ pub mod ffi {
         pub forwarded_room_id: String,
         pub forwarded_event_id: String,
         pub forwarded_origin_ts: i64,
+        pub profile_id: String,
+        pub profile_name: String,
+        pub profile_avatar_set: bool,
+        pub profile_avatar_url: String,
+        pub profile_avatar_encrypted_json: String,
     }
 
     #[derive(Debug, PartialEq, Default)]

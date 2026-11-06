@@ -1728,3 +1728,30 @@ TEST_CASE("a forwarded row does not continue the previous sender's group",
     // (plus the attribution line), so it must be strictly taller.
     CHECK(height_of(make_forward("$2", "second")) > height_of(plain));
 }
+
+TEST_CASE("a different per-message profile id breaks the group (MSC4144)",
+          "[message_list][layout_cache][profile]")
+{
+    LayoutGuard g{tesseract::Settings::MessageLayout::Classic};
+    auto height_of = [](const std::string& first_profile, const std::string& second_profile)
+    {
+        TkMessageListLayoutCacheStage st;
+        MessageListView v;
+        v.on_display_prefs_changed();
+        MessageRowData first = make_rich("$1", "first");
+        MessageRowData second = make_rich("$2", "second");
+        first.sender = second.sender;
+        first.sender_name = second.sender_name;
+        first.profile_id = first_profile;
+        second.profile_id = second_profile;
+        v.set_messages({first, second}, false);
+        st.run(v, {0, 0, 600, 400});
+        return v.content_height();
+    };
+    const float grouped = height_of("", "");
+    // A header is a taller row than a continuation.
+    CHECK(height_of("cat", "dog") > grouped);
+    CHECK(height_of("cat", "") > grouped);
+    CHECK(height_of("", "cat") > grouped);
+    CHECK(height_of("cat", "cat") == grouped);
+}

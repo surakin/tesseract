@@ -414,3 +414,33 @@ TEST_CASE("message rows report the room language set on the list, and none by de
     v.set_room_language({});
     CHECK(row_language() == std::pair<std::string, std::string>{"", ""});
 }
+
+TEST_CASE("a per-message profile row reads \"{profile} via {member}: {body}\"",
+          "[message_list][accessibility][profile]")
+{
+    auto row_name = [](const std::string& profile_name)
+    {
+        MessageListView v;
+        auto r = text_row("$a", "Alice", "hi");
+        r.profile_id = "cat-id";
+        r.profile_name = profile_name;
+        std::vector<MessageRowData> msgs;
+        msgs.push_back(std::move(r));
+        v.set_messages(std::move(msgs), false);
+        AccessNode tree = build_access_tree(&v);
+        const AccessNode* list = find_role_msg(tree, Role::List);
+        REQUIRE(list != nullptr);
+        for (const auto& ch : list->children)
+        {
+            if (ch.role == Role::ListItem)
+            {
+                return ch.name;
+            }
+        }
+        return std::string{};
+    };
+
+    CHECK(row_name("cat") == "cat via Alice: hi");
+    // An avatar-only profile (no name) reads as the member, with no "via".
+    CHECK(row_name("") == "Alice: hi");
+}

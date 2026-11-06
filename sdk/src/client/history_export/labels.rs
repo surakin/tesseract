@@ -95,10 +95,13 @@ pub(super) enum ExportLabel {
     /// event's free-text reason. Same wording as the live view's
     /// `with_membership_reason`.
     MembershipReason = 32,
+    /// "{0} via {1}" — {0} = per-message profile name (MSC4144), {1} = the
+    /// real sender's display name.
+    PerMessageProfile = 33,
 }
 
 impl ExportLabel {
-    pub(super) const COUNT: usize = 33;
+    pub(super) const COUNT: usize = 34;
 }
 
 /// The two label slots for one membership action that has both an

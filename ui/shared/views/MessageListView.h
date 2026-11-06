@@ -254,6 +254,40 @@ struct MessageRowData
         return forwarded && !forwarded_room_id.empty() && !forwarded_event_id.empty();
     }
 
+    // MSC4144 per-message profile. `sender`/`sender_name`/`sender_avatar_url`
+    // always stay the REAL member; the profile only changes what is displayed.
+    // `profile_avatar_set` false == inherit the member avatar; set with an
+    // empty key == cleared (initials from the profile name).
+    std::string profile_id;
+    std::string profile_name;
+    bool profile_avatar_set = false;
+    std::string profile_avatar_key; // mxc url or MediaSource JSON token
+    bool has_profile() const
+    {
+        return !profile_id.empty();
+    }
+    // Real sender's name, else the mxid.
+    const std::string& member_label() const
+    {
+        return sender_name.empty() ? sender : sender_name;
+    }
+    // Name to draw: the profile name when it has one, else the member's.
+    const std::string& display_name() const
+    {
+        return has_profile() && !profile_name.empty() ? profile_name : member_label();
+    }
+    // Avatar key to draw (empty == initials).
+    const std::string& display_avatar_key() const
+    {
+        return has_profile() && profile_avatar_set ? profile_avatar_key : sender_avatar_url;
+    }
+    // True when "via <member>" follows the name. An avatar-only profile already
+    // shows the member's name, so it gets no suffix.
+    bool shows_via() const
+    {
+        return has_profile() && !profile_name.empty();
+    }
+
     // Set when the message has been superseded by an m.replace edit.
     bool is_edited = false;
 

@@ -68,8 +68,11 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc, std::uint64_t group_
     {
         return;
     }
+    // Also takes an MSC4144 per-message-profile avatar token: a MediaSource
+    // JSON (encrypted avatar) rather than a bare mxc:// url.
+    const bool is_mxc = mxc.rfind("mxc://", 0) == 0;
     avatar_mxcs_.insert(mxc);
-    if (tesseract::Settings::instance().prefetch_full_media)
+    if (is_mxc && tesseract::Settings::instance().prefetch_full_media)
     {
         ensure_media_image_(mxc, 0, 0);
     }
@@ -91,8 +94,10 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc, std::uint64_t group_
     // default 0 — those avatars are reused across rooms and cheap to
     // re-fetch, so there's nothing to gain from cancelling on room switch.
     fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(disk_id, avatar_px, avatar_px), tkey,
-                          group_id, tesseract::Client::MediaReqKind::MxcThumbnail, mxc, avatar_px,
-                          avatar_px, animated, MediaKind::UserAvatar);
+                          group_id,
+                          is_mxc ? tesseract::Client::MediaReqKind::MxcThumbnail
+                                 : tesseract::Client::MediaReqKind::SourceThumb,
+                          mxc, avatar_px, avatar_px, animated, MediaKind::UserAvatar);
 }
 
 bool ShellBase::animate_avatars_effective_() const
@@ -1380,6 +1385,11 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     if (fetch_avatars)
     {
         ensure_user_avatar_(ev.sender_avatar_url, media_group);
+        if (ev.profile_avatar_set)
+        {
+            // MSC4144 profile avatar: a bare url or an encrypted-source token.
+            ensure_user_avatar_(ev.profile_avatar_token(), media_group);
+        }
         for (const auto& rr : ev.read_receipts)
         {
             ensure_user_avatar_(rr.avatar_url, media_group);
@@ -1609,6 +1619,10 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
     if (fetch_avatars)
     {
         ensure_user_avatar_(row.sender_avatar_url, media_group);
+        if (row.has_profile() && row.profile_avatar_set)
+        {
+            ensure_user_avatar_(row.display_avatar_key(), media_group);
+        }
         for (const auto& rr : row.read_receipts)
         {
             ensure_user_avatar_(rr.avatar_url, media_group);

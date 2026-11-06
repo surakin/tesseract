@@ -259,6 +259,25 @@ struct Event
     std::string forwarded_event_id;
     /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
     std::int64_t forwarded_origin_ts = 0;
+    /// MSC4144 per-message profile (a bridge or relay account speaking as
+    /// someone else). `profile_id` is empty when the event has none. The name
+    /// is empty when the profile gives none (show the member's). With
+    /// `profile_avatar_set` the avatar is the profile's: both avatar fields
+    /// empty means it was cleared (initials of the profile name); otherwise
+    /// see `profile_avatar_token()`. Not set: show the member's avatar.
+    std::string profile_id;
+    std::string profile_name;
+    bool profile_avatar_set = false;
+    std::string profile_avatar_url;
+    /// MediaSource JSON of an encrypted profile avatar. Empty otherwise.
+    std::string profile_avatar_encrypted_json;
+    /// The key to fetch the profile avatar by: the MediaSource JSON when
+    /// encrypted, else the mxc:// URI. Empty when there is none to fetch.
+    const std::string& profile_avatar_token() const
+    {
+        return profile_avatar_encrypted_json.empty() ? profile_avatar_url
+                                                     : profile_avatar_encrypted_json;
+    }
     /// MSC3440 threads. Non-empty when this event is an in-thread reply.
     std::string thread_root_id;
     /// True when this event roots a thread.

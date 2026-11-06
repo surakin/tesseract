@@ -617,6 +617,10 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.sender = ev.sender;
     row.sender_name = ev.sender_name;
     row.sender_avatar_url = ev.sender_avatar_url;
+    row.profile_id = ev.profile_id;
+    row.profile_name = ev.profile_name;
+    row.profile_avatar_set = ev.profile_avatar_set;
+    row.profile_avatar_key = ev.profile_avatar_token();
     // The status emoji is a free string drawn right after the name, so only
     // accept pure emoji — otherwise "(admin)" could pass for part of the name.
     // A rejected status is dropped whole (no tooltip, not announced).
@@ -1672,6 +1676,26 @@ static bool is_editable_kind(MessageRowData::Kind k)
     return k == Kind::Text || k == Kind::Image || k == Kind::File || k == Kind::Video;
 }
 
+// "{profile} via {member}" for a row with an MSC4144 profile name.
+static std::string speaker_label(const MessageRowData& m)
+{
+    return tk::trf(tk::tr("{0} via {1}"), {m.display_name(), m.member_label()});
+}
+
+// Name a row is attributed to: "cat via Alice" for a profile row, else the
+// member's name (or mxid).
+static std::string speaker_name(const MessageRowData& m)
+{
+    return m.shows_via() ? speaker_label(m) : m.display_name();
+}
+
+// Key the sender name colour is hashed from: per profile, so personas relayed
+// through one account look different.
+static std::string sender_color_key(const MessageRowData& m)
+{
+    return m.has_profile() ? m.sender + '\n' + m.profile_id : m.sender;
+}
+
 // Name an emote row ("* Alice waves") attributes the action to. A forwarded
 // (MSC4553) emote is the *original* author's, never the forwarder's; the
 // generic label stands in when the forward names nobody.
@@ -1682,17 +1706,17 @@ static std::string emote_author_name(const MessageRowData& m)
         const std::string& who = m.forwarded_author();
         return who.empty() ? tk::tr("Sender") : who;
     }
-    return m.sender_name.empty() ? m.sender : m.sender_name;
+    return speaker_name(m);
 }
 
 // Identity the IRC layout colours an emote's nick by.
-static const std::string& emote_author_id(const MessageRowData& m)
+static std::string emote_author_id(const MessageRowData& m)
 {
     if (m.forwarded)
     {
         return m.forwarded_sender.empty() ? m.forwarded_sender_name : m.forwarded_sender;
     }
-    return m.sender;
+    return sender_color_key(m);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2129,7 +2153,7 @@ public:
         {
             return false;
         }
-        if (prev.sender != curr.sender)
+        if (prev.sender != curr.sender || prev.profile_id != curr.profile_id)
         {
             return false;
         }
@@ -2574,13 +2598,12 @@ public:
         {
             // Avatar disc / initials.
             const tk::Image* avatar = nullptr;
-            if (owner_.avatar_provider_ && !m.sender_avatar_url.empty())
+            if (owner_.avatar_provider_ && !m.display_avatar_key().empty())
             {
-                avatar = owner_.avatar_provider_(m.sender_avatar_url);
+                avatar = owner_.avatar_provider_(m.display_avatar_key());
             }
             draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kMsgListAvatarSize,
-                        m.sender_name.empty() ? m.sender : m.sender_name,
-                        ctx.theme.palette.avatar_initials_bg,
+                        m.display_name(), ctx.theme.palette.avatar_initials_bg,
                         ctx.theme.palette.avatar_initials_text);
             if (!draw_name)
             {
@@ -2591,13 +2614,16 @@ public:
             // Sender name — vertically centered against the avatar disc.
             float sender_y = bounds.y + kMsgListPadY + (kMsgListAvatarSize - sender_h()) * 0.5f;
             auto& rc = cache_for(index);
-            const std::string skey = m.sender_name.empty() ? m.sender : m.sender_name;
+            const std::string skey = m.display_name();
+            // The name colour is per persona (sender + profile id).
+            const tk::Color name_col = sender_color(sender_color_key(m), ctx.theme);
 
             // Opt-in MSC4426 status emoji after the name. Built first so the
-            // name can be ellipsised to leave room for it.
+            // name can be ellipsised to leave room for it. It belongs to the
+            // real account, so it is hidden on profile rows.
             constexpr float kStatusGap = 4.0f;
             const std::string status_key =
-                tesseract::Settings::instance().show_sender_status_in_timeline
+                tesseract::Settings::instance().show_sender_status_in_timeline && !m.has_profile()
                     ? m.sender_status_emoji
                     : std::string{};
             if (rc.status_key != status_key)
@@ -2628,9 +2654,30 @@ public:
                 }
                 rc.sender_col_w = -1;
             }
+            // MSC4144 "via {member}" after the profile name, at most half the
+            // sender column.
+            const std::string via_key =
+                m.shows_via() ? tk::trf(tk::tr("via {0}"), {m.member_label()}) : std::string{};
+            const float via_max_w = std::max(0.0f, sender_max_w * 0.5f);
+            if (rc.via_key != via_key || (rc.via && rc.via_col_w != via_max_w))
+            {
+                rc.via.reset();
+                rc.via_key = via_key;
+                rc.via_col_w = via_max_w;
+                if (!via_key.empty())
+                {
+                    tk::TextStyle ts{};
+                    ts.role = tk::FontRole::Small;
+                    ts.trim = tk::TextTrim::Ellipsis;
+                    ts.max_width = via_max_w;
+                    rc.via = ctx.factory.build_text(via_key, ts);
+                }
+                rc.sender_col_w = -1;
+            }
             const float status_w = rc.status ? rc.status->measure().w + kStatusGap : 0.0f;
             const float tz_w = rc.tz ? rc.tz->measure().w + kStatusGap : 0.0f;
-            const float name_max_w = std::max(0.0f, sender_max_w - status_w - tz_w);
+            const float via_w = rc.via ? rc.via->measure().w + kStatusGap : 0.0f;
+            const float name_max_w = std::max(0.0f, sender_max_w - status_w - via_w - tz_w);
 
             if (!rc.sender || rc.sender_key != skey || rc.sender_col_w != name_max_w)
             {
@@ -2642,16 +2689,30 @@ public:
                 rc.sender_key = skey;
                 rc.sender_col_w = name_max_w;
             }
+            // Painted width of the whole line, for right-alignment and for
+            // the sender hit-test.
+            rc.sender_line_w = rc.sender
+                                   ? rc.sender->measure().w +
+                                         (rc.status ? kStatusGap + rc.status->measure().w : 0.0f) +
+                                         (rc.via ? kStatusGap + rc.via->measure().w : 0.0f) +
+                                         (rc.tz ? kStatusGap + rc.tz->measure().w : 0.0f)
+                                   : 0.0f;
             if (right_align && rc.sender)
             {
-                sender_x -= rc.sender->measure().w +
-                            (rc.status ? kStatusGap + rc.status->measure().w : 0.0f) +
-                            (rc.tz ? kStatusGap + rc.tz->measure().w : 0.0f);
+                sender_x -= rc.sender_line_w;
             }
             if (rc.sender)
             {
-                ctx.canvas.draw_text(*rc.sender, {sender_x, sender_y},
-                                     sender_color(m.sender, ctx.theme));
+                ctx.canvas.draw_text(*rc.sender, {sender_x, sender_y}, name_col);
+            }
+            if (rc.sender && rc.via)
+            {
+                const tk::Size vsz = rc.via->measure();
+                const float vx = sender_x + rc.sender->measure().w +
+                                 (rc.status ? kStatusGap + rc.status->measure().w : 0.0f) +
+                                 kStatusGap;
+                const float vy = sender_y + (sender_h() - vsz.h) * 0.5f;
+                ctx.canvas.draw_text(*rc.via, {vx, vy}, ctx.theme.palette.text_secondary);
             }
             if (rc.sender && rc.status)
             {
@@ -2659,7 +2720,7 @@ public:
                 const tk::Size esz = rc.status->measure();
                 const float ex = sender_x + nsz.w + kStatusGap;
                 const float ey = sender_y + (sender_h() - esz.h) * 0.5f;
-                ctx.canvas.draw_text(*rc.status, {ex, ey}, sender_color(m.sender, ctx.theme));
+                ctx.canvas.draw_text(*rc.status, {ex, ey}, name_col);
                 if (rp.hovered)
                 {
                     owner_.hovered_row_geom_.status_emoji =
@@ -2672,7 +2733,7 @@ public:
                 const tk::Size tsz = rc.tz->measure();
                 const float tx = sender_x + nsz.w +
                                  (rc.status ? kStatusGap + rc.status->measure().w : 0.0f) +
-                                 kStatusGap;
+                                 (rc.via ? kStatusGap + rc.via->measure().w : 0.0f) + kStatusGap;
                 const float ty = sender_y + (sender_h() - tsz.h) * 0.5f;
                 ctx.canvas.draw_text(*rc.tz, {tx, ty}, ctx.theme.palette.text_secondary);
             }
@@ -3696,9 +3757,9 @@ public:
             out.push_back(std::move(t));
         }
         tk::TextSpan n;
-        n.text = msgirc::nick_part(m.sender_name.empty() ? m.sender : m.sender_name, kind);
+        n.text = msgirc::nick_part(speaker_name(m), kind);
         n.has_color = true;
-        n.color = msgirc::nick_color(m.sender, mode);
+        n.color = msgirc::nick_color(sender_color_key(m), mode);
         out.push_back(std::move(n));
         return out;
     }
@@ -3706,8 +3767,7 @@ public:
     // Plain "[HH:MM] <nick> " string (the concatenation of the spans above).
     static std::string irc_prefix_plain_(const MessageRowData& m, msgirc::PrefixKind kind)
     {
-        return msgirc::line_prefix(format_hhmm(m.timestamp_ms),
-                                   m.sender_name.empty() ? m.sender : m.sender_name, kind);
+        return msgirc::line_prefix(format_hhmm(m.timestamp_ms), speaker_name(m), kind);
     }
 
     // Which nick delimiter this row uses.
@@ -3940,10 +4000,12 @@ public:
         // piece is its own translatable phrase, joined by a translatable
         // separator.
         const std::string body = message_row_access_body_(m);
-        std::string name =
-            m.sender_name.empty() ? body : tk::trf(tk::tr("{0}: {1}"), {m.sender_name, body});
-        // Opt-in sender status (emoji is only drawn, so announce it too).
-        if (!m.sender_name.empty() &&
+        // "cat via Alice" for an MSC4144 profile row, else the member's name.
+        const std::string speaker = m.shows_via() ? speaker_label(m) : m.sender_name;
+        std::string name = speaker.empty() ? body : tk::trf(tk::tr("{0}: {1}"), {speaker, body});
+        // Opt-in sender status (emoji is only drawn, so announce it too; it is
+        // not drawn on profile rows).
+        if (!speaker.empty() && !m.has_profile() &&
             tesseract::Settings::instance().show_sender_status_in_timeline &&
             tesseract::Settings::instance().message_layout !=
                 tesseract::Settings::MessageLayout::Irc && // IRC doesn't draw it
@@ -3954,18 +4016,16 @@ public:
                 : m.sender_status_emoji.empty()
                     ? m.sender_status_text
                     : tk::trf(tk::tr("{0} {1}"), {m.sender_status_emoji, m.sender_status_text});
-            name = tk::trf(tk::tr("{0} ({1}): {2}"), {m.sender_name, status, body});
+            name = tk::trf(tk::tr("{0} ({1}): {2}"), {speaker, status, body});
         }
-        if (!m.sender_name.empty() &&
-            tesseract::Settings::instance().show_sender_timezone_in_timeline &&
+        if (!speaker.empty() && tesseract::Settings::instance().show_sender_timezone_in_timeline &&
             tesseract::Settings::instance().message_layout !=
                 tesseract::Settings::MessageLayout::Irc)
         {
             if (const auto it = owner_.sender_tz_diffs_.find(m.sender);
                 it != owner_.sender_tz_diffs_.end() && !it->second.empty())
             {
-                name =
-                    tk::trf(tk::tr("{0} ({1} from you): {2}"), {m.sender_name, it->second, body});
+                name = tk::trf(tk::tr("{0} ({1} from you): {2}"), {speaker, it->second, body});
             }
         }
         std::vector<std::string> extras;
@@ -4663,6 +4723,12 @@ public:
             return -1.0f;
         }
         return layout_cache_[index].sender_col_w;
+    }
+    // Width of the sender line (name + via + status + timezone) as last
+    // painted for `index`; 0 when none. Widens the sender hit-test.
+    float sender_line_w(std::size_t index) const
+    {
+        return index < layout_cache_.size() ? layout_cache_[index].sender_line_w : 0.0f;
     }
     void insert_layout_cache_at(std::size_t index)
     {
@@ -7908,6 +7974,12 @@ private:
         // Timezone difference after the name (opt-in); empty key == none.
         std::string tz_key;
         std::unique_ptr<tk::TextLayout> tz;
+        // MSC4144 "via {member}" suffix after the name; empty key == none.
+        std::string via_key;
+        float via_col_w = -1;
+        std::unique_ptr<tk::TextLayout> via;
+        // Painted width of the whole sender line (name + via + status + tz).
+        float sender_line_w = 0.0f;
 
         // One glyph run: either an emoji grapheme cluster (drawn at the
         // reference FontRole::ReactionEmoji size) or a plain-text run (drawn
@@ -7935,6 +8007,10 @@ private:
             status.reset();
             tz_key.clear();
             tz.reset();
+            via_key.clear();
+            via_col_w = -1;
+            via.reset();
+            sender_line_w = 0.0f;
             reactions.clear();
         }
     };
@@ -9902,6 +9978,8 @@ void MessageListView::update_member_profile(const std::string& user_id,
             continue;
         }
         bool changed = false;
+        // Only the real member's fields are patched; an MSC4144 per-message
+        // profile (profile_*) is part of the event and must stay untouched.
         if (display_name && m.sender_name != *display_name)
         {
             m.sender_name = *display_name;
@@ -12226,9 +12304,13 @@ bool MessageListView::on_pointer_down(tk::Point local)
                         const float sender_y =
                             rb.y + kMsgListPadY + (kMsgListAvatarSize - sender_h()) * 0.5f;
                         // Cap at 200px so clicking message body doesn't trigger.
-                        const float name_max_w = std::min(
-                            200.0f, std::max(0.0f, rb.w - kMsgListPadX - kMsgListAvatarSize -
-                                                       kMsgListAvatarGap - kMsgListPadX));
+                        const float col_avail =
+                            std::max(0.0f, rb.w - kMsgListPadX - kMsgListAvatarSize -
+                                               kMsgListAvatarGap - kMsgListPadX);
+                        // The painted line (name + "via" + timezone) can be
+                        // wider than 200px, so widen to it.
+                        const float name_max_w =
+                            std::min(col_avail, std::max(200.0f, adapter_->sender_line_w(ri)));
                         const tk::Rect sender_name_rect{col_x, sender_y, name_max_w, sender_h()};
                         if (rect_contains(avatar_rect, world) ||
                             (sender_name_rect.w > 0 && rect_contains(sender_name_rect, world)))
@@ -13216,6 +13298,11 @@ std::vector<std::string> MessageListView::collect_visible_avatar_urls_() const
         {
             urls.push_back(m.sender_avatar_url);
         }
+        // MSC4144 profile avatar (the row draws this one, not the member's).
+        if (const std::string& dk = m.display_avatar_key(); !dk.empty() && seen.insert(dk).second)
+        {
+            urls.push_back(dk);
+        }
         if (!m.membership_target_avatar_url.empty() &&
             seen.insert(m.membership_target_avatar_url).second)
         {
@@ -13262,6 +13349,7 @@ std::vector<tk::MediaPrefetchKey> MessageListView::collect_prefetchable_media_ke
     {
         const auto& m = messages_[static_cast<std::size_t>(i)];
         push_avatar(m.sender_avatar_url);
+        push_avatar(m.display_avatar_key());
         push_avatar(m.membership_target_avatar_url);
         for (const auto& rr : m.read_receipts)
         {

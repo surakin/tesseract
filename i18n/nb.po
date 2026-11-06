@@ -5469,3 +5469,9 @@ msgstr "Lyd- og videoenheter"
 #: ui/shared/views/settings/PrivacySection.cpp
 msgid "Data sharing"
 msgstr "Datadeling"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/app/HistoryExportController.cpp
+#, c++-format
+msgid "{0} via {1}"
+msgstr "{0} via {1}"

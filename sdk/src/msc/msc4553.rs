@@ -13,6 +13,7 @@
 //! Pure functions over `serde_json::Value`: no client or room access. The
 //! caller supplies the display name and permalinks in a [`FallbackCtx`].
 
+use crate::msc::msc4144;
 use crate::text_utils::html_escape;
 use ruma::events::room::message::sanitize::remove_plain_reply_fallback;
 use ruma::html::remove_html_reply_fallback;
@@ -193,6 +194,8 @@ pub(crate) fn build_forward(
         UNSTABLE_KEY,
         LEGACY_KEY,
         STABLE_KEY,
+        msc4144::STABLE_KEY,
+        msc4144::UNSTABLE_KEY,
     ] {
         top.remove(key);
     }
@@ -245,6 +248,8 @@ fn original_content(envelope: &Value, event_type: &str) -> Result<Value, String>
         for key in [UNSTABLE_KEY, LEGACY_KEY, STABLE_KEY] {
             obj.remove(key);
         }
+        // The forwarder sends it, not the original's persona.
+        msc4144::remove_keys(obj);
         if is_reply {
             strip_reply_fallback(obj);
         }
@@ -1093,6 +1098,25 @@ mod tests {
     }
 
     // ---- content handling ----
+
+    #[test]
+    fn per_message_profile_is_not_copied_into_a_forward() {
+        let profile = json!({ "id": "cat", "displayname": "cat", "has_fallback": true });
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.text", "body": "cat: hi",
+                    msc4144::STABLE_KEY: profile, msc4144::UNSTABLE_KEY: profile }),
+        );
+        for (_, c) in [forward(&env, &ctx()), forward_bare(&env)] {
+            for key in [msc4144::STABLE_KEY, msc4144::UNSTABLE_KEY] {
+                assert!(c.get(key).is_none(), "{key} on the top level");
+                assert!(
+                    c[UNSTABLE_KEY]["content"].get(key).is_none(),
+                    "{key} in the copy"
+                );
+            }
+        }
+    }
 
     #[test]
     fn reply_fallback_is_stripped_from_the_copy() {

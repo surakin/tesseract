@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(messages): messages sent with a per-message profile show its name and avatar, with the real sender beside it (MSC4144). Windows release build
+- fix(messages): forwarding a message no longer carries over its per-message profile. Windows release build
 - refactor(settings): settings regrouped into fewer, clearer tabs (Security & Devices, Messages, General). Windows release build + ctest
 - feat(composer): a new Settings → General → Composer option replaces text emoticons like `:-)` and `<3` with emoji as you type; off by default. Windows release build, ctest 3825/3825; user-verified Windows
 - ci(screenshots): the screenshot fixture reads like a real chat and uses real photos loaded from disk. Qt6 build, ctest 3848/3848, user-verified Qt6

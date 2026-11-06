@@ -132,6 +132,7 @@ std::vector<std::string> HistoryExportController::build_labels()
         tk::tr("{0}'s request to join was denied by {1}"),
         tk::tr("{0}'s join request was denied"),
         tk::tr("{0}. Reason: {1}"),
+        tk::tr("{0} via {1}"),
     };
 }
 

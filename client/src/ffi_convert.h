@@ -715,6 +715,11 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.forwarded_room_id = std::string(e.forwarded_room_id);
     ev.forwarded_event_id = std::string(e.forwarded_event_id);
     ev.forwarded_origin_ts = e.forwarded_origin_ts;
+    ev.profile_id = std::string(e.profile_id);
+    ev.profile_name = std::string(e.profile_name);
+    ev.profile_avatar_set = e.profile_avatar_set;
+    ev.profile_avatar_url = std::string(e.profile_avatar_url);
+    ev.profile_avatar_encrypted_json = std::string(e.profile_avatar_encrypted_json);
     ev.thread_root_id = std::string(e.thread_root_id);
     ev.is_thread_root = e.is_thread_root;
     ev.thread_reply_count = e.thread_reply_count;

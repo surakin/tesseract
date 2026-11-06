@@ -6,6 +6,7 @@
 use super::labels::{membership_labels, ExportLabel, Labels};
 use crate::ffi::TimelineEvent;
 use crate::text_utils::html_escape;
+use std::borrow::Cow;
 
 /// Export-run-level metadata, independent of any single event.
 pub(super) struct ExportMeta {
@@ -61,11 +62,23 @@ pub(super) trait ExportSink: Send + Sync {
     fn footer(&self, labels: &Labels, complete: bool, event_count: u64) -> String;
 }
 
-fn sender_display(ev: &TimelineEvent) -> &str {
-    if !ev.sender_name.is_empty() {
-        &ev.sender_name
+/// The name a message is shown under. A per-message profile (MSC4144) shows
+/// as "{profile} via {member}", so the real sender is never hidden.
+fn sender_display<'a>(ev: &'a TimelineEvent, labels: &Labels) -> Cow<'a, str> {
+    let member = if !ev.sender_name.is_empty() {
+        ev.sender_name.as_str()
     } else {
-        &ev.sender
+        ev.sender.as_str()
+    };
+    if ev.profile_name.is_empty() {
+        return Cow::Borrowed(member);
+    }
+    let shown = labels.format(ExportLabel::PerMessageProfile, &[&ev.profile_name, member]);
+    if shown.is_empty() {
+        // A version-skewed caller without the template.
+        Cow::Borrowed(ev.profile_name.as_str())
+    } else {
+        Cow::Owned(shown)
     }
 }
 
@@ -111,7 +124,7 @@ fn membership_line(ev: &TimelineEvent, labels: &Labels) -> String {
         ev.membership_target_user_id.as_str()
     };
     let by_actor = ev.sender != ev.membership_target_user_id;
-    let line = labels.format_membership(resolved, by_actor, target, sender_display(ev));
+    let line = labels.format_membership(resolved, by_actor, target, &sender_display(ev, labels));
     // Kick/ban reasons, as in the live view (`with_membership_reason`). An
     // empty template (version-skewed C++ caller) keeps the bare line.
     let is_removal = matches!(
@@ -276,7 +289,7 @@ impl ExportSink for TextSink {
         out.push(']');
         if ev.msg_type != "m.room.member" {
             out.push(' ');
-            out.push_str(sender_display(ev));
+            out.push_str(&sender_display(ev, labels));
             out.push(':');
         }
         out.push(' ');
@@ -337,6 +350,7 @@ impl HtmlSink {
         }
         let Some(p) = prev else { return false };
         p.sender == ev.sender
+            && p.profile_id == ev.profile_id
             && !p.msg_type.starts_with("virtual.")
             && p.msg_type != "m.room.member"
             && ev.timestamp.saturating_sub(p.timestamp) <= GROUP_INTERVAL_MS
@@ -427,7 +441,7 @@ impl ExportSink for HtmlSink {
         let is_member = ev.msg_type == "m.room.member";
         let is_placeholder = is_member || ev.msg_type == "m.redacted" || ev.msg_type == "m.utd";
         let is_cont = !is_member && Self::is_continuation(ev, ctx.prev);
-        let color_idx = sender_color_index(sender_display(ev));
+        let color_idx = sender_color_index(&sender_display(ev, labels));
 
         let mut classes = vec!["msg"];
         if is_member {
@@ -451,7 +465,7 @@ impl ExportSink for HtmlSink {
             } else {
                 out.push_str(&format!(
                     "<div class=\"avatar initials s{color_idx}\">{}</div>",
-                    html_escape(&initial(sender_display(ev)))
+                    html_escape(&initial(&sender_display(ev, labels)))
                 ));
             }
         }
@@ -460,7 +474,7 @@ impl ExportSink for HtmlSink {
         if !is_member && !is_cont {
             out.push_str(&format!(
                 "<div class=\"head\"><span class=\"sender s{color_idx}\">{}</span><span class=\"ts\">{}</span></div>",
-                html_escape(sender_display(ev)),
+                html_escape(&sender_display(ev, labels)),
                 format_hm(ev.timestamp)
             ));
         }
@@ -508,7 +522,7 @@ impl ExportSink for HtmlSink {
                 out.push_str(&format!(
                     "<div class=\"attachment\"><a href=\"{path}\" target=\"_blank\" rel=\"noopener noreferrer\"><img src=\"{path}\" alt=\"{alt}\" width=\"{w:.0}\" height=\"{h:.0}\"></a></div>",
                     path = html_escape(&url_encode_path(path)),
-                    alt = html_escape(sender_display(ev)),
+                    alt = html_escape(&sender_display(ev, labels)),
                     w = w, h = h,
                 ));
             }
@@ -647,6 +661,7 @@ mod tests {
         t[ExportLabel::MembershipKickedByActor as usize] = "{0} was removed by {1}".into();
         t[ExportLabel::MembershipLeft as usize] = "{0} left the room".into();
         t[ExportLabel::MembershipReason as usize] = "{0}. Reason: {1}".into();
+        t[ExportLabel::PerMessageProfile as usize] = "{0} via {1}".into();
         Labels::new(t)
     }
 
@@ -679,6 +694,38 @@ mod tests {
             &labels(),
         );
         assert_eq!(line, "[2020-01-01 00:00:00] Alice: hello world\n");
+    }
+
+    #[test]
+    fn text_event_profile_shows_via_the_real_sender() {
+        let mut ev = base_event();
+        ev.profile_id = "cat".into();
+        ev.profile_name = "Cat".into();
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
+        assert_eq!(line, "[2020-01-01 00:00:00] Cat via Alice: hello world\n");
+    }
+
+    #[test]
+    fn profile_without_a_name_shows_the_member() {
+        let mut ev = base_event();
+        ev.profile_id = "cat".into();
+        let labels = labels();
+        assert_eq!(sender_display(&ev, &labels), "Alice");
+    }
+
+    #[test]
+    fn a_new_profile_breaks_a_group() {
+        let a = base_event();
+        let mut b = base_event();
+        b.timestamp += 1000;
+        assert!(HtmlSink::is_continuation(&b, Some(&a)));
+        b.profile_id = "cat".into();
+        assert!(!HtmlSink::is_continuation(&b, Some(&a)));
     }
 
     #[test]

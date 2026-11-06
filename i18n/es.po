@@ -7205,3 +7205,9 @@ msgstr "Dispositivos de audio y vídeo"
 #: ui/shared/views/settings/PrivacySection.cpp
 msgid "Data sharing"
 msgstr "Compartir datos"
+
+#: ui/shared/views/MessageListView.cpp
+#: ui/shared/app/HistoryExportController.cpp
+#, c++-format
+msgid "{0} via {1}"
+msgstr "{0} vía {1}"
