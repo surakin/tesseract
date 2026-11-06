@@ -70,6 +70,7 @@ enum class SettingKey
     ExcludeInsecure,
     BlockOnUnverified,
     BundledUrlPreviews,
+    EncryptedUrlPreviews,
     IndexMessages,
     CheckForUpdates,
     Msc2545Compat,

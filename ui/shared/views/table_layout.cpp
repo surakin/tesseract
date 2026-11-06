@@ -25,16 +25,24 @@ std::string cell_plain(const std::vector<tk::TextSpan>& spans)
     return out;
 }
 
+// Cell spans at (r, c); a short (non-rectangular) row reads as an empty cell.
+const std::vector<tk::TextSpan>& cell_spans(const BodyTable& t, std::size_t r, std::size_t c)
+{
+    static const std::vector<tk::TextSpan> kEmpty;
+    return c < t.rows[r].size() ? t.rows[r][c].spans : kEmpty;
+}
+
 } // namespace
 
 TableGrid compute_table_layout(const BodyTable& table, float avail_width,
                                tk::CanvasFactory& factory, const tk::TextStyle& base)
 {
     TableGrid g;
-    g.header_rows = table.header_rows;
-
-    const std::size_t ncols = table.col_align.size();
-    const std::size_t nrows = table.rows.size();
+    // Defensive clamp: html_to_blocks() already caps the grid, but a
+    // hand-built BodyTable must not be able to demand rows*cols work.
+    const std::size_t ncols = std::min(table.col_align.size(), kMaxTableCols);
+    const std::size_t nrows = ncols == 0 ? 0 : std::min(table.rows.size(), kMaxTableCells / ncols);
+    g.header_rows = std::min(table.header_rows, static_cast<int>(nrows));
     if (ncols == 0 || nrows == 0)
     {
         return g;
@@ -62,7 +70,7 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
     {
         for (std::size_t r = 0; r < nrows; ++r)
         {
-            const auto& spans = table.rows[r][c].spans;
+            const auto& spans = cell_spans(table, r, c);
             if (spans.empty())
             {
                 continue;
@@ -160,7 +168,7 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
             TableCellBox& box = g.cells[i];
             box.row = static_cast<int>(r);
             box.col = static_cast<int>(c);
-            box.spans = table.rows[r][c].spans;
+            box.spans = cell_spans(table, r, c);
 
             if (!box.spans.empty())
             {
@@ -231,11 +239,12 @@ TableGrid compute_table_layout(const BodyTable& table, float avail_width,
 
 std::string table_to_gfm(const BodyTable& table)
 {
-    const std::size_t ncols = table.col_align.size();
+    const std::size_t ncols = std::min(table.col_align.size(), kMaxTableCols);
     if (ncols == 0 || table.rows.empty())
     {
         return {};
     }
+    const std::size_t nrows = std::min(table.rows.size(), kMaxTableCells / ncols);
 
     auto escape = [](std::string s)
     {
@@ -297,7 +306,7 @@ std::string table_to_gfm(const BodyTable& table)
     }
     out += '\n';
 
-    for (std::size_t r = 1; r < table.rows.size(); ++r)
+    for (std::size_t r = 1; r < nrows; ++r)
     {
         out += emit_row(table.rows[r]);
     }

@@ -51,6 +51,30 @@ TEST_CASE("Client::check_media_file classifies through the FFI", "[open_media]")
     CHECK(r.verdict == V::ContentMismatch);
     CHECK(r.renamed_filename == "a.png");
     CHECK(tesseract::Client::check_media_file("x.exe", "image/png", png).verdict == V::Executable);
+    const std::vector<std::uint8_t> proj{'<', 'P', 'r', 'o', 'j', 'e', 'c', 't', '>'};
+    CHECK(tesseract::Client::check_media_file("Build.csproj", "text/plain", proj).verdict != V::Ok);
+}
+
+TEST_CASE("playlists are never handed to the OS launcher", "[open_media]")
+{
+    const std::string text = "#EXTM3U\nhttp://attacker.example/a.mp3\n";
+    const std::vector<std::uint8_t> m3u(text.begin(), text.end());
+    CHECK(tesseract::Client::check_media_file("song.m3u", "audio/x-mpegurl", m3u).verdict ==
+          V::Executable);
+    CHECK(tesseract::Client::check_media_file("attachment", "audio/x-mpegurl", m3u).verdict ==
+          V::Executable);
+    CHECK(tesseract::Client::check_media_file("song.mp3", "audio/mpeg", m3u).verdict ==
+          V::Executable);
+    // Stop here rather than launch a real player if the content sniff regressed.
+    REQUIRE(tesseract::Client::check_media_file("song.mp3", "", m3u).verdict == V::Executable);
+
+    auto a = tesseract::write_open_media_file("song.mp3", m3u);
+    REQUIRE(a);
+    CHECK_FALSE(tesseract::open_local_file(*a));
+    auto b = tesseract::write_open_media_file("attachment", m3u);
+    REQUIRE(b);
+    CHECK_FALSE(tesseract::open_local_file(*b));
+    tesseract::purge_open_media_dir();
 }
 
 TEST_CASE("open_local_file refuses executables even inside the media dir", "[open_media]")
@@ -95,4 +119,15 @@ TEST_CASE("open_media shortens an over-long name and keeps its extension", "[ope
 #endif
     CHECK(fs::file_size(*written) == 3);
     tesseract::purge_open_media_dir();
+}
+
+TEST_CASE("Client::sanitize_filename strips directories through the FFI", "[open_media]")
+{
+    using tesseract::Client;
+    CHECK(Client::sanitize_filename("/home/u/.config/autostart/x.desktop") == "x.desktop");
+    CHECK(Client::sanitize_filename("C:\\Users\\x\\a.png") == "a.png");
+    CHECK(Client::sanitize_filename("CON.txt") == "_CON.txt");
+    CHECK(Client::sanitize_filename("a\nb.txt") == "ab.txt");
+    CHECK(Client::sanitize_filename("..").empty());
+    CHECK(Client::sanitize_filename("").empty());
 }

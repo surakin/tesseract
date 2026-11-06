@@ -5067,6 +5067,12 @@ msgstr "Додавати попередній перегляд посилань 
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr "Отримувати попередній перегляд посилань напряму, а не через домашній сервер"
 
+msgid "Show link previews in encrypted rooms"
+msgstr "Показувати попередній перегляд посилань у зашифрованих кімнатах"
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr "Запитує у вашого домашнього сервера попередній перегляд посилань у зашифрованих кімнатах. Ваш домашній сервер бачитиме ці посилання, а сайти за посиланнями можуть дізнатися, коли ви відкриваєте кімнату. Попередній перегляд, доданий відправником, показується завжди."
+
 #: ui/shared/views/settings/PrivacySection.cpp:137
 msgid ""
 "Before sending a message that contains links, ask your homeserver for a "

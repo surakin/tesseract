@@ -647,6 +647,7 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.room_id = std::string(e.room_id);
     ev.sender = std::string(e.sender);
     ev.sender_name = std::string(e.sender_name);
+    ev.sender_name_ambiguous = e.sender_name_ambiguous;
     ev.sender_avatar_url = std::string(e.sender_avatar_url);
     ev.sender_status_emoji = std::string(e.sender_status_emoji);
     ev.sender_status_text = std::string(e.sender_status_text);

@@ -198,9 +198,11 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.msc2545_legacy_compat = false;
     st.send_bundled_url_previews = true;
     st.fetch_url_previews_directly = true;
-    for (K k : {K::DeveloperMode, K::ShowUnhandledEvents, K::SendMapsAsLocation,
-                K::AutoReplaceEmoticons, K::IndexMessages, K::ShowMembershipEvents,
-                K::ShowDeletedMessages, K::Msc2545Compat, K::BundledUrlPreviews})
+    st.url_previews_in_encrypted_rooms = true;
+    for (K k :
+         {K::DeveloperMode, K::ShowUnhandledEvents, K::SendMapsAsLocation, K::AutoReplaceEmoticons,
+          K::IndexMessages, K::ShowMembershipEvents, K::ShowDeletedMessages, K::Msc2545Compat,
+          K::BundledUrlPreviews, K::EncryptedUrlPreviews})
     {
         changed(s, k);
     }
@@ -216,6 +218,7 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.msc2545_legacy_compat = true;
     st.send_bundled_url_previews = false;
     st.fetch_url_previews_directly = false;
+    st.url_previews_in_encrypted_rooms = false;
     st.load_from_disk(tesseract::config_dir());
     CHECK(st.developer_mode);
     CHECK(st.show_unhandled_events);
@@ -227,6 +230,7 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     CHECK_FALSE(st.msc2545_legacy_compat);
     CHECK(st.send_bundled_url_previews);
     CHECK(st.fetch_url_previews_directly);
+    CHECK(st.url_previews_in_encrypted_rooms);
 }
 
 TEST_CASE("toggles that need a client push to clients when present", "[shell][settings_handlers]")

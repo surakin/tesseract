@@ -273,7 +273,8 @@ public:
 
     // When true, outgoing text messages (sends, replies, thread messages,
     // edits) carry MSC4095 bundled previews of their http(s) links, fetched
-    // via the homeserver's /preview_url before send. On by default: the
+    // via the homeserver's /preview_url before send. On by default: in
+    // unencrypted rooms (or with url_previews_in_encrypted_rooms on) the
     // homeserver already previews the user's own links for display, and
     // bundling spares recipients' homeservers from learning the URL. Can
     // delay sends that contain links by a few seconds.
@@ -284,6 +285,12 @@ public:
     // falling back to the homeserver on failure. Off by default since it
     // exposes the user's IP address to every site they link.
     bool fetch_url_previews_directly = false;
+
+    // When true, links in encrypted rooms are previewed via the homeserver's
+    // /preview_url like in unencrypted rooms. Off by default: the homeserver
+    // would learn those links and the linked site learns when the room is
+    // read. Previews the sender bundled (MSC4095) are shown regardless.
+    bool url_previews_in_encrypted_rooms = false;
 
     // MSC4153 "exclude insecure devices": share room keys only with devices
     // their owner cross-signed, and hide messages sent from devices that

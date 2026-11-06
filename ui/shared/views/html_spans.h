@@ -1,6 +1,7 @@
 #pragma once
 #include "tk/canvas.h"
 #include "tk/emoji_segmentation.h"
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -96,10 +97,19 @@ struct TableCell
     std::vector<tk::TextSpan> spans;
 };
 
+// Caps on the padded table grid. html_to_blocks() clamps every Table block to
+// at most kMaxTableCols columns, and all tables of one call to at most
+// kMaxTableCells padded cells in total, adding a "…" paragraph after a
+// truncated table. Padding ragged rows is rows x cols, which a small input
+// would otherwise inflate quadratically.
+inline constexpr std::size_t kMaxTableCols = 64;
+inline constexpr std::size_t kMaxTableCells = 10000;
+
 // A parsed Markdown table, populated only on BodyBlock::Kind::Table.
 // `rows` is rectangular: every row has `col_align.size()` cells, short
-// rows padded with empty cells. The first `header_rows` rows came from
-// <thead>.
+// rows padded with empty cells. The grid is capped at kMaxTableCols columns
+// and kMaxTableCells cells per message (see above). The first `header_rows`
+// rows came from <thead>.
 struct BodyTable
 {
     std::vector<TableAlign> col_align;

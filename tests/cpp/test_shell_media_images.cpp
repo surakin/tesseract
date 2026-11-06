@@ -202,6 +202,9 @@ struct MediaShell : tesseract::test::TestShellBase
     using ShellBase::handle_url_preview_ready_ui_;
     using ShellBase::load_media_bytes_;
     using ShellBase::media_allowed_;
+    using ShellBase::media_dep_known_failed_;
+    using ShellBase::url_preview_fetch_allowed_;
+    using ShellBase::rooms_;
     using ShellBase::media_decode_failed_;
     using ShellBase::media_fetch_failed_;
     using ShellBase::media_fetches_in_flight_;
@@ -282,6 +285,14 @@ struct MiFx
         s.current_room_id_ = "!r:x";
         s.my_user_id_ = "@me:x";
         s.server_info_.preview_url_enabled = true;
+        st.url_previews_in_encrypted_rooms = false;
+        tesseract::RoomInfo plain_room;
+        plain_room.id = "!r:x";
+        s.rooms_.push_back(plain_room);
+        tesseract::RoomInfo enc_room;
+        enc_room.id = "!e:x";
+        enc_room.is_encrypted = true;
+        s.rooms_.push_back(enc_room);
     }
 };
 
@@ -713,13 +724,13 @@ TEST_CASE("URL preview request lifecycle", "[shell][media_images][preview]")
 {
     MiFx f;
     f.s.server_info_.preview_url_enabled = false;
-    f.s.ensure_url_preview_("https://a.example/");
+    f.s.ensure_url_preview_("!r:x", "https://a.example/");
     CHECK(f.s.pending_media_.empty()); // homeserver has previews off
     f.s.server_info_.preview_url_enabled = true;
 
-    f.s.ensure_url_preview_("");
-    f.s.ensure_url_preview_("https://a.example/");
-    f.s.ensure_url_preview_("https://a.example/"); // in flight
+    f.s.ensure_url_preview_("!r:x", "");
+    f.s.ensure_url_preview_("!r:x", "https://a.example/");
+    f.s.ensure_url_preview_("!r:x", "https://a.example/"); // in flight
     REQUIRE(f.s.pending_media_.size() == 1);
     CHECK(f.s.url_preview_in_flight_.count("https://a.example/") == 1);
 
@@ -731,17 +742,89 @@ TEST_CASE("URL preview request lifecycle", "[shell][media_images][preview]")
     // The preview image is requested as a thumbnail.
     CHECK(f.s.media_fetches_in_flight_.size() == 1);
 
-    f.s.ensure_url_preview_("https://a.example/"); // known: no new request
+    f.s.ensure_url_preview_("!r:x", "https://a.example/"); // known: no new request
     CHECK(f.s.pending_media_.empty());
 
     f.s.handle_url_preview_ready_ui_(12345, "{}"); // unknown id ignored
+}
+
+TEST_CASE("URL previews are not requested in encrypted or unknown rooms unless enabled",
+          "[shell][media_images][preview]")
+{
+    MiFx f;
+    const std::string url = "https://enc.example/";
+    f.s.ensure_url_preview_("!e:x", url);
+    f.s.ensure_url_preview_("!unknown:x", url);
+    CHECK(f.s.pending_media_.empty());
+    CHECK(f.s.url_preview_in_flight_.empty());
+    CHECK(f.s.url_previews_.count(url) == 0); // no failure recorded
+
+    tesseract::Settings::instance().url_previews_in_encrypted_rooms = true;
+    f.s.ensure_url_preview_("!e:x", url);
+    CHECK(f.s.pending_media_.size() == 1);
+    CHECK(f.s.url_preview_in_flight_.count(url) == 1);
+}
+
+TEST_CASE("event media: links in an encrypted room are not sent to the homeserver",
+          "[shell][media_images][row]")
+{
+    MiFx f;
+    auto t = std::make_unique<tesseract::Event>();
+    t->event_id = "$t";
+    t->room_id = "!e:x";
+    t->type = tesseract::EventType::Text;
+    t->body = "look https://example.com/page";
+    f.s.ensure_row_media_(*t, false);
+    CHECK(f.s.url_preview_in_flight_.empty());
+
+    auto b = std::make_unique<tesseract::Event>();
+    b->event_id = "$b";
+    b->room_id = "!e:x";
+    b->type = tesseract::EventType::Text;
+    b->body = "https://example.com/a https://example.com/b";
+    b->bundled_url_previews_present = true;
+    tesseract::UrlPreview with_img;
+    with_img.matched_url = "https://example.com/a";
+    with_img.title = "A";
+    with_img.image = mi_src("mxc://hs/pimg");
+    tesseract::UrlPreview ask_server;
+    ask_server.matched_url = "https://example.com/b";
+    b->bundled_url_previews = {with_img, ask_server};
+    f.s.ensure_row_media_(*b, false);
+    // The sender's bundled thumbnail is still fetched; the homeserver is not asked.
+    CHECK(f.s.media_fetches_in_flight_.size() == 1);
+    CHECK(f.s.url_preview_in_flight_.empty());
+}
+
+TEST_CASE("row media: the pane's room gates URL previews", "[shell][media_images][row]")
+{
+    MiFx f;
+    using K = MessageRowData::Kind;
+    MessageRowData row;
+    row.kind = K::Text;
+    row.event_id = "$t";
+    row.body = "see https://example.com/x";
+    f.s.ensure_row_media_(row, false, "!e:x");
+    CHECK(f.s.url_preview_in_flight_.empty());
+    f.s.ensure_row_media_(row, false); // falls back to current_room_id_ ("!r:x")
+    CHECK(f.s.url_preview_in_flight_.count("https://example.com/x") == 1);
+}
+
+TEST_CASE("room-switch gate does not wait on previews in encrypted rooms",
+          "[shell][media_images][preview]")
+{
+    MiFx f;
+    CHECK(f.s.media_dep_known_failed_("https://x.example/", "!e:x"));
+    CHECK_FALSE(f.s.media_dep_known_failed_("https://x.example/", "!r:x"));
+    tesseract::Settings::instance().url_previews_in_encrypted_rooms = true;
+    CHECK_FALSE(f.s.media_dep_known_failed_("https://x.example/", "!e:x"));
 }
 
 TEST_CASE("a failed URL preview records the failure without a card",
           "[shell][media_images][preview]")
 {
     MiFx f;
-    f.s.ensure_url_preview_("https://b.example/");
+    f.s.ensure_url_preview_("!r:x", "https://b.example/");
     f.s.handle_url_preview_ready_ui_(f.s.only_pending(), "");
     CHECK(f.s.url_previews_.at("https://b.example/").failed);
     CHECK(f.s.url_preview_data_.count("https://b.example/") == 0);
@@ -751,7 +834,7 @@ TEST_CASE("a failed URL preview records the failure without a card",
 TEST_CASE("URL preview cancel frees the in-flight key", "[shell][media_images][preview]")
 {
     MiFx f;
-    f.s.ensure_url_preview_("https://c.example/");
+    f.s.ensure_url_preview_("!r:x", "https://c.example/");
     f.s.cancel_media_group_(MediaShell::media_group_for_room_("!r:x"));
     CHECK(f.s.url_preview_in_flight_.empty());
 }

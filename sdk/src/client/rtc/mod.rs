@@ -67,7 +67,21 @@ pub trait RtcEventSink: Send + Sync + 'static {
         sample_rate: u32,
         num_channels: u32,
     );
+    /// The call's mixed remote audio. Each track in it was already checked
+    /// with [`Self::accepts_participant`] on its way into the mixer, so
+    /// `out_identity` is only a label.
+    fn on_mixed_audio_frame(
+        &self,
+        session_id: u64,
+        out_identity: &str,
+        samples: &[i16],
+        sample_rate: u32,
+        num_channels: u32,
+    ) {
+        self.on_audio_frame(session_id, out_identity, samples, sample_rate, num_channels);
+    }
     /// Whether media from this participant should be played (see `FilteredSink`).
+    /// Per-track audio is gated with this before it is mixed.
     fn accepts_participant(&self, _participant_id: &str) -> bool {
         true
     }

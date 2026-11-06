@@ -5079,6 +5079,12 @@ msgstr "Linkvorschauen in von mir gesendete Nachrichten einfügen"
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr "Linkvorschauen direkt abrufen statt über meinen Homeserver"
 
+msgid "Show link previews in encrypted rooms"
+msgstr "Linkvorschauen in verschlüsselten Räumen anzeigen"
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr "Fragt deinen Homeserver nach Vorschauen für Links in verschlüsselten Räumen. Dein Homeserver sieht diese Links, und die verlinkten Websites können erkennen, wann du den Raum öffnest. Vom Absender angehängte Vorschauen werden immer angezeigt."
+
 #: ui/shared/views/settings/PrivacySection.cpp:103
 msgid "Your homeserver doesn't provide link previews, so links you receive won't show a preview."
 msgstr "Dein Homeserver stellt keine Linkvorschauen bereit, daher wird für empfangene Links keine Vorschau angezeigt."

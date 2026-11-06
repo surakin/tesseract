@@ -11,6 +11,17 @@ pub fn strip_bidi_overrides(s: &str) -> String {
         .collect()
 }
 
+/// `name`, or `name (user_id)` when another room member shares the name
+/// (the spec's display-name disambiguation). An empty name stays empty so the
+/// caller keeps its own user-id fallback.
+pub fn disambiguated_name(name: &str, ambiguous: bool, user_id: &str) -> String {
+    if ambiguous && !name.is_empty() && !user_id.is_empty() {
+        format!("{name} ({user_id})")
+    } else {
+        name.to_owned()
+    }
+}
+
 /// Escape `&`, `<`, `>` and `"` so `s` can sit in HTML text or a quoted attribute.
 pub(crate) fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -271,6 +282,14 @@ mod tests {
             .iter()
             .map(|s| (s.start, s.end, text[s.start..s.end].into()))
             .collect()
+    }
+
+    #[test]
+    fn disambiguated_name_appends_the_id_only_when_ambiguous() {
+        assert_eq!(disambiguated_name("Alice", true, "@m:x"), "Alice (@m:x)");
+        assert_eq!(disambiguated_name("Alice", false, "@m:x"), "Alice");
+        assert_eq!(disambiguated_name("", true, "@m:x"), "");
+        assert_eq!(disambiguated_name("Alice", true, ""), "Alice");
     }
 
     #[test]

@@ -180,6 +180,44 @@ const EXEC_EXTS: &[&str] = &[
     "hlp",
     "pyc",
     "kdelnk",
+    // Project/solution files whose IDE evaluates code on load.
+    "csproj",
+    "vbproj",
+    "fsproj",
+    "vcxproj",
+    "proj",
+    "props",
+    "targets",
+    "sln",
+    "dbproj",
+    "vdproj",
+    "xoml",
+    "rgs",
+    "jsxbin",
+    // Playlists and stream redirectors: the player fetches every URL or UNC path they list.
+    "m3u",
+    "m3u8",
+    "m4u",
+    "mxu",
+    "pls",
+    "asx",
+    "asr",
+    "nsc",
+    "wax",
+    "wvx",
+    "wmx",
+    "lsf",
+    "lsx",
+    "ram",
+    "rmm",
+    "qtl",
+    "xspf",
+    "wpl",
+    "zpl",
+    "b4s",
+    "kpl",
+    "cue",
+    "smil",
 ];
 
 const EXEC_MIMES: &[&str] = &[
@@ -229,7 +267,30 @@ const EXEC_MIMES: &[&str] = &[
     "application/vnd.ms-word.document.macroenabled.12",
     "application/vnd.ms-excel.sheet.macroenabled.12",
     "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+    // Playlists and stream redirectors (not video/x-ms-asf: real .asf/.wmv files share it).
+    "audio/x-mpegurl",
+    "audio/mpegurl",
+    "application/x-mpegurl",
+    "application/vnd.apple.mpegurl",
+    "video/vnd.mpegurl",
+    "audio/scpls",
+    "audio/x-scpls",
+    "audio/x-ms-wax",
+    "video/x-ms-wvx",
+    "video/x-ms-wmx",
+    "video/x-ms-asx",
+    "video/x-la-asf",
+    "audio/x-pn-realaudio",
+    "application/x-quicktimeplayer",
+    "application/xspf+xml",
+    "application/vnd.ms-wpl",
+    "application/smil+xml",
 ];
+
+/// The only extensions whose `text/plain` mapping is trusted to open silently.
+/// mime_guess also labels project/solution files (.csproj, .sln, ...) and source
+/// files text/plain, and their default apps can run code on load.
+const SILENT_TEXT_EXTS: &[&str] = &["txt", "text", "log"];
 
 /// Mime groups whose members are interchangeable containers for this check
 /// (an `.ogg` sent as `audio/ogg` or `video/ogg`, an `.m4a` sent as `audio/mp4`...).
@@ -330,6 +391,17 @@ const MAX_NAME_BYTES: usize = 120;
 /// directories, no control/bidi characters, no characters invalid on Windows,
 /// no leading/trailing dots or spaces, no reserved device names, bounded length.
 pub fn sanitize_filename(raw: &str) -> String {
+    let s = sanitize_filename_or_empty(raw);
+    if s.is_empty() {
+        "download".to_owned()
+    } else {
+        s
+    }
+}
+
+/// Same rules as `sanitize_filename`, but returns an empty string when
+/// nothing usable remains.
+pub fn sanitize_filename_or_empty(raw: &str) -> String {
     let leaf = raw.rsplit(['/', '\\']).next().unwrap_or("");
     let mut s: String = leaf
         .chars()
@@ -379,9 +451,6 @@ pub fn sanitize_filename(raw: &str) -> String {
         s = out;
     }
 
-    if s.is_empty() {
-        s.push_str("download");
-    }
     s
 }
 
@@ -433,6 +502,27 @@ fn ext_for_mime(mime: &str) -> String {
         }
         _ => String::new(),
     }
+}
+
+/// Playlist / redirector text formats: players fetch what they list, so treat
+/// them as code.
+fn sniff_playlist(head: &[u8]) -> Option<&'static str> {
+    const SIGS: &[(&[u8], &str)] = &[
+        (b"#extm3u", "audio/x-mpegurl"),
+        (b"[playlist]", "audio/scpls"),
+        (b"[reference]", "video/x-ms-asf"),
+        (b"<asx", "video/x-ms-asf"),
+        (b"<?wpl", "application/vnd.ms-wpl"),
+    ];
+    let h = head.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(head);
+    let start = h
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(h.len());
+    let h = &h[start..];
+    SIGS.iter()
+        .find(|(sig, _)| h.len() >= sig.len() && h[..sig.len()].eq_ignore_ascii_case(sig))
+        .map(|(_, mime)| *mime)
 }
 
 /// Mime recognised from the leading bytes, plus whether it is executable code.
@@ -493,6 +583,9 @@ fn sniff(head: &[u8]) -> (String, bool) {
     // JPEG XL: bare codestream or ISOBMFF container (infer has no matcher).
     if head.starts_with(&[0xFF, 0x0A]) || head.starts_with(b"\0\0\0\x0cJXL \r\n\x87\n") {
         return ("image/jxl".to_owned(), false);
+    }
+    if let Some(m) = sniff_playlist(head) {
+        return (m.to_owned(), true);
     }
     match infer::get(head) {
         Some(t) => {
@@ -611,7 +704,12 @@ pub fn check(filename: &str, declared_mime: &str, head: &[u8]) -> MediaTypeCheck
     // or what the bytes look like, so the extension itself must be a known-safe
     // media type. An extension mime_guess has never heard of (".rdp", ".iso")
     // can't be vouched for, however convincing the declared type and contents.
-    let ext_is_safe = ext.is_empty() || ext_mimes.iter().any(|m| is_safe_media(m));
+    // text/plain counts only for SILENT_TEXT_EXTS: mime_guess labels many
+    // code-bearing formats (.csproj, .sln, .pkgdef...) text/plain.
+    let ext_is_safe = ext.is_empty()
+        || ext_mimes.iter().any(|m| {
+            is_safe_media(m) && (m != "text/plain" || SILENT_TEXT_EXTS.contains(&ext.as_str()))
+        });
     if !ext_is_safe || !is_safe_media(&effective_mime) {
         return make(Verdict::NotMedia);
     }
@@ -910,6 +1008,24 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_or_empty_returns_empty_when_nothing_usable() {
+        assert_eq!(sanitize_filename_or_empty(""), "");
+        assert_eq!(sanitize_filename_or_empty(".."), "");
+        assert_eq!(sanitize_filename_or_empty("a/"), "");
+        assert_eq!(sanitize_filename_or_empty(" . "), "");
+        assert_eq!(
+            sanitize_filename_or_empty(".config/autostart/notes.desktop"),
+            "notes.desktop"
+        );
+        assert_eq!(
+            sanitize_filename_or_empty(
+                "..\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\x.bat"
+            ),
+            "x.bat"
+        );
+    }
+
+    #[test]
     fn sanitize_removes_bidi_override_spoofing() {
         // "photo" + RLO + "gpj.exe" renders as "photoexe.jpg".
         let s = sanitize_filename("photo\u{202E}gpj.exe");
@@ -938,5 +1054,165 @@ mod tests {
         assert_eq!(ext_for_mime("image/jpeg"), "jpg");
         assert_eq!(ext_for_mime("text/plain"), "txt");
         assert_eq!(ext_for_mime("application/x-nothing-known"), "");
+    }
+
+    #[test]
+    fn text_plain_mapping_alone_is_not_safe() {
+        let head = b"<Project Sdk=\"Microsoft.NET.Sdk\">";
+        for name in [
+            "Build.csproj",
+            "App.vbproj",
+            "All.sln",
+            "x.dbproj",
+            "x.vdproj",
+            "x.xoml",
+            "x.pkgdef",
+            "x.rgs",
+            "x.jsxbin",
+            "x.user",
+            "x.vcs",
+            "main.c",
+            "a.ini",
+        ] {
+            for mime in ["text/plain", ""] {
+                assert_ne!(check(name, mime, head).verdict, Verdict::Ok, "{name}");
+            }
+        }
+        for name in ["Build.csproj", "App.vbproj", "All.sln"] {
+            assert_eq!(
+                check(name, "text/plain", head).verdict,
+                Verdict::Executable,
+                "{name}"
+            );
+        }
+        for name in ["x.user", "main.c"] {
+            assert_eq!(
+                check(name, "text/plain", head).verdict,
+                Verdict::NotMedia,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn plain_text_extensions_still_open_silently() {
+        assert_eq!(
+            check("notes.txt", "text/plain", b"hi\n").verdict,
+            Verdict::Ok
+        );
+        assert_eq!(
+            check("README.TEXT", "text/plain", b"hi").verdict,
+            Verdict::Ok
+        );
+        assert_eq!(check("build.log", "", b"line\n").verdict, Verdict::Ok);
+        assert_eq!(check("NOTES.TXT", "text/plain", b"hi").verdict, Verdict::Ok);
+    }
+
+    #[test]
+    fn nameless_plain_text_is_renamed_to_txt() {
+        let r = check("attachment", "text/plain", b"hi");
+        assert_eq!(r.verdict, Verdict::ExtMimeMismatch);
+        assert_eq!(r.renamed_filename, "attachment.txt");
+        assert_eq!(
+            check("attachment.txt", "text/plain", b"hi").verdict,
+            Verdict::Ok
+        );
+    }
+
+    #[test]
+    fn playlists_are_refused() {
+        let body = b"http://attacker.example/a.mp3\n";
+        for (name, mime) in [
+            ("song.m3u", "audio/x-mpegurl"),
+            ("live.m3u8", "application/vnd.apple.mpegurl"),
+            ("radio.pls", "audio/scpls"),
+            ("a.asx", "video/x-ms-asf"),
+            ("a.wax", "audio/x-ms-wax"),
+            ("a.wvx", "video/x-ms-wvx"),
+            ("a.wmx", "video/x-ms-wmx"),
+            ("a.ram", "audio/x-pn-realaudio"),
+            ("a.xspf", "application/xspf+xml"),
+            ("a.wpl", "application/vnd.ms-wpl"),
+            ("a.qtl", ""),
+            ("a.lsx", ""),
+            ("a.m4u", ""),
+            ("a.cue", ""),
+        ] {
+            assert_eq!(
+                check(name, mime, body).verdict,
+                Verdict::Executable,
+                "{name} {mime}"
+            );
+            assert_eq!(
+                check(name, "", body).verdict,
+                Verdict::Executable,
+                "{name} (no mime)"
+            );
+        }
+    }
+
+    #[test]
+    fn playlist_mime_without_a_name_is_refused() {
+        assert_eq!(
+            check("attachment", "audio/x-mpegurl", b"#EXTM3U\n").verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check("attachment", "audio/x-pn-realaudio", b"rtsp://x/\n").verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check("attachment", "application/x-mpegURL", b"").verdict,
+            Verdict::Executable
+        );
+    }
+
+    #[test]
+    fn playlist_contents_are_refused_under_a_media_name() {
+        let r = check(
+            "song.mp3",
+            "audio/mpeg",
+            b"#EXTM3U\n\\\\attacker.example\\share\\a.mp3\n",
+        );
+        assert_eq!(r.verdict, Verdict::Executable);
+        assert_ne!(r.suggested_ext, "m3u");
+        assert_eq!(
+            check(
+                "clip.asf",
+                "video/x-ms-asf",
+                b"<ASX version=\"3.0\"><Entry><Ref href=\"http://x/\"/></Entry></ASX>"
+            )
+            .verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check(
+                "a.mp3",
+                "audio/mpeg",
+                b"\xEF\xBB\xBF  [playlist]\nFile1=http://x/\n"
+            )
+            .verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check("a.wmv", "video/x-ms-wmv", b"[Reference]\nRef1=http://x/\n").verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check("attachment", "", b"#extm3u\n").verdict,
+            Verdict::Executable
+        );
+    }
+
+    #[test]
+    fn real_windows_and_real_media_still_open() {
+        assert_eq!(check("a.asf", "video/x-ms-asf", b"").verdict, Verdict::Ok);
+        assert_eq!(check("a.wma", "audio/x-ms-wma", b"").verdict, Verdict::Ok);
+        assert_eq!(check("a.wmv", "video/x-ms-wmv", b"").verdict, Verdict::Ok);
+        assert_eq!(
+            check("a.mp3", "audio/mpeg", b"ID3\x04\0\0").verdict,
+            Verdict::Ok
+        );
+        assert_eq!(check("a.ra", "", b"").verdict, Verdict::Ok);
     }
 }

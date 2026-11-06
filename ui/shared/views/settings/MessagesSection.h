@@ -8,8 +8,9 @@
 //                     and recompress images before sending
 //   "Timeline"      - checkboxes for join/leave events, sender status emoji
 //                     and sender timezone difference
-//   "Link previews" - bundled-preview and direct-fetch checkboxes, plus a note
-//                     when the homeserver has link previews off
+//   "Link previews" - encrypted-room, bundled-preview and direct-fetch
+//                     checkboxes, plus a note when the homeserver has link
+//                     previews off
 //   "Search"        - local message-index checkbox with index stats
 //
 // Every checkbox reads its initial state from Settings::instance() and is
@@ -50,6 +51,7 @@ private:
     tk::CheckButton* show_deleted_messages_cb_ = nullptr;
     tk::CheckButton* show_sender_status_cb_ = nullptr;
     tk::CheckButton* show_sender_timezone_cb_ = nullptr;
+    tk::CheckButton* encrypted_url_previews_cb_ = nullptr;
     tk::CheckButton* bundled_url_previews_cb_ = nullptr;
     tk::CheckButton* url_previews_direct_cb_ = nullptr;
     tk::Label* previews_unavailable_label_ = nullptr;

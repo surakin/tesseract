@@ -5804,6 +5804,12 @@ msgstr ""
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr ""
 
+msgid "Show link previews in encrypted rooms"
+msgstr ""
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr ""
+
 #: ui/shared/views/settings/PrivacySection.cpp:137
 msgid ""
 "Before sending a message that contains links, ask your homeserver for a "

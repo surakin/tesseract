@@ -5,6 +5,15 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(security): a message with a huge table can no longer freeze or crash Tesseract; oversized tables are cut short. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): project files such as `.csproj` and `.sln` are never opened, and other text files ask before opening. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): playlists (`.m3u`, `.pls`, `.asx`, …) are never opened, even when renamed to look like media. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): Save-As no longer lets a received file's name pick the folder the dialog opens in. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(calls): another member's call server can no longer add fake participants or show media under a real member's name. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): oversized images in formats the size check can't read are refused before decoding on Windows and macOS. Linux build; unverified Windows/macOS
+- fix(security): members who share a display name are shown with their Matrix ID, also in the per-message profile "via" label. Linux build, ctest 3888/3892, cargo 1672/1672
+- privacy(previews): links in encrypted rooms are no longer sent to the homeserver for previews unless a new setting allows it. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): forwarding an encrypted message sends what you see, not an edit the homeserver could have slipped in. Linux build, ctest 3888/3892, cargo 1672/1672
 - feat(messages): messages sent with a per-message profile show its name and avatar, with the real sender beside it (MSC4144). Windows release build
 - fix(messages): forwarding a message no longer carries over its per-message profile. Windows release build
 - refactor(settings): settings regrouped into fewer, clearer tabs (Security & Devices, Messages, General). Windows release build + ctest

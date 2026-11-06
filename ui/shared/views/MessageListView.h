@@ -146,7 +146,8 @@ struct MessageRowData
     std::string event_id;
     std::string sender; // canonical Matrix ID
     std::string sender_name;
-    std::string sender_avatar_url; // mxc
+    bool sender_name_ambiguous = false; // another member shares sender_name
+    std::string sender_avatar_url;      // mxc
     // MSC4426 status of the sender; emoji drawn after the name (opt-in
     // setting), text shown as a tooltip.
     std::string sender_status_emoji;
@@ -267,15 +268,23 @@ struct MessageRowData
     {
         return !profile_id.empty();
     }
-    // Real sender's name, else the mxid.
-    const std::string& member_label() const
+    // Real sender's raw name, else the mxid.
+    const std::string& member_name() const
     {
         return sender_name.empty() ? sender : sender_name;
     }
-    // Name to draw: the profile name when it has one, else the member's.
+    // member_name(), plus " (@mxid)" when another room member shares the name.
+    std::string member_label() const;
+    // Raw name to draw: the profile name when it has one, else the member's.
+    // Avatar initials use this; header text uses display_label().
     const std::string& display_name() const
     {
-        return has_profile() && !profile_name.empty() ? profile_name : member_label();
+        return has_profile() && !profile_name.empty() ? profile_name : member_name();
+    }
+    // Header text: the profile name when it has one, else member_label().
+    std::string display_label() const
+    {
+        return shows_via() ? profile_name : member_label();
     }
     // Avatar key to draw (empty == initials).
     const std::string& display_avatar_key() const

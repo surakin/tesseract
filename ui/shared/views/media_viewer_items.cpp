@@ -1,5 +1,6 @@
 #include "media_viewer_items.h"
 
+#include "tesseract/client.h"
 #include "tk/i18n.h"
 
 #include <algorithm>
@@ -10,6 +11,15 @@ namespace tesseract::views
 
 namespace
 {
+// The sender's name, cut down to a safe leaf name: a name that carries a path
+// ("../x", ".config/autostart/a.desktop", "C:\\...\\Startup\\x.bat") would
+// otherwise open the save dialog in the sender's chosen folder. Empty when
+// nothing usable remains.
+std::string safe_name(const std::string& raw)
+{
+    return tesseract::Client::sanitize_filename(raw);
+}
+
 // File extension (with the dot) for a mime type, for naming a save when the
 // item has no file name: ".ogg" for "audio/ogg", ".mp3" for "audio/mpeg",
 // ".mov" for "video/quicktime", ".svg" for "image/svg+xml", ".mp4" for
@@ -213,13 +223,14 @@ std::vector<MediaViewerItem> items_from_gallery(const MessageListView::GalleryHi
 MediaSaveSpec media_save_spec(const MediaViewerItem& item)
 {
     MediaSaveSpec spec;
+    const std::string name = safe_name(item.filename);
+    const std::string caption = safe_name(item.caption);
     switch (item.kind)
     {
     case MediaViewerItem::Kind::Image:
     {
         spec.title = tk::tr("Save image");
-        spec.suggested_name =
-            item.filename.empty() ? "image" + mime_extension(item.mime_type) : item.filename;
+        spec.suggested_name = name.empty() ? "image" + mime_extension(item.mime_type) : name;
         spec.filter_name = tk::tr("Images");
         spec.patterns = {"*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp"};
         break;
@@ -227,9 +238,9 @@ MediaSaveSpec media_save_spec(const MediaViewerItem& item)
     case MediaViewerItem::Kind::Video:
     {
         spec.title = tk::tr("Save video");
-        if (!item.filename.empty())
+        if (!name.empty())
         {
-            spec.suggested_name = item.filename;
+            spec.suggested_name = name;
         }
         else
         {
@@ -243,13 +254,13 @@ MediaSaveSpec media_save_spec(const MediaViewerItem& item)
     case MediaViewerItem::Kind::Audio:
     {
         spec.title = tk::tr("Save audio");
-        if (!item.filename.empty())
+        if (!name.empty())
         {
-            spec.suggested_name = item.filename;
+            spec.suggested_name = name;
         }
-        else if (!item.caption.empty())
+        else if (!caption.empty())
         {
-            spec.suggested_name = item.caption;
+            spec.suggested_name = caption;
         }
         else
         {
@@ -260,13 +271,13 @@ MediaSaveSpec media_save_spec(const MediaViewerItem& item)
     case MediaViewerItem::Kind::File:
     {
         spec.title = tk::tr("Save file");
-        if (!item.filename.empty())
+        if (!name.empty())
         {
-            spec.suggested_name = item.filename;
+            spec.suggested_name = name;
         }
-        else if (!item.caption.empty())
+        else if (!caption.empty())
         {
-            spec.suggested_name = item.caption;
+            spec.suggested_name = caption;
         }
         else
         {

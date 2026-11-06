@@ -65,15 +65,21 @@ pub(super) trait ExportSink: Send + Sync {
 /// The name a message is shown under. A per-message profile (MSC4144) shows
 /// as "{profile} via {member}", so the real sender is never hidden.
 fn sender_display<'a>(ev: &'a TimelineEvent, labels: &Labels) -> Cow<'a, str> {
-    let member = if !ev.sender_name.is_empty() {
-        ev.sender_name.as_str()
+    let member: Cow<'a, str> = if ev.sender_name.is_empty() {
+        Cow::Borrowed(ev.sender.as_str())
+    } else if ev.sender_name_ambiguous {
+        Cow::Owned(crate::text_utils::disambiguated_name(
+            &ev.sender_name,
+            true,
+            &ev.sender,
+        ))
     } else {
-        ev.sender.as_str()
+        Cow::Borrowed(ev.sender_name.as_str())
     };
     if ev.profile_name.is_empty() {
-        return Cow::Borrowed(member);
+        return member;
     }
-    let shown = labels.format(ExportLabel::PerMessageProfile, &[&ev.profile_name, member]);
+    let shown = labels.format(ExportLabel::PerMessageProfile, &[&ev.profile_name, &member]);
     if shown.is_empty() {
         // A version-skewed caller without the template.
         Cow::Borrowed(ev.profile_name.as_str())
@@ -716,6 +722,20 @@ mod tests {
         ev.profile_id = "cat".into();
         let labels = labels();
         assert_eq!(sender_display(&ev, &labels), "Alice");
+    }
+
+    #[test]
+    fn ambiguous_sender_shows_the_matrix_id() {
+        let mut ev = base_event();
+        ev.sender_name_ambiguous = true;
+        let labels = labels();
+        assert_eq!(sender_display(&ev, &labels), "Alice (@alice:example.org)");
+        ev.profile_id = "cat".into();
+        ev.profile_name = "Cat".into();
+        assert_eq!(
+            sender_display(&ev, &labels),
+            "Cat via Alice (@alice:example.org)"
+        );
     }
 
     #[test]

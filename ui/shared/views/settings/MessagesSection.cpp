@@ -148,6 +148,12 @@ MessagesSection::MessagesSection(SettingBinder& binder)
     previews_unavailable_label_ = previews_group->add_widget(std::move(unavailable_lbl));
     previews_unavailable_label_->set_visible(false);
 
+    auto enc_cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Show link previews in encrypted rooms"), s.url_previews_in_encrypted_rooms);
+    encrypted_url_previews_cb_ = previews_group->add_widget(std::move(enc_cb));
+    binder.bind(encrypted_url_previews_cb_, &S::url_previews_in_encrypted_rooms,
+                SettingKey::EncryptedUrlPreviews);
+
     auto bundled_cb = tk::create_widget<tk::CheckButton>(
         this, tk::tr("Include link previews in messages I send"), s.send_bundled_url_previews);
     bundled_url_previews_cb_ = previews_group->add_widget(std::move(bundled_cb));
@@ -172,6 +178,26 @@ MessagesSection::MessagesSection(SettingBinder& binder)
                 tesseract::Settings::instance().send_bundled_url_previews);
         });
 
+    encrypted_url_previews_cb_->on_hover_enter = [this]
+    {
+        if (host_)
+        {
+            host_->show_tooltip(
+                encrypted_url_previews_cb_,
+                tk::tr("Ask your homeserver for previews of links in encrypted rooms. "
+                       "Your homeserver will see those links, and the linked sites can "
+                       "tell when you open the room. Previews the sender attached are "
+                       "always shown."),
+                encrypted_url_previews_cb_->bounds());
+        }
+    };
+    encrypted_url_previews_cb_->on_hover_leave = [this]
+    {
+        if (host_)
+        {
+            host_->hide_tooltip(encrypted_url_previews_cb_);
+        }
+    };
     bundled_url_previews_cb_->on_hover_enter = [this]
     {
         if (host_)

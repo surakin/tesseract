@@ -169,6 +169,37 @@ TEST_CASE("MessagesSection: the show-deleted checkbox writes Settings and report
     st.show_deleted_messages = saved;
 }
 
+TEST_CASE("MessagesSection: the encrypted-room link-preview checkbox writes Settings and reports "
+          "its key",
+          "[settings-view]")
+{
+    auto& st = tesseract::Settings::instance();
+    const bool saved = st.url_previews_in_encrypted_rooms;
+    st.url_previews_in_encrypted_rooms = false;
+
+    tesseract::views::SettingBinder binder;
+    tesseract::views::MessagesSection section(binder);
+    tk::CheckButton* enc_cb = find_check_by_label(section, "encrypted rooms");
+    REQUIRE(enc_cb);
+
+    std::vector<tesseract::views::SettingKey> fired;
+    binder.on_changed = [&](tesseract::views::SettingKey k)
+    {
+        fired.push_back(k);
+    };
+
+    binder.reload(); // silent
+    CHECK_FALSE(enc_cb->checked());
+    CHECK(fired.empty());
+
+    enc_cb->on_change(true);
+    REQUIRE(fired.size() == 1);
+    CHECK(fired[0] == tesseract::views::SettingKey::EncryptedUrlPreviews);
+    CHECK(st.url_previews_in_encrypted_rooms);
+
+    st.url_previews_in_encrypted_rooms = saved;
+}
+
 TEST_CASE("MessagesSection: the sender-timezone checkbox writes Settings and reports its key",
           "[settings-view]")
 {

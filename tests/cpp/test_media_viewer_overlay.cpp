@@ -181,6 +181,76 @@ TEST_CASE("media_save_spec for audio and files uses the file name without a filt
     CHECK(tesseract::views::media_save_spec(audio).suggested_name == "audio");
 }
 
+TEST_CASE("media_save_spec never suggests a path from the sender's file name",
+          "[mediaviewer][items]")
+{
+    MediaViewerItem file;
+    file.kind = MediaViewerItem::Kind::File;
+    file.filename = ".config/autostart/notes.desktop";
+    auto name = tesseract::views::media_save_spec(file).suggested_name;
+    CHECK(name == "notes.desktop");
+    CHECK(name.find_first_of("/\\") == std::string::npos);
+
+    file.filename =
+        "..\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\x.bat";
+    name = tesseract::views::media_save_spec(file).suggested_name;
+    CHECK(name == "x.bat");
+    CHECK(name.find_first_of("/\\") == std::string::npos);
+
+    name = tesseract::views::media_save_spec(image_item("mxc://x", "", "/etc/../../cat.png"))
+               .suggested_name;
+    CHECK(name == "cat.png");
+    CHECK(name.find_first_of("/\\") == std::string::npos);
+
+    auto video = video_item("{}", "", "video/mp4");
+    video.filename = "C:\\Users\\v\\clip.mp4";
+    name = tesseract::views::media_save_spec(video).suggested_name;
+    CHECK(name == "clip.mp4");
+    CHECK(name.find_first_of("/\\") == std::string::npos);
+}
+
+TEST_CASE("media_save_spec falls back when the sender's name cleans to nothing",
+          "[mediaviewer][items]")
+{
+    auto image = image_item("mxc://x", "", "..");
+    image.mime_type = "image/png";
+    CHECK(tesseract::views::media_save_spec(image).suggested_name == "image.png");
+
+    auto video = video_item("{}", "", "video/mp4");
+    video.filename = "/";
+    CHECK(tesseract::views::media_save_spec(video).suggested_name == "video.mp4");
+
+    MediaViewerItem file;
+    file.kind = MediaViewerItem::Kind::File;
+    file.filename = "../";
+    file.caption = "dir/evil.sh";
+    CHECK(tesseract::views::media_save_spec(file).suggested_name == "evil.sh");
+
+    file.filename = "..";
+    file.caption = "..";
+    CHECK(tesseract::views::media_save_spec(file).suggested_name == "download");
+
+    MediaViewerItem audio;
+    audio.kind = MediaViewerItem::Kind::Audio;
+    audio.mime_type = "audio/ogg";
+    audio.filename = "a/";
+    audio.caption = "";
+    CHECK(tesseract::views::media_save_spec(audio).suggested_name == "audio.ogg");
+}
+
+TEST_CASE("media_save_spec bounds the length and drops bidi overrides", "[mediaviewer][items]")
+{
+    MediaViewerItem file;
+    file.kind = MediaViewerItem::Kind::File;
+    file.filename = std::string(300, 'x') + ".pdf";
+    const auto name = tesseract::views::media_save_spec(file).suggested_name;
+    CHECK(name.size() <= 120);
+    CHECK(name.ends_with(".pdf"));
+
+    file.filename = "photo\xE2\x80\xAEgpj.exe"; // U+202E RIGHT-TO-LEFT OVERRIDE
+    CHECK(tesseract::views::media_save_spec(file).suggested_name == "photogpj.exe");
+}
+
 // ── one overlay, two pages ────────────────────────────────────────────────
 
 TEST_CASE("switching image to video on one overlay swaps the page controls",

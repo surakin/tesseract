@@ -609,6 +609,15 @@ static std::uint64_t live_now_ms()
                                           .count());
 }
 
+std::string MessageRowData::member_label() const
+{
+    if (sender_name.empty() || !sender_name_ambiguous)
+    {
+        return member_name();
+    }
+    return tk::trf(tk::tr("{0} ({1})"), {sender_name, sender});
+}
+
 MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_user_id)
 {
     using Kind = MessageRowData::Kind;
@@ -616,6 +625,7 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.event_id = ev.event_id;
     row.sender = ev.sender;
     row.sender_name = ev.sender_name;
+    row.sender_name_ambiguous = ev.sender_name_ambiguous;
     row.sender_avatar_url = ev.sender_avatar_url;
     row.profile_id = ev.profile_id;
     row.profile_name = ev.profile_name;
@@ -1405,7 +1415,7 @@ std::string membership_expanded_phrase_base(const MessageRowData& m)
     using A = tesseract::MembershipAction;
     const std::string t =
         m.membership_target_name.empty() ? m.membership_target_user_id : m.membership_target_name;
-    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    const std::string s = m.member_label();
     const bool by_actor = m.sender != m.membership_target_user_id;
     switch (m.membership_action)
     {
@@ -1467,7 +1477,7 @@ std::string membership_expanded_phrase_base(const MessageRowData& m)
 // through tk::tr()/tk::trf().
 std::string room_name_change_phrase(const MessageRowData& m)
 {
-    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    const std::string s = m.member_label();
     if (m.room_name_new.empty())
     {
         return tk::trf(tk::tr("{0} removed the room name"), {s});
@@ -1483,7 +1493,7 @@ std::string room_name_change_phrase(const MessageRowData& m)
 // room: moving to the new version".
 std::string room_tombstone_phrase(const MessageRowData& m)
 {
-    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    const std::string s = m.member_label();
     std::string line = tk::trf(tk::tr("{0} upgraded this room"), {s});
     if (!m.body.empty())
     {
@@ -1495,7 +1505,7 @@ std::string room_tombstone_phrase(const MessageRowData& m)
 // Phrase for a developer "unhandled event" row; `body` is the event type.
 std::string dev_unhandled_phrase(const MessageRowData& m)
 {
-    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    const std::string s = m.member_label();
     if (s.empty())
     {
         return tk::trf(tk::tr("Unhandled event: {0}"), {m.body});
@@ -1684,10 +1694,10 @@ static std::string speaker_label(const MessageRowData& m)
 }
 
 // Name a row is attributed to: "cat via Alice" for a profile row, else the
-// member's name (or mxid).
+// member's name (or mxid), with the mxid added when the name is shared.
 static std::string speaker_name(const MessageRowData& m)
 {
-    return m.shows_via() ? speaker_label(m) : m.display_name();
+    return m.shows_via() ? speaker_label(m) : m.member_label();
 }
 
 // Key the sender name colour is hashed from: per profile, so personas relayed
@@ -2615,7 +2625,7 @@ public:
             // Sender name — vertically centered against the avatar disc.
             float sender_y = bounds.y + kMsgListPadY + (kMsgListAvatarSize - sender_h()) * 0.5f;
             auto& rc = cache_for(index);
-            const std::string skey = m.display_name();
+            const std::string skey = m.display_label();
             // The name colour is per persona (sender + profile id).
             const tk::Color name_col = sender_color(sender_color_key(m), ctx.theme);
 
@@ -3946,7 +3956,7 @@ public:
                        : tk::tr("Start of conversation");
         case Kind::PinnedEvent:
             return m.sender_name.empty() ? m.body
-                                         : tk::trf(tk::tr("{0} {1}"), {m.sender_name, m.body});
+                                         : tk::trf(tk::tr("{0} {1}"), {m.member_label(), m.body});
         case Kind::CallNotification:
         {
             const bool is_video = (m.body == "video");
@@ -3955,7 +3965,7 @@ public:
                                            : (m.body == "audio" ? tk::tr("started a voice call")
                                                                 : tk::tr("started a call"));
             return m.sender_name.empty() ? intent
-                                         : tk::trf(tk::tr("{0} {1}"), {m.sender_name, intent});
+                                         : tk::trf(tk::tr("{0} {1}"), {m.member_label(), intent});
         }
         case Kind::RoomName:
             return room_name_change_phrase(m);
@@ -4002,7 +4012,9 @@ public:
         // separator.
         const std::string body = message_row_access_body_(m);
         // "cat via Alice" for an MSC4144 profile row, else the member's name.
-        const std::string speaker = m.shows_via() ? speaker_label(m) : m.sender_name;
+        const std::string speaker =
+            m.shows_via() ? speaker_label(m)
+                          : (m.sender_name.empty() ? std::string{} : m.member_label());
         std::string name = speaker.empty() ? body : tk::trf(tk::tr("{0}: {1}"), {speaker, body});
         // Opt-in sender status (emoji is only drawn, so announce it too; it is
         // not drawn on profile rows).
@@ -4154,7 +4166,7 @@ public:
         // ── Sender ─────────────────────────────────────────────────────
         if (!m.sender.empty() && owner_.on_sender_clicked)
         {
-            const std::string who = m.sender_name.empty() ? m.sender : m.sender_name;
+            const std::string who = m.member_label();
             out.push_back(
                 action_node_(tk::trf(tk::tr("View profile of {0}"), {who}),
                              [v, uid = m.sender, name = m.sender_name, av = m.sender_avatar_url]
@@ -4914,7 +4926,7 @@ private:
     void paint_pinned_event(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         // "{sender_name} {body}" e.g. "Alice pinned a message"
-        std::string label = m.sender_name.empty() ? m.body : m.sender_name + " " + m.body;
+        std::string label = m.sender_name.empty() ? m.body : m.member_label() + " " + m.body;
         if (label.empty())
         {
             return;
@@ -5005,7 +5017,7 @@ private:
                 ? tk::tr("started a video call")
                 : (m.body == "audio" ? tk::tr("started a voice call") : tk::tr("started a call"));
         const std::string label =
-            m.sender_name.empty() ? intent_label : m.sender_name + " " + intent_label;
+            m.sender_name.empty() ? intent_label : m.member_label() + " " + intent_label;
 
         constexpr float kIconSz = 12.0f;
         constexpr float kIconGap = 4.0f;
@@ -9993,6 +10005,9 @@ void MessageListView::update_member_profile(const std::string& user_id,
         bool changed = false;
         // Only the real member's fields are patched; an MSC4144 per-message
         // profile (profile_*) is part of the event and must stay untouched.
+        // sender_name_ambiguous is left as-is: matrix-sdk-ui re-sends the row
+        // with a fresh flag whenever ambiguity changes, so a stale flag only
+        // errs toward showing the mxid.
         if (display_name && m.sender_name != *display_name)
         {
             m.sender_name = *display_name;
@@ -11845,7 +11860,7 @@ bool MessageListView::invoke_message_action(tesseract::views::MessageActionId id
         {
             return false;
         }
-        on_reply_requested(event_id, rowp->sender_name, rowp->body);
+        on_reply_requested(event_id, rowp->member_label(), rowp->body);
         return true;
     case Id::ReplyInThread:
         if (!on_thread_preview_clicked)
@@ -12787,7 +12802,7 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                     {
                         if (on_reply_requested)
                         {
-                            on_reply_requested(ev, row.sender_name, row.body);
+                            on_reply_requested(ev, row.member_label(), row.body);
                         }
                         break;
                     }

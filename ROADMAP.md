@@ -178,6 +178,79 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   and jump to it). Room settings: show the Bridge tab only when a bridge is
   detected, and fold the one-dropdown Media tab into another tab.
 
+- **Security review backlog (2026-11-06, at f2e80ca).** Findings deferred for
+  later review; each was checked against the code by a second reviewer.
+  - *Medium:* the timeline shows no per-message encryption/authenticity state
+    (plaintext in an encrypted room, unsigned device, unauthenticated session
+    look like verified messages); `timeline_convert.rs` never reads the SDK's
+    shield/`encryption_info`.
+  - *Medium (CI):* `publish-release.yml` GPG-signs whatever `.flatpak` is on
+    the (mutable) GitHub release, so any `contents: write` token can get files
+    signed; the signing key is also in the same job as the tag-pinned
+    `peaceiris/actions-gh-pages`.
+  - *Medium (CI):* third-party actions pinned to mutable tags run in jobs that
+    hold signing keys, the AUR SSH key and write tokens (`package.yml`,
+    `publish-release.yml`); pin to commit SHAs.
+  - *DoS/resources:* quadratic front-erase of whitespace spans
+    (`html_spans.cpp` `commit_block`/`commit_cell`); `code_regions()` is
+    O(bytes × regions) on the UI thread; no resolution cap on remote call
+    video frames (`livekit_room.rs` `i420_to_rgba`); `MAX_MEDIA_BYTES` is
+    checked only after the whole body is buffered; the decrypted-media disk
+    cache is pruned once per process.
+  - *E2EE media integrity:* the video prefix fetch and encrypted streaming
+    hand AES-CTR plaintext to decoders before the SHA-256 check
+    (`media.rs`).
+  - *Local files:* the decrypted search index and legacy stores are created
+    with the process umask; history-export media/zip/segments use default
+    permissions; decrypted media plus its attachment key stay in the shared
+    cache after logout; one keyring failure silently moves tokens and the
+    store key to a plaintext file and deletes the keyring copy.
+  - *Auth:* the OAuth loopback listener accepts the first GET to any path, so
+    a local process or web page can abort a sign-in; QR grant opens an
+    unvalidated verification URI from the scanning device; the URL-preview
+    SSRF guard is skipped when a System/env proxy is in use.
+  - *Calls/crypto:* call frame keys from an unsigned device of a verified
+    user are accepted in default mode; the verification flow table is keyed
+    by `flow_id` alone (a second request can hijack/cancel); a fresh OpenID
+    token is sent to any SFU URL a member advertises.
+  - *Memory safety:* the voice-message waveform decoder (ogg/libopus over
+    remote bytes) has no `catch_unwind` at the cxx boundary.
+  - *Codecs:* remote image bytes reach every installed OS codec (no format
+    allowlist) on Qt/GTK.
+  - *Spoofing:* mention pills show the sender's anchor text, not the target's
+    name, and skip the link-target tooltip; forged MSC4553 forwards put
+    attacker text under a real member's name, and in the IRC layout a
+    forwarded emote hides the forwarder; the plain-text export writes bodies
+    raw, so a sender can forge lines; history export reuses image file names
+    across windows, so pictures can be replaced by another sender's.
+  - *Privacy:* location shares fetch OSM tiles automatically and ignore the
+    media-preview gate; the Klipy `customer_id` is an unsalted SHA-256 of the
+    MXID; avatar/room-avatar/pack/file uploads send the original with EXIF/GPS
+    when stripping fails.
+  - *Local IPC:* the UnifiedPush D-Bus connector accepts
+    `NewEndpoint`/`Message` from any session-bus peer; another local user can
+    pre-create the `/tmp` single-instance fallback dir and disable the lock.
+  - *CI/packaging:* AppImage built with unpinned `continuous` linuxdeploy and
+    a `master`-branch script; CI pipes `llvm.sh` into `sudo bash`; signing
+    credentials load in the same job as the full dependency build;
+    `build-platform.yml` can sign and publish the production Flatpak repo from
+    any branch (secrets not environment-gated); the Flatpak GPG passphrase is
+    written to `$GITHUB_ENV`; some workflows lack a `permissions` block and
+    keep checkout credentials; the Flatpak manifest grants `--device=all`.
+  - *Follow-ups from the fixes:* honour per-room preview controls
+    (`org.matrix.room.preview_urls`), and decide whether to send an empty
+    `url_previews` array in encrypted rooms; the encrypted-preview setting
+    only refreshes the main window's rows; an `Unknown` encryption state
+    reads as unencrypted. Save-As could start in Downloads, and could defang
+    Executable extensions. Names still not disambiguated: typing, receipts,
+    reactions, thread list, search hits, pinned banner, room-list sender,
+    gallery, voice-message artist, membership targets; the sender colour is
+    still keyed by MSC4144 `profile_id`; the "(@mxid)" suffix is ellipsised
+    first. GTK's `size-prepared` handler scales instead of refusing
+    over-budget TIFF/BMP/ICO; `set_clipboard_image` and `encode_for_send`
+    decode with no budget. A remote-SFU member who joins before its
+    membership syncs appears only on the next reconcile pass.
+
 ## Tier 4 — Open questions, decide-don't-build-yet
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the

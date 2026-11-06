@@ -3428,6 +3428,24 @@ static void log_wic_failure(const wchar_t* step, HRESULT hr)
     OutputDebugStringW(msg);
 }
 
+// Refuses a frame whose decoder-reported size is over the decode budget, before
+// any pixel buffer is allocated. Covers formats tk::decode_size_allowed cannot
+// probe (TIFF, BMP, ICO, HEIF...).
+static bool wic_frame_within_budget(IWICBitmapFrameDecode* frame, bool animated)
+{
+    UINT w = 0, h = 0;
+    if (FAILED(frame->GetSize(&w, &h)))
+    {
+        return false;
+    }
+    if (!tk::decode_dims_allowed(w, h, animated))
+    {
+        OutputDebugStringW(L"Tesseract: image over decode budget, skipped\n");
+        return false;
+    }
+    return true;
+}
+
 // Forward declaration — defined further down this file; decode_image needs
 // it for its own optional max_w/max_h downscale.
 static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic, IWICBitmap* src, UINT w,
@@ -3493,6 +3511,10 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/, std::span<const std::uint8_t
 
     ComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(0, frame.GetAddressOf())))
+    {
+        return nullptr;
+    }
+    if (!wic_frame_within_budget(frame.Get(), /*animated=*/false))
     {
         return nullptr;
     }
@@ -3844,6 +3866,10 @@ static std::unique_ptr<Image> decode_wic_frame_at(Backend::Impl& impl, IWICBitma
 {
     ComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(i, frame.GetAddressOf())))
+    {
+        return nullptr;
+    }
+    if (!wic_frame_within_budget(frame.Get(), /*animated=*/true))
     {
         return nullptr;
     }

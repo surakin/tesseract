@@ -56,6 +56,8 @@ struct TableGrid
     int header_rows = 0;
 };
 
+// Clamps the grid to kMaxTableCols columns / kMaxTableCells cells and treats a
+// missing cell in a short row as empty.
 TableGrid compute_table_layout(const BodyTable& table, float avail_width,
                                tk::CanvasFactory& factory, const tk::TextStyle& base);
 

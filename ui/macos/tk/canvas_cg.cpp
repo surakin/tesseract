@@ -517,6 +517,34 @@ std::string initials_upper(std::string_view name, AvatarText text)
     return out;
 }
 
+// True when the pixel size ImageIO reports in `props` is within the decode
+// budget. Covers formats tk::decode_size_allowed cannot probe (TIFF, BMP,
+// HEIF...). Missing or non-positive dimensions are refused.
+bool props_dims_allowed(CFDictionaryRef props, bool animated)
+{
+    if (!props)
+    {
+        return false;
+    }
+    CFIndex w = 0, h = 0;
+    if (auto* wv =
+            static_cast<CFNumberRef>(CFDictionaryGetValue(props, kCGImagePropertyPixelWidth)))
+    {
+        CFNumberGetValue(wv, kCFNumberCFIndexType, &w);
+    }
+    if (auto* hv =
+            static_cast<CFNumberRef>(CFDictionaryGetValue(props, kCGImagePropertyPixelHeight)))
+    {
+        CFNumberGetValue(hv, kCFNumberCFIndexType, &h);
+    }
+    if (w <= 0 || h <= 0)
+    {
+        return false;
+    }
+    return tk::decode_dims_allowed(static_cast<std::uint64_t>(w), static_cast<std::uint64_t>(h),
+                                   animated);
+}
+
 } // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1610,6 +1638,12 @@ public:
         {
             return nullptr;
         }
+        CFRetained<CFDictionaryRef> props{
+            CGImageSourceCopyPropertiesAtIndex(src.get(), 0, nullptr)};
+        if (!props_dims_allowed(props.get(), /*animated=*/false))
+        {
+            return nullptr;
+        }
         CGImageRef img = CGImageSourceCreateImageAtIndex(src.get(), 0, nullptr);
         if (!img)
         {
@@ -2256,6 +2290,11 @@ CGImageRef decode_frame_from_source(CGImageSourceRef src, std::size_t index, int
         }
     }
 
+    if (!props_dims_allowed(props.get(), /*animated=*/true))
+    {
+        return nullptr;
+    }
+
     CFTypeRef decode_opt_keys[] = {kCGImageSourceShouldCache};
     CFTypeRef decode_opt_values[] = {kCFBooleanTrue};
     CFRetained<CFDictionaryRef> decode_opts{
@@ -2369,6 +2408,10 @@ decode_image_bytes(std::span<const std::uint8_t> bytes, int max_w, int max_h,
 
     CFRetained<CFDictionaryRef> still_props{
         CGImageSourceCopyPropertiesAtIndex(src.get(), 0, nullptr)};
+    if (!props_dims_allowed(still_props.get(), /*animated=*/false))
+    {
+        return d;
+    }
     CGImageRef img =
         create_thumbnail_at_native_size(src.get(), 0, frame_native_dim(still_props.get()));
     if (!img)

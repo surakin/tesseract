@@ -246,6 +246,16 @@ std::optional<ImageDims> probe_jxl(std::span<const std::uint8_t> file)
     return ImageDims{*w, *h};
 }
 
+// Sides are checked first so the product cannot overflow.
+bool within_budget(std::uint64_t w, std::uint64_t h, std::uint64_t max_side, std::uint64_t max_px)
+{
+    if (w > max_side || h > max_side)
+    {
+        return false;
+    }
+    return w * h <= max_px;
+}
+
 } // namespace
 
 bool is_jxl_bytes(std::span<const std::uint8_t> b)
@@ -344,15 +354,20 @@ bool decode_size_allowed(std::span<const std::uint8_t> bytes, bool animated)
     }
     const bool jpeg_still = !animated && bytes.size() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
     const std::uint32_t max_side = jpeg_still ? kMaxJpegDecodeSide : kMaxDecodeSide;
-    if (d->width > max_side || d->height > max_side)
-    {
-        return false;
-    }
-    const std::uint64_t px = std::uint64_t{d->width} * d->height;
     const std::uint64_t max_px =
         animated ? kMaxAnimatedDecodePixels
                  : (jpeg_still ? kMaxJpegStillDecodePixels : kMaxStillDecodePixels);
-    return px <= max_px;
+    return within_budget(d->width, d->height, max_side, max_px);
+}
+
+bool decode_dims_allowed(std::uint64_t width, std::uint64_t height, bool animated)
+{
+    if (width == 0 || height == 0)
+    {
+        return false;
+    }
+    return within_budget(width, height, kMaxDecodeSide,
+                         animated ? kMaxAnimatedDecodePixels : kMaxStillDecodePixels);
 }
 
 } // namespace tk

@@ -1084,7 +1084,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->set_media_failed_provider(
         [this](const std::string& key)
         {
-            return media_dep_known_failed_(key);
+            return media_dep_known_failed_(key, current_room_id_);
         });
     app->room_view()->set_image_provider(
         [this](const std::string& mxc, bool hovered) -> const tk::Image*

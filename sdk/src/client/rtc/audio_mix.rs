@@ -129,8 +129,9 @@ pub struct RemoteAudioMixer {
 
 impl RemoteAudioMixer {
     /// Start the 10 ms mixing loop. Mixed frames go to
-    /// `sink.on_audio_frame(session_id, out_identity, ..)`; `out_identity` must be
-    /// an id the sink lets through (our own local identity).
+    /// `sink.on_mixed_audio_frame(session_id, out_identity, ..)`. `out_identity`
+    /// is only a label (the UI ignores it); filtering happens per track in
+    /// `TrackHandle::push`.
     pub fn spawn(sink: Arc<dyn RtcEventSink>, session_id: u64, out_identity: String) -> Self {
         let mixer = Arc::new(Mutex::new(AudioMixer::new()));
         let ticker = {
@@ -149,7 +150,7 @@ impl RemoteAudioMixer {
                     if mixed.iter().all(|&s| s == 0) {
                         continue;
                     }
-                    sink.on_audio_frame(session_id, &out_identity, &mixed, SAMPLE_RATE, 1);
+                    sink.on_mixed_audio_frame(session_id, &out_identity, &mixed, SAMPLE_RATE, 1);
                 }
             })
             .abort_handle()

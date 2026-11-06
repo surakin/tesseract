@@ -803,6 +803,25 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::InviteAvatars:
         apply_media_preview_config_();
         break;
+    case K::EncryptedUrlPreviews:
+        // Turning it on: request previews for the rows already on screen
+        // (bypassing media_prepped_event_ids_). Turning it off needs nothing:
+        // cached cards stay and no new requests go out.
+        if (s.url_previews_in_encrypted_rooms && room_view_ && room_view_->message_list())
+        {
+            auto* ml = room_view_->message_list();
+            auto [first, last] = ml->visible_range();
+            if (first >= 0)
+            {
+                const auto& msgs = ml->messages();
+                for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+                {
+                    ensure_row_media_(msgs[static_cast<std::size_t>(i)], /*fetch_avatars=*/false);
+                }
+                request_relayout_();
+            }
+        }
+        break;
     case K::SendPresence:
         apply_send_presence_();
         break;

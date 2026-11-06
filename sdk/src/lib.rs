@@ -285,6 +285,7 @@ pub mod ffi {
         pub room_id: String,
         pub sender: String,
         pub sender_name: String,
+        pub sender_name_ambiguous: bool,
         pub sender_avatar_url: String,
         pub body: String,
         pub timestamp: u64,

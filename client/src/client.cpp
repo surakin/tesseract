@@ -401,6 +401,15 @@ Client::MediaTypeCheck Client::check_media_file(const std::string& filename,
     return out;
 }
 
+std::string Client::sanitize_filename(const std::string& raw)
+{
+    if (raw.empty())
+    {
+        return {};
+    }
+    return std::string(tesseract_ffi::sanitize_filename_or_empty(rust::Str(utf8_lossy(raw))));
+}
+
 bool Client::open_in_browser(const std::string& url)
 {
     if (!is_launchable_url(url))

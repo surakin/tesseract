@@ -273,7 +273,11 @@ pub(super) async fn emit_notification(
     let sender_member = room.get_member_no_sync(sender_id).await.ok().flatten();
     let sender_name = sender_member
         .as_ref()
-        .and_then(|m| m.display_name().map(str::to_owned))
+        .and_then(|m| {
+            m.display_name().filter(|n| !n.is_empty()).map(|n| {
+                crate::text_utils::disambiguated_name(n, m.name_ambiguous(), sender_id.as_str())
+            })
+        })
         .unwrap_or_else(|| sender_id.localpart().to_string());
     let room_avatar = room
         .avatar(notif_format(true))

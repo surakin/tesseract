@@ -1455,6 +1455,8 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     BodyTable tbl;
     std::vector<TableCell> cur_row;
     bool cur_row_is_header = false;
+    // Padded-cell budget shared by every table in this message.
+    std::size_t table_cells_left = kMaxTableCells;
 
     // Suppress leading paragraph separator inside each block.
     bool first_in_block = true;
@@ -1672,17 +1674,43 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             ncols = std::max(ncols, r.size());
         }
+        bool truncated = false;
+        if (ncols > kMaxTableCols)
+        {
+            ncols = kMaxTableCols;
+            truncated = true;
+        }
         if (ncols != 0)
+        {
+            const std::size_t max_rows = table_cells_left / ncols;
+            if (tbl.rows.size() > max_rows)
+            {
+                tbl.rows.resize(max_rows);
+                truncated = true;
+            }
+        }
+        if (ncols != 0 && !tbl.rows.empty())
         {
             for (auto& r : tbl.rows)
             {
-                r.resize(ncols);
+                r.resize(ncols); // pads short rows and trims wide ones
             }
             tbl.col_align.resize(ncols, TableAlign::Default);
+            tbl.header_rows = std::min(tbl.header_rows, static_cast<int>(tbl.rows.size()));
+            table_cells_left -= tbl.rows.size() * ncols;
             BodyBlock b;
             b.kind = BodyBlock::Kind::Table;
             b.table = std::move(tbl);
             blocks.push_back(std::move(b));
+        }
+        if (truncated)
+        {
+            BodyBlock m;
+            m.kind = BodyBlock::Kind::Paragraph;
+            tk::TextSpan sp;
+            sp.text = "\xE2\x80\xA6";
+            m.spans.push_back(std::move(sp));
+            blocks.push_back(std::move(m));
         }
         tbl = BodyTable{};
         cur_row.clear();

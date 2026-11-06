@@ -56,7 +56,15 @@ inline constexpr std::uint32_t kMaxJpegDecodeSide = 65535;
 inline constexpr std::uint64_t kMaxAnimatedDecodePixels = 4096ull * 4096ull;
 
 // False only when the header is recognised and over budget. Unrecognised
-// formats pass; the platform decoder decides.
+// formats pass: the WIC and ImageIO backends then check the decoder-reported
+// size with decode_dims_allowed, GTK caps it in size-prepared, and Qt relies on
+// QImageReader's allocation limit.
 bool decode_size_allowed(std::span<const std::uint8_t> bytes, bool animated);
+
+// Budget check for a size a platform decoder (WIC, ImageIO) reported for a
+// format probe_image_dimensions cannot read. Applies kMaxDecodeSide and
+// kMaxStillDecodePixels (kMaxAnimatedDecodePixels when animated); on Windows
+// and macOS that equals the JPEG budget. A zero width or height is refused.
+bool decode_dims_allowed(std::uint64_t width, std::uint64_t height, bool animated);
 
 } // namespace tk
