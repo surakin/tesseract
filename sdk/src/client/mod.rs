@@ -1847,6 +1847,7 @@ impl ClientFfi {
         timeline_convert::VisibilityFlags {
             membership: std::sync::Arc::clone(&self.show_membership_events),
             redacted: std::sync::Arc::clone(&self.show_redacted_events),
+            unhandled: std::sync::Arc::clone(&self.show_unhandled_events),
         }
     }
 

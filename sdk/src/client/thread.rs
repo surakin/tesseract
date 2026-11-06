@@ -103,7 +103,6 @@ impl ClientFfi {
             self.search_index_ctx(),
             None,
             self.visibility_flags(),
-            Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             false,
         );

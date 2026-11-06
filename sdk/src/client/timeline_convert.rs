@@ -719,6 +719,8 @@ pub(crate) struct RowVisibility {
     pub membership: bool,
     /// "Show deleted messages".
     pub redacted: bool,
+    /// Developer "Show unhandled events".
+    pub unhandled: bool,
 }
 
 /// Shared handles to the live settings behind [`RowVisibility`]; built by
@@ -727,6 +729,7 @@ pub(crate) struct RowVisibility {
 pub(crate) struct VisibilityFlags {
     pub membership: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub redacted: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub unhandled: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl VisibilityFlags {
@@ -735,6 +738,7 @@ impl VisibilityFlags {
         RowVisibility {
             membership: self.membership.load(Relaxed),
             redacted: self.redacted.load(Relaxed),
+            unhandled: self.unhandled.load(Relaxed),
         }
     }
 }

@@ -473,7 +473,6 @@ pub(super) async fn collect_timeline_ops(
     room: &Room,
     me: Option<&UserId>,
     visibility_flags: &VisibilityFlags,
-    show_unhandled_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     search_index: &Option<super::search::SearchIndexCtx>,
@@ -484,7 +483,7 @@ pub(super) async fn collect_timeline_ops(
         return;
     }
     let vis = visibility_flags.snapshot();
-    let show_unhandled = show_unhandled_events.load(Ordering::Relaxed);
+    let show_unhandled = vis.unhandled;
     match diff {
         VectorDiff::Append { values } => {
             // Collect all visible items from the Append batch into one
@@ -800,14 +799,13 @@ async fn refresh_receipts(
     room: &Room,
     me: Option<&UserId>,
     visibility_flags: &VisibilityFlags,
-    show_unhandled_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     chip_overrides: &super::thread::ThreadChipOverrides,
 ) {
     let items = tl.items().await;
     let vis = visibility_flags.snapshot();
-    let show_unhandled = show_unhandled_events.load(Ordering::Relaxed);
+    let show_unhandled = vis.unhandled;
 
     // Collect all receipt-bearing updates first, then emit as a single batch
     // instead of N individual on_message_updated calls.
@@ -914,7 +912,6 @@ impl ClientFfi {
         index: Option<super::search::SearchIndexCtx>,
         room_media: Option<super::room_media_store::MediaCtx>,
         visibility_flags: VisibilityFlags,
-        show_unhandled_events: Arc<AtomicBool>,
         chip_overrides: super::thread::ThreadChipOverrides,
         prewarm_cached: bool,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
@@ -985,7 +982,7 @@ impl ClientFfi {
                 let mut visible_ids: Vec<String> = Vec::with_capacity(initial_items.len());
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
                 let vis = visibility_flags.snapshot();
-                let show_unhandled = show_unhandled_events.load(Ordering::Relaxed);
+                let show_unhandled = vis.unhandled;
                 for item in initial_items.iter() {
                     let ev = filter_visibility(
                         filter_for_channel(
@@ -1067,7 +1064,6 @@ impl ClientFfi {
                                     &room_clone,
                                     me.as_deref(),
                                     &visibility_flags,
-                                    &show_unhandled_events,
                                     &ch,
                                     &cancelled_stream,
                                     &index,
@@ -1101,7 +1097,6 @@ impl ClientFfi {
                                     &room_clone,
                                     me.as_deref(),
                                     &visibility_flags,
-                                    &show_unhandled_events,
                                     &ch,
                                     &cancelled_stream,
                                     &chip_overrides,
@@ -1202,7 +1197,6 @@ impl ClientFfi {
                         self.search_index_ctx(),
                         self.media_ctx(),
                         self.visibility_flags(),
-                        Arc::clone(&self.show_unhandled_events),
                         Arc::clone(&self.thread_chip_overrides),
                         false,
                     );
@@ -1293,7 +1287,6 @@ impl ClientFfi {
             self.search_index_ctx(),
             self.media_ctx(),
             self.visibility_flags(),
-            Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             true,
         );
@@ -2003,7 +1996,6 @@ impl ClientFfi {
             self.search_index_ctx(),
             self.media_ctx(),
             self.visibility_flags(),
-            Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             false,
         );
