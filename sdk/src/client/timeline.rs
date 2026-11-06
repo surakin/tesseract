@@ -401,10 +401,11 @@ pub(super) fn unhandled_event_filter(
 // Runtime-toggleable visibility gate for membership-change rows, applied at
 // the same call sites as filter_for_channel so it participates in the
 // visible/visible_ids index bookkeeping for free (see visible_index_of).
-// `vis` is a fresh snapshot of ClientFfi's membership/redacted settings (see
-// VisibilityFlags::snapshot), read once per collect_timeline_ops /
-// refresh_receipts call by the caller. Also gates redacted ("deleted message")
-// tombstones.
+// `vis` is the membership/redacted/unhandled snapshot (VisibilityFlags::snapshot)
+// a timeline task took when it started, so every diff of one task is filtered
+// by the same values its `visible` shadow was built under. A toggle takes
+// effect when `subscribe_room` restarts the task. Also gates redacted
+// ("deleted message") tombstones.
 #[cfg(not(test))]
 fn filter_visibility(
     ev: Option<TimelineEvent>,
@@ -472,7 +473,7 @@ pub(super) async fn collect_timeline_ops(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
-    visibility_flags: &VisibilityFlags,
+    vis: RowVisibility,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     search_index: &Option<super::search::SearchIndexCtx>,
@@ -482,7 +483,6 @@ pub(super) async fn collect_timeline_ops(
     if cancelled.load(Ordering::Acquire) {
         return;
     }
-    let vis = visibility_flags.snapshot();
     let show_unhandled = vis.unhandled;
     match diff {
         VectorDiff::Append { values } => {
@@ -798,13 +798,12 @@ async fn refresh_receipts(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
-    visibility_flags: &VisibilityFlags,
+    vis: RowVisibility,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     chip_overrides: &super::thread::ThreadChipOverrides,
 ) {
     let items = tl.items().await;
-    let vis = visibility_flags.snapshot();
     let show_unhandled = vis.unhandled;
 
     // Collect all receipt-bearing updates first, then emit as a single batch
@@ -1063,7 +1062,7 @@ impl ClientFfi {
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
-                                    &visibility_flags,
+                                    vis,
                                     &ch,
                                     &cancelled_stream,
                                     &index,
@@ -1096,7 +1095,7 @@ impl ClientFfi {
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
-                                    &visibility_flags,
+                                    vis,
                                     &ch,
                                     &cancelled_stream,
                                     &chip_overrides,

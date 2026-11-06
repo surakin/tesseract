@@ -513,12 +513,28 @@ void ShellBase::apply_index_messages_()
 
 void ShellBase::apply_show_deleted_messages_()
 {
-    if (client_)
+    const bool show = tesseract::Settings::instance().show_deleted_messages;
+    for (const auto& sess : account_manager_.accounts())
     {
-        client_->set_show_redacted_events(tesseract::Settings::instance().show_deleted_messages);
-        if (!current_room_id_.empty())
+        if (sess && sess->client)
         {
-            client_->subscribe_room(current_room_id_);
+            sess->client->set_show_redacted_events(show);
+        }
+    }
+    if (!client_)
+    {
+        return;
+    }
+    if (!current_room_id_.empty())
+    {
+        client_->subscribe_room(current_room_id_);
+    }
+    for (const auto& [room_id, window] : active_account_popouts_())
+    {
+        (void)window;
+        if (room_id != current_room_id_)
+        {
+            client_->subscribe_room(room_id);
         }
     }
 }

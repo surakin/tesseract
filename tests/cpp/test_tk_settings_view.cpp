@@ -139,6 +139,36 @@ TEST_CASE("MessagesSection: the sender-status checkbox writes Settings and repor
     st.show_sender_status_in_timeline = saved;
 }
 
+TEST_CASE("MessagesSection: the show-deleted checkbox writes Settings and reports its key",
+          "[settings-view]")
+{
+    auto& st = tesseract::Settings::instance();
+    const bool saved = st.show_deleted_messages;
+    st.show_deleted_messages = false;
+
+    tesseract::views::SettingBinder binder;
+    tesseract::views::MessagesSection section(binder);
+    tk::CheckButton* deleted_cb = find_check_by_label(section, "deleted messages");
+    REQUIRE(deleted_cb);
+
+    std::vector<tesseract::views::SettingKey> fired;
+    binder.on_changed = [&](tesseract::views::SettingKey k)
+    {
+        fired.push_back(k);
+    };
+
+    binder.reload(); // silent
+    CHECK_FALSE(deleted_cb->checked());
+    CHECK(fired.empty());
+
+    deleted_cb->on_change(true);
+    REQUIRE(fired.size() == 1);
+    CHECK(fired[0] == tesseract::views::SettingKey::ShowDeletedMessages);
+    CHECK(st.show_deleted_messages);
+
+    st.show_deleted_messages = saved;
+}
+
 TEST_CASE("MessagesSection: the sender-timezone checkbox writes Settings and reports its key",
           "[settings-view]")
 {

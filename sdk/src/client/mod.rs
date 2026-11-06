@@ -4964,6 +4964,22 @@ mod tests {
     }
 
     #[test]
+    fn visibility_flags_track_the_live_settings() {
+        let c = ClientFfi::new();
+        let flags = c.visibility_flags();
+        assert_eq!(flags.snapshot(), timeline_convert::RowVisibility::default());
+        c.set_show_membership_events(true);
+        c.set_show_redacted_events(true);
+        c.set_show_unhandled_events(true);
+        // The handles were taken before the toggles: they share the live values.
+        let on = flags.snapshot();
+        assert!(on.membership && on.redacted && on.unhandled);
+        c.set_show_redacted_events(false);
+        let off = flags.snapshot();
+        assert!(off.membership && !off.redacted && off.unhandled);
+    }
+
+    #[test]
     fn set_low_power_mode_roundtrips() {
         let c = ClientFfi::new();
         assert!(!c.low_power_mode.load(std::sync::atomic::Ordering::Relaxed));

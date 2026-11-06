@@ -380,6 +380,18 @@ TEST_CASE("update_member_profile leaves a per-message profile alone", "[message_
     CHECK(m.member_label() == "Me!");
 }
 
+TEST_CASE("make_row_data carries whether the reply's original was deleted", "[message_list][reply]")
+{
+    tesseract::Event ev;
+    ev.event_id = "$a";
+    ev.sender = "@alice:server";
+    ev.body = "hi";
+    ev.in_reply_to_id = "$gone";
+    CHECK_FALSE(make_row_data(ev, "@me:server").in_reply_to_deleted);
+    ev.in_reply_to_deleted = true;
+    CHECK(make_row_data(ev, "@me:server").in_reply_to_deleted);
+}
+
 TEST_CASE("make_row_data picks the per-message profile avatar key", "[message_list][profile]")
 {
     auto row_for = [](bool set, const std::string& url, const std::string& enc)
