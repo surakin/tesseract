@@ -69,7 +69,7 @@ constexpr float kLayoutColumnGap = 6.0f; // matches SettingsGroup's own inter-ro
 } // namespace
 
 // ---------------------------------------------------------------------------
-// AppearanceSection — thin SettingsPage with one "Theme" group.
+// AppearanceSection — Theme, Layout, Fonts and Room list groups.
 // ---------------------------------------------------------------------------
 
 AppearanceSection::AppearanceSection(SettingBinder& binder)
@@ -114,6 +114,13 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
         note->set_wrap(true);
         note->set_visible(false);
         high_contrast_note_ = group->add_widget(std::move(note));
+    }
+
+    {
+        auto cb_anim_avatars = tk::create_widget<tk::CheckButton>(
+            this, tk::tr("Animate avatars"), tesseract::Settings::instance().animate_avatars);
+        animate_avatars_cb_ = group->add_widget(std::move(cb_anim_avatars));
+        binder.bind(animate_avatars_cb_, &S::animate_avatars, SettingKey::AnimateAvatars);
     }
 
     {
@@ -263,62 +270,6 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
                 refresh_column_controls_();
             };
         }
-
-        // Room list density: radio group + description on the left, live
-        // preview on the right.
-        layout_group->add_widget(tk::create_widget<tk::Label>(this, tk::tr("Room list")));
-
-        auto density_row = tk::create_widget<tk::HBox>(this);
-        density_row->set_spacing(kLayoutRowGap);
-        density_row->set_cross(tk::Cross::Start);
-
-        auto density_col = tk::create_widget<tk::VBox>(this);
-        density_col->set_layout_hints({.fill_main = true});
-        density_col->set_spacing(kLayoutColumnGap);
-
-        auto density = tk::create_widget<tk::RadioGroup>(this, tk::FlexBox::Axis::Vertical);
-        density->set_options({
-            {tk::tr("Normal"), "normal"},
-            {tk::tr("Compact"), "compact"},
-        });
-        room_list_density_group_ = density_col->add_child(std::move(density));
-
-        auto density_desc = tk::create_widget<tk::Label>(
-            this, tk::tr("Compact shows only room names, with smaller avatars."),
-            tk::FontRole::Small);
-        density_desc->set_wrap(true);
-        density_col->add_child(std::move(density_desc));
-
-        density_row->add_child(std::move(density_col));
-        room_list_preview_ = density_row->add_child(std::make_unique<RoomListPreview>());
-        room_list_preview_->set_compact(s.room_list_density ==
-                                        tesseract::Settings::RoomListDensity::Compact);
-        layout_group->add_widget(std::move(density_row));
-
-        using RD = tesseract::Settings::RoomListDensity;
-        binder.bind<RD>(room_list_density_group_, &S::room_list_density,
-                        SettingKey::RoomListDensity,
-                        {{RD::Normal, "normal"}, {RD::Compact, "compact"}});
-        auto refresh_density = [this]
-        {
-            if (room_list_preview_)
-            {
-                room_list_preview_->set_compact(tesseract::Settings::instance().room_list_density ==
-                                                tesseract::Settings::RoomListDensity::Compact);
-            }
-        };
-        {
-            auto bound = room_list_density_group_->on_changed;
-            room_list_density_group_->on_changed = [bound, refresh_density](std::string v)
-            {
-                if (bound)
-                {
-                    bound(v);
-                }
-                refresh_density();
-            };
-        }
-        binder.bind_custom(refresh_density);
     }
 
     {
@@ -345,6 +296,60 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
     {
         const auto& s = tesseract::Settings::instance();
         auto* rl_group = add_group(tk::tr("Room list"));
+
+        // Density: radio group + description on the left, live preview on the
+        // right.
+        auto density_row = tk::create_widget<tk::HBox>(this);
+        density_row->set_spacing(kLayoutRowGap);
+        density_row->set_cross(tk::Cross::Start);
+
+        auto density_col = tk::create_widget<tk::VBox>(this);
+        density_col->set_layout_hints({.fill_main = true});
+        density_col->set_spacing(kLayoutColumnGap);
+
+        auto density = tk::create_widget<tk::RadioGroup>(this, tk::FlexBox::Axis::Vertical);
+        density->set_options({
+            {tk::tr("Normal"), "normal"},
+            {tk::tr("Compact"), "compact"},
+        });
+        room_list_density_group_ = density_col->add_child(std::move(density));
+
+        auto density_desc = tk::create_widget<tk::Label>(
+            this, tk::tr("Compact shows only room names, with smaller avatars."),
+            tk::FontRole::Small);
+        density_desc->set_wrap(true);
+        density_col->add_child(std::move(density_desc));
+
+        density_row->add_child(std::move(density_col));
+        room_list_preview_ = density_row->add_child(std::make_unique<RoomListPreview>());
+        room_list_preview_->set_compact(s.room_list_density ==
+                                        tesseract::Settings::RoomListDensity::Compact);
+        rl_group->add_widget(std::move(density_row));
+
+        using RD = tesseract::Settings::RoomListDensity;
+        binder.bind<RD>(room_list_density_group_, &S::room_list_density,
+                        SettingKey::RoomListDensity,
+                        {{RD::Normal, "normal"}, {RD::Compact, "compact"}});
+        auto refresh_density = [this]
+        {
+            if (room_list_preview_)
+            {
+                room_list_preview_->set_compact(tesseract::Settings::instance().room_list_density ==
+                                                tesseract::Settings::RoomListDensity::Compact);
+            }
+        };
+        {
+            auto bound = room_list_density_group_->on_changed;
+            room_list_density_group_->on_changed = [bound, refresh_density](std::string v)
+            {
+                if (bound)
+                {
+                    bound(v);
+                }
+                refresh_density();
+            };
+        }
+        binder.bind_custom(refresh_density);
 
         auto cb_unread = tk::create_widget<tk::CheckButton>(this, tk::tr("Group unread rooms"),
                                                             s.group_unread_rooms);
@@ -373,35 +378,6 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
             this, tk::tr("Scroll to rooms with new messages"), s.autoscroll_unread_rooms);
         autoscroll_cb_ = rl_group->add_widget(std::move(autoscroll));
         binder.bind(autoscroll_cb_, &S::autoscroll_unread_rooms, SettingKey::AutoscrollUnread);
-    }
-
-    {
-        const auto& s = tesseract::Settings::instance();
-        auto* timeline_group = add_group(tk::tr("Timeline"));
-
-        auto cb_membership = tk::create_widget<tk::CheckButton>(
-            this, tk::tr("Show room join/leave events"), s.show_room_join_leave_events);
-        show_membership_events_cb_ = timeline_group->add_widget(std::move(cb_membership));
-        binder.bind(show_membership_events_cb_, &S::show_room_join_leave_events,
-                    SettingKey::ShowMembershipEvents);
-
-        auto cb_anim_avatars =
-            tk::create_widget<tk::CheckButton>(this, tk::tr("Animate avatars"), s.animate_avatars);
-        animate_avatars_cb_ = timeline_group->add_widget(std::move(cb_anim_avatars));
-        binder.bind(animate_avatars_cb_, &S::animate_avatars, SettingKey::AnimateAvatars);
-
-        auto cb_status = tk::create_widget<tk::CheckButton>(
-            this, tk::tr("Show status emoji next to names"), s.show_sender_status_in_timeline);
-        show_sender_status_cb_ = timeline_group->add_widget(std::move(cb_status));
-        binder.bind(show_sender_status_cb_, &S::show_sender_status_in_timeline,
-                    SettingKey::ShowSenderStatus);
-
-        auto cb_tz = tk::create_widget<tk::CheckButton>(
-            this, tk::tr("Show timezone difference next to names"),
-            s.show_sender_timezone_in_timeline);
-        show_sender_timezone_cb_ = timeline_group->add_widget(std::move(cb_tz));
-        binder.bind(show_sender_timezone_cb_, &S::show_sender_timezone_in_timeline,
-                    SettingKey::ShowSenderTimezone);
     }
 }
 

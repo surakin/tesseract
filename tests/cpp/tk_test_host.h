@@ -4,7 +4,7 @@
 // points input_root_ at a supplied root, and re-exposes the protected
 // dispatch_pointer_* entry points + tooltip/popup state so tests can drive
 // and assert against Host's shared logic directly, without a real platform
-// backend. Shared by test_tk_host_pointer.cpp, test_tk_about_section.cpp,
+// backend. Shared by test_tk_host_pointer.cpp, test_tk_storage_group.cpp,
 // and test_tk_tooltip.cpp.
 
 #include "tk/audio.h"

@@ -2,15 +2,45 @@
 
 #include "SettingsGroup.h"
 
+#include "tesseract/settings.h"
 #include "tk/controls.h"
 #include "tk/i18n.h"
 
 namespace tesseract::views
 {
 
-ImagePacksSection::ImagePacksSection()
+ImagePacksSection::ImagePacksSection(SettingBinder& binder)
 {
+    using S = tesseract::Settings;
+    const auto& s = S::instance();
+
     user_pack_group_ = add_group(tk::tr("Your Sticker Pack"));
+
+    // Stays visible when compatibility is off (it is what turns it back on);
+    // only the editor and Save button hide then.
+    auto cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Use historical MSC2545 compatibility"), s.msc2545_legacy_compat);
+    legacy_compat_cb_ = user_pack_group_->add_widget(std::move(cb));
+    binder.bind(legacy_compat_cb_, &S::msc2545_legacy_compat, SettingKey::Msc2545Compat);
+    legacy_compat_cb_->on_hover_enter = [this]
+    {
+        if (host_)
+        {
+            host_->show_tooltip(
+                legacy_compat_cb_,
+                tk::tr("When enabled, reads unstable-named MSC2545 fields from account "
+                       "data in addition to the stable names, and enables your personal "
+                       "image pack. Disable for strict stable-name-only behavior."),
+                legacy_compat_cb_->bounds());
+        }
+    };
+    legacy_compat_cb_->on_hover_leave = [this]
+    {
+        if (host_)
+        {
+            host_->hide_tooltip(legacy_compat_cb_);
+        }
+    };
 
     auto editor = std::make_unique<UserPackEditor>();
     user_pack_ = user_pack_group_->add_widget(std::move(editor));
@@ -117,8 +147,17 @@ void ImagePacksSection::refresh_save_button_()
 
 void ImagePacksSection::set_personal_pack_enabled(bool enabled)
 {
-    user_pack_group_->set_visible(enabled);
+    // Only the editor and Save button hide: the compatibility checkbox in the
+    // same group must stay reachable so the pack can be turned back on.
+    user_pack_->set_visible(enabled);
+    save_btn_->set_visible(enabled);
     save_btn_->set_enabled(enabled && user_pack_->has_changes());
+}
+
+void ImagePacksSection::paint_before_children(tk::PaintCtx& ctx)
+{
+    host_ = ctx.host;
+    SettingsPage::paint_before_children(ctx);
 }
 
 } // namespace tesseract::views

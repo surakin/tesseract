@@ -4,12 +4,15 @@
 //   • A fixed-height top bar with a "← Back" button.
 //   • A tk::SideTabView below it with sections:
 //       – Account (avatar, display name, Matrix ID)
-//       – Appearance (theme selection + room-list grouping)
-//       – Notifications (enable/disable toggle)
-//       – Media (full-media prefetch toggle)
-//       – Privacy / Server / Sessions / About
+//       – Security & Devices (sessions, encryption, message keys, reset)
+//       – Notifications
+//       – Appearance (theme, layout, fonts, room list)
+//       – Messages (composer, timeline, link previews, search)
+//       – Media & Calls
 //       – Emojis & Stickers (personal pack editor + known-pack subscriptions)
-//       – Language (locale selection, takes effect after restart)
+//       – Privacy
+//       – General (language, startup, power, network, storage)
+//       – About (bottom; server info) and the hidden Advanced tab
 //
 // The shell constructs SettingsView once, wires the public callbacks, and
 // shows/hides it by mounting/unmounting the widget's surface. Before
@@ -28,13 +31,11 @@
 #include "views/settings/DevicesSection.h"
 #include "views/settings/GeneralSection.h"
 #include "views/settings/ImagePacksSection.h"
-#include "views/settings/LanguageSection.h"
 #include "views/settings/SettingBinder.h"
-#include "views/settings/NetworkSection.h"
 #include "views/settings/MediaSection.h"
+#include "views/settings/MessagesSection.h"
 #include "views/settings/NotificationsSection.h"
 #include "views/settings/PrivacySection.h"
-#include "views/settings/ServerSection.h"
 #include "views/ConfirmDialog.h"
 
 #include "views/settings/SettingsController.h"
@@ -235,20 +236,30 @@ public:
     tk::TextField* bio_field() const;
     StatusEditor* status_editor() const; // MSC4426 own-status editor
 
-    // Select the Account tab (index 0). Used by the shells to deep-link into
+    // Tab indices, in registration order (see the constructor). Public so
+    // shells and tests can refer to them. About and Advanced are the two
+    // bottom tabs; Advanced stays hidden until About's button reveals it.
+    static constexpr int kAccountTabIdx = 0;
+    static constexpr int kSecurityTabIdx = 1;
+    static constexpr int kAppearanceTabIdx = 3;
+    static constexpr int kImagePacksTabIdx = 6;
+    static constexpr int kGeneralTabIdx = 8;
+    static constexpr int kAboutTabIdx = 9;
+    static constexpr int kAdvancedTabIdx = 10;
+
+    // Select the Account tab. Used by the shells to deep-link into
     // settings from the sidebar status line. Fires on_tab_changed if the
     // selection actually changes.
     void show_account_section();
 
-    // Appearance is the fourth tab added (see the constructor's add_tab order).
-    static constexpr int kAppearanceTabIdx = 3;
     // Select the Appearance tab. Used by screenshot mode's settings scene.
     void show_appearance_section();
     std::string selected_tab_label() const;
 
     // Settings reached from the login screen, before any account exists:
-    // only the account-independent tabs (Network, Language, About) stay
-    // visible, Network is selected, and About's account actions are hidden.
+    // only the account-independent tabs (General, About) stay visible,
+    // General is selected (Storage hidden, proxy applies immediately), and
+    // About's Advanced button is hidden.
     // Passing false restores the full set (Advanced stays hidden).
     void set_signed_out_mode(bool on);
     bool tab_visible(int idx) const;
@@ -283,7 +294,7 @@ public:
     std::function<tesseract::emoji::SkinTone()> emoji_skin_tone_provider;
     std::function<void(tesseract::emoji::SkinTone)> on_emoji_skin_tone_changed;
 
-    // Show / hide the network section's "Restart now" row.
+    // Show / hide the proxy group's "Restart now" row (General tab).
     void set_proxy_restart_pending(bool pending);
 
     // Fired when the user clicks "Open Activity Monitor" (Advanced tab).
@@ -293,33 +304,34 @@ public:
     // native overlays whose visibility depends on the selected tab).
     std::function<void()> on_tab_changed;
 
-    // Fired when the About tab becomes the selected tab. ShellBase wires it
-    // to kick the live cache-size refresh (see refresh_cache_sizes_poll_()).
-    std::function<void()> on_about_tab_shown;
+    // Fired when the General tab (which hosts Storage) becomes the selected
+    // tab. ShellBase wires it to kick the live cache-size refresh (see
+    // refresh_cache_sizes_poll_()).
+    std::function<void()> on_storage_tab_shown;
 
-    // True while the About tab is the selected tab.
-    bool about_tab_selected() const;
+    // True while the General tab (Storage) is the selected tab.
+    bool storage_tab_selected() const;
 
-    // Fired after the user confirms "Clear all caches" in the About section.
+    // Fired after the user confirms "Clear all caches" in the Storage group.
     // Wire to ShellBase::clear_all_caches_() in each shell's settings setup.
     std::function<void()> on_clear_caches;
 
     // Fired after the user confirms "Reset cryptographic identity" in the
-    // Privacy section. Wire to ShellBase::begin_crypto_identity_reset_() in
+    // Security & Devices tab. Wire to ShellBase::begin_crypto_identity_reset_() in
     // each shell (closing the settings UI first — the reset overlay lives on
     // the main window).
     std::function<void()> on_reset_identity;
 
-    // Update the About section's storage size labels and hit/miss stats.
+    // Update the Storage group's size labels and hit/miss stats.
     // Call on the UI thread after ShellBase::compute_cache_sizes_() posts its result.
     void set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes, uint64_t memory_bytes,
                          uint64_t mem_hits = 0, uint64_t mem_misses = 0, uint64_t disk_hits = 0,
                          uint64_t disk_misses = 0);
 
-    // Fired by the language section's "Restart now" button.
+    // Fired by the Language / Proxy groups' "Restart now" button.
     std::function<void()> on_restart_requested;
 
-    // Show / hide the language section's "Restart now" button.
+    // Show / hide the language group's "Restart now" button.
     void set_language_restart_pending(bool pending);
 
     // ----- tk::Widget overrides ---------------------------------------------
@@ -360,18 +372,6 @@ private:
     void show_status_emoji_picker_(tk::Rect world_anchor);
     void hide_status_emoji_picker_();
 
-    // Index of the hidden "Advanced" bottom tab in tabs_ — computed from the
-    // final tab registration order in the constructor (11 top tabs, indices
-    // 0-10; bottom tabs About=11, Advanced=12). Kept hidden via
-    // tabs_->set_tab_visible(kAdvancedTabIdx, false) until the About tab's
-    // "Advanced" button reveals it.
-    static constexpr int kAdvancedTabIdx = 12;
-    static constexpr int kAboutTabIdx = 11;
-    // Account is the first tab added (see the constructor) and hence index 0.
-    static constexpr int kAccountTabIdx = 0;
-    static constexpr int kNetworkTabIdx = 7;
-    static constexpr int kLanguageTabIdx = 10;
-
     // Child widgets — owned via add_child, raw pointers borrowed back.
     tk::Button* back_btn_ = nullptr;
     tk::SideTabView* tabs_ = nullptr;
@@ -381,13 +381,11 @@ private:
     NotificationsSection* notifications_ = nullptr;
     MediaSection* media_ = nullptr;
     PrivacySection* privacy_ = nullptr;
-    ServerSection* server_section_ = nullptr;
+    MessagesSection* messages_ = nullptr;
     DevicesSection* devices_ = nullptr;
     AboutSection* about_ = nullptr;
     AdvancedSection* advanced_ = nullptr;
     ConfirmDialog* confirm_dialog_ = nullptr;
-    LanguageSection* language_ = nullptr;
-    NetworkSection* network_ = nullptr;
     ImagePacksSection* image_packs_ = nullptr;
 
     std::unique_ptr<EmojiPicker> status_emoji_picker_;

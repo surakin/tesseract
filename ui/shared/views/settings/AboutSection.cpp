@@ -1,379 +1,57 @@
 #include "AboutSection.h"
 
-#include "SettingsGroup.h"
+#include "ServerInfoPanel.h"
 
 #include "views/BrandView.h"
-#include "tk/canvas.h"
 #include "tk/controls.h"
-#include "tk/host.h"
 #include "tk/i18n.h"
 #include "tk/layout.h"
-#include "tk/theme.h"
 #include "tk/widget.h"
 
 #include <algorithm>
-#include <cstdint>
-#include <cstdio>
-#include <functional>
 #include <memory>
-#include <string>
 
 namespace tesseract::views
 {
 
-// Named (not anonymous) so the helper cell types have external linkage,
-// matching AboutSection::CacheSizeRow which stores a CacheValueCell* member
-// (avoids -Wsubobject-linkage). Re-exposed via the using-directive below so
-// call sites stay unqualified.
-namespace about_detail
-{
-
-constexpr float kAboutSectionRowH = 22.0f;
-constexpr float kAboutSectionLabelW = 160.0f;
-constexpr float kAboutSectionLabelGap = 8.0f;
-// Natural width of a CacheSizeRow: label + gap + value column.
-// Caps the Storage group so it doesn't stretch to fill the page.
-constexpr float kNaturalW = kAboutSectionLabelW + kAboutSectionLabelGap + 140.0f;
-
-std::string format_bytes(uint64_t n)
-{
-    if (n < 1024ULL)
-    {
-        return tk::trf(tk::tr("{0} B"), {std::to_string(n)});
-    }
-    if (n < 1024ULL * 1024)
-    {
-        return tk::trf(tk::tr("{0} KB"), {std::to_string(n / 1024)});
-    }
-    if (n < 1024ULL * 1024 * 1024)
-    {
-        return tk::trf(tk::tr("{0} MB"), {std::to_string(n / (1024 * 1024))});
-    }
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(n) / (1024.0 * 1024.0 * 1024.0));
-    return tk::trf(tk::tr("{0} GB"), {buf});
-}
-
-std::string format_hit_miss(uint64_t hits, uint64_t misses)
-{
-    const uint64_t total = hits + misses;
-    if (total == 0)
-    {
-        return tk::trf(tk::tr("Hits: {0}  ·  Misses: {1}"), {"0", "0"});
-    }
-    const double rate = 100.0 * static_cast<double>(hits) / static_cast<double>(total);
-    char rate_buf[16];
-    std::snprintf(rate_buf, sizeof(rate_buf), "%.1f", rate);
-    return tk::trf(tk::tr("Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"),
-                   {std::to_string(hits), std::to_string(misses), rate_buf});
-}
-
-// ---------------------------------------------------------------------------
-// CacheNameCell — fixed-width left cell (kAboutSectionLabelW), text_secondary
-// ---------------------------------------------------------------------------
-
-class CacheNameCell : public tk::Widget
+// BrandView that either takes all the vertical space left over by the widgets
+// below it (nothing else to show), or — once the server info is on screen and
+// the page may scroll — a fixed height, since a fill_main child collapses to
+// nothing when the content already overflows the viewport.
+class AboutSection::AboutBrand : public BrandView
 {
 public:
-    explicit CacheNameCell(std::string label) : label_text_(std::move(label))
+    void set_fixed_height(bool fixed)
     {
+        fixed_ = fixed;
+        set_layout_hints({.fill_main = !fixed});
     }
 
-    std::function<void()> on_hover_enter;
-    std::function<void()> on_hover_leave;
-
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
+    tk::Size measure(tk::LayoutCtx& ctx, tk::Size constraints) override
     {
-        return {std::min(constraints.w, kAboutSectionLabelW), kAboutSectionRowH};
-    }
-
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
-    {
-        if (bounds.w != bounds_.w)
+        if (!fixed_)
         {
-            label_layout_.reset();
+            return BrandView::measure(ctx, constraints);
         }
-        bounds_ = bounds;
-    }
-
-    void paint(tk::PaintCtx& ctx) override
-    {
-        if (!label_layout_)
-        {
-            tk::TextStyle ls;
-            ls.role = tk::FontRole::Body;
-            ls.halign = tk::TextHAlign::Leading;
-            ls.valign = tk::TextVAlign::Top;
-            ls.trim = tk::TextTrim::Ellipsis;
-            ls.max_width = bounds_.w;
-            label_layout_ = ctx.factory.build_text(label_text_, ls);
-        }
-        const float cy = bounds_.y + (kAboutSectionRowH - label_layout_->measure().h) * 0.5f;
-        ctx.canvas.draw_text(*label_layout_, {bounds_.x, cy}, ctx.theme.palette.text_secondary);
-    }
-
-    bool on_pointer_move(tk::Point) override
-    {
-        if (cell_hovered_)
-        {
-            return false;
-        }
-        cell_hovered_ = true;
-        if (on_hover_enter)
-        {
-            on_hover_enter();
-        }
-        return true;
-    }
-
-    void on_pointer_leave() override
-    {
-        if (!cell_hovered_)
-        {
-            return;
-        }
-        cell_hovered_ = false;
-        if (on_hover_leave)
-        {
-            on_hover_leave();
-        }
+        return {constraints.w, std::min(constraints.h, kFixedH)};
     }
 
 private:
-    std::string label_text_;
-    tk::CachedTextLayout label_layout_;
-    bool cell_hovered_ = false;
+    static constexpr float kFixedH = 240.0f;
+    bool fixed_ = false;
 };
-
-// ---------------------------------------------------------------------------
-// CacheValueCell — fill-main right cell, trailing-aligned, text_muted
-// ---------------------------------------------------------------------------
-
-class CacheValueCell : public tk::Widget
-{
-public:
-    CacheValueCell() = default;
-
-    void set_text(std::string t)
-    {
-        value_text_ = std::move(t);
-        value_layout_.reset();
-    }
-
-    std::function<void()> on_hover_enter;
-    std::function<void()> on_hover_leave;
-
-    tk::Size measure(tk::LayoutCtx&, tk::Size) override
-    {
-        // Zero natural width; fill_main=true gives this cell the leftover space.
-        return {0.0f, kAboutSectionRowH};
-    }
-
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
-    {
-        if (bounds.w != bounds_.w)
-        {
-            value_layout_.reset();
-        }
-        bounds_ = bounds;
-    }
-
-    void paint(tk::PaintCtx& ctx) override
-    {
-        if (!value_layout_)
-        {
-            tk::TextStyle vs;
-            vs.role = tk::FontRole::Body;
-            vs.halign = tk::TextHAlign::Trailing;
-            vs.valign = tk::TextVAlign::Top;
-            vs.trim = tk::TextTrim::Ellipsis;
-            vs.max_width = bounds_.w;
-            value_layout_ = ctx.factory.build_text(value_text_, vs);
-        }
-        const auto sz = value_layout_->measure();
-        const float cy = bounds_.y + (kAboutSectionRowH - sz.h) * 0.5f;
-        ctx.canvas.draw_text(*value_layout_, {bounds_.x, cy}, ctx.theme.palette.text_muted);
-    }
-
-    bool on_pointer_move(tk::Point) override
-    {
-        if (cell_hovered_)
-        {
-            return false;
-        }
-        cell_hovered_ = true;
-        if (on_hover_enter)
-        {
-            on_hover_enter();
-        }
-        return true;
-    }
-
-    void on_pointer_leave() override
-    {
-        if (!cell_hovered_)
-        {
-            return;
-        }
-        cell_hovered_ = false;
-        if (on_hover_leave)
-        {
-            on_hover_leave();
-        }
-    }
-
-private:
-    std::string value_text_{"—"};
-    tk::CachedTextLayout value_layout_;
-    bool cell_hovered_ = false;
-};
-
-} // namespace about_detail
-
-using namespace about_detail;
-
-// ---------------------------------------------------------------------------
-// CacheSizeRow — HBox[ CacheNameCell | CacheValueCell(fill_main) ]
-// ---------------------------------------------------------------------------
-
-class AboutSection::CacheSizeRow : public tk::HBox
-{
-public:
-    explicit CacheSizeRow(std::string label)
-    {
-        set_spacing(kAboutSectionLabelGap);
-
-        auto name = std::make_unique<CacheNameCell>(std::move(label));
-        auto val = std::make_unique<CacheValueCell>();
-        val->set_layout_hints({.fill_main = true});
-
-        name->on_hover_enter = [this]
-        {
-            enter_hover_();
-        };
-        name->on_hover_leave = [this]
-        {
-            leave_hover_();
-        };
-        val->on_hover_enter = [this]
-        {
-            enter_hover_();
-        };
-        val->on_hover_leave = [this]
-        {
-            leave_hover_();
-        };
-
-        add_child(std::move(name));
-        value_cell_ = add_child(std::move(val));
-    }
-
-    void set_value(std::string v)
-    {
-        value_cell_->set_text(std::move(v));
-    }
-
-    void set_stats(uint64_t hits, uint64_t misses)
-    {
-        hits_ = hits;
-        misses_ = misses;
-        has_stats_ = true;
-        // Stats may arrive after the initial hover-enter (async load).
-        // Update the tooltip now so the user doesn't have to re-hover.
-        if (hover_count_ > 0 && host_)
-        {
-            host_->update_tooltip_text(this, format_hit_miss(hits_, misses_));
-        }
-    }
-
-    // Override measure so the SettingsGroup reports kNaturalW as its natural
-    // cross-axis width. Without this, the HBox would measure to only
-    // kAboutSectionLabelW + kAboutSectionLabelGap (the value cell has zero natural width since
-    // fill_main children are excluded from FlexBox::measure's used_main),
-    // making the value column 0 px wide after arrange.
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
-    {
-        return {std::min(constraints.w, kNaturalW), kAboutSectionRowH};
-    }
-
-    void paint(tk::PaintCtx& ctx) override
-    {
-        host_ = ctx.host;
-        tk::HBox::paint(ctx);
-    }
-
-private:
-    CacheValueCell* value_cell_ = nullptr;
-    uint64_t hits_ = 0;
-    uint64_t misses_ = 0;
-    bool has_stats_ = false;
-    // Counter rather than bool: when the pointer crosses from CacheNameCell
-    // to CacheValueCell, dispatch_pointer_move fires the new cell's
-    // on_pointer_move (enter) before the host calls on_pointer_leave on the
-    // old cell (leave). The counter absorbs that overlap so the tooltip
-    // neither flickers nor gets orphaned.
-    int hover_count_ = 0;
-    // Cached from paint() so enter_hover_/leave_hover_/set_stats (which don't
-    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip/
-    // update_tooltip_text.
-    tk::Host* host_ = nullptr;
-
-    void enter_hover_()
-    {
-        if (hover_count_++ == 0 && has_stats_ && host_)
-        {
-            host_->show_tooltip(this, format_hit_miss(hits_, misses_), bounds_);
-        }
-    }
-
-    void leave_hover_()
-    {
-        if (hover_count_ > 0 && --hover_count_ == 0)
-        {
-            if (host_)
-            {
-                host_->hide_tooltip(this);
-            }
-        }
-    }
-};
-
-// ---------------------------------------------------------------------------
-// AboutSection
-// ---------------------------------------------------------------------------
 
 AboutSection::AboutSection()
 {
-    // BrandView takes all remaining vertical space above the Storage group.
-    auto bv = std::make_unique<BrandView>();
+    // BrandView takes all remaining vertical space above the server info.
+    auto bv = std::make_unique<AboutBrand>();
     bv->set_layout_hints({.fill_main = true});
-    add_widget(std::move(bv));
+    brand_ = add_widget(std::move(bv));
 
-    // Wrap the Storage group in an HBox so it uses its natural width and
-    // sits at the bottom-left rather than stretching to fill the page.
-    auto sg = std::make_unique<SettingsGroup>(tk::tr("Storage"));
-    memory_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("In-memory cache")));
-    local_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("Local cache")));
-    sdk_row_ = sg->add_widget(std::make_unique<CacheSizeRow>(tk::tr("SDK store")));
-    sg->add_widget(tk::create_widget<tk::Button>(
-        this, tk::tr("Clear all caches"),
-        [this]
-        {
-            if (on_clear_caches)
-            {
-                on_clear_caches();
-            }
-        },
-        tk::Button::Variant::Destructive));
-
-    auto hbox = tk::create_widget<tk::HBox>(this);
-    hbox->add_child(std::move(sg));
-    storage_row_ = add_widget(std::move(hbox));
+    server_info_ = add_widget(std::make_unique<ServerInfoPanel>());
 
     // Right-aligned "Advanced" button — reveals the hidden Advanced settings
-    // tab (see SettingsView::kAdvancedTabIdx). BrandView's fill_main above
-    // already pushes everything below it to the bottom, so this row just
-    // stacks under the Storage group.
+    // tab (see SettingsView::kAdvancedTabIdx).
     auto btn_row = tk::create_widget<tk::HBox>(this);
     btn_row->set_main(tk::Main::End);
     btn_row->add_child(tk::create_widget<tk::Button>(
@@ -389,41 +67,18 @@ AboutSection::AboutSection()
     advanced_row_ = add_widget(std::move(btn_row));
 }
 
+void AboutSection::set_server_info(const tesseract::ServerInfo& info)
+{
+    server_info_->set_server_info(info);
+    brand_->set_fixed_height(!info.homeserver_url.empty());
+}
+
 void AboutSection::set_account_actions_visible(bool visible)
 {
-    if (storage_row_)
-    {
-        storage_row_->set_visible(visible);
-    }
     if (advanced_row_)
     {
         advanced_row_->set_visible(visible);
     }
-}
-
-void AboutSection::set_memory_cache_size(uint64_t bytes)
-{
-    memory_row_->set_value(format_bytes(bytes));
-}
-
-void AboutSection::set_local_cache_size(uint64_t bytes)
-{
-    local_row_->set_value(format_bytes(bytes));
-}
-
-void AboutSection::set_sdk_store_size(uint64_t bytes)
-{
-    sdk_row_->set_value(format_bytes(bytes));
-}
-
-void AboutSection::set_memory_cache_stats(uint64_t hits, uint64_t misses)
-{
-    memory_row_->set_stats(hits, misses);
-}
-
-void AboutSection::set_local_cache_stats(uint64_t hits, uint64_t misses)
-{
-    local_row_->set_stats(hits, misses);
 }
 
 } // namespace tesseract::views

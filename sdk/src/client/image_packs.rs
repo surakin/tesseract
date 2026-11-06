@@ -182,8 +182,10 @@ impl ClientFfi {
             .msc2545_legacy_compat
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            return err("personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)");
+            return err(
+                "personal image pack is disabled (Settings → Emojis & Stickers → \
+                 Use historical MSC2545 compatibility)",
+            );
         }
 
         if image_url.is_empty() {
@@ -481,8 +483,10 @@ impl ClientFfi {
             .msc2545_legacy_compat
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            return err("personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)");
+            return err(
+                "personal image pack is disabled (Settings → Emojis & Stickers → \
+                 Use historical MSC2545 compatibility)",
+            );
         }
         if image_url.is_empty() {
             return err("image_url is empty");
@@ -576,8 +580,10 @@ impl ClientFfi {
             .msc2545_legacy_compat
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            return err("personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)");
+            return err(
+                "personal image pack is disabled (Settings → Emojis & Stickers → \
+                 Use historical MSC2545 compatibility)",
+            );
         }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
@@ -663,8 +669,10 @@ impl ClientFfi {
             .msc2545_legacy_compat
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            return err("personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)");
+            return err(
+                "personal image pack is disabled (Settings → Emojis & Stickers → \
+                 Use historical MSC2545 compatibility)",
+            );
         }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,

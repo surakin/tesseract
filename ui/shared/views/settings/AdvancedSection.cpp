@@ -15,32 +15,6 @@ AdvancedSection::AdvancedSection(SettingBinder& binder)
     using S = tesseract::Settings;
     const auto& s = S::instance();
 
-    auto* group = add_group(tk::tr("Advanced"));
-
-    auto cb = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("Use historical MSC2545 compatibility"), s.msc2545_legacy_compat);
-    legacy_compat_cb_ = group->add_widget(std::move(cb));
-    binder.bind(legacy_compat_cb_, &S::msc2545_legacy_compat, SettingKey::Msc2545Compat);
-    legacy_compat_cb_->on_hover_enter = [this]
-    {
-        if (host_)
-        {
-            host_->show_tooltip(
-                legacy_compat_cb_,
-                tk::tr("When enabled, reads unstable-named MSC2545 fields from account "
-                       "data in addition to the stable names, and enables your personal "
-                       "image pack. Disable for strict stable-name-only behavior."),
-                legacy_compat_cb_->bounds());
-        }
-    };
-    legacy_compat_cb_->on_hover_leave = [this]
-    {
-        if (host_)
-        {
-            host_->hide_tooltip(legacy_compat_cb_);
-        }
-    };
-
     auto* dev_group = add_group(tk::tr("Developer"));
 
     auto dev_cb =
@@ -62,8 +36,7 @@ AdvancedSection::AdvancedSection(SettingBinder& binder)
                     show_unhandled_events_cb_->set_enabled(on);
                 });
 
-    auto* activity_group = add_group(tk::tr("Activity"));
-    activity_group->add_widget(tk::create_widget<tk::Button>(
+    dev_group->add_widget(tk::create_widget<tk::Button>(
         this, tk::tr("Open Activity Monitor"),
         [this]
         {
@@ -73,41 +46,6 @@ AdvancedSection::AdvancedSection(SettingBinder& binder)
             }
         },
         tk::Button::Variant::Subtle));
-
-#ifdef TESSERACT_CRASH_HANDLER_ENABLED
-    auto* diagnostics_group = add_group(tk::tr("Diagnostics"));
-
-    auto crash_cb = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("Save a local crash report if the app crashes"), s.crash_reporting_enabled);
-    crash_reporting_cb_ = diagnostics_group->add_widget(std::move(crash_cb));
-    binder.bind(crash_reporting_cb_, &S::crash_reporting_enabled, SettingKey::CrashReporting);
-    crash_reporting_cb_->on_hover_enter = [this]
-    {
-        if (host_)
-        {
-            host_->show_tooltip(
-                crash_reporting_cb_,
-                tk::tr("When enabled, a plain-text stack trace is written to a file "
-                       "on this device if the app crashes. Nothing is sent anywhere "
-                       "automatically — you can find and share the file yourself if "
-                       "you want to report a bug."),
-                crash_reporting_cb_->bounds());
-        }
-    };
-    crash_reporting_cb_->on_hover_leave = [this]
-    {
-        if (host_)
-        {
-            host_->hide_tooltip(crash_reporting_cb_);
-        }
-    };
-#endif
-}
-
-void AdvancedSection::paint_before_children(tk::PaintCtx& ctx)
-{
-    host_ = ctx.host;
-    SettingsPage::paint_before_children(ctx);
 }
 
 } // namespace tesseract::views

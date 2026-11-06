@@ -9,7 +9,7 @@ namespace tk
 {
 
 // GStreamer-backed device enumeration for the capture-device dropdowns in
-// Settings → Media, shared by the two Linux shells (Qt6 and GTK4). Linux
+// Settings → Media & Calls, shared by the two Linux shells (Qt6 and GTK4). Linux
 // only — Windows and macOS enumerate natively (DirectShow / AVFoundation) in
 // their own Host implementations, and this file is not built for them.
 //

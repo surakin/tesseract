@@ -564,7 +564,7 @@ AccountSection::ExtendedFields::ExtendedFields()
 {
     // Hidden until set_fields_editable(true) confirms the server supports
     // MSC4133 profile fields, so the labels don't flash on screen before
-    // server info is fetched (mirrors ServerSection's group_->set_visible).
+    // server info is fetched (mirrors the former Server tab's group_->set_visible).
     // Applied before the host()-null early return so it's unconditional,
     // including in unit tests that construct with a null host.
     set_visible(false);

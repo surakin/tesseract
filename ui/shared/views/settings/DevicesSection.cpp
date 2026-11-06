@@ -2,8 +2,11 @@
 
 #include "SettingsGroup.h"
 
+#include "tesseract/settings.h"
 #include "tk/controls.h"
 #include "tk/i18n.h"
+#include "tk/layout.h"
+#include "tk/scrollable_base.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 
@@ -32,6 +35,8 @@ constexpr float kDevicesSectionLineGap = 4.0f;
 constexpr float kDevicesSectionErrorGap = 4.0f;
 constexpr float kButtonGap = 8.0f;
 constexpr float kRowRadius = tesseract::visual::kRadiusSM;
+// Share of the tab's viewport height the device list may occupy before it scrolls.
+constexpr float kDeviceListViewportFraction = 0.5f;
 
 std::string format_relative_ts(std::uint64_t ts_ms)
 {
@@ -523,14 +528,246 @@ void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
         ctx.canvas.draw_text(*busy_layout_, {left, y}, pal.text_muted);
     }
 }
+// ---------------------------------------------------------------------------
+// DeviceList — the "Devices" group's scrollable body. Owns a VBox of rows (or
+// the loading / empty label) and measures to min(content, cap), where the cap
+// is half the tab's viewport but never less than kMinVisibleRows rows. Wheel
+// events it can't use (content fits, or it is pinned at an edge) return false
+// so Widget::dispatch_wheel falls through to the outer SettingsPage.
+// Mirrors KnownPacksList.
+// ---------------------------------------------------------------------------
+
+class DevicesSection::DeviceList : public tk::ScrollableBase
+{
+public:
+    DeviceList()
+    {
+        auto content = tk::create_widget<tk::VBox>(this);
+        content->set_spacing(kRowSpacing);
+        content_ = add_child(std::move(content));
+    }
+
+    tk::VBox* content()
+    {
+        return content_;
+    }
+
+    void set_max_height(float h)
+    {
+        max_height_ = h;
+    }
+
+    // Natural height of one row stack of `kMinVisibleRows` rows.
+    static constexpr float min_height()
+    {
+        return kMinVisibleRows * kRowMinH + (kMinVisibleRows - 1) * kRowSpacing;
+    }
+
+    tk::Size measure(tk::LayoutCtx& ctx, tk::Size constraints) override
+    {
+        const float natural = content_->measure(ctx, {constraints.w, kUnbounded}).h;
+        const float cap = std::max(max_height_, min_height());
+        return {constraints.w, std::min(natural, cap)};
+    }
+
+    void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
+    {
+        bounds_ = bounds; // required: otherwise pointer events are dropped
+
+        content_height_ = content_->measure(ctx, {bounds.w, kUnbounded}).h;
+        clamp_scroll();
+        const float laid_h = std::max(bounds.h, content_height_);
+        content_->arrange(ctx, {bounds.x, bounds.y - scroll_y_, bounds.w, laid_h});
+    }
+
+    void paint_before_children(tk::PaintCtx& ctx) override
+    {
+        step_kinetic();
+        // A wheel event only repaints, so re-place content at the live offset.
+        tk::LayoutCtx lc{ctx.factory, ctx.theme};
+        const float laid_h = std::max(bounds_.h, content_height_);
+        content_->arrange(lc, {bounds_.x, bounds_.y - scroll_y_, bounds_.w, laid_h});
+        ctx.canvas.push_clip_rect(bounds_);
+    }
+
+    void paint_after_children(tk::PaintCtx& ctx) override
+    {
+        ctx.canvas.pop_clip();
+        paint_scrollbar(ctx);
+    }
+
+    bool on_wheel(tk::Point, float, float dy, bool is_touchpad) override
+    {
+        return on_wheel_scroll(dy, is_touchpad);
+    }
+
+    tk::Widget* dispatch_pointer_down(tk::Point world) override
+    {
+        if (!visible() || !contains_world(world))
+        {
+            return nullptr;
+        }
+        const tk::Point local = world_to_local(world);
+        if (thumb_hit(local) && scrollbar_on_pointer_down(local))
+        {
+            return this;
+        }
+        return tk::Widget::dispatch_pointer_down(world);
+    }
+    void on_pointer_drag(tk::Point local) override
+    {
+        scrollbar_on_pointer_drag(local);
+    }
+    void on_pointer_up(tk::Point, bool) override
+    {
+        scrollbar_on_pointer_up();
+    }
+
+    float max_height_for_testing() const
+    {
+        return std::max(max_height_, min_height());
+    }
+    float scroll_y_for_testing() const
+    {
+        return scroll_y_;
+    }
+    float content_height_for_testing() const
+    {
+        return content_height_;
+    }
+
+protected:
+    float content_height() const override
+    {
+        return content_height_;
+    }
+
+private:
+    static constexpr float kRowSpacing = 6.0f; // matches SettingsGroup's row spacing
+    static constexpr int kMinVisibleRows = 3;
+    static constexpr float kUnbounded = 1.0e6f;
+
+    tk::VBox* content_ = nullptr;
+    float content_height_ = 0.0f;
+    float max_height_ = 0.0f;
+};
+
 
 // ---------------------------------------------------------------------------
 // DevicesSection
 // ---------------------------------------------------------------------------
 
-DevicesSection::DevicesSection()
+DevicesSection::DevicesSection(SettingBinder& binder)
 {
-    group_ = add_group(tk::tr("Devices"));
+    using S = tesseract::Settings;
+    const auto& s = S::instance();
+
+    auto* devices_group = add_group(tk::tr("Devices"));
+    list_ = devices_group->add_widget(tk::create_widget<DeviceList>(this));
+
+    // ── Encryption ────────────────────────────────────────────────────────────
+    auto* enc_group = add_group(tk::tr("Encryption"));
+
+    auto exclude_cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Exclude unconfirmed devices"), s.exclude_insecure_devices);
+    exclude_insecure_cb_ = enc_group->add_widget(std::move(exclude_cb));
+    binder.bind(exclude_insecure_cb_, &S::exclude_insecure_devices, SettingKey::ExcludeInsecure);
+    exclude_insecure_cb_->on_hover_enter = [this]
+    {
+        if (host_)
+        {
+            host_->show_tooltip(
+                exclude_insecure_cb_,
+                tk::tr("Only send encrypted messages to devices their owner has "
+                       "confirmed, and hide messages sent from devices that aren't. "
+                       "This device must be confirmed to send, and people whose "
+                       "clients don't confirm their devices won't see your messages."),
+                exclude_insecure_cb_->bounds());
+        }
+    };
+    exclude_insecure_cb_->on_hover_leave = [this]
+    {
+        if (host_)
+        {
+            host_->hide_tooltip(exclude_insecure_cb_);
+        }
+    };
+
+    auto block_cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Don't send to people with unconfirmed devices"),
+        s.block_sends_on_unverified_devices);
+    block_unverified_cb_ = enc_group->add_widget(std::move(block_cb));
+    binder.bind(block_unverified_cb_, &S::block_sends_on_unverified_devices,
+                SettingKey::BlockOnUnverified);
+    block_unverified_cb_->on_hover_enter = [this]
+    {
+        if (host_)
+        {
+            host_->show_tooltip(
+                block_unverified_cb_,
+                tk::tr("Refuse to send a message while someone you confirmed has a "
+                       "device they haven't confirmed, or their digital identity has "
+                       "changed. Turn this off to send to every device regardless; "
+                       "you will no longer be warned about identity changes when "
+                       "sending."),
+                block_unverified_cb_->bounds());
+        }
+    };
+    block_unverified_cb_->on_hover_leave = [this]
+    {
+        if (host_)
+        {
+            host_->hide_tooltip(block_unverified_cb_);
+        }
+    };
+
+    // ── Message keys ──────────────────────────────────────────────────────────
+    auto* keys_group = add_group(tk::tr("Message keys"));
+
+    keys_group->add_widget(tk::create_widget<tk::Button>(this, tk::tr("Export message keys…"),
+                                                         [this]
+                                                         {
+                                                             if (on_export_keys)
+                                                             {
+                                                                 on_export_keys();
+                                                             }
+                                                         }));
+
+    keys_group->add_widget(tk::create_widget<tk::Button>(this, tk::tr("Import message keys…"),
+                                                         [this]
+                                                         {
+                                                             if (on_import_keys)
+                                                             {
+                                                                 on_import_keys();
+                                                             }
+                                                         }));
+
+    // ── Danger zone ───────────────────────────────────────────────────────────
+    auto* danger_group = add_group(tk::tr("Danger zone"));
+
+    danger_group->add_widget(tk::create_widget<tk::Button>(
+        this, tk::tr("Reset digital identity…"),
+        [this]
+        {
+            if (on_reset_identity)
+            {
+                on_reset_identity();
+            }
+        },
+        tk::Button::Variant::Destructive));
+}
+
+void DevicesSection::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
+{
+    // The list may take up to half of the visible tab; set before the base lays out.
+    list_->set_max_height(bounds.h * kDeviceListViewportFraction);
+    SettingsPage::arrange(ctx, bounds);
+}
+
+void DevicesSection::paint_before_children(tk::PaintCtx& ctx)
+{
+    host_ = ctx.host;
+    SettingsPage::paint_before_children(ctx);
 }
 
 DevicesSection::~DevicesSection() = default;
@@ -620,11 +857,27 @@ void DevicesSection::clear_uia_state(const std::string& device_id)
     }
 }
 
+tk::Rect DevicesSection::list_bounds_for_testing() const
+{
+    return list_->bounds();
+}
+float DevicesSection::list_scroll_y_for_testing() const
+{
+    return list_->scroll_y_for_testing();
+}
+float DevicesSection::list_content_height_for_testing() const
+{
+    return list_->content_height_for_testing();
+}
+float DevicesSection::list_max_height_for_testing() const
+{
+    return list_->max_height_for_testing();
+}
+
 void DevicesSection::rebuild_()
 {
-    // Clear and rebuild the group's children. SettingsGroup forwards its
-    // children through tk::VBox so re-adding rows just stacks them again.
-    group_->clear_children();
+    // Repopulate the list's content VBox; scroll is re-clamped on the next layout.
+    list_->content()->clear_children();
     rows_.clear();
     loading_label_ = nullptr;
     empty_label_ = nullptr;
@@ -632,14 +885,14 @@ void DevicesSection::rebuild_()
     if (loading_)
     {
         auto lbl = tk::create_widget<tk::Label>(this, tk::tr("Loading devices…"));
-        loading_label_ = group_->add_widget(std::move(lbl));
+        loading_label_ = list_->content()->add_child(std::move(lbl));
         return;
     }
 
     if (devices_.empty())
     {
         auto lbl = tk::create_widget<tk::Label>(this, tk::tr("No devices."));
-        empty_label_ = group_->add_widget(std::move(lbl));
+        empty_label_ = list_->content()->add_child(std::move(lbl));
         return;
     }
 
@@ -668,7 +921,7 @@ void DevicesSection::rebuild_()
                     on_uia_cancelled(std::move(id));
                 }
             });
-        rows_.push_back(group_->add_widget(std::move(row)));
+        rows_.push_back(list_->content()->add_child(std::move(row)));
     }
 }
 

@@ -1,10 +1,11 @@
 #pragma once
 
-// Settings panel section: network proxy (system / none / manual URL).
-// Applied at launch, so a change takes effect after restart.
+// Settings group: network proxy (system / none / manual URL). Applied at
+// launch, so a change takes effect after restart. Hosted by GeneralSection.
 
+#include "RestartNotice.h"
 #include "SettingBinder.h"
-#include "SettingsPage.h"
+#include "SettingsGroup.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/text_field.h"
@@ -16,11 +17,11 @@
 namespace tesseract::views
 {
 
-class NetworkSection : public SettingsPage
+class ProxyGroup : public SettingsGroup
 {
 public:
-    explicit NetworkSection(SettingBinder& binder);
-    ~NetworkSection() override = default;
+    explicit ProxyGroup(SettingBinder& binder);
+    ~ProxyGroup() override = default;
 
     // Show the "Restart now" row — set while the saved proxy differs from the
     // one this process started with.
@@ -36,11 +37,11 @@ public:
     }
     bool restart_row_visible() const
     {
-        return restart_row_ && restart_row_->own_visible();
+        return notice_ && notice_->row_visible();
     }
     std::string restart_note_text() const
     {
-        return restart_note_ ? restart_note_->text() : std::string();
+        return notice_ ? notice_->text() : std::string();
     }
 
     // On a user change of the mode, or of the URL in Manual mode, the new
@@ -59,18 +60,16 @@ private:
     void commit_url_();
     void refresh_url_state_();
     tesseract::Settings::ProxyMode mode_() const;
+    void update_notice_();
 
     SettingBinder* binder_ = nullptr;
     bool loading_ = false;
     tk::ComboBox* combo_ = nullptr;
     tk::TextField* url_field_ = nullptr;
     tk::Label* error_label_ = nullptr;
-    tk::Widget* restart_row_ = nullptr;
-    tk::Label* restart_note_ = nullptr;
+    RestartNotice* notice_ = nullptr;
     bool restart_pending_ = false;
     bool applies_immediately_ = false;
-    void update_restart_note_();
-    void update_restart_row_();
 };
 
 } // namespace tesseract::views

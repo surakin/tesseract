@@ -410,7 +410,7 @@ pub(crate) async fn build_configured_client(
             auto_enable_backups: true,
             ..Default::default()
         })
-        // MSC4153 "exclude insecure devices" (opt-in, Settings → Privacy):
+        // MSC4153 "exclude insecure devices" (opt-in, Settings → Security & Devices):
         // share room keys only with cross-signed devices and hide messages
         // from devices that aren't. Read here, so a toggle applies on the next
         // client rebuild (account start or in-place reload).

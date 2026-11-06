@@ -22,7 +22,7 @@ Tesseract is only the window you look through. Your messages live on your homese
 
 If your server allows registration, a **New here? Create an account** link appears. Servers that only support the old registration method can't create accounts from Tesseract. Register on their website, then sign in here.
 
-Behind a proxy? The wrench button on the login screen opens the network settings (also in Settings → Network).
+Behind a proxy? The wrench button on the login screen opens the network settings (also in Settings → General → Network).
 
 ## 3. The window
 
@@ -89,11 +89,11 @@ Most private rooms are **end-to-end encrypted**. Only the people in the room can
 
 **Verify your devices.** When you sign in on a second device, verify it from the first. Tesseract shows a short list of emoji or numbers for both sides to compare. This stops anyone quietly adding a device to your account. You can do the same with another person to confirm you are really talking to them.
 
-Settings → Privacy also holds the online-status toggle, link-preview options, whether Tesseract may check for updates (only in some builds), and message-key export and import. Your sign-in tokens and recovery key are stored in the operating system's own secure store (Keychain, Credential Manager or Secret Service). Tesseract never sees your password.
+Settings → Privacy holds the online-status toggle and whether Tesseract may check for updates (only in some builds); link-preview options are in Settings → Messages, and message-key export and import are in Settings → Security & Devices. Your sign-in tokens and recovery key are stored in the operating system's own secure store (Keychain, Credential Manager or Secret Service). Tesseract never sees your password.
 
 ### Searching encrypted rooms
 
-Servers can't search encrypted messages, because they can't read them. Tesseract can search them on your computer by building a private index of the decrypted text. It is off until you turn on **Index messages for search** in Settings → Privacy.
+Servers can't search encrypted messages, because they can't read them. Tesseract can search them on your computer by building a private index of the decrypted text. It is off until you turn on **Index messages for search** in Settings → Messages → Search.
 
 ## 8. Several accounts
 
@@ -163,7 +163,7 @@ The full list is in [CLI.md](CLI.md).
 | Can't sign in, or no rooms appear | Your server probably lacks Sliding Sync. Ask the admin |
 | "Unable to decrypt" on a message | Wait a moment. Tesseract retries on its own as keys arrive, either from your server's encrypted key backup or from your other devices. If it persists, make sure you have entered your recovery key (section 7) |
 | Old messages are locked on a new device | Enter your recovery key (section 7) |
-| Things look stale or stuck | Settings → About → Clear all caches |
+| Things look stale or stuck | Settings → General → Storage → Clear all caches |
 | Lost both the recovery key and every device | The old encrypted history can't be recovered. In the unlock dialog choose **I've lost my recovery key and other devices** to start over with a new key. People you chat with will see that your digital identity changed |
 
 Still stuck? Join the community room at [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-client:matrix.org), or open an issue on GitHub.

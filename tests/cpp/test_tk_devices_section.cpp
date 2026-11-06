@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "views/settings/DevicesSection.h"
+#include "views/settings/SettingBinder.h"
 #include "tk_test_surface.h"
 
 #include <memory>
@@ -52,7 +53,8 @@ tesseract::Client::Device make_device(
 TEST_CASE("DevicesSection: loading state paints without crash", "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_loading(true);
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
@@ -60,7 +62,8 @@ TEST_CASE("DevicesSection: loading state paints without crash", "[devices][secti
 TEST_CASE("DevicesSection: empty list paints without crash", "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_devices({});
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
@@ -69,7 +72,8 @@ TEST_CASE("DevicesSection: populated list with mixed states paints without crash
           "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_current_device_id("DEVCURR");
     sec.set_devices({
         make_device("DEVCURR", "My Phone", true, tesseract::Client::DeviceVerification::Verified),
@@ -84,7 +88,8 @@ TEST_CASE("DevicesSection: set_current_device_id flips is_current on cached rows
           "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_devices({
         make_device("DEVA", "A", false),
         make_device("DEVB", "B", true),
@@ -97,7 +102,8 @@ TEST_CASE("DevicesSection: set_current_device_id flips is_current on cached rows
 TEST_CASE("DevicesSection: enter and clear UIA state transitions paint", "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_devices({
         make_device("DEVA", "Other", false),
     });
@@ -114,7 +120,8 @@ TEST_CASE("DevicesSection: enter and clear UIA state transitions paint", "[devic
 TEST_CASE("DevicesSection: per-device busy + error state paint without crash", "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_devices({
         make_device("DEVA", "Phone", false),
     });
@@ -129,7 +136,8 @@ TEST_CASE("DevicesSection: per-device busy + error state paint without crash", "
 TEST_CASE("DevicesSection: state setters on unknown device id are no-ops", "[devices][section]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_devices({});
     // None of these should crash even though no row matches the id.
     sec.set_device_busy("NOPE", true);
@@ -139,57 +147,165 @@ TEST_CASE("DevicesSection: state setters on unknown device id are no-ops", "[dev
     st.run(sec, {0.0f, 0.0f, 640.0f, 480.0f});
 }
 
-TEST_CASE("DevicesSection: wheel scrolls when content exceeds viewport",
-          "[devices][section][scroll]")
+namespace
 {
-    TkDevicesSectionStage st;
-    DevicesSection sec;
-    // Stuff in enough rows to overflow a deliberately-short viewport. Each
-    // row is ~64 px + spacing; 20 rows comfortably exceed 240.
+
+std::vector<tesseract::Client::Device> many_devices(int n)
+{
     std::vector<tesseract::Client::Device> devs;
-    for (int i = 0; i < 20; ++i)
+    for (int i = 0; i < n; ++i)
     {
         devs.push_back(
             make_device("DEV" + std::to_string(i), "Device " + std::to_string(i), false));
     }
-    sec.set_devices(std::move(devs));
-    // Tiny viewport so the content overflows.
-    st.run(sec, {0.0f, 0.0f, 640.0f, 240.0f});
-
-    INFO("content_height = " << sec.content_height_for_testing() << ", viewport = 240");
-    REQUIRE(sec.content_height_for_testing() > 240.0f);
-
-    // First wheel down should consume the event and move scroll_y_ forward.
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, 60.0f) == true);
-    // Repaint with the new scroll position — must not crash.
-    st.run(sec, {0.0f, 0.0f, 640.0f, 240.0f});
-
-    // Scrolling further must still consume and not jump past the bottom.
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, 1e6f) == true);
-    // Now we are pinned at max_scroll; a further wheel-down is a no-op.
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, 60.0f) == false);
-    // Scrolling back up consumes again.
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, -1e6f) == true);
-    // Pinned at top now.
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, -60.0f) == false);
+    return devs;
 }
 
-TEST_CASE("DevicesSection: wheel is a no-op when content fits the viewport",
+tk::Point list_center(const DevicesSection& sec)
+{
+    const tk::Rect r = sec.list_bounds_for_testing();
+    return {r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+}
+
+} // namespace
+
+TEST_CASE("DevicesSection: device list height is capped at half the viewport",
           "[devices][section][scroll]")
 {
     TkDevicesSectionStage st;
-    DevicesSection sec;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(20));
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+
+    CHECK(sec.list_bounds_for_testing().h == 400.0f);
+    CHECK(sec.list_content_height_for_testing() > 400.0f);
+}
+
+TEST_CASE("DevicesSection: device list keeps a three-row minimum in a short viewport",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(20));
+    st.run(sec, {0.0f, 0.0f, 640.0f, 240.0f});
+
+    // Half of 240 is below the minimum, so the minimum wins.
+    CHECK(sec.list_bounds_for_testing().h == sec.list_max_height_for_testing());
+    CHECK(sec.list_bounds_for_testing().h > 120.0f);
+    CHECK(sec.list_bounds_for_testing().h >= 3 * 64.0f);
+}
+
+TEST_CASE("DevicesSection: a short device list is not padded to the cap",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(1));
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+
+    CHECK(sec.list_bounds_for_testing().h == sec.list_content_height_for_testing());
+    CHECK(sec.list_bounds_for_testing().h < 400.0f);
+}
+
+TEST_CASE("DevicesSection: wheel over the device list scrolls the list, not the page",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(20));
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+
+    REQUIRE(sec.dispatch_wheel(list_center(sec), 0.0f, 60.0f) == true);
+    CHECK(sec.list_scroll_y_for_testing() > 0.0f);
+    CHECK(sec.scroll_y_for_testing() == 0.0f);
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f}); // re-layout and paint at the new offset
+
+    // Scroll to the bottom; the list consumes while it can move.
+    REQUIRE(sec.dispatch_wheel(list_center(sec), 0.0f, 1e6f) == true);
+    CHECK(sec.list_scroll_y_for_testing() ==
+          sec.list_content_height_for_testing() - sec.list_bounds_for_testing().h);
+}
+
+TEST_CASE("DevicesSection: wheel at the list edge falls through to the page",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(20));
+    // Short viewport: the page overflows as well as the list.
+    st.run(sec, {0.0f, 0.0f, 640.0f, 300.0f});
+    REQUIRE(sec.content_height_for_testing() > 300.0f);
+
+    REQUIRE(sec.dispatch_wheel(list_center(sec), 0.0f, 1e6f) == true); // list to bottom
+    const float list_bottom = sec.list_scroll_y_for_testing();
+    REQUIRE(sec.scroll_y_for_testing() == 0.0f);
+
+    // At the list's bottom edge the wheel is not swallowed: the page scrolls.
+    REQUIRE(sec.dispatch_wheel(list_center(sec), 0.0f, 60.0f) == true);
+    CHECK(sec.list_scroll_y_for_testing() == list_bottom);
+    CHECK(sec.scroll_y_for_testing() > 0.0f);
+}
+
+TEST_CASE("DevicesSection: wheel over the list is not consumed when nothing can scroll",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
     sec.set_devices({
         make_device("DEVA", "One", false),
         make_device("DEVB", "Two", false),
     });
-    // Generous viewport — content trivially fits.
+    // Generous viewport: neither the list nor the page overflows.
+    st.run(sec, {0.0f, 0.0f, 640.0f, 2000.0f});
+
+    CHECK(sec.dispatch_wheel(list_center(sec), 0.0f, 120.0f) == false);
+    CHECK(sec.dispatch_wheel(list_center(sec), 0.0f, -120.0f) == false);
+    // The page-level handler also reports that it has nothing to scroll.
+    CHECK(sec.on_wheel({10.0f, 10.0f}, 0.0f, 120.0f) == false);
+}
+
+TEST_CASE("DevicesSection: fewer devices re-clamps the list scroll offset",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(20));
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+    REQUIRE(sec.dispatch_wheel(list_center(sec), 0.0f, 1e6f) == true);
+    REQUIRE(sec.list_scroll_y_for_testing() > 0.0f);
+
+    sec.set_devices(many_devices(2));
     st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
 
-    // Wheel returns false → event bubbles up so a parent scroll container
-    // can pick it up.
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, 120.0f) == false);
-    REQUIRE(sec.on_wheel({10.0f, 10.0f}, 0.0f, -120.0f) == false);
+    CHECK(sec.list_scroll_y_for_testing() == 0.0f);
+    CHECK(sec.list_bounds_for_testing().h == sec.list_content_height_for_testing());
+}
+
+TEST_CASE("DevicesSection: busy and UIA rows paint inside the scrolled list",
+          "[devices][section][scroll]")
+{
+    TkDevicesSectionStage st;
+    tesseract::views::SettingBinder binder;
+    DevicesSection sec{binder};
+    sec.set_devices(many_devices(20));
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+
+    sec.set_device_busy("DEV1", true);
+    sec.set_device_error("DEV2", "Network error");
+    sec.enter_uia_state("DEV0", "https://hs/_matrix/client/v3/auth/m.login.sso/fallback/web", "s");
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+
+    REQUIRE(sec.dispatch_wheel(list_center(sec), 0.0f, 200.0f) == true);
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
+    sec.clear_uia_state("DEV0");
+    st.run(sec, {0.0f, 0.0f, 640.0f, 800.0f});
 }
 
 TEST_CASE("url_destination_host names the host a sign-in page opens on", "[devices][uia]")

@@ -1,4 +1,4 @@
-// GStreamer-backed device enumeration for Settings → Media's capture-device
+// GStreamer-backed device enumeration for the Media & Calls settings' capture-device
 // dropdowns. Shared by the Qt6 and GTK4 Linux shells, which both used to carry
 // their own copy of this GstDeviceMonitor loop.
 //

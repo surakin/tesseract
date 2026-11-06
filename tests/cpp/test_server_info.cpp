@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "ffi_convert.h"
 #include "tesseract/client.h"
-#include "views/settings/ServerSection.h"
+#include "views/settings/ServerInfoPanel.h"
 #include "tk_test_surface.h"
 #include <memory>
 #include <string>
@@ -254,10 +254,10 @@ TEST_CASE("build_server_info_rows: capabilities", "[server][ui]")
     CHECK(find_row(rows.capabilities, "Default room version")->value == "11");
 }
 
-TEST_CASE("ServerSection: empty before set_server_info", "[server][ui]")
+TEST_CASE("ServerInfoPanel: empty before set_server_info", "[server][ui]")
 {
     ServerInfoStage st;
-    tesseract::views::ServerSection sec;
+    tesseract::views::ServerInfoPanel sec;
     auto lc = st.layout_ctx();
     auto sz = sec.measure(lc, {640.0f, 480.0f});
     CHECK(sz.h == 0.0f);
@@ -266,10 +266,10 @@ TEST_CASE("ServerSection: empty before set_server_info", "[server][ui]")
     sec.paint(pc1); // must not crash
 }
 
-TEST_CASE("ServerSection: non-zero height and paints after set_server_info", "[server][ui]")
+TEST_CASE("ServerInfoPanel: non-zero height and paints after set_server_info", "[server][ui]")
 {
     ServerInfoStage st;
-    tesseract::views::ServerSection sec;
+    tesseract::views::ServerInfoPanel sec;
 
     tesseract::ServerInfo info;
     info.homeserver_url = "https://matrix.org";

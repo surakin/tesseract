@@ -174,6 +174,10 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   `LiveLocation` timeline items from the thread-panel counting predicate (its
   comment names only polls/reactions); verify and fix separately.
 
+- **Settings follow-ups.** Search across all Settings tabs (find a setting by name
+  and jump to it). Room settings: show the Bridge tab only when a bridge is
+  detected, and fold the one-dropdown Media tab into another tab.
+
 ## Tier 4 — Open questions, decide-don't-build-yet
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the

@@ -2657,7 +2657,7 @@ protected:
     // outlive the overlay.
     void wire_encryption_setup_callbacks_(views::EncryptionSetupOverlay& ov, tk::Host& host);
 
-    // User-initiated "Reset cryptographic identity" (from Settings → Privacy).
+    // User-initiated "Reset cryptographic identity" (from Settings → Security & Devices).
     // Shows the encryption-setup overlay in its reset-approval wait state,
     // starts the SDK cross-signing reset, opens the browser approval URL, and
     // (on success) hands off to the Fresh recovery-key setup. Shells wire their
@@ -4836,8 +4836,8 @@ protected:
     void stop_search_index_stats_poll_();
     void refresh_search_index_stats_();
     // Recompute cache sizes into stats_settings_view_ and re-arm every
-    // kCacheSizesPollMs while the Settings panel is open on the About tab.
-    // Stops itself when the user leaves About; on_about_tab_shown restarts it.
+    // kCacheSizesPollMs while the Settings panel is open on the General tab.
+    // Stops itself when the user leaves General; on_storage_tab_shown restarts it.
     void refresh_cache_sizes_poll_();
     // Each tick walks the cache and the SDK store, so the About tab refreshes
     // every 30 s rather than every 5 s; the sizes are a rough gauge anyway.

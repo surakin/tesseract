@@ -57,8 +57,7 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     AsStage s;
     auto& st = Settings::instance();
     st.group_unread_rooms = st.group_inactive_rooms = st.autoscroll_unread_rooms =
-        st.show_room_join_leave_events = st.animate_avatars = st.show_sender_status_in_timeline =
-            false;
+        st.animate_avatars = false;
     s.binder.reload();
 
     auto fire = [&](const char* label)
@@ -70,19 +69,14 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     fire("Group unread rooms");
     fire("Group inactive rooms");
     fire("Scroll to rooms with new messages");
-    fire("Show room join/leave events");
     fire("Animate avatars");
-    fire("Show status emoji next to names");
-    CHECK(s.keys ==
-          std::vector<SettingKey>{SettingKey::GroupUnread, SettingKey::GroupInactive,
-                                  SettingKey::AutoscrollUnread, SettingKey::ShowMembershipEvents,
-                                  SettingKey::AnimateAvatars, SettingKey::ShowSenderStatus});
+    CHECK(s.keys == std::vector<SettingKey>{SettingKey::GroupUnread, SettingKey::GroupInactive,
+                                            SettingKey::AutoscrollUnread,
+                                            SettingKey::AnimateAvatars});
     CHECK(st.group_unread_rooms);
     CHECK(st.group_inactive_rooms);
     CHECK(st.autoscroll_unread_rooms);
-    CHECK(st.show_room_join_leave_events);
     CHECK(st.animate_avatars);
-    CHECK(st.show_sender_status_in_timeline);
 
     // reload() pushes the stored values into the controls without reporting.
     s.keys.clear();

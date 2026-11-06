@@ -1,8 +1,9 @@
 #include "SettingsView.h"
 
-#include "views/settings/LanguageSection.h"
-#include "views/settings/NetworkSection.h"
+#include "views/settings/LanguageGroup.h"
+#include "views/settings/ProxyGroup.h"
 #include "views/settings/PronounsEditor.h"
+#include "views/settings/StorageGroup.h"
 #include "views/settings/StatusEditor.h"
 #include "views/settings/TimezonePicker.h"
 
@@ -131,18 +132,17 @@ SettingsView::SettingsView()
     auto media = std::make_unique<MediaSection>(binder_);
     media_ = media.get();
 
+    // Messages section.
+    auto messages = std::make_unique<MessagesSection>(binder_);
+    messages_ = messages.get();
+
     // Privacy section.
     auto privacy = std::make_unique<PrivacySection>(binder_);
-    // on_export_keys / on_import_keys are wired in set_controller()
-    // once the SettingsController is available.
     privacy_ = privacy.get();
 
-    // Server section.
-    auto server = std::make_unique<ServerSection>();
-    server_section_ = server.get();
-
-    // Sessions section.
-    auto devices = std::make_unique<DevicesSection>();
+    // Security & Devices section. on_export_keys / on_import_keys are wired
+    // in set_controller() once the SettingsController is available.
+    auto devices = std::make_unique<DevicesSection>(binder_);
     devices_ = devices.get();
 
     // About section — pinned to the bottom of the sidebar.
@@ -162,7 +162,7 @@ SettingsView::SettingsView()
     };
 
     // Emojis & Stickers section.
-    auto image_packs = std::make_unique<ImagePacksSection>();
+    auto image_packs = std::make_unique<ImagePacksSection>(binder_);
     image_packs_ = image_packs.get();
     image_packs_->on_user_pack_pending_image_added = [this](std::uint64_t local_id,
                                                             const std::vector<std::uint8_t>& bytes,
@@ -174,42 +174,30 @@ SettingsView::SettingsView()
         }
     };
 
-    // Network section.
-    auto network = std::make_unique<NetworkSection>(binder_);
-    network->on_restart_requested = [this]
+    // General hosts the Language and Proxy groups; both restart rows route to
+    // the one shell callback.
+    auto forward_restart = [this]
     {
         if (on_restart_requested)
         {
             on_restart_requested();
         }
     };
-    network_ = network.get();
+    general_->language_group()->on_restart_requested = forward_restart;
+    general_->proxy_group()->on_restart_requested = forward_restart;
 
-    // Language section.
-    auto language = std::make_unique<LanguageSection>(binder_);
-    language->on_restart_requested = [this]
-    {
-        if (on_restart_requested)
-        {
-            on_restart_requested();
-        }
-    };
-    language_ = language.get();
-
-    // SideTabView — owns the section widgets. "Sessions" sits next to
-    // "Account" since both relate to the signed-in user's identity.
+    // SideTabView — owns the section widgets. The add_tab order defines the
+    // k*TabIdx constants in SettingsView.h; keep them in step.
     auto tabs = tk::create_widget<tk::SideTabView>(this);
     tabs->add_tab(tk::tr("Account"), std::move(account));
-    tabs->add_tab(tk::tr("Devices"), std::move(devices));
-    tabs->add_tab(tk::tr("General"), std::move(general));
-    tabs->add_tab(tk::tr("Appearance"), std::move(appearance));
+    tabs->add_tab(tk::tr("Security & Devices"), std::move(devices));
     tabs->add_tab(tk::tr("Notifications"), std::move(notifications));
-    tabs->add_tab(tk::tr("Media"), std::move(media));
-    tabs->add_tab(tk::tr("Privacy"), std::move(privacy));
-    tabs->add_tab(tk::tr("Network"), std::move(network));
-    tabs->add_tab(tk::tr("Server"), std::move(server));
+    tabs->add_tab(tk::tr("Appearance"), std::move(appearance));
+    tabs->add_tab(tk::tr("Messages"), std::move(messages));
+    tabs->add_tab(tk::tr("Media & Calls"), std::move(media));
     tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
-    tabs->add_tab(tk::tr("Language"), std::move(language));
+    tabs->add_tab(tk::tr("Privacy"), std::move(privacy));
+    tabs->add_tab(tk::tr("General"), std::move(general));
     tabs->add_bottom_tab(tk::tr("About"), std::move(about));
     tabs->add_bottom_tab(tk::tr("Advanced"), std::move(advanced));
     // First tab is auto-selected by SideTabView::add_tab.
@@ -226,7 +214,7 @@ SettingsView::SettingsView()
         // so a field left visible from the last time Account was shown
         // would otherwise stay stuck. Explicitly hide them here, mirroring
         // RoomSettingsView's identical tab-switch fix.
-        if (idx != 0 && account_)
+        if (idx != kAccountTabIdx && account_)
         {
             if (auto* f = account_->name_field())
             {
@@ -256,9 +244,9 @@ SettingsView::SettingsView()
         {
             on_tab_changed();
         }
-        if (idx == kAboutTabIdx && on_about_tab_shown)
+        if (idx == kGeneralTabIdx && on_storage_tab_shown)
         {
-            on_about_tab_shown();
+            on_storage_tab_shown();
         }
     };
     tabs_ = add_child(std::move(tabs));
@@ -283,8 +271,8 @@ SettingsView::SettingsView()
             });
     };
 
-    // AboutSection: route "Clear all caches" through the shared ConfirmDialog.
-    about_->on_clear_caches = [this]
+    // StorageGroup: route "Clear all caches" through the shared ConfirmDialog.
+    general_->storage_group()->on_clear_caches = [this]
     {
         confirm_dialog_->open(
             {.title = tk::tr("Clear all caches?"),
@@ -305,10 +293,10 @@ SettingsView::SettingsView()
             });
     };
 
-    // PrivacySection: route "Reset encryption" (a cryptographic identity
+    // DevicesSection: route "Reset digital identity" (a cryptographic identity
     // reset) through the shared ConfirmDialog — destructive, so guard it
     // behind an explicit confirm.
-    privacy_->on_reset_identity = [this]
+    devices_->on_reset_identity = [this]
     {
         confirm_dialog_->open(
             {.title = tk::tr("Reset digital identity?"),
@@ -530,9 +518,9 @@ void SettingsView::set_keyword_error_ui(std::string error)
 
 void SettingsView::set_proxy_restart_pending(bool pending)
 {
-    if (network_)
+    if (general_ && general_->proxy_group())
     {
-        network_->set_restart_pending(pending);
+        general_->proxy_group()->set_restart_pending(pending);
     }
 }
 
@@ -636,17 +624,17 @@ void SettingsView::load_persisted_settings()
 
 void SettingsView::set_search_index_stats(const tesseract::SearchIndexStats& stats, bool enabled)
 {
-    if (privacy_)
+    if (messages_)
     {
-        privacy_->set_search_index_stats(stats, enabled);
+        messages_->set_search_index_stats(stats, enabled);
     }
 }
 
 void SettingsView::set_server_info(const tesseract::ServerInfo& info)
 {
-    if (server_section_)
+    if (about_)
     {
-        server_section_->set_server_info(info);
+        about_->set_server_info(info);
     }
     if (account_)
     {
@@ -655,9 +643,9 @@ void SettingsView::set_server_info(const tesseract::ServerInfo& info)
         account_->set_profile_fields_editable(info.supports_profile_fields &&
                                               info.profile_fields_enabled);
     }
-    if (privacy_)
+    if (messages_)
     {
-        privacy_->set_homeserver_previews_available(info.preview_url_enabled);
+        messages_->set_homeserver_previews_available(info.preview_url_enabled);
     }
     // Toggling profile-fields editability now also shows/hides the whole
     // ExtendedFields block, which changes AccountSection's measured height —
@@ -730,9 +718,9 @@ UserPackEditor* SettingsView::user_pack_editor() const
 
 void SettingsView::set_language_restart_pending(bool pending)
 {
-    if (language_)
+    if (general_ && general_->language_group())
     {
-        language_->set_restart_pending(pending);
+        general_->language_group()->set_restart_pending(pending);
     }
 }
 
@@ -740,20 +728,21 @@ void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes, uin
                                    uint64_t mem_hits, uint64_t mem_misses, uint64_t disk_hits,
                                    uint64_t disk_misses)
 {
-    if (about_)
+    if (general_ && general_->storage_group())
     {
-        about_->set_memory_cache_size(memory_bytes);
-        about_->set_local_cache_size(local_bytes);
-        about_->set_sdk_store_size(sdk_bytes);
-        about_->set_memory_cache_stats(mem_hits, mem_misses);
-        about_->set_local_cache_stats(disk_hits, disk_misses);
+        auto* storage = general_->storage_group();
+        storage->set_memory_cache_size(memory_bytes);
+        storage->set_local_cache_size(local_bytes);
+        storage->set_sdk_store_size(sdk_bytes);
+        storage->set_memory_cache_stats(mem_hits, mem_misses);
+        storage->set_local_cache_stats(disk_hits, disk_misses);
     }
     request_relayout();
 }
 
-bool SettingsView::about_tab_selected() const
+bool SettingsView::storage_tab_selected() const
 {
-    return tabs_ && tabs_->selected_idx() == kAboutTabIdx;
+    return tabs_ && tabs_->selected_idx() == kGeneralTabIdx;
 }
 
 void SettingsView::request_relayout()
@@ -1350,18 +1339,15 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
     notifications_->set_mentions_loading(true);
     ctrl->load_mentions_settings();
 
-    // Wire PrivacySection buttons → controller key export/import flows.
-    if (privacy_)
+    // Wire DevicesSection buttons → controller key export/import flows.
+    devices_->on_export_keys = [ctrl]
     {
-        privacy_->on_export_keys = [ctrl]
-        {
-            ctrl->export_room_keys();
-        };
-        privacy_->on_import_keys = [ctrl]
-        {
-            ctrl->import_room_keys();
-        };
-    }
+        ctrl->export_room_keys();
+    };
+    devices_->on_import_keys = [ctrl]
+    {
+        ctrl->import_room_keys();
+    };
 
     // Wire controller → ImagePacksSection state.
     ctrl->on_image_packs_loaded = [this](std::vector<tesseract::ImagePack> packs)
@@ -1454,7 +1440,7 @@ void SettingsView::set_display_name_text(std::string n)
 
 tk::Rect SettingsView::name_field_rect() const
 {
-    if (!account_ || !tabs_ || tabs_->selected_idx() != 0)
+    if (!account_ || !tabs_ || tabs_->selected_idx() != kAccountTabIdx)
     {
         return {};
     }
@@ -1538,7 +1524,7 @@ void SettingsView::set_signed_out_mode(bool on)
     }
     for (int i = 0; i <= kAboutTabIdx; ++i)
     {
-        const bool keep = i == kNetworkTabIdx || i == kLanguageTabIdx || i == kAboutTabIdx;
+        const bool keep = i == kGeneralTabIdx || i == kAboutTabIdx;
         tabs_->set_tab_visible(i, !on || keep);
     }
     tabs_->set_tab_visible(kAdvancedTabIdx, false);
@@ -1546,13 +1532,13 @@ void SettingsView::set_signed_out_mode(bool on)
     {
         about_->set_account_actions_visible(!on);
     }
-    if (network_)
+    if (general_)
     {
-        network_->set_applies_immediately(on);
+        general_->set_signed_out(on);
     }
     if (on)
     {
-        tabs_->select(kNetworkTabIdx);
+        tabs_->select(kGeneralTabIdx);
     }
 }
 

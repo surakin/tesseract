@@ -357,20 +357,26 @@ set(_views_sources
     views/settings/GeneralSection.cpp
     views/settings/AppearanceSection.h
     views/settings/AppearanceSection.cpp
+    views/settings/MessagesSection.h
+    views/settings/MessagesSection.cpp
+    views/settings/RestartNotice.h
+    views/settings/RestartNotice.cpp
+    views/settings/LanguageGroup.h
+    views/settings/LanguageGroup.cpp
+    views/settings/ProxyGroup.h
+    views/settings/ProxyGroup.cpp
+    views/settings/StorageGroup.h
+    views/settings/StorageGroup.cpp
+    views/settings/ServerInfoPanel.h
+    views/settings/ServerInfoPanel.cpp
     views/settings/MessageLayoutPreview.h
     views/settings/MessageLayoutPreview.cpp
     views/settings/RoomListPreview.h
     views/settings/RoomListPreview.cpp
-    views/settings/LanguageSection.h
-    views/settings/LanguageSection.cpp
-    views/settings/NetworkSection.h
-    views/settings/NetworkSection.cpp
     views/settings/NotificationsSection.h
     views/settings/NotificationsSection.cpp
     views/settings/MediaSection.h
     views/settings/MediaSection.cpp
-    views/settings/ServerSection.h
-    views/settings/ServerSection.cpp
     views/settings/DevicesSection.h
     views/settings/DevicesSection.cpp
     views/settings/AboutSection.h

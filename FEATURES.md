@@ -143,13 +143,13 @@ version) are noted where relevant.
 - Device confirmation via emoji (SAS)
 - Key storage recovery
 - Message key export / import (standard interoperable format)
-- **Full-text message search** across all rooms, including E2EE (**Ctrl+Shift+F** / **⌘⇧F**): a local SQLite FTS5 index of decrypted message bodies in `search_index.db`. Opt-in (Settings → Privacy → Search, off by default); enabling lazily backfills history and indexes every subsequent message; disabling clears the index. Results show room · sender · snippet; clicking jumps to the message. Settings panel shows live stats (message count, room count, oldest indexed date, on-disk size).
+- **Full-text message search** across all rooms, including E2EE (**Ctrl+Shift+F** / **⌘⇧F**): a local SQLite FTS5 index of decrypted message bodies in `search_index.db`. Opt-in (Settings → Messages → Search, off by default); enabling lazily backfills history and indexes every subsequent message; disabling clears the index. Results show room · sender · snippet; clicking jumps to the message. Settings panel shows live stats (message count, room count, oldest indexed date, on-disk size).
 - Privacy controls, including presence send/poll toggles
 - Device management (list devices with confirmed status, sign out remote devices)
 - Undecryptable-message states surfaced in the UI
 - Digital identity reset
 - Clear-cache action (excludes the crypto/session store)
-- Optional local crash handler (Settings → Advanced → Diagnostics, off by default, experimental): native and Rust crash handling write a plain-text stack trace to disk; nothing is transmitted anywhere
+- Optional local crash handler (Settings → Privacy → Data sharing, off by default, experimental): native and Rust crash handling write a plain-text stack trace to disk; nothing is transmitted anywhere
 
 ## Account & profile
 
@@ -187,7 +187,7 @@ version) are noted where relevant.
 ## Not yet implemented
 
 - **Accessibility**: screen-reader support is in place but incomplete — Windows UIA, macOS NSAccessibility, and Qt6/GTK4 bridges exist, but not every widget and view is mapped yet
-- **Localization**: English, Spanish, French and German so far (Settings → Language: Auto/English/Spanish/French/German, takes effect after restart) — more languages are opportunistic/contributor-driven
+- **Localization**: English, Spanish, French and German so far (Settings → General → Language: Auto/English/Spanish/French/German, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)
 - **Space child ordering** and "suggested room" flags (creating spaces and adding/removing their rooms are implemented)
 - **3PID management**, **account deactivation**, **identity server settings**

@@ -1,10 +1,14 @@
 #include "GeneralSection.h"
 
+#include "LanguageGroup.h"
+#include "ProxyGroup.h"
 #include "SettingsGroup.h"
+#include "StorageGroup.h"
 
 #include "tesseract/settings.h"
 #include "tk/combobox.h"
 #include "tk/i18n.h"
+#include "tk/layout.h"
 
 namespace tesseract::views
 {
@@ -90,6 +94,9 @@ GeneralSection::GeneralSection(SettingBinder& binder)
     using S = tesseract::Settings;
     const auto& s = S::instance();
 
+    // ── Language ──────────────────────────────────────────────────────────────
+    language_group_ = add_widget(std::make_unique<LanguageGroup>(binder));
+
     // ── Startup ───────────────────────────────────────────────────────────────
     auto* startup_group = add_group(tk::tr("Startup"));
 
@@ -135,14 +142,6 @@ GeneralSection::GeneralSection(SettingBinder& binder)
         {
             refresh_close_action_();
         });
-
-    // ── Composer ──────────────────────────────────────────────────────────────
-    auto* composer_group = add_group(tk::tr("Composer"));
-
-    auto emoticons_cb = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("Replace text emoticons like :-) with emoji"), s.auto_replace_emoticons);
-    binder.bind(composer_group->add_widget(std::move(emoticons_cb)), &S::auto_replace_emoticons,
-                SettingKey::AutoReplaceEmoticons);
 
     // ── Power ─────────────────────────────────────────────────────────────────
     power_group_ = add_group(tk::tr("Power"));
@@ -190,6 +189,18 @@ GeneralSection::GeneralSection(SettingBinder& binder)
                     low_power_from_value(low_power_combo_->selected_value())));
             }
         });
+
+    // ── Network ───────────────────────────────────────────────────────────────
+    proxy_group_ = add_widget(std::make_unique<ProxyGroup>(binder));
+
+    // ── Storage ───────────────────────────────────────────────────────────────
+    // Wrapped in an HBox so the group uses its natural width and sits at the
+    // left rather than stretching to fill the page.
+    auto storage = std::make_unique<StorageGroup>();
+    storage_group_ = storage.get();
+    auto storage_box = tk::create_widget<tk::HBox>(this);
+    storage_box->add_child(std::move(storage));
+    storage_row_ = add_widget(std::move(storage_box));
 }
 
 void GeneralSection::set_launch_at_login(bool enabled)
@@ -254,4 +265,14 @@ void GeneralSection::set_low_power_available(bool available)
     }
 }
 
+void GeneralSection::set_signed_out(bool signed_out)
+{
+    // Storage (cache sizes, "Clear all caches") acts on a signed-in account;
+    // signed out, a proxy change applies at once.
+    if (storage_row_)
+    {
+        storage_row_->set_visible(!signed_out);
+    }
+    proxy_group_->set_applies_immediately(signed_out);
+}
 } // namespace tesseract::views

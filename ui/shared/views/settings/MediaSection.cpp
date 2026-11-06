@@ -33,26 +33,20 @@ MediaSection::MediaSection(SettingBinder& binder)
     using S = tesseract::Settings;
     const auto& s = S::instance();
 
-    // ── Media previews (MSC4278) ────────────────────────────────────────────
-    auto* previews_group = add_group(tk::tr("Media previews"));
+    // ── Media ───────────────────────────────────────────────────────────────
+    auto* group = add_group(tk::tr("Media"));
 
+    // MSC4278 media_previews.
+    group->add_widget(tk::create_widget<tk::Label>(this, tk::tr("Media previews")));
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
         {tk::tr("Always"), "on"},
         {tk::tr("In private rooms only"), "private"},
         {tk::tr("Never"), "off"},
     });
-    previews_combo_ = previews_group->add_widget(std::move(combo));
+    previews_combo_ = group->add_widget(std::move(combo));
     binder.bind<MP>(previews_combo_, &S::media_previews, SettingKey::MediaPreviews,
                     {{MP::On, "on"}, {MP::Private, "private"}, {MP::Off, "off"}});
-
-    auto invite_cb = tk::create_widget<tk::CheckButton>(this, tk::tr("Show avatars in invites"),
-                                                        s.invite_avatars);
-    invite_avatars_cb_ = previews_group->add_widget(std::move(invite_cb));
-    binder.bind(invite_avatars_cb_, &S::invite_avatars, SettingKey::InviteAvatars);
-
-    // ── Local media loading ─────────────────────────────────────────────────
-    auto* group = add_group(tk::tr("Media"));
 
     auto prefetch_cb = tk::create_widget<tk::CheckButton>(
         this, tk::tr("Pre-load full images while scrolling"), s.prefetch_full_media);
@@ -65,14 +59,8 @@ MediaSection::MediaSection(SettingBinder& binder)
     open_external_cb_ = group->add_widget(std::move(external_cb));
     binder.bind(open_external_cb_, &S::open_media_externally, SettingKey::OpenExternal);
 
-    auto recompress_cb = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("Recompress images before sending (animated images are never changed)"),
-        s.recompress_images_on_send);
-    recompress_cb_ = group->add_widget(std::move(recompress_cb));
-    binder.bind(recompress_cb_, &S::recompress_images_on_send, SettingKey::RecompressImages);
-
-    // ── Capture devices ─────────────────────────────────────────────────────
-    auto* dev_group = add_group(tk::tr("Capture devices"));
+    // ── Audio & video devices ───────────────────────────────────────────────
+    auto* dev_group = add_group(tk::tr("Audio & video devices"));
     auto* dev_form = dev_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     dev_form->set_label_gap(8.0f).set_spacing(8.0f);
 

@@ -256,7 +256,7 @@ add_executable(tesseract_tests
     cpp/test_i18n.cpp
     cpp/test_media_disk_cache.cpp
     cpp/test_detached_launch.cpp
-    cpp/test_tk_about_section.cpp
+    cpp/test_tk_storage_group.cpp
     cpp/test_tk_settings_view.cpp
     cpp/test_encryption_setup_overlay.cpp
     cpp/test_shell_encryption_setup.cpp

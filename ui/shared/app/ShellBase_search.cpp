@@ -893,7 +893,7 @@ void ShellBase::thread_search_clear_()
 // calls start_/stop_ when its Settings panel opens/closes. The refresh
 // fetches stats from the active account's client and pushes them to the
 // view, re-arming a slow poll while the history backfill runs.
-// The same start_/stop_ pair also drives the About tab's live cache-size
+// The same start_/stop_ pair also drives the General tab's live cache-size
 // refresh (refresh_cache_sizes_poll_()).
 void ShellBase::start_search_index_stats_poll_()
 {
@@ -901,7 +901,7 @@ void ShellBase::start_search_index_stats_poll_()
     refresh_search_index_stats_();
     // The shell already computed the sizes once on open, so only arm the
     // next tick here rather than computing again.
-    if (stats_settings_view_ && stats_settings_view_->about_tab_selected())
+    if (stats_settings_view_ && stats_settings_view_->storage_tab_selected())
     {
         debounce_(DebounceSlot::CacheSizes, kCacheSizesPollMs,
                   [this]
@@ -921,7 +921,7 @@ void ShellBase::stop_search_index_stats_poll_()
 void ShellBase::refresh_cache_sizes_poll_()
 {
     if (!search_stats_panel_open_ || !stats_settings_view_ ||
-        !stats_settings_view_->about_tab_selected())
+        !stats_settings_view_->storage_tab_selected())
     {
         cancel_debounce_(DebounceSlot::CacheSizes);
         return;
@@ -938,7 +938,7 @@ void ShellBase::refresh_cache_sizes_poll_()
             // Re-arm only after the result lands, so a slow directory walk never
             // stacks up overlapping computes; the debounce generation collapses a
             // tab-switch kick and a pending tick into one loop.
-            if (stats_settings_view_->about_tab_selected())
+            if (stats_settings_view_->storage_tab_selected())
             {
                 debounce_(DebounceSlot::CacheSizes, kCacheSizesPollMs,
                           [this]

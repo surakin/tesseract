@@ -61,7 +61,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 > **Profile timezone: auto-detect and timeline offset (2026-10-28).**
 > A "Detect automatically" checkbox next to the profile timezone picker keeps
 > the profile in sync with the computer's timezone (per-device setting; the
-> picker is disabled while on). Settings → Appearance → Timeline can show each
+> picker is disabled while on). Settings → Messages → Timeline can show each
 > sender's timezone difference after their name (`+2h`, `-5:30`; Classic and
 > Bubbles layouts), fetched lazily per visible sender. Linux release build,
 > ctest 3757/3757.
@@ -83,7 +83,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 > Room timelines lay their rows out in a column that is a percentage of the
 > window (100% by default, so nothing changes until you narrow it; the column
 > then sits beside the room list), so join/leave lines, room events and
-> messages stay together in wide windows. Settings → Appearance sets
+> messages stay together in wide windows. Settings → Appearance → Layout sets
 > the width with a new slider and whether the column is left or centered; thread
 > panels and the IRC layout keep the full width. The media scrub bar uses the
 > same slider. Qt6 + GTK4 build, ctest 3482/3482.
@@ -150,7 +150,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 
 > **Image send (2026-10-13, v0.9.3).**
 > Animated images are never recompressed and stills only when smaller (toggle
-> in Settings → Media); photo formats are stripped of metadata on every send
+> in Settings → Media & Calls); photo formats are stripped of metadata on every send
 > path (single, animated, file, gallery), other files are sent as they are, and
 > an image that can't be stripped is never sent as an image. Qt6 build, ctest 3277/3277, cargo 1065.
 
@@ -168,10 +168,10 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 > titles. Qt6 + GTK4 build, ctest 3217/3217.
 
 > **Compact room list and external media viewers (2026-10-11, v0.9.3).**
-> Settings → Appearance → Layout offers Normal / Compact room rows (name only,
+> Settings → Appearance → Room list offers Normal / Compact room rows (name only,
 > small avatar) with a live preview, using the new `tk::RadioGroup` (also used
-> by the Theme selector). Media can open in the OS default viewer (Settings →
-> Media, or the viewer's ↗ button): saved under its own name to a private temp
+> by the Theme selector). Media can open in the OS default viewer (Settings → Media & Calls,
+> or the viewer's ↗ button): saved under its own name to a private temp
 > folder wiped at startup/exit, with an extension/mime/contents check that
 > warns on mismatch and refuses executables. Qt6 build, ctest 3198/3198.
 
@@ -324,7 +324,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 > **German translation (2026-09-28, v0.9.0).**
 > A German catalog (`i18n/de.po`) covers the whole UI, using Element
 > Web's German terminology (room → "Chat", session → "Gerät") and its
-> informal "du". It is selectable in Settings → Language. `msgfmt -c`
+> informal "du". It is selectable in Settings → General → Language. `msgfmt -c`
 > clean; pending review by a native speaker.
 
 <!-- -->
@@ -341,7 +341,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 <!-- -->
 
 > **Exclude insecure devices (MSC4153) (2026-09-28, v0.9.0).**
-> An opt-in setting (Settings → Privacy → Encryption, applies after
+> An opt-in setting (Settings → Security & Devices → Encryption, applies after
 > restart) shares room keys, including call keys, only with devices their
 > owner cross-signed, and hides messages from devices that aren't. In
 > encrypted rooms, a banner warns when a member's identity is reset ("OK"
@@ -364,7 +364,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 > **Link-preview capability (MSC4452) (2026-09-28, v0.9.0).**
 > The `m.preview_url` capability (and unstable
 > `io.element.msc4452.preview_url`) is read from the homeserver. When the
-> server has link previews off, Settings → Privacy says so and Tesseract
+> server has link previews off, Settings → Messages says so and Tesseract
 > stops calling `/preview_url`; direct fetches for sent messages still run.
 > Builds on all four platforms; user-verified on Windows. Live testing in
 > progress.
@@ -613,7 +613,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 <!-- -->
 
 > **In-memory cache size accounting fixed (2026-09-18, v0.8.24).**
-> Settings → About could show an absurd in-memory cache size (tens of
+> Settings → General → Storage could show an absurd in-memory cache size (tens of
 > billions of GB) instead of the real figure. `AnimImageCache` tracked
 > frame bytes as a running total nudged incrementally on add/remove, which
 > could underflow if a resident frame's `memory_bytes()` grew after being
@@ -1427,8 +1427,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 <!-- -->
 
 > **Optional local crash handler (2026-08-13, v0.8.18).**
-> An opt-in, off-by-default crash handler (Settings → Advanced →
-> Diagnostics) writes a plain-text native/Rust-panic stack trace to disk,
+> An opt-in, off-by-default crash handler (Settings → Privacy → Data sharing) writes a plain-text native/Rust-panic stack trace to disk,
 > with nothing transmitted anywhere.
 
 <!-- -->
@@ -2232,7 +2231,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**
 <!-- -->
 
 > **Audio/video device selection (2026-06-25, v0.8.12-unreleased).**
-> Settings → Media gained microphone, speaker, and camera selection
+> Settings → Media & Calls gained microphone, speaker, and camera selection
 > dropdowns, applied at the next session start.
 
 <!-- -->
@@ -2786,7 +2785,7 @@ The shared UI code builds as four static libraries, each linking the previous: `
 ## Internationalisation
 
 - One mechanism on every platform: `tk::tr` / `trn` / `trf` look strings up in gettext `.mo` catalogs compiled from `i18n/*.po` (English, Spanish, French, German, Norwegian Bokmål, Ukrainian, plus a pseudo-locale for QA). Shared views and all four shells use it; macOS wraps it as `TkTr()`. Qt's `QObject::tr` and GTK's `gettext` are not used.
-- Language picked in Settings → Language (Auto follows the OS); "Restart now" relaunches into it.
+- Language picked in Settings → General → Language (Auto follows the OS); "Restart now" relaunches into it.
 - `tk::N_` marks literal tables translated at display time; `tk::format_date` formats dates from a translatable strftime-style pattern (so locales can reorder day and month) with catalog month/weekday names; `tk::format_size` gives translated byte units.
 - The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails when a marked string is missing from any `.po`, or when a shell calls a bare `tr()` / `_()`.
 

@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- refactor(settings): settings regrouped into fewer, clearer tabs (Security & Devices, Messages, General). Windows release build + ctest
 - feat(composer): a new Settings → General → Composer option replaces text emoticons like `:-)` and `<3` with emoji as you type; off by default. Windows release build, ctest 3825/3825; user-verified Windows
 - ci(screenshots): the screenshot fixture reads like a real chat and uses real photos loaded from disk. Qt6 build, ctest 3848/3848, user-verified Qt6
 - build: matrix-rust-sdk fork moved to upstream main of 2026-10-25 (`50801276e`), keeping ruma at 0.17.2. cargo 1601/1601

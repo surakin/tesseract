@@ -1,8 +1,9 @@
 #pragma once
 
-// Settings panel section: theme selection + room-list grouping options.
-// A SettingsPage with a "Theme" group (Light/Dark/System radio group) and a
-// "Room list" group (checkbox + period combobox).
+// Settings panel section: look and layout. A SettingsPage with a "Theme" group
+// (Light/Dark/System radio group, accent colour, Animate avatars), a "Layout"
+// group (message layout, timeline width/position), a "Fonts" group and a
+// "Room list" group (density, grouping options, autoscroll).
 
 #include "SettingBinder.h"
 #include "SettingsPage.h"
@@ -44,9 +45,6 @@ private:
     tk::CheckButton* group_inactive_cb_ = nullptr;
     tk::ComboBox* period_combo_ = nullptr;
     tk::CheckButton* autoscroll_cb_ = nullptr;
-    tk::CheckButton* show_membership_events_cb_ = nullptr;
-    tk::CheckButton* show_sender_status_cb_ = nullptr;
-    tk::CheckButton* show_sender_timezone_cb_ = nullptr;
     tk::CheckButton* animate_avatars_cb_ = nullptr;
     tk::ComboBox* message_layout_combo_ = nullptr;
     tk::Label* message_layout_desc_ = nullptr;

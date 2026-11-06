@@ -1,22 +1,24 @@
 #pragma once
 
-// Settings panel section: language selection via a combobox.
+// Settings group: language selection via a combobox, with a "Restart now"
+// row shown while the saved language differs from the running one. Hosted by
+// GeneralSection.
 
+#include "RestartNotice.h"
 #include "SettingBinder.h"
-#include "SettingsPage.h"
+#include "SettingsGroup.h"
 #include "tk/combobox.h"
 
 #include <functional>
-#include <string>
 
 namespace tesseract::views
 {
 
-class LanguageSection : public SettingsPage
+class LanguageGroup : public SettingsGroup
 {
 public:
-    explicit LanguageSection(SettingBinder& binder);
-    ~LanguageSection() override = default;
+    explicit LanguageGroup(SettingBinder& binder);
+    ~LanguageGroup() override = default;
 
     // Show the "Restart now" button — set while the saved language differs
     // from the one this process started with.
@@ -27,7 +29,7 @@ public:
 
 private:
     tk::ComboBox* combo_ = nullptr;
-    tk::Widget* restart_row_ = nullptr;
+    RestartNotice* notice_ = nullptr;
 };
 
 } // namespace tesseract::views

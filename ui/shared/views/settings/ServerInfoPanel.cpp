@@ -1,4 +1,4 @@
-#include "ServerSection.h"
+#include "ServerInfoPanel.h"
 
 #include "SettingsGroup.h"
 
@@ -16,9 +16,9 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kServerSectionRowH = 22.0f;
-constexpr float kServerSectionLabelW = 160.0f;
-constexpr float kServerSectionLabelGap = 8.0f;
+constexpr float kServerInfoRowH = 22.0f;
+constexpr float kServerInfoLabelW = 160.0f;
+constexpr float kServerInfoLabelGap = 8.0f;
 
 std::string spec_version_text(const tesseract::SpecVersion& v)
 {
@@ -170,7 +170,7 @@ ServerInfoRows build_server_info_rows(const tesseract::ServerInfo& info)
 // concrete tk::Color, which is theme-independent).
 // ---------------------------------------------------------------------------
 
-class ServerSection::InfoRow : public tk::Widget
+class ServerInfoPanel::InfoRow : public tk::Widget
 {
 public:
     explicit InfoRow(ServerInfoRow row) : row_(std::move(row))
@@ -179,7 +179,7 @@ public:
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
-        return {constraints.w, kServerSectionRowH};
+        return {constraints.w, kServerInfoRowH};
     }
 
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override
@@ -209,7 +209,7 @@ public:
             ls.halign = tk::TextHAlign::Leading;
             ls.valign = tk::TextVAlign::Top;
             ls.trim = tk::TextTrim::Ellipsis;
-            ls.max_width = kServerSectionLabelW;
+            ls.max_width = kServerInfoLabelW;
             label_layout_ = ctx.factory.build_text(row_.label, ls);
 
             tk::TextStyle vs;
@@ -217,14 +217,13 @@ public:
             vs.halign = tk::TextHAlign::Leading;
             vs.valign = tk::TextVAlign::Top;
             vs.trim = tk::TextTrim::Ellipsis;
-            vs.max_width =
-                std::max(0.0f, bounds_.w - kServerSectionLabelW - kServerSectionLabelGap);
+            vs.max_width = std::max(0.0f, bounds_.w - kServerInfoLabelW - kServerInfoLabelGap);
             value_layout_ = ctx.factory.build_text(row_.value, vs);
         }
 
         ctx.canvas.draw_text(*label_layout_, {bounds_.x, bounds_.y}, pal.text_secondary);
         ctx.canvas.draw_text(*value_layout_,
-                             {bounds_.x + kServerSectionLabelW + kServerSectionLabelGap, bounds_.y},
+                             {bounds_.x + kServerInfoLabelW + kServerInfoLabelGap, bounds_.y},
                              row_.dim ? pal.text_secondary : pal.text_primary);
     }
 
@@ -235,24 +234,26 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// ServerSection — SettingsPage with Server / Features / Capabilities groups.
+// ServerInfoPanel — VBox with Server / Features / Capabilities groups.
 // ---------------------------------------------------------------------------
 
-ServerSection::ServerSection()
+ServerInfoPanel::ServerInfoPanel()
 {
-    server_group_ = add_group(tk::tr("Server"));
-    features_group_ = add_group(tk::tr("Features"));
-    capabilities_group_ = add_group(tk::tr("Capabilities"));
-    // Hidden until set_server_info() supplies a URL, so the page reports
+    // Same inter-group gap as SettingsPage.
+    set_spacing(20.0f);
+    server_group_ = add_child(std::make_unique<SettingsGroup>(tk::tr("Server")));
+    features_group_ = add_child(std::make_unique<SettingsGroup>(tk::tr("Features")));
+    capabilities_group_ = add_child(std::make_unique<SettingsGroup>(tk::tr("Capabilities")));
+    // Hidden until set_server_info() supplies a URL, so the panel reports
     // zero height when no server info has been fetched yet.
     server_group_->set_visible(false);
     features_group_->set_visible(false);
     capabilities_group_->set_visible(false);
 }
 
-ServerSection::~ServerSection() = default;
+ServerInfoPanel::~ServerInfoPanel() = default;
 
-void ServerSection::fill_group_(SettingsGroup* group, const std::vector<ServerInfoRow>& rows)
+void ServerInfoPanel::fill_group_(SettingsGroup* group, const std::vector<ServerInfoRow>& rows)
 {
     group->clear_children();
     for (const auto& r : rows)
@@ -261,7 +262,7 @@ void ServerSection::fill_group_(SettingsGroup* group, const std::vector<ServerIn
     }
 }
 
-void ServerSection::set_server_info(const tesseract::ServerInfo& info)
+void ServerInfoPanel::set_server_info(const tesseract::ServerInfo& info)
 {
     const bool have_info = !info.homeserver_url.empty();
     if (have_info)
@@ -274,15 +275,6 @@ void ServerSection::set_server_info(const tesseract::ServerInfo& info)
     server_group_->set_visible(have_info);
     features_group_->set_visible(have_info);
     capabilities_group_->set_visible(have_info);
-}
-
-tk::Size ServerSection::measure(tk::LayoutCtx& ctx, tk::Size constraints)
-{
-    if (!server_group_->visible())
-    {
-        return {constraints.w, 0.0f};
-    }
-    return SettingsPage::measure(ctx, constraints);
 }
 
 } // namespace tesseract::views

@@ -7595,3 +7595,27 @@ msgstr ""
 #: ui/shared/views/settings/GeneralSection.cpp
 msgid "Replace text emoticons like :-) with emoji"
 msgstr ""
+
+#: ui/shared/views/settings/DevicesSection.cpp
+msgid "Security & Devices"
+msgstr ""
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Media & Calls"
+msgstr ""
+
+#: ui/shared/views/settings/DevicesSection.cpp
+msgid "Message keys"
+msgstr ""
+
+#: ui/shared/views/settings/DevicesSection.cpp
+msgid "Danger zone"
+msgstr ""
+
+#: ui/shared/views/settings/MediaSection.cpp
+msgid "Audio & video devices"
+msgstr ""
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Data sharing"
+msgstr ""

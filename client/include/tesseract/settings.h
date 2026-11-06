@@ -505,7 +505,7 @@ public:
     // to data_dir()/crashes/ if the app crashes. Nothing is transmitted
     // anywhere — the file just sits on disk for the user to find and attach
     // to a bug report if they choose. Off by default. Surfaced in
-    // Settings → About → Advanced → Diagnostics.
+    // Settings → Privacy → Data sharing.
     bool crash_reporting_enabled = false;
 
     // Minimum log level forwarded by the Rust/matrix-sdk tracing subscriber.

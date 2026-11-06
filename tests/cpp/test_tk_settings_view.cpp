@@ -3,9 +3,11 @@
 #include "views/settings/SettingsController.h"
 #include "views/SettingsView.h"
 #include "views/settings/AppearanceSection.h"
-#include "views/settings/LanguageSection.h"
-#include "views/settings/NetworkSection.h"
-#include "views/settings/PrivacySection.h"
+#include "views/settings/DevicesSection.h"
+#include "views/settings/ImagePacksSection.h"
+#include "views/settings/LanguageGroup.h"
+#include "views/settings/MessagesSection.h"
+#include "views/settings/ProxyGroup.h"
 #include "views/settings/SettingBinder.h"
 #include "tk/combobox.h"
 #include "tk/slider.h"
@@ -44,15 +46,26 @@ struct TkSettingsViewStage
     }
 };
 
-// The hidden Advanced tab is index 12 in tab-registration order (see
-// SettingsView::kAdvancedTabIdx: 11 top tabs [0-10], bottom tabs About=11,
-// Advanced=12).
-constexpr int kAdvancedTabIdx = 12;
+constexpr int kAdvancedTabIdx = SettingsView::kAdvancedTabIdx;
+constexpr int kUserPackTabIdx = SettingsView::kImagePacksTabIdx;
 
-// The "Emojis & Stickers" tab is index 9 in tab-registration order:
-// Account=0, Devices=1, General=2, Appearance=3, Notifications=4, Media=5,
-// Privacy=6, Network=7, Server=8, Emojis & Stickers=9.
-constexpr int kUserPackTabIdx = 9;
+// First check button whose label contains `needle`, or null.
+tk::CheckButton* find_check_by_label(tk::Widget& root, const std::string& needle)
+{
+    for (auto& c : root.children())
+    {
+        if (auto* b = dynamic_cast<tk::CheckButton*>(c.get());
+            b && b->access_name().find(needle) != std::string::npos)
+        {
+            return b;
+        }
+        if (auto* b = find_check_by_label(*c, needle))
+        {
+            return b;
+        }
+    }
+    return nullptr;
+}
 
 tk::SideTabView* find_tabs(SettingsView& view)
 {
@@ -96,7 +109,7 @@ void collect_check_buttons(tk::Widget& root, std::vector<tk::CheckButton*>& out)
 
 } // namespace
 
-TEST_CASE("AppearanceSection: the sender-status checkbox writes Settings and reports its key",
+TEST_CASE("MessagesSection: the sender-status checkbox writes Settings and reports its key",
           "[settings-view]")
 {
     auto& st = tesseract::Settings::instance();
@@ -104,13 +117,9 @@ TEST_CASE("AppearanceSection: the sender-status checkbox writes Settings and rep
     st.show_sender_status_in_timeline = true;
 
     tesseract::views::SettingBinder binder;
-    tesseract::views::AppearanceSection section(binder);
-    std::vector<tk::CheckButton*> boxes;
-    collect_check_buttons(section, boxes);
-    REQUIRE_FALSE(boxes.empty());
-    // Second to last in the Timeline group (the timezone checkbox follows it).
-    REQUIRE(boxes.size() >= 2);
-    tk::CheckButton* status_cb = boxes[boxes.size() - 2];
+    tesseract::views::MessagesSection section(binder);
+    tk::CheckButton* status_cb = find_check_by_label(section, "status emoji");
+    REQUIRE(status_cb);
 
     std::vector<tesseract::views::SettingKey> fired;
     binder.on_changed = [&](tesseract::views::SettingKey k)
@@ -130,7 +139,7 @@ TEST_CASE("AppearanceSection: the sender-status checkbox writes Settings and rep
     st.show_sender_status_in_timeline = saved;
 }
 
-TEST_CASE("AppearanceSection: the sender-timezone checkbox writes Settings and reports its key",
+TEST_CASE("MessagesSection: the sender-timezone checkbox writes Settings and reports its key",
           "[settings-view]")
 {
     auto& st = tesseract::Settings::instance();
@@ -138,11 +147,9 @@ TEST_CASE("AppearanceSection: the sender-timezone checkbox writes Settings and r
     st.show_sender_timezone_in_timeline = false;
 
     tesseract::views::SettingBinder binder;
-    tesseract::views::AppearanceSection section(binder);
-    std::vector<tk::CheckButton*> boxes;
-    collect_check_buttons(section, boxes);
-    REQUIRE_FALSE(boxes.empty());
-    tk::CheckButton* tz_cb = boxes.back(); // added last, to the Timeline group
+    tesseract::views::MessagesSection section(binder);
+    tk::CheckButton* tz_cb = find_check_by_label(section, "timezone difference");
+    REQUIRE(tz_cb);
 
     std::vector<tesseract::views::SettingKey> fired;
     binder.on_changed = [&](tesseract::views::SettingKey k)
@@ -161,10 +168,10 @@ TEST_CASE("AppearanceSection: the sender-timezone checkbox writes Settings and r
     st.show_sender_timezone_in_timeline = saved;
 }
 
-TEST_CASE("LanguageSection: Restart now shows only while a restart is pending", "[settings-view]")
+TEST_CASE("LanguageGroup: Restart now shows only while a restart is pending", "[settings-view]")
 {
     tesseract::views::SettingBinder binder;
-    tesseract::views::LanguageSection section(binder);
+    tesseract::views::LanguageGroup section(binder);
     int restarts = 0;
     section.on_restart_requested = [&]
     {
@@ -204,12 +211,12 @@ T* find_widget(tk::Widget& root)
 }
 } // namespace
 
-TEST_CASE("NetworkSection: URL field is enabled only for Manual and invalid URLs do not fire",
+TEST_CASE("ProxyGroup: URL field is enabled only for Manual and invalid URLs do not fire",
           "[settings-view]")
 {
     using PM = tesseract::Settings::ProxyMode;
     tesseract::views::SettingBinder binder;
-    tesseract::views::NetworkSection section(binder);
+    tesseract::views::ProxyGroup section(binder);
     auto* combo = find_widget<tk::ComboBox>(section);
     auto* field = find_widget<tk::TextField>(section);
     REQUIRE(combo);
@@ -273,12 +280,12 @@ TEST_CASE("SettingsView::show_account_section selects the Account tab", "[settin
         tab_changed = true;
     };
 
-    tabs->select(kUserPackTabIdx); // navigate away from Account (index 0)
+    tabs->select(kUserPackTabIdx); // navigate away from Account (kAccountTabIdx)
     REQUIRE(tabs->selected_idx() == kUserPackTabIdx);
     tab_changed = false;
 
     view.show_account_section();
-    CHECK(tabs->selected_idx() == 0);
+    CHECK(tabs->selected_idx() == SettingsView::kAccountTabIdx);
     CHECK(tab_changed); // fired on_tab_changed on the way back
 }
 
@@ -312,7 +319,7 @@ TEST_CASE("SettingsView: Advanced tab hides again after navigating away", "[sett
     REQUIRE(tabs->selected_idx() == kAdvancedTabIdx);
 
     // Navigate to a different tab — Advanced must hide again.
-    tabs->select(0);
+    tabs->select(SettingsView::kAccountTabIdx);
     CHECK_FALSE(tabs->tab_visible(kAdvancedTabIdx));
 }
 
@@ -352,7 +359,7 @@ TEST_CASE("SettingsView: file drop reaches the personal pack editor only "
         CHECK(view.dispatch_file_drop(p, payload) == editor);
     }
 
-    tabs->select(0);
+    tabs->select(SettingsView::kAccountTabIdx);
     st.run(view, {0, 0, 900, 700});
     {
         const tk::Rect r = editor->list_rect();
@@ -427,7 +434,7 @@ TEST_CASE("SettingsView: file drop stages an image into the personal "
     CHECK(editor->has_changes());
 }
 
-TEST_CASE("SettingsView: signed-out mode keeps only Network, Language and About", "[settings-view]")
+TEST_CASE("SettingsView: signed-out mode keeps only General and About", "[settings-view]")
 {
     TkSettingsViewStage st;
     auto view_owner = tk::create_root_widget<SettingsView>(nullptr);
@@ -436,17 +443,16 @@ TEST_CASE("SettingsView: signed-out mode keeps only Network, Language and About"
 
     auto* tabs = find_tabs(view);
     REQUIRE(tabs);
-    constexpr int kNetworkTabIdx = 7;
-    constexpr int kLanguageTabIdx = 10;
-    constexpr int kAboutTabIdx = 11;
+    constexpr int kGeneralTabIdx = SettingsView::kGeneralTabIdx;
+    constexpr int kAboutTabIdx = SettingsView::kAboutTabIdx;
 
     view.set_signed_out_mode(true);
     for (int i = 0; i <= kAdvancedTabIdx; ++i)
     {
-        const bool expected = i == kNetworkTabIdx || i == kLanguageTabIdx || i == kAboutTabIdx;
+        const bool expected = i == kGeneralTabIdx || i == kAboutTabIdx;
         CHECK(view.tab_visible(i) == expected);
     }
-    CHECK(tabs->selected_idx() == kNetworkTabIdx);
+    CHECK(tabs->selected_idx() == kGeneralTabIdx);
 
     view.set_signed_out_mode(false);
     for (int i = 0; i <= kAboutTabIdx; ++i)
@@ -456,10 +462,10 @@ TEST_CASE("SettingsView: signed-out mode keeps only Network, Language and About"
     CHECK_FALSE(view.tab_visible(kAdvancedTabIdx));
 }
 
-TEST_CASE("NetworkSection: the note says changes apply now when signed out", "[settings-view]")
+TEST_CASE("ProxyGroup: the note says changes apply now when signed out", "[settings-view]")
 {
     tesseract::views::SettingBinder binder;
-    tesseract::views::NetworkSection section(binder);
+    tesseract::views::ProxyGroup section(binder);
 
     const std::string restart = section.restart_note_text();
     CHECK(restart == "Changes take effect after restart."); // signed in
@@ -479,11 +485,11 @@ TEST_CASE("NetworkSection: the note says changes apply now when signed out", "[s
     CHECK(section.restart_note_text() == restart);
 }
 
-TEST_CASE("NetworkSection: the Restart button is hidden when the change applies live",
+TEST_CASE("ProxyGroup: the Restart button is hidden when the change applies live",
           "[settings-view]")
 {
     tesseract::views::SettingBinder binder;
-    tesseract::views::NetworkSection section(binder);
+    tesseract::views::ProxyGroup section(binder);
 
     // Signed in: a pending change needs a restart, so the button shows.
     section.set_restart_pending(true);
@@ -649,11 +655,11 @@ TEST_CASE("AppearanceSection: the timeline column controls are disabled under th
     CHECK(sliders[0]->enabled());
 }
 
-TEST_CASE("PrivacySection: the encryption checkboxes no longer ask for a restart",
+TEST_CASE("DevicesSection: the encryption checkboxes no longer ask for a restart",
           "[settings-view]")
 {
     tesseract::views::SettingBinder binder;
-    tesseract::views::PrivacySection section(binder);
+    tesseract::views::DevicesSection section(binder);
     std::vector<tk::CheckButton*> boxes;
     collect_check_buttons(section, boxes);
     int seen = 0;
@@ -735,4 +741,24 @@ TEST_CASE("SettingsView: without a host the state setters and load_device_lists 
     CHECK_NOTHROW(view_owner->request_relayout());
     CHECK_NOTHROW(view_owner->load_device_lists()); // no host: early return
     CHECK_NOTHROW(view_owner->set_server_info(tesseract::ServerInfo{}));
+}
+
+TEST_CASE("ImagePacksSection: the MSC2545 checkbox stays visible when compat is off",
+          "[settings-view]")
+{
+    tesseract::views::SettingBinder binder;
+    tesseract::views::ImagePacksSection section(binder);
+    auto* compat_cb = find_check_by_label(section, "MSC2545");
+    REQUIRE(compat_cb);
+    auto* editor = section.user_pack_editor();
+    REQUIRE(editor);
+
+    section.set_personal_pack_enabled(false);
+    CHECK(compat_cb->visible());
+    CHECK_FALSE(editor->visible());
+    CHECK_FALSE(find_button(section, "Save")->visible());
+
+    section.set_personal_pack_enabled(true);
+    CHECK(compat_cb->visible());
+    CHECK(editor->visible());
 }

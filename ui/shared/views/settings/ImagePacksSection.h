@@ -2,7 +2,9 @@
 
 // Settings panel section: global "Emojis & Stickers" tab. Composes two
 // independent pieces —
-//   A. The user's personal image pack (im.ponies.user_emotes /
+//   A. The "Use historical MSC2545 compatibility" checkbox (dual
+//      stable/unstable event-type reads+writes; also whether the personal pack
+//      is loaded at all) and the user's personal image pack (im.ponies.user_emotes /
 //      m.image_pack — a de-facto Element/Cinny extension, not part of the
 //      merged MSC2545 text, but one this app keeps alive as its "Saved
 //      Stickers" pack) via UserPackEditor, with a Save button enabled only
@@ -17,10 +19,13 @@
 // section has no Client dependency of its own — SettingsController feeds it
 // via the setters below and receives its outputs via the callbacks.
 
+#include "SettingBinder.h"
 #include "SettingsPage.h"
 #include "views/ImagePackEditorView.h" // ImagePackImageProvider
 #include "views/settings/KnownPacksList.h"
 #include "views/settings/UserPackEditor.h"
+
+#include "tk/host.h"
 
 #include <tesseract/image_pack.h>
 
@@ -33,6 +38,7 @@
 namespace tk
 {
 class Button;
+class CheckButton;
 } // namespace tk
 
 namespace tesseract::views
@@ -41,7 +47,11 @@ namespace tesseract::views
 class ImagePacksSection : public SettingsPage
 {
 public:
-    ImagePacksSection();
+    // The MSC2545 compatibility checkbox is bound straight to its Settings
+    // field via `binder`.
+    explicit ImagePacksSection(SettingBinder& binder);
+
+    void paint_before_children(tk::PaintCtx& ctx) override;
 
     // ----- Personal pack passthrough ----------------------------------
     void set_user_pack_images(std::vector<tesseract::ImagePackImage> images);
@@ -73,7 +83,7 @@ public:
     std::function<void(std::string room_id, std::string state_key, bool subscribed)>
         on_pack_subscription_toggled;
 
-    // Show/hide the "Your Sticker Pack" group — hidden when the "Use
+    // Show/hide the personal pack editor and its Save button — hidden when the "Use
     // historical MSC2545 compatibility" setting is off, since the personal
     // pack (im.ponies.user_emotes) has no stable-name equivalent and is not
     // loaded/editable in that mode.
@@ -83,9 +93,14 @@ private:
     void refresh_save_button_();
 
     SettingsGroup* user_pack_group_ = nullptr;
+    tk::CheckButton* legacy_compat_cb_ = nullptr;
     UserPackEditor* user_pack_ = nullptr;
     tk::Button* save_btn_ = nullptr;
     KnownPacksList* known_packs_ = nullptr;
+
+    // Cached from paint() so the checkbox's hover callbacks (which don't
+    // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip.
+    tk::Host* host_ = nullptr;
 };
 
 } // namespace tesseract::views

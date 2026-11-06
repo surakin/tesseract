@@ -1,13 +1,13 @@
 #pragma once
 
-// Settings panel section: read-only display of the connected server, in three
-// groups — "Server" (URL, software, spec versions, upload limit, login
-// methods), "Features" (the server-advertised features Tesseract uses, each
-// Stable / Experimental / Not supported) and "Capabilities" (what the
-// account may change). Purely informational; hidden (zero height) until
-// set_server_info() supplies a homeserver URL.
+// Read-only display of the connected server, in three groups — "Server" (URL,
+// software, spec versions, upload limit, login methods), "Features" (the
+// server-advertised features Tesseract uses, each Stable / Experimental / Not
+// supported) and "Capabilities" (what the account may change). Purely
+// informational; a plain VBox hosted by the About tab, hidden (zero height)
+// until set_server_info() supplies a homeserver URL.
 
-#include "SettingsPage.h"
+#include "tk/layout.h"
 
 #include "tesseract/client.h"
 
@@ -16,6 +16,8 @@
 
 namespace tesseract::views
 {
+
+class SettingsGroup;
 
 /// One label / value line. `dim` renders the value in the secondary text
 /// colour (used for "Not supported" and similar).
@@ -37,20 +39,16 @@ struct ServerInfoRows
 /// without painting. Rows whose data is unknown are omitted.
 ServerInfoRows build_server_info_rows(const tesseract::ServerInfo& info);
 
-class ServerSection : public SettingsPage
+class ServerInfoPanel : public tk::VBox
 {
 public:
-    ServerSection();
-    ~ServerSection() override;
+    ServerInfoPanel();
+    ~ServerInfoPanel() override;
 
     void set_server_info(const tesseract::ServerInfo& info);
 
-    // Reports zero height before set_server_info() supplies a URL — the
-    // page's own outer padding is suppressed in that state.
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-
 private:
-    class InfoRow; // defined in ServerSection.cpp
+    class InfoRow; // defined in ServerInfoPanel.cpp
     void fill_group_(SettingsGroup* group, const std::vector<ServerInfoRow>& rows);
 
     SettingsGroup* server_group_ = nullptr;

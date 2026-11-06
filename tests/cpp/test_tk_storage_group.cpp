@@ -1,17 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "views/settings/AboutSection.h"
+#include "views/settings/StorageGroup.h"
 #include "tk_test_host.h"
 #include "tk_test_surface.h"
 
 #include <string>
 
-using tesseract::views::AboutSection;
+using tesseract::views::StorageGroup;
 
 namespace
 {
 
-struct TkAboutSectionStage
+struct TkStorageGroupStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
 
@@ -52,10 +52,10 @@ bool scan_until(tk::Widget& w, float x, float height, std::function<bool()> done
 
 } // namespace
 
-TEST_CASE("memory cache row shows tooltip on hover when stats are set", "[about-section][tooltip]")
+TEST_CASE("memory cache row shows tooltip on hover when stats are set", "[storage-group][tooltip]")
 {
-    TkAboutSectionStage st;
-    AboutSection section;
+    TkStorageGroupStage st;
+    StorageGroup section;
     TestHost host(&section);
     st.run(section, {0, 0, 400, 600}, &host);
 
@@ -74,34 +74,22 @@ TEST_CASE("memory cache row shows tooltip on hover when stats are set", "[about-
     CHECK(host.tooltip_text_.find("50") != std::string::npos);
 }
 
-TEST_CASE("cache size row value cells are at the same x after layout", "[about-section][layout]")
+TEST_CASE("cache size row value cells are at the same x after layout", "[storage-group][layout]")
 {
-    TkAboutSectionStage st;
-    AboutSection section;
+    TkStorageGroupStage st;
+    StorageGroup section;
     TestHost host(&section);
     st.run(section, {0, 0, 400, 600}, &host);
 
-    // Navigate: AboutSection (SettingsPage, a tk::ScrollableBase) has exactly
-    // one real child — content_, the VBox that owns the actual page layout
-    // (see SettingsPage's header comment) — then within content_:
-    //   → second-to-last child (outer HBox wrapping the Storage group —
-    //     the last child is the "Advanced" button row)
-    //     → child 0 (SettingsGroup)
-    //       → children 0-2 (the three CacheSizeRows)
-    REQUIRE(section.children().size() == 1);
-    auto& page_ch = section.children()[0]->children();
-    REQUIRE(page_ch.size() >= 3);
-    auto* outer_hbox = page_ch[page_ch.size() - 2].get();
-    REQUIRE(!outer_hbox->children().empty());
-    auto* sg = outer_hbox->children()[0].get();
-    REQUIRE(sg->children().size() >= 3);
+    // The group's children 0-2 are the three CacheSizeRows (the button follows).
+    REQUIRE(section.children().size() >= 3);
 
-    // Each CacheSizeRow (after fix) must have exactly two children:
+    // Each CacheSizeRow must have exactly two children:
     // index 0 = CacheNameCell, index 1 = CacheValueCell.
     std::vector<float> value_xs;
     for (int i = 0; i < 3; ++i)
     {
-        auto& row = *sg->children()[i];
+        auto& row = *section.children()[i];
         REQUIRE(row.children().size() == 2);
         value_xs.push_back(row.children()[1]->bounds().x);
     }
@@ -113,10 +101,10 @@ TEST_CASE("cache size row value cells are at the same x after layout", "[about-s
 }
 
 TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
-          "[about-section][tooltip]")
+          "[storage-group][tooltip]")
 {
-    TkAboutSectionStage st;
-    AboutSection section;
+    TkStorageGroupStage st;
+    StorageGroup section;
     TestHost host(&section);
     st.run(section, {0, 0, 400, 600}, &host);
     // No stats set yet — hover the row so hover_count_ > 0 but has_stats_ == false.
@@ -140,10 +128,10 @@ TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
     CHECK(host.tooltip_text_.find("500") != std::string::npos);
 }
 
-TEST_CASE("sdk store row never triggers a tooltip", "[about-section][tooltip]")
+TEST_CASE("sdk store row never triggers a tooltip", "[storage-group][tooltip]")
 {
-    TkAboutSectionStage st;
-    AboutSection section;
+    TkStorageGroupStage st;
+    StorageGroup section;
     TestHost host(&section);
     // Set stats only for memory and local; sdk row gets none.
     section.set_memory_cache_stats(100, 5);

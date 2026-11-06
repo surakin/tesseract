@@ -1724,7 +1724,7 @@ void ShellBase::wire_settings_view_(views::SettingsView* view)
     {
         restart_app_();
     };
-    view->on_about_tab_shown = [this]
+    view->on_storage_tab_shown = [this]
     {
         refresh_cache_sizes_poll_();
     };
