@@ -65,6 +65,7 @@ enum class SettingKey
     Camera,
     SendPresence,
     SendMapsAsLocation,
+    AutoReplaceEmoticons,
     ExcludeInsecure,
     BlockOnUnverified,
     BundledUrlPreviews,

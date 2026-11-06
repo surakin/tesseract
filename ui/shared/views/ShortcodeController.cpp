@@ -1,4 +1,5 @@
 #include "views/ShortcodeController.h"
+#include "views/EmoticonReplacer.h"
 #include "tk/emoji_support.h"
 #include "tk/host.h"
 
@@ -73,6 +74,19 @@ bool ShortcodeController::on_text_changed(const std::string& text, int cursor)
         }
         hide();
         return true;
+    }
+
+    // Plain-text emoticon (opt-in): ":-) " → glyph.
+    if (hooks_.emoticons_enabled && hooks_.emoticons_enabled())
+    {
+        if (auto emo = find_emoticon(text, cursor, max_version))
+        {
+            applying_ = true;
+            text_area_->replace_range(emo->start, emo->end, std::string(emo->glyph));
+            applying_ = false;
+            hide();
+            return true;
+        }
     }
 
     // Popup: ":gri" → show suggestions once at least two chars are typed.

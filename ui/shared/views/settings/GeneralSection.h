@@ -6,6 +6,7 @@
 //   "Startup"     — checkbox to launch Tesseract automatically when the user
 //                   logs into the OS, checkbox to start every launch minimized
 //                   to the tray, and a dropdown for what closing the window does
+//   "Composer"    — checkbox to auto-replace text emoticons (":-)") with emoji
 //   "Power"       — Low power mode: Auto / On / Off
 //
 // Reads initial state from Settings::instance(), but the shell re-pushes the

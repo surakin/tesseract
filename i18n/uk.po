@@ -7656,3 +7656,11 @@ msgstr[2] "Збережені входи для {0} не знайдено на �
 #: ui/shared/views/LoginView.cpp
 msgid "The sign-in window could not be opened."
 msgstr "Не вдалося відкрити вікно входу."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Composer"
+msgstr "Поле повідомлення"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Replace text emoticons like :-) with emoji"
+msgstr "Замінювати текстові емотикони на кшталт :-) на емодзі"

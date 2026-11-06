@@ -262,6 +262,11 @@ public:
     // user hasn't explicitly initiated.
     bool send_maps_urls_as_location = false;
 
+    // When true, the composer replaces a finished plain-text emoticon
+    // (":-)", "<3", ...) with its emoji as it's typed. Off by default since
+    // some users mean the literal characters.
+    bool auto_replace_emoticons = false;
+
     // When true, outgoing text messages (sends, replies, thread messages,
     // edits) carry MSC4095 bundled previews of their http(s) links, fetched
     // via the homeserver's /preview_url before send. On by default: the

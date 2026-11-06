@@ -136,6 +136,14 @@ GeneralSection::GeneralSection(SettingBinder& binder)
             refresh_close_action_();
         });
 
+    // ── Composer ──────────────────────────────────────────────────────────────
+    auto* composer_group = add_group(tk::tr("Composer"));
+
+    auto emoticons_cb = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Replace text emoticons like :-) with emoji"), s.auto_replace_emoticons);
+    binder.bind(composer_group->add_widget(std::move(emoticons_cb)), &S::auto_replace_emoticons,
+                SettingKey::AutoReplaceEmoticons);
+
     // ── Power ─────────────────────────────────────────────────────────────────
     power_group_ = add_group(tk::tr("Power"));
     // Hidden until the shell confirms this machine has a battery.

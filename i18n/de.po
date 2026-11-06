@@ -7073,3 +7073,11 @@ msgstr[1] "Die gespeicherten Anmeldungen für {0} wurden auf diesem Computer nic
 #: ui/shared/views/LoginView.cpp
 msgid "The sign-in window could not be opened."
 msgstr "Das Anmeldefenster konnte nicht geöffnet werden."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Composer"
+msgstr "Nachrichteneingabe"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Replace text emoticons like :-) with emoji"
+msgstr "Text-Emoticons wie :-) durch Emoji ersetzen"

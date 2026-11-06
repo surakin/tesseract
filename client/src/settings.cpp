@@ -161,6 +161,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         recompress_images_on_send = j.value("recompress_images_on_send", true);
         open_media_externally = j.value("open_media_externally", false);
         send_maps_urls_as_location = j.value("send_maps_urls_as_location", false);
+        auto_replace_emoticons = j.value("auto_replace_emoticons", false);
         send_bundled_url_previews = j.value("send_bundled_url_previews", true);
         fetch_url_previews_directly = j.value("fetch_url_previews_directly", false);
         exclude_insecure_devices = j.value("exclude_insecure_devices", false);
@@ -507,6 +508,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"recompress_images_on_send", recompress_images_on_send},
         {"open_media_externally", open_media_externally},
         {"send_maps_urls_as_location", send_maps_urls_as_location},
+        {"auto_replace_emoticons", auto_replace_emoticons},
         {"send_bundled_url_previews", send_bundled_url_previews},
         {"fetch_url_previews_directly", fetch_url_previews_directly},
         {"exclude_insecure_devices", exclude_insecure_devices},

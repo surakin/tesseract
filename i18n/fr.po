@@ -7075,3 +7075,11 @@ msgstr[1] "Les connexions enregistrées pour {0} sont introuvables sur cet ordin
 #: ui/shared/views/LoginView.cpp
 msgid "The sign-in window could not be opened."
 msgstr "La fenêtre de connexion n'a pas pu être ouverte."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Composer"
+msgstr "Rédaction"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Replace text emoticons like :-) with emoji"
+msgstr "Remplacer les émoticônes textuelles comme :-) par des emoji"

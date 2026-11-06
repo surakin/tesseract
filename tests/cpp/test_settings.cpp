@@ -576,6 +576,25 @@ TEST_CASE("Settings persist autoscroll_unread_rooms", "[settings]")
     s.autoscroll_unread_rooms = true; // restore default for other tests
 }
 
+TEST_CASE("Settings auto_replace_emoticons defaults off and round-trips", "[settings]")
+{
+    auto dir = make_tmp_dir("auto_replace_emoticons");
+    auto& s = tesseract::Settings::instance();
+
+    s.auto_replace_emoticons = true;
+    s.save_to_disk(dir);
+    s.auto_replace_emoticons = false;
+    s.load_from_disk(dir);
+    CHECK(s.auto_replace_emoticons);
+
+    write_file(dir / "app_settings.json", "{}");
+    s.load_from_disk(dir);
+    CHECK_FALSE(s.auto_replace_emoticons);
+
+    fs::remove_all(dir);
+    s.auto_replace_emoticons = false;
+}
+
 TEST_CASE("Settings persist message_layout", "[settings]")
 {
     using ML = tesseract::Settings::MessageLayout;

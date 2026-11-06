@@ -255,6 +255,7 @@ set(_views_sources
     views/RoomSearchBar.h
     views/RoomSearchBar.cpp
     views/ShortcodeEngine.h
+    views/EmoticonReplacer.cpp
     views/ShortcodeEngine.cpp
     views/SlashCommandEngine.h
     views/SlashCommandEngine.cpp

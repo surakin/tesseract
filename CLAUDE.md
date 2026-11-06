@@ -57,7 +57,7 @@ Bad:  - fix(ui): the space picker stops above the user-info strip, which now run
 Good: - fix(ui): the space picker no longer covers the user-info strip, and hides when the sidebar is collapsed or single-pane. Linux release build
 ```
 
-Never mention public GitHub issues (this repo's or upstream's) in commit messages. If an issue reference is needed for context, put it in CHANGES.md's detailed section instead.
+Never mention upstream or third-party GitHub issues in commit messages; if one is needed for context, put it in CHANGES.md's detailed section instead. Issues and PRs in Tesseract's own repo (`github.com/surakin/tesseract`) may be referenced in commit messages.
 
 ## Code Style
 

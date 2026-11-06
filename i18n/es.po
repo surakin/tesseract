@@ -7173,3 +7173,11 @@ msgstr[1] "No se encontraron en este equipo los inicios de sesión guardados de 
 #: ui/shared/views/LoginView.cpp
 msgid "The sign-in window could not be opened."
 msgstr "No se pudo abrir la ventana de inicio de sesión."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Composer"
+msgstr "Redacción"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Replace text emoticons like :-) with emoji"
+msgstr "Reemplazar emoticonos de texto como :-) por emoji"

@@ -80,6 +80,7 @@ add_executable(tesseract_tests
     cpp/test_image_pack_order.cpp
     cpp/test_image_pack_shortcode_suggest.cpp
     cpp/test_shortcode_engine.cpp
+    cpp/test_emoticon_replacer.cpp
     cpp/test_tk_shortcode_popup.cpp
     cpp/test_tk_slash_command_popup.cpp
     cpp/test_mention_engine.cpp

@@ -351,6 +351,7 @@ struct ShortcodeRig
     int shown = 0, hidden = 0, sel_repaints = 0;
     std::vector<tesseract::ImagePackImage> packs;
     std::vector<std::string> fetched;
+    std::function<bool()> emoticons_enabled;
     std::unique_ptr<ShortcodeController> ctl;
 
     void build()
@@ -377,6 +378,7 @@ struct ShortcodeRig
         {
             fetched.push_back(u);
         };
+        h.emoticons_enabled = emoticons_enabled;
         ctl = std::make_unique<ShortcodeController>(area.get(), &popup, std::move(h));
     }
 
@@ -444,6 +446,58 @@ TEST_CASE("ShortcodeController: a completed :shortcode: expands in place",
     r.build();
     CHECK(r.type(":smile: "));
     CHECK(r.area->text().find(":smile:") == std::string::npos);
+}
+
+TEST_CASE("ShortcodeController: text emoticons are replaced only when enabled",
+          "[composer_controllers][shortcode][emoticon]")
+{
+    const std::string smile = "\xF0\x9F\x99\x82"; // 🙂
+    {
+        ShortcodeRig r; // no hook: never replaced
+        r.build();
+        CHECK_FALSE(r.type("hi :-) "));
+        CHECK(r.area->text() == "hi :-) ");
+    }
+    {
+        ShortcodeRig r;
+        r.emoticons_enabled = []
+        {
+            return false;
+        };
+        r.build();
+        CHECK_FALSE(r.type("hi :-) "));
+        CHECK(r.area->text() == "hi :-) ");
+    }
+    {
+        ShortcodeRig r;
+        bool on = true;
+        r.emoticons_enabled = [&on]
+        {
+            return on;
+        };
+        r.build();
+        CHECK(r.type("hi :-) "));
+        CHECK(r.area->text() == "hi " + smile + " ");
+        CHECK_FALSE(r.ctl->visible());
+        // The setting is read per keystroke.
+        on = false;
+        CHECK_FALSE(r.type("hi :( "));
+        CHECK(r.area->text() == "hi :( ");
+    }
+}
+
+TEST_CASE("ShortcodeController: a completed :shortcode: still wins over emoticons",
+          "[composer_controllers][shortcode][emoticon]")
+{
+    ShortcodeRig r;
+    r.emoticons_enabled = []
+    {
+        return true;
+    };
+    r.build();
+    CHECK(r.type(":+1: "));
+    CHECK(r.area->text().find(":+1:") == std::string::npos);
+    CHECK(r.area->text() != ":+1: ");
 }
 
 TEST_CASE("ShortcodeController: custom emoticons are suggested and prefetched",

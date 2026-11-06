@@ -59,13 +59,17 @@ public:
         std::function<const tk::Image*(const std::string& url)> resolve_image;
         // The account's default emoji skin tone, applied to suggestions.
         std::function<tesseract::emoji::SkinTone()> skin_tone;
+        // Whether plain-text emoticons (":-)") are auto-replaced with emoji
+        // (Settings::auto_replace_emoticons). Read per keystroke so a settings
+        // change applies immediately. Optional: when null, never replaced.
+        std::function<bool()> emoticons_enabled;
     };
 
     ShortcodeController(tk::TextArea* text_area, ShortcodePopup* popup, Hooks hooks);
     ~ShortcodeController();
 
     // Returns true if a shortcode was handled — either a completed `:word:` was
-    // auto-expanded, or an open `:prefix` showed the popup. The caller should
+    // auto-expanded, a plain-text emoticon was replaced, or an open `:prefix` showed the popup. The caller should
     // stop further on_changed processing.
     bool on_text_changed(const std::string& text, int cursor_byte_pos);
     // Keyboard navigation while the popup is open; returns true if consumed.

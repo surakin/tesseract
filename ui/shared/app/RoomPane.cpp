@@ -4814,6 +4814,10 @@ void RoomPane::wire_shortcode_hooks_(views::ShortcodePopup* popup,
     {
         return shell_->emoji_skin_tone_();
     };
+    hooks.emoticons_enabled = []
+    {
+        return tesseract::Settings::instance().auto_replace_emoticons;
+    };
 }
 
 void RoomPane::fetch_banned_members_(views::RoomView* rv, const std::string& room_id)

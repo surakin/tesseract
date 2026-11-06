@@ -7486,3 +7486,11 @@ msgstr[1] "[Thé sàvéd sïgñ-ïñs för {0} çöùld ñöt bé föùñd öñ 
 #: ui/shared/views/LoginView.cpp
 msgid "The sign-in window could not be opened."
 msgstr "[Thé sïgñ-ïñ wïñdöw çöùld ñöt bé öpéñédxxxxxxx]"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Composer"
+msgstr "[Çömpösérx]"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Replace text emoticons like :-) with emoji"
+msgstr "[Réplàçé téxt émötïçöñs lïké :-) wïth émöjïxxxxxxxx]"

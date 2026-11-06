@@ -5437,3 +5437,11 @@ msgstr[1] "De lagrede påloggingene for {0} ble ikke funnet på denne datamaskin
 #: ui/shared/views/LoginView.cpp
 msgid "The sign-in window could not be opened."
 msgstr "Påloggingsvinduet kunne ikke åpnes."
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Composer"
+msgstr "Meldingsfelt"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Replace text emoticons like :-) with emoji"
+msgstr "Erstatt tekst-emotikoner som :-) med emoji"
