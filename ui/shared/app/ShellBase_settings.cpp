@@ -511,16 +511,8 @@ void ShellBase::apply_index_messages_()
     }
 }
 
-void ShellBase::apply_show_deleted_messages_()
+void ShellBase::resubscribe_open_rooms_()
 {
-    const bool show = tesseract::Settings::instance().show_deleted_messages;
-    for (const auto& sess : account_manager_.accounts())
-    {
-        if (sess && sess->client)
-        {
-            sess->client->set_show_redacted_events(show);
-        }
-    }
     if (!client_)
     {
         return;
@@ -537,6 +529,19 @@ void ShellBase::apply_show_deleted_messages_()
             client_->subscribe_room(room_id);
         }
     }
+}
+
+void ShellBase::apply_show_deleted_messages_()
+{
+    const bool show = tesseract::Settings::instance().show_deleted_messages;
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (sess && sess->client)
+        {
+            sess->client->set_show_redacted_events(show);
+        }
+    }
+    resubscribe_open_rooms_();
 }
 
 void ShellBase::apply_show_membership_events_()
@@ -563,22 +568,7 @@ void ShellBase::apply_show_unhandled_events_()
             sess->client->set_show_unhandled_events(effective);
         }
     }
-    if (!client_)
-    {
-        return;
-    }
-    if (!current_room_id_.empty())
-    {
-        client_->subscribe_room(current_room_id_);
-    }
-    for (const auto& [room_id, window] : active_account_popouts_())
-    {
-        (void)window;
-        if (room_id != current_room_id_)
-        {
-            client_->subscribe_room(room_id);
-        }
-    }
+    resubscribe_open_rooms_();
 }
 
 void ShellBase::apply_msc2545_legacy_compat_()
