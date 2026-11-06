@@ -1469,6 +1469,9 @@ msgstr "Línea de tiempo"
 msgid "Show room join/leave events"
 msgstr "Mostrar eventos de entrada/salida de sala"
 
+msgid "Show deleted messages"
+msgstr "Mostrar mensajes eliminados"
+
 #: ui/shared/views/settings/AppearanceSection.cpp:312
 msgid "Show status emoji next to names"
 msgstr "Mostrar emoji de estado junto a los nombres"

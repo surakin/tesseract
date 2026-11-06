@@ -706,6 +706,7 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.in_reply_to_sender_name = std::string(e.in_reply_to_sender_name);
     ev.in_reply_to_body = std::string(e.in_reply_to_body);
     ev.in_reply_to_formatted_body = std::string(e.in_reply_to_formatted_body);
+    ev.in_reply_to_deleted = e.in_reply_to_deleted;
     ev.in_reply_to_image_url = std::string(e.in_reply_to_image_url);
     ev.in_reply_to_image_encrypted_json = std::string(e.in_reply_to_image_encrypted_json);
     ev.is_edited = e.is_edited;

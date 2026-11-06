@@ -695,6 +695,8 @@ pub mod ffi {
         /// render inline formatting (bold/italic/code/links) instead of the raw
         /// markdown-ish plain body.
         in_reply_to_formatted_body: String,
+        /// True when the replied-to message was redacted (deleted).
+        in_reply_to_deleted: bool,
         /// mxc:// URI of the replied-to image thumbnail (or full-res when no
         /// thumbnail exists). Non-empty only when the reply target is an m.image
         /// event whose content is present in the local cache.
@@ -4307,6 +4309,10 @@ pub mod ffi {
         /// reusable live timelines: callers must re-`subscribe_room` every open
         /// room afterwards, which then rebuilds the timeline.
         fn set_show_unhandled_events(self: &ClientFfi, enabled: bool);
+        /// Show or hide redacted (deleted) event rows in room and thread
+        /// timelines; on by default. Same refresh rule as
+        /// `set_show_membership_events`.
+        fn set_show_redacted_events(self: &ClientFfi, enabled: bool);
 
         /// Configure sender-side MSC4095 bundled URL previews. `enabled`
         /// previews http(s) links in outgoing `m.text` messages (sends,

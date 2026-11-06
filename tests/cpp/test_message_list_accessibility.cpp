@@ -340,6 +340,31 @@ TEST_CASE("a forwarded row's name says who it was forwarded from, and its "
     }
 }
 
+TEST_CASE("the reply jump is offered for a deleted original only when deleted messages are shown",
+          "[message_list][accessibility]")
+{
+    auto& settings = tesseract::Settings::instance();
+    const bool prev = settings.show_deleted_messages;
+
+    auto has_jump = [](bool show)
+    {
+        tesseract::Settings::instance().show_deleted_messages = show;
+        MessageListView v;
+        auto row = text_row("$a", "Alice", "reply");
+        row.in_reply_to_id = "$gone";
+        row.in_reply_to_deleted = true;
+        std::vector<MessageRowData> msgs{row};
+        v.set_messages(std::move(msgs), false);
+        AccessNode tree = build_access_tree(&v);
+        return access_test::find_named(tree, "Jump to replied message") != nullptr;
+    };
+
+    CHECK_FALSE(has_jump(false));
+    CHECK(has_jump(true));
+
+    settings.show_deleted_messages = prev;
+}
+
 TEST_CASE("a row's accessible name includes the sender status only when the setting is on",
           "[message_list][accessibility]")
 {

@@ -511,6 +511,39 @@ void ShellBase::apply_index_messages_()
     }
 }
 
+void ShellBase::resubscribe_open_rooms_()
+{
+    if (!client_)
+    {
+        return;
+    }
+    if (!current_room_id_.empty())
+    {
+        client_->subscribe_room(current_room_id_);
+    }
+    for (const auto& [room_id, window] : active_account_popouts_())
+    {
+        (void)window;
+        if (room_id != current_room_id_)
+        {
+            client_->subscribe_room(room_id);
+        }
+    }
+}
+
+void ShellBase::apply_show_deleted_messages_()
+{
+    const bool show = tesseract::Settings::instance().show_deleted_messages;
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (sess && sess->client)
+        {
+            sess->client->set_show_redacted_events(show);
+        }
+    }
+    resubscribe_open_rooms_();
+}
+
 void ShellBase::apply_show_membership_events_()
 {
     if (client_)
@@ -535,22 +568,7 @@ void ShellBase::apply_show_unhandled_events_()
             sess->client->set_show_unhandled_events(effective);
         }
     }
-    if (!client_)
-    {
-        return;
-    }
-    if (!current_room_id_.empty())
-    {
-        client_->subscribe_room(current_room_id_);
-    }
-    for (const auto& [room_id, window] : active_account_popouts_())
-    {
-        (void)window;
-        if (room_id != current_room_id_)
-        {
-            client_->subscribe_room(room_id);
-        }
-    }
+    resubscribe_open_rooms_();
 }
 
 void ShellBase::apply_msc2545_legacy_compat_()
@@ -752,6 +770,9 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::AutoDetectTimezone:
         sync_detected_timezone_();
         break;
+    case K::ShowDeletedMessages:
+        apply_show_deleted_messages_();
+        break;
     case K::ShowSenderStatus:
     case K::ShowSenderTimezone:
     case K::MessageLayout:
@@ -826,6 +847,13 @@ void ShellBase::apply_unhandled_events_pref_(tesseract::Client& client)
     {
         client.set_show_unhandled_events(true);
     }
+}
+
+void ShellBase::apply_deleted_messages_pref_(tesseract::Client& client)
+{
+    // The Rust-side default is true; push the preference so an account whose
+    // user turned it off hides deleted messages from its first subscription.
+    client.set_show_redacted_events(tesseract::Settings::instance().show_deleted_messages);
 }
 
 void ShellBase::apply_bundled_url_previews_pref_(tesseract::Client& client)

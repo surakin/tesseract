@@ -972,7 +972,7 @@ pub struct ClientFfi {
     /// When `false` (the default), room membership-change rows
     /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
     /// variants) are filtered out at the same point pinned-events/etc.
-    /// visibility is decided (see `filter_membership` in `client::timeline`).
+    /// visibility is decided (see `filter_visibility` in `client::timeline`).
     /// Controlled by `set_show_membership_events`.
     pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Developer setting: surface events the timeline does not render as
@@ -982,6 +982,10 @@ pub struct ClientFfi {
     /// Bumped whenever `show_unhandled_events` changes value; see
     /// `TimelineHandle::unhandled_generation`.
     pub(super) unhandled_generation: std::sync::atomic::AtomicU64,
+    /// When `true` (the default), redacted (deleted) events render as an
+    /// `m.redacted` tombstone; when `false` they are filtered out of room and
+    /// thread timelines. Controlled by `set_show_redacted_events`.
+    pub(super) show_redacted_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Sender-side MSC4095 bundled URL previews opt-in (via the homeserver's
     /// `/preview_url`). Set by `set_bundled_url_previews`; see
     /// `client::url_preview_gen`.
@@ -1544,6 +1548,7 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unhandled_generation: std::sync::atomic::AtomicU64::new(0),
+            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1666,6 +1671,7 @@ impl ClientFfi {
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unhandled_generation: std::sync::atomic::AtomicU64::new(0),
+            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1825,6 +1831,23 @@ impl ClientFfi {
         {
             self.unhandled_generation
                 .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
+    }
+
+    /// Enable or disable redacted (deleted) event rows. Thread-safe.
+    /// (Production impl lives in `client::sync`; this test stub mirrors it.)
+    #[cfg(test)]
+    pub fn set_show_redacted_events(&self, enabled: bool) {
+        self.show_redacted_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Handles to the live row-visibility settings, for timeline tasks.
+    pub(super) fn visibility_flags(&self) -> timeline_convert::VisibilityFlags {
+        timeline_convert::VisibilityFlags {
+            membership: std::sync::Arc::clone(&self.show_membership_events),
+            redacted: std::sync::Arc::clone(&self.show_redacted_events),
+            unhandled: std::sync::Arc::clone(&self.show_unhandled_events),
         }
     }
 
@@ -4921,6 +4944,40 @@ mod tests {
         assert!(!c
             .show_membership_events
             .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_show_redacted_events_roundtrips() {
+        let c = ClientFfi::new();
+        assert!(c
+            .show_redacted_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_show_redacted_events(false);
+        assert!(!c
+            .show_redacted_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!c.visibility_flags().snapshot().redacted);
+        c.set_show_redacted_events(true);
+        assert!(c
+            .show_redacted_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn visibility_flags_track_the_live_settings() {
+        let c = ClientFfi::new();
+        let flags = c.visibility_flags();
+        // Deleted messages are shown by default; the other rows are hidden.
+        let initial = flags.snapshot();
+        assert!(!initial.membership && initial.redacted && !initial.unhandled);
+        c.set_show_membership_events(true);
+        c.set_show_unhandled_events(true);
+        c.set_show_redacted_events(false);
+        // The handles were taken before the toggles: they share the live values.
+        let changed = flags.snapshot();
+        assert!(changed.membership && !changed.redacted && changed.unhandled);
+        c.set_show_redacted_events(true);
+        assert!(flags.snapshot().redacted);
     }
 
     #[test]

@@ -4936,6 +4936,9 @@ msgstr "[Tïmélïñéx]"
 msgid "Show room join/leave events"
 msgstr "[Shöw rööm jöïñ/léàvé évéñtsxxxxx]"
 
+msgid "Show deleted messages"
+msgstr "[Shöw délétéd méssàgésxxxx]"
+
 #: ui/shared/views/settings/AppearanceSection.cpp:307
 msgid "Animate avatars"
 msgstr "[Àñïmàté àvàtàrsxxx]"

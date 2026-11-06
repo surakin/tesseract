@@ -2285,6 +2285,11 @@ public:
     /// (the next subscribe rebuilds the timeline).
     void set_show_unhandled_events(bool enabled);
 
+    /// Show or hide redacted (deleted) events, which render as a tombstone row,
+    /// in room and thread timelines. On by default. Thread-safe; takes effect
+    /// on the next timeline reset, like `set_show_membership_events`.
+    void set_show_redacted_events(bool enabled);
+
     /// Configure sender-side MSC4095 bundled URL previews. `enabled` bundles
     /// previews of http(s) links into outgoing text messages, fetched via the
     /// homeserver's `/preview_url`; `direct` (only honoured with `enabled`)

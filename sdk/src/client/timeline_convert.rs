@@ -131,6 +131,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         in_reply_to_sender_name: String::new(),
         in_reply_to_body: String::new(),
         in_reply_to_formatted_body: String::new(),
+        in_reply_to_deleted: false,
         in_reply_to_image_url: String::new(),
         in_reply_to_image_encrypted_json: String::new(),
         is_edited: false,
@@ -703,6 +704,45 @@ pub(crate) fn membership_event_visible(
         || (is_profile_action(action) && me.is_some_and(|m| m == target_user_id))
 }
 
+/// Whether a row reaches the UI given the "Show deleted messages" setting:
+/// redacted events (`m.redacted` tombstones) are hidden unless `show`.
+pub(crate) fn redacted_event_visible(msg_type: &str, show: bool) -> bool {
+    show || msg_type != "m.redacted"
+}
+
+/// Per-call snapshot of the runtime-toggleable timeline row visibility
+/// settings. `Copy` so it is read once from [`VisibilityFlags`] and then
+/// passed by value to every filter in a pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RowVisibility {
+    /// "Show room join/leave events".
+    pub membership: bool,
+    /// "Show deleted messages".
+    pub redacted: bool,
+    /// Developer "Show unhandled events".
+    pub unhandled: bool,
+}
+
+/// Shared handles to the live settings behind [`RowVisibility`]; built by
+/// `ClientFfi::visibility_flags` and cloned into each timeline task.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct VisibilityFlags {
+    pub membership: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub redacted: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub unhandled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl VisibilityFlags {
+    pub(crate) fn snapshot(&self) -> RowVisibility {
+        use std::sync::atomic::Ordering::Relaxed;
+        RowVisibility {
+            membership: self.membership.load(Relaxed),
+            redacted: self.redacted.load(Relaxed),
+            unhandled: self.unhandled.load(Relaxed),
+        }
+    }
+}
+
 /// True for the actions `profile_change_action` produces.
 pub(crate) fn is_profile_action(action: &str) -> bool {
     matches!(
@@ -1062,6 +1102,24 @@ pub(super) fn reply_image_source(
         },
         _ => (String::new(), String::new()),
     }
+}
+
+/// Whether the event this one replies to was redacted (deleted). False when
+/// it is not a reply, or the replied-to item is not in the local cache.
+#[cfg(not(test))]
+pub(super) fn reply_target_redacted(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+) -> bool {
+    let Some(details) = event_item.content().in_reply_to() else {
+        return false;
+    };
+    matches!(
+        &details.event,
+        TimelineDetails::Ready(replied) if matches!(
+            &replied.content,
+            TimelineItemContent::MsgLike(MsgLikeContent { kind: MsgLikeKind::Redacted, .. })
+        )
+    )
 }
 
 /// Extract (event_id, sender_display_name, body_snippet, image_url,
@@ -1937,7 +1995,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
     // m.room.member state events representing an actual membership
     // transition (join/leave/kick/ban/invite/knock and their
     // accept/reject/revoke counterparts). Visibility is gated downstream by
-    // the caller (see `filter_membership` in timeline.rs) — this conversion
+    // the caller (see `filter_visibility` in timeline.rs) — this conversion
     // is unconditional, matching the m.room.pinned_events precedent above.
     // Profile-only changes while already joined are
     // TimelineItemContent::ProfileChange — handled just below.
@@ -2183,6 +2241,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
         ) = extract_in_reply_to(room, event_item).await;
+        let in_reply_to_deleted = reply_target_redacted(event_item);
         // MSC3440 thread metadata — mirrors the m.room.message branch below.
         // Without this, a sticker sent as a thread reply (or thread root)
         // converts with an empty thread_root_id regardless of its actual
@@ -2229,6 +2288,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_sender_name,
             in_reply_to_body,
             in_reply_to_formatted_body,
+            in_reply_to_deleted,
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
             pending_state: pending_state.clone(),
@@ -2289,6 +2349,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
         ) = extract_in_reply_to(room, event_item).await;
+        let in_reply_to_deleted = reply_target_redacted(event_item);
         let thread_root_id = event_item
             .content()
             .thread_root()
@@ -2334,6 +2395,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             in_reply_to_sender_name,
             in_reply_to_body,
             in_reply_to_formatted_body,
+            in_reply_to_deleted,
             in_reply_to_image_url,
             in_reply_to_image_encrypted_json,
             pending_state: pending_state.clone(),
@@ -2517,6 +2579,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
     ) = extract_in_reply_to(room, event_item).await;
+    let in_reply_to_deleted = reply_target_redacted(event_item);
 
     let reactions = collect_reactions(event_item, room, me).await;
     let read_receipts = collect_read_receipts(event_item, room, me).await;
@@ -2567,6 +2630,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         in_reply_to_sender_name,
         in_reply_to_body,
         in_reply_to_formatted_body,
+        in_reply_to_deleted,
         in_reply_to_image_url,
         in_reply_to_image_encrypted_json,
         is_edited: forward.is_none() && msg_content.is_edited(),
@@ -2676,7 +2740,9 @@ mod pinned_action_tests {
 
 #[cfg(test)]
 mod profile_change_tests {
-    use super::{is_profile_action, membership_event_visible, profile_change_action};
+    use super::{
+        is_profile_action, membership_event_visible, profile_change_action, redacted_event_visible,
+    };
 
     #[test]
     fn maps_each_combination() {
@@ -2769,6 +2835,14 @@ mod profile_change_tests {
             false,
             me
         ));
+    }
+
+    #[test]
+    fn redacted_rows_hidden_unless_enabled() {
+        assert!(!redacted_event_visible("m.redacted", false));
+        assert!(redacted_event_visible("m.redacted", true));
+        assert!(redacted_event_visible("m.room.message", false));
+        assert!(redacted_event_visible("m.room.message", true));
     }
 
     #[test]

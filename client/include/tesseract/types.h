@@ -239,6 +239,8 @@ struct Event
     /// with an HTML body only). Empty otherwise. Lets the quote card render
     /// inline formatting instead of raw markdown syntax.
     std::string in_reply_to_formatted_body;
+    /// True when the replied-to message was redacted (deleted).
+    bool in_reply_to_deleted = false;
     /// mxc:// URI of the replied-to image thumbnail (full-res when no thumbnail).
     /// Non-empty only when the reply target is an m.image event in the local cache.
     std::string in_reply_to_image_url;
