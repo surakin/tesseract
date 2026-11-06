@@ -36,9 +36,9 @@ pub(super) fn write_zip(
     mut on_progress: impl FnMut(usize),
 ) -> io::Result<()> {
     if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        crate::private_fs::create_dir_all(parent)?;
     }
-    let file = File::create(out_path)?;
+    let file = crate::private_fs::create_file(out_path)?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 

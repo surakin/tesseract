@@ -43,11 +43,10 @@ pub(super) enum ImageOutcome {
 /// Downloads every descriptor into `media_dir` (created if absent), at most
 /// `max_concurrent` at a time. Returns one outcome per input descriptor, in
 /// the same order, so the caller can look up each event's outcome by index.
-/// `used_names` is the caller's collision-avoidance set: the per-window
-/// message-image pass hands in a fresh one each call (a stale name never
-/// matters across windows there), but the avatar pass hands in one that
-/// persists across the whole export — two different senders named "Alice"
-/// must not collide even though they're fetched in different windows.
+/// `used_names` is the caller's collision-avoidance set. It must persist across
+/// the whole export, for message images and avatars alike: they share one media
+/// directory, and two different senders' "photo" or "Alice" fetched in different
+/// windows must not collide.
 /// Gated `#[cfg(not(test))]` because it calls into `client::media`'s
 /// network-touching helpers, which are gated the same way — the pure
 /// `sanitize_component`/`unique_file_name` helpers below stay un-gated so
@@ -64,7 +63,7 @@ pub(super) async fn download_images(
     if descriptors.is_empty() {
         return Vec::new();
     }
-    if let Err(e) = tokio::fs::create_dir_all(media_dir).await {
+    if let Err(e) = crate::private_fs::create_dir_all(media_dir) {
         tracing::warn!("history export: failed to create media dir {media_dir:?}: {e}");
         return descriptors
             .into_iter()
@@ -119,7 +118,7 @@ pub(super) async fn download_images(
                             return (desc, ImageOutcome::Failed);
                         };
                         let final_name = format!("{stem}.{ext}");
-                        match tokio::fs::write(media_dir.join(&final_name), &bytes).await {
+                        match crate::private_fs::write(&media_dir.join(&final_name), &bytes).await {
                             Ok(()) => (
                                 desc,
                                 ImageOutcome::Saved {
@@ -161,6 +160,23 @@ fn unique_file_name(original_name: &str, used: &mut HashSet<String>) -> String {
         }
         n += 1;
     }
+}
+
+/// Lower-cased stems of the files already in `media_dir` (empty when it does
+/// not exist), to seed [`unique_file_name`]'s set when an export resumes.
+pub(super) fn saved_stems(media_dir: &Path) -> HashSet<String> {
+    let Ok(rd) = std::fs::read_dir(media_dir) else {
+        return HashSet::new();
+    };
+    rd.flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            Some(
+                name.rsplit_once('.')
+                    .map_or(name.clone(), |(s, _)| s.to_owned()),
+            )
+        })
+        .collect()
 }
 
 /// Inserts "-{n}" before the last '.'-delimited extension, or appends it
@@ -278,6 +294,19 @@ mod tests {
     #[test]
     fn sniff_image_extension_unknown_bytes_returns_none() {
         assert_eq!(sniff_image_extension(b"not an image"), None);
+    }
+
+    #[test]
+    fn saved_stems_seed_the_name_set_for_a_resumed_export() {
+        let dir = std::env::temp_dir().join(format!("tess-stems-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Photo.JPG"), b"x").unwrap();
+        let mut used = saved_stems(&dir);
+        assert!(used.contains("photo"));
+        assert_eq!(unique_file_name("photo", &mut used), "photo-1");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(saved_stems(&dir).is_empty());
     }
 
     #[test]

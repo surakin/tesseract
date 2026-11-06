@@ -4,7 +4,17 @@ use audiopus::{Channels, SampleRate};
 /// Decode an Ogg/Opus byte buffer and compute an MSC1767-compatible waveform.
 /// Returns up to 200 amplitude samples in the range 0..=1024. Returns an
 /// empty vec when the input is not valid Ogg/Opus or contains no audio frames.
+///
+/// The bytes come from a remote sender, so a panic in the Ogg parser or the
+/// Opus binding must not unwind across the FFI boundary: it yields no waveform.
 pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        waveform_from_ogg_inner(bytes)
+    }))
+    .unwrap_or_default()
+}
+
+fn waveform_from_ogg_inner(bytes: &[u8]) -> Vec<u16> {
     let cursor = std::io::Cursor::new(bytes);
     let mut reader = ogg::reading::PacketReader::new(cursor);
 

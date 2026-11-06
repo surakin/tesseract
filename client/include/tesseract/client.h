@@ -331,6 +331,11 @@ public:
                                            const std::string& declared_mime,
                                            const std::vector<std::uint8_t>& head);
 
+    /// Reduces a sender-supplied file name to a safe leaf name for a save
+    /// dialog or disk write (see check_media_file's safe_filename). Returns ""
+    /// when nothing usable remains, e.g. ".." or "a/".
+    static std::string sanitize_filename(const std::string& raw);
+
     /// MSC4153 "exclude insecure devices" mode, process-wide: share room
     /// keys only with cross-signed devices and hide messages from devices
     /// that aren't. Read when a client restores or logs in, so set it from

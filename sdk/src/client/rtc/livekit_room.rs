@@ -5,7 +5,7 @@
 //! Every intentionally-unverified API surface is marked `// TODO: verify API`.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex as StdMutex,
@@ -274,6 +274,17 @@ fn apply_pending_for(
     }
 }
 
+/// Whose SFU a connection is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SfuRole {
+    /// Our own homeserver's SFU, reached through our JWT service, which
+    /// verifies the user part of the identity.
+    Primary,
+    /// Another member's SFU: the JWT and every identity on it are chosen by
+    /// whoever runs it.
+    Remote,
+}
+
 /// Which SFU each live call member publishes on (`(user_id, device_id)` ->
 /// JWT service URL), kept current by the session's member reconciler. It also
 /// carries the call's "over" flag, which every connection's sink checks.
@@ -309,8 +320,11 @@ impl MemberTransports {
     /// (hashed identity, or the publisher's own identity) that publishes
     /// nothing; showing it would add a phantom tile or clobber the real one.
     /// So an identity must look like `@user:server:DEVICE`, and a known member
-    /// must actually publish on this SFU.
-    fn allows(&self, sfu_url: &str, identity: &str) -> bool {
+    /// must actually publish on this SFU. On a remote SFU the identity must
+    /// also be a live member that publishes there, because otherwise its
+    /// operator could invent or spoof participants. On the primary an unknown
+    /// member is let through, since its membership may not have synced yet.
+    fn allows(&self, sfu_url: &str, identity: &str, role: SfuRole) -> bool {
         let (user, device) = self
             .1
             .resolve(identity)
@@ -320,7 +334,7 @@ impl MemberTransports {
         }
         match self.0.lock().get(&(user, device)) {
             Some(published_on) => published_on == sfu_url,
-            None => true,
+            None => role == SfuRole::Primary,
         }
     }
 }
@@ -331,8 +345,15 @@ struct FilteredSink {
     inner: Arc<dyn RtcEventSink>,
     sfu_url: String,
     members: MemberTransports,
-    /// Our own identity on this connection is always let through.
-    local_identity: String,
+    role: SfuRole,
+    /// Our own identity on this connection is always let through. Only set on
+    /// the primary: on a remote SFU our "local" identity is assigned by its
+    /// operator.
+    local_identity: Option<String>,
+    /// Identities forwarded as joined/updated and not yet left. The lock is
+    /// held across the inner calls (they only post to the UI) so a LiveKit
+    /// disconnect and a re-check cannot interleave and leave a ghost tile.
+    shown: parking_lot::Mutex<HashSet<String>>,
 }
 
 impl FilteredSink {
@@ -340,22 +361,64 @@ impl FilteredSink {
         inner: Option<Arc<dyn RtcEventSink>>,
         sfu_url: &str,
         members: &MemberTransports,
-        local_identity: String,
-    ) -> Option<Arc<dyn RtcEventSink>> {
+        role: SfuRole,
+        local_identity: Option<String>,
+    ) -> Option<Arc<FilteredSink>> {
+        debug_assert!(role == SfuRole::Primary || local_identity.is_none());
         inner.map(|inner| {
             Arc::new(Self {
                 inner,
                 sfu_url: sfu_url.to_owned(),
                 members: members.clone(),
+                role,
                 local_identity,
-            }) as Arc<dyn RtcEventSink>
+                shown: parking_lot::Mutex::new(HashSet::new()),
+            })
         })
     }
 
     fn ok(&self, participant_id: &str) -> bool {
         !self.members.is_ended()
-            && (participant_id == self.local_identity
-                || self.members.allows(&self.sfu_url, participant_id))
+            && (self.local_identity.as_deref() == Some(participant_id)
+                || self
+                    .members
+                    .allows(&self.sfu_url, participant_id, self.role))
+    }
+
+    /// Re-judge one participant LiveKit already reported: announce it if it is
+    /// allowed now and not shown yet, retract it if it is shown but no longer
+    /// allowed (its membership ended or moved to another SFU).
+    fn recheck(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        info: impl FnOnce() -> RtcParticipantInfo,
+    ) {
+        if self.members.is_ended() {
+            return;
+        }
+        let mut shown = self.shown.lock();
+        let allowed = self.ok(participant_id);
+        let is_shown = shown.contains(participant_id);
+        if allowed && !is_shown {
+            shown.insert(participant_id.to_owned());
+            self.inner.on_participant_updated(session_id, info());
+        } else if !allowed && is_shown {
+            shown.remove(participant_id);
+            self.inner.on_participant_left(session_id, participant_id);
+        }
+    }
+
+    /// Tell the UI every shown participant is gone (we are leaving this SFU).
+    fn retract_all(&self, session_id: u64) {
+        let mut shown = self.shown.lock();
+        let ids: Vec<String> = shown.drain().collect();
+        if self.members.is_ended() {
+            return;
+        }
+        for id in ids {
+            self.inner.on_participant_left(session_id, &id);
+        }
     }
 }
 
@@ -379,17 +442,22 @@ impl RtcEventSink for FilteredSink {
         );
     }
     fn on_participant_joined(&self, session_id: u64, info: RtcParticipantInfo) {
+        let mut shown = self.shown.lock();
         if self.ok(&info.participant_id) {
+            shown.insert(info.participant_id.clone());
             self.inner.on_participant_joined(session_id, info);
         }
     }
     fn on_participant_left(&self, session_id: u64, participant_id: &str) {
-        if self.ok(participant_id) {
+        let mut shown = self.shown.lock();
+        if shown.remove(participant_id) && !self.members.is_ended() {
             self.inner.on_participant_left(session_id, participant_id);
         }
     }
     fn on_participant_updated(&self, session_id: u64, info: RtcParticipantInfo) {
+        let mut shown = self.shown.lock();
         if self.ok(&info.participant_id) {
+            shown.insert(info.participant_id.clone());
             self.inner.on_participant_updated(session_id, info);
         }
     }
@@ -434,6 +502,25 @@ impl RtcEventSink for FilteredSink {
             self.inner.on_audio_frame(
                 session_id,
                 participant_id,
+                samples,
+                sample_rate,
+                num_channels,
+            );
+        }
+    }
+    fn on_mixed_audio_frame(
+        &self,
+        session_id: u64,
+        out_identity: &str,
+        samples: &[i16],
+        sample_rate: u32,
+        num_channels: u32,
+    ) {
+        // Each track was already checked on its way into the mixer.
+        if !self.members.is_ended() {
+            self.inner.on_mixed_audio_frame(
+                session_id,
+                out_identity,
                 samples,
                 sample_rate,
                 num_channels,
@@ -625,7 +712,14 @@ impl LiveKitRoom {
             session_id,
             Arc::clone(&video_frame_in_flight),
             Arc::clone(&screen_frame_in_flight),
-            FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity.clone()),
+            FilteredSink::wrap(
+                sink.clone(),
+                sfu_url,
+                &members,
+                SfuRole::Primary,
+                Some(local_identity.clone()),
+            )
+            .map(|f| f as Arc<dyn RtcEventSink>),
             shared.clone(),
             Some(on_ended),
         );
@@ -925,7 +1019,7 @@ impl LiveKitRoom {
 pub struct RemoteSfuRoom {
     room: Arc<Room>,
     session_id: u64,
-    sink: Option<Arc<dyn RtcEventSink>>,
+    filter: Option<Arc<FilteredSink>>,
     shared: SharedKeys,
     event_task: AbortHandle,
 }
@@ -950,23 +1044,24 @@ impl RemoteSfuRoom {
         }
         let (room, events) = Room::connect(server_url, jwt, room_options).await?;
         let room = Arc::new(room);
-        let local_identity = room.local_participant().identity().as_str().to_owned();
+        // One filter for the event task, `recheck_participants` and
+        // `disconnect`, so they share the set of shown identities.
+        let filter = FilteredSink::wrap(sink, sfu_url, &members, SfuRole::Remote, None);
         let event_task = spawn_event_task(
             Arc::clone(&room),
             events,
             session_id,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
-            FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity),
+            filter.clone().map(|f| f as Arc<dyn RtcEventSink>),
             shared.clone(),
             None,
         );
         info!("rtc: connected to remote SFU {server_url} (session {session_id})");
-        let sink = FilteredSink::wrap(sink, sfu_url, &members, String::new());
         Ok(Self {
             room,
             session_id,
-            sink,
+            filter,
             shared,
             event_task,
         })
@@ -987,13 +1082,24 @@ impl RemoteSfuRoom {
         self.shared.apply_all_to(&self.room);
     }
 
+    /// Re-judge this SFU's participants against the current member map: show
+    /// ones whose membership has synced since they joined, and retract ones
+    /// that are no longer members publishing here.
+    pub fn recheck_participants(&self) {
+        if let Some(ref f) = self.filter {
+            for (identity, rp) in self.room.remote_participants() {
+                f.recheck(self.session_id, identity.as_str(), || {
+                    participant_info(&rp, &self.shared.identities)
+                });
+            }
+        }
+    }
+
     /// Leave this SFU. Its participants vanish from the call, and LiveKit will
     /// not report that once we are disconnected, so tell the UI ourselves.
     pub async fn disconnect(&self) {
-        if let Some(ref s) = self.sink {
-            for (identity, _) in self.room.remote_participants() {
-                s.on_participant_left(self.session_id, identity.as_str());
-            }
+        if let Some(ref f) = self.filter {
+            f.retract_all(self.session_id);
         }
         let _ = self.room.close().await;
         self.event_task.abort();
@@ -1278,7 +1384,9 @@ fn spawn_event_task(
                                 session_id,
                                 participant_info(&rp, &shared.identities),
                             );
-                        } else if identity == room.local_participant().identity() {
+                        } else if on_primary_ended.is_some()
+                            && identity == room.local_participant().identity()
+                        {
                             s.on_participant_updated(
                                 session_id,
                                 local_participant_info(&room.local_participant()),
@@ -1294,7 +1402,9 @@ fn spawn_event_task(
                                 session_id,
                                 participant_info(&rp, &shared.identities),
                             );
-                        } else if identity == room.local_participant().identity() {
+                        } else if on_primary_ended.is_some()
+                            && identity == room.local_participant().identity()
+                        {
                             s.on_participant_updated(
                                 session_id,
                                 local_participant_info(&room.local_participant()),
@@ -1496,29 +1606,49 @@ fn i420_planes_to_rgba(
     rgba
 }
 
-/// Software I420 â†’ RGBA conversion (BT.601 full-range).
-/// Returns None if the received frame buffer isn't I420 type.
+/// Largest remote video frame shown, in pixels (4K UHD). The size comes from a
+/// remote peer (or from whoever runs its SFU), and the RGBA copy is four bytes
+/// a pixel, so a frame claiming more is dropped instead of allocated.
+const MAX_REMOTE_FRAME_PIXELS: usize = 3840 * 2160;
+
+/// Software I420 -> RGBA conversion (BT.601 full-range) of a received frame.
+/// Returns None if the frame buffer isn't I420, or is too large or too short
+/// for its claimed size.
 fn i420_to_rgba(frame: &BoxVideoFrame) -> Option<Vec<u8>> {
     let buf = frame.buffer.as_ref();
     let w = buf.width() as usize;
     let h = buf.height() as usize;
     let i420 = buf.as_i420()?;
     let (y_data, u_data, v_data) = i420.data();
+    remote_i420_to_rgba(w, h, y_data, u_data, v_data)
+}
 
-    if y_data.len() < w * h {
+/// The checked part of [`i420_to_rgba`], on bare planes (tightly packed).
+fn remote_i420_to_rgba(
+    w: usize,
+    h: usize,
+    y_data: &[u8],
+    u_data: &[u8],
+    v_data: &[u8],
+) -> Option<Vec<u8>> {
+    if w == 0 || h == 0 || w > MAX_REMOTE_FRAME_PIXELS || h > MAX_REMOTE_FRAME_PIXELS {
+        return None;
+    }
+    let px = w.checked_mul(h).filter(|&p| p <= MAX_REMOTE_FRAME_PIXELS)?;
+    // Chroma is subsampled 2x2; an odd side rounds up.
+    let cw = w.div_ceil(2);
+    let chroma = cw * h.div_ceil(2);
+    if y_data.len() < px || u_data.len() < chroma || v_data.len() < chroma {
         return None;
     }
 
-    let mut rgba = vec![0u8; w * h * 4];
+    let mut rgba = vec![0u8; px * 4];
     for row in 0..h {
         for col in 0..w {
-            let px = yuv_to_rgba_pixel(
-                y_data[row * w + col],
-                u_data[(row / 2) * (w / 2) + (col / 2)],
-                v_data[(row / 2) * (w / 2) + (col / 2)],
-            );
+            let c = (row / 2) * cw + (col / 2);
+            let rgb = yuv_to_rgba_pixel(y_data[row * w + col], u_data[c], v_data[c]);
             let idx = (row * w + col) * 4;
-            rgba[idx..idx + 4].copy_from_slice(&px);
+            rgba[idx..idx + 4].copy_from_slice(&rgb);
         }
     }
     Some(rgba)
@@ -1544,7 +1674,8 @@ mod participant_filter_tests {
         let m = members(&[]);
         assert!(!m.allows(
             "https://sfu.a",
-            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"
+            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs",
+            SfuRole::Primary
         ));
     }
 
@@ -1557,9 +1688,9 @@ mod participant_filter_tests {
             id.clone(),
             ("@b:matrix.org".to_owned(), "DEV".to_owned()),
         )]));
-        assert!(m.allows("https://sfu.matrix.org", &id));
+        assert!(m.allows("https://sfu.matrix.org", &id, SfuRole::Primary));
         assert!(
-            !m.allows("https://sfu.gnomos.org", &id),
+            !m.allows("https://sfu.gnomos.org", &id, SfuRole::Primary),
             "subscribe-only copy elsewhere"
         );
     }
@@ -1573,7 +1704,8 @@ mod participant_filter_tests {
         )]));
         assert!(!m.allows(
             "https://sfu.a",
-            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"
+            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs",
+            SfuRole::Primary
         ));
     }
 
@@ -1594,14 +1726,59 @@ mod participant_filter_tests {
     #[test]
     fn member_only_counts_on_the_sfu_it_publishes_on() {
         let m = members(&[("@b:matrix.org", "DEV", "https://sfu.matrix.org")]);
-        assert!(m.allows("https://sfu.matrix.org", "@b:matrix.org:DEV"));
+        assert!(m.allows(
+            "https://sfu.matrix.org",
+            "@b:matrix.org:DEV",
+            SfuRole::Primary
+        ));
         // Element's subscribe-only connection to our SFU carries the same identity.
-        assert!(!m.allows("https://sfu.gnomos.org", "@b:matrix.org:DEV"));
+        assert!(!m.allows(
+            "https://sfu.gnomos.org",
+            "@b:matrix.org:DEV",
+            SfuRole::Primary
+        ));
     }
 
     #[test]
-    fn unknown_member_with_matrix_identity_is_allowed() {
-        assert!(members(&[]).allows("https://sfu.a", "@c:x.org:DEV"));
+    fn unknown_member_is_allowed_on_primary_only() {
+        let m = members(&[]);
+        assert!(m.allows("https://sfu.a", "@c:x.org:DEV", SfuRole::Primary));
+        assert!(!m.allows("https://sfu.a", "@c:x.org:DEV", SfuRole::Remote));
+    }
+
+    #[test]
+    fn remote_sfu_shows_only_members_published_there() {
+        let m = members(&[
+            ("@b:matrix.org", "DEV", "https://lk.mallory"),
+            ("@c:x", "D", "https://sfu.c"),
+            ("@d:x", "D", ""),
+        ]);
+        let sfu = "https://lk.mallory";
+        assert!(m.allows(sfu, "@b:matrix.org:DEV", SfuRole::Remote));
+        // Another device of a member, a non-member, a member publishing
+        // elsewhere and one with an unusable transport are all refused.
+        assert!(!m.allows(sfu, "@b:matrix.org:OTHERDEV", SfuRole::Remote));
+        assert!(!m.allows(sfu, "@carol:x:D", SfuRole::Remote));
+        assert!(!m.allows(sfu, "@c:x:D", SfuRole::Remote));
+        assert!(!m.allows(sfu, "@d:x:D", SfuRole::Remote));
+    }
+
+    #[test]
+    fn hashed_identity_on_remote_needs_a_member_there() {
+        let id =
+            crate::client::rtc::identity::livekit_participant_identity("@b:matrix.org", "mid1");
+        let m = members(&[("@b:matrix.org", "DEV", "https://sfu.b")]);
+        m.identities().replace(HashMap::from([(
+            id.clone(),
+            ("@b:matrix.org".to_owned(), "DEV".to_owned()),
+        )]));
+        assert!(m.allows("https://sfu.b", &id, SfuRole::Remote));
+        assert!(!m.allows("https://sfu.other", &id, SfuRole::Remote));
+        assert!(!m.allows(
+            "https://sfu.b",
+            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs",
+            SfuRole::Remote
+        ));
     }
 
     #[test]
@@ -1938,11 +2115,12 @@ mod helper_tests {
             ("@a:x".to_owned(), "D".to_owned()),
             "sfu1".to_owned(),
         )]));
-        assert!(m.allows("sfu1", "@a:x:D"));
-        assert!(!m.allows("sfu2", "@a:x:D"));
+        assert!(m.allows("sfu1", "@a:x:D", SfuRole::Primary));
+        assert!(!m.allows("sfu2", "@a:x:D", SfuRole::Primary));
         m.replace(HashMap::new());
-        // Unknown now, so allowed anywhere.
-        assert!(m.allows("sfu2", "@a:x:D"));
+        // Unknown now, so allowed on the primary only.
+        assert!(m.allows("sfu2", "@a:x:D", SfuRole::Primary));
+        assert!(!m.allows("sfu2", "@a:x:D", SfuRole::Remote));
     }
 
     /// Records which participant ids reached the inner sink, per event kind.
@@ -1980,6 +2158,9 @@ mod helper_tests {
         fn on_audio_frame(&self, _: u64, id: &str, _: &[i16], _: u32, _: u32) {
             self.0.lock().unwrap().push(format!("audio:{id}"));
         }
+        fn on_mixed_audio_frame(&self, _: u64, id: &str, _: &[i16], _: u32, _: u32) {
+            self.0.lock().unwrap().push(format!("mixed:{id}"));
+        }
     }
 
     fn info(id: &str) -> RtcParticipantInfo {
@@ -1992,7 +2173,9 @@ mod helper_tests {
     #[test]
     fn filtered_sink_wrap_of_none_is_none() {
         let m = MemberTransports::default();
-        assert!(FilteredSink::wrap(None, "sfu", &m, "@me:x:D".into()).is_none());
+        assert!(
+            FilteredSink::wrap(None, "sfu", &m, SfuRole::Primary, Some("@me:x:D".into())).is_none()
+        );
     }
 
     #[test]
@@ -2010,7 +2193,8 @@ mod helper_tests {
             Some(rec.clone() as Arc<dyn RtcEventSink>),
             "sfu-here",
             &members,
-            "@me:x:D".into(),
+            SfuRole::Primary,
+            Some("@me:x:D".into()),
         )
         .unwrap();
 
@@ -2043,7 +2227,8 @@ mod helper_tests {
             Some(rec.clone() as Arc<dyn RtcEventSink>),
             "this-sfu",
             &members,
-            "@me:x:D".into(),
+            SfuRole::Primary,
+            Some("@me:x:D".into()),
         )
         .unwrap();
         sink.on_participant_joined(2, info("@me:x:D"));
@@ -2063,7 +2248,8 @@ mod helper_tests {
             Some(rec.clone() as Arc<dyn RtcEventSink>),
             "sfu",
             &members,
-            "@me:x:D".into(),
+            SfuRole::Primary,
+            Some("@me:x:D".into()),
         )
         .unwrap();
         sink.on_audio_frame(1, "@me:x:D", &[0], 48000, 1);
@@ -2075,6 +2261,158 @@ mod helper_tests {
         assert!(!sink.accepts_participant("@me:x:D"));
         sink.on_session_ended(1, "bye");
         assert_eq!(*rec.0.lock().unwrap(), vec!["audio:@me:x:D", "ended:bye"]);
+    }
+
+    fn remote_sink(
+        rec: &Arc<Recorder>,
+        members: &MemberTransports,
+        sfu: &str,
+    ) -> Arc<FilteredSink> {
+        FilteredSink::wrap(
+            Some(rec.clone() as Arc<dyn RtcEventSink>),
+            sfu,
+            members,
+            SfuRole::Remote,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn remote_sink_has_no_local_identity_exemption() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        let sink = remote_sink(&rec, &members, "sfu");
+        for id in ["@me:x:D", ""] {
+            sink.on_participant_joined(1, info(id));
+            sink.on_video_frame(1, id, 1, 1, vec![]);
+            sink.on_audio_frame(1, id, &[0], 48000, 1);
+        }
+        assert!(rec.0.lock().unwrap().is_empty());
+        // The mixer's output is labelled and bypasses the per-participant check.
+        sink.on_mixed_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        assert_eq!(*rec.0.lock().unwrap(), vec!["mixed:@me:x:D"]);
+    }
+
+    #[test]
+    fn mixed_audio_stops_once_the_call_is_over() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        let remote = remote_sink(&rec, &members, "sfu");
+        let primary = FilteredSink::wrap(
+            Some(rec.clone() as Arc<dyn RtcEventSink>),
+            "sfu",
+            &members,
+            SfuRole::Primary,
+            Some("@me:x:D".into()),
+        )
+        .unwrap();
+        members.end();
+        remote.on_mixed_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        primary.on_mixed_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        assert!(rec.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn remote_participant_appears_once_its_membership_syncs() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        let sink = remote_sink(&rec, &members, "sfu-here");
+        sink.on_participant_joined(1, info("@b:x:D"));
+        assert!(rec.0.lock().unwrap().is_empty());
+
+        members.replace(HashMap::from([(
+            ("@b:x".to_owned(), "D".to_owned()),
+            "sfu-here".to_owned(),
+        )]));
+        sink.recheck(1, "@b:x:D", || info("@b:x:D"));
+        assert_eq!(*rec.0.lock().unwrap(), vec!["updated:@b:x:D"]);
+        sink.recheck(1, "@b:x:D", || info("@b:x:D"));
+        assert_eq!(*rec.0.lock().unwrap(), vec!["updated:@b:x:D"]);
+    }
+
+    #[test]
+    fn remote_participant_is_retracted_when_its_membership_goes() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        members.replace(HashMap::from([(
+            ("@b:x".to_owned(), "D".to_owned()),
+            "sfu-here".to_owned(),
+        )]));
+        let sink = remote_sink(&rec, &members, "sfu-here");
+        sink.on_participant_joined(1, info("@b:x:D"));
+
+        members.replace(HashMap::new());
+        sink.recheck(1, "@b:x:D", || info("@b:x:D"));
+        assert_eq!(*rec.0.lock().unwrap(), vec!["joined:@b:x:D", "left:@b:x:D"]);
+        // LiveKit's own disconnect report must not produce a second left.
+        sink.on_participant_left(1, "@b:x:D");
+        assert_eq!(rec.0.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn left_is_forwarded_only_for_shown_participants() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        members.replace(HashMap::from([
+            (("@b:x".to_owned(), "D".to_owned()), "sfu-here".to_owned()),
+            (("@c:x".to_owned(), "D".to_owned()), "sfu-here".to_owned()),
+        ]));
+        let sink = remote_sink(&rec, &members, "sfu-here");
+        sink.on_participant_left(1, "@phantom:x:D");
+        assert!(rec.0.lock().unwrap().is_empty());
+
+        sink.on_participant_joined(1, info("@b:x:D"));
+        sink.on_participant_joined(1, info("@c:x:D"));
+        sink.retract_all(1);
+        let mut got = rec.0.lock().unwrap().clone();
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                "joined:@b:x:D",
+                "joined:@c:x:D",
+                "left:@b:x:D",
+                "left:@c:x:D"
+            ]
+        );
+        assert!(sink.shown.lock().is_empty());
+        sink.retract_all(1);
+        assert_eq!(rec.0.lock().unwrap().len(), 4);
+    }
+}
+
+#[cfg(test)]
+mod remote_i420_tests {
+    use super::*;
+
+    #[test]
+    fn a_small_frame_converts() {
+        let out = remote_i420_to_rgba(4, 2, &[128; 8], &[128; 2], &[128; 2]).unwrap();
+        assert_eq!(out.len(), 4 * 2 * 4);
+    }
+
+    #[test]
+    fn an_odd_size_does_not_index_past_the_chroma_planes() {
+        // 3x3: chroma is 2x2.
+        let out = remote_i420_to_rgba(3, 3, &[0; 9], &[128; 4], &[128; 4]).unwrap();
+        assert_eq!(out.len(), 3 * 3 * 4);
+        // One chroma sample short is refused, not a panic.
+        assert!(remote_i420_to_rgba(3, 3, &[0; 9], &[128; 3], &[128; 4]).is_none());
+    }
+
+    #[test]
+    fn an_oversized_or_degenerate_frame_is_dropped_before_allocating() {
+        assert!(remote_i420_to_rgba(0, 10, &[], &[], &[]).is_none());
+        assert!(remote_i420_to_rgba(10, 0, &[], &[], &[]).is_none());
+        assert!(remote_i420_to_rgba(16384, 16384, &[], &[], &[]).is_none());
+        assert!(remote_i420_to_rgba(usize::MAX, 2, &[], &[], &[]).is_none());
+        assert!(remote_i420_to_rgba(3840, 2161, &[], &[], &[]).is_none());
+    }
+
+    #[test]
+    fn a_short_luma_plane_is_refused() {
+        assert!(remote_i420_to_rgba(4, 4, &[0; 15], &[0; 4], &[0; 4]).is_none());
     }
 }
 

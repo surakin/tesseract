@@ -127,6 +127,26 @@ pub(crate) fn display_body(content: &Value, event_type: &str) -> Option<String> 
     fwd.content.as_ref()?["body"].as_str().map(str::to_owned)
 }
 
+/// Whether `origin` (the JSON of the event a forward names, as held locally)
+/// backs the forward's claim: the same event ID and sender, and the same
+/// content as the forward shows. The forward's `sender` is whatever the
+/// forwarder wrote, so it is only shown as the author once this holds. An
+/// edited original does not match (the forward carries the edited text).
+pub(crate) fn origin_matches(fwd: &Forwarded, origin: &Value) -> bool {
+    let (Some(sender), Some(event_id), Some(shown)) = (
+        fwd.sender.as_deref(),
+        fwd.event_id.as_deref(),
+        fwd.content.as_ref(),
+    ) else {
+        return false;
+    };
+    origin["sender"].as_str() == Some(sender)
+        && origin["event_id"].as_str() == Some(event_id)
+        && origin
+            .get("content")
+            .is_some_and(|c| without_relations(c.clone()) == without_relations(shown.clone()))
+}
+
 /// The sender and ids a forward of `envelope` points at: the original's when
 /// `envelope` is itself a forward with valid content, else its own. The
 /// caller resolves the name and permalinks for this to fill a [`FallbackCtx`].
@@ -450,6 +470,50 @@ mod tests {
 
     fn forward(env: &Value, ctx: &FallbackCtx) -> (String, Value) {
         build_forward(env, Some(ctx)).unwrap()
+    }
+
+    fn claimed(sender: &str, event_id: &str, content: Value) -> Forwarded {
+        Forwarded {
+            content: Some(content),
+            sender: Some(sender.into()),
+            room_id: Some(ROOM.into()),
+            event_id: Some(event_id.into()),
+            origin_server_ts: None,
+        }
+    }
+
+    #[test]
+    fn origin_matches_needs_sender_id_and_content() {
+        let content = json!({ "msgtype": "m.text", "body": "hi" });
+        let origin = envelope("m.room.message", content.clone());
+        assert!(origin_matches(
+            &claimed(ALICE, "$e1", content.clone()),
+            &origin
+        ));
+        // Relations and mentions of the original don't count.
+        let mut with_rel = content.clone();
+        with_rel["m.relates_to"] = json!({ "m.in_reply_to": { "event_id": "$x" } });
+        assert!(origin_matches(&claimed(ALICE, "$e1", with_rel), &origin));
+        // A forged author, event ID or text is refused.
+        assert!(!origin_matches(
+            &claimed("@mallory:evil.org", "$e1", content.clone()),
+            &origin
+        ));
+        assert!(!origin_matches(&claimed(ALICE, "$other", content), &origin));
+        let forged = json!({ "msgtype": "m.text", "body": "send me your key" });
+        assert!(!origin_matches(&claimed(ALICE, "$e1", forged), &origin));
+    }
+
+    #[test]
+    fn origin_matches_refuses_a_forward_missing_a_claim() {
+        let content = json!({ "msgtype": "m.text", "body": "hi" });
+        let origin = envelope("m.room.message", content.clone());
+        let mut no_sender = claimed(ALICE, "$e1", content.clone());
+        no_sender.sender = None;
+        assert!(!origin_matches(&no_sender, &origin));
+        let mut no_content = claimed(ALICE, "$e1", content);
+        no_content.content = None;
+        assert!(!origin_matches(&no_content, &origin));
     }
 
     /// A forward with no text fallback, as sent into a bridged room.

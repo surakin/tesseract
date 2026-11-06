@@ -178,6 +178,54 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   and jump to it). Room settings: show the Bridge tab only when a bridge is
   detected, and fold the one-dropdown Media tab into another tab.
 
+- **Security review backlog (2026-11-06, at f2e80ca).** Findings deferred for
+  later review; each was checked against the code by a second reviewer.
+  - *Medium:* the timeline shows no per-message encryption/authenticity state
+    (plaintext in an encrypted room, unsigned device, unauthenticated session
+    look like verified messages); `timeline_convert.rs` never reads the SDK's
+    shield/`encryption_info`.
+  - *Medium (CI):* `publish-release.yml` GPG-signs whatever `.flatpak` is on
+    the (mutable) GitHub release, so any `contents: write` token can get files
+    signed; the signing key is also in the same job as
+    `peaceiris/actions-gh-pages`.
+  - *DoS/resources:* `MAX_MEDIA_BYTES` is checked only after the whole body
+    is buffered.
+  - *E2EE media integrity:* the video prefix fetch and encrypted streaming
+    hand AES-CTR plaintext to decoders before the SHA-256 check
+    (`media.rs`).
+  - *Local files:* decrypted media plus its attachment key stay in the shared
+    cache after logout; one keyring failure silently moves tokens and the
+    store key to a plaintext file and deletes the keyring copy.
+  - *Auth:* the OAuth loopback listener accepts the first GET to any path, so
+    a local process or web page can abort a sign-in.
+  - *Calls/crypto:* call frame keys from an unsigned device of a verified
+    user are accepted in default mode; a fresh OpenID
+    token is sent to any SFU URL a member advertises.
+  - *Codecs:* remote image bytes reach every installed OS codec (no format
+    allowlist) on Qt/GTK.
+  - *Privacy:* `send_file` sends a photo that fails to parse unstripped
+    (deliberate for arbitrary files, see `StripScope::File`).
+  - *Local IPC:* the UnifiedPush D-Bus connector accepts
+    `NewEndpoint`/`Message` from any session-bus peer.
+  - *CI/packaging:* CI pipes `llvm.sh` into `sudo bash`; signing
+    credentials load in the same job as the full dependency build;
+    `build-platform.yml` can sign and publish the production Flatpak repo from
+    any branch (secrets not environment-gated); the Flatpak GPG passphrase is
+    written to `$GITHUB_ENV`; some workflows lack a `permissions` block and
+    keep checkout credentials; the Flatpak manifest grants `--device=all`.
+  - *Follow-ups from the fixes:* honour per-room preview controls
+    (`org.matrix.room.preview_urls`), and decide whether to send an empty
+    `url_previews` array in encrypted rooms; an `Unknown` encryption state
+    reads as unencrypted. Save-As could start in Downloads, and could defang
+    Executable extensions. Names still not disambiguated: typing, receipts,
+    reactions, thread list, search hits, pinned banner, room-list sender,
+    gallery, voice-message artist, membership targets; the sender colour is
+    still keyed by MSC4144 `profile_id`; the "(@mxid)" suffix is ellipsised
+    first. GTK's `size-prepared` handler scales instead of refusing
+    over-budget TIFF/BMP/ICO; `set_clipboard_image` and `encode_for_send`
+    decode with no budget. A remote-SFU member who joins before its
+    membership syncs appears only on the next reconcile pass.
+
 ## Tier 4 — Open questions, decide-don't-build-yet
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the

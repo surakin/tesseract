@@ -4,6 +4,7 @@
 #include <string>
 
 #include "views/IrcFormat.h"
+#include "views/MessageListView.h"
 
 namespace irc = tesseract::views::msgirc;
 using irc::PrefixKind;
@@ -81,4 +82,21 @@ TEST_CASE("msgirc::timestamp_part and nick_part compose into line_prefix", "[irc
     CHECK(ts == "[09:05] ");
     CHECK(nick == "<bob> ");
     CHECK(ts + nick == irc::line_prefix("09:05", "bob", PrefixKind::Message));
+}
+
+TEST_CASE("irc_emote_actor names the forwarder of a forwarded emote", "[irc]")
+{
+    using tesseract::views::MessageRowData;
+    MessageRowData m;
+    m.sender = "@mallory:evil.org";
+    m.sender_name = "Mallory";
+    CHECK(tesseract::views::irc_emote_actor(m) == "Mallory");
+
+    m.forwarded = true;
+    // Unverified forward: no author is named.
+    CHECK(tesseract::views::irc_emote_actor(m) == "Mallory forwarded:");
+
+    m.forwarded_sender = "@alice:example.org";
+    m.forwarded_sender_name = "Alice";
+    CHECK(tesseract::views::irc_emote_actor(m) == "Mallory forwarded: Alice");
 }

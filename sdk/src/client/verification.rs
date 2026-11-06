@@ -116,6 +116,8 @@ pub(super) async fn watch_verification_request(
 
     let user_id = req.other_user_id().as_str().to_owned();
     let we_started = req.we_started();
+    // Dropped when this watcher ends, unless a SAS watcher takes it over.
+    let mut entry = Some(FlowEntry::new(flow_users, flow_id.clone()));
 
     let mut changes = req.changes();
 
@@ -139,7 +141,8 @@ pub(super) async fn watch_verification_request(
                     let h2 = Arc::clone(&handler);
                     let flow_id2 = flow_id.clone();
                     let sas_cache2 = Arc::clone(&sas_cache);
-                    let handle = tokio::spawn(watch_sas(sas, flow_id2, h2, sas_cache2));
+                    let handle =
+                        tokio::spawn(watch_sas(sas, flow_id2, h2, sas_cache2, entry.take()));
                     track_task(&tasks, handle.abort_handle());
                 }
                 break;
@@ -149,7 +152,6 @@ pub(super) async fn watch_verification_request(
                     let guard = handler.lock();
                     guard.on_verification_done(&flow_id);
                 }
-                lock_or_recover(&flow_users).remove(&flow_id);
                 break;
             }
             VerificationRequestState::Cancelled(info) => {
@@ -157,7 +159,6 @@ pub(super) async fn watch_verification_request(
                     let guard = handler.lock();
                     guard.on_verification_cancelled(&flow_id, info.cancel_code().as_str());
                 }
-                lock_or_recover(&flow_users).remove(&flow_id);
                 break;
             }
             _ => {}
@@ -174,6 +175,8 @@ pub(super) async fn watch_sas(
     flow_id: String,
     handler: Arc<Mutex<SendHandler>>,
     sas_cache: SasCache,
+    // Held until this watcher ends, so the flow leaves the pending table then.
+    _entry: Option<FlowEntry>,
 ) {
     use futures_util::StreamExt;
     use matrix_sdk::encryption::verification::SasState;
@@ -383,6 +386,7 @@ impl ClientFfi {
             return err("not syncing");
         };
         let sas_cache = Arc::clone(&self.sas_cache);
+        let flow_users = Arc::clone(&self.verification_flow_users);
         let tasks = Arc::clone(&self.verification_tasks);
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
@@ -412,7 +416,8 @@ impl ClientFfi {
                     }
                 }
             };
-            let handle = tokio::spawn(watch_sas(sas, flow_id_str, handler, sas_cache));
+            let entry = FlowEntry::new(flow_users, flow_id_str.clone());
+            let handle = tokio::spawn(watch_sas(sas, flow_id_str, handler, sas_cache, Some(entry)));
             track_task(&tasks, handle.abort_handle());
             Ok::<(), anyhow::Error>(())
         }) {
@@ -528,9 +533,159 @@ impl ClientFfi {
     }
 }
 
+/// Verification flows awaiting an answer at once, in all and from one user;
+/// further incoming requests are ignored.
+pub(super) const MAX_PENDING_VERIFICATION_FLOWS: usize = 128;
+pub(super) const MAX_PENDING_FLOWS_PER_USER: usize = 3;
+
+/// Why an incoming verification request was not added to the flow table.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum FlowRefusal {
+    /// A flow with this id is already pending (from this user or another):
+    /// letting a second request take over its entry would point the first
+    /// flow's accept/start calls at the wrong user.
+    DuplicateFlowId,
+    TooManyFromUser,
+    TooManyInTotal,
+}
+
+/// Keeps a flow's `flow_id -> user` entry in the pending table for as long as
+/// the flow is being watched, and removes it when dropped: when the flow ends
+/// (done, cancelled, or the stream closes) or its watcher is aborted at
+/// sign-out. Handed on to the SAS watcher when the request becomes a SAS flow.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) struct FlowEntry {
+    users: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>,
+    flow_id: String,
+}
+
+#[cfg_attr(test, allow(dead_code))]
+impl FlowEntry {
+    pub(super) fn new(
+        users: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>,
+        flow_id: String,
+    ) -> Self {
+        Self { users, flow_id }
+    }
+}
+
+impl Drop for FlowEntry {
+    fn drop(&mut self) {
+        self.users.lock().remove(&self.flow_id);
+    }
+}
+
+/// Records an incoming request's `flow_id -> sender` in the table, unless the
+/// id is already taken or a limit is reached. Flows are removed when they end;
+/// the per-sender limit keeps a peer from filling the table (and the banners)
+/// without locking others out, the overall one is generous.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) fn register_incoming_flow(
+    users: &mut std::collections::HashMap<String, String>,
+    flow_id: &str,
+    user_id: &str,
+) -> Result<(), FlowRefusal> {
+    if users.contains_key(flow_id) {
+        return Err(FlowRefusal::DuplicateFlowId);
+    }
+    if users.values().filter(|u| u.as_str() == user_id).count() >= MAX_PENDING_FLOWS_PER_USER {
+        return Err(FlowRefusal::TooManyFromUser);
+    }
+    if users.len() >= MAX_PENDING_VERIFICATION_FLOWS {
+        return Err(FlowRefusal::TooManyInTotal);
+    }
+    users.insert(flow_id.to_owned(), user_id.to_owned());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sas_payload;
+    use super::{
+        register_incoming_flow, sas_payload, FlowEntry, FlowRefusal, MAX_PENDING_FLOWS_PER_USER,
+        MAX_PENDING_VERIFICATION_FLOWS,
+    };
+    use std::collections::HashMap;
+
+    #[test]
+    fn a_second_request_cannot_take_over_a_pending_flow_id() {
+        let mut users = HashMap::new();
+        register_incoming_flow(&mut users, "X", "@alice:example.org").unwrap();
+        assert_eq!(
+            register_incoming_flow(&mut users, "X", "@bob:example.org"),
+            Err(FlowRefusal::DuplicateFlowId)
+        );
+        assert_eq!(users["X"], "@alice:example.org");
+    }
+
+    #[test]
+    fn a_repeated_request_from_the_same_user_is_not_registered_twice() {
+        let mut users = HashMap::new();
+        register_incoming_flow(&mut users, "X", "@alice:example.org").unwrap();
+        assert_eq!(
+            register_incoming_flow(&mut users, "X", "@alice:example.org"),
+            Err(FlowRefusal::DuplicateFlowId)
+        );
+        assert_eq!(users.len(), 1);
+    }
+
+    #[test]
+    fn a_flow_id_can_be_reused_once_the_flow_has_ended() {
+        let mut users = HashMap::new();
+        register_incoming_flow(&mut users, "X", "@alice:example.org").unwrap();
+        users.remove("X");
+        register_incoming_flow(&mut users, "X", "@bob:example.org").unwrap();
+        assert_eq!(users["X"], "@bob:example.org");
+    }
+
+    #[test]
+    fn one_user_cannot_fill_the_table_but_others_still_get_in() {
+        let mut users = HashMap::new();
+        for i in 0..MAX_PENDING_FLOWS_PER_USER {
+            register_incoming_flow(&mut users, &format!("a{i}"), "@alice:example.org").unwrap();
+        }
+        assert_eq!(
+            register_incoming_flow(&mut users, "a-extra", "@alice:example.org"),
+            Err(FlowRefusal::TooManyFromUser)
+        );
+        register_incoming_flow(&mut users, "b0", "@bob:example.org").unwrap();
+    }
+
+    #[test]
+    fn a_flow_leaves_the_table_when_its_watcher_ends() {
+        let users = std::sync::Arc::new(parking_lot::Mutex::new(HashMap::new()));
+        for i in 0..MAX_PENDING_FLOWS_PER_USER {
+            let id = format!("f{i}");
+            register_incoming_flow(&mut users.lock(), &id, "@alice:example.org").unwrap();
+            // Watcher runs and finishes (flow done, cancelled, or aborted).
+            drop(FlowEntry::new(users.clone(), id));
+        }
+        assert!(users.lock().is_empty());
+        // Alice is not locked out by her finished flows.
+        register_incoming_flow(&mut users.lock(), "next", "@alice:example.org").unwrap();
+    }
+
+    #[test]
+    fn a_flow_stays_in_the_table_while_its_watcher_runs() {
+        let users = std::sync::Arc::new(parking_lot::Mutex::new(HashMap::new()));
+        register_incoming_flow(&mut users.lock(), "X", "@alice:example.org").unwrap();
+        let entry = FlowEntry::new(users.clone(), "X".to_owned());
+        assert!(users.lock().contains_key("X"));
+        drop(entry);
+        assert!(!users.lock().contains_key("X"));
+    }
+
+    #[test]
+    fn the_overall_limit_applies() {
+        let mut users = HashMap::new();
+        for i in 0..MAX_PENDING_VERIFICATION_FLOWS {
+            register_incoming_flow(&mut users, &format!("f{i}"), &format!("@u{i}:example.org"))
+                .unwrap();
+        }
+        assert_eq!(
+            register_incoming_flow(&mut users, "one-more", "@late:example.org"),
+            Err(FlowRefusal::TooManyInTotal)
+        );
+    }
 
     #[test]
     fn sas_payload_decimal_only_has_no_emoji() {

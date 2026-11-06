@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <vector>
 
 namespace tk
@@ -17,21 +18,28 @@ namespace tk
 class MediaDiskCache
 {
 public:
-    // Creates dir_ (and any missing parents) on construction.
-    explicit MediaDiskCache(std::filesystem::path dir);
+    static constexpr std::uintmax_t kDefaultMaxBytes = 256ULL * 1024 * 1024;
+
+    // Creates dir_ (and any missing parents) on construction. max_bytes is the
+    // size the cache keeps itself under once its total is known (see store()).
+    explicit MediaDiskCache(std::filesystem::path dir, std::uintmax_t max_bytes = kDefaultMaxBytes);
 
     // Returns cached bytes, or an empty vector on miss.
     std::vector<uint8_t> load(const CacheKey& key) const;
 
-    // Writes bytes atomically. No-op if bytes is empty.
+    // Writes bytes atomically. No-op if bytes is empty. Keeps a running total
+    // of the cache size; when a write takes it past max_bytes, prunes the oldest
+    // entries down to 90% of it, so the scan happens once per ~10% of growth.
+    // The first store (or prune) scans the directory to learn the starting size.
     void store(const CacheKey& key, const std::vector<uint8_t>& bytes) const;
 
     // Removes the cached entry for key. No-op on miss. Thread-safe.
     void evict(const CacheKey& key) const;
 
     // Deletes oldest entries (by mtime) until total size ≤ max_bytes.
-    // Intended to be called once per session from a background thread.
-    void prune(std::uintmax_t max_bytes = 256ULL * 1024 * 1024) const;
+    // Also (re)learns the running total, so the owner calls it once at startup
+    // from a background thread as a safety net; store() keeps the cap afterwards.
+    void prune(std::uintmax_t max_bytes = kDefaultMaxBytes) const;
 
     // Sum of all cached file sizes, in bytes. Thread-safe.
     std::uintmax_t size_bytes() const;
@@ -65,7 +73,19 @@ public:
 
 private:
     std::filesystem::path path_for(const CacheKey& key) const;
+    // Scans dir_, removes oldest entries while the total exceeds `trigger` until
+    // it is <= `target`, and resyncs the running total. Serialised by prune_mu_;
+    // with wait=false a scan already running makes this a no-op.
+    void prune_scan_(std::uintmax_t trigger, std::uintmax_t target, bool wait) const;
     std::filesystem::path dir_;
+    std::uintmax_t max_bytes_;
+    // Running total of entry bytes; meaningful only once tracked_valid_ is set
+    // (by the first scan). Updated on store/evict/clear, resynced by each scan,
+    // so concurrent writers during a scan can leave it slightly off until the
+    // next one.
+    mutable std::atomic<std::uintmax_t> tracked_bytes_{0};
+    mutable std::atomic<bool> tracked_valid_{false};
+    mutable std::mutex prune_mu_;
     mutable std::atomic<uint64_t> hits_{0};
     mutable std::atomic<uint64_t> misses_{0};
 };

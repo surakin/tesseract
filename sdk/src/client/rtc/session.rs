@@ -2185,6 +2185,7 @@ async fn reconcile_loop(
         }
 
         member_transports.replace(transport_map(&members, Some((join_ts, &local_focus))));
+        sfus.recheck_participants();
         let desired = desired_sfus(
             &members,
             Some((join_ts, &local_focus)),

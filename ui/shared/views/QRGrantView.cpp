@@ -4,6 +4,9 @@
 
 #include <tesseract/client.h>
 
+#include <cctype>
+#include <string_view>
+
 namespace tesseract::views
 {
 
@@ -18,6 +21,26 @@ constexpr float kButtonH = 36.0f;
 constexpr float kQRGrantFieldH = 36.0f;
 
 } // namespace
+
+bool QRGrantView::is_secure_auth_uri(const std::string& uri)
+{
+    static constexpr std::string_view kScheme = "https://";
+    if (uri.size() <= kScheme.size())
+    {
+        return false;
+    }
+    for (std::size_t i = 0; i < kScheme.size(); ++i)
+    {
+        if (std::tolower(static_cast<unsigned char>(uri[i])) != kScheme[i])
+        {
+            return false;
+        }
+    }
+    // A host must follow: not another separator, whitespace or a control byte.
+    const unsigned char first = static_cast<unsigned char>(uri[kScheme.size()]);
+    return first != '/' && first != '?' && first != '#' && first != '@' && first > ' ' &&
+           first != 0x7f;
+}
 
 QRGrantView::QRGrantView()
 {
@@ -341,6 +364,18 @@ void QRGrantView::start()
             {
                 if (auto p = alive.lock())
                 {
+                    if (!is_secure_auth_uri(uri))
+                    {
+                        error_msg_ =
+                            tk::tr("The sign-in address from the other device is not a secure "
+                                   "web address, so it was not opened.");
+                        set_state_(State::Error);
+                        if (relayout_)
+                        {
+                            relayout_();
+                        }
+                        return;
+                    }
                     if (open_browser_)
                     {
                         open_browser_(uri);

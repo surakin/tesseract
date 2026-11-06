@@ -185,6 +185,37 @@ TEST_CASE("LocationMapPanner tooltip show/hide is edge-triggered and geometry "
     CHECK(p.geom_at("$e") == nullptr);
 }
 
+TEST_CASE("LocationMapPanner paint with fetching off requests no tiles", "[tk][view][map_panner]")
+{
+    ChipStage s;
+    auto pc = s.pc();
+    MessageRowData m;
+    m.event_id = "$loc";
+    m.location_lat = 48.85;
+    m.location_lon = 2.35;
+    m.map_viewport.lat = 48.85;
+    m.map_viewport.lon = 2.35;
+    m.map_viewport.zoom = 12;
+
+    LocationMapPanner p;
+    int requested = 0;
+    p.set_tile_request(
+        [&](int, int, int)
+        {
+            ++requested;
+        });
+    p.set_tile_image_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
+    p.paint(m, pc, {10, 10, 300, 200}, /*fetch_tiles=*/false);
+    CHECK(requested == 0);
+    REQUIRE(p.geom_at("$loc") != nullptr); // still hit-testable (click opens the map link)
+    p.paint(m, pc, {10, 10, 300, 200}, /*fetch_tiles=*/true);
+    CHECK(requested > 0);
+}
+
 TEST_CASE("LocationMapPanner paint requests tiles, falls back to parent/child "
           "tiles and draws a pin",
           "[tk][view][map_panner]")

@@ -179,13 +179,51 @@ fn pick_format(file: &Value, fmt: &str, tiers: &[&str]) -> Option<(String, u32, 
     None
 }
 
-/// Derive Klipy's `customer_id` from a user's MXID without leaking the
-/// identity: SHA-256 the MXID and hex-encode the first 16 bytes (128 bits).
-/// Stable per-user (same MXID → same id) but not reversible to the MXID.
-fn hashed_customer_id(mxid: &str) -> String {
+/// Derive Klipy's `customer_id` without leaking the identity: SHA-256 the
+/// salt followed by the identifier and hex-encode the first 16 bytes (128
+/// bits). Stable for one (salt, identifier) pair. An empty salt is the plain
+/// hash, which is what a fixed `client_key` gets: it is meant to be the same
+/// for everyone.
+fn hashed_customer_id(salt: &[u8], id: &str) -> String {
     use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(mxid.as_bytes());
-    digest.iter().take(16).map(|b| format!("{b:02x}")).collect()
+    let mut hasher = Sha256::new();
+    hasher.update(salt);
+    hasher.update(id.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .take(16)
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Name of the per-account file holding the random salt for the Klipy id.
+const KLIPY_SALT_FILE: &str = "klipy_customer_salt";
+
+/// The account's random Klipy salt: read from `dir`, or made and saved there on
+/// first use. Without it the id would be a plain hash of the MXID, which anyone
+/// who knows the MXID can recompute to link the searches to the account. The
+/// salt goes away with the account's data, so a fresh sign-in gets a new id. If
+/// it can't be saved, a salt that lasts for this run is used instead.
+fn klipy_salt(dir: &std::path::Path) -> [u8; 16] {
+    use std::io::Write;
+    use std::sync::OnceLock;
+    static RUN_SALT: OnceLock<[u8; 16]> = OnceLock::new();
+
+    let path = dir.join(KLIPY_SALT_FILE);
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Ok(salt) = <[u8; 16]>::try_from(bytes.as_slice()) {
+            return salt;
+        }
+    }
+    let salt: [u8; 16] = rand::random();
+    let saved = crate::private_fs::create_dir_all(dir)
+        .and_then(|()| crate::private_fs::create_file(&path))
+        .and_then(|mut f| f.write_all(&salt));
+    if saved.is_err() {
+        return *RUN_SALT.get_or_init(rand::random);
+    }
+    salt
 }
 
 /// Percent-encode a query/credential component (RFC 3986 unreserved set kept
@@ -354,18 +392,20 @@ impl ClientFfi {
         client_key: &str,
         limit: u32,
     ) {
-        // Klipy's customer_id is a SHA-256 hash, so the raw matrix identity
-        // never leaves the device. It hashes the MXID, unless a non-empty
-        // `client_key` replaces it (Mac App Store builds send no per-user token).
+        // Klipy's customer_id is a salted SHA-256 hash, so the raw matrix
+        // identity never leaves the device and the id can't be recomputed from
+        // the MXID. The salt is per account. A non-empty `client_key` replaces
+        // the MXID and is hashed without a salt (Mac App Store builds send no
+        // per-user token, so every install shares that id on purpose).
         let handler = self.handler.clone();
         let customer_id = if client_key.is_empty() {
             self.client
                 .as_ref()
                 .and_then(|c| c.user_id().map(|u| u.to_string()))
-                .map(|mxid| hashed_customer_id(&mxid))
+                .map(|mxid| hashed_customer_id(&klipy_salt(&self.data_dir), &mxid))
                 .unwrap_or_default()
         } else {
-            hashed_customer_id(client_key)
+            hashed_customer_id(&[], client_key)
         };
         let provider = KlipyProvider::new(api_key.to_owned(), customer_id);
         let url = provider.search_url(query, limit);
@@ -896,11 +936,89 @@ mod tests {
 
     #[test]
     fn hashed_customer_id_is_stable_and_hides_the_mxid() {
-        let h = hashed_customer_id("@alice:example.org");
-        assert_eq!(h, hashed_customer_id("@alice:example.org")); // stable
-        assert_ne!(h, hashed_customer_id("@bob:example.org")); // per-user
+        let salt = [7u8; 16];
+        let h = hashed_customer_id(&salt, "@alice:example.org");
+        assert_eq!(h, hashed_customer_id(&salt, "@alice:example.org")); // stable
+        assert_ne!(h, hashed_customer_id(&salt, "@bob:example.org")); // per-user
         assert!(!h.contains("alice")); // raw id not present
         assert_eq!(h.len(), 32); // 16 bytes, hex
+    }
+
+    #[test]
+    fn the_salt_changes_the_customer_id() {
+        let mxid = "@alice:example.org";
+        let plain = hashed_customer_id(&[], mxid);
+        assert_ne!(hashed_customer_id(&[1u8; 16], mxid), plain);
+        assert_ne!(
+            hashed_customer_id(&[1u8; 16], mxid),
+            hashed_customer_id(&[2u8; 16], mxid)
+        );
+    }
+
+    struct SaltDir(std::path::PathBuf);
+    impl SaltDir {
+        fn new(tag: &str) -> Self {
+            let p = std::env::temp_dir().join(format!(
+                "tesseract-klipy-salt-{tag}-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let _ = std::fs::remove_dir_all(&p);
+            Self(p)
+        }
+    }
+    impl Drop for SaltDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn the_salt_is_made_once_and_then_reused() {
+        let d = SaltDir::new("reuse");
+        let first = klipy_salt(&d.0);
+        assert_eq!(klipy_salt(&d.0), first);
+        assert_eq!(std::fs::read(d.0.join(KLIPY_SALT_FILE)).unwrap(), first);
+    }
+
+    #[test]
+    fn each_account_directory_gets_its_own_salt() {
+        let a = SaltDir::new("acct-a");
+        let b = SaltDir::new("acct-b");
+        assert_ne!(klipy_salt(&a.0), klipy_salt(&b.0));
+    }
+
+    #[test]
+    fn a_damaged_salt_file_is_replaced() {
+        let d = SaltDir::new("damaged");
+        std::fs::create_dir_all(&d.0).unwrap();
+        std::fs::write(d.0.join(KLIPY_SALT_FILE), b"short").unwrap();
+        let salt = klipy_salt(&d.0);
+        assert_eq!(std::fs::read(d.0.join(KLIPY_SALT_FILE)).unwrap(), salt);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_salt_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = SaltDir::new("perms");
+        klipy_salt(&d.0);
+        let mode = std::fs::metadata(d.0.join(KLIPY_SALT_FILE))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0);
+    }
+
+    #[test]
+    fn an_unwritable_directory_still_gives_a_stable_salt_for_the_run() {
+        // A path under a regular file can't be created.
+        let d = SaltDir::new("unwritable");
+        std::fs::create_dir_all(&d.0).unwrap();
+        let file = d.0.join("file");
+        std::fs::write(&file, b"x").unwrap();
+        let blocked = file.join("sub");
+        assert_eq!(klipy_salt(&blocked), klipy_salt(&blocked));
     }
 
     #[test]

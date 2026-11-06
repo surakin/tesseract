@@ -1284,7 +1284,7 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
     run_media_fetch_(std::move(spec));
 }
 
-void ShellBase::ensure_url_preview_(const std::string& url)
+void ShellBase::ensure_url_preview_(const std::string& room_id, const std::string& url)
 {
     if (url.empty() || url_previews_.count(url))
     {
@@ -1292,6 +1292,13 @@ void ShellBase::ensure_url_preview_(const std::string& url)
     }
     // MSC4452: the homeserver turned /preview_url off, so it would only 403.
     if (!server_info_.preview_url_enabled)
+    {
+        return;
+    }
+    // An encrypted room's links must not reach the homeserver. No failure is
+    // recorded: the cache is keyed by URL and the link may be previewed
+    // legitimately in an unencrypted room.
+    if (!url_preview_fetch_allowed_(room_id))
     {
         return;
     }
@@ -1595,7 +1602,7 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
                 }
                 else if (!p.matched_url.empty() && !p.has_content())
                 {
-                    ensure_url_preview_(p.matched_url);
+                    ensure_url_preview_(gate_room, p.matched_url);
                 }
             }
         }
@@ -1604,15 +1611,20 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
             std::string url = views::first_preview_url(ev.formatted_body, ev.body);
             if (!url.empty())
             {
-                ensure_url_preview_(url);
+                ensure_url_preview_(gate_room, url);
             }
         }
     }
 }
 
-void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_avatars)
+void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_avatars,
+                                  const std::string& room_id)
 {
     using Kind = views::MessageRowData::Kind;
+
+    // Room whose encryption state gates homeserver URL previews: a pop-out
+    // pane passes its own room, the main window falls back to the current one.
+    const std::string& preview_room = room_id.empty() ? current_room_id_ : room_id;
 
     const std::uint64_t media_group = media_group_for_room_(current_room_id_);
 
@@ -1783,7 +1795,7 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
                 }
                 else if (!p.matched_url.empty() && !p.has_content())
                 {
-                    ensure_url_preview_(p.matched_url);
+                    ensure_url_preview_(preview_room, p.matched_url);
                 }
             }
         }
@@ -1792,7 +1804,7 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
             std::string url = views::first_preview_url(row.formatted_body, row.body);
             if (!url.empty())
             {
-                ensure_url_preview_(url);
+                ensure_url_preview_(preview_room, url);
             }
         }
     }
@@ -1891,6 +1903,17 @@ bool ShellBase::media_allowed_(const std::string& room_id, bool is_own) const
     auto mode = effective_preview_mode_(room_id, join_rule);
     return tesseract::app::media_allowed(mode, join_rule, is_own,
                                          /*revealed=*/false);
+}
+
+bool ShellBase::url_preview_fetch_allowed_(const std::string& room_id) const
+{
+    if (tesseract::Settings::instance().url_previews_in_encrypted_rooms)
+    {
+        return true;
+    }
+    // Unknown rooms fail closed.
+    const RoomInfo* r = room_by_id_(room_id);
+    return r && !r->is_encrypted;
 }
 
 bool ShellBase::media_preview_hidden_(const std::string& room_id, const std::string& event_id,

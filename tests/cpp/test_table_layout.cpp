@@ -202,3 +202,59 @@ TEST_CASE("table_to_gfm: escapes pipes in cell text", "[table_layout]")
     std::string md = table_to_gfm(t);
     CHECK(md.find("a\\|b") != std::string::npos);
 }
+
+TEST_CASE("table_layout: an oversized or non-rectangular BodyTable is clamped and safe",
+          "[table_layout]")
+{
+    auto s = surface();
+    BodyTable t;
+    t.col_align.resize(200, TableAlign::Default);
+    t.rows.resize(500); // empty rows: not rectangular
+    t.rows[0].push_back(cell("a"));
+    t.header_rows = 400;
+
+    TableGrid g = compute_table_layout(t, 900.0f, s->factory(), base_style());
+    CHECK(g.col_w.size() == tesseract::views::kMaxTableCols);
+    CHECK(g.cells.size() == g.row_y.size() * g.col_w.size());
+    CHECK(g.cells.size() <= tesseract::views::kMaxTableCells);
+    CHECK(static_cast<std::size_t>(g.header_rows) <= g.row_y.size());
+    REQUIRE(!g.cells.empty());
+    CHECK(g.cells[0].layout != nullptr);
+}
+
+TEST_CASE("table_layout: a short row is laid out as empty cells", "[table_layout]")
+{
+    auto s = surface();
+    auto t = make_table({{"a", "b", "c"}, {"d", "e", "f"}});
+    t.rows[1].resize(1);
+
+    TableGrid g = compute_table_layout(t, 900.0f, s->factory(), base_style());
+    REQUIRE(g.cells.size() == 6);
+    CHECK(g.cells[4].layout == nullptr);
+}
+
+TEST_CASE("table_to_gfm: clamps columns of an oversized table", "[table_layout]")
+{
+    BodyTable t;
+    t.col_align.resize(200, TableAlign::Default);
+    std::vector<TableCell> row;
+    for (int i = 0; i < 200; ++i)
+    {
+        row.push_back(cell("x"));
+    }
+    t.rows.push_back(std::move(row));
+
+    std::string md = table_to_gfm(t);
+    const auto nl = md.find('\n');
+    REQUIRE(nl != std::string::npos);
+    const auto nl2 = md.find('\n', nl + 1);
+    REQUIRE(nl2 != std::string::npos);
+    const std::string delim = md.substr(nl + 1, nl2 - nl - 1);
+    std::size_t count = 0;
+    for (std::size_t pos = delim.find(" --- |"); pos != std::string::npos;
+         pos = delim.find(" --- |", pos + 1))
+    {
+        ++count;
+    }
+    CHECK(count == tesseract::views::kMaxTableCols);
+}

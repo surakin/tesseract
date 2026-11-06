@@ -551,3 +551,67 @@ TEST_CASE("bubble system messages are centered without horizontal rules",
     CHECK(render_system_row(ML::Bubbles, Kind::RoomName) == room_name);
     CHECK(render_system_row(ML::Bubbles, Kind::RoomTombstone) == room_upgrade);
 }
+
+TEST_CASE("member_label disambiguates a shared display name with the Matrix ID",
+          "[message_list][profile]")
+{
+    MessageRowData r = text_row("$1");
+    r.sender = "@mallory:evil.org";
+    r.sender_name = "Alice";
+
+    SECTION("not ambiguous")
+    {
+        CHECK(r.member_label() == "Alice");
+        CHECK(r.display_label() == "Alice");
+    }
+    SECTION("ambiguous")
+    {
+        r.sender_name_ambiguous = true;
+        CHECK(r.member_label() == "Alice (@mallory:evil.org)");
+        CHECK(r.display_label() == "Alice (@mallory:evil.org)");
+        // Avatar initials stay on the raw name.
+        CHECK(r.display_name() == "Alice");
+    }
+    SECTION("ambiguous without a name falls back to the Matrix ID")
+    {
+        r.sender_name.clear();
+        r.sender_name_ambiguous = true;
+        CHECK(r.member_label() == "@mallory:evil.org");
+    }
+    SECTION("a per-message profile name heads the row, the member stays disambiguated")
+    {
+        r.sender_name_ambiguous = true;
+        r.profile_id = "cat";
+        r.profile_name = "cat";
+        CHECK(r.display_label() == "cat");
+        CHECK(r.member_label() == "Alice (@mallory:evil.org)");
+    }
+}
+
+TEST_CASE("make_row_data copies the sender ambiguity flag", "[message_list][profile]")
+{
+    tesseract::Event ev;
+    ev.event_id = "$a";
+    ev.sender = "@alice:server";
+    ev.sender_name = "Alice";
+    CHECK_FALSE(make_row_data(ev, "@me:server").sender_name_ambiguous);
+    ev.sender_name_ambiguous = true;
+    CHECK(make_row_data(ev, "@me:server").sender_name_ambiguous);
+}
+
+TEST_CASE("update_member_profile keeps the ambiguity flag", "[message_list][profile]")
+{
+    using tesseract::views::MessageListView;
+    MessageListView view;
+    MessageRowData r = text_row("$1");
+    r.sender = "@m:x";
+    r.sender_name = "Alice";
+    r.sender_name_ambiguous = true;
+    view.set_messages({r});
+
+    view.update_member_profile("@m:x", std::string("Bob"), std::nullopt);
+    const auto& m = view.messages()[0];
+    CHECK(m.sender_name == "Bob");
+    CHECK(m.sender_name_ambiguous);
+    CHECK(m.member_label() == "Bob (@m:x)");
+}

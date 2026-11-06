@@ -29,6 +29,7 @@ mod net_proxy;
 mod oauth;
 #[cfg(feature = "legacy_login")]
 mod password_login;
+mod private_fs;
 mod recent_emoji;
 #[cfg(feature = "request_log")]
 mod request_log;
@@ -285,6 +286,7 @@ pub mod ffi {
         pub room_id: String,
         pub sender: String,
         pub sender_name: String,
+        pub sender_name_ambiguous: bool,
         pub sender_avatar_url: String,
         pub body: String,
         pub timestamp: u64,

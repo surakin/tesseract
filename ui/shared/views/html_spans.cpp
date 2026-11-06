@@ -1413,6 +1413,32 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text)
 // becomes its own BodyBlock; inline formatting within each block works
 // identically to html_to_spans().
 
+// Drops leading spans that are only spaces and trims the spaces off the first
+// remaining one, so every text-layout backend shares the same byte offsets
+// (Qt's HTML parser strips block-start spaces; Pango/CoreText/D2D do not). An
+// image span carries no text of its own and is never dropped. The blank spans
+// are erased in one go: erasing them one at a time is quadratic in their count.
+static void trim_leading_blank_spans(std::vector<tk::TextSpan>& spans)
+{
+    std::size_t drop = 0;
+    while (drop < spans.size() && !spans[drop].is_image)
+    {
+        std::string& t = spans[drop].text;
+        const auto nsp = t.find_first_not_of(' ');
+        if (nsp == std::string::npos)
+        {
+            ++drop;
+            continue;
+        }
+        if (nsp > 0)
+        {
+            t.erase(0, nsp);
+        }
+        break;
+    }
+    spans.erase(spans.begin(), spans.begin() + static_cast<std::ptrdiff_t>(drop));
+}
+
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
 {
     if (html.empty())
@@ -1455,6 +1481,8 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     BodyTable tbl;
     std::vector<TableCell> cur_row;
     bool cur_row_is_header = false;
+    // Padded-cell budget shared by every table in this message.
+    std::size_t table_cells_left = kMaxTableCells;
 
     // Suppress leading paragraph separator inside each block.
     bool first_in_block = true;
@@ -1565,32 +1593,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // all text-layout backends share identical byte offsets in
         // paint_span_backgrounds/selection_rects.  Qt's HTML parser strips
         // block-start spaces; Pango/CoreText/D2D do not — this normalises them.
-        while (!cur.spans.empty())
-        {
-            // An image span legitimately has empty text (it carries no text
-            // content of its own) — never erase/trim it here. An empty
-            // string vacuously satisfies "all whitespace"
-            // (find_first_not_of returns npos), so without this guard the
-            // very first span in a block being an image (no leading text
-            // before it, e.g. a message that opens with a custom emoji)
-            // gets silently erased entirely.
-            if (cur.spans.front().is_image)
-            {
-                break;
-            }
-            std::string& t = cur.spans.front().text;
-            const auto nsp = t.find_first_not_of(' ');
-            if (nsp == std::string::npos)
-            {
-                cur.spans.erase(cur.spans.begin());
-                continue;
-            }
-            if (nsp > 0)
-            {
-                t.erase(0, nsp);
-            }
-            break;
-        }
+        trim_leading_blank_spans(cur.spans);
         if (!cur.spans.empty())
         {
             cur.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
@@ -1625,25 +1628,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 cur.spans.pop_back();
             }
         }
-        while (!cur.spans.empty())
-        {
-            if (cur.spans.front().is_image)
-            {
-                break;
-            }
-            std::string& t = cur.spans.front().text;
-            const auto nsp = t.find_first_not_of(' ');
-            if (nsp == std::string::npos)
-            {
-                cur.spans.erase(cur.spans.begin());
-                continue;
-            }
-            if (nsp > 0)
-            {
-                t.erase(0, nsp);
-            }
-            break;
-        }
+        trim_leading_blank_spans(cur.spans);
         TableCell cell;
         if (!cur.spans.empty())
         {
@@ -1672,17 +1657,43 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             ncols = std::max(ncols, r.size());
         }
+        bool truncated = false;
+        if (ncols > kMaxTableCols)
+        {
+            ncols = kMaxTableCols;
+            truncated = true;
+        }
         if (ncols != 0)
+        {
+            const std::size_t max_rows = table_cells_left / ncols;
+            if (tbl.rows.size() > max_rows)
+            {
+                tbl.rows.resize(max_rows);
+                truncated = true;
+            }
+        }
+        if (ncols != 0 && !tbl.rows.empty())
         {
             for (auto& r : tbl.rows)
             {
-                r.resize(ncols);
+                r.resize(ncols); // pads short rows and trims wide ones
             }
             tbl.col_align.resize(ncols, TableAlign::Default);
+            tbl.header_rows = std::min(tbl.header_rows, static_cast<int>(tbl.rows.size()));
+            table_cells_left -= tbl.rows.size() * ncols;
             BodyBlock b;
             b.kind = BodyBlock::Kind::Table;
             b.table = std::move(tbl);
             blocks.push_back(std::move(b));
+        }
+        if (truncated)
+        {
+            BodyBlock m;
+            m.kind = BodyBlock::Kind::Paragraph;
+            tk::TextSpan sp;
+            sp.text = "\xE2\x80\xA6";
+            m.spans.push_back(std::move(sp));
+            blocks.push_back(std::move(m));
         }
         tbl = BodyTable{};
         cur_row.clear();

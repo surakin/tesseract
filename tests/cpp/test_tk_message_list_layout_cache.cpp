@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
@@ -779,6 +780,12 @@ TEST_CASE("bubble hugs a short own message that contains a mention", "[message_l
     BubbleModeGuard g{true};
     TkMessageListLayoutCacheStage st;
     MessageListView v;
+    // The pill reads the member's name (not the sender's link text); keep it short.
+    v.set_mention_name_provider(
+        [](const std::string&)
+        {
+            return std::string("X");
+        });
     // Same short visible text: one plain, one with a mention pill.
     v.set_messages({make_own("$plain", "ok ta"),
                     make_own_mention("$ment", "ok X",
@@ -798,6 +805,49 @@ TEST_CASE("bubble hugs a short own message that contains a mention", "[message_l
     CHECK(plain_x > 300.0f);
     CHECK(ment_x > 300.0f);
     CHECK(std::abs(ment_x - plain_x) < 60.0f);
+}
+
+TEST_CASE("a user mention pill shows the member's real name, not the sender's anchor text",
+          "[message_list][bubble][mention]")
+{
+    BubbleModeGuard g{true};
+    TkMessageListLayoutCacheStage st;
+    const auto ment_x = [&](const std::function<std::string(const std::string&)>& names)
+    {
+        MessageListView v;
+        v.set_mention_name_provider(names);
+        // The anchor claims to be "X"; the link points at @x:example.org.
+        v.set_messages(
+            {make_own_mention("$m", "ok X",
+                              "ok <a href=\"https://matrix.to/#/@x:example.org\">X</a>")},
+            false);
+        st.run(v, {0, 0, 600, 400});
+        st.run(v, {0, 0, 600, 400});
+        return v.body_origin_x_for_test("$m");
+    };
+    // Without a name the pill reads the Matrix id ("@x:example.org"), never
+    // the sender's "X".
+    const float unknown = ment_x(nullptr);
+    const float empty_name = ment_x(
+        [](const std::string&)
+        {
+            return std::string{};
+        });
+    const float real_name = ment_x(
+        [](const std::string&)
+        {
+            return std::string("Bartholomew Longname");
+        });
+    const float short_name = ment_x(
+        [](const std::string&)
+        {
+            return std::string("X");
+        });
+    REQUIRE(unknown > 0.0f);
+    CHECK(empty_name == unknown);
+    // The bubble hugs the right edge, so a wider label moves its origin left.
+    CHECK(real_name < unknown);
+    CHECK(short_name > unknown);
 }
 
 TEST_CASE("bubble does not clip the sender name to the hugged bubble width",
@@ -1651,7 +1701,7 @@ TEST_CASE("a forward without origin ids has no clickable attribution",
     CHECK_FALSE(fired);
 }
 
-TEST_CASE("a forwarded emote names the original sender, never the forwarder",
+TEST_CASE("a forwarded emote names the original sender; only the IRC line also names the forwarder",
           "[message_list][layout_cache][forward]")
 {
     using ML = tesseract::Settings::MessageLayout;
@@ -1689,20 +1739,35 @@ TEST_CASE("a forwarded emote names the original sender, never the forwarder",
         row.kind = MessageRowData::Kind::Emote;
         row.formatted_body.clear();
 
+        // The IRC emote line has no sender header, so it names the forwarder
+        // first ("Bob forwarded: Carol waves"); the other layouts show the
+        // forwarder in the row header and keep the line to the original author.
+        const bool irc = layout == ML::Irc;
+
         auto texts = emote_texts(layout, row);
         CHECK(any_with(texts, "Carol", "waves"));
-        CHECK_FALSE(any_with(texts, "Bob", "waves"));
+        CHECK(any_with(texts, "Bob forwarded: Carol", "waves") == irc);
+        CHECK(any_with(texts, "Bob", "waves") == irc);
 
         // The mxid stands in for an unknown display name.
         row.forwarded_sender_name.clear();
         texts = emote_texts(layout, row);
         CHECK(any_with(texts, "@carol:example.org", "waves"));
 
-        // No sender at all: a generic label, still not the forwarder.
+        // No sender at all: the original author is left out. The IRC line still
+        // names the forwarder; the others use a generic label, not the forwarder.
         row.forwarded_sender.clear();
         texts = emote_texts(layout, row);
-        CHECK(any_with(texts, "Sender", "waves"));
-        CHECK_FALSE(any_with(texts, "Bob", "waves"));
+        if (irc)
+        {
+            CHECK(any_with(texts, "Bob forwarded:", "waves"));
+            CHECK_FALSE(any_with(texts, "Sender", "waves"));
+        }
+        else
+        {
+            CHECK(any_with(texts, "Sender", "waves"));
+            CHECK_FALSE(any_with(texts, "Bob", "waves"));
+        }
     }
 }
 

@@ -99,3 +99,17 @@ TEST_CASE("QRGrantView shutdown, theme change and visibility are safe", "[tk][vi
     CHECK_FALSE(token.expired());
     s.run();
 }
+
+TEST_CASE("QRGrantView only opens https verification URIs", "[tk][view][qr_grant]")
+{
+    CHECK(QRGrantView::is_secure_auth_uri("https://auth.example.org/device?code=1"));
+    CHECK(QRGrantView::is_secure_auth_uri("HTTPS://auth.example.org"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri(""));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri("https://"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri("https:///path"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri("http://auth.example.org"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri("file:///etc/passwd"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri("javascript:alert(1)"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri("com.example.app://callback"));
+    CHECK_FALSE(QRGrantView::is_secure_auth_uri(" https://auth.example.org"));
+}

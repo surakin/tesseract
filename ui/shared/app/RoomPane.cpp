@@ -556,7 +556,7 @@ void RoomPane::wire_room_view_()
     rv->set_media_failed_provider(
         [this](const std::string& key)
         {
-            return shell_->media_dep_known_failed_(key);
+            return shell_->media_dep_known_failed_(key, room_id_);
         });
     rv->set_image_provider(
         [this](const std::string& mxc, bool hovered) -> const tk::Image*
@@ -624,6 +624,20 @@ void RoomPane::wire_room_view_()
         [this](const std::string& user_id) -> const tk::Image*
         {
             return mention_avatar_for_user_(user_id);
+        });
+    // Label of received user mention pills: the member's own display name,
+    // never the sender's anchor text.
+    rv->message_list()->set_mention_name_provider(
+        [this](const std::string& user_id) -> std::string
+        {
+            for (const auto& m : cached_room_members_)
+            {
+                if (m.user_id == user_id)
+                {
+                    return m.display_name;
+                }
+            }
+            return {};
         });
     // Avatar inside received @room mention pills: this room's own avatar,
     // cache-peeked and fetched-on-miss exactly like the header's avatar.
@@ -1396,7 +1410,7 @@ void RoomPane::wire_room_view_()
             const auto& row = msgs[static_cast<std::size_t>(i)];
             if (visible_media_prepped_.insert(row.event_id).second)
             {
-                shell_->ensure_row_media_(row, /*fetch_avatars=*/true);
+                shell_->ensure_row_media_(row, /*fetch_avatars=*/true, room_id_);
             }
         }
     };
@@ -5253,16 +5267,6 @@ void RoomPane::prompt_save_(const views::MediaViewerItem& item)
                                                    }));
 }
 
-namespace
-{
-// Mirrors the Rust check's "opens silently" set: image, audio, video, PDF, text.
-bool is_safe_media_mime_(const std::string& m)
-{
-    return m.rfind("image/", 0) == 0 || m.rfind("audio/", 0) == 0 || m.rfind("video/", 0) == 0 ||
-           m == "application/pdf" || m == "text/plain";
-}
-} // namespace
-
 void RoomPane::open_media_externally_(const views::MediaViewerItem& item)
 {
     if (!pane_client_() || item.source.empty())
@@ -5319,13 +5323,16 @@ void RoomPane::open_media_externally_(const views::MediaViewerItem& item)
             // No file name from the sender: name it after what it is, so the
             // OS has an extension to pick a viewer by.
             const std::string open_name = had_name ? chk.safe_filename : chk.renamed_filename;
-            if (!had_name && chk.verdict == V::ExtMimeMismatch)
+            if (!had_name && chk.verdict == V::ExtMimeMismatch && !chk.suggested_ext.empty())
             {
-                // Nothing to contradict; the type check above found no other
-                // concern, so it falls through to the not-media prompt below.
-                if (is_safe_media_mime_(chk.effective_mime))
+                // The sender gave no name, so the file is named after what it is,
+                // and that name must pass the same check; anything else falls
+                // through to the prompts below.
+                const auto renamed =
+                    tesseract::Client::check_media_file(chk.renamed_filename, item.mime_type, head);
+                if (renamed.verdict == V::Ok)
                 {
-                    launch(chk.renamed_filename);
+                    launch(renamed.safe_filename);
                     return;
                 }
             }

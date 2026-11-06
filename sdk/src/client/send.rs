@@ -3733,6 +3733,20 @@ impl ClientFfi {
                     .get("event_id")
                     .cloned()
                     .unwrap_or_else(|| event_id.as_str().into());
+                // The server-bundled edit is not covered by E2EE: keep it only if
+                // it is a valid replacement, as the timeline does.
+                let edit_encryption = tl_event
+                    .kind
+                    .unsigned_encryption_map()
+                    .and_then(|m| {
+                        m.get(&matrix_sdk::deserialized_responses::UnsignedEventLocation::RelationsReplace)
+                    })
+                    .and_then(|r| r.encryption_info());
+                crate::event_json::drop_invalid_bundled_edit(
+                    &mut envelope,
+                    tl_event.encryption_info().map(|i| &**i),
+                    edit_encryption.map(|i| &**i),
+                );
                 let (event_type, content) = match envelope["type"].as_str() {
                     Some("m.room.message" | "m.sticker") => {
                         // Bridges relay the top-level text to the other network, so a
@@ -4434,7 +4448,8 @@ async fn forward_fallback_ctx(
 ///
 /// In practice that is polls, which are copied plainly. An edited poll sends
 /// the newest edit's `m.new_content` (the bundled edit under
-/// `unsigned.m.relations.m.replace`), not the original. `m.mentions` is
+/// `unsigned.m.relations.m.replace`, already validated by `forward_event`),
+/// not the original. `m.mentions` is
 /// dropped so the forward doesn't ping the original recipients again. An
 /// undecrypted `m.room.encrypted` event is refused rather than forwarded as
 /// ciphertext.

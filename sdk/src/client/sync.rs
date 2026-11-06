@@ -11,11 +11,6 @@
 
 use super::*;
 
-/// Verification flows awaiting an answer at once, in all and from one user;
-/// further incoming requests are ignored.
-const MAX_PENDING_VERIFICATION_FLOWS: usize = 128;
-const MAX_PENDING_FLOWS_PER_USER: usize = 3;
-
 use matrix_sdk::SessionChange;
 use matrix_sdk_ui::sync_service::SyncService;
 
@@ -2316,20 +2311,10 @@ async fn adopt_incoming_verification_request(
     };
     {
         let mut users = lock_or_recover(&flow_users);
-        // Flows are removed when they end. A peer spamming requests must not
-        // grow the table (and the banners) without bound, but must not be able
-        // to lock others out either, so the limit is per sender (the sender of
-        // a to-device event is authenticated) with a generous overall one.
-        let from_sender = users.values().filter(|u| **u == user_id).count();
-        if from_sender >= MAX_PENDING_FLOWS_PER_USER
-            || users.len() >= MAX_PENDING_VERIFICATION_FLOWS
-        {
-            tracing::warn!(
-                "too many pending verification flows; ignoring {flow_id} from {user_id}"
-            );
+        if let Err(refusal) = verification::register_incoming_flow(&mut users, &flow_id, &user_id) {
+            tracing::warn!("ignoring verification request {flow_id} from {user_id}: {refusal:?}");
             return;
         }
-        users.insert(flow_id.clone(), user_id.clone());
     }
     {
         let guard = h.lock();

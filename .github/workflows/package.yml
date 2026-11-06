@@ -19,13 +19,13 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/windows-release/cargo/build
 
@@ -35,7 +35,7 @@ jobs:
       # (3.14 in the hosted toolcache), which has no resvg_py installed.
       - name: Set up Python (icon generation)
         id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
 
@@ -54,7 +54,7 @@ jobs:
       # that checksum so most runs never touch the release URL, and the
       # download retries because GitHub release downloads intermittently 500.
       - name: Cache gettext download
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}\gettext.zip
           key: gettext-2b999bc37b56fa052ff98578e9cb188152009f634e3a66aa8ff263a016e9c466
@@ -75,7 +75,7 @@ jobs:
       # find cl.exe and silently falls back to the runner's bundled MinGW gcc.
       # This step runs vcvars and exports INCLUDE/LIB/PATH so Ninja picks MSVC.
       - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       # opus is required by matrix-sdk-ui (MSC3245 voice messages).
       # Build from source so the CRT (/MD) and generator (Ninja+MSVC) match
@@ -115,7 +115,7 @@ jobs:
 
       - name: Cache ssign
         id: ssign_cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~\.cargo\bin\ssign.exe
           key: ssign-0.1.8-${{ runner.os }}
@@ -182,7 +182,7 @@ jobs:
           if ($bad) { throw "signature verification failed" }
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-windows
           path: build/windows-release/Tesseract-*.exe
@@ -198,7 +198,7 @@ jobs:
       # the maximum retention — it has to outlive the time the pre-release
       # spends being tested.
       - name: Upload Store MSIX artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-msix-store
           path: build/windows-release/msix/Tesseract-store-x64.msix
@@ -243,7 +243,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The runner image's default Xcode / Command Line Tools move with every
       # image update, and a linker older than its SDK fails on the new .tbd
@@ -286,7 +286,7 @@ jobs:
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable, aarch64 target)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin
           # rust-objcopy (used by rustc to strip release binaries on Apple
@@ -296,7 +296,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -423,7 +423,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-arm64
           path: build/macos-appkit-arm64-release/Tesseract-*.dmg
@@ -436,7 +436,7 @@ jobs:
           ditto -c -k --keepParent "$BUILD/ui/macos/Tesseract.app.dSYM" "$BUILD/$NAME.dSYM.zip"
 
       - name: Upload dSYM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-arm64-dsym
           path: build/macos-appkit-arm64-release/Tesseract-*.dSYM.zip
@@ -487,7 +487,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The `secrets` context can't be read in an `if:`; check presence here
       # and gate the remaining steps on this step's output (see the Windows
@@ -514,14 +514,14 @@ jobs:
       # Homebrew bottle targets the runner's own macOS and is single-arch.
       - name: Install Rust (stable, aarch64 + x86_64 targets)
         if: steps.as_check.outputs.present == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         if: steps.as_check.outputs.present == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-appstore/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -604,7 +604,7 @@ jobs:
 
       - name: Upload App Store pkg artifact
         if: steps.as_check.outputs.present == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-appstore
           path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
@@ -620,7 +620,7 @@ jobs:
 
       - name: Upload dSYM artifact
         if: steps.as_check.outputs.present == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-appstore-dsym
           path: build/macos-appkit-appstore/Tesseract-*.dSYM.zip
@@ -646,7 +646,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The runner image's default Xcode / Command Line Tools move with every
       # image update, and a linker older than its SDK fails on the new .tbd
@@ -690,7 +690,7 @@ jobs:
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable, x86_64 target)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-apple-darwin
           # See the aarch64 job above: rust-objcopy needs llvm-tools-preview's
@@ -698,7 +698,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-x86_64-release/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -825,7 +825,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-x86_64
           path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
@@ -838,7 +838,7 @@ jobs:
           ditto -c -k --keepParent "$BUILD/ui/macos/Tesseract.app.dSYM" "$BUILD/$NAME.dSYM.zip"
 
       - name: Upload dSYM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-x86_64-dsym
           path: build/macos-appkit-x86_64-release/Tesseract-*.dSYM.zip
@@ -870,7 +870,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -904,10 +904,10 @@ jobs:
           echo "OPUS_STATIC=1" >> $GITHUB_ENV
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/linux-release/cargo/build
 
@@ -921,14 +921,14 @@ jobs:
         run: cmake --build build/linux-release --target package
 
       - name: Upload DEB artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-deb
           path: build/linux-release/*.deb
           if-no-files-found: error
 
       - name: Upload RPM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-rpm
           path: build/linux-release/*.rpm
@@ -973,9 +973,16 @@ jobs:
           
       - name: Download linuxdeploy and Qt + GStreamer plugins
         run: |
+          # Pinned by SHA-256 / commit so a changed upstream build fails the job
+          # instead of being bundled. To bump: copy the new asset digests from
+          # the `continuous` releases (gh api repos/linuxdeploy/<repo>/releases).
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/432af639725bc8b99df12351e86bb2e8a6b3585f/linuxdeploy-plugin-gstreamer.sh
+          sha256sum -c - <<'EOF'
+          df908b19f1ed1cdafa79508d415aa12d6c56ce4d56d4149aa8c09286718706e5  linuxdeploy-x86_64.AppImage
+          cfc1055b2b9dbc08412b579f20990b7b41a17b61beaa5847dc9477c96c9e9617  linuxdeploy-plugin-qt-x86_64.AppImage
+          EOF
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
     
       # The current appimagetool refuses an AppDir whose icon is only an SVG:
@@ -998,7 +1005,7 @@ jobs:
             --output appimage
 
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-appimage
           path: Tesseract-*.AppImage
@@ -1028,7 +1035,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The tag is the only source of truth for what's being published;
       # project() must already agree with it, or the manifest/metainfo below
@@ -1122,7 +1129,7 @@ jobs:
           echo "FLATPAK_GPG_PASSPHRASE=$FLATPAK_GPG_PASSPHRASE" >> "$GITHUB_ENV"
 
       - name: Cache flatpak-builder state
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .flatpak-builder
           key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'Cargo.lock') }}
@@ -1162,7 +1169,7 @@ jobs:
             io.github.surakin.Tesseract
 
       - name: Upload Flatpak bundle artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-flatpak-bundle
           path: tesseract-v*.flatpak
@@ -1190,12 +1197,12 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: dist
 
       - name: Create release and upload assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           prerelease: true
           files: |

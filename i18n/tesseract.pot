@@ -3262,6 +3262,10 @@ msgstr ""
 msgid "Loading map…"
 msgstr ""
 
+#: ui/shared/views/LocationMapPanner.cpp:101
+msgid "Map not loaded"
+msgstr ""
+
 #: ui/shared/views/LoginView.cpp:63
 msgid "Sign in to Matrix"
 msgstr ""
@@ -5804,6 +5808,12 @@ msgstr ""
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr ""
 
+msgid "Show link previews in encrypted rooms"
+msgstr ""
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr ""
+
 #: ui/shared/views/settings/PrivacySection.cpp:137
 msgid ""
 "Before sending a message that contains links, ask your homeserver for a "
@@ -7624,4 +7634,16 @@ msgstr ""
 #: ui/shared/app/HistoryExportController.cpp
 #, c++-format
 msgid "{0} via {1}"
+msgstr ""
+
+#: ui/shared/views/QRGrantView.cpp:349
+msgid "The sign-in address from the other device is not a secure web address, so it was not opened."
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded:"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded: {1}"
 msgstr ""

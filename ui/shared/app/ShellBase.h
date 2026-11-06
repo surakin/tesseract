@@ -991,9 +991,11 @@ protected:
     // not wait on it: a media key in failure backoff or permanently
     // undecodable, a URL whose preview already failed (cached, so never
     // re-requested), or any preview while the server has previews disabled
-    // (never requested). A failure *event* only fires when a fetch actually
-    // runs; this covers revisits where the guards skip the fetch entirely.
-    bool media_dep_known_failed_(const std::string& key) const
+    // (never requested), or a preview in an encrypted room (never requested
+    // either, see url_preview_fetch_allowed_). A failure *event* only fires
+    // when a fetch actually runs; this covers revisits where the guards skip
+    // the fetch entirely.
+    bool media_dep_known_failed_(const std::string& key, const std::string& room_id) const
     {
         if (media_decode_failed_.count(key) || media_fetch_backed_off_(key))
         {
@@ -1001,7 +1003,7 @@ protected:
         }
         if (key.starts_with("http://") || key.starts_with("https://"))
         {
-            if (!server_info_.preview_url_enabled)
+            if (!server_info_.preview_url_enabled || !url_preview_fetch_allowed_(room_id))
             {
                 return true;
             }
@@ -5464,7 +5466,9 @@ protected:
 
     // Fetch OpenGraph preview metadata for `url` from the homeserver.
     // Idempotent — deduplicates in-flight fetches and skips already-cached URLs.
-    void ensure_url_preview_(const std::string& url);
+    // Refuses (without recording a failure) when url_preview_fetch_allowed_()
+    // says the room's links must not reach the homeserver.
+    void ensure_url_preview_(const std::string& room_id, const std::string& url);
 
     // Decode the BlurHash for `event_id` and store the result via cache_rgba_image_.
     // Idempotent — skips events already attempted or already cached.
@@ -5476,7 +5480,10 @@ protected:
     void ensure_row_media_(const Event& ev, bool fetch_avatars = true);
     // Overload for rows that have already been converted to MessageRowData
     // (used by the lazy visible-range callback for off-screen events).
-    void ensure_row_media_(const views::MessageRowData& row, bool fetch_avatars = true);
+    // `room_id` is the room whose encryption state gates URL previews (a
+    // pop-out pane passes its own); empty means current_room_id_.
+    void ensure_row_media_(const views::MessageRowData& row, bool fetch_avatars = true,
+                           const std::string& room_id = {});
 
     // The timeline's visible rows changed (scroll / room enter / data update):
     // raise the priority of the still-pending media fetches backing the now-
@@ -5498,6 +5505,10 @@ protected:
     // The user's own media (is_own) is exempt from public-room suppression in
     // Private mode (but not Off — "off means off"); see media_preview_policy.h.
     bool media_allowed_(const std::string& room_id, bool is_own) const;
+    // True when a homeserver /preview_url request may be made for a link in
+    // `room_id`. False for encrypted or unknown rooms (fail closed) unless
+    // Settings::url_previews_in_encrypted_rooms is on.
+    bool url_preview_fetch_allowed_(const std::string& room_id) const;
     // Resolve the effective preview mode for `room_id` (global config overlaid
     // with the per-room override) and report its cached join_rule.
     tesseract::Settings::MediaPreviews effective_preview_mode_(const std::string& room_id,

@@ -15,7 +15,8 @@ namespace tesseract::views
 
 // Paint a slippy-map tile composite for a Kind::Location row.
 // `map_rect` is the bounding box for the map canvas area (pre-clipped).
-void LocationMapPanner::paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect map_rect)
+void LocationMapPanner::paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect map_rect,
+                              bool fetch_tiles)
 {
     record_geom(m.event_id, map_rect);
 
@@ -81,7 +82,7 @@ void LocationMapPanner::paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Re
                     }
                 }
             }
-            if (tile_request_)
+            if (fetch_tiles && tile_request_)
             {
                 tile_request_(t.z, t.x, t.y);
             }
@@ -95,7 +96,8 @@ void LocationMapPanner::paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Re
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.max_width = map_rect.w;
-        auto lo = ctx.factory.build_text(tk::tr("Loading map\xe2\x80\xa6"), st);
+        auto lo = ctx.factory.build_text(
+            fetch_tiles ? tk::tr("Loading map\xe2\x80\xa6") : tk::tr("Map not loaded"), st);
         if (lo)
         {
             tk::Size sz = lo->measure();

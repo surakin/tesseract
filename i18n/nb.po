@@ -1947,6 +1947,10 @@ msgstr "Avbryt forespørselen"
 msgid "Loading map…"
 msgstr "Laster kart…"
 
+#: ui/shared/views/LocationMapPanner.cpp:101
+msgid "Map not loaded"
+msgstr "Kartet er ikke lastet"
+
 msgid "Sign in to Matrix"
 msgstr "Logg inn på Matrix"
 
@@ -3332,6 +3336,12 @@ msgstr "Ta med lenkeforhåndsvisning i meldinger jeg sender"
 
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr "Hent lenkeforhåndsvisning direkte i stedet for via hjemmetjeneren min"
+
+msgid "Show link previews in encrypted rooms"
+msgstr "Vis lenkeforhåndsvisning i krypterte rom"
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr "Ber hjemmetjeneren din om forhåndsvisning av lenker i krypterte rom. Hjemmetjeneren din ser disse lenkene, og de lenkede nettstedene kan se når du åpner rommet. Forhåndsvisninger avsenderen har lagt ved, vises alltid."
 
 msgid "Before sending a message that contains links, ask your homeserver for a preview of each link and attach it to the message, so recipients see it without fetching it themselves. Sending such messages can take a few seconds longer."
 msgstr "Før en melding med lenker sendes, ber Tesseract hjemmetjeneren din om en forhåndsvisning av hver lenke og legger den ved meldingen, slik at mottakerne ser den uten å hente den selv. Det kan ta noen sekunder ekstra å sende slike meldinger."
@@ -5482,3 +5492,15 @@ msgstr "Datadeling"
 #, c++-format
 msgid "{0} via {1}"
 msgstr "{0} via {1}"
+
+#: ui/shared/views/QRGrantView.cpp:349
+msgid "The sign-in address from the other device is not a secure web address, so it was not opened."
+msgstr "Påloggingsadressen fra den andre enheten er ikke en sikker nettadresse, så den ble ikke åpnet."
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded:"
+msgstr "{0} videresendte:"
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded: {1}"
+msgstr "{0} videresendte: {1}"

@@ -24,9 +24,15 @@ struct SingleInstanceLock
 // $XDG_RUNTIME_DIR/app/$FLATPAK_ID inside a Flatpak (so sandbox instances share
 // one lock), else $XDG_RUNTIME_DIR on Linux / DARWIN_USER_TEMP_DIR on macOS when it is a
 // real directory owned by this user and closed to group/other, else a
-// /tmp/tesseract-<uid> directory created 0700 and checked the same way.
+// /tmp/tesseract-<uid> directory created 0700 and checked the same way, else
+// <data_dir>/run (for when another user has taken the /tmp name).
 // Empty when no such directory is available; callers then fail open.
 std::string private_runtime_dir();
+
+// `path` as a directory created 0700 if missing and owned by this user and
+// closed to group/other; empty when it exists any other way (planted by
+// someone else, a symlink, too open) or cannot be created.
+std::string private_dir_at(const std::string& path);
 
 // What a losing launch hands the running instance. Every field may be empty.
 struct ActivationRequest

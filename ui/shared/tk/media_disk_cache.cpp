@@ -31,7 +31,8 @@ static uint64_t fnv1a64(std::string_view s)
 // 64-bit hash, and two keys can share one.
 static constexpr char kEntryMagic[4] = {'T', 'S', 'C', 'K'};
 
-MediaDiskCache::MediaDiskCache(fs::path dir) : dir_(std::move(dir))
+MediaDiskCache::MediaDiskCache(fs::path dir, std::uintmax_t max_bytes)
+    : dir_(std::move(dir)), max_bytes_(max_bytes)
 {
     std::error_code ec;
     // Decrypted media lives here: owner-only, whatever the process umask is.
@@ -131,21 +132,78 @@ void MediaDiskCache::store(const CacheKey& key, const std::vector<uint8_t>& byte
     fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace,
                     ec);
     ec.clear();
+    const std::uintmax_t new_size = fs::file_size(tmp, ec);
+    const bool sized = !ec;
+    ec.clear();
+    const std::uintmax_t old_size = fs::file_size(dest, ec); // 0 when replacing nothing
+    const bool replaced = !ec;
+    ec.clear();
     fs::rename(tmp, dest, ec);
     if (ec)
     {
         fs::remove(tmp, ec);
+        return;
+    }
+    if (!tracked_valid_.load(std::memory_order_acquire))
+    {
+        // Total unknown yet: learn it (and trim if already over) with one scan.
+        prune_scan_(max_bytes_, max_bytes_ - max_bytes_ / 10, false);
+        return;
+    }
+    if (sized)
+    {
+        tracked_bytes_.fetch_add(new_size, std::memory_order_relaxed);
+    }
+    if (replaced)
+    {
+        // Overwrote an existing entry: its bytes no longer count. Clamp at 0.
+        std::uintmax_t cur = tracked_bytes_.load(std::memory_order_relaxed);
+        while (!tracked_bytes_.compare_exchange_weak(cur, cur > old_size ? cur - old_size : 0,
+                                                     std::memory_order_relaxed))
+        {
+        }
+    }
+    if (tracked_bytes_.load(std::memory_order_relaxed) > max_bytes_)
+    {
+        prune_scan_(max_bytes_, max_bytes_ - max_bytes_ / 10, false);
     }
 }
 
 void MediaDiskCache::evict(const CacheKey& key) const
 {
     std::error_code ec;
-    fs::remove(path_for(key), ec);
+    const fs::path p = path_for(key);
+    const std::uintmax_t size = fs::file_size(p, ec);
+    const bool sized = !ec;
+    ec.clear();
+    if (fs::remove(p, ec) && sized && tracked_valid_.load(std::memory_order_acquire))
+    {
+        std::uintmax_t cur = tracked_bytes_.load(std::memory_order_relaxed);
+        while (!tracked_bytes_.compare_exchange_weak(cur, cur > size ? cur - size : 0,
+                                                     std::memory_order_relaxed))
+        {
+        }
+    }
 }
 
 void MediaDiskCache::prune(std::uintmax_t max_bytes) const
 {
+    prune_scan_(max_bytes, max_bytes, true);
+}
+
+void MediaDiskCache::prune_scan_(std::uintmax_t trigger, std::uintmax_t target, bool wait) const
+{
+    // One scan at a time. A writer that finds one running skips: that scan
+    // resyncs the total, and the next store re-checks.
+    std::unique_lock<std::mutex> lock(prune_mu_, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        if (!wait)
+        {
+            return; // automatic prune from store(): the running one covers it
+        }
+        lock.lock(); // explicit prune(): wait for its turn
+    }
     struct Entry
     {
         fs::file_time_type mtime;
@@ -177,8 +235,10 @@ void MediaDiskCache::prune(std::uintmax_t max_bytes) const
         total += sz;
     }
 
-    if (total <= max_bytes)
+    if (total <= trigger)
     {
+        tracked_bytes_.store(total, std::memory_order_relaxed);
+        tracked_valid_.store(true, std::memory_order_release);
         return;
     }
 
@@ -190,7 +250,7 @@ void MediaDiskCache::prune(std::uintmax_t max_bytes) const
 
     for (const auto& e : entries)
     {
-        if (total <= max_bytes)
+        if (total <= target)
         {
             break;
         }
@@ -201,6 +261,8 @@ void MediaDiskCache::prune(std::uintmax_t max_bytes) const
         }
         ec.clear();
     }
+    tracked_bytes_.store(total, std::memory_order_relaxed);
+    tracked_valid_.store(true, std::memory_order_release);
 }
 
 std::uintmax_t MediaDiskCache::size_bytes() const
@@ -225,6 +287,8 @@ void MediaDiskCache::clear() const
     fs::permissions(dir_, fs::perms::owner_all, fs::perm_options::replace, ec);
     hits_.store(0, std::memory_order_relaxed);
     misses_.store(0, std::memory_order_relaxed);
+    tracked_bytes_.store(0, std::memory_order_relaxed);
+    tracked_valid_.store(true, std::memory_order_release);
 }
 
 fs::path MediaDiskCache::retire_for_clear() const
@@ -247,6 +311,8 @@ fs::path MediaDiskCache::retire_for_clear() const
     fs::permissions(dir_, fs::perms::owner_all, fs::perm_options::replace, ec);
     hits_.store(0, std::memory_order_relaxed);
     misses_.store(0, std::memory_order_relaxed);
+    tracked_bytes_.store(0, std::memory_order_relaxed);
+    tracked_valid_.store(true, std::memory_order_release);
     return retired;
 }
 
@@ -265,6 +331,7 @@ void MediaDiskCache::finish_clear(const fs::path& retired) const
             fs::remove(de.path(), ec);
         }
     }
+    tracked_valid_.store(false, std::memory_order_release); // re-learn on next store
 }
 
 } // namespace tk

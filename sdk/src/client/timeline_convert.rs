@@ -39,6 +39,8 @@ use std::sync::Arc;
 #[cfg(not(test))]
 struct SenderProfileFfi {
     sender_name: String,
+    /// Another room member shares `sender_name`.
+    sender_name_ambiguous: bool,
     sender_avatar_url: String,
     sender_status_emoji: String,
     sender_status_text: String,
@@ -51,6 +53,7 @@ fn sender_profile_ffi(
     let TimelineDetails::Ready(p) = details else {
         return SenderProfileFfi {
             sender_name: String::new(),
+            sender_name_ambiguous: false,
             sender_avatar_url: String::new(),
             sender_status_emoji: String::new(),
             sender_status_text: String::new(),
@@ -61,6 +64,8 @@ fn sender_profile_ffi(
         sender_name: crate::text_utils::strip_bidi_overrides(
             p.display_name.as_deref().unwrap_or_default(),
         ),
+        sender_name_ambiguous: p.display_name_ambiguous
+            && p.display_name.as_deref().is_some_and(|n| !n.is_empty()),
         sender_avatar_url: p
             .avatar_url
             .as_ref()
@@ -89,6 +94,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         room_id: String::new(),
         sender: String::new(),
         sender_name: String::new(),
+        sender_name_ambiguous: false,
         sender_avatar_url: String::new(),
         sender_status_emoji: String::new(),
         sender_status_text: String::new(),
@@ -1057,10 +1063,14 @@ pub(super) async fn embedded_event_preview(
     embedded: &matrix_sdk_ui::timeline::EmbeddedEvent,
 ) -> (String, String, String, u64) {
     let name = match &embedded.sender_profile {
-        TimelineDetails::Ready(p) => p
-            .display_name
-            .clone()
-            .unwrap_or_else(|| embedded.sender.to_string()),
+        TimelineDetails::Ready(p) => match p.display_name.as_deref() {
+            Some(n) if !n.is_empty() => crate::text_utils::disambiguated_name(
+                &crate::text_utils::strip_bidi_overrides(n),
+                p.display_name_ambiguous,
+                embedded.sender.as_str(),
+            ),
+            _ => embedded.sender.to_string(),
+        },
         _ => embedded.sender.to_string(),
     };
     let (body, formatted) = match forwarded_embedded_snippet(room, embedded).await {
@@ -1190,13 +1200,16 @@ pub(crate) fn forward_view(
 }
 
 /// Mark `fields` as a forward and fill the attribution. `sender_name` is the
-/// original sender's display name as far as the caller could resolve it. The
-/// ids come from the sender of the forward, so one that is not a valid Matrix
-/// ID is dropped rather than handed to the UI.
+/// original sender's display name as far as the caller could resolve it, and
+/// `verified` says the original event was found and matches the forward;
+/// without it no author is named. The ids come from the sender of the
+/// forward, so one that is not a valid Matrix ID is dropped rather than
+/// handed to the UI.
 pub(crate) fn apply_forward(
     fields: &mut TimelineEvent,
     fwd: &msc4553::Forwarded,
     sender_name: String,
+    verified: bool,
 ) {
     use matrix_sdk::ruma::{EventId, RoomId, UserId};
     let valid = |id: &Option<String>, ok: fn(&str) -> bool| -> String {
@@ -1206,7 +1219,13 @@ pub(crate) fn apply_forward(
             .to_owned()
     };
     fields.forwarded = true;
-    fields.forwarded_sender = valid(&fwd.sender, |s| UserId::parse(s).is_ok());
+    // The sender is the forwarder's claim: it is shown only when the original
+    // event is held locally and matches (`origin_matches`).
+    fields.forwarded_sender = if verified {
+        valid(&fwd.sender, |s| UserId::parse(s).is_ok())
+    } else {
+        String::new()
+    };
     fields.forwarded_sender_name = if fields.forwarded_sender.is_empty() {
         String::new()
     } else {
@@ -1399,6 +1418,33 @@ fn original_content_info(
         .and_then(|json| json.pointer("/content/info").cloned())
 }
 
+/// Whether the event a forward names is in the local event cache of its room
+/// and backs the forward's sender and content. No network: a forward whose
+/// original is not held locally stays unattributed.
+#[cfg(not(test))]
+async fn forwarded_origin_verified(room: &Room, fwd: &msc4553::Forwarded) -> bool {
+    use matrix_sdk::ruma::{EventId, RoomId};
+    let (Some(room_id), Some(event_id)) = (
+        fwd.room_id.as_deref().and_then(|s| RoomId::parse(s).ok()),
+        fwd.event_id.as_deref().and_then(|s| EventId::parse(s).ok()),
+    ) else {
+        return false;
+    };
+    let Some(origin_room) = room.client().get_room(&room_id) else {
+        return false;
+    };
+    let Some((cache, _handles)) = super::room_event_cache(&origin_room).await else {
+        return false;
+    };
+    let Ok(Some(event)) = cache.find_event(&event_id).await else {
+        return false;
+    };
+    let Ok(origin) = serde_json::from_str::<serde_json::Value>(event.raw().json().get()) else {
+        return false;
+    };
+    msc4553::origin_matches(fwd, &origin)
+}
+
 /// Display name of a forward's original sender, from the current room's
 /// member cache (no network). Empty when the sender isn't known there; the UI
 /// then shows the ID.
@@ -1408,9 +1454,11 @@ async fn forwarded_sender_name(room: &Room, fwd: &msc4553::Forwarded) -> String 
         return String::new();
     };
     match room.get_member_no_sync(&uid).await {
-        Ok(Some(m)) => {
-            crate::text_utils::strip_bidi_overrides(m.display_name().unwrap_or_default())
-        }
+        Ok(Some(m)) => crate::text_utils::disambiguated_name(
+            &crate::text_utils::strip_bidi_overrides(m.display_name().unwrap_or_default()),
+            m.name_ambiguous(),
+            uid.as_str(),
+        ),
         _ => String::new(),
     }
 }
@@ -1816,6 +1864,7 @@ fn dev_unhandled_event(
     };
     let SenderProfileFfi {
         sender_name,
+        sender_name_ambiguous,
         sender_avatar_url,
         sender_status_emoji,
         sender_status_text,
@@ -1829,6 +1878,7 @@ fn dev_unhandled_event(
             .unwrap_or_default(),
         sender: event_item.sender().to_string(),
         sender_name,
+        sender_name_ambiguous,
         sender_avatar_url,
         sender_status_emoji,
         sender_status_text,
@@ -1897,6 +1947,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 let body = pinned_events_action(&new_ids, &old_ids);
                 let SenderProfileFfi {
                     sender_name,
+                    sender_name_ambiguous,
                     sender_avatar_url,
                     sender_status_emoji,
                     sender_status_text,
@@ -1910,6 +1961,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                         .unwrap_or_default(),
                     sender: event_item.sender().to_string(),
                     sender_name,
+                    sender_name_ambiguous,
                     sender_avatar_url,
                     sender_status_emoji,
                     sender_status_text,
@@ -1932,6 +1984,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                     .unwrap_or_default();
                 let SenderProfileFfi {
                     sender_name,
+                    sender_name_ambiguous,
                     sender_avatar_url,
                     sender_status_emoji,
                     sender_status_text,
@@ -1945,6 +1998,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                         .unwrap_or_default(),
                     sender: event_item.sender().to_string(),
                     sender_name,
+                    sender_name_ambiguous,
                     sender_avatar_url,
                     sender_status_emoji,
                     sender_status_text,
@@ -1959,6 +2013,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             if let StateEventContentChange::Original { content, .. } = full {
                 let SenderProfileFfi {
                     sender_name,
+                    sender_name_ambiguous,
                     sender_avatar_url,
                     sender_status_emoji,
                     sender_status_text,
@@ -1972,6 +2027,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                         .unwrap_or_default(),
                     sender: event_item.sender().to_string(),
                     sender_name,
+                    sender_name_ambiguous,
                     sender_avatar_url,
                     sender_status_emoji,
                     sender_status_text,
@@ -2014,6 +2070,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         };
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2033,6 +2090,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 .unwrap_or_default(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2056,6 +2114,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         };
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2069,6 +2128,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 .unwrap_or_default(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2147,6 +2207,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         let body = utd_message_for_cause(cause).to_owned();
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2159,6 +2220,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             room_id: room_id.to_owned(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2180,6 +2242,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
     {
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2195,6 +2258,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             room_id: room_id.to_owned(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2218,8 +2282,13 @@ pub(super) async fn timeline_item_to_ffi_opts(
             .and_then(forwarded_sticker_fields)
             .unwrap_or_else(|| sticker_fields(s.content()));
         if let Some(view) = &forward {
-            let name = forwarded_sender_name(room, &view.forwarded).await;
-            apply_forward(&mut fields, &view.forwarded, name);
+            let verified = forwarded_origin_verified(room, &view.forwarded).await;
+            let name = if verified {
+                forwarded_sender_name(room, &view.forwarded).await
+            } else {
+                String::new()
+            };
+            apply_forward(&mut fields, &view.forwarded, name, verified);
         }
         // MSC4144: a sticker has no fallback text to cut.
         if let Some(view) = latest_profile(event_item) {
@@ -2227,6 +2296,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         }
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2278,6 +2348,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             room_id: room_id.to_owned(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2335,6 +2406,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         let f = poll_fields(&answers, disclosed, ended, me.map_or("", |u| u.as_str()));
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2382,6 +2454,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             room_id: room_id.to_owned(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2437,6 +2510,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         );
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2451,6 +2525,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
             room_id: room_id.to_owned(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2482,6 +2557,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         };
         let SenderProfileFfi {
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2495,6 +2571,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 .unwrap_or_default(),
             sender: event_item.sender().to_string(),
             sender_name,
+            sender_name_ambiguous,
             sender_avatar_url,
             sender_status_emoji,
             sender_status_text,
@@ -2551,8 +2628,13 @@ pub(super) async fn timeline_item_to_ffi_opts(
         };
     };
     if let Some(view) = &forward {
-        let name = forwarded_sender_name(room, &view.forwarded).await;
-        apply_forward(&mut msg_fields, &view.forwarded, name);
+        let verified = forwarded_origin_verified(room, &view.forwarded).await;
+        let name = if verified {
+            forwarded_sender_name(room, &view.forwarded).await
+        } else {
+            String::new()
+        };
+        apply_forward(&mut msg_fields, &view.forwarded, name, verified);
     }
     if let Some(view) = &profile {
         if strip_profile {
@@ -2563,6 +2645,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
 
     let SenderProfileFfi {
         sender_name,
+        sender_name_ambiguous,
         sender_avatar_url,
         sender_status_emoji,
         sender_status_text,
@@ -2620,6 +2703,7 @@ pub(super) async fn timeline_item_to_ffi_opts(
         room_id: room_id.to_owned(),
         sender: event_item.sender().to_string(),
         sender_name,
+        sender_name_ambiguous,
         sender_avatar_url,
         sender_status_emoji,
         sender_status_text,
@@ -3629,7 +3713,7 @@ mod forward_tests {
         assert!(v.forwarded.content.is_none());
         let mut f = forwarded_message_fields(&v).unwrap();
         assert_eq!(f.body, FALLBACK);
-        apply_forward(&mut f, &v.forwarded, String::new());
+        apply_forward(&mut f, &v.forwarded, String::new(), true);
         assert!(f.forwarded);
         assert_eq!(f.forwarded_sender, "@bob:other.org");
     }
@@ -3651,7 +3735,7 @@ mod forward_tests {
         let v = view(&ev);
         let mut f = forwarded_message_fields(&v).unwrap();
         assert_eq!(f.body, "the text");
-        apply_forward(&mut f, &v.forwarded, "Bob".into());
+        apply_forward(&mut f, &v.forwarded, "Bob".into(), true);
         assert!(f.forwarded);
         assert_eq!(f.forwarded_sender, "@bob:other.org");
         assert_eq!(f.forwarded_sender_name, "Bob");
@@ -3704,7 +3788,7 @@ mod forward_tests {
         ev["content"][UNSTABLE_KEY]["origin_server_ts"] = json!(-5);
         let v = view(&ev);
         let mut f = TimelineEvent::default();
-        apply_forward(&mut f, &v.forwarded, "A name".into());
+        apply_forward(&mut f, &v.forwarded, "A name".into(), true);
         assert!(f.forwarded);
         assert_eq!(f.forwarded_sender, "");
         // A name without a sender to belong to is not shown.
@@ -3715,10 +3799,22 @@ mod forward_tests {
     }
 
     #[test]
+    fn an_unverified_forward_names_nobody_but_keeps_the_jump_target() {
+        let v = view(&forward_event(json!({ "msgtype": "m.text", "body": "x" })));
+        let mut f = TimelineEvent::default();
+        apply_forward(&mut f, &v.forwarded, "Bob".into(), false);
+        assert!(f.forwarded);
+        assert_eq!(f.forwarded_sender, "");
+        assert_eq!(f.forwarded_sender_name, "");
+        assert_eq!(f.forwarded_room_id, "!orig:other.org");
+        assert_eq!(f.forwarded_event_id, "$orig");
+    }
+
+    #[test]
     fn full_attribution_is_copied() {
         let v = view(&forward_event(json!({ "msgtype": "m.text", "body": "x" })));
         let mut f = TimelineEvent::default();
-        apply_forward(&mut f, &v.forwarded, "Bob".into());
+        apply_forward(&mut f, &v.forwarded, "Bob".into(), true);
         assert_eq!(f.forwarded_sender, "@bob:other.org");
         assert_eq!(f.forwarded_sender_name, "Bob");
         assert_eq!(f.forwarded_room_id, "!orig:other.org");

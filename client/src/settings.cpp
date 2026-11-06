@@ -164,6 +164,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         auto_replace_emoticons = j.value("auto_replace_emoticons", false);
         send_bundled_url_previews = j.value("send_bundled_url_previews", true);
         fetch_url_previews_directly = j.value("fetch_url_previews_directly", false);
+        url_previews_in_encrypted_rooms = j.value("url_previews_in_encrypted_rooms", false);
         exclude_insecure_devices = j.value("exclude_insecure_devices", false);
         block_sends_on_unverified_devices = j.value("block_sends_on_unverified_devices", true);
         {
@@ -517,6 +518,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"auto_replace_emoticons", auto_replace_emoticons},
         {"send_bundled_url_previews", send_bundled_url_previews},
         {"fetch_url_previews_directly", fetch_url_previews_directly},
+        {"url_previews_in_encrypted_rooms", url_previews_in_encrypted_rooms},
         {"exclude_insecure_devices", exclude_insecure_devices},
         {"block_sends_on_unverified_devices", block_sends_on_unverified_devices},
         {"proxy_mode", proxy_mode == ProxyMode::None     ? "none"

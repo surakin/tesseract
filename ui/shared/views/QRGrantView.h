@@ -70,6 +70,11 @@ public:
     {
         relayout_ = std::move(fn);
     }
+    // Whether `uri` is safe to hand to the browser: an https URL with a host.
+    // The verification URI comes from the scanning device, so anything else
+    // (file:, custom schemes, plain http) is refused rather than opened.
+    static bool is_secure_auth_uri(const std::string& uri);
+
     void set_open_browser(std::function<void(const std::string&)> fn)
     {
         open_browser_ = std::move(fn);

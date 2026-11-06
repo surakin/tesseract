@@ -11,6 +11,17 @@ pub fn strip_bidi_overrides(s: &str) -> String {
         .collect()
 }
 
+/// `name`, or `name (user_id)` when another room member shares the name
+/// (the spec's display-name disambiguation). An empty name stays empty so the
+/// caller keeps its own user-id fallback.
+pub fn disambiguated_name(name: &str, ambiguous: bool, user_id: &str) -> String {
+    if ambiguous && !name.is_empty() && !user_id.is_empty() {
+        format!("{name} ({user_id})")
+    } else {
+        name.to_owned()
+    }
+}
+
 /// Escape `&`, `<`, `>` and `"` so `s` can sit in HTML text or a quoted attribute.
 pub(crate) fn html_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -87,12 +98,21 @@ pub fn find_preview_url_spans(text: &str) -> Vec<UrlSpan> {
     let code_regions = code_regions(text);
     find_url_spans(text)
         .into_iter()
-        .filter(|s| !code_regions.iter().any(|r| s.start >= r.0 && s.end <= r.1))
+        .filter(|s| {
+            // The regions are sorted and disjoint, so only the last one that
+            // starts at or before the span can contain it.
+            let after = code_regions.partition_point(|r| r.0 <= s.start);
+            !after
+                .checked_sub(1)
+                .is_some_and(|i| s.start >= code_regions[i].0 && s.end <= code_regions[i].1)
+        })
         .collect()
 }
 
 /// Byte ranges of `text` that are Markdown code regions (fenced blocks and
-/// inline code spans), as `(start, end)` pairs.
+/// inline code spans), as `(start, end)` pairs, sorted and disjoint. Linear in
+/// the text apart from one extra scan per distinct unmatched backtick-run
+/// length, since the text is untrusted and this runs on the UI thread.
 fn code_regions(text: &str) -> Vec<(usize, usize)> {
     let mut regions = Vec::new();
 
@@ -139,10 +159,18 @@ fn code_regions(text: &str) -> Vec<(usize, usize)> {
     // Skip scanning inside fenced blocks already found above.
     let bytes = text.as_bytes();
     let n = bytes.len();
+    let fenced = regions.clone(); // sorted and disjoint
+    let mut next_fenced = 0usize;
+    // Opening-run lengths already known to have no closing run after them: a
+    // later opener of the same length would search a subset and fail too.
+    let mut unmatched_lens: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut i = 0;
     while i < n {
-        if regions.iter().any(|r| i >= r.0 && i < r.1) {
-            i += 1;
+        while next_fenced < fenced.len() && fenced[next_fenced].1 <= i {
+            next_fenced += 1;
+        }
+        if next_fenced < fenced.len() && i >= fenced[next_fenced].0 {
+            i = fenced[next_fenced].1;
             continue;
         }
         if bytes[i] == b'`' {
@@ -156,7 +184,7 @@ fn code_regions(text: &str) -> Vec<(usize, usize)> {
             };
             let mut j = open_start + open_len;
             let mut found_close = None;
-            while j < n {
+            while j < n && !unmatched_lens.contains(&open_len) {
                 if bytes[j] == b'`' {
                     let close_start = j;
                     let mut k = j;
@@ -179,6 +207,7 @@ fn code_regions(text: &str) -> Vec<(usize, usize)> {
                 continue;
             }
             // No matching close: not a code span, just literal backticks.
+            unmatched_lens.insert(open_len);
             i = open_start + open_len;
             continue;
         }
@@ -274,6 +303,14 @@ mod tests {
     }
 
     #[test]
+    fn disambiguated_name_appends_the_id_only_when_ambiguous() {
+        assert_eq!(disambiguated_name("Alice", true, "@m:x"), "Alice (@m:x)");
+        assert_eq!(disambiguated_name("Alice", false, "@m:x"), "Alice");
+        assert_eq!(disambiguated_name("", true, "@m:x"), "");
+        assert_eq!(disambiguated_name("Alice", true, ""), "Alice");
+    }
+
+    #[test]
     fn no_urls_returns_empty() {
         assert!(find_url_spans("just some text, no link").is_empty());
         assert!(find_url_spans("").is_empty());
@@ -353,6 +390,34 @@ mod preview_span_tests {
             .iter()
             .map(|s| &text[s.start..s.end])
             .collect()
+    }
+
+    #[test]
+    fn many_regions_and_unmatched_runs_stay_fast_and_correct() {
+        // 20k fenced blocks, then a URL after them: found, and quickly.
+        let mut text = String::new();
+        for _ in 0..20_000 {
+            text.push_str("```\nx\n```\n");
+        }
+        text.push_str("http://after.example/");
+        assert_eq!(preview_urls(&text), vec!["http://after.example/"]);
+
+        // Backtick runs of rising length that never close: no quadratic scan.
+        let mut text = String::new();
+        for len in 1..300 {
+            text.push_str(&"`".repeat(len));
+            text.push(' ');
+        }
+        text.push_str("http://tail.example/");
+        let started = std::time::Instant::now();
+        assert_eq!(preview_urls(&text), vec!["http://tail.example/"]);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+
+        // A matched span still hides its URL after an unmatched run.
+        assert_eq!(
+            preview_urls("`` x `http://in.example/` http://out.example/"),
+            vec!["http://out.example/"]
+        );
     }
 
     #[test]

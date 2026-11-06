@@ -4,8 +4,33 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- fix(messages): in the IRC layout a forwarded emote names who forwarded it ("* Bob forwarded: Carol waves"). Linux build, ctest 3913/3913
+- fix(security): linking a device by QR now refuses to open a sign-in address that isn't https. Linux build, ctest 3912/3912
+- fix(security): mention pills show the member's real name (or Matrix ID) with the ID on hover, not the sender's link text. Linux build, ctest 3911/3911
+- fix(security): a forwarded message names its original author only when that message is in your local history and matches. Linux build, ctest 3911/3911, cargo 1703/1703
 - feat(settings): a new Appearance option centers system messages (joins, leaves, invites) in the Bubbles layout. Linux build, focused ctest
 
+- fix(verification): finished emoji verifications no longer count against the pending limit, so new requests from the same person aren't ignored. cargo 1700/1700
+- privacy(gifs): the GIF search id sent to Klipy can no longer be recomputed from your Matrix ID. cargo 1698/1698
+- fix(security): a second verification request can no longer take over a pending one by reusing its ID. cargo 1692/1692
+- fix(security): the media disk cache now keeps to its size limit during a session, not only at startup. Linux build, ctest 3903/3903
+- ci(security): workflow actions are pinned to commit SHAs, and the AppImage build checks linuxdeploy's SHA-256 and pins its GStreamer script. Workflow YAML parses; not run in CI
+- fix(security): history exports and their images are readable only by you, and no longer overwrite each other's pictures. Linux build, ctest 3900/3900, cargo 1687/1687
+- fix(security): the plain-text history export can no longer be made to show forged message lines. Linux build, ctest 3900/3900, cargo 1687/1687
+- fix(security): avatars and pack or room images that can't be stripped of location data are refused instead of uploaded. Linux build, ctest 3900/3900, cargo 1687/1687
+- privacy(location): shared-location maps don't load tiles while media previews are hidden for the room. Linux build, ctest 3900/3900, cargo 1687/1687
+- fix(security): another user can no longer stop the single-instance lock by taking its folder in /tmp. Linux build, ctest 3900/3900, cargo 1687/1687
+- fix(security): remote call video is size-limited, and very long messages with code or blank spans no longer stall the UI. Linux build, ctest 3900/3900, cargo 1687/1687
+- fix(security): a damaged voice message can no longer crash Tesseract. Linux build, ctest 3900/3900, cargo 1687/1687
+- fix(security): a message with a huge table can no longer freeze or crash Tesseract; oversized tables are cut short. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): project files such as `.csproj` and `.sln` are never opened, and other text files ask before opening. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): playlists (`.m3u`, `.pls`, `.asx`, …) are never opened, even when renamed to look like media. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): Save-As no longer lets a received file's name pick the folder the dialog opens in. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(calls): another member's call server can no longer add fake participants or show media under a real member's name. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): oversized images in formats the size check can't read are refused before decoding on Windows and macOS. Linux build; unverified Windows/macOS
+- fix(security): members who share a display name are shown with their Matrix ID, also in the per-message profile "via" label. Linux build, ctest 3888/3892, cargo 1672/1672
+- privacy(previews): links in encrypted rooms are no longer sent to the homeserver for previews unless a new setting allows it. Linux build, ctest 3888/3892, cargo 1672/1672
+- fix(security): forwarding an encrypted message sends what you see, not an edit the homeserver could have slipped in. Linux build, ctest 3888/3892, cargo 1672/1672
 - feat(messages): messages sent with a per-message profile show its name and avatar, with the real sender beside it (MSC4144). Windows release build
 - fix(messages): forwarding a message no longer carries over its per-message profile. Windows release build
 - refactor(settings): settings regrouped into fewer, clearer tabs (Security & Devices, Messages, General). Windows release build + ctest

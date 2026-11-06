@@ -40,7 +40,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -77,10 +77,10 @@ jobs:
           echo "OPUS_STATIC=1" >> "$GITHUB_ENV"
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/linux-release/cargo/build
 
@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload refreshed screenshots
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-screenshots
           path: generated-screenshots/*.png
@@ -140,7 +140,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -181,7 +181,7 @@ jobs:
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable, aarch64 target)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin
           # rust-objcopy (used by rustc to strip release binaries on Apple
@@ -191,7 +191,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -226,7 +226,7 @@ jobs:
           python3 scripts/ci/screenshots/check_size.py generated-screenshots
 
       - name: Upload refreshed screenshots
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-appkit-screenshots
           path: generated-screenshots/*.png
@@ -240,13 +240,13 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/windows-release/cargo/build
 
@@ -254,7 +254,7 @@ jobs:
       # hand that exact interpreter to CMake below.
       - name: Set up Python (icon generation)
         id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
 
@@ -264,7 +264,7 @@ jobs:
       # Ninja doesn't activate MSVC on its own; without vcvars CMake falls
       # back to the runner's bundled MinGW gcc.
       - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       # Build opus from source so its CRT (/MD) matches the rest of the build.
       - name: Build opus from source
@@ -331,7 +331,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Screenshots have the wrong size' }
 
       - name: Upload refreshed screenshots
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-windows-screenshots
           path: generated-screenshots/*.png
@@ -354,10 +354,10 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download the new screenshots
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: tesseract-*-screenshots
           path: screenshots

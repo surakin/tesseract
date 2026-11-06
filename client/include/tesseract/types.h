@@ -208,6 +208,8 @@ struct Event
     std::string room_id;
     std::string sender;
     std::string sender_name;
+    /// Another room member shares `sender_name`; show the Matrix ID beside it.
+    bool sender_name_ambiguous = false;
     std::string sender_avatar_url;
     /// MSC4426 status of the sender (global profile); empty when unset.
     std::string sender_status_emoji;

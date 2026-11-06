@@ -78,13 +78,13 @@ jobs:
     environment: ${{ inputs.windows_sign && 'signing' || '' }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/windows-release/cargo/build
 
@@ -94,7 +94,7 @@ jobs:
       # (3.14 in the hosted toolcache), which has no resvg_py installed.
       - name: Set up Python (icon generation)
         id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
 
@@ -123,7 +123,7 @@ jobs:
       - name: Cache ssign
         if: ${{ inputs.windows_sign }}
         id: ssign_cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~\.cargo\bin\ssign.exe
           key: ssign-0.1.8-${{ runner.os }}
@@ -139,7 +139,7 @@ jobs:
       # that checksum so most runs never touch the release URL, and the
       # download retries because GitHub release downloads intermittently 500.
       - name: Cache gettext download
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}\gettext.zip
           key: gettext-2b999bc37b56fa052ff98578e9cb188152009f634e3a66aa8ff263a016e9c466
@@ -160,7 +160,7 @@ jobs:
       # find cl.exe and silently falls back to the runner's bundled MinGW gcc.
       # This step runs vcvars and exports INCLUDE/LIB/PATH so Ninja picks MSVC.
       - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       # opus is required by matrix-sdk-ui (MSC3245 voice messages).
       # Build from source so the CRT (/MD) and generator (Ninja+MSVC) match
@@ -232,7 +232,7 @@ jobs:
           if ($bad) { throw "signature verification failed" }
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-windows
           path: build/windows-release/Tesseract-*.exe
@@ -253,7 +253,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -293,7 +293,7 @@ jobs:
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable, aarch64 target)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin
           # rust-objcopy (used by rustc to strip release binaries on Apple
@@ -303,7 +303,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -415,7 +415,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-arm64
           path: build/macos-appkit-arm64-release/Tesseract-*.dmg
@@ -440,7 +440,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -481,7 +481,7 @@ jobs:
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable, x86_64 target)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-apple-darwin
           # See the aarch64 job above: rust-objcopy needs llvm-tools-preview's
@@ -489,7 +489,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-x86_64-release/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -601,7 +601,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -v "$DMG"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-x86_64
           path: build/macos-appkit-x86_64-release/Tesseract-*.dmg
@@ -634,7 +634,7 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
@@ -675,14 +675,14 @@ jobs:
       # Homebrew bottle targets the runner's own macOS and is single-arch.
       - name: Install Rust (stable, aarch64 + x86_64 targets)
         if: steps.as_check.outputs.present == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         if: steps.as_check.outputs.present == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-appstore/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
@@ -753,7 +753,7 @@ jobs:
 
       - name: Upload App Store pkg artifact
         if: steps.as_check.outputs.present == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-macos-appstore
           path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
@@ -816,7 +816,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -849,10 +849,10 @@ jobs:
           echo "OPUS_STATIC=1" >> $GITHUB_ENV
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/linux-release/cargo/build
 
@@ -868,7 +868,7 @@ jobs:
 
       - name: Upload DEB artifact
         if: ${{ inputs.linux_packages }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-deb
           path: build/linux-release/*.deb
@@ -876,7 +876,7 @@ jobs:
 
       - name: Upload RPM artifact
         if: ${{ inputs.linux_packages }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-rpm
           path: build/linux-release/*.rpm
@@ -925,9 +925,16 @@ jobs:
       - name: Download linuxdeploy and Qt + GStreamer plugins
         if: ${{ inputs.linux_appimage }}
         run: |
+          # Pinned by SHA-256 / commit so a changed upstream build fails the job
+          # instead of being bundled. To bump: copy the new asset digests from
+          # the `continuous` releases (gh api repos/linuxdeploy/<repo>/releases).
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/432af639725bc8b99df12351e86bb2e8a6b3585f/linuxdeploy-plugin-gstreamer.sh
+          sha256sum -c - <<'EOF'
+          df908b19f1ed1cdafa79508d415aa12d6c56ce4d56d4149aa8c09286718706e5  linuxdeploy-x86_64.AppImage
+          cfc1055b2b9dbc08412b579f20990b7b41a17b61beaa5847dc9477c96c9e9617  linuxdeploy-plugin-qt-x86_64.AppImage
+          EOF
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
 
       - name: Build AppImage
@@ -944,7 +951,7 @@ jobs:
 
       - name: Upload AppImage artifact
         if: ${{ inputs.linux_appimage }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-linux-appimage
           path: Tesseract-*.AppImage
@@ -964,10 +971,10 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Deploy docs/ to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs
@@ -990,7 +997,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -1081,7 +1088,7 @@ jobs:
           echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
 
       - name: Cache flatpak-builder state
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .flatpak-builder
           key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'Cargo.lock') }}
@@ -1114,7 +1121,7 @@ jobs:
 
       - name: Upload Flatpak bundle artifact
         if: ${{ inputs.flatpak_publish }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: tesseract-flatpak-bundle
           path: tesseract-v*.flatpak
@@ -1132,7 +1139,7 @@ jobs:
 
       - name: Deploy Flatpak repo to gh-pages
         if: ${{ inputs.flatpak_publish }}
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: pages-deploy

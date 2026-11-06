@@ -167,6 +167,29 @@ TEST_CASE("private_runtime_dir: rejects a symlinked XDG_RUNTIME_DIR")
     fs::remove_all(target);
 }
 
+TEST_CASE("private_dir_at: creates a private dir and rejects ones it does not own safely")
+{
+    namespace fs = std::filesystem;
+    const fs::path base = make_temp_dir("pda", fs::perms::owner_all);
+    const std::string fresh = (base / "new").string();
+    CHECK(tk::private_dir_at(fresh) == fresh);
+    CHECK(is_private_dir(fresh));
+    CHECK(tk::private_dir_at(fresh) == fresh); // idempotent
+
+    const fs::path open_dir = base / "open";
+    fs::create_directory(open_dir);
+    fs::permissions(open_dir,
+                    fs::perms::owner_all | fs::perms::others_read | fs::perms::others_exec);
+    CHECK(tk::private_dir_at(open_dir.string()).empty());
+
+    const fs::path link = base / "link";
+    fs::create_directory_symlink(fresh, link);
+    CHECK(tk::private_dir_at(link.string()).empty());
+
+    CHECK(tk::private_dir_at((base / "no" / "such" / "parent").string()).empty());
+    fs::remove_all(base);
+}
+
 TEST_CASE("private_runtime_dir: falls back to a private /tmp dir without XDG_RUNTIME_DIR")
 {
     RuntimeDirEnv env(nullptr);

@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <climits>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <thread>
 
 #include <fcntl.h>
@@ -152,12 +154,26 @@ std::string private_runtime_dir()
         return xdg;
     }
 #endif
-    const std::string fallback = "/tmp/tesseract-" + std::to_string(getuid());
-    if (mkdir(fallback.c_str(), 0700) != 0 && errno != EEXIST)
+    if (std::string dir = private_dir_at("/tmp/tesseract-" + std::to_string(getuid()));
+        !dir.empty())
+    {
+        return dir;
+    }
+    // /tmp is shared: another local user can occupy the name above and so stop
+    // the lock from working. The user's own data directory cannot be planted.
+    std::error_code ec;
+    const std::filesystem::path data = tesseract::data_dir();
+    std::filesystem::create_directories(data, ec);
+    return private_dir_at((data / "run").string());
+}
+
+std::string private_dir_at(const std::string& path)
+{
+    if (mkdir(path.c_str(), 0700) != 0 && errno != EEXIST)
     {
         return {};
     }
-    return is_private_dir(fallback) ? fallback : std::string{};
+    return is_private_dir(path) ? path : std::string{};
 }
 
 std::string format_activation_payload(const ActivationRequest& req)

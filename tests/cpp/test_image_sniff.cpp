@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -314,6 +315,40 @@ TEST_CASE("decode_size_allowed: budgets")
     CHECK(tk::decode_size_allowed(gif_screen(5000, 5000), false));
     CHECK_FALSE(tk::decode_size_allowed(webp_vp8x_canvas(16383, 16383), true));
     CHECK(tk::decode_size_allowed(bytes_of("not an image"), false));
+}
+
+TEST_CASE("decode_dims_allowed: decoder-reported sizes use the still/animated budget")
+{
+    CHECK(tk::decode_dims_allowed(8064, 6048, false));
+    CHECK_FALSE(tk::decode_dims_allowed(10001, 10001, false));
+    CHECK_FALSE(tk::decode_dims_allowed(40000, 10, false));
+    CHECK_FALSE(tk::decode_dims_allowed(32000, 32000, false));
+    CHECK(tk::decode_dims_allowed(4096, 4096, true));
+    CHECK_FALSE(tk::decode_dims_allowed(5000, 5000, true));
+    CHECK(tk::decode_dims_allowed(5000, 5000, false));
+    CHECK_FALSE(tk::decode_dims_allowed(0, 100, false));
+    CHECK_FALSE(tk::decode_dims_allowed(100, 0, true));
+    CHECK_FALSE(tk::decode_dims_allowed(UINT32_MAX, UINT32_MAX, false));
+    CHECK_FALSE(tk::decode_dims_allowed(1ull << 40, 1, false));
+    CHECK(tk::decode_dims_allowed(tk::kMaxDecodeSide, 1, false));
+    CHECK_FALSE(tk::decode_dims_allowed(tk::kMaxDecodeSide + 1ull, 1, false));
+}
+
+TEST_CASE("decode_size_allowed and decode_dims_allowed agree on probed sizes")
+{
+    const std::pair<std::uint32_t, std::uint32_t> sizes[] = {
+        {8064, 6048}, {10001, 10001}, {4096, 4096}, {5000, 5000}};
+    for (const auto& [w, h] : sizes)
+    {
+        for (const bool anim : {false, true})
+        {
+            CAPTURE(w, h, anim);
+            CHECK(tk::decode_size_allowed(png_ihdr(w, h), anim) ==
+                  tk::decode_dims_allowed(w, h, anim));
+            CHECK(tk::decode_size_allowed(gif_screen(w, h), anim) ==
+                  tk::decode_dims_allowed(w, h, anim));
+        }
+    }
 }
 
 TEST_CASE("decode_size_allowed: JPEG stills get the larger budget where it is DCT-scaled")

@@ -804,6 +804,56 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::InviteAvatars:
         apply_media_preview_config_();
         break;
+    case K::EncryptedUrlPreviews:
+        // Turning it on: request previews for the rows already on screen
+        // (bypassing media_prepped_event_ids_). Turning it off needs nothing:
+        // cached cards stay and no new requests go out.
+        if (s.url_previews_in_encrypted_rooms)
+        {
+            // The main window's list and every pop-out's list, each gated by
+            // its own room.
+            auto request_visible = [this](views::MessageListView* ml, const std::string& room_id)
+            {
+                if (!ml)
+                {
+                    return;
+                }
+                auto [first, last] = ml->visible_range();
+                if (first < 0)
+                {
+                    return;
+                }
+                const auto& msgs = ml->messages();
+                for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+                {
+                    ensure_row_media_(msgs[static_cast<std::size_t>(i)], /*fetch_avatars=*/false,
+                                      room_id);
+                }
+                request_relayout_();
+            };
+            // Thread panels only prefetch when their snapshot loads, so an open
+            // one would never retry the links the gate refused.
+            auto request_view = [&request_visible](views::RoomView* rv, const std::string& room_id)
+            {
+                request_visible(rv->message_list(), room_id);
+                if (auto* tv = rv->thread_view())
+                {
+                    request_visible(tv->message_list(), room_id);
+                }
+            };
+            if (room_view_)
+            {
+                request_view(room_view_, current_room_id_);
+            }
+            for (auto& [rid, w] : secondary_windows_)
+            {
+                if (auto* rv = w->room_view())
+                {
+                    request_view(rv, rid);
+                }
+            }
+        }
+        break;
     case K::SendPresence:
         apply_send_presence_();
         break;

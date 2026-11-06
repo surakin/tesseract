@@ -63,6 +63,10 @@ pub fn validate_proxy_url(url: &str) -> bool {
     super::net_proxy::validate_proxy_url(url)
 }
 
+pub fn sanitize_filename_or_empty(raw: &str) -> String {
+    super::media_type_check::sanitize_filename_or_empty(raw)
+}
+
 pub fn check_media_file(
     filename: &str,
     declared_mime: &str,
@@ -588,6 +592,8 @@ pub mod ffi {
         room_id: String,
         sender: String,
         sender_name: String,
+        /// True when another room member shares sender_name; the UI then appends the Matrix ID.
+        sender_name_ambiguous: bool,
         sender_avatar_url: String,
         /// MSC4426 status emoji / text of the sender; empty when unset.
         sender_status_emoji: String,
@@ -2305,6 +2311,11 @@ pub mod ffi {
         /// Compare a received file's name, declared mime and leading bytes
         /// (pass up to ~8 KiB) before handing it to an OS viewer.
         fn check_media_file(filename: &str, declared_mime: &str, head: &[u8]) -> MediaTypeCheckFfi;
+
+        /// Filesystem-safe leaf of a sender-supplied name (no directories,
+        /// control/bidi chars, Windows-invalid chars or reserved names, at
+        /// most 120 bytes); empty when nothing usable remains.
+        fn sanitize_filename_or_empty(raw: &str) -> String;
 
         // ----- Local waveform generation -----
 

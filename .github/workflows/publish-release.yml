@@ -123,12 +123,12 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: refs/tags/${{ env.TAG }}
 
       - name: Deploy docs/ to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs
@@ -154,7 +154,7 @@ jobs:
     steps:
       # Only for the static .flatpakrepo/.flatpakref files deployed alongside
       # the repo.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: refs/tags/${{ env.TAG }}
 
@@ -223,7 +223,7 @@ jobs:
           cp packaging/flatpak/io.github.surakin.Tesseract.flatpakref pages-deploy/
 
       - name: Deploy Flatpak repo to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: pages-deploy
@@ -267,7 +267,7 @@ jobs:
           test -f msix/Tesseract-store-x64.msix
 
       - name: Configure Microsoft Store CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.4
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
 
       - name: Reconfigure store credentials
         run: |
@@ -388,7 +388,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: refs/tags/${{ env.TAG }}
 
@@ -400,7 +400,7 @@ jobs:
           grep -E '^(pkgver|pkgrel)=' "$pkgbuild"
 
       - name: Publish to the AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        uses: KSXGitHub/github-actions-deploy-aur@2ac5a4c1d7035885d46b10e3193393be8460b6f1 # v4.1.1
         with:
           pkgname: tesseract-matrix
           pkgbuild: packaging/arch/aur/tesseract-matrix/PKGBUILD
@@ -425,7 +425,7 @@ jobs:
 
     steps:
       - name: Submit package update
-        uses: vedantmgoyal2009/winget-releaser@v2
+        uses: vedantmgoyal2009/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
         with:
           identifier: Tesseract.Matrix
           installers-regex: 'Tesseract-.*-AMD64\.exe$'

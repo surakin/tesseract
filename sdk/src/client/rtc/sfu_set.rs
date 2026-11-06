@@ -166,6 +166,14 @@ impl SfuSet {
         }
     }
 
+    /// Show remote-SFU participants whose membership has synced since they
+    /// joined, and retract ones that are no longer members publishing there.
+    pub fn recheck_participants(&self) {
+        for remote in self.remotes.lock().values() {
+            remote.room.recheck_participants();
+        }
+    }
+
     /// Connect to newly needed SFUs and drop the ones nobody publishes on.
     pub async fn reconcile(&self, desired: &BTreeSet<String>) {
         let (to_connect, to_drop) = {

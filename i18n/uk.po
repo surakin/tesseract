@@ -3007,6 +3007,10 @@ msgstr "Скасувати запит"
 msgid "Loading map…"
 msgstr "Завантаження мапи…"
 
+#: ui/shared/views/LocationMapPanner.cpp:101
+msgid "Map not loaded"
+msgstr "Карту не завантажено"
+
 #: ui/shared/views/LoginView.cpp:61
 msgid "Sign in to Matrix"
 msgstr "Увійти до Matrix"
@@ -5066,6 +5070,12 @@ msgstr "Додавати попередній перегляд посилань 
 #: ui/shared/views/settings/PrivacySection.cpp:115
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr "Отримувати попередній перегляд посилань напряму, а не через домашній сервер"
+
+msgid "Show link previews in encrypted rooms"
+msgstr "Показувати попередній перегляд посилань у зашифрованих кімнатах"
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr "Запитує у вашого домашнього сервера попередній перегляд посилань у зашифрованих кімнатах. Ваш домашній сервер бачитиме ці посилання, а сайти за посиланнями можуть дізнатися, коли ви відкриваєте кімнату. Попередній перегляд, доданий відправником, показується завжди."
 
 #: ui/shared/views/settings/PrivacySection.cpp:137
 msgid ""
@@ -7701,3 +7711,15 @@ msgstr "Передавання даних"
 #, c++-format
 msgid "{0} via {1}"
 msgstr "{0} через {1}"
+
+#: ui/shared/views/QRGrantView.cpp:349
+msgid "The sign-in address from the other device is not a secure web address, so it was not opened."
+msgstr "Адреса входу з іншого пристрою не є захищеною веб-адресою, тому її не відкрито."
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded:"
+msgstr "{0} переслав(-ла):"
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded: {1}"
+msgstr "{0} переслав(-ла): {1}"

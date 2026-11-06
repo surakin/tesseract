@@ -709,7 +709,7 @@ async fn run_window(
     running_totals: &mut RunningTotals,
     room_created_ts_ms: u64,
     avatar_cache: &mut HashMap<String, Option<String>>,
-    avatar_names_used: &mut HashSet<String>,
+    media_names_used: &mut HashSet<String>,
 ) -> WindowOutcome {
     if let Some(id) = seed_seen {
         seen.insert(id.to_string());
@@ -908,7 +908,7 @@ async fn run_window(
                 descriptors,
                 EXPORT_IMAGE_CONCURRENCY,
                 &ctx.cancel,
-                &mut HashSet::new(),
+                media_names_used,
             )
             .await;
             for (desc, outcome) in outcomes {
@@ -970,7 +970,7 @@ async fn run_window(
                 avatar_descriptors,
                 EXPORT_IMAGE_CONCURRENCY,
                 &ctx.cancel,
-                avatar_names_used,
+                media_names_used,
             )
             .await;
             for (desc, outcome) in outcomes {
@@ -1319,7 +1319,10 @@ async fn run_export(mut ctx: ExportCtx) {
     // window after window, and filename collision-avoidance for avatars
     // must hold across windows too (see `images.rs`'s doc comment).
     let mut avatar_cache: HashMap<String, Option<String>> = HashMap::new();
-    let mut avatar_names_used: HashSet<String> = HashSet::new();
+    // One name set for message images and avatars across every window, seeded
+    // with what an earlier (resumed) run already saved: they share one media
+    // directory, and a reused name would replace another sender's picture.
+    let mut media_names_used: HashSet<String> = images::saved_stems(&media_dir);
 
     for _ in 0..MAX_WINDOWS {
         let result = run_window(
@@ -1335,7 +1338,7 @@ async fn run_export(mut ctx: ExportCtx) {
             &mut totals,
             room_created_ts_ms,
             &mut avatar_cache,
-            &mut avatar_names_used,
+            &mut media_names_used,
         )
         .await;
         seed_for_first_window = None;
@@ -1507,7 +1510,7 @@ async fn run_export(mut ctx: ExportCtx) {
     }
 
     let out_dir = fresh_export_dir(std::path::Path::new(&ctx.options.out_path));
-    if let Err(e) = std::fs::create_dir_all(&out_dir) {
+    if let Err(e) = crate::private_fs::create_dir_all(&out_dir) {
         emit_complete(
             &ctx.handler,
             ctx.request_id,
@@ -1583,7 +1586,7 @@ async fn run_export(mut ctx: ExportCtx) {
         }
         if media_dir.is_dir() {
             let dest_media = out_dir.join("media");
-            let _ = std::fs::create_dir_all(&dest_media);
+            let _ = crate::private_fs::create_dir_all(&dest_media);
             if let Ok(rd) = std::fs::read_dir(&media_dir) {
                 for entry in rd.flatten() {
                     let path = entry.path();

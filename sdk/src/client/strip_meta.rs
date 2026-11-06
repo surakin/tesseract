@@ -57,6 +57,14 @@ pub(super) fn strip_for_upload<'a>(
     strip_image_metadata(bytes, mime)
 }
 
+/// The image with its metadata removed, or `None` when that cannot be done
+/// with confidence (unknown format, unparseable file). For uploads nothing
+/// else vets, such as avatars and pack images: the original must not go out
+/// in its place, since it may carry GPS and device data.
+pub(super) fn strip_image_or_refuse<'a>(bytes: &'a [u8], mime: &str) -> Option<Cow<'a, [u8]>> {
+    strip_checked(bytes, mime)
+}
+
 pub(super) fn strip_image_metadata<'a>(bytes: &'a [u8], mime: &str) -> Cow<'a, [u8]> {
     strip_checked(bytes, mime).unwrap_or(Cow::Borrowed(bytes))
 }
@@ -1600,6 +1608,16 @@ mod tests {
         assert!(!out.contains("inkscape:export-xdpi=\"96\"") && !out.contains("/home/x"));
         assert!(out.contains("xinkscape:export-xdpi=\"1\"")); // not preceded by whitespace: kept
         assert_eq!(out.matches("id=\"a\"").count(), 200_000);
+    }
+
+    #[test]
+    fn avatar_style_uploads_refuse_what_cannot_be_stripped() {
+        assert!(strip_image_or_refuse(&jpeg_fixture(), "image/jpeg").is_some());
+        assert!(strip_image_or_refuse(&png_fixture(), "image/png").is_some());
+        // Truncated / unknown bytes: not uploaded as they are.
+        assert!(strip_image_or_refuse(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00], "image/jpeg").is_none());
+        assert!(strip_image_or_refuse(b"not an image at all", "image/png").is_none());
+        assert!(strip_image_or_refuse(b"", "image/jpeg").is_none());
     }
 
     #[test]

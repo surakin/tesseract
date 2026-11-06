@@ -1346,6 +1346,132 @@ TEST_CASE("blocks: an empty table emits no block", "[html_spans][blocks]")
     CHECK(find_block(blocks, BodyBlock::Kind::Table) == nullptr);
 }
 
+namespace
+{
+// Sum of rows * cols over every Table block.
+std::size_t total_table_cells(const std::vector<BodyBlock>& blocks)
+{
+    std::size_t n = 0;
+    for (const auto& b : blocks)
+    {
+        if (b.kind == BodyBlock::Kind::Table)
+        {
+            n += b.table.rows.size() * b.table.col_align.size();
+        }
+    }
+    return n;
+}
+
+std::size_t count_ellipsis_paragraphs(const std::vector<BodyBlock>& blocks)
+{
+    std::size_t n = 0;
+    for (const auto& b : blocks)
+    {
+        if (b.kind == BodyBlock::Kind::Paragraph && joined_block_text(b) == "\xE2\x80\xA6")
+        {
+            ++n;
+        }
+    }
+    return n;
+}
+} // namespace
+
+TEST_CASE("blocks: an over-wide, over-long table is capped", "[html_spans][blocks]")
+{
+    std::string html = "<table><tr>";
+    for (int i = 0; i < 200; ++i)
+    {
+        html += "<td>x</td>";
+    }
+    html += "</tr>";
+    for (int i = 0; i < 3000; ++i)
+    {
+        html += "<tr><td>y</td></tr>";
+    }
+    html += "</table>";
+
+    auto blocks = html_to_blocks(html, false);
+    REQUIRE(blocks.size() == 2);
+    const BodyBlock& t = blocks[0];
+    REQUIRE(t.kind == BodyBlock::Kind::Table);
+    CHECK(t.table.col_align.size() == tesseract::views::kMaxTableCols);
+    for (const auto& row : t.table.rows)
+    {
+        CHECK(row.size() == t.table.col_align.size());
+    }
+    CHECK(t.table.rows.size() * t.table.col_align.size() <= tesseract::views::kMaxTableCells);
+    CHECK(blocks[1].kind == BodyBlock::Kind::Paragraph);
+    CHECK(joined_block_text(blocks[1]) == "\xE2\x80\xA6");
+}
+
+TEST_CASE("blocks: pathological table from a single small message stays bounded",
+          "[html_spans][blocks]")
+{
+    std::string html = "<table><tr>";
+    for (int i = 0; i < 8000; ++i)
+    {
+        html += "<td></td>";
+    }
+    html += "</tr>";
+    for (int i = 0; i < 4000; ++i)
+    {
+        html += "<tr><td></td></tr>";
+    }
+    html += "</table>";
+
+    auto blocks = html_to_blocks(html, false);
+    CHECK(total_table_cells(blocks) <= tesseract::views::kMaxTableCells);
+    CHECK(count_ellipsis_paragraphs(blocks) >= 1);
+}
+
+TEST_CASE("blocks: the table cell budget is shared across tables in one message",
+          "[html_spans][blocks]")
+{
+    std::string one = "<table>";
+    for (int r = 0; r < 100; ++r)
+    {
+        one += "<tr>";
+        for (int c = 0; c < 64; ++c)
+        {
+            one += "<td>a</td>";
+        }
+        one += "</tr>";
+    }
+    one += "</table>";
+
+    std::string html;
+    for (int i = 0; i < 5; ++i)
+    {
+        html += one;
+    }
+
+    auto blocks = html_to_blocks(html, false);
+    CHECK(total_table_cells(blocks) <= tesseract::views::kMaxTableCells);
+    CHECK(count_ellipsis_paragraphs(blocks) >= 1);
+}
+
+TEST_CASE("blocks: header_rows never exceeds the kept rows", "[html_spans][blocks]")
+{
+    std::string html = "<table><thead>";
+    for (int r = 0; r < 300; ++r)
+    {
+        html += "<tr>";
+        for (int c = 0; c < 64; ++c)
+        {
+            html += "<th>h</th>";
+        }
+        html += "</tr>";
+    }
+    html += "</thead></table>";
+
+    auto blocks = html_to_blocks(html, false);
+    const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
+    REQUIRE(t != nullptr);
+    CHECK(t->table.header_rows >= 0);
+    CHECK(static_cast<std::size_t>(t->table.header_rows) <= t->table.rows.size());
+    CHECK(total_table_cells(blocks) <= tesseract::views::kMaxTableCells);
+}
+
 TEST_CASE("blocks: block content inside a cell stays in the cell", "[html_spans][blocks]")
 {
     // The Matrix HTML subset permits <ul>/<p>/<blockquote> inside a <td>
@@ -1927,4 +2053,22 @@ TEST_CASE("first_preview_url: code and matrix.to links are not previewed",
                             "https://matrix.to/#/!r:s</a>",
                             "https://matrix.to/#/!r:s")
               .empty());
+}
+
+TEST_CASE("blocks: a long run of blank leading spans is trimmed away", "[html_spans][blocks]")
+{
+    std::string html;
+    for (int i = 0; i < 20000; ++i)
+    {
+        html += "<b> </b><i> </i>";
+    }
+    html += "<u>hello</u>";
+    const auto blocks = html_to_blocks(html, false);
+    REQUIRE(blocks.size() == 1);
+    std::string text;
+    for (const auto& sp : blocks[0].spans)
+    {
+        text += sp.text;
+    }
+    CHECK(text == "hello");
 }

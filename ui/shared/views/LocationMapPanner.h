@@ -182,7 +182,11 @@ public:
     // Draws the slippy-map tile composite + pin + attribution for one
     // Kind::Location row into `map_rect` (pre-clipped). Records the rect for
     // hit-testing and requests any missing tiles via the tile-request cb.
-    void paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect map_rect);
+    // `fetch_tiles` false (the row's media preview is hidden) paints cached
+    // tiles only and never requests one, so no map server is contacted for a
+    // room whose previews are off.
+    void paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect map_rect,
+               bool fetch_tiles = true);
 
 private:
     TileImageProvider tile_image_provider_;

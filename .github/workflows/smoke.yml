@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
@@ -87,15 +87,15 @@ jobs:
           echo "OPUS_STATIC=1" >> "$GITHUB_ENV"
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/linux-release/cargo/build
           cache-on-failure: true
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
 
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: smoke-linux-logs
           path: |
@@ -179,7 +179,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Select Xcode
         run: |
@@ -210,20 +210,20 @@ jobs:
           echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-apple-darwin
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
           # Same key as prime-rust-cache.yml, which seeds this cache nightly.
           shared-key: macos-arm64-xcode-26.4.1
           cache-on-failure: true
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
 
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: smoke-macos-logs
           path: |
@@ -278,13 +278,13 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: . -> build/windows-release/cargo/build
           cache-on-failure: true
@@ -293,7 +293,7 @@ jobs:
       # hand that exact interpreter to CMake (see compile-check.yml).
       - name: Set up Python (icon generation, smoke scripts)
         id: python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.12'
 
@@ -301,7 +301,7 @@ jobs:
         run: pip install resvg-py
 
       - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
 
       - name: Build opus from source
         run: |
@@ -348,7 +348,7 @@ jobs:
           localhostForwarding=false
           "@ | Set-Content -Path "$env:USERPROFILE\.wslconfig"
 
-      - uses: Vampire/setup-wsl@v7
+      - uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7
         with:
           distribution: Ubuntu-24.04
           additional-packages: python3-venv python3-pip
@@ -423,7 +423,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: smoke-windows-logs
           path: |

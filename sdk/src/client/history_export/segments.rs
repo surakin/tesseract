@@ -32,7 +32,7 @@ pub(super) struct SegmentWriter {
 impl SegmentWriter {
     /// Starts a fresh segment sequence in a new directory.
     pub(super) fn create(dir: &Path) -> io::Result<Self> {
-        fs::create_dir_all(dir)?;
+        crate::private_fs::create_dir_all(dir)?;
         Ok(Self {
             dir: dir.to_path_buf(),
             finished: Vec::new(),
@@ -49,7 +49,7 @@ impl SegmentWriter {
     /// already-fetched history is recoverable (the window gets re-walked),
     /// refusing to resume at all is not friendlier to the user.
     pub(super) fn resume(dir: &Path, existing_segment_count: u32) -> io::Result<Self> {
-        fs::create_dir_all(dir)?;
+        crate::private_fs::create_dir_all(dir)?;
         let mut finished = Vec::new();
         for i in 0..existing_segment_count {
             let p = segment_path(dir, i);
@@ -71,7 +71,7 @@ impl SegmentWriter {
     pub(super) fn begin_segment(&mut self) -> io::Result<()> {
         debug_assert!(self.current.is_none(), "finish the previous segment first");
         let path = segment_path(&self.dir, self.next_index);
-        self.current = Some(BufWriter::new(File::create(path)?));
+        self.current = Some(BufWriter::new(crate::private_fs::create_file(&path)?));
         Ok(())
     }
 
@@ -120,7 +120,7 @@ impl SegmentWriter {
         footer: &str,
         mut on_progress: impl FnMut(usize),
     ) -> io::Result<()> {
-        let mut out = BufWriter::new(File::create(out_path)?);
+        let mut out = BufWriter::new(crate::private_fs::create_file(out_path)?);
         out.write_all(header.as_bytes())?;
         let mut buf = Vec::new();
         for (i, seg) in self.finished.iter().rev().enumerate() {

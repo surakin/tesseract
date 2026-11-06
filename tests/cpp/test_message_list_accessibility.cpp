@@ -469,3 +469,37 @@ TEST_CASE("a per-message profile row reads \"{profile} via {member}: {body}\"",
     // An avatar-only profile (no name) reads as the member, with no "via".
     CHECK(row_name("") == "Alice: hi");
 }
+
+TEST_CASE("an ambiguous sender reads with their Matrix ID",
+          "[message_list][accessibility][profile]")
+{
+    auto row_name = [](const std::string& profile_name)
+    {
+        MessageListView v;
+        auto r = text_row("$a", "Alice", "hi");
+        r.sender = "@mallory:evil.org";
+        r.sender_name_ambiguous = true;
+        if (!profile_name.empty())
+        {
+            r.profile_id = "cat-id";
+            r.profile_name = profile_name;
+        }
+        std::vector<MessageRowData> msgs;
+        msgs.push_back(std::move(r));
+        v.set_messages(std::move(msgs), false);
+        AccessNode tree = build_access_tree(&v);
+        const AccessNode* list = find_role_msg(tree, Role::List);
+        REQUIRE(list != nullptr);
+        for (const auto& ch : list->children)
+        {
+            if (ch.role == Role::ListItem)
+            {
+                return ch.name;
+            }
+        }
+        return std::string{};
+    };
+
+    CHECK(row_name("") == "Alice (@mallory:evil.org): hi");
+    CHECK(row_name("cat") == "cat via Alice (@mallory:evil.org): hi");
+}

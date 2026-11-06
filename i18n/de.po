@@ -748,6 +748,10 @@ msgstr "Nachricht gelöscht"
 msgid "Loading map…"
 msgstr "Karte wird geladen …"
 
+#: ui/shared/views/LocationMapPanner.cpp:101
+msgid "Map not loaded"
+msgstr "Karte nicht geladen"
+
 #: ui/shared/views/MessageListView.cpp:12434
 msgid "Reacted with :"
 msgstr "Reagiert mit :"
@@ -5079,6 +5083,12 @@ msgstr "Linkvorschauen in von mir gesendete Nachrichten einfügen"
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr "Linkvorschauen direkt abrufen statt über meinen Homeserver"
 
+msgid "Show link previews in encrypted rooms"
+msgstr "Linkvorschauen in verschlüsselten Räumen anzeigen"
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr "Fragt deinen Homeserver nach Vorschauen für Links in verschlüsselten Räumen. Dein Homeserver sieht diese Links, und die verlinkten Websites können erkennen, wann du den Raum öffnest. Vom Absender angehängte Vorschauen werden immer angezeigt."
+
 #: ui/shared/views/settings/PrivacySection.cpp:103
 msgid "Your homeserver doesn't provide link previews, so links you receive won't show a preview."
 msgstr "Dein Homeserver stellt keine Linkvorschauen bereit, daher wird für empfangene Links keine Vorschau angezeigt."
@@ -7118,3 +7128,15 @@ msgstr "Datenweitergabe"
 #, c++-format
 msgid "{0} via {1}"
 msgstr "{0} über {1}"
+
+#: ui/shared/views/QRGrantView.cpp:349
+msgid "The sign-in address from the other device is not a secure web address, so it was not opened."
+msgstr "Die Anmeldeadresse des anderen Geräts ist keine sichere Webadresse und wurde deshalb nicht geöffnet."
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded:"
+msgstr "{0} hat weitergeleitet:"
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded: {1}"
+msgstr "{0} hat weitergeleitet: {1}"

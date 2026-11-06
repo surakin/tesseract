@@ -3131,6 +3131,10 @@ msgstr "[Çàñçél Réqùéstxx]"
 msgid "Loading map…"
 msgstr "[Löàdïñg màp…xx]"
 
+#: ui/shared/views/LocationMapPanner.cpp:101
+msgid "Map not loaded"
+msgstr "[Màp ñöt löàdédxx]"
+
 #: ui/shared/views/LoginView.cpp:61
 msgid "Sign in to Matrix"
 msgstr "[Sïgñ ïñ tö Màtrïxxxx]"
@@ -5395,6 +5399,12 @@ msgstr "[Ïñçlùdé lïñk prévïéws ïñ méssàgés Ï séñdxxxxxxxx]"
 msgid "Fetch link previews directly instead of through my homeserver"
 msgstr "[Fétçh lïñk prévïéws dïréçtly ïñstéàd öf thröùgh my hömésérvérxxxxxxxxxxxx]"
 
+msgid "Show link previews in encrypted rooms"
+msgstr "[Shöw lïñk prévïéws ïñ éñçryptéd röömsxxxxxxx]"
+
+msgid "Ask your homeserver for previews of links in encrypted rooms. Your homeserver will see those links, and the linked sites can tell when you open the room. Previews the sender attached are always shown."
+msgstr "[Àsk yöùr hömésérvér för prévïéws öf lïñks ïñ éñçryptéd rööms. Yöùr hömésérvér wïll séé thösé lïñks, àñd thé lïñkéd sïtés çàñ téll whéñ yöù öpéñ thé rööm. Prévïéws thé séñdér àttàçhéd àré àlwàys shöwñ.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
 #: ui/shared/views/settings/PrivacySection.cpp:137
 msgid "Before sending a message that contains links, ask your homeserver for a preview of each link and attach it to the message, so recipients see it without fetching it themselves. Sending such messages can take a few seconds longer."
 msgstr "[Béföré séñdïñg à méssàgé thàt çöñtàïñs lïñks, àsk yöùr hömésérvér för à prévïéw öf éàçh lïñk àñd àttàçh ït tö thé méssàgé, sö réçïpïéñts séé ït wïthöùt fétçhïñg ït thémsélvés. Séñdïñg sùçh méssàgés çàñ tàké à féw séçöñds löñgér.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
@@ -7532,3 +7542,15 @@ msgstr "[{0} vïà {1}xx]"
 msgid "Center system messages"
 msgstr "[Çéñtér systém méssàgésxxxxxxx]"
 
+
+#: ui/shared/views/QRGrantView.cpp:349
+msgid "The sign-in address from the other device is not a secure web address, so it was not opened."
+msgstr "[Thé sïgñ-ïñ àddréss fröm thé öthér dévïçé ïs ñöt à séçùré wéb àddréss, sö ït wàs ñöt öpéñéd.xxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded:"
+msgstr "[{0} förwàrdéd:xx]"
+
+#: ui/shared/views/MessageListView.cpp:1747
+msgid "{0} forwarded: {1}"
+msgstr "[{0} förwàrdéd: {1}xxx]"

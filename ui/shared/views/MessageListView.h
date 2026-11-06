@@ -146,7 +146,8 @@ struct MessageRowData
     std::string event_id;
     std::string sender; // canonical Matrix ID
     std::string sender_name;
-    std::string sender_avatar_url; // mxc
+    bool sender_name_ambiguous = false; // another member shares sender_name
+    std::string sender_avatar_url;      // mxc
     // MSC4426 status of the sender; emoji drawn after the name (opt-in
     // setting), text shown as a tooltip.
     std::string sender_status_emoji;
@@ -267,15 +268,23 @@ struct MessageRowData
     {
         return !profile_id.empty();
     }
-    // Real sender's name, else the mxid.
-    const std::string& member_label() const
+    // Real sender's raw name, else the mxid.
+    const std::string& member_name() const
     {
         return sender_name.empty() ? sender : sender_name;
     }
-    // Name to draw: the profile name when it has one, else the member's.
+    // member_name(), plus " (@mxid)" when another room member shares the name.
+    std::string member_label() const;
+    // Raw name to draw: the profile name when it has one, else the member's.
+    // Avatar initials use this; header text uses display_label().
     const std::string& display_name() const
     {
-        return has_profile() && !profile_name.empty() ? profile_name : member_label();
+        return has_profile() && !profile_name.empty() ? profile_name : member_name();
+    }
+    // Header text: the profile name when it has one, else member_label().
+    std::string display_label() const
+    {
+        return shows_via() ? profile_name : member_label();
     }
     // Avatar key to draw (empty == initials).
     const std::string& display_avatar_key() const
@@ -400,6 +409,13 @@ struct MessageRowData
         return std::min(gallery_items.size(), kMaxGalleryItems);
     }
 };
+
+// Who the IRC layout's emote line ("* <actor> waves") names. A forwarded
+// (MSC4553) emote has no sender header in that layout, so the line names the
+// forwarder first ("Mallory forwarded: Alice waves"); the original author is
+// left out when the forward does not name a verified one. Any other emote
+// names its sender.
+std::string irc_emote_actor(const MessageRowData& m);
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
 // consumes. `my_user_id` is used to set `is_own` on the returned row.
@@ -786,6 +802,16 @@ public:
     void set_mention_avatar_provider(MentionAvatarProvider p)
     {
         mention_avatar_provider_ = std::move(p);
+    }
+
+    // Resolves a mentioned user's display name by Matrix user id, for the
+    // label of a received mention pill. The sender's own anchor text is never
+    // shown (it can claim to be anyone); a miss (empty string) shows the
+    // Matrix id instead.
+    using MentionNameProvider = std::function<std::string(const std::string& user_id)>;
+    void set_mention_name_provider(MentionNameProvider p)
+    {
+        mention_name_provider_ = std::move(p);
     }
 
     // Resolves the CURRENT room's own avatar image, for drawing inside an
@@ -1783,6 +1809,7 @@ private:
     // goes to on_link_clicked. False when neither callback is set.
     bool open_link_(const std::string& url);
     MentionAvatarProvider mention_avatar_provider_;
+    MentionNameProvider mention_name_provider_;
     RoomAvatarProvider room_avatar_provider_;
     std::string room_language_;
     bool predecessor_available_ = false;

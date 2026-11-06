@@ -173,3 +173,60 @@ TEST_CASE("cache directory and entries are owner-only", "[media-disk-cache]")
     CHECK((file_perms & (fs::perms::group_all | fs::perms::others_all)) == fs::perms::none);
 }
 #endif
+
+TEST_CASE("store keeps the cache under its size cap without an explicit prune",
+          "[media-disk-cache]")
+{
+    TmpDir tmp;
+    tk::MediaDiskCache c(tmp.path, 1000);
+    const std::vector<std::uint8_t> payload(100, 0xAB);
+    for (int i = 0; i < 40; ++i)
+    {
+        c.store(tk::CacheKey::media("mxc://example.org/" + std::to_string(i)), payload);
+        CHECK(c.size_bytes() <= 1000);
+    }
+    CHECK(c.load(tk::CacheKey::media("mxc://example.org/39")) == payload);
+    CHECK(c.size_bytes() > 0);
+}
+
+TEST_CASE("evicting an entry frees room under the cap", "[media-disk-cache]")
+{
+    TmpDir tmp;
+    tk::MediaDiskCache c(tmp.path, 1000);
+    const std::vector<std::uint8_t> payload(100, 0xCD);
+    auto key = [](int i)
+    {
+        return tk::CacheKey::media("mxc://example.org/" + std::to_string(i));
+    };
+    for (int i = 0; i < 5; ++i)
+    {
+        c.store(key(i), payload);
+    }
+    for (int i = 0; i < 3; ++i)
+    {
+        c.evict(key(i));
+    }
+    // Five entries again, under the cap only because the evictions were counted.
+    for (int i = 5; i < 8; ++i)
+    {
+        c.store(key(i), payload);
+    }
+    for (int i = 3; i < 8; ++i)
+    {
+        CHECK(c.load(key(i)) == payload);
+    }
+}
+
+TEST_CASE("replacing an entry does not count it twice", "[media-disk-cache]")
+{
+    TmpDir tmp;
+    tk::MediaDiskCache c(tmp.path, 1000);
+    const std::vector<std::uint8_t> payload(100, 0xEF);
+    const auto other = tk::CacheKey::media("mxc://example.org/other");
+    c.store(other, payload);
+    for (int i = 0; i < 20; ++i)
+    {
+        c.store(tk::CacheKey::media("mxc://example.org/same"), payload);
+    }
+    CHECK(c.load(other) == payload);
+}
