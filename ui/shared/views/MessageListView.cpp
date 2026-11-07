@@ -1607,6 +1607,15 @@ std::string membership_target_label(const MessageRowData& m)
                                             : m.membership_target_name;
 }
 
+// Bubbles layout with the "Center system messages" option on.
+bool system_messages_centered()
+{
+    const auto& settings = tesseract::Settings::instance();
+    return settings.message_layout == tesseract::Settings::MessageLayout::Bubbles &&
+           settings.system_message_timeline_alignment ==
+               tesseract::Settings::SystemMessageTimelineAlignment::Center;
+}
+
 } // namespace
 
 bool membership_avatar_hit(tk::Rect row_rect, tk::Point world)
@@ -2075,10 +2084,7 @@ public:
     bool membership_avatar_hit_at(std::size_t index, std::size_t line_index, tk::Rect line,
                                   tk::Point world) const
     {
-        const auto& settings = tesseract::Settings::instance();
-        if (settings.message_layout != tesseract::Settings::MessageLayout::Bubbles ||
-            settings.system_message_timeline_alignment !=
-                tesseract::Settings::SystemMessageTimelineAlignment::Center)
+        if (!system_messages_centered())
         {
             return membership_avatar_hit(line, world);
         }
@@ -2288,10 +2294,7 @@ public:
         {
             auto& avatar_offsets = cache_for(index).centered_avatar_offsets;
             avatar_offsets.clear();
-            const auto& settings = tesseract::Settings::instance();
-            if (settings.message_layout == tesseract::Settings::MessageLayout::Bubbles &&
-                settings.system_message_timeline_alignment ==
-                    tesseract::Settings::SystemMessageTimelineAlignment::Center)
+            if (system_messages_centered())
             {
                 const float column_w = owner_.column_for_(width).w;
                 if (is_membership_group_start(index) && membership_group_collapsed(index))
@@ -8341,8 +8344,7 @@ public:
     bool paint_membership_line(std::size_t index, const MessageRowData& m, tk::PaintCtx& ctx,
                                tk::Rect bounds, const Adapter& ad) const override
     {
-        if (tesseract::Settings::instance().system_message_timeline_alignment !=
-            tesseract::Settings::SystemMessageTimelineAlignment::Center)
+        if (!system_messages_centered())
         {
             return false;
         }
@@ -8352,8 +8354,7 @@ public:
     bool paint_membership_summary(std::size_t start, std::size_t end, tk::PaintCtx& ctx,
                                   tk::Rect bounds, const Adapter& ad) const override
     {
-        if (tesseract::Settings::instance().system_message_timeline_alignment !=
-            tesseract::Settings::SystemMessageTimelineAlignment::Center)
+        if (!system_messages_centered())
         {
             return false;
         }

@@ -4,8 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
-- fix(messages): centered system messages keep their avatars and expanded timestamps. Linux build, focused ctest
-- feat(settings): Bubbles system messages can be left-aligned or centered in Appearance settings. Linux build, focused ctest
+- feat(settings): a new Appearance option centers system messages (joins, leaves, invites) in the Bubbles layout. Linux build, focused ctest
 
 - feat(messages): messages sent with a per-message profile show its name and avatar, with the real sender beside it (MSC4144). Windows release build
 - fix(messages): forwarding a message no longer carries over its per-message profile. Windows release build
