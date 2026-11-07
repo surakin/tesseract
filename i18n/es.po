@@ -6556,6 +6556,18 @@ msgstr "Algo salió mal al confirmar. Inténtalo de nuevo."
 msgid "Show my name and avatar"
 msgstr "Mostrar mi nombre y avatar"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Position of system messages in the timeline"
+msgstr "Posición de los mensajes del sistema en la conversación"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:174
+msgid ""
+"Applies to joins, leaves, invites, bans, and changes to profiles and room "
+"settings."
+msgstr ""
+"Se aplica a entradas, salidas, invitaciones, baneos y cambios en los perfiles "
+"y en la configuración de la sala."
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "No tienes permiso para unirte a llamadas en esta sala."

@@ -1,10 +1,20 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tk/canvas.h"
+#include "tk/theme.h"
+#include "tk/widget.h"
+#include "tk_test_surface.h"
 #include "views/MessageListView.h"
 #include "views/MembershipGroupExpander.h"
 #include "tesseract/types.h"
 
+#include <tesseract/settings.h>
+
+#include <cstdint>
+#include <utility>
+
 using tesseract::MembershipAction;
+using tesseract::Settings;
 using tesseract::views::is_membership_group_start;
 using tesseract::views::MembershipGroupExpander;
 using tesseract::views::membership_avatar_hit;
@@ -12,6 +22,7 @@ using tesseract::views::membership_group_actions;
 using tesseract::views::membership_group_end;
 using tesseract::views::membership_group_expandable;
 using tesseract::views::membership_group_start_of;
+using tesseract::views::MessageListView;
 using tesseract::views::MessageRowData;
 using tesseract::views::make_row_data;
 using tesseract::views::with_membership_reason;
@@ -41,6 +52,63 @@ MessageRowData day_separator_row()
     MessageRowData r;
     r.kind = MessageRowData::Kind::DaySeparator;
     return r;
+}
+
+std::vector<std::uint32_t> render_system_row(Settings::MessageLayout layout,
+                                             MessageRowData::Kind kind, bool repeated = false)
+{
+    Settings::instance().message_layout = layout;
+    auto surface = TestSurface::create(320, 64);
+    if (!surface)
+    {
+        return {};
+    }
+
+    MessageRowData row;
+    if (kind == MessageRowData::Kind::Membership)
+    {
+        row = membership_row("$system", MembershipAction::Left);
+        row.membership_target_name = "Alice";
+        row.membership_target_user_id = "@alice:example.org";
+    }
+    else
+    {
+        row.kind = kind;
+        row.sender_name = "Alice";
+        row.body = "left the room";
+        row.room_name_new = "New room name";
+        row.room_name_old = "Old room name";
+        row.replacement_room_id = "!new:example.org";
+    }
+
+    std::vector<MessageRowData> rows{row};
+    if (kind == MessageRowData::Kind::Membership && repeated)
+    {
+        row.event_id = "$system-2";
+        rows.push_back(row);
+    }
+
+    MessageListView view;
+    view.set_messages(std::move(rows), true);
+    surface->canvas().clear(tk::Color::rgb(0xffffff));
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    view.measure(lc, {320.0f, 64.0f});
+    view.arrange(lc, {0.0f, 0.0f, 320.0f, 64.0f});
+    tk::PaintCtx pc{surface->canvas(), surface->factory(), tk::Theme::light()};
+    view.paint(pc);
+
+    std::vector<std::uint32_t> pixels;
+    pixels.reserve(320 * 64);
+    for (int y = 0; y < 64; ++y)
+    {
+        for (int x = 0; x < 320; ++x)
+        {
+            const tk::Color c = surface->read_pixel(x, y);
+            pixels.push_back((std::uint32_t(c.r) << 24) | (std::uint32_t(c.g) << 16) |
+                             (std::uint32_t(c.b) << 8) | c.a);
+        }
+    }
+    return pixels;
 }
 
 } // namespace
@@ -423,4 +491,63 @@ TEST_CASE("make_row_data picks the per-message profile avatar key", "[message_li
     tesseract::Event plain;
     plain.sender_avatar_url = "mxc://x/alice";
     CHECK(make_row_data(plain, "@me:server").display_avatar_key() == "mxc://x/alice");
+}
+
+TEST_CASE("bubble system messages are centered without horizontal rules",
+          "[message_list][system_messages][layout]")
+{
+    using A = Settings::SystemMessageTimelineAlignment;
+    using ML = Settings::MessageLayout;
+    using Kind = MessageRowData::Kind;
+    struct RestoreSettings
+    {
+        Settings::MessageLayout previous_layout = Settings::instance().message_layout;
+        A previous_alignment = Settings::instance().system_message_timeline_alignment;
+        ~RestoreSettings()
+        {
+            Settings::instance().message_layout = previous_layout;
+            Settings::instance().system_message_timeline_alignment = previous_alignment;
+        }
+    } restore;
+    Settings::instance().system_message_timeline_alignment = A::Center;
+
+    const auto system_messages = render_system_row(ML::Bubbles, Kind::Membership);
+    const auto pinned = render_system_row(ML::Bubbles, Kind::PinnedEvent);
+    REQUIRE_FALSE(system_messages.empty());
+    REQUIRE_FALSE(pinned.empty());
+
+    bool pinned_left_rule = false;
+    bool pinned_right_rule = false;
+    for (std::size_t y = 0; y < 64; ++y)
+    {
+        const std::size_t row = y * 320;
+        const std::size_t left = row + 20;
+        const std::size_t right = row + 300;
+        CHECK(system_messages[left] == system_messages[row + 5]);
+        CHECK(system_messages[right] == system_messages[row + 315]);
+        pinned_left_rule |= pinned[left] != pinned[row + 5];
+        pinned_right_rule |= pinned[right] != pinned[row + 315];
+    }
+    CHECK(pinned_left_rule);
+    CHECK(pinned_right_rule);
+
+    CHECK(render_system_row(ML::Bubbles, Kind::Membership, true) != system_messages);
+    const auto classic = render_system_row(ML::Classic, Kind::Membership);
+    const auto irc = render_system_row(ML::Irc, Kind::Membership);
+    const auto room_name = render_system_row(ML::Bubbles, Kind::RoomName);
+    const auto room_upgrade = render_system_row(ML::Bubbles, Kind::RoomTombstone);
+    CHECK(classic != render_system_row(ML::Classic, Kind::PinnedEvent));
+    CHECK(irc != render_system_row(ML::Irc, Kind::PinnedEvent));
+
+    // Left (the default) restores the existing rows, including collapsed groups.
+    Settings::instance().system_message_timeline_alignment = A::Left;
+    const auto left = render_system_row(ML::Bubbles, Kind::Membership);
+    CHECK(left != system_messages);
+    CHECK(left == classic);
+    CHECK(render_system_row(ML::Bubbles, Kind::Membership, true) != system_messages);
+    CHECK(render_system_row(ML::Classic, Kind::Membership) == classic);
+    CHECK(render_system_row(ML::Irc, Kind::Membership) == irc);
+    CHECK(render_system_row(ML::Bubbles, Kind::PinnedEvent) == pinned);
+    CHECK(render_system_row(ML::Bubbles, Kind::RoomName) == room_name);
+    CHECK(render_system_row(ML::Bubbles, Kind::RoomTombstone) == room_upgrade);
 }
