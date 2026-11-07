@@ -1804,7 +1804,7 @@ public:
     {
         return false;
     }
-    virtual bool paint_membership_line(const MessageRowData&, tk::PaintCtx&, tk::Rect,
+    virtual bool paint_membership_line(std::size_t, const MessageRowData&, tk::PaintCtx&, tk::Rect,
                                        const Adapter&) const
     {
         return false;
@@ -2072,6 +2072,29 @@ public:
         return rows;
     }
 
+    bool membership_avatar_hit_at(std::size_t index, std::size_t line_index, tk::Rect line,
+                                  tk::Point world) const
+    {
+        const auto& settings = tesseract::Settings::instance();
+        if (settings.message_layout != tesseract::Settings::MessageLayout::Bubbles ||
+            settings.system_message_timeline_alignment !=
+                tesseract::Settings::SystemMessageTimelineAlignment::Center)
+        {
+            return membership_avatar_hit(line, world);
+        }
+        if (index >= layout_cache_.size() ||
+            line_index >= layout_cache_[index].centered_avatar_offsets.size() ||
+            !rect_contains(line, world))
+        {
+            return false;
+        }
+        const float radius = kMembershipAvatarD * 0.5f;
+        const float dx =
+            world.x - (line.x + layout_cache_[index].centered_avatar_offsets[line_index] + radius);
+        const float dy = world.y - (line.y + kPinnedEventH * 0.5f);
+        return dx * dx + dy * dy <= radius * radius;
+    }
+
     std::size_t count() const override
     {
         return owner_.messages_.size() + 1; // +1 for always-present typing row
@@ -2263,6 +2286,33 @@ public:
         }
         if (m.kind == Kind::Membership)
         {
+            auto& avatar_offsets = cache_for(index).centered_avatar_offsets;
+            avatar_offsets.clear();
+            const auto& settings = tesseract::Settings::instance();
+            if (settings.message_layout == tesseract::Settings::MessageLayout::Bubbles &&
+                settings.system_message_timeline_alignment ==
+                    tesseract::Settings::SystemMessageTimelineAlignment::Center)
+            {
+                const float column_w = owner_.column_for_(width).w;
+                if (is_membership_group_start(index) && membership_group_collapsed(index))
+                {
+                    for (const auto& run :
+                         membership_group_actions(index, membership_group_end(index)))
+                    {
+                        auto line = centered_system_message_layout_(
+                            ctx.factory, column_w, membership_run_phrase(owner_.messages_, run),
+                            std::min<std::size_t>(run.rows.size(), 3), {});
+                        avatar_offsets.push_back(line.avatar_x);
+                    }
+                }
+                else if (membership_row_painted(index))
+                {
+                    auto line = centered_system_message_layout_(ctx.factory, column_w,
+                                                                membership_expanded_phrase(m), 1,
+                                                                format_hhmm(m.timestamp_ms));
+                    avatar_offsets.push_back(line.avatar_x);
+                }
+            }
             // A collapsed group-start row is one line per distinct action
             // (the summary); expanded, it's the first member's own line.
             // Non-start rows are 0 height while their group is collapsed
@@ -2432,7 +2482,7 @@ public:
                 }
                 else
                 {
-                    paint_membership_line(m, ctx, bounds);
+                    paint_membership_line(index, m, ctx, bounds);
                 }
             }
             else
@@ -2440,7 +2490,7 @@ public:
                 std::size_t start = membership_group_start_of(index);
                 if (owner_.membership_groups_.is_expanded(owner_.messages_[start].event_id))
                 {
-                    paint_membership_line(m, ctx, bounds);
+                    paint_membership_line(index, m, ctx, bounds);
                 }
             }
             return;
@@ -5090,29 +5140,101 @@ private:
         }
     }
 
-    void paint_centered_system_message_text_(const std::string& text, tk::PaintCtx& ctx,
-                                             tk::Rect bounds) const
+    struct CenteredSystemMessageLayout
     {
+        std::unique_ptr<tk::TextLayout> text;
+        std::unique_ptr<tk::TextLayout> timestamp;
+        float avatar_x = 0.0f;
+        float text_x = 0.0f;
+        float timestamp_x = 0.0f;
+    };
+
+    CenteredSystemMessageLayout centered_system_message_layout_(tk::CanvasFactory& factory,
+                                                                float width,
+                                                                const std::string& text,
+                                                                std::size_t avatar_count,
+                                                                const std::string& timestamp) const
+    {
+        constexpr float kGap = 6.0f;
+        constexpr float kStride = 12.0f;
+        const float available = std::max(0.0f, width - kMsgListPadX * 2);
+        const float avatars_width =
+            avatar_count ? kMembershipAvatarD + static_cast<float>(avatar_count - 1) * kStride : 0;
+        CenteredSystemMessageLayout result;
+        tk::TextStyle ts_style{};
+        ts_style.role = tk::FontRole::Timestamp;
+        ts_style.wrap = false;
+        ts_style.trim = tk::TextTrim::Ellipsis;
+        ts_style.max_width = std::max(0.0f, available - avatars_width - kGap);
+        if (!timestamp.empty() && ts_style.max_width > 0.0f)
+        {
+            result.timestamp = factory.build_text(timestamp, ts_style);
+        }
+        const float ts_width =
+            result.timestamp ? std::min(result.timestamp->measure().w, ts_style.max_width) : 0.0f;
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
         st.wrap = false;
         st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2);
-        auto lo = ctx.factory.build_text(text, st);
-        if (!lo)
+        st.max_width = std::max(0.0f, available - avatars_width - kGap -
+                                          (result.timestamp ? ts_width + kGap : 0.0f));
+        if (st.max_width > 0.0f)
         {
-            return;
+            result.text = factory.build_text(text, st);
         }
-
-        const tk::Size sz = lo->measure();
-        const float cx = bounds.x + bounds.w * 0.5f;
-        const float cy = bounds.y + kPinnedEventH * 0.5f;
-        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
-                             ctx.theme.palette.text_muted);
+        const float text_width = result.text ? std::min(result.text->measure().w, st.max_width) : 0;
+        const float group_width = avatars_width + (result.text ? kGap + text_width : 0.0f) +
+                                  (result.timestamp ? kGap + ts_width : 0.0f);
+        result.avatar_x = (width - group_width) * 0.5f;
+        result.text_x = result.avatar_x + avatars_width + kGap;
+        result.timestamp_x =
+            result.avatar_x + avatars_width + (result.text ? kGap + text_width : 0.0f) + kGap;
+        return result;
     }
 
-    void paint_centered_system_message_line_(const MessageRowData& m, tk::PaintCtx& ctx,
-                                             tk::Rect bounds) const
+    void paint_centered_system_message_(const std::vector<std::size_t>& rows,
+                                        const std::string& text, const std::string& timestamp,
+                                        tk::PaintCtx& ctx, tk::Rect bounds) const
+    {
+        constexpr float kStride = 12.0f;
+        const std::size_t count = std::min<std::size_t>(rows.size(), 3);
+        auto layout =
+            centered_system_message_layout_(ctx.factory, bounds.w, text, count, timestamp);
+        tk::ClipScope clip(ctx.canvas, bounds);
+        const float cy = bounds.y + kPinnedEventH * 0.5f;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const auto& m = owner_.messages_[rows[i]];
+            const tk::Image* img = nullptr;
+            if (owner_.avatar_provider_ && !m.membership_target_avatar_url.empty())
+            {
+                img = owner_.avatar_provider_(m.membership_target_avatar_url);
+            }
+            draw_avatar(ctx.canvas, img,
+                        {bounds.x + layout.avatar_x + kMembershipAvatarD * 0.5f +
+                             static_cast<float>(i) * kStride,
+                         cy},
+                        kMembershipAvatarD, membership_target_label(m),
+                        ctx.theme.palette.avatar_initials_bg,
+                        ctx.theme.palette.avatar_initials_text);
+        }
+        if (layout.text)
+        {
+            const tk::Size sz = layout.text->measure();
+            ctx.canvas.draw_text(*layout.text, {bounds.x + layout.text_x, cy - sz.h * 0.5f},
+                                 ctx.theme.palette.text_muted);
+        }
+        if (layout.timestamp)
+        {
+            const tk::Size sz = layout.timestamp->measure();
+            ctx.canvas.draw_text(*layout.timestamp,
+                                 {bounds.x + layout.timestamp_x, cy - sz.h * 0.5f},
+                                 ctx.theme.palette.text_muted);
+        }
+    }
+
+    void paint_centered_system_message_line_(std::size_t index, const MessageRowData& m,
+                                             tk::PaintCtx& ctx, tk::Rect bounds) const
     {
         if (!m.pronoun_resolved &&
             m.membership_action == tesseract::MembershipAction::KnockRetracted &&
@@ -5121,7 +5243,8 @@ private:
             owner_.on_member_pronoun_needed(m.membership_target_user_id);
         }
 
-        paint_centered_system_message_text_(membership_expanded_phrase(m), ctx, bounds);
+        paint_centered_system_message_({index}, membership_expanded_phrase(m),
+                                       format_hhmm(m.timestamp_ms), ctx, bounds);
     }
 
     void paint_centered_system_message_summary_(std::size_t start, std::size_t end,
@@ -5141,8 +5264,8 @@ private:
                 owner_.on_member_pronoun_needed(first.membership_target_user_id);
             }
 
-            paint_centered_system_message_text_(membership_run_phrase(owner_.messages_, run), ctx,
-                                                {bounds.x, y, bounds.w, kPinnedEventH});
+            paint_centered_system_message_(run.rows, membership_run_phrase(owner_.messages_, run),
+                                           {}, ctx, {bounds.x, y, bounds.w, kPinnedEventH});
             y += kPinnedEventH;
         }
     }
@@ -5152,9 +5275,10 @@ private:
     // timestamp right-aligned. Left-aligned like a compact row header
     // (rather than the pinned/call-notification centred-banner style) so a
     // stack of these reads naturally as a small list.
-    void paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
+    void paint_membership_line(std::size_t index, const MessageRowData& m, tk::PaintCtx& ctx,
+                               tk::Rect bounds) const
     {
-        if (row_renderer_->paint_membership_line(m, ctx, bounds, *this))
+        if (row_renderer_->paint_membership_line(index, m, ctx, bounds, *this))
         {
             return;
         }
@@ -8022,6 +8146,7 @@ private:
     // Per-row cache: sender name layout + per-reaction count/glyph layouts.
     struct RowLayoutCache
     {
+        std::vector<float> centered_avatar_offsets;
         std::string sender_key;
         float sender_col_w = -1;
         std::unique_ptr<tk::TextLayout> sender;
@@ -8057,6 +8182,7 @@ private:
 
         void clear()
         {
+            centered_avatar_offsets.clear();
             sender_key.clear();
             sender_col_w = -1;
             sender.reset();
@@ -8212,15 +8338,15 @@ public:
         return "bubble";
     }
 
-    bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
-                               const Adapter& ad) const override
+    bool paint_membership_line(std::size_t index, const MessageRowData& m, tk::PaintCtx& ctx,
+                               tk::Rect bounds, const Adapter& ad) const override
     {
         if (tesseract::Settings::instance().system_message_timeline_alignment !=
             tesseract::Settings::SystemMessageTimelineAlignment::Center)
         {
             return false;
         }
-        ad.paint_centered_system_message_line_(m, ctx, bounds);
+        ad.paint_centered_system_message_line_(index, m, ctx, bounds);
         return true;
     }
     bool paint_membership_summary(std::size_t start, std::size_t end, tk::PaintCtx& ctx,
@@ -8305,8 +8431,8 @@ public:
                                   ctx.theme.palette.accent, /*rule=*/true);
         return true;
     }
-    bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
-                               const Adapter& ad) const override
+    bool paint_membership_line(std::size_t, const MessageRowData& m, tk::PaintCtx& ctx,
+                               tk::Rect bounds, const Adapter& ad) const override
     {
         // membership_expanded_phrase already leads with the target name, so
         // just prefix the mIRC "* " action marker + timestamp.
@@ -12429,10 +12555,12 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 const tk::Point world{local.x + bounds().x, local.y + bounds().y};
                 tk::Rect line = content_row_rect_(row_at);
                 line.h = kPinnedEventH;
+                std::size_t line_index = 0;
                 for (std::size_t r : adapter_->membership_avatar_rows(row))
                 {
                     const auto& t = messages_[r];
-                    if (!t.membership_target_user_id.empty() && membership_avatar_hit(line, world))
+                    if (!t.membership_target_user_id.empty() &&
+                        adapter_->membership_avatar_hit_at(row, line_index, line, world))
                     {
                         press_sender_ = true;
                         press_sender_user_id_ = t.membership_target_user_id;
@@ -12441,6 +12569,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                         return true;
                     }
                     line.y += kPinnedEventH;
+                    ++line_index;
                 }
                 std::size_t start = adapter_->membership_group_start_of(row);
                 // Groups whose collapsed summary already shows every event

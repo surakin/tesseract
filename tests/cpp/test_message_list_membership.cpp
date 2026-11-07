@@ -519,7 +519,7 @@ TEST_CASE("bubble system messages are centered without horizontal rules",
     CHECK(pinned_left_rule);
     CHECK(pinned_right_rule);
 
-    CHECK(render_system_row(ML::Bubbles, Kind::Membership, true) == system_messages);
+    CHECK(render_system_row(ML::Bubbles, Kind::Membership, true) != system_messages);
     const auto classic = render_system_row(ML::Classic, Kind::Membership);
     const auto irc = render_system_row(ML::Irc, Kind::Membership);
     const auto room_name = render_system_row(ML::Bubbles, Kind::RoomName);
