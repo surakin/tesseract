@@ -64,6 +64,7 @@ const char* accent_theme_value(tk::AccentTheme accent)
 }
 
 constexpr float kLayoutRowGap = 16.0f;   // gap between the combo/desc column and the preview
+constexpr float kOptionCheckH = 24.0f;   // compact rows for the per-layout checkboxes
 constexpr float kLayoutColumnGap = 6.0f; // matches SettingsGroup's own inter-row spacing
 
 } // namespace
@@ -159,29 +160,33 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
             opts->set_spacing(kLayoutColumnGap);
             auto cb = tk::create_widget<tk::CheckButton>(this, tk::tr("Show my name and avatar"),
                                                          s.bubbles_show_own_avatar);
+            cb->set_min_height(kOptionCheckH);
             bubbles_own_avatar_cb_ = opts->add_child(std::move(cb));
             binder.bind(bubbles_own_avatar_cb_, &S::bubbles_show_own_avatar,
                         SettingKey::BubblesOwnAvatar);
             using A = S::SystemMessageTimelineAlignment;
-            opts->add_child(tk::create_widget<tk::Label>(
-                this, tk::tr("Position of system messages in the timeline")));
-            auto alignment = tk::create_widget<tk::ComboBox>(this);
-            alignment->set_options({
-                {tk::tr("Left"), "left"},
-                {tk::tr("Centered"), "center"},
-            });
-            system_message_timeline_alignment_combo_ = opts->add_child(std::move(alignment));
-            binder.bind<A>(system_message_timeline_alignment_combo_,
-                           &S::system_message_timeline_alignment,
-                           SettingKey::SystemMessageTimelineAlignment,
-                           {{A::Left, "left"}, {A::Center, "center"}});
-            auto help = tk::create_widget<tk::Label>(
-                this,
-                tk::tr("Applies to joins, leaves, invites, bans, and changes to profiles and room "
-                       "settings."),
-                tk::FontRole::Small);
-            help->set_wrap(true);
-            opts->add_child(std::move(help));
+            auto center_cb = tk::create_widget<tk::CheckButton>(
+                this, tk::tr("Center system messages"),
+                s.system_message_timeline_alignment == A::Center);
+            center_cb->set_min_height(kOptionCheckH);
+            system_message_timeline_alignment_cb_ = opts->add_child(std::move(center_cb));
+            system_message_timeline_alignment_cb_->on_change = [&binder](bool centered)
+            {
+                auto& st = tesseract::Settings::instance();
+                const A value = centered ? A::Center : A::Left;
+                if (st.system_message_timeline_alignment != value)
+                {
+                    st.system_message_timeline_alignment = value;
+                    binder.changed(SettingKey::SystemMessageTimelineAlignment);
+                }
+            };
+            binder.bind_custom(
+                [this]
+                {
+                    system_message_timeline_alignment_cb_->set_checked(
+                        tesseract::Settings::instance().system_message_timeline_alignment ==
+                        A::Center);
+                });
             opts->set_visible(s.message_layout == ML::Bubbles);
             layout_options_bubbles_ = column->add_child(std::move(opts));
         }

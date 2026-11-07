@@ -7023,16 +7023,8 @@ msgid "Show my name and avatar"
 msgstr "Показувати моє ім’я та аватар"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:159
-msgid "Position of system messages in the timeline"
-msgstr "Розташування системних повідомлень у стрічці"
-
-#: ui/shared/views/settings/AppearanceSection.cpp:174
-msgid ""
-"Applies to joins, leaves, invites, bans, and changes to profiles and room "
-"settings."
-msgstr ""
-"Стосується приєднань, виходів, запрошень, блокувань і змін профілів та "
-"налаштувань кімнати."
+msgid "Center system messages"
+msgstr "Центрувати системні повідомлення"
 
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."

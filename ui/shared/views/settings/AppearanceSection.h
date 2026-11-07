@@ -51,7 +51,7 @@ private:
     MessageLayoutPreview* message_layout_preview_ = nullptr;
     tk::VBox* layout_options_bubbles_ = nullptr; // per-layout options: Bubbles
     tk::CheckButton* bubbles_own_avatar_cb_ = nullptr;
-    tk::ComboBox* system_message_timeline_alignment_combo_ = nullptr;
+    tk::CheckButton* system_message_timeline_alignment_cb_ = nullptr;
     tk::Slider* column_width_slider_ = nullptr;
     tk::Label* column_width_value_ = nullptr;
     tk::ComboBox* column_anchor_combo_ = nullptr;

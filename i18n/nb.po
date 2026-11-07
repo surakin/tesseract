@@ -4818,16 +4818,8 @@ msgid "Show my name and avatar"
 msgstr "Vis navnet og avataren min"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:159
-msgid "Position of system messages in the timeline"
-msgstr "Plassering av systemmeldinger i tidslinjen"
-
-#: ui/shared/views/settings/AppearanceSection.cpp:174
-msgid ""
-"Applies to joins, leaves, invites, bans, and changes to profiles and room "
-"settings."
-msgstr ""
-"Gjelder når noen blir med, forlater rommet, inviteres eller bannlyses, samt "
-"endringer i profiler og rominnstillinger."
+msgid "Center system messages"
+msgstr "Sentrer systemmeldinger"
 
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."

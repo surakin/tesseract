@@ -7526,9 +7526,6 @@ msgid "{0} via {1}"
 msgstr "[{0} vïà {1}xx]"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:167
-msgid "Position of system messages in the timeline"
-msgstr "[Pösïtïöñ öf systém méssàgés ïñ thé tïmélïñéxxxxxxxx]"
+msgid "Center system messages"
+msgstr "[Çéñtér systém méssàgésxxxxxxx]"
 
-#: ui/shared/views/settings/AppearanceSection.cpp:180
-msgid "Applies to joins, leaves, invites, bans, and changes to profiles and room settings."
-msgstr "[Àpplïés tö jöïñs, léàvés, ïñvïtés, bàñs, àñd çhàñgés tö pröfïlés àñd rööm séttïñgs.xxxxxxxxxxxxxxxx]"

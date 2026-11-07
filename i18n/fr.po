@@ -6456,16 +6456,8 @@ msgid "Show my name and avatar"
 msgstr "Afficher mon nom et mon avatar"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:159
-msgid "Position of system messages in the timeline"
-msgstr "Position des messages système dans la conversation"
-
-#: ui/shared/views/settings/AppearanceSection.cpp:174
-msgid ""
-"Applies to joins, leaves, invites, bans, and changes to profiles and room "
-"settings."
-msgstr ""
-"S’applique aux arrivées, départs, invitations, bannissements et modifications "
-"des profils et des paramètres du salon."
+msgid "Center system messages"
+msgstr "Centrer les messages système"
 
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
