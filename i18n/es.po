@@ -6556,6 +6556,10 @@ msgstr "Algo salió mal al confirmar. Inténtalo de nuevo."
 msgid "Show my name and avatar"
 msgstr "Mostrar mi nombre y avatar"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Center system messages"
+msgstr "Centrar los mensajes del sistema"
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "No tienes permiso para unirte a llamadas en esta sala."

@@ -89,11 +89,51 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     CHECK(s.check("Group inactive rooms")->checked());
 }
 
+TEST_CASE("AppearanceSection: the center-system-messages checkbox writes Settings "
+          "and reports its key",
+          "[tk][view][appearance]")
+{
+    AsStage s;
+    using A = Settings::SystemMessageTimelineAlignment;
+    auto& st = Settings::instance();
+    st.message_layout = Settings::MessageLayout::Bubbles;
+    st.system_message_timeline_alignment = A::Left;
+    s.binder.reload();
+
+    auto* cb = s.check("Center system messages");
+    REQUIRE(cb != nullptr);
+    CHECK_FALSE(cb->checked());
+    CHECK(cb->parent()->visible());
+
+    cb->on_change(true);
+    CHECK(st.system_message_timeline_alignment == A::Center);
+    CHECK(s.keys == std::vector<SettingKey>{SettingKey::SystemMessageTimelineAlignment});
+    cb->on_change(false);
+    CHECK(st.system_message_timeline_alignment == A::Left);
+    CHECK(s.keys.size() == 2);
+
+    // reload() pushes the stored value back without reporting.
+    s.keys.clear();
+    st.system_message_timeline_alignment = A::Center;
+    s.binder.reload();
+    CHECK(s.keys.empty());
+    CHECK(cb->checked());
+
+    for (auto layout : {Settings::MessageLayout::Classic, Settings::MessageLayout::Irc})
+    {
+        st.message_layout = layout;
+        s.binder.reload();
+        CHECK_FALSE(cb->parent()->visible());
+        CHECK(st.system_message_timeline_alignment == A::Center);
+    }
+}
+
 TEST_CASE("AppearanceSection combos map to settings enums", "[tk][view][appearance]")
 {
     AsStage s;
     auto combos = vt::find_all<tk::ComboBox>(*s.sec);
-    REQUIRE(combos.size() == 4); // accent, message layout, timeline position, inactive period
+    // Accent, message layout, timeline position, inactive period.
+    REQUIRE(combos.size() == 4);
 
     auto& st = Settings::instance();
     std::vector<Settings::ThemeAccent> accents;

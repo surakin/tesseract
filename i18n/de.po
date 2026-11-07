@@ -6456,6 +6456,10 @@ msgstr "Beim Bestätigen ist etwas schiefgelaufen. Bitte versuche es erneut."
 msgid "Show my name and avatar"
 msgstr "Meinen Namen und Avatar anzeigen"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Center system messages"
+msgstr "Systemnachrichten zentrieren"
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "Du hast keine Berechtigung, Anrufen in diesem Raum beizutreten."

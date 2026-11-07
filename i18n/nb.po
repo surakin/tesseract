@@ -4820,6 +4820,10 @@ msgstr "Noe gikk galt under bekreftelsen. Prøv igjen."
 msgid "Show my name and avatar"
 msgstr "Vis navnet og avataren min"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Center system messages"
+msgstr "Sentrer systemmeldinger"
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "Du har ikke tillatelse til å bli med i samtaler i dette rommet."

@@ -7025,6 +7025,10 @@ msgstr "Під час підтвердження сталася помилка. 
 msgid "Show my name and avatar"
 msgstr "Показувати моє ім’я та аватар"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Center system messages"
+msgstr "Центрувати системні повідомлення"
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "У вас немає дозволу приєднуватися до дзвінків у цій кімнаті."

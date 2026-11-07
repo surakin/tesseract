@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- feat(settings): a new Appearance option centers system messages (joins, leaves, invites) in the Bubbles layout. Linux build, focused ctest
 
 - feat(messages): messages sent with a per-message profile show its name and avatar, with the real sender beside it (MSC4144). Windows release build
 - fix(messages): forwarding a message no longer carries over its per-message profile. Windows release build

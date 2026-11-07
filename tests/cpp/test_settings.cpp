@@ -1,6 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <tesseract/settings.h>
 
+#include "settings_guard.h"
+
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -617,6 +621,59 @@ TEST_CASE("Settings persist message_layout", "[settings]")
 
     std::filesystem::remove_all(dir);
     s.message_layout = ML::Classic; // restore default for other tests
+}
+
+TEST_CASE("Settings persist system_message_timeline_alignment", "[settings][system_messages]")
+{
+    using A = tesseract::Settings::SystemMessageTimelineAlignment;
+    tesseract::test::SettingsGuard guard;
+    auto dir = make_tmp_dir("system_message_timeline_alignment");
+    auto& s = tesseract::Settings::instance();
+    for (auto value : {A::Left, A::Center})
+    {
+        s.system_message_timeline_alignment = value;
+        s.save_to_disk(dir);
+        std::ifstream file(dir / "app_settings.json");
+        const auto saved = nlohmann::json::parse(file);
+        CHECK(saved.at("system_message_timeline_alignment") ==
+              (value == A::Center ? "center" : "left"));
+
+        s.system_message_timeline_alignment = value == A::Center ? A::Left : A::Center;
+        s.load_from_disk(dir);
+        CHECK(s.system_message_timeline_alignment == value);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE(
+    "Settings system_message_timeline_alignment defaults to Left for missing or invalid values",
+    "[settings][system_messages]")
+{
+    using A = tesseract::Settings::SystemMessageTimelineAlignment;
+    tesseract::test::SettingsGuard guard;
+    auto dir = make_tmp_dir("system_message_timeline_alignment_invalid");
+    auto& s = tesseract::Settings::instance();
+
+    s.system_message_timeline_alignment = A::Center;
+    write_file(dir / "app_settings.json", "{}");
+    s.load_from_disk(dir);
+    CHECK(s.system_message_timeline_alignment == A::Left);
+
+    for (const auto& value :
+         {nlohmann::json("unknown"), nlohmann::json(""), nlohmann::json("Centered"),
+          nlohmann::json(nullptr), nlohmann::json(true), nlohmann::json(1), nlohmann::json::array(),
+          nlohmann::json::object()})
+    {
+        CAPTURE(value);
+        s.system_message_timeline_alignment = A::Center;
+        write_file(dir / "app_settings.json",
+                   nlohmann::json{{"system_message_timeline_alignment", value}}.dump());
+        s.load_from_disk(dir);
+        CHECK(s.system_message_timeline_alignment == A::Left);
+    }
+
+    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("Settings persist room_list_density", "[settings]")

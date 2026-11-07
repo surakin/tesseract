@@ -748,7 +748,7 @@ Size CheckButton::measure(LayoutCtx& ctx, Size constraints)
         label_size_ = label_layout_ ? label_layout_->measure() : Size{};
     }
 
-    float h = std::max({kCbBoxSize, label_size_.h, kCbMinH});
+    float h = std::max({kCbBoxSize, label_size_.h, min_height_ < 0.0f ? kCbMinH : min_height_});
     float w = constraints.w > 0 ? constraints.w : kCbBoxSize + kCbGap + label_size_.w;
     return {w, h};
 }

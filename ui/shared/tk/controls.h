@@ -471,6 +471,13 @@ public:
         return checked_;
     }
     void set_font_role(FontRole role);
+    // Lower bound of the row height (the hit target). Defaults to a
+    // touch-friendly 36px; dense option lists can pass something smaller. Set
+    // before the first layout, like set_font_role.
+    void set_min_height(float h)
+    {
+        min_height_ = h;
+    }
 
     std::function<void(bool)> on_change;
     // Fired on the false->true hover transition / on leaving hover. Used by
@@ -554,6 +561,7 @@ private:
     bool pressed_ = false;
 
     FontRole font_role_ = FontRole::Body;
+    float min_height_ = -1.0f; // < 0: the default (kCbMinH)
 
     CachedTextLayout label_layout_;
     float cached_max_w_ = -2.0f;

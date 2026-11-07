@@ -6458,6 +6458,10 @@ msgstr "Un problème est survenu lors de la confirmation. Veuillez réessayer."
 msgid "Show my name and avatar"
 msgstr "Afficher mon nom et mon avatar"
 
+#: ui/shared/views/settings/AppearanceSection.cpp:159
+msgid "Center system messages"
+msgstr "Centrer les messages système"
+
 #: ui/shared/app/ShellBase_navigation.cpp:486
 msgid "You don't have permission to join calls in this room."
 msgstr "Vous n'avez pas la permission de rejoindre les appels dans ce salon."

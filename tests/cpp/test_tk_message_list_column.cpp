@@ -6,9 +6,12 @@
 #include "tk/theme.h"
 #include "tk_test_surface.h"
 #include "views/MessageListView.h"
+#include "views/format.h"
 
 #include <tesseract/settings.h>
 
+#include <cmath>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -200,6 +203,272 @@ TEST_CASE("message list column: a membership avatar click lands in the centred c
     REQUIRE(v.on_pointer_down(on_avatar));
     v.on_pointer_up(on_avatar, true);
     CHECK(clicked == "@bob:x");
+}
+
+TEST_CASE("centered system messages keep clickable avatars and expanded timestamps",
+          "[message_list][membership][system_messages][column]")
+{
+    ColumnStage st;
+    auto& settings = Settings::instance();
+    settings.message_layout = Settings::MessageLayout::Bubbles;
+    settings.system_message_timeline_alignment = Settings::SystemMessageTimelineAlignment::Center;
+    settings.timeline_column_anchor = Anchor::Center;
+
+    const std::uint8_t red[] = {255, 0, 0, 255};
+    auto avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+    REQUIRE(avatar != nullptr);
+
+    auto alice = membership("$alice", "@alice:x");
+    alice.membership_target_name = "Alice";
+    alice.membership_target_avatar_url = "mxc://x/alice";
+    alice.timestamp_ms = 1700000000000;
+    auto bob = membership("$bob", "@bob:x");
+    bob.membership_target_name = "Bob";
+    bob.membership_target_avatar_url = "mxc://x/bob";
+    bob.timestamp_ms = 1700000060000;
+
+    MessageListView v;
+    v.set_content_column_enabled(true);
+    v.set_avatar_provider(
+        [&](const std::string&)
+        {
+            return avatar.get();
+        });
+    v.set_messages({alice, bob}, false);
+    std::string clicked;
+    v.on_sender_clicked = [&](const std::string& uid, const std::string&, const std::string&)
+    {
+        clicked = uid;
+    };
+
+    auto avatar_x = [&](tk::Rect row)
+    {
+        const int cy = static_cast<int>(row.y + 12.0f);
+        for (int x = static_cast<int>(row.x); x < static_cast<int>(row.x + row.w); ++x)
+        {
+            const auto c = st.surface->read_pixel(x, cy);
+            if (c.r > 240 && c.g < 15 && c.b < 15)
+            {
+                return static_cast<float>(x) + 9.0f;
+            }
+        }
+        return -1.0f;
+    };
+
+    st.run(v, 1600);
+    const tk::Rect collapsed = v.row_world_rect(0);
+    const float collapsed_avatar = avatar_x(collapsed);
+    REQUIRE(collapsed_avatar > 400.0f);
+    REQUIRE(collapsed_avatar < 800.0f);
+    const tk::Point summary_click{collapsed_avatar, collapsed.y + 12.0f};
+    REQUIRE(v.on_pointer_down(summary_click));
+    v.on_pointer_up(summary_click, true);
+    CHECK(clicked.empty());
+
+    st.surface = TestSurface::create(1600, 600);
+    avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+    REQUIRE(avatar != nullptr);
+    st.run(v, 1600);
+    const tk::Rect first = v.row_world_rect(0);
+    const tk::Rect second = v.row_world_rect(1);
+    REQUIRE(second.h > 0.0f);
+    const float first_avatar = avatar_x(first);
+    const float second_avatar = avatar_x(second);
+    REQUIRE(first_avatar > 400.0f);
+    REQUIRE(second_avatar > 400.0f);
+    const tk::Point avatar_click{second_avatar, second.y + 12.0f};
+    REQUIRE(v.on_pointer_down(avatar_click));
+    v.on_pointer_up(avatar_click, true);
+    CHECK(clicked == "@bob:x");
+
+    tk::TextStyle text_style{};
+    text_style.role = tk::FontRole::Small;
+    text_style.wrap = false;
+    text_style.trim = tk::TextTrim::Ellipsis;
+    tk::TextStyle time_style = text_style;
+    time_style.role = tk::FontRole::Timestamp;
+    time_style.max_width = 800.0f - 24.0f - 18.0f - 6.0f;
+    const auto time = st.surface->factory().build_text(
+        tesseract::views::format_hhmm(alice.timestamp_ms), time_style);
+    REQUIRE(time != nullptr);
+    const float time_width = time->measure().w;
+    text_style.max_width = time_style.max_width - time_width - 6.0f;
+    const auto phrase = st.surface->factory().build_text("Alice joined the room", text_style);
+    REQUIRE(phrase != nullptr);
+    const float phrase_width = phrase->measure().w;
+    const float group_width = 18.0f + 6.0f + phrase_width + 6.0f + time_width;
+    const float expected_avatar = 800.0f - group_width * 0.5f + 9.0f;
+    CHECK(first_avatar == Catch::Approx(expected_avatar).margin(2.0f));
+
+    const float time_x = 800.0f - group_width * 0.5f + 18.0f + 6.0f + phrase_width + 6.0f;
+    const auto background = st.surface->read_pixel(450, static_cast<int>(first.y + 12.0f));
+    int timestamp_ink = 0;
+    for (int y = static_cast<int>(first.y); y < static_cast<int>(first.y + first.h); ++y)
+    {
+        for (int x = static_cast<int>(std::ceil(time_x));
+             x < static_cast<int>(std::floor(time_x + time_width)); ++x)
+        {
+            const auto c = st.surface->read_pixel(x, y);
+            if (c.r != background.r || c.g != background.g || c.b != background.b)
+            {
+                ++timestamp_ink;
+            }
+        }
+    }
+    CHECK(timestamp_ink > 0);
+
+    alice.timestamp_ms = 0;
+    bob.timestamp_ms = 0;
+    v.set_messages({alice, bob}, false);
+    st.surface = TestSurface::create(1600, 600);
+    avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+    REQUIRE(avatar != nullptr);
+    st.run(v, 1600);
+    const tk::Rect new_collapsed = v.row_world_rect(0);
+    const float new_avatar = avatar_x(new_collapsed);
+    REQUIRE(new_avatar > 0.0f);
+    const tk::Point expand_again{new_avatar, new_collapsed.y + 12.0f};
+    REQUIRE(v.on_pointer_down(expand_again));
+    v.on_pointer_up(expand_again, true);
+    st.surface = TestSurface::create(1600, 600);
+    avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+    REQUIRE(avatar != nullptr);
+    st.run(v, 1600);
+    const float no_timestamp_avatar = avatar_x(v.row_world_rect(0));
+    CHECK(no_timestamp_avatar ==
+          Catch::Approx(800.0f - (18.0f + 6.0f + phrase_width) * 0.5f + 9.0f).margin(2.0f));
+}
+
+TEST_CASE("centered system message avatars track summary changes and resizing",
+          "[message_list][membership][system_messages][column]")
+{
+    ColumnStage st;
+    auto& settings = Settings::instance();
+    settings.message_layout = Settings::MessageLayout::Bubbles;
+    settings.system_message_timeline_alignment = Settings::SystemMessageTimelineAlignment::Center;
+    settings.timeline_column_anchor = Anchor::Center;
+    const std::uint8_t red[] = {255, 0, 0, 255};
+    auto avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+    REQUIRE(avatar != nullptr);
+
+    auto alice = membership("$alice", "@alice:x");
+    alice.membership_target_name = "Alice";
+    alice.membership_target_avatar_url = "mxc://x/alice";
+    auto bob = membership("$bob", "@bob:x");
+    bob.membership_target_name = "Bob";
+    bob.membership_target_avatar_url = "mxc://x/bob";
+    bob.membership_action = tesseract::MembershipAction::Left;
+
+    MessageListView v;
+    v.set_content_column_enabled(true);
+    v.set_avatar_provider(
+        [&](const std::string&)
+        {
+            return avatar.get();
+        });
+    v.set_messages({alice, bob}, false);
+    std::string clicked;
+    v.on_sender_clicked = [&](const std::string& uid, const std::string&, const std::string&)
+    {
+        clicked = uid;
+    };
+
+    auto check_avatar = [&](float width, int line, const std::string& expected)
+    {
+        st.run(v, width);
+        const auto row = v.row_world_rect(0);
+        const int y = static_cast<int>(row.y + 12.0f + 24.0f * line);
+        int x = 0;
+        for (; x < static_cast<int>(width); ++x)
+        {
+            const auto c = st.surface->read_pixel(x, y);
+            if (c.r > 240 && c.g < 15 && c.b < 15)
+            {
+                break;
+            }
+        }
+        REQUIRE(x < static_cast<int>(width));
+        const tk::Point point{static_cast<float>(x) + 9.0f, static_cast<float>(y)};
+        clicked.clear();
+        REQUIRE(v.on_pointer_down(point));
+        v.on_pointer_up(point, true);
+        CHECK(clicked == expected);
+    };
+    auto new_surface = [&]
+    {
+        st.surface = TestSurface::create(1600, 600);
+        avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+        REQUIRE(avatar != nullptr);
+    };
+
+    check_avatar(1600, 0, "@alice:x");
+    new_surface();
+    check_avatar(1600, 1, "@bob:x");
+    bob.membership_target_name = "Bob with a much longer display name";
+    v.update_message(1, bob);
+    new_surface();
+    check_avatar(1600, 1, "@bob:x");
+    new_surface();
+    check_avatar(1000, 1, "@bob:x");
+
+    auto carol = membership("$carol", "@carol:x");
+    carol.membership_action = tesseract::MembershipAction::Invited;
+    carol.membership_target_name = "Carol";
+    carol.membership_target_avatar_url = "mxc://x/carol";
+    v.insert_message(1, carol);
+    new_surface();
+    check_avatar(1000, 2, "@bob:x");
+    v.remove_message(1);
+    new_surface();
+    check_avatar(1000, 1, "@bob:x");
+
+    settings.system_message_timeline_alignment = Settings::SystemMessageTimelineAlignment::Left;
+    v.on_display_prefs_changed();
+    new_surface();
+    check_avatar(1000, 1, "@bob:x");
+}
+
+TEST_CASE("centered system message avatars stay within a narrow list",
+          "[message_list][membership][system_messages][column]")
+{
+    ColumnStage st;
+    auto& settings = Settings::instance();
+    settings.message_layout = Settings::MessageLayout::Bubbles;
+    settings.system_message_timeline_alignment = Settings::SystemMessageTimelineAlignment::Center;
+    const std::uint8_t red[] = {255, 0, 0, 255};
+    auto avatar = st.surface->factory().create_image_rgba(red, 1, 1);
+    REQUIRE(avatar != nullptr);
+    auto alice = membership("$alice", "@alice:x");
+    alice.membership_target_name = "Alice";
+    alice.membership_target_avatar_url = "mxc://x/alice";
+    MessageListView v;
+    v.set_avatar_provider(
+        [&](const std::string&)
+        {
+            return avatar.get();
+        });
+    v.set_messages({alice}, false);
+    std::string clicked;
+    v.on_sender_clicked = [&](const std::string& uid, const std::string&, const std::string&)
+    {
+        clicked = uid;
+    };
+    st.run(v, 12);
+    const auto row = v.row_world_rect(0);
+    const int y = static_cast<int>(row.y + 12.0f);
+    const auto inside = st.surface->read_pixel(6, y);
+    CHECK(inside.r > 240);
+    CHECK(inside.g < 15);
+    CHECK(inside.b < 15);
+    for (int x = 12; x < 30; ++x)
+    {
+        const auto outside = st.surface->read_pixel(x, y);
+        CHECK_FALSE((outside.r > 240 && outside.g < 15 && outside.b < 15));
+    }
+    const tk::Point point{6.0f, static_cast<float>(y)};
+    REQUIRE(v.on_pointer_down(point));
+    v.on_pointer_up(point, true);
+    CHECK(clicked == "@alice:x");
 }
 
 TEST_CASE("message list column: day separators keep the full width", "[message_list][column]")
