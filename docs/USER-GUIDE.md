@@ -115,21 +115,21 @@ Settings is a list of pages, in this order:
 
 | Page | What's in it |
 | --- | --- |
-| Account | Your name, avatar, pronouns, time zone, bio, status |
-| Devices | Your signed-in devices; sign out ones you don't recognise |
-| General | Start at login, start in the tray, what closing the window does, low power mode (only on machines with a battery) |
-| Appearance | Light/dark theme, accent colour, message layout, fonts, compact room list |
+| Account | Your name, avatar, pronouns, time zone, bio, status, and **Log Out** |
+| Security & Devices | Your signed-in devices (sign out ones you don't recognise), encryption options, message-key export and import, and a **Danger zone** for resetting your digital identity |
 | Notifications | Turn desktop notifications on or off, hide message content, and choose what notifies you (mentions, @room, keywords) |
-| Media | Media previews, pre-loading images, opening files in other apps, microphone and speaker choice |
-| Privacy | Online status, link previews, encrypted-message search, update checks (some builds only), message-key export and import, digital identity reset |
-| Network | Proxy |
-| Server | What your homeserver supports and what you may change |
-| Emojis & Stickers | Custom emoji and sticker packs |
-| Language | Interface language |
-| About | Version info and **Clear all caches**. The **Advanced** button at the bottom reveals the Advanced page |
+| Appearance | Light/dark theme, accent colour, message layout, timeline width and position, fonts, room list options |
+| Messages | Composer options, what the timeline shows (joins and leaves, deleted messages), link previews, and encrypted-message search |
+| Media & Calls | Media previews, pre-loading images, opening files in other apps, microphone, speaker and camera choice |
+| Emojis & Stickers | Your own sticker pack and the packs you've subscribed to |
+| Privacy | Online status, avatars in invites, update checks (some builds only), local crash reports |
+| General | Start at login, start in the tray, what closing the window does, low power mode (only on machines with a battery), interface language, proxy and storage |
+| About | Version info and what your homeserver supports and what you may change. The **Advanced** button at the bottom reveals the Advanced page |
 | Advanced | Developer options and the Activity Monitor. It stays hidden until you click **Advanced** on the About page, and hides again when you leave it |
 
-**Clear all caches** (About) throws away downloaded data and rebuilds it. It closes any open tabs and pop-out windows, but keeps your login and your encryption keys. Use it if something looks stale or broken.
+When you are signed out, Settings shows only General (without Storage) and About.
+
+**Clear all caches** (General → Storage) throws away downloaded data and rebuilds it. It closes any open tabs and pop-out windows, but keeps your login and your encryption keys. Use it if something looks stale or broken.
 
 **Low power mode** pauses background work, such as downloading old history and previews, while still delivering new messages. The default is Auto: it turns on when you are on battery or your system's energy saver is on.
 
