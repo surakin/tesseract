@@ -9,6 +9,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- feat(ui): a "Show deleted messages" option in Settings → Messages lets you hide deleted messages from the timeline. Linux build
 - fix(messages): in the IRC layout a forwarded emote names who forwarded it ("* Bob forwarded: Carol waves"). Linux build, ctest 3913/3913
 - fix(security): linking a device by QR now refuses to open a sign-in address that isn't https. Linux build, ctest 3912/3912
 - fix(security): mention pills show the member's real name (or Matrix ID) with the ID on hover, not the sender's link text. Linux build, ctest 3911/3911
@@ -127,7 +128,6 @@ Tagged releases summarize all changes since the previous tag.
 - chore(ci): the manually-run test workflow adds an AddressSanitizer build and a keyring for the keychain tests. YAML parse only
 - feat(ui): right-clicking a message offers the same actions as its hover toolbar. Linux Qt6 build
 - chore(ci): the Flatpak job retries its source and runtime downloads, so a transient crates.io or Flathub error no longer cancels the release run. YAML parse only
-- feat(ui): a "Show deleted messages" option in Settings → Messages lets you hide deleted messages from the timeline. Linux build
 
 ## v0.9.5 — 2026-10-26
 
