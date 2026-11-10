@@ -4,6 +4,11 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+
+## v0.9.8 — 2026-11-10
+
+### Summary
+
 - fix(messages): in the IRC layout a forwarded emote names who forwarded it ("* Bob forwarded: Carol waves"). Linux build, ctest 3913/3913
 - fix(security): linking a device by QR now refuses to open a sign-in address that isn't https. Linux build, ctest 3912/3912
 - fix(security): mention pills show the member's real name (or Matrix ID) with the ID on hover, not the sender's link text. Linux build, ctest 3911/3911
