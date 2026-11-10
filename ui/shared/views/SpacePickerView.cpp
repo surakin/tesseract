@@ -596,7 +596,7 @@ bool SpacePickerView::on_right_click(tk::Point local)
     };
     items.push_back(std::move(unpin));
 
-    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, PopupMenu::kWidth, 0.0f};
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, 0.0f, 0.0f};
     menu_->open(std::move(items), anchor_world);
     return true;
 }

@@ -353,6 +353,7 @@ void PopupMenu::open(std::vector<Item> items, tk::Rect anchor_world)
     items_ = std::move(items);
     anchor_world_ = anchor_world;
     open_ = true;
+    width_dirty_ = true; // re-measured by the next arrange() (needs a text factory)
 
     if (!popup_surface_)
     {
@@ -422,9 +423,40 @@ tk::Size PopupMenu::measure(tk::LayoutCtx&, tk::Size)
     return {0.0f, 0.0f};
 }
 
-void PopupMenu::arrange(tk::LayoutCtx&, tk::Rect /*bounds*/)
+void PopupMenu::arrange(tk::LayoutCtx& lc, tk::Rect /*bounds*/)
 {
+    if (width_dirty_)
+    {
+        width_ = measure_width_(lc.factory);
+        width_dirty_ = false;
+    }
     reposition_();
+}
+
+float PopupMenu::measure_width_(tk::CanvasFactory& factory) const
+{
+    tk::TextStyle label_st{};
+    label_st.role = tk::FontRole::Body; // must match MenuList::paint
+    label_st.halign = tk::TextHAlign::Leading;
+    label_st.valign = tk::TextVAlign::Top;
+
+    float w = kWidth;
+    for (const auto& item : items_)
+    {
+        if (item.is_separator)
+        {
+            continue;
+        }
+        auto ll = factory.build_text(item.label, label_st);
+        if (!ll)
+        {
+            continue;
+        }
+        const bool has_icon = !item.svg_icon.empty() || !item.glyph.empty();
+        const float left = has_icon ? kTextX : kTextXNoIcon;
+        w = std::max(w, std::ceil(left + ll->measure().w + kTextPadRight));
+    }
+    return std::min(w, kMaxWidth);
 }
 
 void PopupMenu::reposition_()
@@ -445,10 +477,12 @@ void PopupMenu::reposition_()
     // anchor's x so the result still right-aligns to the ORIGINAL anchor's
     // right edge, matching this menu's established on-screen position.
     tk::Rect adjusted = anchor_world_;
-    adjusted.x = anchor_world_.x + anchor_world_.w - kWidth;
+    // A zero-width anchor is a pointer position: the menu's left edge goes there.
+    adjusted.x =
+        anchor_world_.w > 0.0f ? anchor_world_.x + anchor_world_.w - width_ : anchor_world_.x;
     adjusted.w = 0.0f; // set_rect ignores width for x; only .x/.h matter now
 
-    popup_surface_->set_rect(adjusted, {kWidth, popup_h}, tk::PopupPlacement::PreferBelow);
+    popup_surface_->set_rect(adjusted, {width_, popup_h}, tk::PopupPlacement::PreferBelow);
 }
 
 void PopupMenu::paint(tk::PaintCtx& ctx)

@@ -42,7 +42,9 @@ namespace tesseract::views
 class PopupMenu : public tk::Widget
 {
 public:
-    static constexpr float kWidth = 180.0f;
+    static constexpr float kWidth = 180.0f;       // minimum menu width
+    static constexpr float kMaxWidth = 480.0f;    // widest a long translated label may make it
+    static constexpr float kTextPadRight = 14.0f; // gap after the widest label
     static constexpr float kRowHeight = 34.0f;
     static constexpr float kSeparatorHeight = 1.0f; // thin rule, no margin
     static constexpr float kGlyphX = 10.0f;         // icon left margin
@@ -73,7 +75,9 @@ public:
 
     // Show the menu anchored to `anchor` in WORLD coordinates. The menu opens
     // below the anchor, right-aligned to its right edge; flips above if the
-    // menu would clip the screen's bottom.
+    // menu would clip the screen's bottom. A zero-width anchor (a pointer
+    // position) instead puts the menu's LEFT edge at anchor.x. The menu is as
+    // wide as its widest label (at least kWidth), so translations fit.
     void open(std::vector<Item> items, tk::Rect anchor_world);
     void close();
     bool is_open() const
@@ -121,6 +125,11 @@ private:
     class MenuList; // popup surface's root widget — defined in the .cpp
 
     void reposition_(); // computes size + positions popup_surface_
+
+    // Widest label + margins, clamped to [kWidth, kMaxWidth].
+    float measure_width_(tk::CanvasFactory& factory) const;
+    float width_ = kWidth;     // current menu width (see measure_width_)
+    bool width_dirty_ = false; // items changed; re-measure on the next layout pass
 
     bool open_ = false;
     std::vector<Item> items_;

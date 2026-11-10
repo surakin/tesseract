@@ -1745,10 +1745,9 @@ bool RoomInfoPanelBody::on_right_click(tk::Point local)
     };
     items.push_back(std::move(ban));
 
-    // Anchor of width PopupMenu::kWidth starting at the click point, so the
-    // menu (right-aligned to the anchor) opens to the right of the cursor —
-    // same as RoomListView::on_right_click.
-    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, PopupMenu::kWidth, 0.0f};
+    // Zero-width anchor at the click point: the menu opens to the right of the
+    // cursor — same as RoomListView::on_right_click.
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, 0.0f, 0.0f};
     member_menu_->open(std::move(items), anchor_world);
     return true;
 }

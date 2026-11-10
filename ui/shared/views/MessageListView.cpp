@@ -12010,7 +12010,7 @@ bool MessageListView::on_right_click(tk::Point local)
         return false;
     }
     // Opens like the member-list menu: right of the pointer.
-    return open_actions_menu_(idx, {world.x, world.y, PopupMenu::kWidth, 0.0f},
+    return open_actions_menu_(idx, {world.x, world.y, 0.0f, 0.0f},
                               /*full=*/true, selection, !context_link_url_.empty());
 }
 

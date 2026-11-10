@@ -2937,11 +2937,9 @@ bool RoomListView::on_right_click(tk::Point local)
     };
     items.push_back(std::move(leave));
 
-    // PopupMenu::open() right-aligns the menu to the anchor's right edge, so
-    // give the anchor a width of exactly PopupMenu::kWidth starting at the
-    // click point — that puts the anchor's right edge (and thus the menu's
-    // left edge) at the cursor, opening the menu to the right of it.
-    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, PopupMenu::kWidth, 0.0f};
+    // A zero-width anchor at the click point puts the menu's left edge at the
+    // cursor, opening it to the right of it whatever its (label-driven) width.
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, 0.0f, 0.0f};
     room_context_menu_->open(std::move(items), anchor_world);
     return true;
 }
@@ -2980,7 +2978,7 @@ bool RoomListView::open_space_context_menu_(const tesseract::RoomInfo& space, tk
     };
     items.push_back(std::move(leave));
 
-    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, PopupMenu::kWidth, 0.0f};
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y, 0.0f, 0.0f};
     room_context_menu_->open(std::move(items), anchor_world);
     return true;
 }

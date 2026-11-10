@@ -6,6 +6,7 @@
 #include "views/AlertDialog.h"
 #include "views/BusyDialog.h"
 #include "views/ConfirmDialog.h"
+#include "view_test_util.h"
 #include "views/PopupMenu.h"
 
 #include <functional>
@@ -263,4 +264,36 @@ TEST_CASE("BusyDialog opens and closes, consumes pointer and keys, and is modal"
     busy->close();
     CHECK_FALSE(busy->is_open());
     CHECK(layout_changes == 2);
+}
+
+TEST_CASE("PopupMenu widens to fit a long label and left-anchors a pointer anchor", "[popup_menu]")
+{
+    vt::Stage stage;
+    auto menu = tk::create_root_widget<PopupMenu>(&stage.host);
+
+    auto open_with = [&](const std::string& label, tk::Rect anchor)
+    {
+        std::vector<PopupMenu::Item> items;
+        items.push_back({{}, {}, label, false, {}, false, true});
+        menu->open(std::move(items), anchor);
+        stage.layout(*menu, {0, 0, 800, 600});
+        REQUIRE(!stage.host.popups_created.empty());
+        return stage.host.popups_created.back();
+    };
+
+    auto* shortp = open_with("Reply", {300, 100, 0, 0});
+    CHECK(shortp->last_size.w == PopupMenu::kWidth);
+    CHECK(shortp->last_anchor.x == 300.0f);
+
+    menu->close();
+    auto* longp = open_with("Dies ist ein sehr langer uebersetzter Menueeintrag fuer den Test",
+                            {300, 100, 0, 0});
+    CHECK(longp->last_size.w > PopupMenu::kWidth);
+    CHECK(longp->last_size.w <= PopupMenu::kMaxWidth);
+    CHECK(longp->last_anchor.x == 300.0f);
+
+    // A real (non-zero) anchor still right-aligns to its right edge.
+    menu->close();
+    auto* right = open_with("Reply", {100, 50, 40, 20});
+    CHECK(right->last_anchor.x + right->last_size.w == 140.0f);
 }
