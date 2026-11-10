@@ -4700,6 +4700,32 @@ const tk::Image* RoomPane::shell_gif_strip_image_(const GifResult& result,
     return shell_->gif_strip_image_(result, repaint);
 }
 
+const tk::Image* RoomPane::shell_sticker_strip_image_(const tesseract::ImagePackImage& sticker)
+{
+    return shell_->make_picker_image_provider_(true)(sticker.url, sticker.url, false);
+}
+
+tk::CacheKey RoomPane::shell_picker_sticker_key_(const std::string& url) const
+{
+    return shell_->picker_sticker_key_(url);
+}
+
+void RoomPane::shell_set_sticker_strip_repaint_(const void* owner, std::function<void()> fn)
+{
+    if (!shell_)
+    {
+        return;
+    }
+    if (fn)
+    {
+        shell_->sticker_strip_repaints_[owner] = std::move(fn);
+    }
+    else
+    {
+        shell_->sticker_strip_repaints_.erase(owner);
+    }
+}
+
 std::vector<std::uint8_t> RoomPane::shell_cached_gif_bytes_(const std::string& url)
 {
     return shell_->cached_gif_source_bytes_(url);
@@ -4918,6 +4944,35 @@ void RoomPane::wire_gif_hooks_(views::GifController::Hooks& hooks)
     hooks.get_cached_gif_bytes = [this](const std::string& url) -> std::vector<std::uint8_t>
     {
         return shell_cached_gif_bytes_(url);
+    };
+}
+
+void RoomPane::wire_sticker_hooks_(views::StickerController::Hooks& hooks)
+{
+    hooks.search = [this](const std::string& query) -> std::vector<tesseract::ImagePackImage>
+    {
+        auto* client = pane_client_();
+        if (!client)
+        {
+            return {};
+        }
+        return views::search_room_stickers(*client, room_id_, shell_parent_spaces_for_room_(),
+                                           query);
+    };
+    hooks.send = [this](const tesseract::ImagePackImage& img)
+    {
+        send_sticker_(img.body.empty() ? img.shortcode : img.body, img.url, img.info_json);
+    };
+    hooks.clear_composer = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->clear_compose_text();
+        }
     };
 }
 

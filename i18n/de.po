@@ -7140,3 +7140,11 @@ msgstr "{0} hat weitergeleitet:"
 #: ui/shared/views/MessageListView.cpp:1747
 msgid "{0} forwarded: {1}"
 msgstr "{0} hat weitergeleitet: {1}"
+
+#: ui/shared/views/SlashCommands.cpp
+msgid "Search for a sticker to send"
+msgstr "Einen Sticker zum Senden suchen"
+
+#: ui/shared/views/StickerController.cpp
+msgid "No stickers found"
+msgstr "Keine Sticker gefunden"

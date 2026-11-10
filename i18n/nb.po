@@ -5504,3 +5504,11 @@ msgstr "{0} videresendte:"
 #: ui/shared/views/MessageListView.cpp:1747
 msgid "{0} forwarded: {1}"
 msgstr "{0} videresendte: {1}"
+
+#: ui/shared/views/SlashCommands.cpp
+msgid "Search for a sticker to send"
+msgstr "Søk etter en klistremerke å sende"
+
+#: ui/shared/views/StickerController.cpp
+msgid "No stickers found"
+msgstr "Fant ingen klistremerker"

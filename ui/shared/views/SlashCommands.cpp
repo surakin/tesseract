@@ -240,6 +240,7 @@ const std::vector<SlashCommandDescriptor>& available_commands()
         {"leave", "", tk::tr("Leave the current room")},
         {"invite", "<@user:server> [reason]", tk::tr("Invite a user to the current room")},
         {"gif", "<search>", tk::tr("Search for a GIF to send")},
+        {"sticker", "<search>", tk::tr("Search for a sticker to send")},
         {"selfie", "", tk::tr("Take a selfie and attach it")},
         {"location", "", tk::tr("Share your current location")},
         {"poll", "", tk::tr("Create a poll")},

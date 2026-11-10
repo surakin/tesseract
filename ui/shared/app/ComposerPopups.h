@@ -9,6 +9,8 @@
 #include "views/ShortcodePopup.h"
 #include "views/SlashCommandController.h"
 #include "views/SlashCommandPopup.h"
+#include "views/StickerController.h"
+#include "views/StickerPopup.h"
 
 #include <cstdint>
 #include <functional>
@@ -32,7 +34,7 @@ class RoomView;
 }
 
 // The composer's four autocomplete popups (@mention, /command, :shortcode:,
-// /gif strip) for one room pane, in a pop-out room window or the main window
+// /gif and /sticker strips) for one room pane, in a pop-out room window or the main window
 // (ShellBase::compose_popups_): popup surface + popup widget + controller
 // each, the hooks wiring via RoomPane, and the compose text-area callbacks
 // that drive them through views/ComposePopups.h. By default it also sends the
@@ -89,15 +91,22 @@ public:
     void show_gif_popup();
     void hide_gif_popup();
 
+    // Position + show the /sticker strip above the compose bar / hide it.
+    void show_sticker_popup();
+    void hide_sticker_popup();
+
+    // A sticker thumbnail landed: redraw the /sticker strip if it is open.
+    void on_sticker_image_loaded();
+
     // Async GIF search results; only the controller that issued the request
     // matches, so every pop-out can forward every result.
     void on_gif_results(std::uint64_t request_id, std::vector<GifResult> results);
     void on_gif_search_failed(std::uint64_t request_id, const std::string& message);
 
-    // Re-theme the popup surfaces (all four popup surfaces).
+    // Re-theme the popup surfaces (all five popup surfaces).
     void apply_theme(const tk::Theme& theme);
 
-    // Animation tick: repaint the /gif strip when it is on screen.
+    // Animation tick: repaint the /gif and /sticker strips when on screen.
     void repaint_anim_frame();
 
 private:
@@ -125,6 +134,10 @@ private:
     std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
     views::GifPopup* gif_popup_widget_ = nullptr;
     std::unique_ptr<views::GifController> gif_controller_;
+
+    std::unique_ptr<tk::PopupSurfaceHandle> sticker_popup_;
+    views::StickerPopup* sticker_popup_widget_ = nullptr;
+    std::unique_ptr<views::StickerController> sticker_controller_;
 };
 
 } // namespace tesseract

@@ -430,6 +430,10 @@ void ShellBase::notify_secondary_media_ready_(const std::string& cache_key, Medi
     if (kind == MediaKind::Sticker)
     {
         repaint_pickers_();
+        for (const auto& [owner, repaint] : sticker_strip_repaints_)
+        {
+            repaint();
+        }
     }
     for (const auto& [rid, w] : secondary_windows_)
     {

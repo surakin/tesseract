@@ -5094,6 +5094,11 @@ protected:
     // appear in several rooms), so notify all secondary windows.
     void notify_secondary_media_ready_(const std::string& cache_key, MediaKind kind);
 
+    // Repaint callbacks of the open /sticker strips (main composer + pop-outs),
+    // keyed by owner; run when a sticker image lands. Registered by
+    // ComposerPopups through RoomPane.
+    std::map<const void*, std::function<void()>> sticker_strip_repaints_;
+
     // Override in a platform shell to instantiate the concrete RoomWindow
     // subclass. The subclass constructor must call finish_init_() before
     // returning. Default: no-op (secondary windows are inert until a shell

@@ -3105,7 +3105,7 @@ TEST_CASE("composer popups: the main composer's typing reaches the shell's typin
 {
     ComposerFixture f;
     REQUIRE(f.s.compose_popups_ != nullptr);
-    REQUIRE(f.host.popups_created.size() == f.first_popup + 4);
+    REQUIRE(f.host.popups_created.size() == f.first_popup + 5);
     auto* nat = f.composer_native();
     REQUIRE(nat != nullptr);
     REQUIRE(nat->on_changed != nullptr);

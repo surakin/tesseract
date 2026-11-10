@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(composer): `/sticker <text>` shows matching stickers above the composer; arrows or Tab pick one and Enter sends it. Linux release build, ctest 3921/3921
+
 ## v0.9.8 — 2026-11-10
 
 ### Summary

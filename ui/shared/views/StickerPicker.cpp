@@ -2,7 +2,9 @@
 
 #include "tk/i18n.h"
 #include "tk/theme.h"
+#include "views/StickerEngine.h"
 #include "views/image_pack_order.h"
+#include "views/text_match.h"
 
 #include <tesseract/client.h>
 
@@ -11,26 +13,6 @@
 
 namespace tesseract::views
 {
-
-namespace
-{
-
-bool icontains(const std::string& haystack, const std::string& needle)
-{
-    if (needle.empty())
-    {
-        return true;
-    }
-    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
-                          [](char a, char b)
-                          {
-                              return std::tolower(static_cast<unsigned char>(a)) ==
-                                     std::tolower(static_cast<unsigned char>(b));
-                          });
-    return it != haystack.end();
-}
-
-} // namespace
 
 // ─────────────────────────────────────────────────────────────────────────
 //  StickerPicker
@@ -57,28 +39,20 @@ void StickerPicker::refresh_packs()
     favorites_.clear();
     if (client_)
     {
-        // Keep only packs whose usage allows stickers (per MSC2545; missing
-        // usage means any, which the SDK already normalised to PackUsage::Any).
-        std::vector<tesseract::ImagePack> filtered;
-        for (auto& p : client_->list_image_packs())
+        packs_ = sticker_packs_for_room(*client_, current_room_id_, current_room_parent_spaces_);
+        // Packs without their own avatar borrow the first sticker's image so
+        // the tab shows a glyph rather than a bare letter.
+        for (auto& p : packs_)
         {
-            if (any(p.usage & PackUsage::Sticker))
+            if (p.avatar_url.empty())
             {
-                // Packs without their own avatar borrow the first sticker's
-                // image so the tab shows a glyph rather than a bare letter.
-                if (p.avatar_url.empty())
+                auto imgs = client_->list_pack_images(p.id, PackUsageFilter::Sticker);
+                if (!imgs.empty())
                 {
-                    auto imgs = client_->list_pack_images(p.id, PackUsageFilter::Sticker);
-                    if (!imgs.empty())
-                    {
-                        p.avatar_url = imgs.front().url;
-                    }
+                    p.avatar_url = imgs.front().url;
                 }
-                filtered.push_back(std::move(p));
             }
         }
-        packs_ =
-            order_picker_packs(std::move(filtered), current_room_id_, current_room_parent_spaces_);
         favorites_ = client_->list_favorite_stickers();
     }
     // If we were on Favorites and there are no longer any, fall back to pack 0.
@@ -398,7 +372,7 @@ void StickerPicker::rebuild_current_items()
             {
                 for (const auto& img : client_->list_pack_images(pack.id, PackUsageFilter::Sticker))
                 {
-                    if (icontains(img.body, query) || icontains(img.shortcode, query))
+                    if (contains_ci(img.body, query) || contains_ci(img.shortcode, query))
                     {
                         current_items_.push_back(img);
                     }

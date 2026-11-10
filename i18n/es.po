@@ -7240,3 +7240,11 @@ msgstr "{0} reenvió:"
 #: ui/shared/views/MessageListView.cpp:1747
 msgid "{0} forwarded: {1}"
 msgstr "{0} reenvió: {1}"
+
+#: ui/shared/views/SlashCommands.cpp
+msgid "Search for a sticker to send"
+msgstr "Buscar un sticker para enviar"
+
+#: ui/shared/views/StickerController.cpp
+msgid "No stickers found"
+msgstr "No se encontraron stickers"

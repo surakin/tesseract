@@ -19,7 +19,7 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane
     : text_area_(text_area), pane_(pane), room_view_(room_view), options_(std::move(options))
 {
     // Compose text area -> popups, through the shared priority dispatch
-    // (gif > slash > shortcode > mention).
+    // (gif > sticker > slash > shortcode > mention).
     text_area_->set_on_changed(
         [this](const std::string& s)
         {
@@ -41,14 +41,14 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane
                 room_view_->set_current_text(s);
             }
             views::dispatch_compose_text_changed(
-                s, text_area_->cursor_byte_pos(), gif_controller_.get(), slash_controller_.get(),
-                shortcode_controller_.get(), mention_controller_.get());
+                s, text_area_->cursor_byte_pos(), gif_controller_.get(), sticker_controller_.get(),
+                slash_controller_.get(), shortcode_controller_.get(), mention_controller_.get());
         });
     text_area_->set_on_submit(
         [this]
         {
-            if (views::dispatch_compose_submit(gif_controller_.get(), slash_controller_.get(),
-                                               shortcode_controller_.get(),
+            if (views::dispatch_compose_submit(gif_controller_.get(), sticker_controller_.get(),
+                                               slash_controller_.get(), shortcode_controller_.get(),
                                                mention_controller_.get()))
             {
                 return;
@@ -63,8 +63,8 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane
     text_area_->push_popup_nav(
         [this](tk::NavKey nk) -> bool
         {
-            return views::dispatch_compose_nav(nk, gif_controller_.get(), slash_controller_.get(),
-                                               shortcode_controller_.get(),
+            return views::dispatch_compose_nav(nk, gif_controller_.get(), sticker_controller_.get(),
+                                               slash_controller_.get(), shortcode_controller_.get(),
                                                mention_controller_.get());
         });
 
@@ -285,6 +285,57 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane
         gif_controller_ =
             std::make_unique<views::GifController>(text_area_, gif_popup_widget_, std::move(gh));
     }
+
+    // ── /sticker inline result strip ──────────────────────────────────────
+    sticker_popup_ = host.make_popup_surface();
+    {
+        auto w = std::make_unique<views::StickerPopup>();
+        sticker_popup_widget_ = w.get();
+        sticker_popup_widget_->set_image_provider(
+            [this](const tesseract::ImagePackImage& sticker) -> const tk::Image*
+            {
+                return pane_->shell_sticker_strip_image_(sticker);
+            });
+        sticker_popup_widget_->cache_key_resolver = [this](const std::string& url)
+        {
+            return pane_->shell_picker_sticker_key_(url);
+        };
+        if (sticker_popup_)
+        {
+            sticker_popup_->set_root(std::move(w));
+            if (const auto* cache = pane_->shell_anim_cache_())
+            {
+                sticker_popup_->set_anim_cache(cache);
+            }
+        }
+    }
+    {
+        views::StickerController::Hooks sh;
+        sh.show = [this]
+        {
+            show_sticker_popup();
+        };
+        sh.hide = [this]
+        {
+            hide_sticker_popup();
+        };
+        sh.repaint = [this]
+        {
+            refresh_(sticker_popup_.get());
+        };
+        sh.repaint_selection = [this]
+        {
+            refresh_(sticker_popup_.get(), /*layout=*/false);
+        };
+        pane_->wire_sticker_hooks_(sh);
+        sticker_controller_ =
+            std::make_unique<views::StickerController>(sticker_popup_widget_, std::move(sh));
+        pane_->shell_set_sticker_strip_repaint_(this, pane_->guarded(
+                                                          [this]
+                                                          {
+                                                              on_sticker_image_loaded();
+                                                          }));
+    }
 }
 
 ComposerPopups::~ComposerPopups()
@@ -298,6 +349,10 @@ ComposerPopups::~ComposerPopups()
         text_area_->set_on_changed(nullptr);
         text_area_->set_on_submit(nullptr);
         text_area_->pop_popup_nav(); // the one handler pushed in the ctor
+    }
+    if (pane_)
+    {
+        pane_->shell_set_sticker_strip_repaint_(this, nullptr);
     }
     if (typing_active_)
     {
@@ -331,8 +386,9 @@ void ComposerPopups::refresh_(tk::PopupSurfaceHandle* popup, bool layout)
 
 void ComposerPopups::hide_all()
 {
-    views::hide_all_compose_popups(gif_controller_.get(), slash_controller_.get(),
-                                   shortcode_controller_.get(), mention_controller_.get());
+    views::hide_all_compose_popups(gif_controller_.get(), sticker_controller_.get(),
+                                   slash_controller_.get(), shortcode_controller_.get(),
+                                   mention_controller_.get());
 }
 
 void ComposerPopups::on_bot_commands_changed()
@@ -390,6 +446,39 @@ void ComposerPopups::hide_gif_popup()
     }
 }
 
+void ComposerPopups::show_sticker_popup()
+{
+    if (!sticker_popup_ || !sticker_popup_widget_ || !text_area_ || !room_view_)
+    {
+        return;
+    }
+    const tk::Rect cb = room_view_->compose_bar_rect();
+    const tk::Size sz = sticker_popup_widget_->content_size(cb.w);
+    if (cb.w <= 0.0f || sz.h <= 0.0f)
+    {
+        hide_sticker_popup();
+        return;
+    }
+    sticker_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
+    sticker_popup_->set_visible(true);
+}
+
+void ComposerPopups::hide_sticker_popup()
+{
+    if (sticker_popup_)
+    {
+        sticker_popup_->set_visible(false);
+    }
+}
+
+void ComposerPopups::on_sticker_image_loaded()
+{
+    if (sticker_popup_ && sticker_popup_->visible())
+    {
+        sticker_popup_->request_repaint();
+    }
+}
+
 void ComposerPopups::on_gif_results(std::uint64_t request_id, std::vector<GifResult> results)
 {
     if (gif_controller_)
@@ -424,6 +513,10 @@ void ComposerPopups::apply_theme(const tk::Theme& theme)
     {
         gif_popup_->set_theme(theme);
     }
+    if (sticker_popup_)
+    {
+        sticker_popup_->set_theme(theme);
+    }
 }
 
 void ComposerPopups::repaint_anim_frame()
@@ -432,6 +525,17 @@ void ComposerPopups::repaint_anim_frame()
     // anim cache; the shell's tick fires this for every window). With the
     // cache wired only the cells' rects are repainted; without one (a host
     // that cannot track them) the whole popup is.
+    if (sticker_popup_ && sticker_popup_->visible())
+    {
+        if (anim_partial_repaint_)
+        {
+            sticker_popup_->update_anim_regions();
+        }
+        else
+        {
+            sticker_popup_->request_repaint();
+        }
+    }
     if (!gif_popup_ || !gif_popup_->visible())
     {
         return;

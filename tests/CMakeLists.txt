@@ -118,6 +118,7 @@ add_executable(tesseract_tests
     cpp/test_setting_binder.cpp
     cpp/test_gif_engine.cpp
     cpp/test_tk_gif_popup.cpp
+    cpp/test_sticker_strip.cpp
     cpp/test_map_tiles.cpp
     cpp/test_location_events.cpp
     cpp/test_poll.cpp
