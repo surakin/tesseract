@@ -101,6 +101,26 @@ narrow the rewritten note to the surface(s) that predate this version.
   or is dropped if it adds nothing a user would notice. Put the merged item in
   the section its main change belongs to (step 4). Related-but-separate
   features (emoji skin tones vs. a newer Emoji version) stay separate items.
+- **Summarize security fixes by theme, not one per bug.** Security
+  hardening fixes (`fix(security)`, and any other `fix(...)` whose text is
+  about resisting an attack: "can no longer be made to", "another member's
+  server can no longer", size limits on untrusted input) are collapsed into
+  at most four short Fixes bullets, one per theme. Typical themes:
+  - malformed or oversized content (messages, images, voice messages, call
+    video) can no longer crash or freeze the app;
+  - harmful received files are never opened, other risky ones ask first;
+  - impersonation is harder (look-alike names, mention pills, forwards, call
+    participants);
+  - everything else in one line naming the areas only ("Verification, QR
+    device linking, history exports, the media cache and image uploads are
+    also handled more safely.").
+  Name what the user would recognize, never the attack or the mechanism: no
+  file extensions beyond an example or two, no "https", "/tmp", "lock",
+  "edit the homeserver slipped in". Small items that fit no theme and mean
+  nothing to a user (e.g. a lock-file location) are dropped. If the user says
+  the fixes came from a security review, open the first bullet with
+  "Following a security review,". Keep these bullets above the other Fixes.
+  `privacy(...)` changes are not security fixes: place them by step 4.
 - **Write like a person, not a press release.** The notes should read as if
   the developer typed them. Concretely:
   - Plain, direct sentences. Say what changed and stop. Short is fine.
@@ -309,3 +329,6 @@ switching, so they become one Fixes item.)
 - Appending an MSC number to a line derived from a `fix`/`perf`/`refactor` bullet — the exception follows the `feat` source prefix, not the output section.
 - Ending with only a pointer to the notes file. The user never sees tool
   output, so the reply itself must contain the notes in a `markdown` code block.
+- Listing each security fix as its own technical bullet ("refuses a sign-in
+  address that isn't https", "the lock in /tmp") instead of the few themed
+  summary bullets from step 3.
