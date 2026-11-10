@@ -323,9 +323,28 @@ void ShellBase::push_unjoined_to_sidebar_(const std::string& space_id)
     }
 }
 
+void ShellBase::mark_server_info_stale_()
+{
+    server_info_stale_accounts_.insert(event_account_);
+}
+
+void ShellBase::refresh_server_info_after_reconnect_()
+{
+    if (server_info_stale_accounts_.erase(event_account_) != 0 && event_is_for_active_account_())
+    {
+        server_info_fetch_started_ = false;
+    }
+}
+
 void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
                                                    tesseract::ServerInfo info)
 {
+    // A half-up server right after an upgrade can fail /versions; taking that
+    // result would hide calls, jump-to-date, etc. Keep what we already know.
+    if (info.spec_versions.empty() && !server_info_.spec_versions.empty())
+    {
+        return;
+    }
     server_info_ = std::move(info);
     push_own_status_to_strip_(); // profile-field support gates the placeholder
     on_server_info_ready_ui_();

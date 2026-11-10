@@ -520,6 +520,7 @@ void EventHandlerBase::on_sync_error(const std::string& context, const std::stri
             if (ctx == "sync_offline" || ctx == "sync_error")
             {
                 shell->handle_offline_ui_();
+                shell->mark_server_info_stale_();
             }
             shell->handle_sync_error_ui_(std::move(ctx), std::move(uid), std::move(desc), sl);
         });
@@ -587,6 +588,7 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
             if (s == RoomListState::Running)
             {
                 shell->handle_room_list_running_ui_();
+                shell->refresh_server_info_after_reconnect_();
                 shell->begin_server_info_fetch_();
                 if (shell->offline_)
                 {

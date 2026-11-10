@@ -251,7 +251,7 @@ async fn build_server_info(
     // SDK keeps it for 24h and picks endpoint paths (stable vs unstable)
     // from it, so a stale entry after a server upgrade sent requests down
     // the wrong path.
-    let (caps_resp, supported, fed_body, media_body, login_body) = tokio::join!(
+    let (caps_resp, (supported, versions_ok), fed_body, media_body, login_body) = tokio::join!(
         http.get(format!("{base}/_matrix/client/v3/capabilities"))
             .bearer_auth(&access_token)
             .send(),
@@ -260,12 +260,15 @@ async fn build_server_info(
                 tracing::warn!("failed to reset cached supported versions: {e}");
             }
             match client.supported_versions().await {
-                Ok(v) => v,
+                Ok(v) => (v, true),
                 Err(e) => {
                     tracing::warn!("failed to fetch supported versions: {e}");
-                    matrix_sdk::ruma::api::SupportedVersions::from_parts(
-                        &[],
-                        &std::collections::BTreeMap::new(),
+                    (
+                        matrix_sdk::ruma::api::SupportedVersions::from_parts(
+                            &[],
+                            &std::collections::BTreeMap::new(),
+                        ),
+                        false,
                     )
                 }
             }
@@ -321,17 +324,20 @@ async fn build_server_info(
     // unstable_features key.
     let supports_invite_reason = has_feature("uk.timedout.msc4491.create_room_invite_reasons");
 
-    *prefix_slot.write().unwrap() = if supports_msc4133_stable {
-        Some("/_matrix/client/v3".to_owned())
-    } else if supports_msc4133_unstable {
-        Some("/_matrix/client/unstable/uk.tcpip.msc4133".to_owned())
-    } else {
-        None
-    };
-    *invite_reason_slot.write().unwrap() = supports_invite_reason;
-
+    // When `/versions` failed, `supported` is empty: keep the slots' previous
+    // values instead of overwriting them with "nothing supported".
     let mutual_rooms_mode = mutual_rooms_mode_for(has_feature, &spec_versions);
-    mutual_rooms_slot.store(mutual_rooms_mode, Ordering::Relaxed);
+    if versions_ok {
+        *prefix_slot.write().unwrap() = if supports_msc4133_stable {
+            Some("/_matrix/client/v3".to_owned())
+        } else if supports_msc4133_unstable {
+            Some("/_matrix/client/unstable/uk.tcpip.msc4133".to_owned())
+        } else {
+            None
+        };
+        *invite_reason_slot.write().unwrap() = supports_invite_reason;
+        mutual_rooms_slot.store(mutual_rooms_mode, Ordering::Relaxed);
+    }
 
     let caps: serde_json::Value = match caps_resp {
         Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
@@ -357,7 +363,9 @@ async fn build_server_info(
         .and_then(|v| v.as_bool())
         .unwrap_or(caps_known);
     let preview_url_enabled = caps_known && preview_url_enabled(&caps);
-    preview_url_slot.store(preview_url_enabled, Ordering::Relaxed);
+    if versions_ok {
+        preview_url_slot.store(preview_url_enabled, Ordering::Relaxed);
+    }
 
     let supports_calls = crate::client::rtc::transport::probe_livekit_support(&client, &http).await;
 

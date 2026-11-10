@@ -1323,6 +1323,9 @@ protected:
     // ── Server capabilities ───────────────────────────────────────────────────
     tesseract::ServerInfo server_info_;      ///< populated after first sync
     bool server_info_fetch_started_ = false; ///< guards begin_server_info_fetch_
+    /// Accounts that lost contact with their homeserver since their server info
+    /// was last fetched; the next reconnect re-reads it.
+    std::unordered_set<std::string> server_info_stale_accounts_;
     /// Last fetched own extended profile (MSC4133). Populated by
     /// fetch_own_extended_profile_async_() after server_info_ confirms support,
     /// and kept in sync thereafter by handle_profile_field_result_ui_ applying
@@ -4638,8 +4641,17 @@ protected:
         own_extended_profile_ = {};
     }
 
+    /// Note that the event account lost contact with its homeserver, so its
+    /// server info is re-read once it is back.
+    void mark_server_info_stale_();
+
+    /// On reconnect, allow a new server-info fetch if the event account was
+    /// marked stale and is the active one. The old info stays until the new
+    /// result arrives.
+    void refresh_server_info_after_reconnect_();
+
     /// Fire an async server-info fetch. Result arrives via
-    /// handle_server_info_async_ready_ui_(). Only fetches once per session.
+    /// handle_server_info_async_ready_ui_(). Fetches once per session, again after a reconnect.
     void begin_server_info_fetch_()
     {
         if (server_info_fetch_started_ || !client_)

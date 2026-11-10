@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(sync): server details and features are re-read after reconnecting, so a server upgrade is picked up without restarting. Linux release build
 - fix(ui): the avatar in the user info panel is sharp, and animated avatars stay animated there. Linux build
 - feat(composer): `/sticker <text>` shows matching stickers above the composer; arrows or Tab pick one and Enter sends it. Linux release build, ctest 3921/3921
 - fix(ui): context menus widen to fit longer translated labels. Linux release build, ctest popup-menu tests
