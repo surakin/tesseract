@@ -1,6 +1,57 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-11-03**. 3842 C++ + 1601 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-11-10**. 3913 C++ + 1703 Rust tests.
+
+> **Centered system messages (2026-11-07, v0.9.8).**
+> A "Center system messages" checkbox under Settings → Appearance → Layout
+> (Bubbles layout only) centers joins, leaves, invites and other membership
+> lines in the content column. Avatars stay clickable and expanded groups keep
+> their timestamps.
+
+> **Security review hardening (2026-11-06, v0.9.8).**
+> Fixes from the 2026-11-06 review. Huge tables, long code spans, damaged
+> voice messages, oversized images and remote call video are bounded so they
+> can't freeze or crash the app. Project files and playlists are never opened
+> and other text files ask first; Save-As ignores the file name's folder.
+> Members sharing a display name show their Matrix ID, mention pills show the
+> member's real name, forwards credit the author only when the original is held
+> locally and matches, and another member's call server can't add fake
+> participants. History exports are owner-only and can't forge lines, uploads
+> refuse images that can't be stripped of metadata, the media disk cache keeps
+> to its cap, verification requests can't take over a pending flow ID, QR
+> device linking opens only https addresses, and links in encrypted rooms are
+> previewed only when "Show link previews in encrypted rooms" is on. Open
+> findings are in ROADMAP.md. Linux build, ctest 3913/3913, cargo 1703/1703.
+
+> **Per-message profiles, MSC4144 (2026-11-06, v0.9.8).**
+> Messages carrying `com.beeper.per_message_profile` (or the stable
+> `m.per_message_profile`) show the profile's name and avatar with a muted
+> "via <real sender>" label; clicking the name opens the real sender's
+> profile. A profile change breaks message grouping, and forwards don't copy
+> the original's profile. Reply previews, the room-list preview and
+> notifications don't show profiles yet.
+
+> **Settings regrouped (2026-11-06, v0.9.8).**
+> The 13 settings tabs are now Account, Security & Devices, Notifications,
+> Appearance, Messages, Media & Calls, Emojis & Stickers, Privacy, General and
+> About (plus the hidden Advanced tab). No setting or stored value changed.
+
+> **Emoticon replacement (2026-11-06, v0.9.8).**
+> An off-by-default Settings → Messages → Composer option turns a finished
+> plain-text emoticon (`:-)`, `;)`, `<3`) into its emoji as you type, in every
+> composer; Ctrl+Z restores the typed text. Only whole tokens outside code
+> spans are replaced, so times and URLs are untouched.
+
+> **macOS sign-in through the system sheet (2026-11-03, v0.9.8).**
+> OAuth sign-in on macOS opens `ASWebAuthenticationSession` and receives the
+> redirect as `io.github.surakin:/callback` instead of listening on a loopback
+> port. Linux and Windows keep the loopback flow.
+
+> **Show unhandled events (2026-11-02, v0.9.8).**
+> "Show unhandled events in the timeline" under Settings → Advanced →
+> Developer (needs developer mode) shows event types the timeline doesn't
+> render as one-line rows with the event type, whose menu offers "Copy event
+> source".
 
 > **End-to-end smoke test in CI (2026-11-02).**
 > `smoke.yml` runs the Qt6, GTK4, AppKit and Win32 shells against a throwaway
@@ -2769,6 +2820,7 @@ The shared UI code builds as four static libraries, each linking the previous: `
 - **FFI surface (writes)** — `send_sticker`, `save_sticker_to_user_pack`, `toggle_favorite_sticker`, `remove_user_pack_image`, `rename_user_pack_image`, `set_pack_room_subscribed` (dual-writes stable + unstable event types, forces a synchronous rebuild so `is_subscribed` is correct before returning), `save_room_pack` (wholesale-replaces a room/space pack's images, matching the editor's full-snapshot staging model), `remove_room_pack` (empties a pack — Matrix has no true state-event delete; discovery skips zero-image packs), `can_set_room_image_packs` (power-level gate, mirrors `can_set_room_name`).
 - **`IEventHandler::on_image_packs_updated`** — fires whenever the cache is rebuilt; pickers refresh in place.
 - **UI** — `ImagePackEditorView` (multi-pack room/space editor, `RoomSettingsView`'s "Emojis & Stickers" tab) and `ImagePacksSection` (`UserPackEditor` + `KnownPacksList`, global `SettingsView` tab) share tile-grid logic via `ImagePackTileGridBase`.
+- **Per-message profiles (MSC4144, display only)** — `com.beeper.per_message_profile` / `m.per_message_profile` name and avatar shown with a "via <real sender>" label; plain and HTML fallbacks stripped; encrypted profile avatars supported. Not yet in reply previews, room-list previews or notifications.
 
 ## Compose bar
 
@@ -2781,6 +2833,7 @@ The shared UI code builds as four static libraries, each linking the previous: `
 - Clipboard image paste; clipboard file-list paste (files copied in a file manager, not dragged — Qt6/GTK4 shipped); file drag-drop; pending-image / pending-file preview chip with clear button.
 - Reply-mode banner (`kReplyBandH = 44 px`) with sender + body snippet and "×" cancel; edit-mode banner (`kEditBandH = 44 px`) with "×" cancel; both modes mutually exclusive.
 - **Slash commands** — `SlashCommandEngine`/`SlashCommandPopup` autocomplete (typing `/` opens the popup); `dispatch_compose_send` routes recognised commands: `/me` + `/slap` → `m.emote`, `/shrug` appends `¯\_(ツ)_/¯`, `/spoiler [(reason)] <text>` → `m.text` with a `data-mx-spoiler` span (MSC2010; content rendered through inline markdown). Unknown `/foo` is sent verbatim.
+- **Emoticon replacement** — optional (Settings → Messages → Composer, off by default); whole-token `:-)`, `;)`, `<3` etc. become emoji as typed, skipping code spans; undoable with Ctrl+Z.
 
 ## Internationalisation
 
