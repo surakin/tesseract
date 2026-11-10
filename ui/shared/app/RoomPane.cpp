@@ -489,6 +489,17 @@ void RoomPane::wire_room_view_()
     // per pane so pop-outs get it too, each on its own account.
     if (auto* panel = rv->user_profile_panel())
     {
+        // The big avatar uses its own widget-sized thumbnail, not the shared
+        // list-size avatar provider RoomView hands the other panels.
+        panel->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                return shell_->profile_avatar_image_(mxc);
+            });
+        panel->on_avatar_needed = [this](const std::string& mxc)
+        {
+            shell_->ensure_profile_avatar_(mxc);
+        };
         panel->on_trust_requested = [this](std::string user_id)
         {
             refresh_profile_trust_(user_id);

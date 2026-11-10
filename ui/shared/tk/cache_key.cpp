@@ -35,6 +35,8 @@ std::string CacheKey::to_string() const
         return "pill:" + id;
     case CacheUsage::PickerSticker:
         return "pickersticker" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
+    case CacheUsage::ProfileAvatar:
+        return "profileavatar" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
     case CacheUsage::ServerIcon:
         return "servericon:" + id;
     }
@@ -90,6 +92,11 @@ CacheKey CacheKey::gif_preview(std::string url)
 CacheKey CacheKey::picker_sticker(std::string id, int w, int h)
 {
     return CacheKey{CacheUsage::PickerSticker, std::move(id), w, h};
+}
+
+CacheKey CacheKey::profile_avatar(std::string id, int w, int h)
+{
+    return CacheKey{CacheUsage::ProfileAvatar, std::move(id), w, h};
 }
 
 CacheKey CacheKey::server_icon(std::string homepage_url)

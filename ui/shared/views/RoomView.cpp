@@ -2008,10 +2008,6 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     {
         room_settings_view_->set_avatar_provider(p);
     }
-    if (user_profile_panel_)
-    {
-        user_profile_panel_->set_avatar_provider(p);
-    }
     if (thread_view_ && thread_view_->message_list())
     {
         thread_view_->message_list()->set_avatar_provider(p);

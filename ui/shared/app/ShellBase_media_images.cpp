@@ -5,6 +5,7 @@
 #include "platform/video_decode.h"
 #include "views/GifPopup.h"
 #include "views/MainAppWidget.h"
+#include "views/UserProfilePanel.h"
 #include <algorithm>
 #ifndef _WIN32
 #include <unistd.h>
@@ -454,6 +455,61 @@ void ShellBase::ensure_picker_sticker_(const std::string& url)
     fetch_media_pipeline_(flight_key, tk::CacheKey::media(url), flight_key,
                           /*group_id=*/0, tesseract::Client::MediaReqKind::SourceFull, url,
                           /*w=*/0, /*h=*/0, /*animated=*/false, MediaKind::Sticker, key);
+}
+
+int ShellBase::profile_avatar_px_() const
+{
+    return std::max(1, static_cast<int>(
+                           std::lround(views::UserProfilePanel::kAvatarDiameter * current_scale_)));
+}
+
+tk::CacheKey ShellBase::profile_avatar_key_(const std::string& mxc) const
+{
+    const int px = profile_avatar_px_();
+    return tk::CacheKey::profile_avatar(mxc, px, px);
+}
+
+void ShellBase::ensure_profile_avatar_(const std::string& mxc)
+{
+    // Only plain mxc:// avatars have a sized server thumbnail to ask for.
+    if (mxc.rfind("mxc://", 0) != 0 || media_decode_failed_.count(mxc))
+    {
+        return;
+    }
+    const tk::CacheKey key = profile_avatar_key_(mxc);
+    if (account_manager_.image_cache().contains(key) || account_manager_.anim_cache().has(key))
+    {
+        return;
+    }
+    const std::string flight_key = key.to_string();
+    if (media_fetch_backed_off_(flight_key) || !media_fetches_in_flight_.insert(flight_key).second)
+    {
+        return;
+    }
+    // The animated and still thumbnails are different server responses, so
+    // they get different disk entries.
+    const bool animated = animate_avatars_effective_();
+    const tk::CacheKey disk_key =
+        tk::CacheKey::profile_avatar(animated ? "anim:" + mxc : mxc, key.w, key.h);
+    fetch_media_pipeline_(flight_key, disk_key, flight_key, /*group_id=*/0,
+                          tesseract::Client::MediaReqKind::MxcThumbnail, mxc,
+                          static_cast<std::uint32_t>(key.w), static_cast<std::uint32_t>(key.h),
+                          animated, MediaKind::MediaImage, key);
+}
+
+const tk::Image* ShellBase::profile_avatar_image_(const std::string& mxc)
+{
+    const tk::CacheKey key = profile_avatar_key_(mxc);
+    if (const auto* f = account_manager_.anim_cache().peek_frame(key, low_power_active()))
+    {
+        start_anim_tick_();
+        return f;
+    }
+    if (const auto* img = account_manager_.image_cache().peek(key))
+    {
+        return img;
+    }
+    return avatar_image_(mxc);
 }
 
 const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)

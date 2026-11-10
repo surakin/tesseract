@@ -214,7 +214,8 @@ void ShellBase::evict_media_bytes_(const tk::CacheKey& key) const
 
 std::pair<int, int> ShellBase::media_decode_clamp_(MediaKind kind, const tk::CacheKey& cache_key)
 {
-    if (cache_key.usage == tk::CacheUsage::PickerSticker)
+    if (cache_key.usage == tk::CacheUsage::PickerSticker ||
+        cache_key.usage == tk::CacheUsage::ProfileAvatar)
     {
         return {cache_key.w, cache_key.h};
     }

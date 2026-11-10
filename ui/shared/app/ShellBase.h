@@ -5213,6 +5213,18 @@ protected:
     // timeline's), so the picker never holds timeline-sized frames.
     void ensure_picker_sticker_(const std::string& url);
 
+    // Edge in device pixels of the user-profile panel's avatar (widget size ×
+    // display scale); its server thumbnail is requested and decoded at this
+    // size so the large avatar is not an upscaled list-size one.
+    int profile_avatar_px_() const;
+    tk::CacheKey profile_avatar_key_(const std::string& mxc) const;
+    // Fetch + decode the profile-panel avatar (animated when avatars animate).
+    // Idempotent; the panel falls back to the list-size avatar meanwhile.
+    void ensure_profile_avatar_(const std::string& mxc);
+    // Panel avatar lookup: the profile-size image when cached (current frame
+    // when animated, frozen in low power), else avatar_image_(). Never fetches.
+    const tk::Image* profile_avatar_image_(const std::string& mxc);
+
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
     // relayout the main surface and every pop-out.
