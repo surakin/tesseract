@@ -1209,8 +1209,6 @@ jobs:
             dist/tesseract-windows/Tesseract-*.exe
             dist/tesseract-macos-arm64/Tesseract-*.dmg
             dist/tesseract-macos-x86_64/Tesseract-*.dmg
-            dist/tesseract-macos-arm64-dsym/Tesseract-*.dSYM.zip
-            dist/tesseract-macos-x86_64-dsym/Tesseract-*.dSYM.zip
             dist/tesseract-linux-appimage/Tesseract-*.AppImage
             dist/tesseract-linux-deb/*.deb
             dist/tesseract-linux-rpm/*.rpm
