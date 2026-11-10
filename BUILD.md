@@ -185,8 +185,13 @@ linking, `dsymutil` writes `<build>/ui/macos/Tesseract.app.dSYM`, then
 `strip -x` drops local symbols from `Tesseract.app/Contents/MacOS/Tesseract`
 (before codesigning, so the DMG ships the stripped binary). Keep the `.dSYM`
 for every build you distribute: it is the only way to symbolicate that build's
-crash reports. CI uploads it as `Tesseract-<version>-<arch>.dSYM.zip`. Pass
-`-DTESSERACT_MAC_STRIP=OFF` to keep the dSYM but skip stripping.
+crash reports. CI uploads it as `Tesseract-<version>-<arch>.dSYM.zip`.
+
+Both steps are controlled by `TESSERACT_MAC_STRIP`, which defaults to ON only
+under GitHub Actions. Local builds make no dSYM and keep the executable
+unstripped; pass `-DTESSERACT_MAC_STRIP=ON` to get CI's behaviour. An existing
+build directory keeps its cached value, so reconfigure it with
+`-DTESSERACT_MAC_STRIP=OFF` if it was configured before this default changed.
 
 The App Store `.pkg` additionally embeds Apple `.symbols` (generated from the
 dSYM with `xcrun symbols`) through `productbuild`'s undocumented
@@ -275,10 +280,11 @@ link order.
   cache of a superseded configuration (any env/flag change starts a fresh
   one). `-DTESSERACT_CARGO_INCREMENTAL=ON` turns it back on for faster
   rebuilds while iterating on `sdk/src/*.rs`.
-- **Rust LTO** is off by default. `-DTESSERACT_RUST_LTO=ON` builds the Rust
-  SDK crate with fat LTO in release builds, cutting its archive from ~800 MB
-  to ~100 MB per copy at the cost of a much slower, more memory-hungry Rust
-  build.
+- **Rust LTO** is off by default, except in the `macos-appkit-appstore` preset
+  (`thin`). `-DTESSERACT_RUST_LTO=ON` builds the Rust SDK crate with fat LTO in
+  release builds, cutting its archive from ~800 MB to ~100 MB per copy at the
+  cost of a much slower, more memory-hungry Rust build. `-DTESSERACT_RUST_LTO=thin`
+  uses thin LTO with one codegen unit per crate, which builds in parallel across crates.
 - **Compressed debug info** (Linux): object files build with `-gz=zlib` and
   executables link with `--compress-debug-sections=zlib`. Every UI and test
   executable carries the whole Rust archive's debug info, so this roughly

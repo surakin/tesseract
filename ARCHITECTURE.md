@@ -76,7 +76,8 @@ Some API calls block, so the shared application layer also uses worker threads.
 
 Matrix state and encryption data are stored per account. C++ session persistence
 uses the OS credential backend, with a file fallback when it is unavailable.
-OAuth opens the system browser and uses the SDK's loopback redirect listener;
+OAuth opens the system browser and uses the SDK's loopback redirect listener (macOS
+uses a private-use scheme through `ASWebAuthenticationSession` instead);
 legacy password login is an optional build feature. Calls use Matrix for
 signaling and LiveKit/WebRTC for realtime media. Optional integrations such as
 GIF search, maps, URL previews, update checks, and UnifiedPush are omitted here

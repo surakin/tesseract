@@ -22,7 +22,7 @@ Tesseract is only the window you look through. Your messages live on your homese
 
 If your server allows registration, a **New here? Create an account** link appears. Servers that only support the old registration method can't create accounts from Tesseract. Register on their website, then sign in here.
 
-Behind a proxy? The wrench button on the login screen opens the network settings (also in Settings → Network).
+Behind a proxy? The wrench button on the login screen opens the network settings (also in Settings → General → Network).
 
 ## 3. The window
 
@@ -89,11 +89,11 @@ Most private rooms are **end-to-end encrypted**. Only the people in the room can
 
 **Verify your devices.** When you sign in on a second device, verify it from the first. Tesseract shows a short list of emoji or numbers for both sides to compare. This stops anyone quietly adding a device to your account. You can do the same with another person to confirm you are really talking to them.
 
-Settings → Privacy also holds the online-status toggle, link-preview options, whether Tesseract may check for updates (only in some builds), and message-key export and import. Your sign-in tokens and recovery key are stored in the operating system's own secure store (Keychain, Credential Manager or Secret Service). Tesseract never sees your password.
+Settings → Privacy holds the online-status toggle and whether Tesseract may check for updates (only in some builds); link-preview options are in Settings → Messages, and message-key export and import are in Settings → Security & Devices. Your sign-in tokens and recovery key are stored in the operating system's own secure store (Keychain, Credential Manager or Secret Service). Tesseract never sees your password.
 
 ### Searching encrypted rooms
 
-Servers can't search encrypted messages, because they can't read them. Tesseract can search them on your computer by building a private index of the decrypted text. It is off until you turn on **Index messages for search** in Settings → Privacy.
+Servers can't search encrypted messages, because they can't read them. Tesseract can search them on your computer by building a private index of the decrypted text. It is off until you turn on **Index messages for search** in Settings → Messages → Search.
 
 ## 8. Several accounts
 
@@ -115,21 +115,21 @@ Settings is a list of pages, in this order:
 
 | Page | What's in it |
 | --- | --- |
-| Account | Your name, avatar, pronouns, time zone, bio, status |
-| Devices | Your signed-in devices; sign out ones you don't recognise |
-| General | Start at login, start in the tray, what closing the window does, low power mode (only on machines with a battery) |
-| Appearance | Light/dark theme, accent colour, message layout, fonts, compact room list |
+| Account | Your name, avatar, pronouns, time zone, bio, status, and **Log Out** |
+| Security & Devices | Your signed-in devices (sign out ones you don't recognise), encryption options, message-key export and import, and a **Danger zone** for resetting your digital identity |
 | Notifications | Turn desktop notifications on or off, hide message content, and choose what notifies you (mentions, @room, keywords) |
-| Media | Media previews, pre-loading images, opening files in other apps, microphone and speaker choice |
-| Privacy | Online status, link previews, encrypted-message search, update checks (some builds only), message-key export and import, digital identity reset |
-| Network | Proxy |
-| Server | What your homeserver supports and what you may change |
-| Emojis & Stickers | Custom emoji and sticker packs |
-| Language | Interface language |
-| About | Version info and **Clear all caches**. The **Advanced** button at the bottom reveals the Advanced page |
+| Appearance | Light/dark theme, accent colour, message layout, timeline width and position, fonts, room list options |
+| Messages | Composer options, what the timeline shows (joins and leaves, deleted messages), link previews, and encrypted-message search |
+| Media & Calls | Media previews, pre-loading images, opening files in other apps, microphone, speaker and camera choice |
+| Emojis & Stickers | Your own sticker pack and the packs you've subscribed to |
+| Privacy | Online status, avatars in invites, update checks (some builds only), local crash reports |
+| General | Start at login, start in the tray, what closing the window does, low power mode (only on machines with a battery), interface language, proxy and storage |
+| About | Version info and what your homeserver supports and what you may change. The **Advanced** button at the bottom reveals the Advanced page |
 | Advanced | Developer options and the Activity Monitor. It stays hidden until you click **Advanced** on the About page, and hides again when you leave it |
 
-**Clear all caches** (About) throws away downloaded data and rebuilds it. It closes any open tabs and pop-out windows, but keeps your login and your encryption keys. Use it if something looks stale or broken.
+When you are signed out, Settings shows only General (without Storage) and About.
+
+**Clear all caches** (General → Storage) throws away downloaded data and rebuilds it. It closes any open tabs and pop-out windows, but keeps your login and your encryption keys. Use it if something looks stale or broken.
 
 **Low power mode** pauses background work, such as downloading old history and previews, while still delivering new messages. The default is Auto: it turns on when you are on battery or your system's energy saver is on.
 
@@ -163,7 +163,7 @@ The full list is in [CLI.md](CLI.md).
 | Can't sign in, or no rooms appear | Your server probably lacks Sliding Sync. Ask the admin |
 | "Unable to decrypt" on a message | Wait a moment. Tesseract retries on its own as keys arrive, either from your server's encrypted key backup or from your other devices. If it persists, make sure you have entered your recovery key (section 7) |
 | Old messages are locked on a new device | Enter your recovery key (section 7) |
-| Things look stale or stuck | Settings → About → Clear all caches |
+| Things look stale or stuck | Settings → General → Storage → Clear all caches |
 | Lost both the recovery key and every device | The old encrypted history can't be recovered. In the unlock dialog choose **I've lost my recovery key and other devices** to start over with a new key. People you chat with will see that your digital identity changed |
 
 Still stuck? Join the community room at [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-client:matrix.org), or open an issue on GitHub.
