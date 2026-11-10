@@ -206,27 +206,30 @@ a hand-written grep missed.
 Separately, confirm every bullet traces back to something in the Summary
 section — no invented content.
 
-## 6. Deliver the File — Do Not Retype the Notes Into Your Answer
+## 6. Deliver the Notes — Paste the Verified File Into Your Reply
 
-**This step matters as much as step 5 and is not optional.** In every test of
-this skill, the verified file on disk was clean, and the leak still came
-back — because the agent then retyped the notes into its own chat response,
-and composing free-form chat prose re-triggers the same auto-escaping habit
-that step 5 exists to fix. The file was correct; the sentence describing the
-file was not.
+**The user cannot see tool output.** Output from `cat`, `Read` or any other
+tool call is shown to you, not to the user. The only thing the user reads is
+your reply text. A reply that says "release notes written to `<path>`" and
+nothing else means the user never sees the notes. Always put the full notes
+in your final reply.
 
-So: the deliverable is the verified file, not a paraphrase of it.
+Retyping the notes from memory brings back the `&amp;` leak that step 5
+fixed. So copy them from the verified file, don't compose them again:
 
-- If the caller (user or orchestrating agent) gave you a destination path,
-  write the final verified text there.
-- To show the notes in your response, do not compose them from memory —
-  relay the file's exact bytes via a tool call (e.g. `cat <file>`, or a
-  `Read` of it) and treat that tool output as the content, rather than typing
-  your own rendition of it into your final answer.
-- If your harness requires you to produce a final natural-language message,
-  keep that message to a short pointer ("release notes written to `<path>`,
-  N bullets") and let the tool-relayed content carry the actual text —
-  never re-key the release notes text by hand at that point.
+1. If the caller (user or orchestrating agent) gave you a destination path,
+   write the final verified text there too.
+2. `cat` the verified file as your last tool call, so its exact text is in
+   front of you.
+3. In your final reply, paste that output unchanged inside one fenced
+   ```` ```markdown ```` code block. The fence makes it easy to copy and stops
+   the chat from rendering or escaping it. Change nothing: no rewording, no
+   reordering, no extra bullets.
+4. Before sending, compare your pasted block line by line with the `cat`
+   output. Literal `&`, `'`, `<` and `>` must stay literal; if you see
+   `&amp;`, `&#39;`, `&lt;` or `&gt;` in your reply, fix it to match the file.
+5. Outside the code block, add at most a short summary: the file path, the
+   bullet count per section, and anything notable you dropped or merged.
 
 ## Example
 
@@ -304,3 +307,5 @@ switching, so they become one Fixes item.)
 - Filing a bullet under New Features only because its prefix is `feat` — apply the step 4 test; a `feat` that repairs, redesigns, or adds detail to something that already shipped belongs under Fixes or Improvements.
 - Dropping a `feat(...)` bullet's MSC number when the source names one — required whichever section the bullet lands in; it's the one exception to the no-protocol-jargon rule.
 - Appending an MSC number to a line derived from a `fix`/`perf`/`refactor` bullet — the exception follows the `feat` source prefix, not the output section.
+- Ending with only a pointer to the notes file. The user never sees tool
+  output, so the reply itself must contain the notes in a `markdown` code block.
