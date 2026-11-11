@@ -3,6 +3,7 @@
 #include "fake_media_players.h"
 #include "media_viewer_test_items.h"
 #include "tk/canvas.h"
+#include "tk/layout.h"
 #include "tk/theme.h"
 #include "tk_test_surface.h"
 #include "views/MediaViewerOverlay.h"
@@ -439,4 +440,41 @@ TEST_CASE("memory_bytes sums the player and the stream pre-roll buffer", "[media
     const std::vector<std::uint8_t> chunk(5000, 1);
     overlay.feed_stream_chunk(overlay.load_token(), chunk.data(), chunk.size());
     CHECK(overlay.memory_bytes() >= 1000 + 5000);
+}
+
+namespace
+{
+struct RightClickProbe : Widget
+{
+    Size measure(LayoutCtx&, Size constraints) override
+    {
+        return constraints;
+    }
+    bool clicked = false;
+    bool on_right_click(Point) override
+    {
+        clicked = true;
+        return true;
+    }
+};
+} // namespace
+
+TEST_CASE("an open viewer swallows right-clicks instead of passing them to widgets behind it",
+          "[mediaviewer][input]")
+{
+    MvOverlayStage st;
+    auto root_owner = create_root_widget<Stack>(nullptr);
+    Stack& root = *root_owner;
+    auto* behind = root.add_child(std::make_unique<RightClickProbe>());
+    auto* overlay = root.add_child(std::make_unique<MediaViewerOverlay>());
+    overlay->open(image_item("mxc://example.org/img", "", "", 640, 360));
+    st.run(root);
+
+    CHECK(root.dispatch_right_click({20.0f, 20.0f}) == overlay);
+    CHECK_FALSE(behind->clicked);
+
+    overlay->close();
+    overlay->set_visible(false);
+    root.dispatch_right_click({20.0f, 20.0f});
+    CHECK(behind->clicked);
 }

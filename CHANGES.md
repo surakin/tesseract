@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): right-clicking in the media viewer no longer opens the message menu behind it. Linux build, ctest media viewer tests
 - fix(ui): the Windows status bar no longer flickers when its text or indicator updates. Windows build
 - fix(ui): the emoji picker and `:shortcode:` suggestions no longer offer custom image packs in bridged rooms. Windows build
 - fix(ui): pack names in the image pack editor show on Windows, and renaming uses the same font size as the displayed names. Linux build
