@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): pack names in the image pack editor show on Windows, and renaming uses the same font size as the displayed names. Windows build
 - fix(ui): copying an image to the clipboard on Windows can be pasted into other apps and back into the composer. Windows build
 - fix(sync): server details and features are re-read after reconnecting, so a server upgrade is picked up without restarting. Linux release build
 - fix(ui): the avatar in the user info panel is sharp, and animated avatars stay animated there. Linux build

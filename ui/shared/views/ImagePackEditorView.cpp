@@ -541,9 +541,9 @@ void ImagePackSectionList::paint_header_(tk::PaintCtx& ctx, std::size_t pack_idx
     if (!editing_name)
     {
         tk::TextStyle st;
+        // No valign: D2D centers within an unset max_height (8192px) box,
+        // pushing the text off-screen; it is centered manually below.
         st.role = tk::FontRole::UiSemibold;
-        st.halign = tk::TextHAlign::Leading;
-        st.valign = tk::TextVAlign::Center;
         st.trim = tk::TextTrim::Ellipsis;
         st.max_width = sec.name_rect.w;
         const std::string name =
@@ -676,6 +676,7 @@ ImagePackEditorView::ImagePackEditorView()
 
         auto shortcode = tk::create_widget<tk::TextField>(this, kRowH);
         shortcode->set_compact(true);
+        shortcode->set_role(tk::FontRole::Small);
         shortcode->set_accessible_name(tk::tr("Shortcode"));
         shortcode->set_visible(false);
         shortcode->set_on_changed(
@@ -700,6 +701,7 @@ ImagePackEditorView::ImagePackEditorView()
 
         auto pack_name = tk::create_widget<tk::TextField>(this, kRowH);
         pack_name->set_compact(true);
+        pack_name->set_role(tk::FontRole::UiSemibold);
         pack_name->set_accessible_name(tk::tr("Pack name"));
         pack_name->set_visible(false);
         pack_name->set_on_changed(
