@@ -240,7 +240,7 @@ void EmojiPicker::show_frequents_page()
 void EmojiPicker::refresh_emoticon_packs()
 {
     custom_packs_.clear();
-    if (client_)
+    if (client_ && custom_emoticons_allowed_)
     {
         std::vector<tesseract::ImagePack> filtered;
         for (auto& p : client_->list_image_packs())

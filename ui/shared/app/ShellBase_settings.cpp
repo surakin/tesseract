@@ -448,8 +448,14 @@ std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
 std::vector<tesseract::ImagePackImage>
 ShellBase::emoticons_for_room_(const std::string& room_id) const
 {
-    const std::vector<std::string> parent_space_ids = parent_spaces_for_room_(room_id);
     std::vector<tesseract::ImagePackImage> out;
+    // Bridged rooms cannot carry custom emoticons (see EmojiPicker).
+    const auto* room = room_by_id_(room_id);
+    if (room && room->is_bridged && !room->bridge_overridden)
+    {
+        return out;
+    }
+    const std::vector<std::string> parent_space_ids = parent_spaces_for_room_(room_id);
     for (const auto& [pack, imgs] : emoticon_packs_)
     {
         if (!views::is_pack_picker_visible(pack, room_id, parent_space_ids))
