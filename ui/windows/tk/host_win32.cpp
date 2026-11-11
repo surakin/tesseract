@@ -59,6 +59,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <new>
 #include <vector>
 
 namespace tk::win32
@@ -215,8 +216,10 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
         DWORD entries = bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
         palette_bytes = entries * sizeof(RGBQUAD);
     }
-    else if (bih->biCompression == BI_BITFIELDS)
+    else if (bih->biCompression == BI_BITFIELDS && header_size == sizeof(BITMAPINFOHEADER))
     {
+        // Only the plain 40-byte header keeps its masks outside the header;
+        // V4/V5 headers embed them, so adding 12 here would skew the offset.
         palette_bytes = 3 * sizeof(DWORD);
     }
     bfh->bfOffBits = sizeof(BITMAPFILEHEADER) + header_size + palette_bytes;
@@ -4200,57 +4203,169 @@ public:
 
         const SIZE_T stride = static_cast<SIZE_T>(w) * 4;
         const SIZE_T pixel_bytes = stride * h;
-        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, sizeof(BITMAPV5HEADER) + pixel_bytes);
-        if (!hg)
+
+        // Top-down BGRA pixels, flipped per format below (apps disagree on
+        // negative-height DIBs, so every DIB we publish is bottom-up).
+        // Dimensions come from remote media: cap the size and never let an
+        // allocation failure escape into the UI thread.
+        constexpr SIZE_T kMaxClipboardPixelBytes = 512u * 1024u * 1024u;
+        if (pixel_bytes > kMaxClipboardPixelBytes)
         {
             return false;
         }
-        auto* base = static_cast<std::uint8_t*>(GlobalLock(hg));
-        if (!base)
+        std::vector<std::uint8_t> top_down;
+        try
         {
-            GlobalFree(hg);
+            top_down.resize(pixel_bytes);
+        }
+        catch (const std::bad_alloc&)
+        {
             return false;
         }
-
-        auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
-        std::memset(hdr, 0, sizeof(BITMAPV5HEADER));
-        hdr->bV5Size = sizeof(BITMAPV5HEADER);
-        hdr->bV5Width = static_cast<LONG>(w);
-        hdr->bV5Height = -static_cast<LONG>(h); // top-down
-        hdr->bV5Planes = 1;
-        hdr->bV5BitCount = 32;
-        hdr->bV5Compression = BI_BITFIELDS;
-        hdr->bV5RedMask = 0x00FF0000;
-        hdr->bV5GreenMask = 0x0000FF00;
-        hdr->bV5BlueMask = 0x000000FF;
-        hdr->bV5AlphaMask = 0xFF000000;
-        hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
-
-        std::uint8_t* pixels = base + sizeof(BITMAPV5HEADER);
         if (FAILED(bgra->CopyPixels(nullptr, static_cast<UINT>(stride),
-                                    static_cast<UINT>(pixel_bytes), pixels)))
+                                    static_cast<UINT>(pixel_bytes), top_down.data())))
         {
-            GlobalUnlock(hg);
-            GlobalFree(hg);
             return false;
         }
-        GlobalUnlock(hg);
+
+        // One movable global holding `header_bytes` of header then the
+        // bottom-up pixels; `fill_header` writes the header in place.
+        auto make_dib = [&](SIZE_T header_bytes, auto&& fill_header) -> HGLOBAL
+        {
+            HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, header_bytes + pixel_bytes);
+            if (!g)
+            {
+                return nullptr;
+            }
+            auto* base = static_cast<std::uint8_t*>(GlobalLock(g));
+            if (!base)
+            {
+                GlobalFree(g);
+                return nullptr;
+            }
+            fill_header(base);
+            std::uint8_t* dst = base + header_bytes;
+            for (UINT row = 0; row < h; ++row)
+            {
+                std::memcpy(dst + static_cast<SIZE_T>(row) * stride,
+                            top_down.data() + static_cast<SIZE_T>(h - 1 - row) * stride, stride);
+            }
+            GlobalUnlock(g);
+            return g;
+        };
+
+        HGLOBAL hg_v5 = make_dib(sizeof(BITMAPV5HEADER),
+                                 [&](std::uint8_t* base)
+                                 {
+                                     auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
+                                     hdr->bV5Size = sizeof(BITMAPV5HEADER);
+                                     hdr->bV5Width = static_cast<LONG>(w);
+                                     hdr->bV5Height = static_cast<LONG>(h); // bottom-up
+                                     hdr->bV5Planes = 1;
+                                     hdr->bV5BitCount = 32;
+                                     hdr->bV5Compression = BI_BITFIELDS;
+                                     hdr->bV5SizeImage = static_cast<DWORD>(pixel_bytes);
+                                     hdr->bV5RedMask = 0x00FF0000;
+                                     hdr->bV5GreenMask = 0x0000FF00;
+                                     hdr->bV5BlueMask = 0x000000FF;
+                                     hdr->bV5AlphaMask = 0xFF000000;
+                                     hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
+                                     hdr->bV5Intent = LCS_GM_IMAGES;
+                                 });
+        HGLOBAL hg_dib = make_dib(sizeof(BITMAPINFOHEADER),
+                                  [&](std::uint8_t* base)
+                                  {
+                                      auto* hdr = reinterpret_cast<BITMAPINFOHEADER*>(base);
+                                      hdr->biSize = sizeof(BITMAPINFOHEADER);
+                                      hdr->biWidth = static_cast<LONG>(w);
+                                      hdr->biHeight = static_cast<LONG>(h); // bottom-up
+                                      hdr->biPlanes = 1;
+                                      hdr->biBitCount = 32;
+                                      hdr->biCompression = BI_RGB;
+                                      hdr->biSizeImage = static_cast<DWORD>(pixel_bytes);
+                                  });
+
+        // Registered "PNG" format (alpha-preserving; browsers, Discord,
+        // Office, Element read it). Re-encode the decoded pixels via WIC.
+        HGLOBAL hg_png = nullptr;
+        {
+            ComPtr<IStream> mem;
+            ComPtr<IWICBitmapEncoder> encoder;
+            ComPtr<IWICBitmapFrameEncode> out_frame;
+            ComPtr<IPropertyBag2> props;
+            WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA;
+            if (SUCCEEDED(CreateStreamOnHGlobal(nullptr, FALSE, mem.GetAddressOf())) &&
+                SUCCEEDED(
+                    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())) &&
+                SUCCEEDED(encoder->Initialize(mem.Get(), WICBitmapEncoderNoCache)) &&
+                SUCCEEDED(
+                    encoder->CreateNewFrame(out_frame.GetAddressOf(), props.GetAddressOf())) &&
+                SUCCEEDED(out_frame->Initialize(props.Get())) &&
+                SUCCEEDED(out_frame->SetSize(w, h)) && SUCCEEDED(out_frame->SetPixelFormat(&fmt)) &&
+                SUCCEEDED(out_frame->WritePixels(h, static_cast<UINT>(stride),
+                                                 static_cast<UINT>(pixel_bytes),
+                                                 top_down.data())) &&
+                SUCCEEDED(out_frame->Commit()) && SUCCEEDED(encoder->Commit()))
+            {
+                GetHGlobalFromStream(mem.Get(), &hg_png);
+            }
+            else
+            {
+                // Stream owns no HGLOBAL we kept (DeleteOnRelease=FALSE):
+                // release it if it was created.
+                HGLOBAL leaked = nullptr;
+                if (mem && SUCCEEDED(GetHGlobalFromStream(mem.Get(), &leaked)) && leaked)
+                {
+                    GlobalFree(leaked);
+                }
+            }
+        }
+
+        if (!hg_v5 && !hg_dib)
+        {
+            if (hg_png)
+            {
+                GlobalFree(hg_png);
+            }
+            return false;
+        }
 
         if (!OpenClipboard(hwnd_))
         {
-            GlobalFree(hg);
+            for (HGLOBAL g : {hg_v5, hg_dib, hg_png})
+            {
+                if (g)
+                {
+                    GlobalFree(g);
+                }
+            }
             return false;
         }
         EmptyClipboard();
-        if (!SetClipboardData(CF_DIBV5, hg))
+        // Each successful SetClipboardData transfers ownership; free only
+        // the handles the clipboard refused.
+        bool any = false;
+        auto publish = [&](UINT format, HGLOBAL g)
         {
-            // Clipboard did not take ownership; free our copy.
-            GlobalFree(hg);
-            CloseClipboard();
-            return false;
-        }
+            if (!g)
+            {
+                return;
+            }
+            if (SetClipboardData(format, g))
+            {
+                any = true;
+            }
+            else
+            {
+                GlobalFree(g);
+            }
+        };
+        static const UINT png_format = RegisterClipboardFormatW(L"PNG");
+        publish(png_format, hg_png);
+        publish(CF_DIBV5, hg_v5);
+        publish(CF_DIB, hg_dib);
         CloseClipboard();
-        return true;
+        return any;
     }
 
     Win32TextAreaBase* area_by_id(int id)
