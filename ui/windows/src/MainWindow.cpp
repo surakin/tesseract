@@ -474,10 +474,35 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
+        HDC win_dc = BeginPaint(hwnd, &ps);
         const auto& pal = theme::palette();
         RECT rc;
         GetClientRect(hwnd, &rc);
+
+        // Compose into an off-screen buffer and blit once, so the bar never
+        // shows a half-painted state (background without text/dot) on update.
+        HDC hdc = CreateCompatibleDC(win_dc);
+        HBITMAP buf_bmp = CreateCompatibleBitmap(win_dc, std::max<LONG>(rc.right, 1),
+                                                 std::max<LONG>(rc.bottom, 1));
+        HGDIOBJ buf_old = nullptr;
+        if (hdc && buf_bmp)
+        {
+            buf_old = SelectObject(hdc, buf_bmp);
+        }
+        else
+        {
+            // Allocation failed: fall back to drawing directly.
+            if (buf_bmp)
+            {
+                DeleteObject(buf_bmp);
+                buf_bmp = nullptr;
+            }
+            if (hdc)
+            {
+                DeleteDC(hdc);
+            }
+            hdc = win_dc;
+        }
 
         // Solid background + 1px top separator.
         HBRUSH bg = theme::brush(pal.chrome_bg);
@@ -620,6 +645,13 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             RECT glyph_rc = {rc.right - MulDiv(38, sb_dpi, 96), cy - gpx / 2,
                              rc.right - MulDiv(38, sb_dpi, 96) + gpx, cy - gpx / 2 + gpx};
             draw_low_power_glyph(hdc, glyph_rc, pal.text_secondary);
+        }
+        if (buf_bmp)
+        {
+            BitBlt(win_dc, 0, 0, rc.right, rc.bottom, hdc, 0, 0, SRCCOPY);
+            SelectObject(hdc, buf_old);
+            DeleteObject(buf_bmp);
+            DeleteDC(hdc);
         }
         EndPaint(hwnd, &ps);
         return 0;
