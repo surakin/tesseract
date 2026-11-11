@@ -1157,7 +1157,9 @@ public:
     // Decode `encoded_bytes` (a self-describing PNG/JPEG/GIF/WebP blob) and
     // place the resulting bitmap on the system clipboard. Returns false if the
     // bytes could not be decoded or the platform has no image-clipboard
-    // support. Used by the image lightbox's "copy image" button.
+    // support. An animated GIF/WebP is also offered as its original bytes
+    // (backends that support it), so the animation survives a paste. Used by
+    // the image lightbox's and the message menu's "copy image".
     virtual bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) = 0;
 
     // Newest Emoji version (tk/emoji_support.h) the platform's emoji font can

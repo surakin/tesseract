@@ -573,6 +573,13 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
             on_save_sticker_requested(mxc, body, info);
         }
     };
+    ml->on_copy_image_requested = [this](const std::string& token)
+    {
+        if (on_copy_image_requested)
+        {
+            on_copy_image_requested(token);
+        }
+    };
     ml->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
     {
         return is_sticker_saved && is_sticker_saved(mxc, info);

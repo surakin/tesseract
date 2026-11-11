@@ -925,6 +925,9 @@ public:
     std::function<void(const std::string& mxc_url, const std::string& body,
                        const std::string& info_json)>
         on_save_sticker_requested;
+    // "Copy image" on an image or sticker row; `source_token` is the row's
+    // MediaSource::fetch_token(). Hosts fetch the bytes and set the clipboard.
+    std::function<void(const std::string& source_token)> on_copy_image_requested;
     // True when the sticker is already in the Saved Stickers pack, so the
     // action is not offered. Unset means "not saved".
     std::function<bool(const std::string& mxc_url, const std::string& info_json)> is_sticker_saved;

@@ -8,6 +8,7 @@
 #include "macos_accessible.h"
 #include "emoji_segmentation.h"
 #include "pill.h"
+#include "tk/image_sniff.h"
 #include "pixmap_cache.h"
 
 #import <AppKit/AppKit.h>
@@ -3668,7 +3669,27 @@ bool Host::set_clipboard_image(std::span<const std::uint8_t> encoded_bytes)
     }
     NSPasteboard* pb = [NSPasteboard generalPasteboard];
     [pb clearContents];
-    [pb declareTypes:@[ NSPasteboardTypeTIFF ] owner:nil];
+    // An animated GIF/WebP also goes out as its original bytes so apps that
+    // understand it keep the animation; the TIFF still stays the fallback.
+    NSString* anim_type = nil;
+    if (tk::bytes_may_be_animated(encoded_bytes))
+    {
+        const std::string_view m = tk::sniff_image_mime(encoded_bytes);
+        if (m == "image/gif")
+        {
+            anim_type = @"com.compuserve.gif";
+        }
+        else if (m == "image/webp")
+        {
+            anim_type = @"org.webmproject.webp";
+        }
+    }
+    [pb declareTypes:(anim_type ? @[ NSPasteboardTypeTIFF, anim_type ] : @[ NSPasteboardTypeTIFF ])
+               owner:nil];
+    if (anim_type)
+    {
+        [pb setData:data forType:anim_type];
+    }
     return [pb setData:tiff forType:NSPasteboardTypeTIFF];
 }
 

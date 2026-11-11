@@ -7248,3 +7248,6 @@ msgstr "Buscar un sticker para enviar"
 #: ui/shared/views/StickerController.cpp
 msgid "No stickers found"
 msgstr "No se encontraron stickers"
+
+msgid "Copy image"
+msgstr "Copiar imagen"

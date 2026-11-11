@@ -12036,6 +12036,8 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.saveable_sticker =
         m.kind == Kind::Sticker && m.source && on_save_sticker_requested &&
         !(is_sticker_saved && is_sticker_saved(m.source->mxc_url(), m.sticker_info_json));
+    in.copyable_image =
+        (m.kind == Kind::Image || m.kind == Kind::Sticker) && m.source && on_copy_image_requested;
     return tesseract::views::build_message_actions(in);
 }
 
@@ -12127,6 +12129,13 @@ bool MessageListView::invoke_message_action(tesseract::views::MessageActionId id
             return false;
         }
         on_save_sticker_requested(rowp->source->mxc_url(), rowp->body, rowp->sticker_info_json);
+        return true;
+    case Id::CopyImage:
+        if (!on_copy_image_requested || !rowp || !rowp->source)
+        {
+            return false;
+        }
+        on_copy_image_requested(rowp->source->fetch_token());
         return true;
     default:
         if (!on_overflow_action_requested)

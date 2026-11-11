@@ -2892,6 +2892,19 @@ public:
         // Klipper historymodel.cpp checkClipData). The flag is an inert extra
         // format on non-KDE platforms.
         mime->setData(QStringLiteral("x-kde-force-image-copy"), QByteArray());
+        // An animated GIF/WebP also goes out as its original bytes so apps
+        // that understand it keep the animation; the still above stays the
+        // fallback for the rest.
+        if (tk::bytes_may_be_animated(encoded_bytes))
+        {
+            const std::string_view anim_mime = tk::sniff_image_mime(encoded_bytes);
+            if (anim_mime == "image/gif" || anim_mime == "image/webp")
+            {
+                mime->setData(
+                    QString::fromLatin1(anim_mime.data(), static_cast<qsizetype>(anim_mime.size())),
+                    raw);
+            }
+        }
         // Also advertise a suggested filename so pasting into a save dialog /
         // Dolphin proposes a sensible name rather than "Untitled".
         mime->setData(QStringLiteral("application/x-kde-suggestedfilename"), "image." + fmt);

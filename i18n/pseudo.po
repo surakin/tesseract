@@ -7562,3 +7562,6 @@ msgstr "[Séàrçh för à stïçkér tö séñdxxxxx]"
 #: ui/shared/views/StickerController.cpp
 msgid "No stickers found"
 msgstr "[Ñö stïçkérs föùñdxxx]"
+
+msgid "Copy image"
+msgstr "[Çöpyx ïmägé]"

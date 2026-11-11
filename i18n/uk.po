@@ -7731,3 +7731,6 @@ msgstr "Знайти стікер для надсилання"
 #: ui/shared/views/StickerController.cpp
 msgid "No stickers found"
 msgstr "Стікерів не знайдено"
+
+msgid "Copy image"
+msgstr "Копіювати зображення"

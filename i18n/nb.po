@@ -5512,3 +5512,6 @@ msgstr "Søk etter en klistremerke å sende"
 #: ui/shared/views/StickerController.cpp
 msgid "No stickers found"
 msgstr "Fant ingen klistremerker"
+
+msgid "Copy image"
+msgstr "Kopier bilde"

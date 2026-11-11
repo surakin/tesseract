@@ -7,6 +7,7 @@
 #include "emoji_segmentation.h"
 #include "pill.h"
 #include "pixmap_cache.h"
+#include "tk/image_sniff.h"
 
 #include <BetterText/BetterText.h>
 
@@ -4321,8 +4322,35 @@ public:
             }
         }
 
+        // An animated GIF also goes out as its original bytes under the
+        // registered "GIF" format (browsers, Office and chat apps read it) so
+        // the animation survives; the DIB/PNG stills stay the fallback.
+        HGLOBAL hg_gif = nullptr;
+        if (tk::bytes_may_be_animated(encoded_bytes) &&
+            tk::sniff_image_mime(encoded_bytes) == "image/gif")
+        {
+            hg_gif = GlobalAlloc(GMEM_MOVEABLE, encoded_bytes.size());
+            if (hg_gif)
+            {
+                if (void* dst = GlobalLock(hg_gif))
+                {
+                    std::memcpy(dst, encoded_bytes.data(), encoded_bytes.size());
+                    GlobalUnlock(hg_gif);
+                }
+                else
+                {
+                    GlobalFree(hg_gif);
+                    hg_gif = nullptr;
+                }
+            }
+        }
+
         if (!hg_v5 && !hg_dib)
         {
+            if (hg_gif)
+            {
+                GlobalFree(hg_gif);
+            }
             if (hg_png)
             {
                 GlobalFree(hg_png);
@@ -4332,7 +4360,7 @@ public:
 
         if (!OpenClipboard(hwnd_))
         {
-            for (HGLOBAL g : {hg_v5, hg_dib, hg_png})
+            for (HGLOBAL g : {hg_v5, hg_dib, hg_png, hg_gif})
             {
                 if (g)
                 {
@@ -4361,6 +4389,8 @@ public:
             }
         };
         static const UINT png_format = RegisterClipboardFormatW(L"PNG");
+        static const UINT gif_format = RegisterClipboardFormatW(L"GIF");
+        publish(gif_format, hg_gif);
         publish(png_format, hg_png);
         publish(CF_DIBV5, hg_v5);
         publish(CF_DIB, hg_dib);

@@ -208,3 +208,11 @@ TEST_CASE("message actions: Report is destructive and lives in the overflow", "[
     CHECK(it->destructive);
     CHECK_FALSE(it->in_pill);
 }
+
+TEST_CASE("message actions: an image offers Copy image", "[message_actions]")
+{
+    MessageActionInputs in;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::CopyImage));
+    in.copyable_image = true;
+    CHECK(has(build_message_actions(in), MessageActionId::CopyImage));
+}

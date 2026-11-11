@@ -1293,6 +1293,10 @@ void RoomPane::wire_room_view_()
     {
         save_sticker_(mxc, body, info);
     };
+    rv->on_copy_image_requested = [this](const std::string& token)
+    {
+        copy_source_to_clipboard_(token);
+    };
     rv->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
     {
         auto* c = pane_client_();

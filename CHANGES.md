@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(messages): the message menu has "Copy image" on images and stickers, and copied GIFs keep their animation where the target app supports it. Linux build
 - fix(ui): right-clicking in the media viewer no longer opens the message menu behind it. Linux build, ctest media viewer tests
 - fix(ui): the Windows status bar no longer flickers when its text or indicator updates. Windows build
 - fix(ui): the emoji picker and `:shortcode:` suggestions no longer offer custom image packs in bridged rooms. Windows build

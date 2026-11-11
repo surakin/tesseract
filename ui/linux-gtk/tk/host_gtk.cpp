@@ -9,6 +9,7 @@
 #include "emoji_segmentation.h"
 #include "pill.h"
 #include "pixmap_cache.h"
+#include "tk/image_sniff.h"
 
 #include <gio/gio.h>
 #include <gtk/gtk.h>
@@ -3142,22 +3143,54 @@ public:
 
         // Decode the encoded blob straight into a GdkTexture (GTK 4.6+). Its
         // built-in loaders cover PNG/JPEG/TIFF; anything it can't decode (e.g.
-        // some GIF/WebP) fails gracefully and we report false.
+        // some GIF/WebP) fails gracefully.
         GBytes* gb = g_bytes_new(encoded_bytes.data(), encoded_bytes.size());
         GError* err = nullptr;
         GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
-        g_bytes_unref(gb);
-        if (!tex)
+        if (err)
         {
-            if (err)
+            g_error_free(err);
+        }
+
+        // An animated GIF/WebP also goes out as its original bytes so apps
+        // that understand it keep the animation; the texture stays the
+        // fallback for the rest.
+        std::string anim_mime;
+        if (tk::bytes_may_be_animated(encoded_bytes))
+        {
+            const std::string_view m = tk::sniff_image_mime(encoded_bytes);
+            if (m == "image/gif" || m == "image/webp")
             {
-                g_error_free(err);
+                anim_mime = std::string(m);
             }
+        }
+        GdkContentProvider* anim_provider =
+            anim_mime.empty() ? nullptr : gdk_content_provider_new_for_bytes(anim_mime.c_str(), gb);
+        g_bytes_unref(gb);
+
+        GdkContentProvider* tex_provider =
+            tex ? gdk_content_provider_new_typed(GDK_TYPE_TEXTURE, tex) : nullptr;
+        if (tex)
+        {
+            g_object_unref(tex);
+        }
+        if (!tex_provider && !anim_provider)
+        {
             return false;
         }
-        gdk_clipboard_set_texture(cb, tex);
-        g_object_unref(tex);
-        return true;
+        GdkContentProvider* provider = nullptr;
+        if (tex_provider && anim_provider)
+        {
+            GdkContentProvider* both[] = {anim_provider, tex_provider};
+            provider = gdk_content_provider_new_union(both, 2);
+        }
+        else
+        {
+            provider = tex_provider ? tex_provider : anim_provider;
+        }
+        const bool ok = gdk_clipboard_set_content(cb, provider);
+        g_object_unref(provider);
+        return ok;
     }
 
     // ── Internal ──────────────────────────────────────────────────────

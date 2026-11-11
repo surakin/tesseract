@@ -33,6 +33,11 @@ std::vector<MessageAction> build_message_actions(const MessageActionInputs& in)
         out.push_back({MessageActionId::Edit, tk::tr("Edit"), kEditSvg, false, true});
     }
 
+    if (in.copyable_image)
+    {
+        out.push_back({MessageActionId::CopyImage, tk::tr("Copy image"), kCopySvg});
+    }
+
     if (reactable)
     {
         // A poll can't be forwarded (it would re-send as an unrelated poll).
