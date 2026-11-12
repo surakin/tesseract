@@ -6,6 +6,10 @@ cmake_minimum_required(VERSION 3.30)
 # already in a dev environment. See cmake/MsvcAutoVcvars.cmake.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsvcAutoVcvars.cmake)
 
+# Picks clang over GCC on Linux when both are installed (see the file for the
+# opt-outs). Must also run before project().
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/PreferClang.cmake)
+
 project(Tesseract VERSION 0.9.9 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)

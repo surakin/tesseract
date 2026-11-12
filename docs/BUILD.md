@@ -179,6 +179,12 @@ Pass this alongside a `linux-*` preset (e.g. `-DTESSERACT_UI=qt6`) to build
 and install/package a single Linux backend instead of both.
 
 ### macOS release stripping and symbolication
+**Compiler:** on Linux/BSD, `clang`/`clang++` are preferred over GCC when both
+are installed (`-DTESSERACT_PREFER_CLANG=OFF` opts out). An explicit
+`CC`/`CXX`, `-DCMAKE_CXX_COMPILER=` or a toolchain file always wins. An
+existing build directory keeps its cached compiler, so switch with
+`cmake --preset <name> --fresh`.
+
 
 Release builds on macOS compile with `-gline-tables-only` (C++ and Rust). After
 linking, `dsymutil` writes `<build>/ui/macos/Tesseract.app.dSYM`, then
