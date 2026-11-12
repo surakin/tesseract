@@ -3,6 +3,7 @@
 #include "tk/canvas.h"
 
 #include <cmath>
+#include <numbers>
 #include <cstdint>
 
 namespace tk
@@ -20,7 +21,8 @@ inline void draw_spinner_dots(Canvas& cv, Point center, float phase01, float rad
     constexpr int kN = 8;
     for (int i = 0; i < kN; ++i)
     {
-        const float angle = (static_cast<float>(i) / kN + phase01) * 2.0f * 3.14159265f;
+        const float angle =
+            (static_cast<float>(i) / kN + phase01) * 2.0f * std::numbers::pi_v<float>;
         const float dx = std::cos(angle) * radius;
         const float dy = std::sin(angle) * radius;
         const float t = static_cast<float>(i) / kN;

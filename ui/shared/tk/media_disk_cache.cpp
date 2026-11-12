@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 namespace tk
 {
@@ -46,7 +47,7 @@ MediaDiskCache::MediaDiskCache(fs::path dir, std::uintmax_t max_bytes)
     for (const auto& de : fs::directory_iterator(parent.empty() ? fs::path(".") : parent, ec))
     {
         const std::string name = de.path().filename().string();
-        if (name.compare(0, prefix.size(), prefix) == 0)
+        if (name.starts_with(prefix))
         {
             std::error_code rm_ec;
             fs::remove_all(de.path(), rm_ec);
@@ -74,7 +75,7 @@ std::vector<uint8_t> MediaDiskCache::load(const CacheKey& key) const
     const auto size = static_cast<std::streamsize>(f.tellg());
     const std::string id = key.to_string();
     const std::size_t header = sizeof(kEntryMagic) + sizeof(std::uint32_t) + id.size();
-    if (size <= 0 || static_cast<std::size_t>(size) <= header)
+    if (size <= 0 || std::cmp_less_equal(size, header))
     {
         ++misses_;
         return {};

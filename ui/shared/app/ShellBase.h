@@ -722,7 +722,7 @@ protected:
     struct UnjoinedRetryState
     {
         int attempts = 0;
-        std::chrono::steady_clock::time_point next_retry{};
+        std::chrono::steady_clock::time_point next_retry;
     };
     std::unordered_map<std::string, UnjoinedRetryState> unjoined_fetch_retry_;
     // In-flight summary fetches for one space. The sidebar and the space-root
@@ -997,7 +997,7 @@ protected:
     // the fetch entirely.
     bool media_dep_known_failed_(const std::string& key, const std::string& room_id) const
     {
-        if (media_decode_failed_.count(key) || media_fetch_backed_off_(key))
+        if (media_decode_failed_.contains(key) || media_fetch_backed_off_(key))
         {
             return true;
         }
@@ -1220,7 +1220,7 @@ protected:
     std::unordered_set<std::string> room_list_running_accounts_;
     bool warmup_allowed_() const
     {
-        return active_account_ && room_list_running_accounts_.count(active_account_->user_id) != 0;
+        return active_account_ && room_list_running_accounts_.contains(active_account_->user_id);
     }
     void handle_room_list_running_ui_();
     void start_background_warming_();
@@ -1389,7 +1389,7 @@ protected:
     std::atomic<std::uint32_t> status_msg_gen_{0};
     // Last status-line text spoken (see show_status_message_) and when.
     std::string last_announced_status_;
-    std::chrono::steady_clock::time_point last_announced_status_at_{};
+    std::chrono::steady_clock::time_point last_announced_status_at_;
     /// True while a persistent (auto_clear_ms=0) status override is active.
     /// refresh_sync_status_() checks this to avoid clobbering the override.
     bool status_override_active_ = false;
@@ -1665,12 +1665,12 @@ protected:
         thread_last_active_;
     // Pure selection: rooms in last_active but not in currently_visible whose
     // last-active timestamp is older than `now - ttl`.
-    std::vector<std::string> select_idle_room_evictions_(
+    static std::vector<std::string> select_idle_room_evictions_(
         const std::unordered_map<std::string, std::chrono::steady_clock::time_point>& last_active,
         const std::unordered_set<std::string>& currently_visible,
         std::chrono::steady_clock::time_point now, std::chrono::minutes ttl);
     // Same shape as select_idle_room_evictions_, keyed by (room_id, thread_root).
-    std::vector<std::pair<std::string, std::string>> select_idle_thread_evictions_(
+    static std::vector<std::pair<std::string, std::string>> select_idle_thread_evictions_(
         const std::map<std::pair<std::string, std::string>, std::chrono::steady_clock::time_point>&
             last_active,
         const std::set<std::pair<std::string, std::string>>& currently_visible,
@@ -3845,7 +3845,7 @@ protected:
     // same mapping start_call() uses to pick the initial mode. Shared so
     // handle_call_room_navigation_()'s auto-restore-from-Floating path
     // restores the user's real preference rather than a hardcoded Docked.
-    views::CallOverlayWidget::Mode overlay_mode_from_settings_() const;
+    static views::CallOverlayWidget::Mode overlay_mode_from_settings_();
 
     // Called from after_active_room_changed_() on every room switch. Drives
     // auto-join (first switch into a call room), auto-leave-and-join
@@ -3968,7 +3968,7 @@ protected:
     struct CallOverlayRoster
     {
         std::string room_id;
-        std::chrono::steady_clock::time_point built_at{};
+        std::chrono::steady_clock::time_point built_at;
         std::unordered_map<std::string, std::pair<std::string, std::string>>
             people; // user id -> (name, avatar mxc)
     };
@@ -4815,7 +4815,7 @@ protected:
     // Applies the stored font preferences (Settings → Appearance → Fonts).
     // Re-measures every window; widgets with their own caches drop them from
     // Widget::on_fonts_changed().
-    void apply_fonts_();
+    static void apply_fonts_();
 
     // The room-list density (Normal / Compact) changed.
     void apply_room_list_density_();
@@ -4829,28 +4829,28 @@ protected:
     // right after restore_session/start_sync, on whichever thread is doing
     // that work (background restore/finalize) — genuinely non-blocking
     // (fire-and-forget spawn on the Rust side), confirmed safe either way.
-    void apply_search_indexing_pref_(tesseract::Client& client);
+    static void apply_search_indexing_pref_(tesseract::Client& client);
 
     // Apply the persisted "show room join/leave events" preference to a
     // freshly-restored account's Rust client. Called right after
     // restore_session/start_sync so the very first room subscription already
     // reflects the setting instead of defaulting to the Rust-side AtomicBool's
     // off default. A plain atomic store on the Rust side — non-blocking.
-    void apply_membership_events_pref_(tesseract::Client& client);
+    static void apply_membership_events_pref_(tesseract::Client& client);
 
     // Pushes the effective "Show unhandled events" value to a freshly created
     // account client (no re-subscribe: nothing is open yet).
-    void apply_unhandled_events_pref_(tesseract::Client& client);
+    static void apply_unhandled_events_pref_(tesseract::Client& client);
     // Same for the persisted "show deleted messages" preference.
-    void apply_deleted_messages_pref_(tesseract::Client& client);
+    static void apply_deleted_messages_pref_(tesseract::Client& client);
 
     // Apply the persisted "Link previews" preferences to a freshly-restored
     // account's Rust client, alongside apply_membership_events_pref_.
-    void apply_bundled_url_previews_pref_(tesseract::Client& client);
+    static void apply_bundled_url_previews_pref_(tesseract::Client& client);
 
     // Apply the persisted "Use historical MSC2545 compatibility" preference
     // to a freshly-restored account's Rust client.
-    void apply_msc2545_legacy_compat_pref_(tesseract::Client& client);
+    static void apply_msc2545_legacy_compat_pref_(tesseract::Client& client);
 
     // ── Search-index stats (Settings panel) ───────────────────────────────
     // Each shell points `settings_view_` at its shared SettingsView once, and
@@ -5181,7 +5181,7 @@ protected:
     // so it can never collide with a same-mxc sticker / full-image entry).
     // Independent of the display scale: avatar animations are decoded at
     // kAvatarCacheSize whatever the scale, so a scale change keeps them valid.
-    tk::CacheKey avatar_anim_key_(const std::string& mxc) const;
+    static tk::CacheKey avatar_anim_key_(const std::string& mxc);
     // Avatar lookup used by every avatar provider: the current frame of an
     // animated avatar when one is cached (frozen while low power mode is on),
     // else the still from thumbnail_cache_. Pure cache read, never fetches.
@@ -5645,8 +5645,8 @@ protected:
     // Called once per push_rooms_ tick so every downstream consumer
     // (call button, threads button, RoomInfoPanel via RoomView::set_room)
     // sees a consistent view without each needing its own override lookup.
-    void apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
-                                 const std::vector<std::string>& overrides) const;
+    static void apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
+                                        const std::vector<std::string>& overrides);
 
     // Toggles the local "not actually bridged" override for `room_id`,
     // persists it into the active account's im.gnomos.tesseract prefs, and
@@ -5878,7 +5878,7 @@ protected:
 
     // True when the saved encryption flags differ from the ones the running
     // clients were built with.
-    bool encryption_flags_pending_() const;
+    static bool encryption_flags_pending_();
 
     // Settings just closed: reload the clients if a flag changed (or, from the
     // login screen, only update the flags for the next client).

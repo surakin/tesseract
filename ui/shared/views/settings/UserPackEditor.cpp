@@ -313,7 +313,7 @@ void UserPackEditor::set_committing(bool committing)
     layout_changed_();
 }
 
-void UserPackEditor::layout_changed_()
+void UserPackEditor::layout_changed_() const
 {
     if (on_layout_changed)
     {

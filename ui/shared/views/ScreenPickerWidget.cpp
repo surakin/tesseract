@@ -227,7 +227,7 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
                 continue;
             }
 
-            const bool hov = (static_cast<int>(i) == hovered_idx_);
+            const bool hov = std::cmp_equal(i, hovered_idx_);
 
             ctx.canvas.fill_rect(r, hov ? col.tile_hov : col.tile_norm);
 

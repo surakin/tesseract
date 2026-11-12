@@ -114,7 +114,7 @@ Size Avatar::measure(LayoutCtx&, Size /*constraints*/)
 void Avatar::paint_before_children(PaintCtx& ctx)
 {
     Point centre{bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f};
-    float d = std::min(diameter_, std::min(bounds_.w, bounds_.h));
+    float d = std::min({diameter_, bounds_.w, bounds_.h});
     if (image_)
     {
         ctx.canvas.draw_circle_image(*image_, centre, d);

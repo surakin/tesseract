@@ -57,7 +57,7 @@ float ImageStripPopup::content_width_() const
     {
         return 0.0f;
     }
-    return float(n) * cell_w_ + float(n - 1) * kGap;
+    return static_cast<float>(n) * cell_w_ + static_cast<float>(n - 1) * kGap;
 }
 
 void ImageStripPopup::ensure_selected_visible_()
@@ -73,7 +73,7 @@ void ImageStripPopup::ensure_selected_visible_()
     const float max_scroll = std::max(0.0f, content_width_() - inner_w);
 
     // Selected cell's left/right within the (unscrolled) content strip.
-    const float left = float(selected_index_) * (cell_w_ + kGap);
+    const float left = static_cast<float>(selected_index_) * (cell_w_ + kGap);
     const float right = left + cell_w_;
     if (left - scroll_x_ < 0.0f)
     {
@@ -88,7 +88,7 @@ void ImageStripPopup::ensure_selected_visible_()
 
 tk::Rect ImageStripPopup::cell_rect(int i) const
 {
-    float x = bounds_.x + kPad + float(i) * (cell_w_ + kGap) - scroll_x_;
+    float x = bounds_.x + kPad + static_cast<float>(i) * (cell_w_ + kGap) - scroll_x_;
     float y = bounds_.y + kPad;
     return {x, y, cell_w_, cell_h_};
 }
@@ -126,7 +126,7 @@ tk::Size ImageStripPopup::content_size(float max_width) const
     {
         // Heuristic width from the message length (no factory here to measure);
         // clamped to a sensible minimum and the host's available width.
-        float w = 2.0f * kPad + 7.0f * float(status_.size());
+        float w = 2.0f * kPad + 7.0f * static_cast<float>(status_.size());
         w = std::max(w, kStatusMinW);
         if (max_width > 0.0f)
         {

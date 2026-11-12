@@ -6,6 +6,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace tesseract::views
 {

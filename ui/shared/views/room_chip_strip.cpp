@@ -88,7 +88,7 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
                                              : pal.text_primary);
         }
 
-        out_chips.push_back({chip, room.id});
+        out_chips.emplace_back(chip, room.id);
         x += style.chip_w + style.chip_gap;
     }
 }

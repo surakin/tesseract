@@ -21,15 +21,15 @@ enum class PackUsage : std::uint8_t
     Any = Sticker | Emoticon,
 };
 
-constexpr inline PackUsage operator|(PackUsage a, PackUsage b) noexcept
+constexpr PackUsage operator|(PackUsage a, PackUsage b) noexcept
 {
     return static_cast<PackUsage>(static_cast<std::uint8_t>(a) | static_cast<std::uint8_t>(b));
 }
-constexpr inline PackUsage operator&(PackUsage a, PackUsage b) noexcept
+constexpr PackUsage operator&(PackUsage a, PackUsage b) noexcept
 {
     return static_cast<PackUsage>(static_cast<std::uint8_t>(a) & static_cast<std::uint8_t>(b));
 }
-constexpr inline bool any(PackUsage v) noexcept
+constexpr bool any(PackUsage v) noexcept
 {
     return static_cast<std::uint8_t>(v) != 0;
 }

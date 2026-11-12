@@ -151,7 +151,7 @@ bool ShortcodeController::on_nav(tk::NavKey nk)
         break;
     case tk::NavKey::Tab:
     {
-        if (cur >= 0 && cur < static_cast<int>(suggestions_.size()))
+        if (cur >= 0 && std::cmp_less(cur, suggestions_.size()))
         {
             accept(suggestions_[cur]);
         }
@@ -182,7 +182,7 @@ bool ShortcodeController::on_submit()
         return false;
     }
     int sel = popup_->selected_index();
-    if (sel >= 0 && sel < static_cast<int>(suggestions_.size()))
+    if (sel >= 0 && std::cmp_less(sel, suggestions_.size()))
     {
         accept(suggestions_[sel]);
         return true;
@@ -220,7 +220,7 @@ void ShortcodeController::replace_with(const std::string& r)
     hide();
 }
 
-void ShortcodeController::repaint_selection_()
+void ShortcodeController::repaint_selection_() const
 {
     if (hooks_.repaint_selection)
     {

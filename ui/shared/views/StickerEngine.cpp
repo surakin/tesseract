@@ -21,9 +21,9 @@ bool is_space(char c)
 }
 } // namespace
 
-std::optional<std::string> StickerEngine::match(std::string_view text) const
+std::optional<std::string> StickerEngine::match(std::string_view text)
 {
-    if (text.size() < kPrefix.size() || text.substr(0, kPrefix.size()) != kPrefix)
+    if (text.size() < kPrefix.size() || !text.starts_with(kPrefix))
     {
         return std::nullopt;
     }

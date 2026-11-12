@@ -159,8 +159,9 @@ CacheKey pill_cache_key(const PillSpec& spec, float line_ascent, float line_desc
     h = hash_combine(h, spec.reserve_leading_visual ? 1u : 0u);
     auto mix_color = [&](Color c)
     {
-        h = hash_combine(h, (std::size_t(c.r) << 24) | (std::size_t(c.g) << 16) |
-                                (std::size_t(c.b) << 8) | std::size_t(c.a));
+        h = hash_combine(
+            h, (static_cast<std::size_t>(c.r) << 24) | (static_cast<std::size_t>(c.g) << 16) |
+                   (static_cast<std::size_t>(c.b) << 8) | static_cast<std::size_t>(c.a));
     };
     mix_color(spec.bg);
     mix_color(spec.fg);

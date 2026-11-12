@@ -190,6 +190,7 @@ TEST_CASE("the warm voice cache is bounded", "[shell][cache]")
     }
     // Complete all nine downloads.
     std::vector<std::uint64_t> ids;
+    ids.reserve(s.pending_media_.size());
     for (auto& [id, req] : s.pending_media_)
     {
         ids.push_back(id);
@@ -200,7 +201,7 @@ TEST_CASE("the warm voice cache is bounded", "[shell][cache]")
         s.handle_media_ready_ui_(id, {7});
     }
     CHECK(s.voice_bytes_cache_.size() <= 8);
-    CHECK(s.voice_bytes_cache_.size() >= 1);
+    CHECK(!s.voice_bytes_cache_.empty());
 }
 
 TEST_CASE("prefetch window falls back without a laid-out message list", "[shell][cache]")

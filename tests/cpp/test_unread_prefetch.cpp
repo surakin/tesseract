@@ -64,6 +64,7 @@ TEST_CASE("prefetch set: cap drops the least-recently-active rooms")
 {
     std::vector<RoomInfo> rooms;
     // 21 unread rooms with ascending timestamps r0..r20 (r20 most recent).
+    rooms.reserve(21);
     for (int i = 0; i < 21; ++i)
     {
         rooms.push_back(unread_room("!r" + std::to_string(i) + ":ex.org",

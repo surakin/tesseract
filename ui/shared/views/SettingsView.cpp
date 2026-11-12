@@ -1067,7 +1067,7 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                     {
                         if (i > 0)
                         {
-                            json += ",";
+                            json += ',';
                         }
                         json += "{\"summary\":" + json_quote(entries[i].summary) +
                                 ",\"language\":" + json_quote(entries[i].language);
@@ -1076,9 +1076,9 @@ void SettingsView::set_controller(tesseract::SettingsController* ctrl)
                             json += ",\"grammatical_gender\":" +
                                     json_quote(entries[i].grammatical_gender);
                         }
-                        json += "}";
+                        json += '}';
                     }
-                    json += "]";
+                    json += ']';
                 }
                 on_profile_field_changed(kPronounsKey, json);
             }

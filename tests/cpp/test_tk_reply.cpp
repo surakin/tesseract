@@ -21,7 +21,7 @@ namespace
 struct TkReplyStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 300);
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});

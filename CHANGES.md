@@ -16,6 +16,8 @@ Tagged releases summarize all changes since the previous tag.
 - fix(ui): the avatar in the user info panel is sharp, and animated avatars stay animated there. Linux build
 - feat(composer): `/sticker <text>` shows matching stickers above the composer; arrows or Tab pick one and Enter sends it. Linux release build, ctest 3921/3921
 - fix(ui): context menus widen to fit longer translated labels. Linux release build, ctest popup-menu tests
+- build: clang-tidy now runs over the tree via `scripts/clang-tidy.py`, a ctest and a CI workflow, and the code is clean of findings. Linux release build, ctest 3929/3929
+- fix(settings): a device sign-out error or re-authentication prompt could be lost when it was handed to more than one device row. Linux release build
 
 ## v0.9.8 — 2026-11-10
 

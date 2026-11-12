@@ -31,7 +31,7 @@ struct PeStage : vt::Stage
         mount(*ed, {0, 0, 600, 700});
     }
     // Per row: [language picker's field, summary field]; rows are fixed slots.
-    tk::TextField* summary(std::size_t row)
+    tk::TextField* summary(std::size_t row) const
     {
         return vt::find_all<tk::TextField>(*ed).at(row * 2 + 1);
     }

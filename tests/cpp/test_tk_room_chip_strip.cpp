@@ -43,6 +43,7 @@ TEST_CASE("paint_room_chips lays out as many chips as fit, with hit rects",
     ChipStage s;
     auto pc = s.pc();
     std::vector<tesseract::RoomInfo> rooms;
+    rooms.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         rooms.push_back(chip_room("!r" + std::to_string(i), "Room " + std::to_string(i)));
@@ -240,7 +241,7 @@ TEST_CASE("LocationMapPanner paint requests tiles, falls back to parent/child "
                                 std::to_string(y));
         });
     p.paint(m, pc, {10, 10, 300, 200});
-    CHECK(requested.size() >= 1);
+    CHECK(!requested.empty());
     REQUIRE(p.geom_at("$loc") != nullptr);
 
     // Provider returns nothing: "Loading map" placeholder path + fallbacks.

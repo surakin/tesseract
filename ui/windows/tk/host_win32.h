@@ -81,7 +81,7 @@ public:
     // responsible for painting whatever it wants to be visible.
     Surface(HINSTANCE inst, HWND parent, const Theme& theme = Theme::light(),
             bool transparent = false);
-    ~Surface();
+    ~Surface() override;
     Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;
 

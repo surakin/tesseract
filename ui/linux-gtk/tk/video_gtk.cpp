@@ -276,14 +276,8 @@ public:
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.25f)
-        {
-            rate = 0.25f;
-        }
-        if (rate > 4.0f)
-        {
-            rate = 4.0f;
-        }
+        rate = std::max(rate, 0.25f);
+        rate = std::min(rate, 4.0f);
         rate_ = rate;
         if (!pipeline_)
         {
@@ -528,7 +522,7 @@ private:
         (*ctx)->need_data(appsrc, length);
     }
     // appsrc's seek-data callback trampoline.
-    static gboolean appsrc_seek_data_(GstAppSrc* appsrc, guint64 offset, gpointer user_data)
+    static gboolean appsrc_seek_data_(GstAppSrc* /*appsrc*/, guint64 offset, gpointer user_data)
     {
         auto* ctx = static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
         return (*ctx)->seek_data(offset) ? TRUE : FALSE;

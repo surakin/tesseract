@@ -6,7 +6,6 @@
 #include <string>
 
 using tesseract::Settings;
-using tesseract::views::Choice;
 using tesseract::views::SettingBinder;
 using tesseract::views::SettingKey;
 

@@ -93,7 +93,7 @@ struct BridgeRecorder : tesseract::IEventHandler
     void on_rooms_updated(const std::vector<tesseract::RoomInfo>& r) override
     {
         rooms = r;
-        log.push_back("rooms");
+        log.emplace_back("rooms");
     }
     void on_sync_error(const std::string& c, const std::string& d, bool soft) override
     {

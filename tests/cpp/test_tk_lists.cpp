@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <utility>
 
 using namespace tk;
 using tesseract::RoomInfo;
@@ -28,15 +29,15 @@ namespace
 struct TkListsStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});
@@ -591,6 +592,7 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
     RoomListView& view = *view_owner;
     // Six rooms × 62 = 372 px > 200 px viewport → overflow.
     std::vector<RoomInfo> rooms;
+    rooms.reserve(6);
     for (int i = 0; i < 6; ++i)
     {
         rooms.push_back(
@@ -2102,6 +2104,7 @@ TEST_CASE("MessageListView::append_messages does not follow to the new "
     MessageListView view;
 
     std::vector<MessageRowData> seed;
+    seed.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         seed.push_back(make_text_row(("$s" + std::to_string(i)).c_str(), "row"));
@@ -2121,6 +2124,7 @@ TEST_CASE("MessageListView::append_messages does not follow to the new "
     REQUIRE(pre_scroll > 0.0f);
 
     std::vector<MessageRowData> more;
+    more.reserve(5);
     for (int i = 0; i < 5; ++i)
     {
         more.push_back(make_text_row(("$more" + std::to_string(i)).c_str(), "row"));

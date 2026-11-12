@@ -8,6 +8,7 @@
 #include <cctype>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -81,7 +82,7 @@ public:
     tk::AccessState access_state_for_row(std::size_t index) const override
     {
         tk::AccessState st;
-        st.selected = static_cast<int>(index) == owner_.selected_index_;
+        st.selected = std::cmp_equal(index, owner_.selected_index_);
         return st;
     }
     bool access_activate_row(std::size_t index) override
@@ -253,8 +254,8 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
                     std::equal(known.begin(), known.end(), text.begin(),
                                [](char a, char c)
                                {
-                                   return std::tolower((unsigned char)a) ==
-                                          std::tolower((unsigned char)c);
+                                   return std::tolower(static_cast<unsigned char>(a)) ==
+                                          std::tolower(static_cast<unsigned char>(c));
                                }))
                 {
                     server_picker_->set_value(known);

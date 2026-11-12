@@ -11,12 +11,12 @@ struct TkFormLayoutStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 800);
 
-    tk::LayoutCtx lc()
+    tk::LayoutCtx lc() const
     {
         return {surface->factory(), tk::Theme::light()};
     }
 
-    void run(tk::Widget& root)
+    void run(tk::Widget& root) const
     {
         auto ctx = lc();
         root.measure(ctx, {640.0f, 800.0f});

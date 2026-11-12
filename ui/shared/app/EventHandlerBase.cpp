@@ -373,11 +373,11 @@ void EventHandlerBase::on_search_results(std::uint64_t request_id,
         {
             ShellBase::EventAccountScope scope(*shell, uid);
             // Route by which pending map owns this id.
-            if (shell->in_room_search_pending_.count(request_id))
+            if (shell->in_room_search_pending_.contains(request_id))
             {
                 shell->handle_in_room_search_results_ui_(request_id, std::move(*r));
             }
-            else if (shell->thread_search_pending_.count(request_id))
+            else if (shell->thread_search_pending_.contains(request_id))
             {
                 shell->handle_thread_search_results_ui_(request_id, std::move(*r));
             }
@@ -394,11 +394,11 @@ void EventHandlerBase::on_search_failed(std::uint64_t request_id, const std::str
         [shell = shell(), uid = user_id_, request_id, msg = message]() mutable
         {
             ShellBase::EventAccountScope scope(*shell, uid);
-            if (shell->in_room_search_pending_.count(request_id))
+            if (shell->in_room_search_pending_.contains(request_id))
             {
                 shell->handle_in_room_search_failed_ui_(request_id, std::move(msg));
             }
-            else if (shell->thread_search_pending_.count(request_id))
+            else if (shell->thread_search_pending_.contains(request_id))
             {
                 shell->handle_thread_search_failed_ui_(request_id, std::move(msg));
             }

@@ -50,7 +50,7 @@ struct ShortcutsStage
         app->paint(pc);
     }
 
-    KeyboardShortcutsOverlay& overlay()
+    KeyboardShortcutsOverlay& overlay() const
     {
         return *app->keyboard_shortcuts_overlay();
     }

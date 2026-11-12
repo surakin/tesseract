@@ -25,22 +25,22 @@ struct TabBarStage
     StubHost host;
     std::unique_ptr<TabBar> bar = create_root_widget<TabBar>(&host);
 
-    LayoutCtx lc()
+    LayoutCtx lc() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    void layout(float w = 600)
+    void layout(float w = 600) const
     {
         auto l = lc();
         bar->measure(l, {w, TabBar::kHeight});
         bar->arrange(l, {0, 0, w, TabBar::kHeight});
     }
-    void paint()
+    void paint() const
     {
         PaintCtx p{surface->canvas(), surface->factory(), Theme::light()};
         bar->paint(p);
     }
-    void add3()
+    void add3() const
     {
         bar->add_tab("!a", "Alpha", nullptr);
         bar->add_tab("!b", "Beta", nullptr);

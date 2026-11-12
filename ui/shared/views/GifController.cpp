@@ -213,7 +213,7 @@ void GifController::accept(const tesseract::GifResult& gif)
     }
 }
 
-void GifController::repaint_selection_()
+void GifController::repaint_selection_() const
 {
     if (hooks_.repaint_selection)
     {

@@ -136,7 +136,7 @@ void RoomModerationSection::remove_banned_member(const std::string& user_id)
 
 bool RoomModerationSection::click_unban_for_test(int i)
 {
-    if (i < 0 || i >= static_cast<int>(rows_.size()))
+    if (i < 0 || std::cmp_greater_equal(i, rows_.size()))
     {
         return false;
     }

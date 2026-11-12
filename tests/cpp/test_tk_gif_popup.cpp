@@ -75,8 +75,9 @@ TEST_CASE("GifPopup content_size clamps the strip to the window width", "[view][
     GifPopup p;
     p.set_results(make_results(GifPopup::kMaxCells)); // far wider than a window
 
-    const float full = 2.0f * GifPopup::kPad + float(GifPopup::kMaxCells) * GifPopup::kCellW +
-                       float(GifPopup::kMaxCells - 1) * GifPopup::kGap;
+    const float full = 2.0f * GifPopup::kPad +
+                       static_cast<float>(GifPopup::kMaxCells) * GifPopup::kCellW +
+                       static_cast<float>(GifPopup::kMaxCells - 1) * GifPopup::kGap;
 
     // Unbounded (max_width <= 0) returns the full content width.
     CHECK(p.content_size(0.0f).w == full);

@@ -128,8 +128,7 @@ void MruSwitcher::arrange(tk::LayoutCtx&, tk::Rect bounds)
     const float content_w = n > 0.0f
                                 ? 2 * kChipPadX + n * kChipW + std::max(0.0f, n - 1.0f) * kChipGap
                                 : kChipW + 2 * kChipPadX;
-    const float cw =
-        std::min(std::min(content_w, kCardW), std::max(0.0f, bounds.w - 2 * kCardMargin));
+    const float cw = std::min({content_w, kCardW, std::max(0.0f, bounds.w - 2 * kCardMargin)});
     const float ch = kStripH;
     const float cx = bounds.x + (bounds.w - cw) * 0.5f;
     // Bias slightly above centre, matching QuickSwitcher's card placement.
@@ -194,7 +193,7 @@ bool MruSwitcher::on_pointer_down(tk::Point local)
     return true;
 }
 
-void MruSwitcher::on_pointer_up(tk::Point local, bool inside_self)
+void MruSwitcher::on_pointer_up(tk::Point /*local*/, bool inside_self)
 {
     if (press_outside_)
     {

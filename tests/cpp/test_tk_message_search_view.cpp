@@ -62,7 +62,7 @@ struct MsvStage : vt::Stage
     {
         mount(*view, {0, 0, 900, 700});
     }
-    std::vector<std::string> rows()
+    std::vector<std::string> rows() const
     {
         std::vector<std::string> out;
         for (const auto& n : vt::all_names(*view))

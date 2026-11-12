@@ -27,6 +27,7 @@
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
 #include <QtGui/QPaintEvent>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QWheelEvent>
@@ -69,6 +70,7 @@
 #include <QMediaDevices>
 #include <QAudioDevice>
 #include <QtNetwork/QNetworkInformation>
+#include <utility>
 
 #include "platform/linux/gst_device_listing.h"
 
@@ -126,7 +128,7 @@ int emoji_cluster_start_before(const QString& text, int pos)
     {
         return -1;
     }
-    return int(start);
+    return static_cast<int>(start);
 }
 
 // Plain Backspace (Shift is ignored, as Qt does); Ctrl/Alt+Backspace delete
@@ -314,7 +316,7 @@ class QtOcclusionClient;
 struct QtOcclusionRegistry
 {
     std::vector<QtOcclusionClient*> clients;
-    void refresh_all();
+    void refresh_all() const;
 };
 
 class QtOcclusionClient
@@ -390,7 +392,7 @@ private:
     QRegion mask_;
 };
 
-void QtOcclusionRegistry::refresh_all()
+void QtOcclusionRegistry::refresh_all() const
 {
     // Copy: a refresh must not be able to invalidate the iteration.
     const std::vector<QtOcclusionClient*> snapshot = clients;
@@ -820,8 +822,9 @@ private:
         // soft/heavier text independent of the antialiasing mode above.
         // Mirrors insert_mention()'s pill-rasterization dpr handling.
         const qreal dpr = edit_->devicePixelRatioF();
-        QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
-                   has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
+        QImage img(
+            QSize(static_cast<int>(edit_->width() * dpr), static_cast<int>(edit_->height() * dpr)),
+            has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
         img.setDevicePixelRatio(dpr);
         img.fill(has_bg_ ? bg_color_ : Qt::transparent);
         QPainter p(&img);
@@ -901,7 +904,7 @@ std::optional<tk::FileDropPayload> read_local_file_for_paste(const QString& path
         return std::nullopt;
     }
     const qint64 size = fi.size();
-    if (size <= 0 || static_cast<std::size_t>(size) > tk::kMaxDroppedFileBytes)
+    if (size <= 0 || std::cmp_greater(size, tk::kMaxDroppedFileBytes))
     {
         return std::nullopt;
     }
@@ -1633,7 +1636,8 @@ public:
         }
         QRect cr = edit_->cursorRect();
         QPoint pt = edit_->viewport()->mapTo(edit_->parentWidget(), cr.topLeft());
-        return {float(pt.x()), float(pt.y()), float(cr.width()), float(cr.height())};
+        return {static_cast<float>(pt.x()), static_cast<float>(pt.y()),
+                static_cast<float>(cr.width()), static_cast<float>(cr.height())};
     }
     // setCursorWidth(0) in the ctor means Qt never draws a caret into the
     // capture — the canvas draws its own, driven by caret_rect()/
@@ -1947,7 +1951,7 @@ public:
         {
             if (!first_block)
             {
-                pending += "\n";
+                pending += '\n';
             }
             first_block = false;
             for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
@@ -2206,8 +2210,9 @@ private:
         // an opaque buffer, and why dpr matters — same rationale, mirrored
         // here.
         const qreal dpr = edit_->devicePixelRatioF();
-        QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
-                   has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
+        QImage img(
+            QSize(static_cast<int>(edit_->width() * dpr), static_cast<int>(edit_->height() * dpr)),
+            has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
         img.setDevicePixelRatio(dpr);
         img.fill(has_bg_ ? bg_color_ : Qt::transparent);
         QPainter p(&img);
@@ -2254,7 +2259,7 @@ private:
     static int utf8_byte_to_qt_cursor(const QString& qs, int byte_offset)
     {
         QByteArray full = qs.toUtf8();
-        byte_offset = std::clamp(byte_offset, 0, (int)full.size());
+        byte_offset = std::clamp(byte_offset, 0, static_cast<int>(full.size()));
         return QString::fromUtf8(full.left(byte_offset)).size();
     }
 
@@ -2368,14 +2373,14 @@ public:
             return;
         }
         QWidget* window = anchor_surface_->window();
-        QPoint pc = anchor_surface_->mapTo(
-            window, QPoint(int(anchor_world_rect.x), int(anchor_world_rect.y)));
+        QPoint pc = anchor_surface_->mapTo(window, QPoint(static_cast<int>(anchor_world_rect.x),
+                                                          static_cast<int>(anchor_world_rect.y)));
         QRect work = window->rect();
-        const int w = std::max(1, int(size.w));
-        const int h = std::max(1, int(size.h));
+        const int w = std::max(1, static_cast<int>(size.w));
+        const int h = std::max(1, static_cast<int>(size.h));
         int x = pc.x();
         const int y_above = pc.y() - h - 4;
-        const int y_below = pc.y() + int(anchor_world_rect.h) + 4;
+        const int y_below = pc.y() + static_cast<int>(anchor_world_rect.h) + 4;
         int y;
         if (placement == tk::PopupPlacement::PreferAbove)
         {
@@ -3564,7 +3569,7 @@ void Surface::wheelEvent(QWheelEvent* e)
     // per notch). A wheel reports no scroll phase; trackpads on compositors
     // that send phases do, so only phase-less events are treated as wheels.
     const bool is_touchpad =
-        !pd.isNull() && !(e->phase() == Qt::NoScrollPhase && !e->angleDelta().isNull());
+        !pd.isNull() && (e->phase() != Qt::NoScrollPhase || e->angleDelta().isNull());
     if (is_touchpad)
     {
         // Smooth-scroll device (trackpad): pixel delta is already in px.
@@ -3663,7 +3668,7 @@ void Surface::dropEvent(QDropEvent* e)
                 continue;
             }
             const qint64 size = fi.size();
-            if (size <= 0 || static_cast<std::size_t>(size) > kMaxDroppedFileBytes)
+            if (size <= 0 || std::cmp_greater(size, kMaxDroppedFileBytes))
             {
                 continue;
             }

@@ -15,7 +15,6 @@
 #include <string>
 
 using namespace tk;
-using tesseract::views::MessageListView;
 using tesseract::views::MessageRowData;
 using tesseract::views::RoomView;
 

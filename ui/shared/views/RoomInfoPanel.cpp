@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstddef>
 #include <string>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -539,6 +540,7 @@ std::vector<std::string> RoomInfoPanelBody::shown_member_names_for_test() const
 {
     std::vector<std::string> names;
     const std::size_t rows = std::min(member_rects_.size(), members_.size());
+    names.reserve(rows);
     for (std::size_t i = 0; i < rows; ++i)
     {
         names.push_back(members_[i].display_name);
@@ -548,7 +550,7 @@ std::vector<std::string> RoomInfoPanelBody::shown_member_names_for_test() const
 
 tk::Rect RoomInfoPanelBody::member_row_rect_for_test(int i) const
 {
-    if (i < 0 || i >= static_cast<int>(member_rects_.size()))
+    if (i < 0 || std::cmp_greater_equal(i, member_rects_.size()))
     {
         return {};
     }
@@ -819,9 +821,10 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     // Member rows
     const int total_members = static_cast<int>(members_.size());
-    const int visible_members = (members_expanded_ || total_members <= kCollapsedMemberRows)
-                                    ? total_members
-                                    : static_cast<int>(kCollapsedMemberRows);
+    const int visible_members =
+        (members_expanded_ || std::cmp_less_equal(total_members, kCollapsedMemberRows))
+            ? total_members
+            : static_cast<int>(kCollapsedMemberRows);
 
     member_rects_.clear();
     for (int i = 0; i < visible_members; ++i)
@@ -831,7 +834,8 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     }
 
     // Expand button (shown when >5 members and not expanded)
-    const bool show_expand = !members_expanded_ && total_members > kCollapsedMemberRows;
+    const bool show_expand =
+        !members_expanded_ && std::cmp_greater(total_members, kCollapsedMemberRows);
     if (expand_btn_)
     {
         expand_btn_->set_visible(show_expand);
@@ -1210,7 +1214,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
     // Member rows
     // Rebuild member layouts lazily as the cache may be empty
     const int visible_count = static_cast<int>(member_rects_.size());
-    if (static_cast<int>(member_layouts_.size()) < visible_count)
+    if (std::cmp_less(member_layouts_.size(), visible_count))
     {
         member_layouts_.resize(static_cast<std::size_t>(visible_count));
     }
@@ -1469,7 +1473,7 @@ bool RoomInfoPanelBody::on_pointer_down(tk::Point local)
     }
 
     // Hit-test direct-painted member rows first (not child widgets).
-    for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, member_rects_.size()); ++i)
     {
         if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
         {
@@ -1522,9 +1526,9 @@ void RoomInfoPanelBody::on_pointer_up(tk::Point local, bool inside_self)
     {
         const int idx = press_member_;
         press_member_ = -1;
-        if (inside_self && idx < static_cast<int>(members_.size()))
+        if (inside_self && std::cmp_less(idx, members_.size()))
         {
-            if (idx < static_cast<int>(member_rects_.size()) &&
+            if (std::cmp_less(idx, member_rects_.size()) &&
                 rect_contains(member_rects_[static_cast<std::size_t>(idx)], c))
             {
                 const auto& mem = members_[static_cast<std::size_t>(idx)];
@@ -1625,7 +1629,7 @@ bool RoomInfoPanelBody::on_pointer_move(tk::Point local)
     int prev_hover = hover_member_;
     hover_member_ = -1;
 
-    for (int i = 0; i < static_cast<int>(member_rects_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, member_rects_.size()); ++i)
     {
         if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
         {
@@ -1677,8 +1681,8 @@ bool RoomInfoPanelBody::on_right_click(tk::Point local)
     // Same viewport-local → content-local conversion as on_pointer_down.
     const tk::Point c{local.x, local.y + scroll_y_};
     int idx = -1;
-    for (int i = 0;
-         i < static_cast<int>(member_rects_.size()) && i < static_cast<int>(members_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, member_rects_.size()) && std::cmp_less(i, members_.size());
+         ++i)
     {
         if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
         {

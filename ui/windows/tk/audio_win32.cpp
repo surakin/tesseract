@@ -34,6 +34,7 @@
 
 #include "audio.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -271,10 +272,7 @@ public:
         {
             target = dur;
         }
-        if (target < 0.0)
-        {
-            target = 0.0;
-        }
+        target = std::max(target, 0.0);
         engine_->SetCurrentTime(target);
         if (on_progress)
         {
@@ -284,14 +282,8 @@ public:
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.5f)
-        {
-            rate = 0.5f;
-        }
-        if (rate > 3.0f)
-        {
-            rate = 3.0f;
-        }
+        rate = std::max(rate, 0.5f);
+        rate = std::min(rate, 3.0f);
         rate_ = rate;
         if (engine_)
         {

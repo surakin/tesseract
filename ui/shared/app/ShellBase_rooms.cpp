@@ -1247,7 +1247,7 @@ void ShellBase::refresh_room_list_()
         filtered.reserve(child_ids.size());
         for (const auto& r : rooms_)
         {
-            if (child_set.count(r.id))
+            if (child_set.contains(r.id))
             {
                 filtered.push_back(r);
             }
@@ -1534,7 +1534,7 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id, bool o
 // tab triggered this action — closes the dialog on success or surfaces
 // the failure in JoinRoomView on failure. No shell needs to override
 // this; it's virtual only so a shell could extend it if ever needed.
-void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& room_id,
+void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& /*room_id*/,
                                          const std::string& message)
 {
     if (!ok && main_app_ && main_app_->room_preview())
@@ -1904,7 +1904,6 @@ void ShellBase::send_current_location_(std::string room_id,
                                        const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
-    Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || !acting || !acting->client)
     {

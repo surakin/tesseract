@@ -68,7 +68,8 @@ Bytes png(const std::vector<std::pair<std::string, Bytes>>& chunks)
     for (const auto& [type, data] : chunks)
     {
         const auto n = static_cast<std::uint32_t>(data.size());
-        put(b, {int(n >> 24), int((n >> 16) & 255), int((n >> 8) & 255), int(n & 255)});
+        put(b, {static_cast<int>(n >> 24), static_cast<int>((n >> 16) & 255),
+                static_cast<int>((n >> 8) & 255), static_cast<int>(n & 255)});
         b.insert(b.end(), type.begin(), type.end());
         b.insert(b.end(), data.begin(), data.end());
         put(b, {0, 0, 0, 0}); // crc

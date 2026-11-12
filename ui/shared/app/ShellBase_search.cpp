@@ -3,6 +3,7 @@
 #include "views/SettingsView.h"
 #include <algorithm>
 #include <ctime>
+#include <utility>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -125,7 +126,7 @@ void ShellBase::handle_search_results_ui_(std::uint64_t request_id,
 
 void ShellBase::handle_forward_done_ui_(std::uint64_t request_id)
 {
-    if (pending_forwards_.count(request_id))
+    if (pending_forwards_.contains(request_id))
     {
         pending_forwards_.erase(request_id);
         if (pending_forwards_.empty())
@@ -321,7 +322,7 @@ void ShellBase::handle_in_room_search_results_ui_(std::uint64_t request_id,
     // Save focused event id so we can restore focus after results update.
     std::string prev_focused;
     if (in_room_search_current_ >= 0 &&
-        in_room_search_current_ < static_cast<int>(in_room_search_matches_.size()))
+        std::cmp_less(in_room_search_current_, in_room_search_matches_.size()))
     {
         prev_focused =
             in_room_search_matches_[static_cast<std::size_t>(in_room_search_current_)].event_id;
@@ -335,7 +336,7 @@ void ShellBase::handle_in_room_search_results_ui_(std::uint64_t request_id,
     {
         in_room_search_current_ = -1;
         in_room_search_goto_oldest_ = false;
-        const bool reached_start = pagination_.count(in_room_search_room_id_) &&
+        const bool reached_start = pagination_.contains(in_room_search_room_id_) &&
                                    pagination_.at(in_room_search_room_id_).reached_start;
         if (auto* bar = in_room_search_bar_())
         {
@@ -394,7 +395,7 @@ void ShellBase::handle_in_room_search_failed_ui_(std::uint64_t request_id,
     in_room_search_matches_.clear();
     in_room_search_current_ = -1;
     in_room_search_apply_highlights_();
-    const bool reached_start = pagination_.count(in_room_search_room_id_) &&
+    const bool reached_start = pagination_.contains(in_room_search_room_id_) &&
                                pagination_.at(in_room_search_room_id_).reached_start;
     if (auto* bar = in_room_search_bar_())
     {
@@ -484,7 +485,7 @@ void ShellBase::in_room_search_focus_current_()
         }
     }
 
-    const bool reached_start = pagination_.count(in_room_search_room_id_) &&
+    const bool reached_start = pagination_.contains(in_room_search_room_id_) &&
                                pagination_.at(in_room_search_room_id_).reached_start;
     if (auto* bar = in_room_search_bar_())
     {
@@ -510,7 +511,7 @@ void ShellBase::in_room_search_navigate_(int delta)
         // At the oldest match, going further UP. Try to paginate back when
         // enabled and history is not exhausted; otherwise wrap to the newest.
         const bool can_paginate =
-            in_room_search_paginate_ && !(pagination_.count(in_room_search_room_id_) &&
+            in_room_search_paginate_ && !(pagination_.contains(in_room_search_room_id_) &&
                                           pagination_.at(in_room_search_room_id_).reached_start);
         if (can_paginate)
         {
@@ -543,7 +544,7 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
         return;
     }
 
-    const bool reached_start = pagination_.count(in_room_search_room_id_) &&
+    const bool reached_start = pagination_.contains(in_room_search_room_id_) &&
                                pagination_.at(in_room_search_room_id_).reached_start;
     if (reached_start)
     {
@@ -748,7 +749,7 @@ void ShellBase::handle_thread_search_results_ui_(std::uint64_t request_id,
 
     std::string prev_focused;
     if (thread_search_current_ >= 0 &&
-        thread_search_current_ < static_cast<int>(thread_search_matches_.size()))
+        std::cmp_less(thread_search_current_, thread_search_matches_.size()))
     {
         prev_focused =
             thread_search_matches_[static_cast<std::size_t>(thread_search_current_)].event_id;

@@ -25,7 +25,7 @@ namespace
 struct Stage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(200, 120);
-    LayoutCtx lc()
+    LayoutCtx lc() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }

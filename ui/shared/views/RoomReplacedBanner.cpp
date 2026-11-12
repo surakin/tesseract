@@ -48,7 +48,7 @@ void RoomReplacedBanner::set_successor_joined(bool joined)
     apply_();
 }
 
-std::string RoomReplacedBanner::label_text() const
+std::string RoomReplacedBanner::label_text()
 {
     return tk::tr("This room has been replaced and is no longer active.");
 }

@@ -72,7 +72,7 @@ struct UrlPreviewData
     int image_h = 0;
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image_source);
+        return !title.empty() || !description.empty() || static_cast<bool>(image_source);
     }
 };
 
@@ -233,7 +233,7 @@ struct MessageRowData
     }
     bool has_reply_image() const
     {
-        return has_reply() && bool(in_reply_to_image_source);
+        return has_reply() && static_cast<bool>(in_reply_to_image_source);
     }
 
     // MSC4553 forwarded message. `body`/`formatted_body`/kind already hold the
@@ -1240,7 +1240,8 @@ public:
     // events. Stored in world coordinates. Public for tests.
     struct RowChipGeom
     {
-        std::size_t row_index = static_cast<std::size_t>(-1);
+        static constexpr std::size_t kNoRow = static_cast<std::size_t>(-1);
+        std::size_t row_index = kNoRow;
         std::vector<tk::Rect> chips;         // one per Reaction in row
         std::vector<tk::Rect> receipt_discs; // one per visible read-receipt disc
         tk::Rect add_button{};               // 0-area when not painted
@@ -1807,10 +1808,10 @@ private:
     // Whether the reply quote of `m` can be followed. The original of a
     // deleted message is filtered out of the timeline while deleted messages
     // are hidden, so it can never be scrolled to.
-    bool reply_jump_available_(const MessageRowData& m) const;
+    static bool reply_jump_available_(const MessageRowData& m);
     // A clicked link: a matrix.to user link opens the profile, anything else
     // goes to on_link_clicked. False when neither callback is set.
-    bool open_link_(const std::string& url);
+    bool open_link_(const std::string& url) const;
     MentionAvatarProvider mention_avatar_provider_;
     MentionNameProvider mention_name_provider_;
     RoomAvatarProvider room_avatar_provider_;

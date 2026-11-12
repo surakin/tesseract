@@ -284,7 +284,7 @@ TEST_CASE("a wrapped (multi-line) row's pill renders at the same width it "
     // the old line (the anchor's "before" position) alongside the real box
     // on the line it actually wrapped to — the widest rect is the pill's
     // reserved box, not necessarily rects[0].
-    const tk::Rect* reserved = &rects[0];
+    const tk::Rect* reserved = rects.data();
     for (const auto& r : rects)
     {
         if (r.w > reserved->w)

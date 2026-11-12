@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 // Keyboard-operability framework (a11y Phase 5): focus scoping for
 // registered popups and modal dialogs, the context-menu key, keyboard
@@ -523,7 +524,7 @@ MessageRowData kbd_text_row(int i)
 struct TimelineStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});
@@ -540,6 +541,7 @@ TEST_CASE("Timeline: focus lands on the newest visible message; Up/Down move",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -565,6 +567,7 @@ TEST_CASE("Timeline: Shift+PageUp pages up when nothing is unread",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -587,6 +590,7 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(5);
     for (int i = 0; i < 5; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -618,7 +622,7 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
 
     const auto names = v.keyboard_part_names();
     int reply_at = -1;
-    for (int i = 0; i < static_cast<int>(names.size()); ++i)
+    for (int i = 0; std::cmp_less(i, names.size()); ++i)
     {
         if (names[static_cast<std::size_t>(i)] == "Reply")
         {
@@ -655,6 +659,7 @@ TEST_CASE("Timeline: a click never moves keyboard focus onto it", "[message_list
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(5);
     for (int i = 0; i < 5; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -692,6 +697,7 @@ TEST_CASE("Timeline: the cursor follows its message across a history prepend",
     REQUIRE(v.selected_index() == 4); // $e14
 
     std::vector<MessageRowData> older;
+    older.reserve(10);
     for (int i = 0; i < 10; ++i)
     {
         older.push_back(kbd_text_row(i));
@@ -709,6 +715,7 @@ TEST_CASE("Timeline: a part added before the chosen one doesn't redirect Enter",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(3);
     for (int i = 0; i < 3; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -731,7 +738,7 @@ TEST_CASE("Timeline: a part added before the chosen one doesn't redirect Enter",
     host.request_focus(&v);
     const auto names = v.keyboard_part_names();
     int reply_at = -1;
-    for (int i = 0; i < static_cast<int>(names.size()); ++i)
+    for (int i = 0; std::cmp_less(i, names.size()); ++i)
     {
         if (names[static_cast<std::size_t>(i)] == "Reply")
         {

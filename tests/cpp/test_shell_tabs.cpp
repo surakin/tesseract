@@ -138,6 +138,7 @@ struct TabShell : tesseract::test::TestShellBase
     std::vector<std::string> tab_ids() const
     {
         std::vector<std::string> v;
+        v.reserve(tabs_.size());
         for (const auto& t : tabs_)
         {
             v.push_back(t.room_id);

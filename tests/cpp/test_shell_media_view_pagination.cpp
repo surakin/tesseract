@@ -255,7 +255,7 @@ struct GalleryFixture
     std::string room_id = "!room:example.org";
     std::unique_ptr<RoomPane> pane;
 
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return {surface->factory(), tk::Theme::light()};
     }

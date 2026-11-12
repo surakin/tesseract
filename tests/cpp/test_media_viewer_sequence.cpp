@@ -38,7 +38,7 @@ struct SeqStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
 
-    void run(Widget& root, Rect bounds = {0, 0, 600, 400})
+    void run(Widget& root, Rect bounds = {0, 0, 600, 400}) const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});

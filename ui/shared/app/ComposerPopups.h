@@ -110,7 +110,7 @@ public:
     void repaint_anim_frame();
 
 private:
-    void refresh_(tk::PopupSurfaceHandle* popup, bool layout = true);
+    static void refresh_(tk::PopupSurfaceHandle* popup, bool layout = true);
 
     tk::TextArea* text_area_;
     RoomPane* pane_;

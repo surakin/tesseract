@@ -53,6 +53,7 @@ PrefsData parse(const std::string& json_str)
     }
     catch (...)
     {
+        // Malformed optional field: keep the defaults.
     }
     // Backward compat: old prefs have last_room but no open_rooms array.
     if (p.open_rooms.empty() && !p.last_room.empty())

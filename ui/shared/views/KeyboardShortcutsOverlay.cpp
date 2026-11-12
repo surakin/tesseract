@@ -251,6 +251,7 @@ void KeyboardShortcutsOverlay::build_rows_()
             column->add_child(std::move(heading));
         }
         std::vector<std::string> keys;
+        keys.reserve(def.chords.size());
         for (const auto& chord : def.chords)
         {
             keys.push_back(tk::chord_label(chord));

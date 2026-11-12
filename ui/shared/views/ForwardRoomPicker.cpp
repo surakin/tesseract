@@ -310,7 +310,7 @@ void ForwardRoomPicker::toggle_row_(std::size_t index)
         return;
     }
     const std::string id = room->id;
-    if (selected_ids_.count(id))
+    if (selected_ids_.contains(id))
     {
         selected_ids_.erase(id);
         selected_order_.erase(std::remove_if(selected_order_.begin(), selected_order_.end(),
@@ -426,7 +426,7 @@ void ForwardRoomPicker::refilter_()
     filtered_unselected_.clear();
     for (const auto& r : all_rooms_)
     {
-        if (!selected_ids_.count(r.id) && name_matches(r.name, query_))
+        if (!selected_ids_.contains(r.id) && name_matches(r.name, query_))
         {
             filtered_unselected_.push_back(r);
         }
@@ -479,10 +479,7 @@ void ForwardRoomPicker::move_selection(int delta)
     }
     const int n = static_cast<int>(row_count_());
     int cur = list_->selected_index();
-    if (cur < 0)
-    {
-        cur = 0;
-    }
+    cur = std::max(cur, 0);
     const int next = std::max(0, std::min(n - 1, cur + delta));
     list_->set_selected_index(next);
     list_->scroll_to_index(next);

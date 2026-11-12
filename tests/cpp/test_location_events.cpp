@@ -9,7 +9,6 @@ using tesseract::views::live_location_status_text;
 using tesseract::views::live_location_has_map;
 using tesseract::views::next_map_viewport;
 using tesseract::views::make_row_data;
-using tesseract::views::MapViewport;
 using tesseract::views::MessageRowData;
 
 static tesseract::LocationEvent make_loc_event(double lat, double lon, const std::string& desc = "")
@@ -78,7 +77,7 @@ TEST_CASE("live location status text", "[location]")
 {
     CHECK(live_location_status_text(make_row_data(make_loc_event(1, 2), "@o:x"), 1).empty());
     CHECK_FALSE(live_location_status_text(live_row(true, false, 2000), 1000).empty());
-    CHECK(live_location_status_text(live_row(true, true, 2000), 1000) != "");
+    CHECK(!live_location_status_text(live_row(true, true, 2000), 1000).empty());
     CHECK(live_location_status_text(live_row(true, true, 2000), 1000) !=
           live_location_status_text(live_row(true, true, 2000), 3000));
     CHECK(live_location_status_text(live_row(false, false, 2000), 1000) ==

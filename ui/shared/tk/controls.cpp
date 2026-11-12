@@ -222,7 +222,7 @@ Color button_text(Button::Variant v, const Theme& th, bool enabled)
 
 } // namespace
 
-Size Button::measure(LayoutCtx& ctx, Size constraints)
+Size Button::measure(LayoutCtx& ctx, Size /*constraints*/)
 {
     if (variant_ == Variant::Icon)
     {

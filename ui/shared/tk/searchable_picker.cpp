@@ -335,7 +335,7 @@ private:
             return -1;
         }
         const int idx = static_cast<int>((local.y - bounds_.y + scroll_y_) / row_h_);
-        return (idx >= 0 && idx < static_cast<int>(entries_.size())) ? idx : -1;
+        return (idx >= 0 && std::cmp_less(idx, entries_.size())) ? idx : -1;
     }
 
     void arrange_pending_center_()
@@ -414,7 +414,7 @@ void SearchablePicker::init_(float field_h, float row_h, float width, int max_ro
                     return;
                 }
             }
-            if (hovered_row_ >= 0 && hovered_row_ < static_cast<int>(filtered_.size()))
+            if (hovered_row_ >= 0 && std::cmp_less(hovered_row_, filtered_.size()))
             {
                 commit_row_(static_cast<std::size_t>(hovered_row_));
             }

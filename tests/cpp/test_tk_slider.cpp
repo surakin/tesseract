@@ -30,7 +30,7 @@ struct SliderStage : vt::Stage
         };
         mount(*slider, {0, 0, 200, 24});
     }
-    Point mid() const
+    static Point mid()
     {
         return {100.0f, 12.0f};
     }

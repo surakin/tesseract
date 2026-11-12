@@ -30,11 +30,11 @@ struct FakeHost : ScreenshotHost
 
     void apply_theme(ScreenshotTheme t) override
     {
-        log->push_back(t == ScreenshotTheme::Light ? "theme:light" : "theme:dark");
+        log->emplace_back(t == ScreenshotTheme::Light ? "theme:light" : "theme:dark");
     }
     void refresh() override
     {
-        log->push_back("refresh");
+        log->emplace_back("refresh");
     }
     bool save_png(const std::string& f) override
     {
@@ -58,7 +58,7 @@ struct FakeHost : ScreenshotHost
     {
         ++finish_calls;
         finish_ok = ok;
-        log->push_back(ok ? "finish:ok" : "finish:fail");
+        log->emplace_back(ok ? "finish:ok" : "finish:fail");
     }
     // Drain like an event loop: run pending callbacks one at a time.
     void drain()
@@ -133,6 +133,7 @@ std::string read_all(const std::filesystem::path& p)
 std::vector<Scene> scenes(std::vector<std::string>& log, std::vector<std::string> names)
 {
     std::vector<Scene> out;
+    out.reserve(names.size());
     for (auto& n : names)
     {
         out.push_back({n,

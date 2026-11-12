@@ -100,7 +100,7 @@ struct Stage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
 
-    void layout_and_paint(tk::Widget& w)
+    void layout_and_paint(tk::Widget& w) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         w.measure(lc, {640, 480});

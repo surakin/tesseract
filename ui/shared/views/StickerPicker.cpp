@@ -201,7 +201,7 @@ void StickerPicker::paint_tab_content(int i, tk::PaintCtx& ctx, tk::Rect tab)
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Title;
-        auto layout = ctx.factory.build_text(std::string("\xE2\xAD\x90"), st);
+        auto layout = ctx.factory.build_text("\xE2\xAD\x90", st);
         if (layout)
         {
             tk::Size sz = layout->measure();

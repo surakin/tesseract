@@ -89,7 +89,7 @@ public:
 
     // Scan the session bus for the first service exposing Distributor1.
     // Safe to call from a worker thread — uses the thread's own D-Bus connection.
-    QString find_distributor()
+    static QString find_distributor()
     {
         QDBusReply<QStringList> names =
             QDBusConnection::sessionBus().interface()->registeredServiceNames();
@@ -176,7 +176,7 @@ public:
             }));
     }
 
-    void distributor_register(const QString& svc, const std::string& token)
+    static void distributor_register(const QString& svc, const std::string& token)
     {
         QDBusInterface dist(svc, QStringLiteral("/org/unifiedpush/Distributor"),
                             QStringLiteral("org.unifiedpush.Distributor1"),
@@ -185,7 +185,7 @@ public:
                        QString::fromStdString(token), QStringLiteral("Tesseract"));
     }
 
-    void distributor_unregister(const QString& svc, const std::string& token)
+    static void distributor_unregister(const QString& svc, const std::string& token)
     {
         QDBusInterface dist(svc, QStringLiteral("/org/unifiedpush/Distributor"),
                             QStringLiteral("org.unifiedpush.Distributor1"),

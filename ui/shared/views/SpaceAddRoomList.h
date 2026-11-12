@@ -98,7 +98,7 @@ private:
     void refilter_();
     const tesseract::RoomInfo* room_at_(std::size_t index) const;
     tk::DragVisual build_drag_visual_(const tesseract::RoomInfo& room);
-    std::string tooltip_text_(const tesseract::RoomInfo& room) const;
+    static std::string tooltip_text_(const tesseract::RoomInfo& room);
 
     RoomsProvider rooms_provider_;
     AvatarProvider avatar_provider_;

@@ -498,8 +498,8 @@ private:
     void use_passphrase_();
     // The Intro's bottom-left link: Skip for now / Remind me later, or
     // "Sign out without saving" before a sign-out.
-    void skip_();
-    void sign_out_removing_key_();
+    void skip_() const;
+    void sign_out_removing_key_() const;
     void turn_off_backup_();
     // The Done step's sentence for done_kind_.
     std::string done_text_() const;
@@ -593,7 +593,7 @@ private:
     tk::IconCache done_check_icon_;
 
     // Spinner animation clock; reset when the Progress step is entered.
-    std::chrono::steady_clock::time_point progress_start_{};
+    std::chrono::steady_clock::time_point progress_start_;
 };
 
 } // namespace tesseract::views

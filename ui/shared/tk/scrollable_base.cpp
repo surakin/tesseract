@@ -19,14 +19,8 @@ constexpr float kScrollbarMinLen = 24.0f;
 void ScrollableBase::clamp_scroll()
 {
     float max_scroll = std::max(0.0f, content_height() - bounds_.h);
-    if (scroll_y_ < 0)
-    {
-        scroll_y_ = 0;
-    }
-    if (scroll_y_ > max_scroll)
-    {
-        scroll_y_ = max_scroll;
-    }
+    scroll_y_ = std::max<float>(scroll_y_, 0);
+    scroll_y_ = std::min(scroll_y_, max_scroll);
 }
 
 ScrollableBase::ThumbGeom ScrollableBase::thumb_geom() const
@@ -144,14 +138,8 @@ bool ScrollableBase::scrollbar_on_pointer_drag(Point local)
     }
     float wanted_thumb_top = (local.y + bounds_.y) - drag_anchor_y_;
     float t = (wanted_thumb_top - g.track_top) / travel;
-    if (t < 0)
-    {
-        t = 0;
-    }
-    if (t > 1)
-    {
-        t = 1;
-    }
+    t = std::max<float>(t, 0);
+    t = std::min<float>(t, 1);
     scroll_y_ = t * (total - bounds_.h);
     clamp_scroll();
     return true;

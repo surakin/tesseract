@@ -6,6 +6,7 @@
 #include "views/media_utils.h"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -49,13 +50,14 @@ public:
     }
     bool actionable(int i) const
     {
-        return i >= 0 && i < int(items_.size()) && !items_[std::size_t(i)].is_separator &&
-               items_[std::size_t(i)].enabled;
+        return i >= 0 && std::cmp_less(i, items_.size()) &&
+               !items_[static_cast<std::size_t>(i)].is_separator &&
+               items_[static_cast<std::size_t>(i)].enabled;
     }
     // Next actionable row from `from` stepping by `dir` (+1/-1), or -1.
     int next_actionable(int from, int dir) const
     {
-        for (int i = from + dir; i >= 0 && i < int(items_.size()); i += dir)
+        for (int i = from + dir; i >= 0 && std::cmp_less(i, items_.size()); i += dir)
         {
             if (actionable(i))
             {
@@ -66,13 +68,13 @@ public:
     }
     int item_count() const
     {
-        return int(items_.size());
+        return static_cast<int>(items_.size());
     }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
         float h = 0.0f;
-        for (int i = 0; i < int(items_.size()); ++i)
+        for (int i = 0; std::cmp_less(i, items_.size()); ++i)
         {
             h += row_height_(i);
         }
@@ -92,7 +94,7 @@ public:
         }
 
         const auto& pal = ctx.theme.palette;
-        const int n = int(items_.size());
+        const int n = static_cast<int>(items_.size());
 
         // Invalidate rasterized icons when the DPI scale changes so they stay crisp.
         const float scale = ctx.canvas.scale_factor();
@@ -121,7 +123,7 @@ public:
 
         for (int i = 0; i < n; ++i)
         {
-            const auto& item = items_[std::size_t(i)];
+            const auto& item = items_[static_cast<std::size_t>(i)];
             const tk::Rect row = item_rect_(i);
 
             if (item.is_separator)
@@ -151,8 +153,8 @@ public:
             float label_x = row.x + kTextXNoIcon;
             if (!item.svg_icon.empty())
             {
-                auto& cached = icon_cache_[std::size_t(i)];
-                auto& tint = icon_tint_[std::size_t(i)];
+                auto& cached = icon_cache_[static_cast<std::size_t>(i)];
+                auto& tint = icon_tint_[static_cast<std::size_t>(i)];
                 if (cached && !(tint == text_col))
                 {
                     cached.reset(); // hot-row colour differs from the cached tint
@@ -160,9 +162,9 @@ public:
                 if (!cached)
                 {
                     tint = text_col;
-                    cached = tk::rasterize_svg(ctx.factory, item.svg_icon,
-                                               std::max(1, int(std::lround(kMenuIconPx * scale))),
-                                               text_col);
+                    cached = tk::rasterize_svg(
+                        ctx.factory, item.svg_icon,
+                        std::max(1, static_cast<int>(std::lround(kMenuIconPx * scale))), text_col);
                 }
                 if (cached)
                 {
@@ -216,9 +218,9 @@ public:
             return;
         }
         int r = row_at_(local);
-        if (r == was && r >= 0 && r < int(items_.size()))
+        if (r == was && r >= 0 && std::cmp_less(r, items_.size()))
         {
-            const auto& item = items_[std::size_t(r)];
+            const auto& item = items_[static_cast<std::size_t>(r)];
             // A separator or disabled item: released inside the menu, so
             // don't act on it — matches native disabled-menu-item behavior
             // (menu stays open, click is absorbed).
@@ -228,7 +230,7 @@ public:
             }
             if (on_row_activated)
             {
-                on_row_activated(std::size_t(r));
+                on_row_activated(static_cast<std::size_t>(r));
             }
         }
     }
@@ -238,9 +240,10 @@ public:
         int prev = hovered_index_;
         int r = row_at_(local);
         // Separators and disabled items never show a hover highlight.
-        hovered_index_ =
-            (r >= 0 && !items_[std::size_t(r)].is_separator && items_[std::size_t(r)].enabled) ? r
-                                                                                               : -1;
+        hovered_index_ = (r >= 0 && !items_[static_cast<std::size_t>(r)].is_separator &&
+                          items_[static_cast<std::size_t>(r)].enabled)
+                             ? r
+                             : -1;
         return hovered_index_ != prev;
     }
 
@@ -277,7 +280,7 @@ public:
         if (index < items_.size())
         {
             st.disabled = !items_[index].enabled;
-            st.selected = int(index) == hovered_index_;
+            st.selected = std::cmp_equal(index, hovered_index_);
         }
         return st;
     }
@@ -307,7 +310,7 @@ public:
 private:
     float row_height_(int i) const
     {
-        return items_[std::size_t(i)].is_separator ? kSeparatorHeight : kRowHeight;
+        return items_[static_cast<std::size_t>(i)].is_separator ? kSeparatorHeight : kRowHeight;
     }
 
     tk::Rect item_rect_(int i) const
@@ -322,7 +325,7 @@ private:
 
     int row_at_(tk::Point local) const
     {
-        const int n = int(items_.size());
+        const int n = static_cast<int>(items_.size());
         for (int i = 0; i < n; ++i)
         {
             if (rect_contains(item_rect_(i), local))
@@ -467,7 +470,7 @@ void PopupMenu::reposition_()
     }
 
     float popup_h = 0.0f;
-    for (int i = 0; i < int(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         popup_h += row_height(i);
     }
@@ -539,7 +542,7 @@ bool PopupMenu::on_key_down(const tk::KeyEvent& e)
     case tk::Key::Space:
         if (list_->actionable(cur) && list_->on_row_activated)
         {
-            list_->on_row_activated(std::size_t(cur));
+            list_->on_row_activated(static_cast<std::size_t>(cur));
         }
         return true;
     case tk::Key::Escape:
@@ -579,7 +582,7 @@ void PopupMenu::on_popup_dismiss()
 
 float PopupMenu::row_height(int i) const
 {
-    return items_[std::size_t(i)].is_separator ? kSeparatorHeight : kRowHeight;
+    return items_[static_cast<std::size_t>(i)].is_separator ? kSeparatorHeight : kRowHeight;
 }
 
 } // namespace tesseract::views

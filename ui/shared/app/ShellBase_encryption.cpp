@@ -9,7 +9,7 @@ namespace tesseract
 
 uint8_t ShellBase::read_recovery_state_() const
 {
-    return client_ ? static_cast<uint8_t>(client_->recovery_state()) : 0u;
+    return client_ ? client_->recovery_state() : 0u;
 }
 
 bool ShellBase::read_own_identity_exists_() const
@@ -78,7 +78,7 @@ void ShellBase::handle_enable_recovery_progress_ui_(uint8_t step, std::string re
                                                     uint32_t backed_up, uint32_t total)
 {
     const std::string uid = event_account_.empty() ? my_user_id_ : event_account_;
-    if (silent_recovery_in_flight_.count(uid))
+    if (silent_recovery_in_flight_.contains(uid))
     {
         handle_silent_recovery_progress_(uid, step, recovery_key);
         return;
@@ -86,7 +86,7 @@ void ShellBase::handle_enable_recovery_progress_ui_(uint8_t step, std::string re
     // Only the dialog's own setup (with a key it shows, or a passphrase)
     // replaces the account's recovery; recover() reports its success as the
     // same step 4 and must leave Tesseract's key alone.
-    const bool dialog_setup = dialog_recovery_setup_users_.count(uid) > 0;
+    const bool dialog_setup = dialog_recovery_setup_users_.contains(uid);
     if (step == 4 || step == 5)
     {
         dialog_recovery_setup_users_.erase(uid);
@@ -513,7 +513,7 @@ void ShellBase::check_encryption_setup_()
         // The user turned backup off after a silent setup: only the
         // reminder strip offers it again, no dialog.
         if (!foreign_identity && silent_recovery_setup_enabled_ &&
-            Settings::instance().silent_recovery_declined.count(my_user_id_))
+            Settings::instance().silent_recovery_declined.contains(my_user_id_))
         {
             encryption_setup_shown_ = true;
             return;
@@ -558,7 +558,7 @@ void ShellBase::reopen_encryption_setup_()
     const Reminder kind = EncryptionFlowController::reminder_for(
         read_recovery_state_(), read_device_verified_(), foreign_cross_signing_identity_(),
         silent_recovery_setup_enabled_ &&
-            Settings::instance().recovery_key_unsaved.count(my_user_id_) > 0);
+            Settings::instance().recovery_key_unsaved.contains(my_user_id_));
     if (kind == Reminder::None)
     {
         check_encryption_setup_();
@@ -585,7 +585,7 @@ bool ShellBase::silent_recovery_exhausted_(const std::string& uid) const
 
 bool ShellBase::silent_recovery_pending_(const std::string& uid) const
 {
-    if (silent_recovery_in_flight_.count(uid))
+    if (silent_recovery_in_flight_.contains(uid))
     {
         return true;
     }
@@ -615,7 +615,7 @@ bool ShellBase::begin_silent_recovery_setup_(const std::shared_ptr<AccountSessio
     {
         return false; // keeps failing: let the user drive it from the dialog
     }
-    if (Settings::instance().silent_recovery_declined.count(uid))
+    if (Settings::instance().silent_recovery_declined.contains(uid))
     {
         return false; // the user turned backup off
     }
@@ -691,7 +691,7 @@ void ShellBase::handle_silent_recovery_progress_(const std::string& uid, uint8_t
         silent_recovery_failed_(uid);
         return;
     }
-    if (step != 4 || !silent_recovery_in_flight_.count(uid))
+    if (step != 4 || !silent_recovery_in_flight_.contains(uid))
     {
         return;
     }
@@ -964,7 +964,7 @@ bool ShellBase::intercept_sign_out_for_unsaved_key_(std::function<void()> procee
         sign_out_confirmed_uid_.clear();
         return false; // proceed_sign_out_ re-entering, or an expired session
     }
-    if (!silent_recovery_setup_enabled_ || !Settings::instance().recovery_key_unsaved.count(uid))
+    if (!silent_recovery_setup_enabled_ || !Settings::instance().recovery_key_unsaved.contains(uid))
     {
         return false;
     }
@@ -1064,14 +1064,14 @@ void ShellBase::settle_recovery_key_on_sign_out_(const std::string& uid)
     silent_recovery_retry_after_.erase(uid);
     silent_recovery_new_account_.erase(uid);
     silent_unlock_tried_.erase(uid);
-    const bool only_in_memory = unstored_recovery_keys_.count(uid) > 0;
+    const bool only_in_memory = unstored_recovery_keys_.contains(uid);
 
     // Signed out without saving it: the secure-storage copy is the only one
     // left. It stays, with its reminder, for the next sign-in (which can
     // also unlock with it silently) — unless the user chose to delete it
     // (a shared computer).
     const bool delete_anyway = sign_out_remove_key_uid_ == uid;
-    if (Settings::instance().recovery_key_unsaved.count(uid) > 0 && !only_in_memory &&
+    if (Settings::instance().recovery_key_unsaved.contains(uid) && !only_in_memory &&
         !delete_anyway)
     {
         return;
@@ -1192,7 +1192,7 @@ void ShellBase::refresh_encryption_reminder_(std::optional<bool> device_verified
         const uint8_t state = read_recovery_state_();
         const bool foreign = (!verified || state == 1) && foreign_identity_cached_();
         const bool unsaved = silent_recovery_setup_enabled_ &&
-                             Settings::instance().recovery_key_unsaved.count(my_user_id_) > 0;
+                             Settings::instance().recovery_key_unsaved.contains(my_user_id_);
         kind = EncryptionFlowController::reminder_for(state, verified, foreign, unsaved);
         // Recovery is being set up silently: "set it up" would start a
         // second, competing setup.
@@ -1204,7 +1204,7 @@ void ShellBase::refresh_encryption_reminder_(std::optional<bool> device_verified
         // makes sense once that has given up.
         if (kind == Reminder::SetupNeeded && silent_recovery_setup_enabled_ &&
             !silent_recovery_exhausted_(my_user_id_) &&
-            !Settings::instance().silent_recovery_declined.count(my_user_id_))
+            !Settings::instance().silent_recovery_declined.contains(my_user_id_))
         {
             kind = Reminder::None;
         }

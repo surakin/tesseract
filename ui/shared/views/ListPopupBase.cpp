@@ -3,13 +3,14 @@
 #include "tk/theme.h"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace tesseract::views
 {
 
 tk::Size ListPopupBase::measure(tk::LayoutCtx&, tk::Size)
 {
-    return {width(), row_height() * float(visible_rows())};
+    return {width(), row_height() * static_cast<float>(visible_rows())};
 }
 
 void ListPopupBase::arrange(tk::LayoutCtx&, tk::Rect bounds)
@@ -21,7 +22,7 @@ void ListPopupBase::arrange(tk::LayoutCtx&, tk::Rect bounds)
 void ListPopupBase::paint(tk::PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
-    int total = (int)row_count();
+    int total = static_cast<int>(row_count());
     float rh = row_height();
 
     step_kinetic();
@@ -32,12 +33,13 @@ void ListPopupBase::paint(tk::PaintCtx& ctx)
     {
         tk::ClipScope clip(ctx.canvas, bounds_);
 
-        int first = std::max(0, (int)(scroll_y_ / rh));
-        int last = std::min(total, (int)std::ceil((scroll_y_ + bounds_.h) / rh));
+        int first = std::max(0, static_cast<int>(scroll_y_ / rh));
+        int last = std::min(total, static_cast<int>(std::ceil((scroll_y_ + bounds_.h) / rh)));
 
         for (int i = first; i < last; ++i)
         {
-            tk::Rect row{bounds_.x, bounds_.y + float(i) * rh - scroll_y_, bounds_.w, rh};
+            tk::Rect row{bounds_.x, bounds_.y + static_cast<float>(i) * rh - scroll_y_, bounds_.w,
+                         rh};
 
             bool selected = (i == selected_index_);
             bool hovered = (i == hovered_index_);
@@ -58,7 +60,7 @@ void ListPopupBase::paint(tk::PaintCtx& ctx)
                 ctx.canvas.fill_rect(row, pal.subtle_hover);
             }
 
-            paint_row(ctx, row, std::size_t(i), selected, hovered);
+            paint_row(ctx, row, static_cast<std::size_t>(i), selected, hovered);
 
             // Row separator (except after the last actual row — it may not be
             // the last one drawn, when the list is taller than the viewport).
@@ -102,9 +104,9 @@ void ListPopupBase::on_pointer_up(tk::Point local, bool inside_self)
         return;
     }
     int r = row_at(local.y);
-    if (r >= 0 && r == pressed_index_ && r < (int)row_count())
+    if (r >= 0 && r == pressed_index_ && std::cmp_less(r, row_count()))
     {
-        on_row_activated(std::size_t(r));
+        on_row_activated(static_cast<std::size_t>(r));
     }
     pressed_index_ = -1;
 }

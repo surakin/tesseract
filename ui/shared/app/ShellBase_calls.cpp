@@ -188,7 +188,7 @@ void ShellBase::drop_call_invites_of_missing_rooms_(const std::string& uid,
     }
     for (auto it = pending_call_invites_.begin(); it != pending_call_invites_.end();)
     {
-        it = (it->first.first == uid && known.count(it->first.second) == 0)
+        it = (it->first.first == uid && !known.contains(it->first.second))
                  ? pending_call_invites_.erase(it)
                  : std::next(it);
     }
@@ -196,7 +196,7 @@ void ShellBase::drop_call_invites_of_missing_rooms_(const std::string& uid,
     {
         for (auto it = call_banner_rosters_.begin(); it != call_banner_rosters_.end();)
         {
-            it = known.count(it->first) == 0 ? call_banner_rosters_.erase(it) : std::next(it);
+            it = !known.contains(it->first) ? call_banner_rosters_.erase(it) : std::next(it);
         }
     }
 }
@@ -799,7 +799,7 @@ void ShellBase::handle_call_video_error_(tk::VideoCapture::Error err)
     show_status_message_(tk::VideoCapture::describe(err));
 }
 
-views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
+views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_()
 {
     switch (Settings::instance().call_overlay_mode)
     {
@@ -1202,7 +1202,7 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id, std::stri
         reason != "switch_device")
     {
         std::string msg;
-        if (reason.rfind(kRtcStartFailedReason, 0) == 0)
+        if (reason.starts_with(kRtcStartFailedReason))
         {
             msg = tk::trf(tk::tr("Call failed: {0}"),
                           {reason.substr(sizeof(kRtcStartFailedReason) - 1)});

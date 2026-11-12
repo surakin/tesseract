@@ -91,7 +91,7 @@ public:
 
 private:
     // Selection-only repaint: hooks_.repaint_selection if set, else hooks_.repaint.
-    void repaint_selection_();
+    void repaint_selection_() const;
     void run_search(std::string query);
     void accept(const tesseract::GifResult& gif);
     // Show a one-line message in the popup (empty key, no results, failed

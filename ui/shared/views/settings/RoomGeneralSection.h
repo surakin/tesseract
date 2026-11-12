@@ -109,7 +109,7 @@ private:
     void refresh_name_display_();
     void refresh_topic_display_();
     void refresh_address_display_();
-    void relayout_and_notify_();
+    void relayout_and_notify_() const;
 
     AvatarCell* avatar_cell_ = nullptr;
 

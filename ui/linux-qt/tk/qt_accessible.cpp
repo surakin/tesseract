@@ -315,7 +315,7 @@ private:
         // fired into a torn-down Qt if the app is already shutting down.
         for (auto it = ids_.begin(); it != ids_.end();)
         {
-            if (new_index.find(it->first) == new_index.end())
+            if (!new_index.contains(it->first))
             {
                 if (auto* iface = QAccessible::accessibleInterface(it->second))
                 {
@@ -341,7 +341,7 @@ private:
         {
             for (const auto& [key, node] : new_index)
             {
-                if (index_.find(key) == index_.end())
+                if (!index_.contains(key))
                 {
                     structure_changed = true;
                     break;
@@ -440,7 +440,7 @@ private:
     // without moving real keyboard focus off the view.
     void hook_selection_changed(Widget* widget)
     {
-        if (!widget || selection_hooked_.count(widget))
+        if (!widget || selection_hooked_.contains(widget))
         {
             return;
         }
@@ -966,7 +966,7 @@ AccessBridge::~AccessBridge()
 QAccessibleInterface* AccessBridge::interface_for(const AccessKey& key)
 {
     rebuild_if_dirty();
-    if (index_.find(key) == index_.end())
+    if (!index_.contains(key))
     {
         return nullptr;
     }
@@ -1093,7 +1093,7 @@ QAccessibleInterface* factory(const QString&, QObject* object)
     // plain QWidget in the app, not just Surface instances. Identify ours by
     // address instead of dynamic_cast: Qt queries objects while they are
     // still being constructed or destroyed, where RTTI on them can crash.
-    if (!object || !live_surfaces().count(object))
+    if (!object || !live_surfaces().contains(object))
     {
         return nullptr;
     }

@@ -842,7 +842,7 @@ void EncryptionSetupOverlay::simulate_skip()
     skip_();
 }
 
-void EncryptionSetupOverlay::skip_()
+void EncryptionSetupOverlay::skip_() const
 {
     if (before_sign_out_ && on_sign_out)
     {
@@ -854,7 +854,7 @@ void EncryptionSetupOverlay::skip_()
     }
 }
 
-void EncryptionSetupOverlay::sign_out_removing_key_()
+void EncryptionSetupOverlay::sign_out_removing_key_() const
 {
     if (before_sign_out_ && on_sign_out)
     {

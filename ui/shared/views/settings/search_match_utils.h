@@ -27,7 +27,8 @@ inline bool icontains(std::string_view hay, std::string_view needle)
         bool ok = true;
         for (std::size_t k = 0; k < needle.size(); ++k)
         {
-            if (std::tolower((unsigned char)hay[i + k]) != std::tolower((unsigned char)needle[k]))
+            if (std::tolower(static_cast<unsigned char>(hay[i + k])) !=
+                std::tolower(static_cast<unsigned char>(needle[k])))
             {
                 ok = false;
                 break;
@@ -49,7 +50,8 @@ inline bool istarts_with(std::string_view hay, std::string_view prefix)
     }
     for (std::size_t i = 0; i < prefix.size(); ++i)
     {
-        if (std::tolower((unsigned char)hay[i]) != std::tolower((unsigned char)prefix[i]))
+        if (std::tolower(static_cast<unsigned char>(hay[i])) !=
+            std::tolower(static_cast<unsigned char>(prefix[i])))
         {
             return false;
         }
@@ -65,7 +67,8 @@ inline bool iequals(std::string_view a, std::string_view b)
     }
     for (std::size_t i = 0; i < a.size(); ++i)
     {
-        if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i]))
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
         {
             return false;
         }

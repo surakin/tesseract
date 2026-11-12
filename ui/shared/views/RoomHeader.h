@@ -222,7 +222,7 @@ public:
 
 private:
     // Draws a vector padlock icon in `rect` (10×12 logical px), tinted with `tint`.
-    void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
+    static void draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint);
 
     // Cached from paint() so on_pointer_move/on_pointer_leave (which don't
     // receive a PaintCtx) can reach Host::show_tooltip/hide_tooltip for the

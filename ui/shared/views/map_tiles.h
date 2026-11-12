@@ -5,15 +5,12 @@
 #include <cstdint>
 #include <iomanip>
 #include <locale>
+#include <numbers>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 namespace tesseract::views
 {
@@ -53,10 +50,10 @@ inline TileCoord lat_lon_to_tile(double lat, double lon, int zoom)
     const double fn = static_cast<double>(n);
     lat = clamp_mercator_lat(lat);
     lon = clamp_lon(lon);
-    const double lat_r = lat * M_PI / 180.0;
+    const double lat_r = lat * std::numbers::pi / 180.0;
     int x = static_cast<int>(std::floor((lon + 180.0) / 360.0 * fn));
-    int y = static_cast<int>(
-        std::floor((1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / M_PI) / 2.0 * fn));
+    int y = static_cast<int>(std::floor(
+        (1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / std::numbers::pi) / 2.0 * fn));
     x = std::max(0, std::min(x, n - 1));
     y = std::max(0, std::min(y, n - 1));
     return {zoom, x, y};
@@ -69,9 +66,10 @@ inline tk::Point lat_lon_to_world_px(double lat, double lon, int zoom)
     const double n = static_cast<double>(1 << zoom) * 256.0;
     lat = clamp_mercator_lat(lat);
     lon = clamp_lon(lon);
-    const double lat_r = lat * M_PI / 180.0;
+    const double lat_r = lat * std::numbers::pi / 180.0;
     double fx = (lon + 180.0) / 360.0 * n;
-    double fy = (1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / M_PI) / 2.0 * n;
+    double fy =
+        (1.0 - std::log(std::tan(lat_r) + 1.0 / std::cos(lat_r)) / std::numbers::pi) / 2.0 * n;
     return {static_cast<float>(fx), static_cast<float>(fy)};
 }
 
@@ -82,8 +80,9 @@ inline std::pair<double, double> world_px_to_lat_lon(float px, float py, int zoo
     double fx = static_cast<double>(px) / n;
     double fy = static_cast<double>(py) / n;
     double lon = fx * 360.0 - 180.0;
-    double merc_y = M_PI * (1.0 - 2.0 * fy);
-    double lat = (2.0 * std::atan(std::exp(merc_y)) - M_PI / 2.0) * (180.0 / M_PI);
+    double merc_y = std::numbers::pi * (1.0 - 2.0 * fy);
+    double lat =
+        (2.0 * std::atan(std::exp(merc_y)) - std::numbers::pi / 2.0) * (180.0 / std::numbers::pi);
     return {lat, lon};
 }
 

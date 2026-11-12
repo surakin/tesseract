@@ -1209,7 +1209,8 @@ public:
             ox = pt_out.x;
             oy = pt_out.y;
         }
-        return {float(ox), float(oy), float(rect.width), float(rect.height)};
+        return {static_cast<float>(ox), static_cast<float>(oy), static_cast<float>(rect.width),
+                static_cast<float>(rect.height)};
     }
     // gtk_text_view_set_cursor_visible(FALSE) in the ctor means GTK never
     // draws a caret into the capture — the canvas draws its own, driven by
@@ -1271,7 +1272,7 @@ public:
         gtk_text_buffer_get_iter_at_offset(buffer_, &si, char_start);
         gtk_text_buffer_get_iter_at_offset(buffer_, &ej, char_end);
         gtk_text_buffer_delete(buffer_, &si, &ej);
-        gtk_text_buffer_insert(buffer_, &si, text.c_str(), (int)text.size());
+        gtk_text_buffer_insert(buffer_, &si, text.c_str(), static_cast<int>(text.size()));
     }
 
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
@@ -1308,7 +1309,7 @@ public:
         gtk_text_buffer_get_iter_at_mark(buffer_, &it, ins);
         gtk_text_buffer_get_start_iter(buffer_, &start);
         gchar* slice = gtk_text_buffer_get_slice(buffer_, &start, &it, FALSE);
-        int n = slice ? (int)std::strlen(slice) : 0;
+        int n = slice ? static_cast<int>(std::strlen(slice)) : 0;
         g_free(slice);
         return n;
     }
@@ -1843,7 +1844,7 @@ private:
         while (bytes < byte_offset && *p)
         {
             const gchar* next = g_utf8_next_char(p);
-            bytes += (int)(next - p);
+            bytes += static_cast<int>(next - p);
             p = next;
             ++chars;
         }
@@ -2279,7 +2280,7 @@ private:
             return std::nullopt;
         }
         const goffset sz = g_file_info_get_size(info);
-        if (sz <= 0 || static_cast<std::size_t>(sz) > kMaxDroppedFileBytes)
+        if (sz <= 0 || std::cmp_greater(sz, kMaxDroppedFileBytes))
         {
             g_object_unref(info);
             return std::nullopt;
@@ -2471,14 +2472,8 @@ Rect intersect_rect(const Rect& a, const Rect& b)
     float y0 = std::max(a.y, b.y);
     float x1 = std::min(a.right(), b.right());
     float y1 = std::min(a.bottom(), b.bottom());
-    if (x1 < x0)
-    {
-        x1 = x0;
-    }
-    if (y1 < y0)
-    {
-        y1 = y0;
-    }
+    x1 = std::max(x1, x0);
+    y1 = std::max(y1, y0);
     return {x0, y0, x1 - x0, y1 - y0};
 }
 } // namespace
@@ -2574,11 +2569,11 @@ public:
         gtk_popover_set_position(GTK_POPOVER(popover_), placement == tk::PopupPlacement::PreferAbove
                                                             ? GTK_POS_TOP
                                                             : GTK_POS_BOTTOM);
-        gtk_widget_set_size_request(surface_->widget(), std::max(1, int(size.w)),
-                                    std::max(1, int(size.h)));
-        GdkRectangle r{int(anchor_world_rect.x), int(anchor_world_rect.y),
-                       std::max(1, int(anchor_world_rect.w)),
-                       std::max(1, int(anchor_world_rect.h))};
+        gtk_widget_set_size_request(surface_->widget(), std::max(1, static_cast<int>(size.w)),
+                                    std::max(1, static_cast<int>(size.h)));
+        GdkRectangle r{static_cast<int>(anchor_world_rect.x), static_cast<int>(anchor_world_rect.y),
+                       std::max(1, static_cast<int>(anchor_world_rect.w)),
+                       std::max(1, static_cast<int>(anchor_world_rect.h))};
         gtk_popover_set_pointing_to(GTK_POPOVER(popover_), &r);
         // Explicit, not left to GTK's "resize" signal — that only fires when
         // the size actually changes, but the popup's content can change
@@ -2771,12 +2766,13 @@ public:
             PangoFontFamily** fams = nullptr;
             int n = 0;
             pango_font_map_list_families(pango_cairo_font_map_get_default(), &fams, &n);
+            out.reserve(n);
             for (int i = 0; i < n; ++i)
             {
                 out.push_back({pango_font_family_get_name(fams[i]),
                                pango_font_family_is_monospace(fams[i]) != FALSE});
             }
-            g_free(fams);
+            g_free(static_cast<void*>(fams));
             std::sort(out.begin(), out.end(),
                       [](const FontFamilyInfo& a, const FontFamilyInfo& b)
                       {
@@ -3290,7 +3286,7 @@ public:
             return false;
         }
         const goffset sz = g_file_info_get_size(info);
-        if (sz <= 0 || static_cast<std::size_t>(sz) > kMaxDroppedFileBytes)
+        if (sz <= 0 || std::cmp_greater(sz, kMaxDroppedFileBytes))
         {
             g_object_unref(info);
             return false;
@@ -3585,7 +3581,7 @@ private:
     void ensure_popup_shield_();
 
     // Shared by both the create and reposition paths in sync_anim_overlays_.
-    void position_anim_overlay_(GtkWidget* w, const Rect& visible)
+    static void position_anim_overlay_(GtkWidget* w, const Rect& visible)
     {
         gtk_widget_set_margin_start(w, static_cast<int>(std::floor(visible.x)));
         gtk_widget_set_margin_top(w, static_cast<int>(std::floor(visible.y)));
@@ -3659,7 +3655,7 @@ void draw_cb(GtkDrawingArea*, cairo_t* cr, int w, int h, gpointer p)
 // GDestroyNotify), so its lifetime is tied to the widget's, not the Host's.
 struct AnimOverlayDrawCtx
 {
-    Host* host;
+    Host* host = nullptr;
     tk::CacheKey key;
 };
 
@@ -3769,7 +3765,7 @@ gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy, g
 // Popup shield (see GtkOcclusionRegistry): its controllers run the drawing
 // area's own callbacks, translated from shield-local to drawing-area
 // coordinates.
-static void shield_to_canvas(GtkEventController* c, double& x, double& y)
+void shield_to_canvas(GtkEventController* c, double& x, double& y)
 {
     GtkWidget* shield = gtk_event_controller_get_widget(c);
     GtkWidget* overlay = gtk_widget_get_parent(shield);
@@ -4069,7 +4065,7 @@ void Host::sync_anim_overlays_()
     // scrolled off, the image stopped animating, or the row was removed.
     for (auto it = live_overlays_.begin(); it != live_overlays_.end();)
     {
-        if (painted_this_pass_.count(it->first) == 0)
+        if (!painted_this_pass_.contains(it->first))
         {
             if (overlay_ && it->second.widget)
             {

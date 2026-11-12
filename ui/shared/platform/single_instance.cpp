@@ -292,7 +292,7 @@ bool send_activation_to(const std::string& path, const ActivationRequest& reques
         return false;
     }
 
-    sockaddr_un addr;
+    sockaddr_un addr{};
     if (!make_sockaddr(addr, path))
     {
         close(sock);
@@ -364,7 +364,7 @@ ActivationListener::ActivationListener(Callback on_activate) : on_activate_(std:
         return;
     }
 
-    sockaddr_un addr;
+    sockaddr_un addr{};
     if (!make_sockaddr(addr, path))
     {
         close(fd);

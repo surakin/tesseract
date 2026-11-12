@@ -84,7 +84,7 @@ private:
 
     // Loading state: set on open(), cleared once image_provider_ returns non-null.
     bool is_loading_ = false;
-    std::chrono::steady_clock::time_point loading_start_{};
+    std::chrono::steady_clock::time_point loading_start_;
 
     // Native image size (zoom 1.0 = 1:1 pixels). Set in arrange/paint and
     // reused in on_wheel. base_ * zoom_ is the on-screen image size.

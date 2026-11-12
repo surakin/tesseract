@@ -30,7 +30,7 @@ using MediaKind = tk::MediaKind;
 struct MediaFetchBackoff
 {
     std::uint32_t attempts = 0;
-    std::chrono::steady_clock::time_point retry_after{};
+    std::chrono::steady_clock::time_point retry_after;
 };
 
 struct PendingMediaReq
@@ -109,14 +109,17 @@ struct MediaFetchSpec
     // Screenshot mode: served from a local file, so no client_ is needed.
     bool screenshot_local_ = false;
 #endif
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     bool screenshot_local() const
     {
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         return screenshot_local_;
-#else
-        return false;
-#endif
     }
+#else
+    static bool screenshot_local()
+    {
+        return false;
+    }
+#endif
 };
 
 // Shared state for one frame's prefetch batch. Lives only for the

@@ -437,7 +437,7 @@ private:
     void notify_layout_changed_();
     void set_room_visible_(bool visible);
     bool handle_primary_shortcut_(const tk::KeyEvent& event);
-    bool handle_history_shortcut_(const tk::KeyEvent& event);
+    bool handle_history_shortcut_(const tk::KeyEvent& event) const;
     bool handle_mru_shortcut_(const tk::KeyEvent& event);
     bool dismiss_top_transient_();
 

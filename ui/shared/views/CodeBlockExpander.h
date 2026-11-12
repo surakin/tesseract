@@ -25,7 +25,7 @@ public:
     bool is_expanded(const std::string& event_id, int block) const
     {
         auto it = expanded_.find(event_id);
-        return it != expanded_.end() && it->second.count(block) > 0;
+        return it != expanded_.end() && it->second.contains(block);
     }
 
     void toggle(const std::string& event_id, int block)

@@ -107,7 +107,7 @@ struct ReadReceipt
     std::string user_id;
     std::string display_name;
     std::string avatar_url;
-    uint64_t timestamp_ms;
+    uint64_t timestamp_ms = 0;
 };
 
 /// A joined member of a room. `display_name` resolves to the user's
@@ -198,7 +198,7 @@ struct UrlPreview
     /// True when this entry carries something worth rendering as a card.
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image);
+        return !title.empty() || !description.empty() || static_cast<bool>(image);
     }
 };
 

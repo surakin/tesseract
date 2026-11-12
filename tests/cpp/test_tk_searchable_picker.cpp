@@ -43,7 +43,7 @@ protected:
         {
             return 1;
         }
-        if (f.compare(0, q.size(), q) == 0)
+        if (f.starts_with(q))
         {
             return 0;
         }
@@ -80,7 +80,7 @@ struct SpStage
     {
         return *host.fields_created.at(0);
     }
-    void layout()
+    void layout() const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         picker->measure(lc, {300, 100});

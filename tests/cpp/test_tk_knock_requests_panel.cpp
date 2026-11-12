@@ -61,7 +61,7 @@ TEST_CASE("KnockRequestsPanel exposes count in its name and an empty "
     CHECK(s.panel->access_role() == tk::Role::Dialog);
     CHECK(s.panel->access_description() == "No pending requests");
     s.panel->set_requests({knock("@a:x", "Alice"), knock("@b:x", "")});
-    CHECK(s.panel->access_name().find("2") != std::string::npos);
+    CHECK(s.panel->access_name().find('2') != std::string::npos);
     CHECK(s.panel->access_description().empty());
     s.run();
     // Row groups: name falls back to user id; description to the reason.
@@ -166,6 +166,7 @@ TEST_CASE("KnockRequestsPanel input is ignored while closed; wheel scrolls "
 
     s.panel->open("!r:x");
     std::vector<tesseract::KnockRequestInfo> many;
+    many.reserve(12);
     for (int i = 0; i < 12; ++i)
     {
         many.push_back(knock("@u" + std::to_string(i) + ":x", "User " + std::to_string(i)));

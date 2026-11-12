@@ -197,7 +197,7 @@ tk::Size UserInfo::measure(tk::LayoutCtx& ctx, tk::Size constraints)
         tk::TextStyle st;
         st.role = role;
         st.trim = tk::TextTrim::None;
-        const auto layout = ctx.factory.build_text(std::string(sample), st);
+        const auto layout = ctx.factory.build_text(sample, st);
         return layout ? layout->measure().h : 0.0f;
     };
 

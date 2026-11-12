@@ -7,6 +7,7 @@
 #include "views/MainAppWidget.h"
 #include "views/UserProfilePanel.h"
 #include <algorithm>
+#include <utility>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -20,7 +21,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
-    if (mxc.empty() || media_decode_failed_.count(mxc) || media_fetch_backed_off_(mxc))
+    if (mxc.empty() || media_decode_failed_.contains(mxc) || media_fetch_backed_off_(mxc))
     {
         return;
     }
@@ -65,13 +66,13 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
 
 void ShellBase::ensure_user_avatar_(const std::string& mxc, std::uint64_t group_id)
 {
-    if (mxc.empty() || media_decode_failed_.count(mxc) || media_fetch_backed_off_(mxc))
+    if (mxc.empty() || media_decode_failed_.contains(mxc) || media_fetch_backed_off_(mxc))
     {
         return;
     }
     // Also takes an MSC4144 per-message-profile avatar token: a MediaSource
     // JSON (encrypted avatar) rather than a bare mxc:// url.
-    const bool is_mxc = mxc.rfind("mxc://", 0) == 0;
+    const bool is_mxc = mxc.starts_with("mxc://");
     avatar_mxcs_.insert(mxc);
     if (is_mxc && tesseract::Settings::instance().prefetch_full_media)
     {
@@ -111,7 +112,7 @@ int ShellBase::avatar_px_() const
     return static_cast<int>(std::lround(visual::kAvatarCacheSize * current_scale_));
 }
 
-tk::CacheKey ShellBase::avatar_anim_key_(const std::string& mxc) const
+tk::CacheKey ShellBase::avatar_anim_key_(const std::string& mxc)
 {
     return tk::CacheKey::thumbnail(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
 }
@@ -406,7 +407,7 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/, int /
 {
     const tk::CacheKey mem_key = tk::CacheKey::media(url);
     if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
-        account_manager_.anim_cache().has(mem_key) || media_decode_failed_.count(url) ||
+        account_manager_.anim_cache().has(mem_key) || media_decode_failed_.contains(url) ||
         media_fetch_backed_off_(url))
     {
         return;
@@ -440,7 +441,7 @@ void ShellBase::ensure_picker_sticker_(const std::string& url)
 {
     const tk::CacheKey key = picker_sticker_key_(url);
     if (url.empty() || account_manager_.image_cache().contains(key) ||
-        account_manager_.anim_cache().has(key) || media_decode_failed_.count(url))
+        account_manager_.anim_cache().has(key) || media_decode_failed_.contains(url))
     {
         return;
     }
@@ -472,7 +473,7 @@ tk::CacheKey ShellBase::profile_avatar_key_(const std::string& mxc) const
 void ShellBase::ensure_profile_avatar_(const std::string& mxc)
 {
     // Only plain mxc:// avatars have a sized server thumbnail to ask for.
-    if (mxc.rfind("mxc://", 0) != 0 || media_decode_failed_.count(mxc))
+    if (!mxc.starts_with("mxc://") || media_decode_failed_.contains(mxc))
     {
         return;
     }
@@ -566,8 +567,9 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     // Guard on both the still map (viewer_fullres_) and the fullres-keyed
     // anim_cache entry — an animated source decodes into the latter (see
     // decode_fullres_and_store_ below) rather than the former.
-    if (url.empty() || viewer_fullres_.count(fckey) || account_manager_.anim_cache().has(fckey) ||
-        media_decode_failed_.count(fkey) || media_fetch_backed_off_(fkey))
+    if (url.empty() || viewer_fullres_.contains(fckey) ||
+        account_manager_.anim_cache().has(fckey) || media_decode_failed_.contains(fkey) ||
+        media_fetch_backed_off_(fkey))
     {
         return;
     }
@@ -658,7 +660,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                 [this, url, fkey, fckey, d]() mutable
                 {
                     viewer_fullres_in_flight_.erase(fkey);
-                    if (viewer_fullres_.count(fckey) || account_manager_.anim_cache().has(fckey))
+                    if (viewer_fullres_.contains(fckey) || account_manager_.anim_cache().has(fckey))
                     {
                         return;
                     }
@@ -1114,7 +1116,7 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h, bo
     const tk::CacheKey mem_key = tk::CacheKey::media(url);
     if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
         account_manager_.thumbnail_cache().contains(mem_key) ||
-        account_manager_.anim_cache().has(mem_key) || media_decode_failed_.count(url) ||
+        account_manager_.anim_cache().has(mem_key) || media_decode_failed_.contains(url) ||
         media_fetch_backed_off_(url))
     {
         return;
@@ -1295,7 +1297,7 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
 {
     const std::string key = tesseract::views::tile_cache_key({z, x, y});
     const tk::CacheKey tile_key = tk::CacheKey::tile(z, x, y);
-    if (account_manager_.image_cache().contains(tile_key) || tile_fetch_failed_.count(key))
+    if (account_manager_.image_cache().contains(tile_key) || tile_fetch_failed_.contains(key))
     {
         return;
     }
@@ -1342,7 +1344,7 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
 
 void ShellBase::ensure_url_preview_(const std::string& room_id, const std::string& url)
 {
-    if (url.empty() || url_previews_.count(url))
+    if (url.empty() || url_previews_.contains(url))
     {
         return;
     }
@@ -1469,7 +1471,7 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     // placeholder would be gone but the bytes never fetched.
     const bool preview =
         media_allowed_(gate_room, !my_user_id_.empty() && ev.sender == my_user_id_) ||
-        revealed_events_.count(ev.event_id) != 0;
+        revealed_events_.contains(ev.event_id);
 
     if (ev.type == EventType::Image)
     {
@@ -1699,7 +1701,7 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
     }
 
     const bool preview = media_allowed_(current_room_id_, !my_user_id_.empty() && row.is_own) ||
-                         revealed_events_.count(row.event_id) != 0;
+                         revealed_events_.contains(row.event_id);
 
     if (row.kind == Kind::Image)
     {
@@ -1915,7 +1917,7 @@ void ShellBase::on_visible_rows_changed_(const std::vector<std::string>& keys)
         return;
     }
     const auto& msgs = ml->messages();
-    for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+    for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
     {
         const auto& row = msgs[static_cast<std::size_t>(i)];
         if (media_prepped_event_ids_.insert(row.event_id).second)
@@ -1975,7 +1977,7 @@ bool ShellBase::url_preview_fetch_allowed_(const std::string& room_id) const
 bool ShellBase::media_preview_hidden_(const std::string& room_id, const std::string& event_id,
                                       bool is_own) const
 {
-    if (revealed_events_.count(event_id) != 0)
+    if (revealed_events_.contains(event_id))
     {
         return false;
     }
@@ -1988,7 +1990,7 @@ void ShellBase::ensure_room_preview_override_(const std::string& room_id)
     {
         return;
     }
-    if (room_preview_overrides_.count(room_id) != 0)
+    if (room_preview_overrides_.contains(room_id))
     {
         return;
     }
@@ -2543,8 +2545,8 @@ const tk::Image* ShellBase::gif_strip_image_(const GifResult& result,
     }
 
     // Stage 1: the static preview, shown as soon as it lands.
-    if (!gif_previews_.count(tk::CacheKey::gif_preview(result.preview_url)) &&
-        !gif_preview_unavailable_.count(result.preview_url) &&
+    if (!gif_previews_.contains(tk::CacheKey::gif_preview(result.preview_url)) &&
+        !gif_preview_unavailable_.contains(result.preview_url) &&
         gif_preview_inflight_.insert(result.preview_url).second)
     {
         const std::string url = result.preview_url;
@@ -2589,7 +2591,7 @@ const tk::Image* ShellBase::gif_strip_image_(const GifResult& result,
     }
 
     // Stage 2: the animation (MP4 or an animated image) replaces the preview.
-    if (!gif_anim_unavailable_.count(result.strip_url) &&
+    if (!gif_anim_unavailable_.contains(result.strip_url) &&
         gif_anim_inflight_.insert(result.strip_url).second)
     {
         const std::string anim_url = result.strip_url;

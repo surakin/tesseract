@@ -15,16 +15,16 @@ struct TkStorageGroupStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
 
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    tk::PaintCtx paint_ctx(tk::Host* host)
+    tk::PaintCtx paint_ctx(tk::Host* host) const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light(), nullptr,
                             host};
     }
-    void run(tk::Widget& root, tk::Rect bounds, tk::Host* host)
+    void run(tk::Widget& root, tk::Rect bounds, tk::Host* host) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});

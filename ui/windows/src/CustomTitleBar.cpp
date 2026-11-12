@@ -221,7 +221,7 @@ void CustomTitleBar::invalidate_strip(HWND hwnd) const
     InvalidateRect(hwnd, &rc, TRUE);
 }
 
-void CustomTitleBar::adjust_nccalcsize(HWND hwnd, WPARAM wParam, LPARAM lParam) const
+void CustomTitleBar::adjust_nccalcsize(HWND hwnd, WPARAM wParam, LPARAM lParam)
 {
     if (wParam != TRUE)
     {
@@ -344,7 +344,7 @@ bool CustomTitleBar::handle_nclbuttonup(HWND hwnd, WPARAM ht)
     return true;
 }
 
-bool CustomTitleBar::show_system_menu(HWND hwnd, WPARAM ht, LPARAM lParam) const
+bool CustomTitleBar::show_system_menu(HWND hwnd, WPARAM ht, LPARAM lParam)
 {
     if (ht != HTCAPTION)
     {

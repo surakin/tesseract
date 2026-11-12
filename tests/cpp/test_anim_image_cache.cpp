@@ -30,6 +30,7 @@ struct AnimImageCacheFakeImage : tk::Image
 std::vector<std::unique_ptr<tk::Image>> frames(int n)
 {
     std::vector<std::unique_ptr<tk::Image>> v;
+    v.reserve(n);
     for (int i = 0; i < n; ++i)
     {
         v.push_back(std::make_unique<AnimImageCacheFakeImage>());

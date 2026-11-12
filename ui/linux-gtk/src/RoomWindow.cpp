@@ -436,7 +436,7 @@ void RoomWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
 
 // static
 gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval, guint,
-                                     GdkModifierType state, gpointer self)
+                                     GdkModifierType /*state*/, gpointer self)
 {
     auto* w = static_cast<RoomWindow*>(self);
     if (keyval == GDK_KEY_Escape)

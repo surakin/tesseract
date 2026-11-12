@@ -72,7 +72,7 @@ std::vector<std::string> command_line_utf8_args()
         {
             args.push_back(to_utf8(szArgList[i]));
         }
-        LocalFree(szArgList);
+        LocalFree(static_cast<void*>(szArgList));
     }
     return args;
 }

@@ -116,7 +116,7 @@ struct TmcCardsFixture
                 ++repaints;
             });
     }
-    tk::PaintCtx pc()
+    tk::PaintCtx pc() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }

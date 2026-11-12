@@ -42,12 +42,12 @@ struct SarStage : vt::Stage
     {
         mount(*list, {0, 0, 300, 400});
     }
-    std::vector<std::string> add_names()
+    std::vector<std::string> add_names() const
     {
         std::vector<std::string> out;
         for (const auto& n : vt::all_names(*list))
         {
-            if (n.rfind("Add ", 0) == 0)
+            if (n.starts_with("Add "))
             {
                 out.push_back(n);
             }

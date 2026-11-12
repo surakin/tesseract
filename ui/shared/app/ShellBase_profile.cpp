@@ -405,7 +405,7 @@ void ShellBase::handle_open_dm_(const std::string& user_id, const std::string& r
     }
 
     // In-flight guard: suppress duplicate async calls for the same user.
-    if (dm_in_flight_user_ids_.count(user_id))
+    if (dm_in_flight_user_ids_.contains(user_id))
     {
         return;
     }
@@ -780,7 +780,7 @@ void ShellBase::request_member_pronoun_ui_(const std::string& user_id)
     {
         return;
     }
-    if (member_gender_cache_.count(user_id) || member_gender_inflight_.count(user_id))
+    if (member_gender_cache_.contains(user_id) || member_gender_inflight_.contains(user_id))
     {
         return;
     }
@@ -792,7 +792,7 @@ void ShellBase::request_member_pronoun_ui_(const std::string& user_id)
 
 void ShellBase::request_sender_timezone_ui_(const std::string& user_id)
 {
-    if (!client_ || user_id.empty() || member_tz_inflight_.count(user_id))
+    if (!client_ || user_id.empty() || member_tz_inflight_.contains(user_id))
     {
         return;
     }
@@ -1011,7 +1011,7 @@ void ShellBase::handle_user_query_(const std::string& query)
 
     // Live-resolve a fully-typed mxid we don't already know, debounced so fast
     // typing coalesces into a single lookup.
-    if (views::is_complete_mxid(query) && known_users_.find(query) == known_users_.end())
+    if (views::is_complete_mxid(query) && !known_users_.contains(query))
     {
         if (!client_)
         {

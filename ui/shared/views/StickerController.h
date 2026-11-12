@@ -57,7 +57,7 @@ public:
     void hide();
 
 private:
-    void repaint_selection_();
+    void repaint_selection_() const;
     void accept(const tesseract::ImagePackImage& sticker);
     void show_popup_();
 

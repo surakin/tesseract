@@ -68,7 +68,7 @@ std::string mime_extension(const std::string& mime)
     trim(sub);
     for (const char* prefix : {"x-", "vnd."})
     {
-        if (sub.rfind(prefix, 0) == 0)
+        if (sub.starts_with(prefix))
         {
             sub.erase(0, std::string(prefix).size());
         }

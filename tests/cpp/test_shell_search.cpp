@@ -169,6 +169,7 @@ struct SearchRoomFixture
         info.name = "R";
         rv->set_room(info);
         std::vector<MessageRowData> rows;
+        rows.reserve(loaded.size());
         for (auto& e : loaded)
         {
             rows.push_back(srch_row(e));
@@ -181,7 +182,7 @@ struct SearchRoomFixture
         s.rooms_ = {info};
         s.mark_room_index_dirty_();
     }
-    tesseract::views::MessageListView* ml()
+    tesseract::views::MessageListView* ml() const
     {
         return rv->message_list();
     }

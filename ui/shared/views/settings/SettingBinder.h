@@ -111,7 +111,7 @@ public:
         {
             commit_(field, v, key, local);
         };
-        loaders_.push_back(
+        loaders_.emplace_back(
             [cb, field]
             {
                 cb->set_checked(settings_().*field);
@@ -125,7 +125,7 @@ public:
         {
             commit_(field, v, key, local);
         };
-        loaders_.push_back(
+        loaders_.emplace_back(
             [sb, field]
             {
                 sb->set_checked(settings_().*field);
@@ -157,7 +157,7 @@ public:
             *dirty = false;
             changed(key);
         };
-        loaders_.push_back(
+        loaders_.emplace_back(
             [slider, field]
             {
                 slider->set_value(static_cast<double>(settings_().*field));
@@ -214,7 +214,7 @@ public:
         {
             commit_(field, id, key, {});
         };
-        loaders_.push_back(
+        loaders_.emplace_back(
             [combo, field]
             {
                 combo->set_selected_value(settings_().*field);
@@ -229,7 +229,7 @@ public:
         loaders_.push_back(std::move(load));
     }
 
-    void changed(SettingKey key)
+    void changed(SettingKey key) const
     {
         if (on_changed)
         {

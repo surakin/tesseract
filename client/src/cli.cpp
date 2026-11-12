@@ -242,13 +242,13 @@ std::string format_usage(std::span<const OptionSpec> specs, std::string_view pro
             left += s.long_name;
             if (s.arity == Arity::Required)
             {
-                left += "=";
+                left += '=';
                 left += s.value_name.empty() ? std::string("VALUE") : s.value_name;
             }
         }
         else if (s.arity == Arity::Required)
         {
-            left += " ";
+            left += ' ';
             left += s.value_name.empty() ? std::string("VALUE") : s.value_name;
         }
         width = std::max(width, left.size());
@@ -257,23 +257,23 @@ std::string format_usage(std::span<const OptionSpec> specs, std::string_view pro
 
     std::string out;
     out += usage_label;
-    out += " ";
+    out += ' ';
     out += program;
     if (!synopsis.empty())
     {
-        out += " ";
+        out += ' ';
         out += synopsis;
     }
     out += "\n\n";
     out += options_heading;
-    out += "\n";
+    out += '\n';
     for (const auto& [left, spec] : rows)
     {
         out += "  ";
         out += left;
         out.append(width - left.size() + 3, ' ');
         out += spec->help;
-        out += "\n";
+        out += '\n';
     }
     return out;
 }

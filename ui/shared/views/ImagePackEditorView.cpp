@@ -1372,7 +1372,7 @@ ImagePackEditorResult ImagePackEditorView::build_result() const
     return result;
 }
 
-void ImagePackEditorView::layout_changed_()
+void ImagePackEditorView::layout_changed_() const
 {
     if (on_layout_changed)
     {

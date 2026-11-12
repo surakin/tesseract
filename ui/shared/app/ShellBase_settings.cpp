@@ -9,6 +9,7 @@
 #include "views/SettingsView.h"
 #include "views/image_pack_order.h"
 #include <algorithm>
+#include <utility>
 
 namespace tesseract
 {
@@ -125,7 +126,7 @@ void ShellBase::handle_user_pack_pending_image_added_(std::uint64_t local_id,
 }
 
 void ShellBase::apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
-                                        const std::vector<std::string>& overrides) const
+                                        const std::vector<std::string>& overrides)
 {
     // An empty list must still clear flags left from a removed override.
     for (auto& r : rooms)
@@ -830,7 +831,7 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
                     return;
                 }
                 const auto& msgs = ml->messages();
-                for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+                for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
                 {
                     ensure_row_media_(msgs[static_cast<std::size_t>(i)], /*fetch_avatars=*/false,
                                       room_id);
@@ -1656,7 +1657,7 @@ ShellBase::apply_image_pack_changes_(tesseract::Client* client,
     std::vector<std::string> errors;
     if (!client)
     {
-        errors.push_back("image_packs: not logged in");
+        errors.emplace_back("image_packs: not logged in");
         return errors;
     }
 

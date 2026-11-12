@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <utility>
 
 namespace tesseract
 {
@@ -336,7 +337,7 @@ void ShellBase::run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& ke
         std::min<std::size_t>(keys.size(), static_cast<std::size_t>(std::max(max_items, 0))));
     for (const auto& k : keys)
     {
-        if (static_cast<int>(filtered.size()) >= max_items)
+        if (std::cmp_greater_equal(filtered.size(), max_items))
         {
             break;
         }
@@ -384,7 +385,7 @@ void ShellBase::run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& ke
         // — that fetch will populate the cache and this key drops out of the
         // candidate set on its own. Racing it with a duplicate disk-only
         // task just starves its decode step on the shared pool_.
-        if (media_fetches_in_flight_.count(disk_key))
+        if (media_fetches_in_flight_.contains(disk_key))
         {
             continue;
         }
@@ -442,6 +443,8 @@ void ShellBase::run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& ke
                     const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
                     decoded = decode_image_(bytes, max_w, max_h);
                 }
+                // Read before `key` is moved into the batch below.
+                const std::string key_id = key.id;
                 bool became_ready = false;
                 {
                     std::lock_guard<std::mutex> lock(batch->mu);
@@ -482,7 +485,6 @@ void ShellBase::run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& ke
                 // store stays the one and only UI callback this task posts —
                 // media_prefetch_in_flight_ and the batch caches are all
                 // UI-thread-only, hence the hop.
-                const std::string key_id = key.id;
                 post_to_ui_(
                     [this, batch, became_ready, kind, group_id, key_id,
                      disk_key = std::move(disk_key)]
@@ -744,12 +746,12 @@ void ShellBase::fetch_media_pipeline_(std::string cache_key, tk::CacheKey disk_k
     spec.should_deliver_ = [this, group_id]
     {
         return group_id == 0 || group_id == active_media_group_ ||
-               active_media_view_groups_.count(group_id) != 0 ||
-               active_popout_media_groups_.count(group_id) != 0;
+               active_media_view_groups_.contains(group_id) ||
+               active_popout_media_groups_.contains(group_id);
     };
     spec.start_fetch_ = [this, group_id, kind, source, w, h, animated, cache_key](std::uint64_t id)
     {
-        const auto prio = media_fetch_failed_.count(cache_key)
+        const auto prio = media_fetch_failed_.contains(cache_key)
                               ? tesseract::Client::MediaPriority::Backoff
                               : tesseract::Client::MediaPriority::Normal;
         if (serve_screenshot_media_(id, source) || serve_screenshot_media_(id, cache_key))

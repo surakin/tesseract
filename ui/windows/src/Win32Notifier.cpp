@@ -102,7 +102,7 @@ static std::string to_utf8(const std::wstring& w)
         return {};
     }
     std::string s(static_cast<std::size_t>(n - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), n, nullptr, nullptr);
     return s;
 }
 

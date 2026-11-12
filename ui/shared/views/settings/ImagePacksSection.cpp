@@ -109,7 +109,7 @@ void ImagePacksSection::set_user_pack_saving(bool saving)
     save_btn_->set_enabled(!saving && user_pack_->has_changes());
 }
 
-void ImagePacksSection::set_user_pack_save_result(bool ok, std::string /*error*/)
+void ImagePacksSection::set_user_pack_save_result(bool /*ok*/, std::string /*error*/)
 {
     // On success the host follows with a fresh set_user_pack_images() call
     // (the new baseline), which itself resets has_changes() to false and

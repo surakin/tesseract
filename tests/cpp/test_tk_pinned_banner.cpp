@@ -29,11 +29,11 @@ PinnedEvent make_pin(const std::string& id, std::uint64_t ts)
 struct TkPinnedBannerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 200);
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    void arrange(tk::Widget& w, tk::Rect bounds)
+    void arrange(tk::Widget& w, tk::Rect bounds) const
     {
         auto lc = layout_ctx();
         w.measure(lc, {bounds.w, bounds.h});

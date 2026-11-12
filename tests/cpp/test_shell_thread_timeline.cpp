@@ -179,12 +179,12 @@ struct TtFx
         s.main_room_pane_->attach({.room_view = view.get()});
         view->on_thread_open_requested("$root");
     }
-    tesseract::views::MessageListView* thread_list()
+    tesseract::views::MessageListView* thread_list() const
     {
         auto* tv = view->thread_view();
         return tv ? tv->message_list() : nullptr;
     }
-    std::vector<std::string> thread_ids()
+    std::vector<std::string> thread_ids() const
     {
         std::vector<std::string> v;
         if (auto* ml = thread_list())

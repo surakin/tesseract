@@ -440,9 +440,9 @@ inline std::optional<tk::FileDropPayload> read_local_file_for_paste(const std::w
 // Used by BetterTextArea for replace_range().
 // Returns the number of UTF-16 code units in the first `byte_offset` bytes
 // of `utf8`; clamped to [0, utf8.size()].
-static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
+int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
 {
-    byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
+    byte_offset = std::clamp(byte_offset, 0, static_cast<int>(utf8.size()));
     int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
     return wlen < 0 ? 0 : wlen;
 }
@@ -3044,7 +3044,7 @@ static std::unordered_set<HWND>& live_popup_hwnds()
 
 bool is_popup_surface_hwnd(HWND hwnd)
 {
-    return hwnd && live_popup_hwnds().count(hwnd) != 0;
+    return hwnd && live_popup_hwnds().contains(hwnd);
 }
 
 class Win32PopupSurfaceHandle : public tk::PopupSurfaceHandle
@@ -3092,12 +3092,12 @@ public:
         // point on the very first call.
         UINT dpi = GetDpiForWindow(anchor_hwnd_);
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
-        const int w = std::max(1, int(std::round(size.w * scale)));
-        const int h = std::max(1, int(std::round(size.h * scale)));
-        const int anchor_h_px = int(std::round(anchor_world_rect.h * scale));
-        const int gap_px = int(std::round(4.0f * scale));
-        POINT pt{LONG(std::round(anchor_world_rect.x * scale)),
-                 LONG(std::round(anchor_world_rect.y * scale))};
+        const int w = std::max(1, static_cast<int>(std::round(size.w * scale)));
+        const int h = std::max(1, static_cast<int>(std::round(size.h * scale)));
+        const int anchor_h_px = static_cast<int>(std::round(anchor_world_rect.h * scale));
+        const int gap_px = static_cast<int>(std::round(4.0f * scale));
+        POINT pt{static_cast<LONG>(std::round(anchor_world_rect.x * scale)),
+                 static_cast<LONG>(std::round(anchor_world_rect.y * scale))};
         ClientToScreen(anchor_hwnd_, &pt);
         HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{};
@@ -3115,8 +3115,8 @@ public:
         {
             y = (y_below + h <= mi.rcWork.bottom) ? y_below : y_above;
         }
-        x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-        y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+        x = std::clamp(x, static_cast<int>(mi.rcWork.left), static_cast<int>(mi.rcWork.right) - w);
+        y = std::clamp(y, static_cast<int>(mi.rcWork.top), static_cast<int>(mi.rcWork.bottom) - h);
         // No show/hide flags — visibility is set_visible()'s job alone, so
         // repositioning an already-open popup (e.g. row count changed) never
         // has a side effect on whether it's shown.
@@ -3385,7 +3385,7 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
     } mono_info{};
     mono_info.header.biSize = sizeof(BITMAPINFOHEADER);
     mono_info.header.biWidth = width;
-    mono_info.header.biHeight = -(bm.bmHeight); // top-down
+    mono_info.header.biHeight = -bm.bmHeight; // top-down
     mono_info.header.biPlanes = 1;
     mono_info.header.biBitCount = 1;
     mono_info.header.biCompression = BI_RGB;
@@ -3540,6 +3540,7 @@ public:
                 reinterpret_cast<LPARAM>(&c), 0);
             ReleaseDC(nullptr, hdc);
             std::vector<FontFamilyInfo> out;
+            out.reserve(c.fams.size());
             for (auto& [name, mono] : c.fams)
             {
                 out.push_back({name, mono});
@@ -3870,7 +3871,7 @@ public:
                 }
                 devices[i]->Release();
             }
-            CoTaskMemFree(devices);
+            CoTaskMemFree(static_cast<void*>(devices));
         }
         attrs->Release();
         return result;
@@ -4988,8 +4989,7 @@ constexpr LPARAM kTouchInjectedSignature = 0xFF515700; // MI_WP_SIGNATURE
 
 bool wheel_event_is_touchpad()
 {
-    return (static_cast<LPARAM>(GetMessageExtraInfo()) & kTouchInjectedSignatureMask) ==
-           kTouchInjectedSignature;
+    return (GetMessageExtraInfo() & kTouchInjectedSignatureMask) == kTouchInjectedSignature;
 }
 
 Key key_from_win32(WPARAM vk, bool shift)

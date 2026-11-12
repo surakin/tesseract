@@ -55,7 +55,7 @@ int ServerPicker::match_rank_(std::size_t index, std::string_view query) const
     {
         return 0;
     }
-    if (s.compare(0, q.size(), q) == 0)
+    if (s.starts_with(q))
     {
         return 1;
     }

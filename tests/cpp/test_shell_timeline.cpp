@@ -202,11 +202,11 @@ struct TlMainFixture
             tesseract::RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, "!r:x");
         s.main_room_pane_->attach({.room_view = view.get()});
     }
-    tesseract::views::MessageListView* ml()
+    tesseract::views::MessageListView* ml() const
     {
         return view->message_list();
     }
-    std::vector<std::string> ids()
+    std::vector<std::string> ids() const
     {
         std::vector<std::string> v;
         for (const auto& m : ml()->messages())

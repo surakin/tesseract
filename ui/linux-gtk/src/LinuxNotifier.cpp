@@ -138,7 +138,7 @@ LinuxNotifierGtk::~LinuxNotifierGtk()
     g_object_unref(bus_);
 }
 
-bool LinuxNotifierGtk::use_portal() const
+bool LinuxNotifierGtk::use_portal()
 {
     // Only Flatpak actually requires the portal — direct D-Bus calls to the
     // notification daemon are blocked by the sandbox's D-Bus proxy there.

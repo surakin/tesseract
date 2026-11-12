@@ -26,7 +26,7 @@ struct RadioStage : vt::Stage
         };
         mount(*group, {0, 0, 300, 300});
     }
-    std::vector<RadioButton*> buttons()
+    std::vector<RadioButton*> buttons() const
     {
         std::vector<RadioButton*> out;
         vt::collect<RadioButton>(*group, out);

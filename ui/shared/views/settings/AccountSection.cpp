@@ -117,7 +117,7 @@ protected:
 private:
     void invalidate_text();
 
-    tk::Point disc_centre_local() const;
+    static tk::Point disc_centre_local();
 
     std::string display_name_;
     std::string user_id_;
@@ -232,7 +232,7 @@ void AccountSection::Content::invalidate_text()
     name_error_layout_.reset();
 }
 
-tk::Point AccountSection::Content::disc_centre_local() const
+tk::Point AccountSection::Content::disc_centre_local()
 {
     return {kAccountSectionPadX + kAvatarRadius, kAccountSectionPadY + kAvatarRadius};
 }

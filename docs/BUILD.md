@@ -161,6 +161,7 @@ All presets live in `CMakePresets.json`:
 
 `windows-debug`, `windows-release`, `windows-xwin-debug`,
 `windows-xwin-release` (Linux host, see above), `linux-debug`, `linux-release`,
+`linux-tidy` and `windows-xwin-tidy` (clang-tidy databases, below),
 `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
 `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`,
 `macos-appkit-appstore` (universal Mac App Store, below).
@@ -178,13 +179,13 @@ override (below) to install or package.
 Pass this alongside a `linux-*` preset (e.g. `-DTESSERACT_UI=qt6`) to build
 and install/package a single Linux backend instead of both.
 
-### macOS release stripping and symbolication
 **Compiler:** on Linux/BSD, `clang`/`clang++` are preferred over GCC when both
 are installed (`-DTESSERACT_PREFER_CLANG=OFF` opts out). An explicit
 `CC`/`CXX`, `-DCMAKE_CXX_COMPILER=` or a toolchain file always wins. An
 existing build directory keeps its cached compiler, so switch with
 `cmake --preset <name> --fresh`.
 
+### macOS release stripping and symbolication
 
 Release builds on macOS compile with `-gline-tables-only` (C++ and Rust). After
 linking, `dsymutil` writes `<build>/ui/macos/Tesseract.app.dSYM`, then
@@ -252,6 +253,34 @@ stops there: CI validates and uploads it (`package.yml` `macos-appstore`,
 For a TestFlight build without tagging, run Build Platform with
 `macos_appstore_upload`. `ITSAppUsesNonExemptEncryption` in the
 Info.plist must match your export-compliance answer in App Store Connect.
+
+## Static analysis (clang-tidy)
+
+`.clang-tidy` holds the check set. clang-tidy needs real translation units, so
+it uses its own build tree: the `linux-tidy` preset (and `windows-xwin-tidy` for
+the Win32 shell) turns off unity builds and PCH, otherwise
+`compile_commands.json` lists `Unity/` stubs instead of sources.
+
+```bash
+scripts/clang-tidy.py                                   # all of client/, ui/, tests/cpp/
+scripts/clang-tidy.py ui/shared/views --checks='bugprone-*'
+scripts/clang-tidy.py --preset windows-xwin-tidy ui/windows
+```
+
+The script configures the preset, builds only the generated headers (cxx
+bridge, icons, XDG protocol), runs `run-clang-tidy` and writes `raw.txt` and a
+de-duplicated `summary.txt` (counts per check and directory) to
+`build/<preset>/clang-tidy/`. `--fix` applies fix-its; run it on a clean tree and
+review the diff. Non-unity builds also surface missing `#include`s that unity
+batching and PCH hide, reported as `clang-diagnostic-error`.
+
+The tree is kept at zero findings and gated twice: the `clang_tidy_check` ctest
+(only registered in a non-unity, non-PCH tree, so
+`ctest --test-dir build/linux-tidy -R clang_tidy_check`; it assumes the generated
+headers exist, i.e. the tree has been built) and the `clang-tidy` CI workflow
+(`.github/workflows/tidy.yml`, pinned to LLVM 23). The Win32 shell is checked
+locally with `windows-xwin-tidy`. Disable a check only in `.clang-tidy`, with the
+reason in its header comment.
 
 ## Build internals
 

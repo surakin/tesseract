@@ -95,7 +95,8 @@ public:
         }
 
         const auto* bytes = reinterpret_cast<const char*>(samples);
-        const qsizetype len = static_cast<qsizetype>(sample_count * sizeof(std::int16_t));
+        const qsizetype len =
+            static_cast<qsizetype>(sample_count) * static_cast<qsizetype>(sizeof(std::int16_t));
         io_->write(bytes, len);
     }
 

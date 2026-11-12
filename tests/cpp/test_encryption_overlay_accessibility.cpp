@@ -23,7 +23,7 @@ namespace enc_overlay_a11y_test
 struct EncOverlayA11yStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    void run(Widget& root)
+    void run(Widget& root) const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         root.measure(lc, {800, 600});

@@ -16,7 +16,7 @@ TEST_CASE("available_commands lists me and shrug", "[slash]")
                 return &c;
             }
         }
-        return (const tesseract::SlashCommandDescriptor*)nullptr;
+        return static_cast<const tesseract::SlashCommandDescriptor*>(nullptr);
     };
 
     const auto* me = by_name("me");

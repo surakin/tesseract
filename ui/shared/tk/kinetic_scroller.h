@@ -61,7 +61,7 @@ public:
 private:
     struct Sample
     {
-        float dy;
+        float dy = 0.0f;
         std::chrono::steady_clock::time_point t;
     };
 

@@ -290,6 +290,7 @@ TEST_CASE("MessageListView body layout cache is memory-bounded", "[message_list]
     TkMessageListLayoutCacheStage st;
     MessageListView v;
     std::vector<MessageRowData> many;
+    many.reserve(400);
     for (int i = 0; i < 400; ++i)
     {
         many.push_back(make_rich("$m" + std::to_string(i), "body number " + std::to_string(i)));
@@ -1714,6 +1715,7 @@ TEST_CASE("a forwarded emote names the original sender; only the IRC line also n
         v.set_messages({row}, false);
         st.run(v, {0, 0, 600, 400});
         std::vector<std::string> out;
+        out.reserve(st.cf.shapes.size());
         for (const auto& s : st.cf.shapes)
         {
             out.push_back(s.second);

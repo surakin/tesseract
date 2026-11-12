@@ -110,14 +110,8 @@ void TimelineMediaController::handle_voice_scrub_at(const MessageRowData& row, f
     }
 
     float frac = (world_x - strip.x) / strip.w;
-    if (frac < 0.0f)
-    {
-        frac = 0.0f;
-    }
-    if (frac > 1.0f)
-    {
-        frac = 1.0f;
-    }
+    frac = std::max(frac, 0.0f);
+    frac = std::min(frac, 1.0f);
 
     // Resolve total duration: the sender's metadata if present, otherwise
     // whatever the backend has discovered after loading.
@@ -303,10 +297,7 @@ void TimelineMediaController::seek_active(std::int64_t offset_ms)
     // mirror, which is only refreshed by on_audio_progress()'s ~60ms tick and
     // so can be briefly stale relative to the backend's actual position.
     std::int64_t target = static_cast<std::int64_t>(audio_player_->position_ms()) + offset_ms;
-    if (target < 0)
-    {
-        target = 0;
-    }
+    target = std::max<std::int64_t>(target, 0);
     audio_player_->seek(static_cast<std::uint64_t>(target));
     playing_position_ms_ = static_cast<std::uint64_t>(target);
     on_audio_progress();
@@ -705,10 +696,7 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m, tk::Pain
     std::uint16_t wf_peak = 0;
     for (std::uint16_t v : m.waveform)
     {
-        if (v > wf_peak)
-        {
-            wf_peak = v;
-        }
+        wf_peak = std::max(v, wf_peak);
     }
     const float wf_norm = wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak) : 0.0f;
     auto amp_at = [&](int i) -> float
@@ -728,10 +716,7 @@ void TimelineMediaController::paint_voice_card(const MessageRowData& m, tk::Pain
     if (is_active_row && total > 0)
     {
         cursor_frac = static_cast<float>(playing_position_ms_) / static_cast<float>(total);
-        if (cursor_frac > 1.0f)
-        {
-            cursor_frac = 1.0f;
-        }
+        cursor_frac = std::min(cursor_frac, 1.0f);
     }
     const int cursor_bar = static_cast<int>(cursor_frac * bars);
 
@@ -835,10 +820,7 @@ void TimelineMediaController::paint_audio_card(const MessageRowData& m, tk::Pain
         if (is_active_row && total > 0)
         {
             fill_frac = static_cast<float>(playing_position_ms_) / static_cast<float>(total);
-            if (fill_frac > 1.0f)
-            {
-                fill_frac = 1.0f;
-            }
+            fill_frac = std::min(fill_frac, 1.0f);
         }
         if (fill_frac > 0.0f)
         {

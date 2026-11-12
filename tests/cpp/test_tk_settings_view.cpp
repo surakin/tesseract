@@ -28,15 +28,15 @@ struct TkSettingsViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(900, 700);
 
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    tk::PaintCtx paint_ctx()
+    tk::PaintCtx paint_ctx() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
-    void run(tk::Widget& root, tk::Rect bounds)
+    void run(tk::Widget& root, tk::Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});
@@ -633,7 +633,7 @@ TEST_CASE("AppearanceSection: the timeline width slider persists and reads out a
     {
         for (auto* l : labels)
         {
-            if (l->access_name().ends_with("%"))
+            if (l->access_name().ends_with('%'))
             {
                 return l->access_name();
             }

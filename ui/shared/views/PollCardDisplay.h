@@ -43,9 +43,9 @@ public:
 
     // Card height for the row at `col_w`, without painting. `factory` is used
     // only for text measurement.
-    float height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
-                 bool show_end) const;
-    float width(float col_w) const; // min(col_w, kPollCardMaxW)
+    static float height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
+                        bool show_end);
+    static float width(float col_w); // min(col_w, kPollCardMaxW)
 
     // Paints at (x, y); returns the bottom y. When `interactive`, records hit
     // rects (one per answer, plus the End poll button when `show_end`).
@@ -92,8 +92,8 @@ private:
         tk::Rect end_rect; // card-relative; empty when no button
     };
 
-    Layout layout_(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
-                   bool show_end) const;
+    static Layout layout_(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
+                          bool show_end);
 
     std::vector<Hit> geom_;
 };

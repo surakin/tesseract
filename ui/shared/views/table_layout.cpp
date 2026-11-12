@@ -285,7 +285,7 @@ std::string table_to_gfm(const BodyTable& table)
     out += emit_row(table.rows[0]);
 
     // GFM requires a delimiter row after the first (header) row.
-    out += "|";
+    out += '|';
     for (std::size_t c = 0; c < ncols; ++c)
     {
         switch (table.col_align[c])

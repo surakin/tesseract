@@ -176,7 +176,7 @@ private:
     void rebuild_rows_();
     void paint_grid_row_(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool hovered);
     void paint_cell_(tk::PaintCtx& ctx, tk::Rect cell, const MessageRowData& item);
-    void activate_item_(const MessageRowData& item);
+    void activate_item_(const MessageRowData& item) const;
     // Called by MediaGridList when a press/release lands on the same row;
     // resolves the column from `world` and activates that cell.
     void handle_cell_pointer_up_(std::size_t row_idx, tk::Point world);

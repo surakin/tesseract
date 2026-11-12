@@ -310,7 +310,7 @@ void SpaceAddRoomList::refresh()
             // Spaces (including this one) aren't offered as addable
             // candidates — nesting a space as a child is out of scope for
             // this management UI.
-            if (!r.is_space && !excluded_ids_.count(r.id))
+            if (!r.is_space && !excluded_ids_.contains(r.id))
             {
                 all_candidates_.push_back(std::move(r));
             }
@@ -521,7 +521,7 @@ tk::DragVisual SpaceAddRoomList::build_drag_visual_(const tesseract::RoomInfo& r
     return visual;
 }
 
-std::string SpaceAddRoomList::tooltip_text_(const tesseract::RoomInfo& room) const
+std::string SpaceAddRoomList::tooltip_text_(const tesseract::RoomInfo& room)
 {
     std::string text = room.name.empty() ? room.id : room.name;
     if (!room.topic.empty())

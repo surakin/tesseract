@@ -110,7 +110,7 @@ struct PopupsRig
     }
 
     // Simulate the user typing `t` (native change event).
-    void type(const std::string& t)
+    void type(const std::string& t) const
     {
         host.native->text_ = t;
         host.native->on_changed(t);

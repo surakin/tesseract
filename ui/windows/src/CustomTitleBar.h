@@ -76,7 +76,7 @@ public:
     // over-extends the window rect slightly past the monitor's visible
     // bounds to hide the resize border, and zeroing the top unconditionally
     // would let our own content spill into that hidden strip.
-    void adjust_nccalcsize(HWND hwnd, WPARAM wParam, LPARAM lParam) const;
+    static void adjust_nccalcsize(HWND hwnd, WPARAM wParam, LPARAM lParam);
 
     // Give DWM first refusal on non-client mouse messages so Snap Layouts'
     // hover flyout keeps working. Call at the top of the WM_NCHITTEST /
@@ -114,7 +114,7 @@ public:
     // (the hit-test code, same convention as WM_NCLBUTTONUP) and lParam
     // (screen coords, used as the popup menu's anchor point). Returns true
     // (menu shown) only when ht is HTCAPTION.
-    bool show_system_menu(HWND hwnd, WPARAM ht, LPARAM lParam) const;
+    static bool show_system_menu(HWND hwnd, WPARAM ht, LPARAM lParam);
 
     // client_rc is the window's full client rect (as from GetClientRect);
     // only the top height_px() of it is painted. Not const: drives the

@@ -5,6 +5,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -260,7 +261,7 @@ void SkinTonePopover::paint(tk::PaintCtx& ctx)
 
 void SkinTonePopover::pick_(int index)
 {
-    if (index < 0 || index >= static_cast<int>(buttons_.size()))
+    if (index < 0 || std::cmp_greater_equal(index, buttons_.size()))
     {
         return;
     }

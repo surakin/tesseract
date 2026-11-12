@@ -45,6 +45,7 @@ tk::Widget* find_clickable(tk::Widget& w, const std::string& name)
 std::vector<std::string> names(const std::vector<const Entry*>& v)
 {
     std::vector<std::string> out;
+    out.reserve(v.size());
     for (const auto* e : v)
     {
         out.push_back(e->name);

@@ -10,7 +10,7 @@ TEST_CASE("sanitize_token keeps alphanumerics and replaces the rest", "[linux_up
 {
     CHECK(sanitize_token("@alice:example.org") == "_alice_example_org");
     CHECK(sanitize_token("abc123") == "abc123");
-    CHECK(sanitize_token("") == "");
+    CHECK(sanitize_token("").empty());
 }
 
 TEST_CASE("normalize_gateway_url accepts https endpoints", "[linux_up]")

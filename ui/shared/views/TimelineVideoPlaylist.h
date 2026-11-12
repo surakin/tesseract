@@ -93,7 +93,7 @@ public:
     }
     bool has(const std::string& event_id) const
     {
-        return players_.count(event_id) != 0;
+        return players_.contains(event_id);
     }
 
     // Create + start an inline player for `info` (the former

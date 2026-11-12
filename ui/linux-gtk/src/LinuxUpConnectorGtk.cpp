@@ -58,9 +58,9 @@ struct UpSharedBusGtk
         routes_.erase(token);
     }
 
-    std::string find_distributor(GDBusConnection* bus);
-    void distributor_call(GDBusConnection* bus, const char* method, const char* svc,
-                          const std::string& token);
+    static std::string find_distributor(GDBusConnection* bus);
+    static void distributor_call(GDBusConnection* bus, const char* method, const char* svc,
+                                 const std::string& token);
 
     void dispatch_new_endpoint(const char* token, const char* endpoint)
     {

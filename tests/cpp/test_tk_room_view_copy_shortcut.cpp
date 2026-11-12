@@ -25,7 +25,7 @@ namespace
 struct TkRoomViewCopyShortcutStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(1000, 700);
-    void run(Widget& root)
+    void run(Widget& root) const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         root.measure(lc, {1000, 700});

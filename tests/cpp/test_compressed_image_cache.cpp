@@ -100,6 +100,7 @@ TEST_CASE("concurrent get/put stays consistent", "[compressed-image-cache]")
     std::atomic<bool> go{false};
     std::vector<std::thread> threads;
 
+    threads.reserve(8);
     for (int t = 0; t < 8; ++t)
     {
         threads.emplace_back(

@@ -16,15 +16,15 @@ namespace
 struct TkDevicesSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    tk::PaintCtx paint_ctx()
+    tk::PaintCtx paint_ctx() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
-    void run(tk::Widget& root, tk::Rect bounds)
+    void run(tk::Widget& root, tk::Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});
@@ -153,6 +153,7 @@ namespace
 std::vector<tesseract::Client::Device> many_devices(int n)
 {
     std::vector<tesseract::Client::Device> devs;
+    devs.reserve(n);
     for (int i = 0; i < n; ++i)
     {
         devs.push_back(

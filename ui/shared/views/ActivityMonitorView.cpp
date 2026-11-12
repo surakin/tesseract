@@ -175,7 +175,7 @@ std::string ActivityMonitorView::status_text_(const tesseract::ActivityEntry& e)
     return tk::trf(tk::tr("{0} ago"), {format_duration(now_ms_ - e.last_finished_ms)});
 }
 
-std::string ActivityMonitorView::secondary_text_(const tesseract::ActivityEntry& e) const
+std::string ActivityMonitorView::secondary_text_(const tesseract::ActivityEntry& e)
 {
     std::string out = translated_kind(e.kind);
     if (e.run_count > 0)

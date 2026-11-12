@@ -19,11 +19,11 @@ namespace
 struct TkRoomViewThreadCallbacksStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});

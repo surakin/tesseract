@@ -37,7 +37,8 @@ inline VideoFrame downscale_bgra(VideoFrame src, int max_w, int max_h)
     {
         return src;
     }
-    const double s = std::min(double(max_w) / src.w, double(max_h) / src.h);
+    const double s =
+        std::min(static_cast<double>(max_w) / src.w, static_cast<double>(max_h) / src.h);
     const int tw = std::max(1, static_cast<int>(src.w * s));
     const int th = std::max(1, static_cast<int>(src.h * s));
     VideoFrame out;
@@ -47,12 +48,14 @@ inline VideoFrame downscale_bgra(VideoFrame src, int max_w, int max_h)
     out.bgra.resize(static_cast<std::size_t>(tw) * th * 4);
     for (int ty = 0; ty < th; ++ty)
     {
-        const int sy0 = static_cast<int>(std::int64_t(ty) * src.h / th);
-        const int sy1 = std::max(sy0 + 1, static_cast<int>(std::int64_t(ty + 1) * src.h / th));
+        const int sy0 = static_cast<int>(static_cast<std::int64_t>(ty) * src.h / th);
+        const int sy1 =
+            std::max(sy0 + 1, static_cast<int>(static_cast<std::int64_t>(ty + 1) * src.h / th));
         for (int tx = 0; tx < tw; ++tx)
         {
-            const int sx0 = static_cast<int>(std::int64_t(tx) * src.w / tw);
-            const int sx1 = std::max(sx0 + 1, static_cast<int>(std::int64_t(tx + 1) * src.w / tw));
+            const int sx0 = static_cast<int>(static_cast<std::int64_t>(tx) * src.w / tw);
+            const int sx1 =
+                std::max(sx0 + 1, static_cast<int>(static_cast<std::int64_t>(tx + 1) * src.w / tw));
             std::uint32_t b = 0, g = 0, r = 0, a = 0, n = 0;
             for (int sy = sy0; sy < sy1; ++sy)
             {

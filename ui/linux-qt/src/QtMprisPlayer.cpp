@@ -73,31 +73,31 @@ public:
     {
     }
 
-    bool canQuit() const
+    static bool canQuit()
     {
         return false;
     }
-    bool canRaise() const
+    static bool canRaise()
     {
         return false;
     }
-    bool hasTrackList() const
+    static bool hasTrackList()
     {
         return false;
     }
-    QString identity() const
+    static QString identity()
     {
         return QStringLiteral("Tesseract");
     }
-    QString desktopEntry() const
+    static QString desktopEntry()
     {
         return QStringLiteral("tesseract-matrix");
     }
-    QStringList supportedUriSchemes() const
+    static QStringList supportedUriSchemes()
     {
         return {};
     }
-    QStringList supportedMimeTypes() const
+    static QStringList supportedMimeTypes()
     {
         return {};
     }
@@ -151,7 +151,7 @@ public:
         }
         return np.is_playing ? QStringLiteral("Playing") : QStringLiteral("Paused");
     }
-    double rate() const
+    static double rate()
     {
         return 1.0;
     }
@@ -159,7 +159,7 @@ public:
     {
         return build_metadata(account_manager_->media_playback_hub().current());
     }
-    double volume() const
+    static double volume()
     {
         return 1.0;
     }
@@ -169,20 +169,20 @@ public:
                    account_manager_->media_playback_hub().current().position_ms) *
                1000;
     }
-    double minimumRate() const
+    static double minimumRate()
     {
         return 1.0;
     }
-    double maximumRate() const
+    static double maximumRate()
     {
         return 1.0;
     }
     // No playlist concept — rooms/messages aren't a linear playlist.
-    bool canGoNext() const
+    static bool canGoNext()
     {
         return false;
     }
-    bool canGoPrevious() const
+    static bool canGoPrevious()
     {
         return false;
     }
@@ -198,7 +198,7 @@ public:
     {
         return loaded_();
     }
-    bool canControl() const
+    static bool canControl()
     {
         return true;
     }
@@ -255,7 +255,7 @@ struct QtMprisPlayer::Impl
     QObject* host = nullptr;
     tesseract::AccountManager* account_manager = nullptr;
 
-    void emit_properties_changed()
+    void emit_properties_changed() const
     {
         const auto& np = account_manager->media_playback_hub().current();
         const bool loaded = np.kind != tesseract::NowPlaying::Kind::None;

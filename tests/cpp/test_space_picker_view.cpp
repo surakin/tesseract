@@ -29,7 +29,7 @@ struct PickerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(SpacePickerView::kWidth, 400);
 
-    void layout(tk::Widget& w)
+    void layout(tk::Widget& w) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         w.measure(lc, {SpacePickerView::kWidth, 400});
@@ -194,8 +194,8 @@ TEST_CASE("picker: dragging a tab down uses the host drag and reorders on drop",
     s.host.dispatch_pointer_up(end);
 
     CHECK(s.moved == "!a");
-    CHECK(s.before == "");  // now last
-    CHECK(s.selected == 0); // a drag is not a click
+    CHECK(s.before.empty()); // now last
+    CHECK(s.selected == 0);  // a drag is not a click
     CHECK_FALSE(s.host.is_dragging());
     CHECK(s.picker->drop_slot_for_test() == -1);
     REQUIRE(s.picker->entries().size() == 3);
@@ -300,6 +300,7 @@ TEST_CASE("picker: wheel scrolls tall tab lists and clamps at both ends", "[spac
     auto owner = tk::create_root_widget<SpacePickerView>(nullptr);
     SpacePickerView& v = *owner;
     std::vector<SpacePickerEntry> es;
+    es.reserve(30);
     for (int i = 0; i < 30; ++i)
     {
         es.push_back(entry("!s" + std::to_string(i), "Space " + std::to_string(i)));
@@ -331,6 +332,7 @@ TEST_CASE("picker: clicks hit the right tab after scrolling", "[spacepicker]")
     auto owner = tk::create_root_widget<SpacePickerView>(nullptr);
     SpacePickerView& v = *owner;
     std::vector<SpacePickerEntry> es;
+    es.reserve(30);
     for (int i = 0; i < 30; ++i)
     {
         es.push_back(entry("!s" + std::to_string(i), "Space " + std::to_string(i)));

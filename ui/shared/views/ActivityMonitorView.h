@@ -74,7 +74,7 @@ private:
     };
 
     std::string status_text_(const tesseract::ActivityEntry& e) const;
-    std::string secondary_text_(const tesseract::ActivityEntry& e) const;
+    static std::string secondary_text_(const tesseract::ActivityEntry& e);
 
     std::vector<Row> rows_;
     std::size_t job_count_ = 0;

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 namespace tk
 {
 
@@ -26,10 +27,7 @@ void TabBar::add_tab(std::string room_id, std::string display_name, const Image*
     {
         set_visible(true);
     }
-    if (active_idx_ < 0)
-    {
-        active_idx_ = 0;
-    }
+    active_idx_ = std::max(active_idx_, 0);
 }
 
 void TabBar::remove_tab(const std::string& room_id)
@@ -54,7 +52,7 @@ void TabBar::remove_tab(const std::string& room_id)
     {
         --active_idx_;
     }
-    if (active_idx_ >= static_cast<int>(items_.size()))
+    if (std::cmp_greater_equal(active_idx_, items_.size()))
     {
         active_idx_ = static_cast<int>(items_.size()) - 1;
     }
@@ -67,7 +65,7 @@ void TabBar::remove_tab(const std::string& room_id)
 
 void TabBar::set_active(const std::string& room_id)
 {
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         if (items_[i].room_id == room_id)
         {
@@ -135,7 +133,7 @@ bool TabBar::close_button_hit_(int idx, Point local) const
 
 int TabBar::tab_at_(float scroll_local) const
 {
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         if (scroll_local >= items_[i].x && scroll_local < items_[i].x + items_[i].width)
         {
@@ -148,14 +146,8 @@ int TabBar::tab_at_(float scroll_local) const
 void TabBar::clamp_scroll_()
 {
     float max_s = std::max(0.f, total_width_ - bounds_.w);
-    if (scroll_x_ < 0.f)
-    {
-        scroll_x_ = 0.f;
-    }
-    if (scroll_x_ > max_s)
-    {
-        scroll_x_ = max_s;
-    }
+    scroll_x_ = std::max(scroll_x_, 0.f);
+    scroll_x_ = std::min(scroll_x_, max_s);
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────────
@@ -232,7 +224,7 @@ void TabBar::paint_before_children(PaintCtx& ctx)
 
     const bool show_close = (static_cast<int>(items_.size()) > 1);
 
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         auto& t = items_[i];
 
@@ -356,7 +348,7 @@ bool TabBar::on_pointer_move(Point local)
     float sl = local.x + scroll_x_;
     int hover_idx = tab_at_(sl);
     const bool show_close = (static_cast<int>(items_.size()) > 1);
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         items_[i].hovered = (i == hover_idx);
         items_[i].close_hovered = false;

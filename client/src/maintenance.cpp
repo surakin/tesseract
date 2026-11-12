@@ -67,7 +67,7 @@ LogoutAllReport logout_all_accounts()
         // Wipe locally regardless: the user asked for these accounts to be
         // gone from this machine even if the homeserver is unreachable.
         SessionStore::clear_account(uid);
-        if (!settings.recovery_key_unsaved.count(uid))
+        if (!settings.recovery_key_unsaved.contains(uid))
         {
             SecretStore::remove_recovery_key(uid);
             settings_changed |= settings.save_key_reminder_dismissals.erase(uid) > 0;

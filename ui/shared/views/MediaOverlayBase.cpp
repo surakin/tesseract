@@ -255,13 +255,14 @@ void MediaOverlayBase::paint_scrim_(tk::PaintCtx& ctx)
 
 void MediaOverlayBase::draw_icon_(tk::PaintCtx& ctx, tk::Rect box, float logical_px,
                                   std::unique_ptr<tk::Image>& cache,
-                                  std::span<const std::uint8_t> svg, tk::Color tint)
+                                  std::span<const std::uint8_t> svg, tk::Color tint) const
 {
     auto& cv = ctx.canvas;
     if (!cache)
     {
-        cache = tk::rasterize_svg(ctx.factory, svg,
-                                  std::max(1, int(std::lround(logical_px * icon_scale_))), tint);
+        cache = tk::rasterize_svg(
+            ctx.factory, svg, std::max(1, static_cast<int>(std::lround(logical_px * icon_scale_))),
+            tint);
     }
     if (cache)
     {

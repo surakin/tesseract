@@ -110,7 +110,7 @@ public:
                         std::filesystem::path screenshot_dir = {}
 #endif
     );
-    ~MainWindow();
+    ~MainWindow() override;
 
     bool create(int nCmdShow);
     Win32Taskbar& taskbar()
@@ -269,9 +269,9 @@ private:
     // see RoomListView / MessageListView. The legacy DRAWITEM hooks
     // are gone.
 
-    void apply_default_font(HWND);                // SegoeUI / SegoeUI Variable
-    void on_system_theme_changed();               // re-apply DWM + invalidate
-    void paint_main_background(HDC, const RECT&); // compose card etc.
+    static void apply_default_font(HWND);                // SegoeUI / SegoeUI Variable
+    void on_system_theme_changed();                      // re-apply DWM + invalidate
+    static void paint_main_background(HDC, const RECT&); // compose card etc.
     void show_user_context_menu_(int screen_x, int screen_y);
 
     float dip_scale() const

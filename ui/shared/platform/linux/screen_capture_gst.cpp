@@ -158,7 +158,7 @@ private:
                 const auto stride_uv = (w + 1) / 2;
                 const auto h_uv = (h + 1) / 2;
 
-                tk::ScreenCapture::Frame f;
+                tk::ScreenCapture::Frame f{};
                 f.y = map.data;
                 f.u = map.data + stride_y * h;
                 f.v = map.data + stride_y * h + stride_uv * h_uv;

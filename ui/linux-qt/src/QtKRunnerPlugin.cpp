@@ -229,7 +229,7 @@ public slots:
         account_manager_->search_backend().activate(id, kind);
     }
 
-    RemoteActions Actions()
+    static RemoteActions Actions()
     {
         return {}; // no auxiliary actions in v1 — bare Match/Run only
     }

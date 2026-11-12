@@ -83,7 +83,7 @@ private:
 
     const ChildRoomEntry* entry_at_(std::size_t index) const;
     tk::DragVisual build_drag_visual_(const ChildRoomEntry& entry);
-    std::string tooltip_text_(const ChildRoomEntry& entry) const;
+    static std::string tooltip_text_(const ChildRoomEntry& entry);
 
     std::vector<ChildRoomEntry> children_;
     AvatarProvider avatar_provider_;

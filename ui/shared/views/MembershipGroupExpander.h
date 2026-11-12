@@ -27,7 +27,7 @@ class MembershipGroupExpander
 public:
     bool is_expanded(const std::string& group_key) const
     {
-        return expanded_.count(group_key) > 0;
+        return expanded_.contains(group_key);
     }
 
     void toggle(const std::string& group_key)

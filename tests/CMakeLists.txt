@@ -620,3 +620,16 @@ if(Python3_Interpreter_FOUND AND CLANG_FORMAT_FOR_TESTS)
                 --skip-wrong-version)
     set_tests_properties(cxx_format_check PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+
+# clang-tidy is clean (see scripts/clang-tidy.py and .clang-tidy). It needs a
+# non-unity, non-PCH tree, so it only runs in the linux-tidy preset's build
+# (`ctest --test-dir build/linux-tidy -R clang_tidy_check`) and is skipped
+# (exit 77) everywhere else, or when clang-tidy is not installed.
+find_program(CLANG_TIDY_FOR_TESTS clang-tidy)
+if(Python3_Interpreter_FOUND AND CLANG_TIDY_FOR_TESTS AND NOT TESSERACT_UNITY_BUILD
+   AND NOT TESSERACT_ENABLE_PCH AND UNIX AND NOT APPLE)
+    add_test(NAME clang_tidy_check
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/clang-tidy.py
+                --build-dir ${CMAKE_BINARY_DIR} --no-build --skip-unsuitable)
+    set_tests_properties(clang_tidy_check PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 1800)
+endif()
