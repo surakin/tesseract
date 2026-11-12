@@ -11,7 +11,7 @@ struct TkFormLayoutStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 800);
 
-    tk::LayoutCtx lc()
+    tk::LayoutCtx lc() const
     {
         return {surface->factory(), tk::Theme::light()};
     }

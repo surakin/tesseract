@@ -50,7 +50,7 @@ public:
     // suggestion that lives at the current selected_index_.
     const SlashCommandSuggestion& suggestion_at(int i) const
     {
-        assert(i >= 0 && i < (int)suggestions_.size());
+        assert(i >= 0 && std::cmp_less(i, suggestions_.size()));
         return suggestions_[i];
     }
 

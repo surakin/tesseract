@@ -568,7 +568,7 @@ private:
         push_if_changed(data, widget, node);
     }
 
-    void push_if_changed(NodeData* data, GtkWidget* widget, const AccessNode& node)
+    static void push_if_changed(NodeData* data, GtkWidget* widget, const AccessNode& node)
     {
         const bool first = !data->pushed_once;
         const bool disabled = node_disabled(node);

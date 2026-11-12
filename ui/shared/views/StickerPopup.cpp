@@ -18,7 +18,7 @@ void StickerPopup::set_status(std::string message)
 
 void StickerPopup::paint_item(tk::PaintCtx& ctx, int i, tk::Rect cell)
 {
-    const auto& s = results_[std::size_t(i)];
+    const auto& s = results_[static_cast<std::size_t>(i)];
     const tk::Image* img = image_provider_ ? image_provider_(s) : nullptr;
     if (!img)
     {
@@ -36,7 +36,7 @@ void StickerPopup::accept_item(int i)
 {
     if (on_accepted)
     {
-        on_accepted(results_[std::size_t(i)]);
+        on_accepted(results_[static_cast<std::size_t>(i)]);
     }
 }
 

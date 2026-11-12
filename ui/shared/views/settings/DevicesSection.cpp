@@ -53,7 +53,7 @@ std::string format_relative_ts(std::uint64_t ts_ms)
     }
 
     const auto delta_ms =
-        (now > static_cast<std::int64_t>(ts_ms)) ? (now - static_cast<std::int64_t>(ts_ms)) : 0;
+        (std::cmp_greater(now, ts_ms)) ? (now - static_cast<std::int64_t>(ts_ms)) : 0;
     const auto secs = delta_ms / 1000;
     if (secs < 60)
     {

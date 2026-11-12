@@ -84,7 +84,7 @@ struct MemberMenuStage
         panel.arrange(lc, {0, 0, 1000, 800});
     }
 
-    tesseract::views::RoomInfoPanelBody& body()
+    tesseract::views::RoomInfoPanelBody& body() const
     {
         return *panel.body_for_test();
     }

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -637,7 +638,7 @@ void InviteDialog::remove_pill_(const std::string& user_id)
         }
         const std::string t = search_field_->text();
         int end = p.start + kInvitePillBytes;
-        if (end < static_cast<int>(t.size()) && t[static_cast<std::size_t>(end)] == ' ')
+        if (std::cmp_less(end, t.size()) && t[static_cast<std::size_t>(end)] == ' ')
         {
             ++end;
         }
@@ -835,7 +836,7 @@ void InviteDialog::rebuild_rows_()
     relayout_();
 }
 
-void InviteDialog::relayout_()
+void InviteDialog::relayout_() const
 {
     if (on_layout_changed)
     {

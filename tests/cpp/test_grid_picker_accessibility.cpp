@@ -26,7 +26,7 @@ namespace
 struct GridPickerAccessibilityStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 360);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
@@ -146,7 +146,7 @@ TEST_CASE("EmojiPicker's tab strip is a TabList of named Tabs, with the "
         CHECK(tab.role == Role::Tab);
         CHECK_FALSE(tab.name.empty()); // every builtin category has a name
         CHECK(tab.row_index >= 0);
-        CHECK(tab.row_set_size == static_cast<int>(tablist->children.size()));
+        CHECK(std::cmp_equal(tab.row_set_size, tablist->children.size()));
         if (tab.state.selected)
         {
             ++selected_count;

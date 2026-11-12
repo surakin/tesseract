@@ -46,7 +46,7 @@ MessageRowData make_day_separator(std::uint64_t ts)
 struct DateBadgeStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
-    void run(tk::Widget& root, tk::Rect bounds)
+    void run(tk::Widget& root, tk::Rect bounds) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});

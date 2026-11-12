@@ -12,11 +12,11 @@ namespace
 struct TkRoomPermissionsSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    tk::PaintCtx paint_ctx()
+    tk::PaintCtx paint_ctx() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }

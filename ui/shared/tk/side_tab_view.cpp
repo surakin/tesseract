@@ -1,6 +1,7 @@
 #include "side_tab_view.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace tk
 {
@@ -59,7 +60,7 @@ void SideTabView::add_bottom_tab(std::string label, std::unique_ptr<Widget> cont
 
 bool SideTabView::tab_visible(int idx) const
 {
-    if (idx < 0 || idx >= static_cast<int>(tabs_.size()))
+    if (idx < 0 || std::cmp_greater_equal(idx, tabs_.size()))
     {
         return false;
     }
@@ -68,7 +69,7 @@ bool SideTabView::tab_visible(int idx) const
 
 void SideTabView::set_tab_visible(int idx, bool visible)
 {
-    if (idx < 0 || idx >= static_cast<int>(tabs_.size()))
+    if (idx < 0 || std::cmp_greater_equal(idx, tabs_.size()))
     {
         return;
     }
@@ -84,7 +85,7 @@ void SideTabView::set_tab_visible(int idx, bool visible)
         if (idx == selected_idx_)
         {
             selected_idx_ = -1;
-            for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+            for (int i = 0; std::cmp_less(i, tabs_.size()); ++i)
             {
                 if (tabs_[i].visible)
                 {
@@ -115,7 +116,7 @@ void SideTabView::set_tab_visible(int idx, bool visible)
 
 void SideTabView::select(int idx)
 {
-    if (idx < 0 || idx >= static_cast<int>(tabs_.size()))
+    if (idx < 0 || std::cmp_greater_equal(idx, tabs_.size()))
     {
         return;
     }
@@ -125,7 +126,7 @@ void SideTabView::select(int idx)
     }
 
     // Hide old content.
-    if (selected_idx_ >= 0 && selected_idx_ < static_cast<int>(tabs_.size()))
+    if (selected_idx_ >= 0 && std::cmp_less(selected_idx_, tabs_.size()))
     {
         tabs_[selected_idx_].content->set_visible(false);
     }
@@ -154,7 +155,7 @@ Size SideTabView::measure(LayoutCtx& ctx, Size constraints)
 
     // Measure the selected content widget so we report a sensible height.
     float content_h = 0.0f;
-    if (selected_idx_ >= 0 && selected_idx_ < static_cast<int>(tabs_.size()))
+    if (selected_idx_ >= 0 && std::cmp_less(selected_idx_, tabs_.size()))
     {
         Widget* w = tabs_[selected_idx_].content;
         Size cs = w->measure(ctx, {content_w, avail_h});
@@ -185,7 +186,7 @@ void SideTabView::arrange(LayoutCtx& ctx, Rect bounds)
 
     // Ensure TextLayout caches are ready for the sidebar labels.
     const float label_max_w = kSidebarWidth - kTabHPad * 2 - kTabInset * 2;
-    for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, tabs_.size()); ++i)
     {
         ensure_layout_(ctx, i, label_max_w);
     }
@@ -369,7 +370,7 @@ bool SideTabView::on_pointer_move(Point local)
     {
         return false;
     }
-    for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, tabs_.size()); ++i)
     {
         tabs_[i].hovered = (i == hit);
     }
@@ -502,7 +503,7 @@ float SideTabView::max_top_scroll_() const
 
 int SideTabView::visible_slot_(int idx) const
 {
-    if (idx < 0 || idx >= static_cast<int>(tabs_.size()) || !tabs_[idx].visible)
+    if (idx < 0 || std::cmp_greater_equal(idx, tabs_.size()) || !tabs_[idx].visible)
     {
         return -1;
     }
@@ -521,7 +522,7 @@ int SideTabView::visible_slot_(int idx) const
 int SideTabView::tab_at_visible_slot_(int slot, bool bottom) const
 {
     int seen = 0;
-    for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, tabs_.size()); ++i)
     {
         if (tabs_[i].bottom != bottom || !tabs_[i].visible)
         {
@@ -538,7 +539,7 @@ int SideTabView::tab_at_visible_slot_(int slot, bool bottom) const
 
 void SideTabView::scroll_tab_into_view_(int idx)
 {
-    if (idx < 0 || idx >= static_cast<int>(tabs_.size()) || tabs_[idx].bottom)
+    if (idx < 0 || std::cmp_greater_equal(idx, tabs_.size()) || tabs_[idx].bottom)
     {
         return; // bottom group never scrolls — always pinned/visible
     }

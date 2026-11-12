@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace tk
 {
@@ -611,7 +612,7 @@ void ListView::capture_anchor_()
     // Anchor the row under the mouse so it stays pixel-stable; with no pointer
     // over the list, fall back to the top-of-viewport row.
     std::size_t idx;
-    if (hovered_index_ >= 0 && static_cast<std::size_t>(hovered_index_) < measured)
+    if (hovered_index_ >= 0 && std::cmp_less(hovered_index_, measured))
     {
         idx = static_cast<std::size_t>(hovered_index_);
     }
@@ -835,8 +836,8 @@ void ListView::paint(PaintCtx& ctx)
             {
                 continue;
             }
-            bool selected = (static_cast<int>(i) == selected_index_);
-            bool hovered = (static_cast<int>(i) == hovered_index_);
+            bool selected = (std::cmp_equal(i, selected_index_));
+            bool hovered = (std::cmp_equal(i, hovered_index_));
             adapter_->paint_row(i, ctx, row_bounds, selected, hovered);
         }
     }
@@ -1003,7 +1004,7 @@ int GridView::cols(float available_w) const
     return std::max(1, c);
 }
 
-int GridView::rows(int n_cells, int cols_) const
+int GridView::rows(int n_cells, int cols_)
 {
     if (cols_ <= 0 || n_cells <= 0)
     {
@@ -1565,7 +1566,8 @@ bool ListView::on_key_down(const KeyEvent& e)
 
 Rect ListView::context_anchor_rect() const
 {
-    if (!adapter_ || selected_index_ < 0 || selected_index_ >= static_cast<int>(adapter_->count()))
+    if (!adapter_ || selected_index_ < 0 ||
+        std::cmp_greater_equal(selected_index_, adapter_->count()))
     {
         return bounds_;
     }

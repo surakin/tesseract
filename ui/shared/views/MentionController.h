@@ -104,7 +104,7 @@ public:
 
 private:
     // Selection-only repaint: hooks_.repaint_selection if set, else hooks_.repaint.
-    void repaint_selection_();
+    void repaint_selection_() const;
     void accept(const MentionCandidate& c);
 
     tk::TextArea* text_area_;

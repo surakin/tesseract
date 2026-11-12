@@ -30,11 +30,11 @@ struct Stage
     {
     }
 
-    tk::LayoutCtx lc()
+    tk::LayoutCtx lc() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    tk::PaintCtx pc()
+    tk::PaintCtx pc() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }

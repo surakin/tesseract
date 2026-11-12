@@ -133,7 +133,7 @@ void StickerController::accept(const tesseract::ImagePackImage& sticker)
     }
 }
 
-void StickerController::repaint_selection_()
+void StickerController::repaint_selection_() const
 {
     if (hooks_.repaint_selection)
     {

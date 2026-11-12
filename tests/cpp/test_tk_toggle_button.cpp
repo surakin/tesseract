@@ -25,7 +25,7 @@ struct ToggleStage
         btn->arrange(lc, {10, 10, 32, 32});
     }
 
-    void click()
+    void click() const
     {
         const Point p{26, 26};
         Widget* claimer = btn->dispatch_pointer_down(p);

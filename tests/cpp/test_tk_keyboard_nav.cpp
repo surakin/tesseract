@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 // Keyboard-operability framework (a11y Phase 5): focus scoping for
 // registered popups and modal dialogs, the context-menu key, keyboard
@@ -523,7 +524,7 @@ MessageRowData kbd_text_row(int i)
 struct TimelineStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});
@@ -621,7 +622,7 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
 
     const auto names = v.keyboard_part_names();
     int reply_at = -1;
-    for (int i = 0; i < static_cast<int>(names.size()); ++i)
+    for (int i = 0; std::cmp_less(i, names.size()); ++i)
     {
         if (names[static_cast<std::size_t>(i)] == "Reply")
         {
@@ -737,7 +738,7 @@ TEST_CASE("Timeline: a part added before the chosen one doesn't redirect Enter",
     host.request_focus(&v);
     const auto names = v.keyboard_part_names();
     int reply_at = -1;
-    for (int i = 0; i < static_cast<int>(names.size()); ++i)
+    for (int i = 0; std::cmp_less(i, names.size()); ++i)
     {
         if (names[static_cast<std::size_t>(i)] == "Reply")
         {

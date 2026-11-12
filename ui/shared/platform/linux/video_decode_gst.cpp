@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace tk
@@ -59,7 +60,7 @@ struct DecodeCtx
 static GstFlowReturn on_new_sample_(GstAppSink* sink, gpointer user_data)
 {
     auto* ctx = static_cast<DecodeCtx*>(user_data);
-    if (static_cast<int>(ctx->frames.size()) >= ctx->frame_cap)
+    if (std::cmp_greater_equal(ctx->frames.size(), ctx->frame_cap))
     {
         return GST_FLOW_OK; // silently drop excess frames
     }

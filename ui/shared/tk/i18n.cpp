@@ -465,8 +465,8 @@ bool load_mo(Catalog& cat, const std::string& path)
     uint32_t trans_offset = read_u32(buf + 16, swap);
 
     // Sanity: each table entry is 8 bytes (length + offset)
-    if ((uint64_t)orig_offset + (uint64_t)num_strings * 8 > size ||
-        (uint64_t)trans_offset + (uint64_t)num_strings * 8 > size)
+    if (static_cast<uint64_t>(orig_offset) + static_cast<uint64_t>(num_strings) * 8 > size ||
+        static_cast<uint64_t>(trans_offset) + static_cast<uint64_t>(num_strings) * 8 > size)
     {
         return false;
     }
@@ -478,7 +478,8 @@ bool load_mo(Catalog& cat, const std::string& path)
         uint32_t trans_len = read_u32(buf + trans_offset + i * 8, swap);
         uint32_t trans_off = read_u32(buf + trans_offset + i * 8 + 4, swap);
 
-        if ((uint64_t)orig_off + orig_len > size || (uint64_t)trans_off + trans_len > size)
+        if (static_cast<uint64_t>(orig_off) + orig_len > size ||
+            static_cast<uint64_t>(trans_off) + trans_len > size)
         {
             continue;
         }

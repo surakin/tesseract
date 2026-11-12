@@ -4,6 +4,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -355,7 +356,7 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         int total = owner_.tab_count();
-        if (total <= 0 || index >= static_cast<std::size_t>(total))
+        if (total <= 0 || std::cmp_greater_equal(index, total))
         {
             return false;
         }
@@ -365,7 +366,7 @@ public:
     tk::Rect access_rect_for_widget_row(std::size_t index) const override
     {
         int total = owner_.tab_count();
-        if (total <= 0 || index >= static_cast<std::size_t>(total))
+        if (total <= 0 || std::cmp_greater_equal(index, total))
         {
             return {};
         }

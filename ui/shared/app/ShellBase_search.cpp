@@ -3,6 +3,7 @@
 #include "views/SettingsView.h"
 #include <algorithm>
 #include <ctime>
+#include <utility>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -321,7 +322,7 @@ void ShellBase::handle_in_room_search_results_ui_(std::uint64_t request_id,
     // Save focused event id so we can restore focus after results update.
     std::string prev_focused;
     if (in_room_search_current_ >= 0 &&
-        in_room_search_current_ < static_cast<int>(in_room_search_matches_.size()))
+        std::cmp_less(in_room_search_current_, in_room_search_matches_.size()))
     {
         prev_focused =
             in_room_search_matches_[static_cast<std::size_t>(in_room_search_current_)].event_id;
@@ -748,7 +749,7 @@ void ShellBase::handle_thread_search_results_ui_(std::uint64_t request_id,
 
     std::string prev_focused;
     if (thread_search_current_ >= 0 &&
-        thread_search_current_ < static_cast<int>(thread_search_matches_.size()))
+        std::cmp_less(thread_search_current_, thread_search_matches_.size()))
     {
         prev_focused =
             thread_search_matches_[static_cast<std::size_t>(thread_search_current_)].event_id;

@@ -40,7 +40,7 @@ bool contains(const tk::Rect& r, tk::Point p)
 }
 } // namespace
 
-float PollCardDisplay::width(float col_w) const
+float PollCardDisplay::width(float col_w)
 {
     return std::min(col_w, kPollCardMaxW);
 }

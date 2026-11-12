@@ -189,7 +189,7 @@ struct VfFx
         s.active_account_->client = std::make_unique<tesseract::Client>();
         s.my_user_id_ = "@me:x";
     }
-    EncryptionSetupOverlay* ov()
+    EncryptionSetupOverlay* ov() const
     {
         return app->encryption_setup();
     }

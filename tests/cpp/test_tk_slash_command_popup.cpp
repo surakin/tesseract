@@ -21,11 +21,11 @@ namespace
 struct TkSlashCommandPopupStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(300, 400);
-    LayoutCtx lc()
+    LayoutCtx lc() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx pc()
+    PaintCtx pc() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }

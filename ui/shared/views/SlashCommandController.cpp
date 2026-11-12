@@ -131,7 +131,7 @@ bool SlashCommandController::on_nav(tk::NavKey nk)
         return false;
     }
     int cur = popup_->selected_index();
-    int n = (int)popup_->total_rows();
+    int n = static_cast<int>(popup_->total_rows());
     if (n <= 0)
     {
         return true;
@@ -148,7 +148,7 @@ bool SlashCommandController::on_nav(tk::NavKey nk)
     case tk::NavKey::Tab:
     {
         int sel = popup_->selected_index();
-        if (sel >= 0 && sel < (int)popup_->total_rows())
+        if (sel >= 0 && std::cmp_less(sel, popup_->total_rows()))
         {
             accept(popup_->suggestion_at(sel));
         }
@@ -183,7 +183,7 @@ bool SlashCommandController::on_submit()
         return submit_bot_command();
     }
     int sel = popup_->selected_index();
-    if (sel >= 0 && sel < (int)popup_->total_rows())
+    if (sel >= 0 && std::cmp_less(sel, popup_->total_rows()))
     {
         accept(popup_->suggestion_at(sel));
         return true;
@@ -358,7 +358,7 @@ bool SlashCommandController::submit_bot_command()
     return true;
 }
 
-void SlashCommandController::repaint_selection_()
+void SlashCommandController::repaint_selection_() const
 {
     if (hooks_.repaint_selection)
     {

@@ -1999,8 +1999,9 @@ public:
     /// documented limitation. Pure, no I/O; does not coerce token values to
     /// their schema type (see `ui/shared/app/SlashCommands.cpp`'s per-token
     /// coercion, which runs on this method's output).
-    BotCommandMatchResult match_bot_command_arguments(const CommandDescription& desc,
-                                                      const std::vector<std::string>& tokens) const;
+    static BotCommandMatchResult
+    match_bot_command_arguments(const CommandDescription& desc,
+                                const std::vector<std::string>& tokens);
 
     // ------------------------------------------------------------------
     // MSC2545 image packs (Step 8)

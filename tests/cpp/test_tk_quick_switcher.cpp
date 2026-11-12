@@ -22,7 +22,7 @@ namespace
 struct TkQuickSwitcherStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 600);
-    LayoutCtx lc()
+    LayoutCtx lc() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }

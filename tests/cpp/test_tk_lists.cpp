@@ -28,11 +28,11 @@ namespace
 struct TkListsStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
@@ -2874,7 +2874,7 @@ TEST_CASE("MessageListView keeps the hovered message put when a preview card "
     // Hover a text row in the lower half of the viewport, below the link.
     view.on_pointer_move({50, 220});
     st.run(view, {0, 0, 360, 300});
-    REQUIRE(view.hovered_row_geom().row_index != static_cast<std::size_t>(-1));
+    REQUIRE(std::cmp_not_equal(view.hovered_row_geom().row_index, -1));
     REQUIRE(view.hovered_row_geom().row_index > 0); // a text row, not the link
     const float y_before = view.hovered_row_geom().row_bounds.y;
     const float ch_before = view.content_height();

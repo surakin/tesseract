@@ -229,7 +229,7 @@ public:
         loaders_.push_back(std::move(load));
     }
 
-    void changed(SettingKey key)
+    void changed(SettingKey key) const
     {
         if (on_changed)
         {

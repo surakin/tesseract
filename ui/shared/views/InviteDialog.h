@@ -216,7 +216,7 @@ private:
     void toggle_row_(std::size_t index);
     const tk::Image* avatar_for_(const UserEntry& e);
     float field_height_() const;
-    void relayout_();
+    void relayout_() const;
     std::string title_() const;
     // The painted-only text currently shown in the body (status line, error
     // lines, or the empty-list message).

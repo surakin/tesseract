@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <utility>
 
 namespace tesseract
 {
@@ -1420,7 +1421,7 @@ void RoomPane::wire_room_view_()
             return;
         }
         const auto& msgs = ml->messages();
-        for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+        for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
         {
             const auto& row = msgs[static_cast<std::size_t>(i)];
             if (visible_media_prepped_.insert(row.event_id).second)

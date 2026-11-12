@@ -3,6 +3,7 @@
 #include <tesseract/emoji.h>
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -30,7 +31,8 @@ bool icontains(std::string_view hay, std::string_view needle)
         bool ok = true;
         for (std::size_t k = 0; k < needle.size(); ++k)
         {
-            if (std::tolower((unsigned char)hay[i + k]) != std::tolower((unsigned char)needle[k]))
+            if (std::tolower(static_cast<unsigned char>(hay[i + k])) !=
+                std::tolower(static_cast<unsigned char>(needle[k])))
             {
                 ok = false;
                 break;
@@ -47,21 +49,23 @@ bool icontains(std::string_view hay, std::string_view needle)
 // Rank: 0 = exact, 1 = starts-with, 2 = substring
 int match_rank(std::string_view sc, std::string_view prefix)
 {
-    if (sc.size() == prefix.size() && std::equal(sc.begin(), sc.end(), prefix.begin(),
-                                                 [](char a, char b)
-                                                 {
-                                                     return std::tolower((unsigned char)a) ==
-                                                            std::tolower((unsigned char)b);
-                                                 }))
+    if (sc.size() == prefix.size() &&
+        std::equal(sc.begin(), sc.end(), prefix.begin(),
+                   [](char a, char b)
+                   {
+                       return std::tolower(static_cast<unsigned char>(a)) ==
+                              std::tolower(static_cast<unsigned char>(b));
+                   }))
     {
         return 0;
     }
-    if (sc.size() >= prefix.size() && std::equal(prefix.begin(), prefix.end(), sc.begin(),
-                                                 [](char a, char b)
-                                                 {
-                                                     return std::tolower((unsigned char)a) ==
-                                                            std::tolower((unsigned char)b);
-                                                 }))
+    if (sc.size() >= prefix.size() &&
+        std::equal(prefix.begin(), prefix.end(), sc.begin(),
+                   [](char a, char b)
+                   {
+                       return std::tolower(static_cast<unsigned char>(a)) ==
+                              std::tolower(static_cast<unsigned char>(b));
+                   }))
     {
         return 1;
     }
@@ -70,9 +74,9 @@ int match_rank(std::string_view sc, std::string_view prefix)
 
 } // namespace
 
-std::optional<ShortcodeMatch> ShortcodeEngine::find_prefix(std::string_view text, int cursor) const
+std::optional<ShortcodeMatch> ShortcodeEngine::find_prefix(std::string_view text, int cursor)
 {
-    cursor = std::min(cursor, (int)text.size());
+    cursor = std::min(cursor, static_cast<int>(text.size()));
     // Walk backward from cursor to find the start of a `:word` pattern.
     int pos = cursor;
     while (pos > 0 && is_shortcode_char(text[pos - 1]))
@@ -102,10 +106,9 @@ std::optional<ShortcodeMatch> ShortcodeEngine::find_prefix(std::string_view text
     return ShortcodeMatch{colon, cursor, std::move(prefix)};
 }
 
-std::optional<ShortcodeMatch> ShortcodeEngine::find_complete(std::string_view text,
-                                                             int cursor) const
+std::optional<ShortcodeMatch> ShortcodeEngine::find_complete(std::string_view text, int cursor)
 {
-    cursor = std::min(cursor, (int)text.size());
+    cursor = std::min(cursor, static_cast<int>(text.size()));
     // Text immediately before cursor must be: space/tab OR cursor==end-of-text.
     int scan_end = cursor;
     if (scan_end > 0)
@@ -115,7 +118,7 @@ std::optional<ShortcodeMatch> ShortcodeEngine::find_complete(std::string_view te
         {
             --scan_end;
         }
-        else if (scan_end < (int)text.size())
+        else if (std::cmp_less(scan_end, text.size()))
         {
             return std::nullopt;
         }
@@ -149,7 +152,7 @@ std::optional<ShortcodeMatch> ShortcodeEngine::find_complete(std::string_view te
 std::vector<ShortcodeSuggestion>
 ShortcodeEngine::lookup(std::string_view prefix,
                         const std::vector<tesseract::ImagePackImage>& packs, int max_results,
-                        tesseract::emoji::SkinTone tone, std::uint16_t max_version) const
+                        tesseract::emoji::SkinTone tone, std::uint16_t max_version)
 {
     if (prefix.empty())
     {
@@ -183,7 +186,7 @@ ShortcodeEngine::lookup(std::string_view prefix,
     std::vector<ShortcodeSuggestion> out;
     for (auto& [r, s] : ranked)
     {
-        if ((int)out.size() >= max_results)
+        if (std::cmp_greater_equal(out.size(), max_results))
         {
             break;
         }
@@ -192,7 +195,7 @@ ShortcodeEngine::lookup(std::string_view prefix,
 
     for (const auto& img : packs)
     {
-        if ((int)out.size() >= max_results)
+        if (std::cmp_greater_equal(out.size(), max_results))
         {
             break;
         }

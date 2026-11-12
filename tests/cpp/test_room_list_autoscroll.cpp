@@ -26,7 +26,7 @@ struct RoomListAutoscrollStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 240);
 
-    void layout(tk::Widget& w, tk::Rect bounds)
+    void layout(tk::Widget& w, tk::Rect bounds) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         w.measure(lc, {bounds.w, bounds.h});

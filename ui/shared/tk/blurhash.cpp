@@ -1,6 +1,7 @@
 #include "blurhash.h"
 #include <cmath>
 #include <cstdint>
+#include <utility>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -84,7 +85,7 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
 
     // Minimum length: 1 (flag) + 1 (quant max) + 4 (DC) + 2*(total-1) (AC).
     int expected = 4 + 2 * (total - 1) + 2;
-    if (static_cast<int>(hash.size()) < expected)
+    if (std::cmp_less(hash.size(), expected))
     {
         return false;
     }

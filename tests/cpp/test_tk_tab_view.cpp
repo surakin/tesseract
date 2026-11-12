@@ -19,11 +19,11 @@ struct TkTabViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
 
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }

@@ -790,7 +790,8 @@ public:
         // defeating partial repaints for every pane that doesn't contain the
         // animated content.
         const QRectF r = p_.clipBoundingRect();
-        return {float(r.x()), float(r.y()), float(r.width()), float(r.height())};
+        return {static_cast<float>(r.x()), static_cast<float>(r.y()), static_cast<float>(r.width()),
+                static_cast<float>(r.height())};
     }
 
     float scale_factor() const override
@@ -1270,7 +1271,8 @@ public:
     // is_plain() run. Only reached for !s.wrap (see build_rich_text), so it
     // stays one line; hard breaks are folded first (QPainter::drawText
     // honours them even under NoWrap).
-    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8, QFont f, const TextStyle& s)
+    static std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8, QFont f,
+                                                    const TextStyle& s)
     {
         const std::string folded = fold_hard_breaks_utf8(text_u8);
         QString text = QString::fromUtf8(folded.data(), static_cast<int>(folded.size()));

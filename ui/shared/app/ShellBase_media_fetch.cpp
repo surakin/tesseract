@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <utility>
 
 namespace tesseract
 {
@@ -336,7 +337,7 @@ void ShellBase::run_media_prefetch_impl_(const std::vector<MediaPrefetchKey>& ke
         std::min<std::size_t>(keys.size(), static_cast<std::size_t>(std::max(max_items, 0))));
     for (const auto& k : keys)
     {
-        if (static_cast<int>(filtered.size()) >= max_items)
+        if (std::cmp_greater_equal(filtered.size(), max_items))
         {
             break;
         }

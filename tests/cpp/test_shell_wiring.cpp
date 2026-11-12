@@ -559,7 +559,7 @@ struct WiringShell : tesseract::test::TestShellBase
     }
     // A 3-frame animation, delivered through the windowed streamed decode
     // (with no session) or, in low power mode, through decode_image_.
-    DecodedImage decode_anim_batch_() const
+    static DecodedImage decode_anim_batch_()
     {
         DecodedImage d;
         for (int i = 0; i < 3; ++i)

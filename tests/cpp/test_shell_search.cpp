@@ -182,7 +182,7 @@ struct SearchRoomFixture
         s.rooms_ = {info};
         s.mark_room_index_dirty_();
     }
-    tesseract::views::MessageListView* ml()
+    tesseract::views::MessageListView* ml() const
     {
         return rv->message_list();
     }

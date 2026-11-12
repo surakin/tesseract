@@ -491,7 +491,7 @@ tk::DragVisual SpaceChildRoomGrid::build_drag_visual_(const ChildRoomEntry& entr
     return visual;
 }
 
-std::string SpaceChildRoomGrid::tooltip_text_(const ChildRoomEntry& entry) const
+std::string SpaceChildRoomGrid::tooltip_text_(const ChildRoomEntry& entry)
 {
     const tesseract::RoomInfo& info = entry.info;
     if (!entry.joined && info.name.empty())

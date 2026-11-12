@@ -10,7 +10,7 @@ TEST_CASE("find_prefix:detects open shortcode at end of text")
 {
     ShortcodeEngine eng;
     std::string text = "hello :gri";
-    auto m = eng.find_prefix(text, (int)text.size());
+    auto m = eng.find_prefix(text, static_cast<int>(text.size()));
     REQUIRE(m.has_value());
     CHECK(m->prefix == "gri");
     CHECK(m->start == 6); // byte offset of ':'
@@ -32,7 +32,7 @@ TEST_CASE("find_prefix:no match when colon followed by space")
 {
     ShortcodeEngine eng;
     std::string text = ": )";
-    auto m = eng.find_prefix(text, (int)text.size());
+    auto m = eng.find_prefix(text, static_cast<int>(text.size()));
     CHECK(!m.has_value());
 }
 
@@ -81,7 +81,7 @@ TEST_CASE("find_complete:detects complete shortcode at end of text")
 {
     ShortcodeEngine eng;
     std::string text = "hi :smile:";
-    auto m = eng.find_complete(text, (int)text.size());
+    auto m = eng.find_complete(text, static_cast<int>(text.size()));
     REQUIRE(m.has_value());
     CHECK(m->prefix == "smile");
     CHECK(m->start == 3);

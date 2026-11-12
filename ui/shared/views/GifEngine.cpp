@@ -13,7 +13,7 @@ bool is_space(char c)
 }
 } // namespace
 
-std::optional<std::string> GifEngine::match(std::string_view text) const
+std::optional<std::string> GifEngine::match(std::string_view text)
 {
     if (text.size() < kPrefix.size() || !text.starts_with(kPrefix))
     {

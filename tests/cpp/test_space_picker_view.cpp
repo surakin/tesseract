@@ -29,7 +29,7 @@ struct PickerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(SpacePickerView::kWidth, 400);
 
-    void layout(tk::Widget& w)
+    void layout(tk::Widget& w) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         w.measure(lc, {SpacePickerView::kWidth, 400});

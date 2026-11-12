@@ -1807,10 +1807,10 @@ private:
     // Whether the reply quote of `m` can be followed. The original of a
     // deleted message is filtered out of the timeline while deleted messages
     // are hidden, so it can never be scrolled to.
-    bool reply_jump_available_(const MessageRowData& m) const;
+    static bool reply_jump_available_(const MessageRowData& m);
     // A clicked link: a matrix.to user link opens the profile, anything else
     // goes to on_link_clicked. False when neither callback is set.
-    bool open_link_(const std::string& url);
+    bool open_link_(const std::string& url) const;
     MentionAvatarProvider mention_avatar_provider_;
     MentionNameProvider mention_name_provider_;
     RoomAvatarProvider room_avatar_provider_;

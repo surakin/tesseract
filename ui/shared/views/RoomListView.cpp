@@ -22,6 +22,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -320,7 +321,7 @@ public:
                 return;
             }
             const auto& inv = *owner_.invites_;
-            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(inv.size()))
+            if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, inv.size()))
             {
                 return;
             }
@@ -330,7 +331,7 @@ public:
         else if (item.kind == Item::Kind::SpaceUnjoined)
         {
             const auto& unjoined = owner_.space_unjoined_rooms_;
-            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(unjoined.size()))
+            if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, unjoined.size()))
             {
                 return;
             }
@@ -344,7 +345,7 @@ public:
                 return;
             }
             const auto& knocks = *owner_.my_knocks_;
-            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(knocks.size()))
+            if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, knocks.size()))
             {
                 return;
             }
@@ -354,7 +355,7 @@ public:
         else
         {
             const auto& rooms = owner_.section_rooms_[item.section];
-            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+            if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, rooms.size()))
             {
                 return;
             }
@@ -420,7 +421,7 @@ public:
         if (item.kind == Item::Kind::Invite)
         {
             if (!owner_.invites_ || item.room_idx < 0 ||
-                item.room_idx >= static_cast<int>(owner_.invites_->size()))
+                std::cmp_greater_equal(item.room_idx, owner_.invites_->size()))
             {
                 return {};
             }
@@ -430,7 +431,7 @@ public:
         if (item.kind == Item::Kind::SpaceUnjoined)
         {
             const auto& unjoined = owner_.space_unjoined_rooms_;
-            if (item.room_idx < 0 || item.room_idx >= static_cast<int>(unjoined.size()))
+            if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, unjoined.size()))
             {
                 return {};
             }
@@ -440,7 +441,7 @@ public:
             return s.name.empty() ? tk::tr("Loading…") : s.name;
         }
         const auto& rooms = owner_.section_rooms_[item.section];
-        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, rooms.size()))
         {
             return {};
         }
@@ -1794,7 +1795,7 @@ float RoomListView::longest_visible_row_width(tk::CanvasFactory& factory, const 
             continue;
         }
         const auto& rooms = section_rooms_[item.section];
-        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, rooms.size()))
         {
             continue;
         }
@@ -1913,7 +1914,7 @@ void RoomListView::paint_overlay(tk::PaintCtx& ctx)
         if (item.kind == Item::Kind::Room)
         {
             const auto& rooms = section_rooms_[item.section];
-            if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()))
+            if (item.room_idx >= 0 && std::cmp_less(item.room_idx, rooms.size()))
             {
                 room = rooms[item.room_idx];
             }
@@ -2023,7 +2024,7 @@ int RoomListView::item_index_for_room_(const std::string& id) const
     {
         return -1;
     }
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         const auto& item = items_[static_cast<std::size_t>(i)];
         if (item.kind != Item::Kind::Room)
@@ -2031,7 +2032,7 @@ int RoomListView::item_index_for_room_(const std::string& id) const
             continue;
         }
         const auto& rooms = section_rooms_[item.section];
-        if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()) &&
+        if (item.room_idx >= 0 && std::cmp_less(item.room_idx, rooms.size()) &&
             rooms[item.room_idx]->id == id)
         {
             return i;
@@ -2100,13 +2101,13 @@ std::string RoomListView::selected_room_id() const
         return {};
     }
     int flat = list_->selected_index();
-    if (flat >= 0 && flat < static_cast<int>(items_.size()))
+    if (flat >= 0 && std::cmp_less(flat, items_.size()))
     {
         const auto& item = items_[static_cast<std::size_t>(flat)];
         if (item.kind == Item::Kind::Room)
         {
             const auto& rooms = section_rooms_[item.section];
-            if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()))
+            if (item.room_idx >= 0 && std::cmp_less(item.room_idx, rooms.size()))
             {
                 return rooms[item.room_idx]->id;
             }
@@ -2122,7 +2123,7 @@ int RoomListView::selected_index() const
         return -1;
     }
     int flat = list_->selected_index();
-    if (flat < 0 || flat >= static_cast<int>(items_.size()))
+    if (flat < 0 || std::cmp_greater_equal(flat, items_.size()))
     {
         return -1;
     }
@@ -2207,7 +2208,7 @@ std::vector<std::string> RoomListView::visible_room_ids() const
         if (item.kind == Item::Kind::Room)
         {
             const auto& rooms = section_rooms_[item.section];
-            if (item.room_idx >= 0 && item.room_idx < static_cast<int>(rooms.size()))
+            if (item.room_idx >= 0 && std::cmp_less(item.room_idx, rooms.size()))
             {
                 ids.push_back(rooms[item.room_idx]->id);
             }
@@ -2236,7 +2237,7 @@ std::vector<tk::MediaPrefetchKey> RoomListView::collect_prefetchable_media_keys(
             continue;
         }
         const auto& rooms = section_rooms_[item.section];
-        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+        if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, rooms.size()))
         {
             continue;
         }
@@ -2313,7 +2314,7 @@ void RoomListView::rebuild_items()
     if (invites_ && !invites_->empty())
     {
         items_.push_back({Item::Kind::Header, kSecInvites, 0});
-        for (int i = 0; i < static_cast<int>(invites_->size()); ++i)
+        for (int i = 0; std::cmp_less(i, invites_->size()); ++i)
         {
             items_.push_back({Item::Kind::Invite, kSecInvites, i});
         }
@@ -2329,7 +2330,7 @@ void RoomListView::rebuild_items()
     if (my_knocks_ && !my_knocks_->empty())
     {
         items_.push_back({Item::Kind::Header, kSecKnocks, 0});
-        for (int i = 0; i < static_cast<int>(my_knocks_->size()); ++i)
+        for (int i = 0; std::cmp_less(i, my_knocks_->size()); ++i)
         {
             items_.push_back({Item::Kind::Knock, kSecKnocks, i});
         }
@@ -2341,7 +2342,7 @@ void RoomListView::rebuild_items()
         items_.push_back({Item::Kind::Header, kSecUnread, 0});
         if (collapsed_[kSecUnread] && search_text_.empty())
         {
-            for (int i = 0; i < static_cast<int>(section_rooms_[kSecUnread].size()); ++i)
+            for (int i = 0; std::cmp_less(i, section_rooms_[kSecUnread].size()); ++i)
             {
                 const auto* r = section_rooms_[kSecUnread][i];
                 if (r->notification_count > 0 || r->highlight_count > 0 ||
@@ -2353,7 +2354,7 @@ void RoomListView::rebuild_items()
         }
         else
         {
-            for (int i = 0; i < static_cast<int>(section_rooms_[kSecUnread].size()); ++i)
+            for (int i = 0; std::cmp_less(i, section_rooms_[kSecUnread].size()); ++i)
             {
                 items_.push_back({Item::Kind::Room, kSecUnread, i});
             }
@@ -2375,7 +2376,7 @@ void RoomListView::rebuild_items()
         items_.push_back({Item::Kind::Header, s, 0});
         if (collapsed_[s] && search_text_.empty())
         {
-            for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
+            for (int r = 0; std::cmp_less(r, section_rooms_[s].size()); ++r)
             {
                 if (section_rooms_[s][r]->notification_count > 0 ||
                     section_rooms_[s][r]->highlight_count > 0 ||
@@ -2386,7 +2387,7 @@ void RoomListView::rebuild_items()
             }
             continue;
         }
-        for (int r = 0; r < static_cast<int>(section_rooms_[s].size()); ++r)
+        for (int r = 0; std::cmp_less(r, section_rooms_[s].size()); ++r)
         {
             items_.push_back({Item::Kind::Room, s, r});
         }
@@ -2399,7 +2400,7 @@ void RoomListView::rebuild_items()
         items_.push_back({Item::Kind::Header, kSecSpaceUnjoined, 0});
         if (!collapsed_[kSecSpaceUnjoined])
         {
-            for (int i = 0; i < static_cast<int>(space_unjoined_rooms_.size()); ++i)
+            for (int i = 0; std::cmp_less(i, space_unjoined_rooms_.size()); ++i)
             {
                 items_.push_back({Item::Kind::SpaceUnjoined, kSecSpaceUnjoined, i});
             }
@@ -2562,7 +2563,8 @@ void RoomListView::activate_row_(std::size_t idx)
 
     if (item.kind == Item::Kind::Invite)
     {
-        if (!invites_ || item.room_idx < 0 || item.room_idx >= static_cast<int>(invites_->size()))
+        if (!invites_ || item.room_idx < 0 ||
+            std::cmp_greater_equal(item.room_idx, invites_->size()))
         {
             return;
         }
@@ -2576,7 +2578,8 @@ void RoomListView::activate_row_(std::size_t idx)
 
     if (item.kind == Item::Kind::SpaceUnjoined)
     {
-        if (item.room_idx < 0 || item.room_idx >= static_cast<int>(space_unjoined_rooms_.size()))
+        if (item.room_idx < 0 ||
+            std::cmp_greater_equal(item.room_idx, space_unjoined_rooms_.size()))
         {
             return;
         }
@@ -2591,7 +2594,7 @@ void RoomListView::activate_row_(std::size_t idx)
     if (item.kind == Item::Kind::Knock)
     {
         if (!my_knocks_ || item.room_idx < 0 ||
-            item.room_idx >= static_cast<int>(my_knocks_->size()))
+            std::cmp_greater_equal(item.room_idx, my_knocks_->size()))
         {
             return;
         }
@@ -2604,7 +2607,7 @@ void RoomListView::activate_row_(std::size_t idx)
     }
 
     const auto& rooms = section_rooms_[item.section];
-    if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+    if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, rooms.size()))
     {
         return;
     }
@@ -2664,7 +2667,7 @@ RoomListView::StickyHeader RoomListView::sticky_header_() const
 
     float world_y = list_top;
     // The next section's header pushes the pinned header up as it approaches.
-    for (int i = hdr + 1; i < static_cast<int>(items_.size()); ++i)
+    for (int i = hdr + 1; std::cmp_less(i, items_.size()); ++i)
     {
         if (items_[static_cast<std::size_t>(i)].kind == Item::Kind::Header)
         {
@@ -2814,7 +2817,7 @@ const tesseract::RoomInfo* RoomListView::room_row_at_(tk::Point local) const
         return nullptr;
     }
     const auto& rooms = section_rooms_[item.section];
-    if (item.room_idx < 0 || item.room_idx >= static_cast<int>(rooms.size()))
+    if (item.room_idx < 0 || std::cmp_greater_equal(item.room_idx, rooms.size()))
     {
         return nullptr;
     }

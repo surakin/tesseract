@@ -24,7 +24,7 @@ TEST_CASE("mention engine: finds @prefix at end of text", "[mention][engine]")
 {
     MentionEngine e;
     std::string t = "hey @al";
-    auto m = e.find_prefix(t, (int)t.size());
+    auto m = e.find_prefix(t, static_cast<int>(t.size()));
     REQUIRE(m.has_value());
     CHECK(m->start == 4);
     CHECK(m->end == 7);

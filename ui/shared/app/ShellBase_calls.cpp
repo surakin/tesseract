@@ -799,7 +799,7 @@ void ShellBase::handle_call_video_error_(tk::VideoCapture::Error err)
     show_status_message_(tk::VideoCapture::describe(err));
 }
 
-views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
+views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_()
 {
     switch (Settings::instance().call_overlay_mode)
     {

@@ -59,7 +59,7 @@ struct Rig
         }
         ctl = std::make_unique<SlashCommandController>(area.get(), &popup, std::move(h));
     }
-    bool type_and_submit(const std::string& text)
+    bool type_and_submit(const std::string& text) const
     {
         area->set_text(text);
         REQUIRE(ctl->on_text_changed(text, static_cast<int>(text.size())));

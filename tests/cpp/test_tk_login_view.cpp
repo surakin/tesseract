@@ -18,7 +18,7 @@ namespace
 struct TkLoginViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 480);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }

@@ -175,7 +175,7 @@ struct RpFx
     {
         return *s.main_room_pane_;
     }
-    tesseract::views::MessageListView* ml()
+    tesseract::views::MessageListView* ml() const
     {
         return view->message_list();
     }

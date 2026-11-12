@@ -58,7 +58,7 @@ struct RmvStage : vt::Stage
     {
         mount(*view, {0, 0, 800, 600});
     }
-    std::vector<tk::AccessNode> cells()
+    std::vector<tk::AccessNode> cells() const
     {
         std::vector<tk::AccessNode> out;
         std::function<void(const tk::AccessNode&)> walk = [&](const tk::AccessNode& n)

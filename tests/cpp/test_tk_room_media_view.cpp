@@ -27,11 +27,11 @@ namespace
 struct TkRoomMediaViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return {surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return {surface->canvas(), surface->factory(), Theme::light()};
     }

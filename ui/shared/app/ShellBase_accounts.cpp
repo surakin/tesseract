@@ -2454,7 +2454,7 @@ void ShellBase::apply_account_prefs_(tesseract::Client& client)
     apply_low_power_pref_(client);
 }
 
-bool ShellBase::encryption_flags_pending_() const
+bool ShellBase::encryption_flags_pending_()
 {
     const auto& s = tesseract::Settings::instance();
     return s.exclude_insecure_devices != tesseract::Client::exclude_insecure_devices_applied() ||

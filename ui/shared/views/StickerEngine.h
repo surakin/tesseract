@@ -22,7 +22,7 @@ class StickerEngine
 public:
     /// Returns the trimmed query when `text` starts with `"/sticker "` (the
     /// query may be empty), or `nullopt` when it is not a `/sticker` command.
-    std::optional<std::string> match(std::string_view text) const;
+    static std::optional<std::string> match(std::string_view text);
 };
 
 /// Pure sticker search over already-ordered sticker packs. Favourites that

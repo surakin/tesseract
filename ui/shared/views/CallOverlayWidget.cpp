@@ -725,7 +725,7 @@ void CallOverlayWidget::toggle_video()
     }
 }
 
-void CallOverlayWidget::hang_up()
+void CallOverlayWidget::hang_up() const
 {
     if (on_hang_up)
     {

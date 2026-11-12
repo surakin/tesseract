@@ -109,7 +109,7 @@ struct MediaFetchSpec
     // Screenshot mode: served from a local file, so no client_ is needed.
     bool screenshot_local_ = false;
 #endif
-    bool screenshot_local() const
+    static bool screenshot_local()
     {
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         return screenshot_local_;

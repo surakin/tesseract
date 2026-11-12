@@ -479,7 +479,7 @@ TEST_CASE("detect_emoji_version walks versions newest first and stops early",
 {
     ProbeFactory all;
     CHECK(tk::detect_emoji_version(all) == 180);
-    CHECK(all.probes == static_cast<int>(emoji::glyphs_introduced_in(180).size()));
+    CHECK(std::cmp_equal(all.probes, emoji::glyphs_introduced_in(180).size()));
 
     ProbeFactory no18;
     no18.rejected = {"🫫"}; // cracking face, E18.0

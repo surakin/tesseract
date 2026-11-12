@@ -189,7 +189,7 @@ bool MentionController::on_nav(tk::NativeTextArea::NavKey nk)
     case tk::NativeTextArea::NavKey::Tab:
     {
         int sel = popup_->selected_index();
-        if (sel >= 0 && sel < (int)candidates_.size())
+        if (sel >= 0 && std::cmp_less(sel, candidates_.size()))
         {
             accept(candidates_[sel]);
         }
@@ -220,7 +220,7 @@ bool MentionController::on_submit()
         return false;
     }
     int sel = popup_ ? popup_->selected_index() : -1;
-    if (sel >= 0 && sel < (int)candidates_.size())
+    if (sel >= 0 && std::cmp_less(sel, candidates_.size()))
     {
         accept(candidates_[sel]);
         return true;
@@ -251,7 +251,7 @@ void MentionController::accept(const MentionCandidate& c)
     hide();
 }
 
-void MentionController::repaint_selection_()
+void MentionController::repaint_selection_() const
 {
     if (hooks_.repaint_selection)
     {

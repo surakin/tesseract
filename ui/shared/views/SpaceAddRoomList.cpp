@@ -521,7 +521,7 @@ tk::DragVisual SpaceAddRoomList::build_drag_visual_(const tesseract::RoomInfo& r
     return visual;
 }
 
-std::string SpaceAddRoomList::tooltip_text_(const tesseract::RoomInfo& room) const
+std::string SpaceAddRoomList::tooltip_text_(const tesseract::RoomInfo& room)
 {
     std::string text = room.name.empty() ? room.id : room.name;
     if (!room.topic.empty())

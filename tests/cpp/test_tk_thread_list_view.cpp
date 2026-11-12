@@ -44,7 +44,7 @@ float mark_all_cx(float panel_w)
 struct TkThreadListViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(300, 400);
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
@@ -323,7 +323,7 @@ TEST_CASE("ThreadListView::paint re-masks the header strip over scrolled row con
     const tk::Color px = st.surface->read_pixel(100, 20);
     auto close = [](std::uint8_t a, std::uint8_t b)
     {
-        return std::abs(int(a) - int(b)) <= 2;
+        return std::abs(static_cast<int>(a) - static_cast<int>(b)) <= 2;
     };
     CHECK(close(px.r, bg.r));
     CHECK(close(px.g, bg.g));

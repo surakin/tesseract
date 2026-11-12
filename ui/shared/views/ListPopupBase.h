@@ -2,6 +2,7 @@
 #include "tk/access_tree.h"
 #include "tk/scrollable_base.h"
 #include <algorithm>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -32,7 +33,7 @@ public:
     // Number of rows to actually render (== rows clamped to max_visible_rows()).
     int visible_rows() const
     {
-        return std::min((int)row_count(), max_visible_rows());
+        return std::min(static_cast<int>(row_count()), max_visible_rows());
     }
 
     // Total number of items behind the popup, before the visible-rows cap —
@@ -100,8 +101,8 @@ public:
         {
             return {};
         }
-        return {bounds_.x, bounds_.y + float(index) * row_height() - scroll_y_, width(),
-                row_height()};
+        return {bounds_.x, bounds_.y + static_cast<float>(index) * row_height() - scroll_y_,
+                width(), row_height()};
     }
 
     // tk::Widget overrides — shared across all three popups.
@@ -138,7 +139,7 @@ protected:
     // tk::ScrollableBase contract — total content height behind the viewport.
     float content_height() const override
     {
-        return float(row_count()) * row_height();
+        return static_cast<float>(row_count()) * row_height();
     }
 
     // Scroll so that row `index` is fully within the viewport. No-op for an
@@ -150,7 +151,7 @@ protected:
         {
             return;
         }
-        float top = float(index) * row_height();
+        float top = static_cast<float>(index) * row_height();
         float bottom = top + row_height();
         if (top < scroll_y_)
         {
@@ -179,8 +180,8 @@ protected:
     // hit-testing resolves correctly against scrolled content.
     int row_at(float y) const
     {
-        int r = (int)((y + scroll_y_) / row_height());
-        return (r >= 0 && r < (int)row_count()) ? r : -1;
+        int r = static_cast<int>((y + scroll_y_) / row_height());
+        return (r >= 0 && std::cmp_less(r, row_count())) ? r : -1;
     }
 };
 

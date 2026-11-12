@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <string>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -27,7 +28,7 @@ std::string relative_time(std::uint64_t ts_ms)
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::system_clock::now().time_since_epoch())
                          .count();
-    if (static_cast<std::uint64_t>(now) <= ts_ms)
+    if (std::cmp_less_equal(now, ts_ms))
     {
         return tk::tr("now");
     }

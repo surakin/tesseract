@@ -42,7 +42,7 @@ public:
     const tesseract::ImagePackImage* selected() const
     {
         return (selected_index() >= 0 && selected_index() < visible_count())
-                   ? &results_[std::size_t(selected_index())]
+                   ? &results_[static_cast<std::size_t>(selected_index())]
                    : nullptr;
     }
 

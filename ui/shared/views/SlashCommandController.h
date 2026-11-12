@@ -104,7 +104,7 @@ public:
 
 private:
     // Selection-only repaint: hooks_.repaint_selection if set, else hooks_.repaint.
-    void repaint_selection_();
+    void repaint_selection_() const;
     void accept(const SlashCommandSuggestion& s);
     // Recompute and show the argument hint (or error, if `error` is set)
     // for the in-progress bot command, given the composer text after the

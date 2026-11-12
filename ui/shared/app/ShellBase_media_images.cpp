@@ -7,6 +7,7 @@
 #include "views/MainAppWidget.h"
 #include "views/UserProfilePanel.h"
 #include <algorithm>
+#include <utility>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -111,7 +112,7 @@ int ShellBase::avatar_px_() const
     return static_cast<int>(std::lround(visual::kAvatarCacheSize * current_scale_));
 }
 
-tk::CacheKey ShellBase::avatar_anim_key_(const std::string& mxc) const
+tk::CacheKey ShellBase::avatar_anim_key_(const std::string& mxc)
 {
     return tk::CacheKey::thumbnail(mxc, visual::kAvatarCacheSize, visual::kAvatarCacheSize);
 }
@@ -1916,7 +1917,7 @@ void ShellBase::on_visible_rows_changed_(const std::vector<std::string>& keys)
         return;
     }
     const auto& msgs = ml->messages();
-    for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+    for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
     {
         const auto& row = msgs[static_cast<std::size_t>(i)];
         if (media_prepped_event_ids_.insert(row.event_id).second)

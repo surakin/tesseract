@@ -195,7 +195,7 @@ private:
                             std::string filename);
     void begin_editing_shortcode_(std::size_t tile_idx);
     void remove_tile_(std::size_t tile_idx);
-    void layout_changed_();
+    void layout_changed_() const;
 
     std::vector<StagedPackImage> images_;
     tk::RowKeyboardCursor kbd_;

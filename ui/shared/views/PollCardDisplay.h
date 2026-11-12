@@ -45,7 +45,7 @@ public:
     // only for text measurement.
     float height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
                  bool show_end) const;
-    float width(float col_w) const; // min(col_w, kPollCardMaxW)
+    static float width(float col_w); // min(col_w, kPollCardMaxW)
 
     // Paints at (x, y); returns the bottom y. When `interactive`, records hit
     // rects (one per answer, plus the End poll button when `show_end`).

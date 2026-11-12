@@ -28,7 +28,7 @@ MessageRowData make_reply(const std::string& id)
 struct TkThreadViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 600);
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }

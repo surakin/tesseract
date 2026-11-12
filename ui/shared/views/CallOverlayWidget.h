@@ -120,7 +120,7 @@ public:
     // state, callbacks, and repaint behavior cannot diverge.
     void toggle_audio();
     void toggle_video();
-    void hang_up();
+    void hang_up() const;
 
     // Set the local user's Matrix user_id so the self tile can be mirrored.
     void set_local_user_id(std::string id)

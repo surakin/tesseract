@@ -25,11 +25,11 @@ struct ComboStage
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 300);
     PopupCapableStubHost host;
 
-    LayoutCtx lc()
+    LayoutCtx lc() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx pc()
+    PaintCtx pc() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }

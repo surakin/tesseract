@@ -13,7 +13,7 @@ namespace
 struct TkTextAreaStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
-    LayoutCtx lc()
+    LayoutCtx lc() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }

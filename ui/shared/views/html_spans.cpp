@@ -771,8 +771,8 @@ std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans, b
                 break;
             }
             std::size_t after = pos + 5;
-            bool left_ok = (pos == 0) || !is_word((unsigned char)t[pos - 1]);
-            bool right_ok = (after >= t.size()) || !is_word((unsigned char)t[after]);
+            bool left_ok = (pos == 0) || !is_word(static_cast<unsigned char>(t[pos - 1]));
+            bool right_ok = (after >= t.size()) || !is_word(static_cast<unsigned char>(t[after]));
             if (left_ok && right_ok)
             {
                 if (pos > emitted)

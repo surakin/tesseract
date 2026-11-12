@@ -1947,36 +1947,36 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::u
     auto state = std::make_shared<State>();
     state->info.pending_gen = pending_gen;
 
-    QObject::connect(sink, &QVideoSink::videoFrameChanged, sink,
-                     [this, player, state, target, target_alive](const QVideoFrame& frame)
-                     {
-                         if (state->done || !frame.isValid())
-                         {
-                             return;
-                         }
-                         state->done = true;
-                         state->info.duration_ms =
-                             static_cast<std::uint64_t>(std::max(qint64(0), player->duration()));
-                         player->stop();
-                         player->deleteLater();
-                         QImage img = frame.toImage();
-                         if (!img.isNull())
-                         {
-                             state->info.video_w = static_cast<std::uint32_t>(img.width());
-                             state->info.video_h = static_cast<std::uint32_t>(img.height());
-                             state->info.thumb_w = state->info.video_w;
-                             state->info.thumb_h = state->info.video_h;
-                             QByteArray enc;
-                             QBuffer encbuf(&enc);
-                             encbuf.open(QIODevice::WriteOnly);
-                             img.save(&encbuf, "JPEG", 85);
-                             state->info.thumb_bytes.assign(
-                                 reinterpret_cast<const std::uint8_t*>(enc.constData()),
-                                 reinterpret_cast<const std::uint8_t*>(enc.constData()) +
-                                     enc.size());
-                         }
-                         post_pending_attachment_(state->info, target, target_alive);
-                     });
+    QObject::connect(
+        sink, &QVideoSink::videoFrameChanged, sink,
+        [this, player, state, target, target_alive](const QVideoFrame& frame)
+        {
+            if (state->done || !frame.isValid())
+            {
+                return;
+            }
+            state->done = true;
+            state->info.duration_ms =
+                static_cast<std::uint64_t>(std::max(static_cast<qint64>(0), player->duration()));
+            player->stop();
+            player->deleteLater();
+            QImage img = frame.toImage();
+            if (!img.isNull())
+            {
+                state->info.video_w = static_cast<std::uint32_t>(img.width());
+                state->info.video_h = static_cast<std::uint32_t>(img.height());
+                state->info.thumb_w = state->info.video_w;
+                state->info.thumb_h = state->info.video_h;
+                QByteArray enc;
+                QBuffer encbuf(&enc);
+                encbuf.open(QIODevice::WriteOnly);
+                img.save(&encbuf, "JPEG", 85);
+                state->info.thumb_bytes.assign(
+                    reinterpret_cast<const std::uint8_t*>(enc.constData()),
+                    reinterpret_cast<const std::uint8_t*>(enc.constData()) + enc.size());
+            }
+            post_pending_attachment_(state->info, target, target_alive);
+        });
     QObject::connect(
         player, qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
         player,
@@ -2038,7 +2038,8 @@ void MainWindow::probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::u
             *done = true;
             tesseract::views::MediaInfo info;
             info.pending_gen = pending_gen;
-            info.duration_ms = static_cast<std::uint64_t>(std::max(qint64(0), player->duration()));
+            info.duration_ms =
+                static_cast<std::uint64_t>(std::max(static_cast<qint64>(0), player->duration()));
             player->stop();
             player->deleteLater();
             post_pending_attachment_(info, target, target_alive);

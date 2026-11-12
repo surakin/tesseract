@@ -26,6 +26,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tk
@@ -210,7 +211,7 @@ private:
     AccessState access_state_for_widget_row(std::size_t index) const override
     {
         AccessState s;
-        s.selected = static_cast<int>(index) == selected_idx_;
+        s.selected = std::cmp_equal(index, selected_idx_);
         return s;
     }
     bool access_activate_widget_row(std::size_t index) override

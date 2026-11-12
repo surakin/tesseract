@@ -295,7 +295,7 @@ protected:
 
 private:
     int cols(float available_w) const;
-    int rows(int n_cells, int cols_) const;
+    static int rows(int n_cells, int cols_);
     // Actual per-cell width used for layout: cell_w_ stretched evenly across
     // `c` columns so the last column's right edge lands on the available
     // width's right edge, instead of leaving a dead strip when the row
@@ -654,7 +654,7 @@ private:
     // shorter than the viewport. Must be applied consistently to every
     // screen<->content y mapping (paint, hit-test, visible range).
     float content_top_pad_() const;
-    void fire_latch_(bool now_near, bool& was_near, const std::function<void()>& callback);
+    static void fire_latch_(bool now_near, bool& was_near, const std::function<void()>& callback);
     std::size_t first_visible_row_() const;
 
     // scroll_y_, the scrollbar drag state, clamp_scroll(), thumb_geom(), and

@@ -24,7 +24,7 @@ struct RoomListContextMenuStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(280, 400);
 
-    void layout(tk::Widget& w, tk::Rect bounds = kContextMenuBounds)
+    void layout(tk::Widget& w, tk::Rect bounds = kContextMenuBounds) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         w.measure(lc, {bounds.w, bounds.h});

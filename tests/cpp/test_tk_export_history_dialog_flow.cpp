@@ -29,19 +29,19 @@ struct EhdStage : vt::Stage
     {
         relayout_paint(*dlg, {0, 0, 800, 600});
     }
-    tk::ComboBox* format()
+    tk::ComboBox* format() const
     {
         return vt::find_all<tk::ComboBox>(*dlg).at(0);
     }
-    tk::ComboBox* range()
+    tk::ComboBox* range() const
     {
         return vt::find_all<tk::ComboBox>(*dlg).at(1);
     }
-    tk::CheckButton* images()
+    tk::CheckButton* images() const
     {
         return vt::find_all<tk::CheckButton>(*dlg).at(0);
     }
-    tk::CheckButton* zip()
+    tk::CheckButton* zip() const
     {
         return vt::find_all<tk::CheckButton>(*dlg).at(1);
     }
