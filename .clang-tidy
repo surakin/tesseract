@@ -1,7 +1,47 @@
-# clang-tidy configuration. Checks switched off below are style churn that adds
+# Checks switched off below are style churn that adds
 # thousands of findings (const-correctness, anonymous-namespace, nodiscard,
 # parentheses, named-parameter, ...) or contradict deliberate patterns
 # (shells narrow ShellBase hook visibility; #pragma once everywhere).
+# bugprone-signed-bitwise is off too: it flags every signed operand (promoted
+# bytes, flag enums) and a review of all hits found nothing real.
+# Also off: misc-static-assert (its fix-it turns runtime assert() into invalid
+# static_assert()), modernize-use-using (C-style forward typedefs of GTK/cairo
+# types are deliberate) and pure style checks with no bug value (use-auto,
+# qualified-auto, init-variables, prefer-member-initializer,
+# return-braced-init-list, raw-string-literal, loop-convert,
+# special-member-functions), bugprone-narrowing-conversions and
+# bugprone-implicit-widening-of-multiplication-result (reviewed: int->float layout
+# arithmetic and image/video buffer offsets far below 2 GB) and
+# readability-static-accessed-through-instance
+# (its fix-it makes `engine.lookup()` call sites in tests needlessly verbose).
+# clang-analyzer-cplusplus.NewDeleteLeaks is off: it reports every std::function
+# holding a lambda that captures a shared_ptr (false positive, 71 hits).
+# performance-unnecessary-value-param and -unnecessary-copy-initialization are
+# off: their fix-its turn deliberate snapshots into aliases (a member that is
+# cleared mid-call), which compiles but changes behaviour. Review such sites
+# by hand instead.
+# Off because the fix-it or the advice is unsafe or low value here:
+# readability-redundant-nested-if (merging into `if (a && b)` changes behaviour
+# when an outer `else` follows), readability-redundant-access-specifiers (drops
+# Qt `public slots:` after `public:`), readability-inconsistent-declaration-
+# parameter-name (renames to moc's `_t1`), readability-redundant-qualified-alias
+# (yields invalid block-scope using-declarations), readability-redundant-
+# declaration (macOS needs `extern char** environ;`), misc-explicit-constructor
+# (cannot be verified on the Windows/macOS shells) and readability-use-anyofallof.
+# Reviewed and off as false positives or deliberate design:
+# bugprone-derived-method-shadowing-base-method (Widget::set_visible is
+# deliberately non-virtual), bugprone-return-const-ref-from-parameter (QDBus
+# stream operators return their argument), bugprone-reserved-identifier
+# (forward typedefs of GTK/cairo `_GtkWidget`), clang-analyzer-optin.core.
+# EnumCastOutOfRange (GStreamer/GIO flag combinations),
+# bugprone-suspicious-stringview-data-usage (views over string literals),
+# clang-analyzer-core.CallAndMessage (host() getter guarded by `if (host())`),
+# bugprone-unchecked-string-to-number-conversion and
+# cppcoreguidelines-pro-type-member-init for enum members with no neutral default.
+# Move-semantics micro-optimisations are off (performance-use-std-move, -move-const-arg,
+# -no-automatic-move, cppcoreguidelines-rvalue-reference-param-not-moved,
+# -missing-std-forward): they are not correctness issues.
+#
 # clang-tidy configuration. Run via scripts/clang-tidy.py (see docs/BUILD.md,
 # "Static analysis"); it needs a non-unity, non-PCH compile database
 # (cmake --preset linux-tidy). Checks are tuned in Phase 1 of the tidy pass.
@@ -18,7 +58,6 @@ Checks: >
   cppcoreguidelines-init-variables,
   cppcoreguidelines-pro-type-member-init,
   cppcoreguidelines-slicing,
-  cppcoreguidelines-special-member-functions,
   cppcoreguidelines-virtual-class-destructor,
   cppcoreguidelines-prefer-member-initializer,
   cppcoreguidelines-missing-std-forward,
@@ -34,9 +73,46 @@ Checks: >
   -readability-uppercase-literal-suffix,
   -readability-braces-around-statements,
   -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
   -misc-non-private-member-variables-in-classes,
   -misc-include-cleaner,
   -misc-no-recursion,
+  -misc-static-assert,
+  -readability-static-accessed-through-instance,
+  -bugprone-narrowing-conversions,
+  -clang-analyzer-cplusplus.NewDeleteLeaks,
+  -readability-redundant-nested-if,
+  -readability-redundant-access-specifiers,
+  -readability-inconsistent-declaration-parameter-name,
+  -readability-redundant-qualified-alias,
+  -readability-redundant-declaration,
+  -readability-use-anyofallof,
+  -bugprone-derived-method-shadowing-base-method,
+  -bugprone-return-const-ref-from-parameter,
+  -bugprone-reserved-identifier,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -bugprone-suspicious-stringview-data-usage,
+  -clang-analyzer-core.CallAndMessage,
+  -performance-use-std-move,
+  -performance-move-const-arg,
+  -performance-no-automatic-move,
+  -cppcoreguidelines-rvalue-reference-param-not-moved,
+  -cppcoreguidelines-missing-std-forward,
+  -bugprone-unchecked-string-to-number-conversion,
+  -cppcoreguidelines-pro-type-member-init,
+  -misc-explicit-constructor,
+  -performance-unnecessary-value-param,
+  -performance-unnecessary-copy-initialization,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -modernize-use-using,
+  -modernize-use-auto,
+  -modernize-return-braced-init-list,
+  -modernize-raw-string-literal,
+  -modernize-loop-convert,
+  -readability-qualified-auto,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-prefer-member-initializer,
+  -cppcoreguidelines-special-member-functions,
   -misc-const-correctness,
   -misc-use-anonymous-namespace,
   -misc-use-internal-linkage,
@@ -58,12 +134,6 @@ Checks: >
   -readability-duplicate-include,
   -performance-no-int-to-ptr,
   -modernize-macro-to-enum
-CheckOptions:
-  # Rule of three/five only where a class actually owns something: interfaces
-  # with a defaulted virtual destructor and no move members are fine.
-  cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
-  cppcoreguidelines-special-member-functions.AllowMissingMoveFunctions: true
-  cppcoreguidelines-special-member-functions.AllowMissingMoveFunctionsWhenCopyIsDeleted: true
 WarningsAsErrors: ''
 HeaderFilterRegex: '(client|ui|tests/cpp)/'
 ExcludeHeaderFilterRegex: '(third_party|nanosvg|xdg-activation-v1-protocol|/build/|cxxbridge)'

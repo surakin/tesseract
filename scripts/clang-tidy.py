@@ -34,8 +34,16 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCOPE = ("client/", "ui/", "tests/cpp/")
 SKIP = ("/build/", "/third_party/", "/_deps/", "/.qt/", "xdg-activation-v1-protocol")
-# Targets that generate headers the analysed TUs include.
-GENERATED = ("tesseract_sdk_bridge_cxx", "tesseract_icons", "tesseract_xdg_protocol")
+# Targets that generate headers/sources the analysed TUs include.
+GENERATED = (
+    "tesseract_sdk_bridge_cxx",
+    "tesseract_icons",
+    "tesseract_xdg_protocol",
+    # Provides the .moc files the Qt shell includes. Builds the libraries it
+    # depends on first (about two minutes, once).
+    "tesseract_qt_autogen",
+    "tesseract_tests_autogen",
+)
 FINDING = re.compile(r"^(?P<file>/[^:\n]+):(?P<line>\d+):(?P<col>\d+): "
                      r"(?P<sev>warning|error): (?P<msg>.*) \[(?P<check>[^\]]+)\]$")
 
