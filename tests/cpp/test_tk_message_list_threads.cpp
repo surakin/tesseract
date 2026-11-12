@@ -295,6 +295,7 @@ TEST_CASE("MessageListView clears thread chip hit rects when deferred event scro
     // first window, the reset replaces the timeline, then the shell re-arms the
     // pending scroll before layout resolves it.
     std::vector<MessageRowData> reset_rows;
+    reset_rows.reserve(24);
     for (int i = 0; i < 24; ++i)
     {
         reset_rows.push_back(make_text("$page" + std::to_string(i), "page"));

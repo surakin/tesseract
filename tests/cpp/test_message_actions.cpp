@@ -23,6 +23,7 @@ bool has(const std::vector<MessageAction>& v, MessageActionId id)
 std::vector<MessageActionId> ids(const std::vector<MessageAction>& v)
 {
     std::vector<MessageActionId> out;
+    out.reserve(v.size());
     for (const auto& a : v)
     {
         out.push_back(a.id);

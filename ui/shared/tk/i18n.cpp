@@ -1,4 +1,5 @@
 #include "i18n.h"
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -351,10 +352,7 @@ struct Catalog
     long pick_plural_form(long n) const
     {
         long form = eval_plural(plural_expr_, n);
-        if (form < 0)
-        {
-            form = 0;
-        }
+        form = std::max<long>(form, 0);
         if (form >= nplurals_)
         {
             form = nplurals_ - 1;
@@ -566,14 +564,7 @@ void set_locale(const std::string& i18n_dir, const std::string& lang)
         if (sep != std::string::npos)
         {
             std::string prefix = lang.substr(0, sep);
-            if (!try_load(cat, i18n_dir, prefix))
-            {
-                cat.identity_mode_ = true;
-            }
-            else
-            {
-                cat.identity_mode_ = false;
-            }
+            cat.identity_mode_ = !try_load(cat, i18n_dir, prefix);
         }
         else
         {

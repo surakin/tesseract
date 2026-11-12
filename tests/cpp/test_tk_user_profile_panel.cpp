@@ -193,6 +193,7 @@ TEST_CASE("UserProfilePanel: common rooms hook", "[tk][view][user_profile_panel]
     auto make_rooms = [](int n)
     {
         std::vector<UserProfilePanel::CommonRoom> rooms;
+        rooms.reserve(n);
         for (int i = 0; i < n; ++i)
         {
             rooms.push_back({"!r" + std::to_string(i) + ":example.org",

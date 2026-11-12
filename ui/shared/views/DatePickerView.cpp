@@ -200,7 +200,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
     // ── header: prev button / month-year label / next button ─────────────────
     {
         // Prev button
-        const bool can_prev = !(view_year_ == 1970 && view_month_ == 1);
+        const bool can_prev = view_year_ != 1970 || view_month_ != 1;
         const bool prev_hov = hovered_zone_ == Zone::PrevBtn;
         const bool prev_prs = pressed_zone_ == Zone::PrevBtn;
         if (can_prev)
@@ -225,7 +225,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
         }
 
         // Next button
-        const bool can_next = !(view_year_ == max_year_ && view_month_ == max_month_);
+        const bool can_next = view_year_ != max_year_ || view_month_ != max_month_;
         const bool next_hov = hovered_zone_ == Zone::NextBtn;
         const bool next_prs = pressed_zone_ == Zone::NextBtn;
         if (can_next)
@@ -591,9 +591,9 @@ bool DatePickerView::part_enabled_(FocusPart p) const
     switch (p)
     {
     case FocusPart::PrevBtn:
-        return !(view_year_ == 1970 && view_month_ == 1);
+        return view_year_ != 1970 || view_month_ != 1;
     case FocusPart::NextBtn:
-        return !(view_year_ == max_year_ && view_month_ == max_month_);
+        return view_year_ != max_year_ || view_month_ != max_month_;
     case FocusPart::TodayBtn:
         return today_enabled();
     default:
@@ -836,14 +836,8 @@ bool DatePickerView::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is
     if (over_year)
     {
         int y = view_year_ + steps;
-        if (y < 1970)
-        {
-            y = 1970;
-        }
-        if (y > max_year_)
-        {
-            y = max_year_;
-        }
+        y = std::max(y, 1970);
+        y = std::min(y, max_year_);
         if (y == view_year_)
         {
             return true;

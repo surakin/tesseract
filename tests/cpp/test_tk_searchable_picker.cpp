@@ -43,7 +43,7 @@ protected:
         {
             return 1;
         }
-        if (f.compare(0, q.size(), q) == 0)
+        if (f.starts_with(q))
         {
             return 0;
         }

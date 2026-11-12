@@ -3,8 +3,6 @@
 #include <tesseract/image_pack.h>
 
 using tesseract::views::ShortcodeEngine;
-using tesseract::views::ShortcodeMatch;
-using tesseract::views::ShortcodeSuggestion;
 
 // ── find_prefix ────────────────────────────────────────────────────────────
 

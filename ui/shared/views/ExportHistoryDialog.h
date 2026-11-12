@@ -200,8 +200,8 @@ private:
     // happens. `finish_generation_` invalidates a deferred show_finished()
     // call if a new export starts before the delay elapses.
     static constexpr int kMinInProgressDurationMs = 500;
-    std::chrono::steady_clock::time_point in_progress_started_at_{};
-    std::chrono::steady_clock::time_point finalizing_started_at_{};
+    std::chrono::steady_clock::time_point in_progress_started_at_;
+    std::chrono::steady_clock::time_point finalizing_started_at_;
     bool finalizing_started_ = false;
     int finish_generation_ = 0;
 

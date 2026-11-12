@@ -145,7 +145,7 @@ SlashCommandEngine::lookup(std::string_view prefix,
         {
             continue;
         }
-        if (c.name.compare(0, prefix.size(), prefix) != 0)
+        if (!c.name.starts_with(prefix))
         {
             continue;
         }
@@ -165,7 +165,7 @@ SlashCommandEngine::lookup(std::string_view prefix,
         {
             continue;
         }
-        if (d.command.compare(0, prefix.size(), prefix) != 0)
+        if (!d.command.starts_with(prefix))
         {
             continue;
         }

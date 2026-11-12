@@ -1566,7 +1566,7 @@ TEST_CASE("map tiles fetch through the same pipeline and remember failures",
 {
     MiFx f;
     // Unique coordinates: the tile disk cache outlives a test case in-process.
-    const int x = 1000 + f.s.pending_media_.size() + static_cast<int>(MiFx::next_id()++);
+    const int x = 1000 + f.s.pending_media_.size() + (MiFx::next_id()++);
     f.s.ensure_tile_async(7, x, 3);
     f.s.ensure_tile_async(7, x, 3); // in flight
     CHECK(f.s.tile_fetches_in_flight_.size() == 1);

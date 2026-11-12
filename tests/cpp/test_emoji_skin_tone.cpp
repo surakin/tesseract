@@ -439,7 +439,7 @@ struct ProbeFactory : tk::CanvasFactory
     bool can_render_emoji(std::string_view glyph) override
     {
         ++probes;
-        return rejected.find(glyph) == rejected.end();
+        return !rejected.contains(glyph);
     }
 };
 

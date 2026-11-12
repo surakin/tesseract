@@ -320,11 +320,11 @@ static std::string lang_from_class(std::string_view cls)
         }
         std::string_view tok = cls.substr(i, j - i);
         std::string_view prefix;
-        if (tok.rfind("language-", 0) == 0)
+        if (tok.starts_with("language-"))
         {
             prefix = "language-";
         }
-        else if (tok.rfind("lang-", 0) == 0)
+        else if (tok.starts_with("lang-"))
         {
             prefix = "lang-";
         }
@@ -515,7 +515,7 @@ Tag parse_tag(const char*& p, const char* end)
     if (t.name == "a" && !t.closing)
     {
         auto href = extract_attr(attr_start, attr_end, "href");
-        if (href && (href->rfind("http://", 0) == 0 || href->rfind("https://", 0) == 0))
+        if (href && (href->starts_with("http://") || href->starts_with("https://")))
         {
             t.href = std::move(*href);
         }
@@ -1009,7 +1009,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             // no untrusted image source is ever rendered.
             if (!tag.closing && tag.name == "img")
             {
-                if (tag.is_mx_emoticon && tag.img_src.rfind("mxc://", 0) == 0)
+                if (tag.is_mx_emoticon && tag.img_src.starts_with("mxc://"))
                 {
                     flush();
                     tk::TextSpan sp;
@@ -1222,7 +1222,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
 // are Matrix entity references, not web pages — skip them for URL preview.
 static bool is_matrix_to_url(const std::string& url)
 {
-    return url.rfind("https://matrix.to", 0) == 0 || url.rfind("http://matrix.to", 0) == 0;
+    return url.starts_with("https://matrix.to") || url.starts_with("http://matrix.to");
 }
 
 // Decode every HTML entity in `s` (attribute values reach us undecoded).
@@ -1259,7 +1259,7 @@ static std::string_view url_compare_form(std::string_view s)
     }
     for (std::string_view scheme : {"https://", "http://"})
     {
-        if (s.substr(0, scheme.size()) == scheme)
+        if (s.starts_with(scheme))
         {
             s.remove_prefix(scheme.size());
             break;
@@ -2194,7 +2194,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // before the opening/self-closing/closing dispatch below.
         if (!tag.closing && tag.name == "img")
         {
-            if (tag.is_mx_emoticon && tag.img_src.rfind("mxc://", 0) == 0)
+            if (tag.is_mx_emoticon && tag.img_src.starts_with("mxc://"))
             {
                 flush();
                 tk::TextSpan sp;

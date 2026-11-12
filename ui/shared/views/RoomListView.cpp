@@ -190,7 +190,7 @@ filter_root_rooms(const std::vector<tesseract::RoomInfo>& rooms,
         {
             continue;
         }
-        if (in_space.count(r.id) && !r.is_favorite)
+        if (in_space.contains(r.id) && !r.is_favorite)
         {
             // Space-child and not a favorite: include only if group_unread is on
             // and the room has a visible unread indicator.
@@ -207,7 +207,7 @@ filter_root_rooms(const std::vector<tesseract::RoomInfo>& rooms,
     // Spaces: only top-level spaces (not children of another space) or favorites.
     for (const auto& r : rooms)
     {
-        if (r.is_space && (!in_space.count(r.id) || r.is_favorite))
+        if (r.is_space && (!in_space.contains(r.id) || r.is_favorite))
         {
             filtered.push_back(r);
         }
@@ -864,10 +864,7 @@ private:
         constexpr float kCallIconGap = 4.0f;
         const float call_icon_w = room.has_active_call ? kCallIconPx + kCallIconGap : 0.f;
         text_w -= call_icon_w;
-        if (text_w < 0)
-        {
-            text_w = 0;
-        }
+        text_w = std::max<float>(text_w, 0);
 
         const bool compact = owner_.compact_;
         bool has_preview = !compact && !room.last_message_kind.empty();
@@ -894,10 +891,7 @@ private:
         if (thumb)
         {
             text_w -= (owner_.thumb_() + kThumbGap);
-            if (text_w < 0)
-            {
-                text_w = 0;
-            }
+            text_w = std::max<float>(text_w, 0);
         }
 
         // Build preview string (cheap string ops, no TextLayout allocation).
@@ -1261,10 +1255,7 @@ private:
         // Text column geometry (no badge reserved).
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
-        if (text_w < 0)
-        {
-            text_w = 0;
-        }
+        text_w = std::max<float>(text_w, 0);
 
         // Primary / secondary text.
         // DM invite:    primary = inviter display name, secondary = @user_id
@@ -1362,10 +1353,7 @@ private:
 
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
-        if (text_w < 0)
-        {
-            text_w = 0;
-        }
+        text_w = std::max<float>(text_w, 0);
 
         const std::string primary = k.room_name.empty() ? k.room_id : k.room_name;
         const std::string secondary = tk::tr("Request pending");
@@ -1464,10 +1452,7 @@ private:
 
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
-        if (text_w < 0)
-        {
-            text_w = 0;
-        }
+        text_w = std::max<float>(text_w, 0);
 
         // Name + members/join-rule on two lines, muted to signal unjoined.
         const std::uint8_t kAlpha =

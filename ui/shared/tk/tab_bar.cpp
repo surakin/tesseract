@@ -26,10 +26,7 @@ void TabBar::add_tab(std::string room_id, std::string display_name, const Image*
     {
         set_visible(true);
     }
-    if (active_idx_ < 0)
-    {
-        active_idx_ = 0;
-    }
+    active_idx_ = std::max(active_idx_, 0);
 }
 
 void TabBar::remove_tab(const std::string& room_id)
@@ -148,14 +145,8 @@ int TabBar::tab_at_(float scroll_local) const
 void TabBar::clamp_scroll_()
 {
     float max_s = std::max(0.f, total_width_ - bounds_.w);
-    if (scroll_x_ < 0.f)
-    {
-        scroll_x_ = 0.f;
-    }
-    if (scroll_x_ > max_s)
-    {
-        scroll_x_ = max_s;
-    }
+    scroll_x_ = std::max(scroll_x_, 0.f);
+    scroll_x_ = std::min(scroll_x_, max_s);
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────────

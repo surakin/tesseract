@@ -33,6 +33,7 @@ TEST_CASE("poll_draft_valid", "[poll]")
     CHECK_FALSE(poll_draft_valid(PollDraft{"Q", {"a"}, false, false}));
     CHECK_FALSE(poll_draft_valid(PollDraft{"Q", {"a", "a"}, false, false})); // duplicate text
     std::vector<std::string> many;
+    many.reserve(21);
     for (int i = 0; i < 21; ++i)
     {
         many.push_back("o" + std::to_string(i));

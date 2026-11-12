@@ -495,7 +495,7 @@ void ServerBrowserOverlay::set_icon(const std::string& client_domain,
 
 bool ServerBrowserOverlay::has_icon(const std::string& client_domain) const
 {
-    return icon_images_.count(client_domain) != 0 || pending_icons_.count(client_domain) != 0;
+    return icon_images_.contains(client_domain) || pending_icons_.contains(client_domain);
 }
 
 void ServerBrowserOverlay::show_icon_(const std::string& client_domain, const tk::Image* image)

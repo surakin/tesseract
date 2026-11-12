@@ -2599,7 +2599,7 @@ public:
         // Search match tint — subtle accent fill behind the row.
         // Painted before the hover highlight so hover layers on top.
         if (!owner_.search_match_ids_.empty() && !m.event_id.empty() &&
-            owner_.search_match_ids_.count(m.event_id))
+            owner_.search_match_ids_.contains(m.event_id))
         {
             ctx.canvas.fill_rounded_rect(highlight_bounds, tesseract::visual::kRadiusSM,
                                          ctx.theme.palette.accent.with_alpha(25));
@@ -5747,10 +5747,7 @@ private:
                                                     (kGalleryCellSize + kGalleryCellSpacing)));
             cols = std::min(cols, std::max(n, 1));
             int rows = (n + cols - 1) / cols;
-            if (rows < 1)
-            {
-                rows = 1;
-            }
+            rows = std::max(rows, 1);
             float grid_h = static_cast<float>(rows) * kGalleryCellSize +
                            static_cast<float>(std::max(0, rows - 1)) * kGalleryCellSpacing;
             if (owner_.media_is_hidden_(m))
@@ -6178,10 +6175,7 @@ private:
                                                     (kGalleryCellSize + kGalleryCellSpacing)));
             cols = std::min(cols, std::max(n, 1));
             int rows = (n + cols - 1) / cols;
-            if (rows < 1)
-            {
-                rows = 1;
-            }
+            rows = std::max(rows, 1);
             float grid_w = static_cast<float>(cols) * kGalleryCellSize +
                            static_cast<float>(std::max(0, cols - 1)) * kGalleryCellSpacing;
             float grid_h = static_cast<float>(rows) * kGalleryCellSize +
@@ -9247,10 +9241,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     {
         return;
     }
-    if (index > messages_.size())
-    {
-        index = messages_.size();
-    }
+    index = std::min(index, messages_.size());
 
     const bool animated =
         msg.kind == MessageRowData::Kind::Video && (msg.video_autoplay || msg.video_gif);
@@ -9553,8 +9544,7 @@ void MessageListView::arm_live_location_expiry_(const MessageRowData& m)
         return;
     }
     const std::string key = m.event_id + ":" + std::to_string(m.location_live_expires_ms);
-    if (live_expiry_armed_.count(key) != 0 ||
-        live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
+    if (live_expiry_armed_.contains(key) || live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
     {
         return; // already armed, or the view's timers are full
     }
@@ -12030,7 +12020,7 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.thread_button_visible = thread_button_visible_;
     in.can_redact_others = can_redact_others_;
     in.can_pin = can_pin_;
-    in.is_pinned = pinned_event_ids_.count(m.event_id) != 0;
+    in.is_pinned = pinned_event_ids_.contains(m.event_id);
     in.developer_mode = tesseract::Settings::instance().developer_mode;
     in.unhandled = m.kind == Kind::DevUnhandled;
     in.saveable_sticker =
@@ -14138,10 +14128,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         {
             panel_x = view.x + view.w - panel_w - 4.0f;
         }
-        if (panel_x < view.x + 4.0f)
-        {
-            panel_x = view.x + 4.0f;
-        }
+        panel_x = std::max(panel_x, view.x + 4.0f);
 
         tk::Rect panel{panel_x, panel_y, panel_w, panel_h};
         ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);
@@ -14198,7 +14185,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                 // append the extra punctuation colon the Unicode branch uses.
                 header = tk::tr("Reacted with :");
                 header += sc;
-                header += ":";
+                header += ':';
             }
         }
         if (header.empty())
@@ -14211,7 +14198,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             {
                 header = tk::tr("Reacted with ");
                 header += r.key;
-                header += ":";
+                header += ':';
             }
         }
         lines.push_back(std::move(header));
@@ -14272,10 +14259,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     {
         panel_x = view.x + view.w - panel_w - 4.0f;
     }
-    if (panel_x < view.x + 4.0f)
-    {
-        panel_x = view.x + 4.0f;
-    }
+    panel_x = std::max(panel_x, view.x + 4.0f);
 
     tk::Rect panel{panel_x, panel_y, panel_w, panel_h};
     ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);

@@ -85,7 +85,7 @@ std::optional<std::string> parse_slash_arg(const std::string& body, const char* 
     {
         return std::nullopt;
     }
-    if (body.compare(0, prefix.size(), prefix) != 0)
+    if (!body.starts_with(prefix))
     {
         return std::nullopt;
     }
@@ -106,7 +106,7 @@ std::optional<std::vector<std::string>> parse_slash_args(const std::string& body
     {
         return std::nullopt;
     }
-    if (body.compare(0, prefix.size(), prefix) != 0)
+    if (!body.starts_with(prefix))
     {
         return std::nullopt;
     }
@@ -269,13 +269,13 @@ std::string strip_command_from_html(const std::string& html, std::string_view co
 {
     std::string_view h = html;
     std::string prefix;
-    if (h.substr(0, 3) == "<p>")
+    if (h.starts_with("<p>"))
     {
         prefix = "<p>";
         h.remove_prefix(3);
     }
     const std::string literal = "/" + std::string(command);
-    if (h.substr(0, literal.size()) != literal)
+    if (!h.starts_with(literal))
     {
         return {};
     }
@@ -290,8 +290,7 @@ std::string strip_command_from_html(const std::string& html, std::string_view co
 std::string append_to_html(const std::string& html, const std::string& tail)
 {
     constexpr std::string_view kClose = "</p>";
-    if (html.size() >= kClose.size() &&
-        html.compare(html.size() - kClose.size(), kClose.size(), kClose) == 0)
+    if (html.size() >= kClose.size() && html.ends_with(kClose))
     {
         return html.substr(0, html.size() - kClose.size()) + tail + std::string(kClose);
     }
@@ -782,7 +781,7 @@ std::string describe_param_type(const ParamSchema& schema)
         {
             if (!joined.empty())
             {
-                joined += "/";
+                joined += '/';
             }
             joined += describe_param_type(v);
         }

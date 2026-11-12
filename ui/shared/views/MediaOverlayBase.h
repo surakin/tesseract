@@ -295,7 +295,7 @@ private:
 
     // Full-screen chrome auto-hide.
     bool chrome_visible_ = true;
-    std::chrono::steady_clock::time_point last_activity_{};
+    std::chrono::steady_clock::time_point last_activity_;
 
     bool press_outside_ = false;
 };

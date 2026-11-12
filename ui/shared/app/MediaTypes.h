@@ -30,7 +30,7 @@ using MediaKind = tk::MediaKind;
 struct MediaFetchBackoff
 {
     std::uint32_t attempts = 0;
-    std::chrono::steady_clock::time_point retry_after{};
+    std::chrono::steady_clock::time_point retry_after;
 };
 
 struct PendingMediaReq

@@ -258,7 +258,7 @@ bool RoomPane::restore_upload_draft_(const UploadDraft& draft)
 
 void RoomPane::stash_upload_draft_(const UploadDraft& draft)
 {
-    if (draft.room_id.empty() || room_compose_drafts_.count(draft.room_id))
+    if (draft.room_id.empty() || room_compose_drafts_.contains(draft.room_id))
     {
         return;
     }
@@ -268,7 +268,7 @@ void RoomPane::stash_upload_draft_(const UploadDraft& draft)
 
 void RoomPane::stash_unsent_draft_(const std::string& room_id, const std::string& text)
 {
-    if (room_id.empty() || text.empty() || room_compose_drafts_.count(room_id))
+    if (room_id.empty() || text.empty() || room_compose_drafts_.contains(room_id))
     {
         return;
     }
@@ -2704,7 +2704,7 @@ void RoomPane::retry_stale_reply_previews_(views::MessageListView* list, const s
     for (const auto& row : list->messages())
     {
         if (row.has_reply() && row.in_reply_to_sender_name.empty() &&
-            targets.count(row.in_reply_to_id))
+            targets.contains(row.in_reply_to_id))
         {
             shell_->reply_details_requested_.erase(
                 ShellBase::reply_details_key_(pane_user_id_(), row.event_id));
@@ -4057,7 +4057,7 @@ void RoomPane::open_dm_(std::string user_id)
         return;
     }
 
-    if (shell_->dm_in_flight_user_ids_.count(user_id))
+    if (shell_->dm_in_flight_user_ids_.contains(user_id))
     {
         return;
     }
@@ -4637,7 +4637,7 @@ void RoomPane::feed_gallery_reset_(const std::string& event_room_id,
 
 bool RoomPane::handle_forward_done_(std::uint64_t request_id)
 {
-    if (!pending_forwards_.count(request_id))
+    if (!pending_forwards_.contains(request_id))
     {
         return false;
     }

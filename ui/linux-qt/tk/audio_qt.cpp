@@ -15,6 +15,7 @@
 #include <QtMultimedia/QAudioOutput>
 #include <QtMultimedia/QMediaPlayer>
 
+#include <algorithm>
 #include <utility>
 
 namespace tk::qt6
@@ -145,24 +146,15 @@ public:
         {
             target = dur;
         }
-        if (target < 0)
-        {
-            target = 0;
-        }
+        target = std::max<qint64>(target, 0);
         player_.setPosition(target);
         fire_progress();
     }
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.5f)
-        {
-            rate = 0.5f;
-        }
-        if (rate > 3.0f)
-        {
-            rate = 3.0f;
-        }
+        rate = std::max(rate, 0.5f);
+        rate = std::min(rate, 3.0f);
         rate_ = rate;
         player_.setPlaybackRate(static_cast<qreal>(rate_));
     }

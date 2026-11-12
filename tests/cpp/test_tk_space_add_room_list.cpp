@@ -47,7 +47,7 @@ struct SarStage : vt::Stage
         std::vector<std::string> out;
         for (const auto& n : vt::all_names(*list))
         {
-            if (n.rfind("Add ", 0) == 0)
+            if (n.starts_with("Add "))
             {
                 out.push_back(n);
             }

@@ -202,8 +202,8 @@ private:
     tk::MediaDiskCache media_disk_cache_{tesseract::cache_dir() / "media"};
     tk::CompressedImageCache compressed_cache_{32u * 1024u * 1024u};
 
-    std::chrono::steady_clock::time_point last_gc_activity_{};
-    std::chrono::steady_clock::time_point last_gc_run_{};
+    std::chrono::steady_clock::time_point last_gc_activity_;
+    std::chrono::steady_clock::time_point last_gc_run_;
     SearchBackend search_backend_;
     MediaPlaybackHub media_playback_hub_;
     std::uint64_t next_upload_request_id_ = 1;

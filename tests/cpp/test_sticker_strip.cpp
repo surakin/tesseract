@@ -81,6 +81,7 @@ TEST_CASE("StickerPopup selection, cap and status", "[sticker][popup]")
 {
     StickerPopup p;
     std::vector<ImagePackImage> v;
+    v.reserve(StickerPopup::kMaxCells + 5);
     for (int i = 0; i < StickerPopup::kMaxCells + 5; ++i)
     {
         v.push_back(sticker("a", std::to_string(i).c_str()));

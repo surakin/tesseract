@@ -48,6 +48,7 @@ RoomInfo plain_room(int i, std::uint64_t ts)
 std::vector<RoomInfo> read_rooms(int n = 40)
 {
     std::vector<RoomInfo> v;
+    v.reserve(n);
     for (int i = 0; i < n; ++i)
     {
         v.push_back(plain_room(i, 1'000 + static_cast<std::uint64_t>(i)));

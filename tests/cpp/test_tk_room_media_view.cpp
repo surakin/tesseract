@@ -105,6 +105,7 @@ TEST_CASE("RoomMediaView::content_fills_viewport reflects actual content vs boun
 
     // Enough rows to exceed 600px of grid content.
     std::vector<MessageRowData> many;
+    many.reserve(200);
     for (int i = 0; i < 200; ++i)
     {
         many.push_back(make_image_row("$ev" + std::to_string(i)));

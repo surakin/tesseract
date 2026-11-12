@@ -33,7 +33,7 @@ TEST_CASE("shortcut registry: ids unique, entries complete", "[shortcuts]")
         {
             CHECK(ids.insert(def.id).second);
             CHECK(def.description != nullptr);
-            CHECK(std::string(def.description).size() > 0);
+            CHECK(!std::string(def.description).empty());
             CHECK_FALSE(def.chords.empty());
             CHECK_FALSE(group_title(def.group).empty());
         }

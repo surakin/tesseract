@@ -68,7 +68,7 @@ bool SlashCommandController::on_text_changed(const std::string& text, int cursor
     if (active_bot_command_)
     {
         std::string prefix = "/" + active_bot_command_->name + " ";
-        if (text.rfind(prefix, 0) == 0)
+        if (text.starts_with(prefix))
         {
             update_arg_hint(text.substr(prefix.size()));
             return true;
@@ -332,7 +332,7 @@ bool SlashCommandController::submit_bot_command()
 
     std::string prefix = "/" + active_bot_command_->name + " ";
     std::string text = text_area_->text();
-    std::string args_text = text.rfind(prefix, 0) == 0 ? text.substr(prefix.size()) : std::string{};
+    std::string args_text = text.starts_with(prefix) ? text.substr(prefix.size()) : std::string{};
 
     tesseract::CommandDescription desc;
     desc.command = active_bot_command_->name;

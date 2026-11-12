@@ -419,10 +419,7 @@ int ListView::index_at(Point local) const
     }
     auto it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(), content_y);
     int idx = static_cast<int>(it - row_offsets_.begin()) - 1;
-    if (idx < 0)
-    {
-        idx = 0;
-    }
+    idx = std::max(idx, 0);
     if (static_cast<std::size_t>(idx) >= adapter_->count())
     {
         idx = kInvalidIndex;
@@ -1119,10 +1116,7 @@ std::pair<int, int> GridView::visible_range() const
     if (row_h > 0 && origin_y < bounds_.y)
     {
         first_row = static_cast<int>((bounds_.y - origin_y) / row_h);
-        if (first_row < 0)
-        {
-            first_row = 0;
-        }
+        first_row = std::max(first_row, 0);
     }
     if (c <= 0 || first_row * c >= total)
     {

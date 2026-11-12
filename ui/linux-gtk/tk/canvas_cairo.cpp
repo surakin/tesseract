@@ -1318,7 +1318,7 @@ public:
                 }
                 else
                 {
-                    image_ranges.push_back({start, end});
+                    image_ranges.emplace_back(start, end);
                 }
                 markup += pango_escape(sp.text);
                 byte_offset = end;

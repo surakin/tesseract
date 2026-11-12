@@ -273,7 +273,7 @@ void apply_hw_decoder_cache(const std::string& cache_dir)
         gst_object_unref(factory);
         if (!el)
         {
-            broken.push_back(name);
+            broken.emplace_back(name);
             continue;
         }
 
@@ -284,11 +284,11 @@ void apply_hw_decoder_cache(const std::string& cache_dir)
 
         if (ret == GST_STATE_CHANGE_FAILURE)
         {
-            broken.push_back(name);
+            broken.emplace_back(name);
         }
         else
         {
-            working.push_back(name);
+            working.emplace_back(name);
         }
     }
 

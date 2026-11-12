@@ -236,14 +236,8 @@ public:
         }
         float delta = (dx != 0.0f) ? dx : dy;
         scroll_offset_ += delta;
-        if (scroll_offset_ < 0.0f)
-        {
-            scroll_offset_ = 0.0f;
-        }
-        if (scroll_offset_ > max_offset)
-        {
-            scroll_offset_ = max_offset;
-        }
+        scroll_offset_ = std::max(scroll_offset_, 0.0f);
+        scroll_offset_ = std::min(scroll_offset_, max_offset);
         return true; // host repaints on true
     }
 

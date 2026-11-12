@@ -75,6 +75,7 @@ TEST_CASE("date badge is hidden at the bottom and shown once scrolled up, "
 
     const std::uint64_t ts = now_ms();
     std::vector<MessageRowData> rows;
+    rows.reserve(60);
     for (int i = 0; i < 60; ++i)
     {
         rows.push_back(make_text_row("$e" + std::to_string(i), ts));
@@ -108,6 +109,7 @@ TEST_CASE("date badge label reflects the day of the topmost visible row",
     const std::uint64_t ts_new = now_ms();
 
     std::vector<MessageRowData> rows;
+    rows.reserve(30);
     for (int i = 0; i < 30; ++i)
     {
         rows.push_back(make_text_row("$old" + std::to_string(i), ts_old));
@@ -150,6 +152,7 @@ TEST_CASE("date badge rests at the same position when no DaySeparator row "
     const std::uint64_t ts_new = now_ms();
 
     std::vector<MessageRowData> rows;
+    rows.reserve(30);
     for (int i = 0; i < 30; ++i)
     {
         rows.push_back(make_text_row("$old" + std::to_string(i), ts_old));

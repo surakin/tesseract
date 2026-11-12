@@ -190,7 +190,7 @@ TEST_CASE("ConfirmDialog: reason field hands its trimmed text to on_reason befor
     dlg->open(std::move(opts),
               [&]
               {
-                  order.push_back("confirm");
+                  order.emplace_back("confirm");
               });
     CHECK(dlg->reason_field()->own_visible());
 

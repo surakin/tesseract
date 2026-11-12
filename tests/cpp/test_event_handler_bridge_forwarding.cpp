@@ -99,7 +99,7 @@ struct FwdRecorder : tesseract::IEventHandler
     }
     void on_image_packs_updated() override
     {
-        log.push_back("packs");
+        log.emplace_back("packs");
     }
     void on_threads_updated(const std::string& r) override
     {

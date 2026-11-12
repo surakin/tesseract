@@ -540,6 +540,7 @@ TEST_CASE("Timeline: focus lands on the newest visible message; Up/Down move",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -565,6 +566,7 @@ TEST_CASE("Timeline: Shift+PageUp pages up when nothing is unread",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -587,6 +589,7 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(5);
     for (int i = 0; i < 5; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -655,6 +658,7 @@ TEST_CASE("Timeline: a click never moves keyboard focus onto it", "[message_list
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(5);
     for (int i = 0; i < 5; ++i)
     {
         rows.push_back(kbd_text_row(i));
@@ -692,6 +696,7 @@ TEST_CASE("Timeline: the cursor follows its message across a history prepend",
     REQUIRE(v.selected_index() == 4); // $e14
 
     std::vector<MessageRowData> older;
+    older.reserve(10);
     for (int i = 0; i < 10; ++i)
     {
         older.push_back(kbd_text_row(i));
@@ -709,6 +714,7 @@ TEST_CASE("Timeline: a part added before the chosen one doesn't redirect Enter",
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
+    rows.reserve(3);
     for (int i = 0; i < 3; ++i)
     {
         rows.push_back(kbd_text_row(i));

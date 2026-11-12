@@ -539,6 +539,7 @@ std::vector<std::string> RoomInfoPanelBody::shown_member_names_for_test() const
 {
     std::vector<std::string> names;
     const std::size_t rows = std::min(member_rects_.size(), members_.size());
+    names.reserve(rows);
     for (std::size_t i = 0; i < rows; ++i)
     {
         names.push_back(members_[i].display_name);

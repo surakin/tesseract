@@ -2471,14 +2471,8 @@ Rect intersect_rect(const Rect& a, const Rect& b)
     float y0 = std::max(a.y, b.y);
     float x1 = std::min(a.right(), b.right());
     float y1 = std::min(a.bottom(), b.bottom());
-    if (x1 < x0)
-    {
-        x1 = x0;
-    }
-    if (y1 < y0)
-    {
-        y1 = y0;
-    }
+    x1 = std::max(x1, x0);
+    y1 = std::max(y1, y0);
     return {x0, y0, x1 - x0, y1 - y0};
 }
 } // namespace
@@ -2771,6 +2765,7 @@ public:
             PangoFontFamily** fams = nullptr;
             int n = 0;
             pango_font_map_list_families(pango_cairo_font_map_get_default(), &fams, &n);
+            out.reserve(n);
             for (int i = 0; i < n; ++i)
             {
                 out.push_back({pango_font_family_get_name(fams[i]),
@@ -4069,7 +4064,7 @@ void Host::sync_anim_overlays_()
     // scrolled off, the image stopped animating, or the row was removed.
     for (auto it = live_overlays_.begin(); it != live_overlays_.end();)
     {
-        if (painted_this_pass_.count(it->first) == 0)
+        if (!painted_this_pass_.contains(it->first))
         {
             if (overlay_ && it->second.widget)
             {

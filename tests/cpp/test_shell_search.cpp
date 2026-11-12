@@ -169,6 +169,7 @@ struct SearchRoomFixture
         info.name = "R";
         rv->set_room(info);
         std::vector<MessageRowData> rows;
+        rows.reserve(loaded.size());
         for (auto& e : loaded)
         {
             rows.push_back(srch_row(e));

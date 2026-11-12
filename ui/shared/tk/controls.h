@@ -388,7 +388,7 @@ protected:
 
 private:
     bool busy_ = false;
-    std::chrono::steady_clock::time_point busy_start_{};
+    std::chrono::steady_clock::time_point busy_start_;
 };
 
 // A Button with a persistent on/off state, for icon toolbars (e.g. a filter or

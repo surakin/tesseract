@@ -722,7 +722,7 @@ protected:
     struct UnjoinedRetryState
     {
         int attempts = 0;
-        std::chrono::steady_clock::time_point next_retry{};
+        std::chrono::steady_clock::time_point next_retry;
     };
     std::unordered_map<std::string, UnjoinedRetryState> unjoined_fetch_retry_;
     // In-flight summary fetches for one space. The sidebar and the space-root
@@ -997,7 +997,7 @@ protected:
     // the fetch entirely.
     bool media_dep_known_failed_(const std::string& key, const std::string& room_id) const
     {
-        if (media_decode_failed_.count(key) || media_fetch_backed_off_(key))
+        if (media_decode_failed_.contains(key) || media_fetch_backed_off_(key))
         {
             return true;
         }
@@ -1220,7 +1220,7 @@ protected:
     std::unordered_set<std::string> room_list_running_accounts_;
     bool warmup_allowed_() const
     {
-        return active_account_ && room_list_running_accounts_.count(active_account_->user_id) != 0;
+        return active_account_ && room_list_running_accounts_.contains(active_account_->user_id);
     }
     void handle_room_list_running_ui_();
     void start_background_warming_();
@@ -1389,7 +1389,7 @@ protected:
     std::atomic<std::uint32_t> status_msg_gen_{0};
     // Last status-line text spoken (see show_status_message_) and when.
     std::string last_announced_status_;
-    std::chrono::steady_clock::time_point last_announced_status_at_{};
+    std::chrono::steady_clock::time_point last_announced_status_at_;
     /// True while a persistent (auto_clear_ms=0) status override is active.
     /// refresh_sync_status_() checks this to avoid clobbering the override.
     bool status_override_active_ = false;
@@ -3968,7 +3968,7 @@ protected:
     struct CallOverlayRoster
     {
         std::string room_id;
-        std::chrono::steady_clock::time_point built_at{};
+        std::chrono::steady_clock::time_point built_at;
         std::unordered_map<std::string, std::pair<std::string, std::string>>
             people; // user id -> (name, avatar mxc)
     };

@@ -249,6 +249,7 @@ TEST_CASE("clicking a gallery cell opens the viewer at that cell, audio and file
     // Stepping on shows the next image and drops the old video's fetch.
     f.s.pump();
     std::vector<std::uint64_t> before;
+    before.reserve(f.s.pending_media_.size());
     for (const auto& [id, req] : f.s.pending_media_)
     {
         before.push_back(id);

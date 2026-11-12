@@ -1656,7 +1656,7 @@ ShellBase::apply_image_pack_changes_(tesseract::Client* client,
     std::vector<std::string> errors;
     if (!client)
     {
-        errors.push_back("image_packs: not logged in");
+        errors.emplace_back("image_packs: not logged in");
         return errors;
     }
 

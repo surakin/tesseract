@@ -15,7 +15,7 @@ bool is_space(char c)
 
 std::optional<std::string> GifEngine::match(std::string_view text) const
 {
-    if (text.size() < kPrefix.size() || text.substr(0, kPrefix.size()) != kPrefix)
+    if (text.size() < kPrefix.size() || !text.starts_with(kPrefix))
     {
         return std::nullopt;
     }

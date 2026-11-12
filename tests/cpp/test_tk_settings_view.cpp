@@ -633,7 +633,7 @@ TEST_CASE("AppearanceSection: the timeline width slider persists and reads out a
     {
         for (auto* l : labels)
         {
-            if (l->access_name().ends_with("%"))
+            if (l->access_name().ends_with('%'))
             {
                 return l->access_name();
             }

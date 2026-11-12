@@ -803,6 +803,7 @@ TEST_CASE("ImagePackEditorView: the section list clamps wheel scroll", "[image_p
     v.set_available_packs({make_pack("p1", "Emotes", "!room:example.org")});
 
     std::vector<tesseract::ImagePackImage> images;
+    images.reserve(60);
     for (int i = 0; i < 60; ++i)
     {
         images.push_back(

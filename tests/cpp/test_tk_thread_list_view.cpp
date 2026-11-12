@@ -301,6 +301,7 @@ TEST_CASE("ThreadListView::paint re-masks the header strip over scrolled row con
     ThreadListView v;
     st.arrange(v, {0, 0, 300, 400});
     std::vector<ThreadInfo> threads;
+    threads.reserve(10);
     for (int i = 0; i < 10; ++i)
     {
         threads.push_back(make_thread("$t" + std::to_string(i), 1, /*root_ts=*/1000 + i));

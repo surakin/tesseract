@@ -23,7 +23,7 @@ class SpoilerRevealer
 public:
     bool is_revealed(const std::string& event_id) const
     {
-        return revealed_.count(event_id) > 0;
+        return revealed_.contains(event_id);
     }
 
     void reveal(const std::string& event_id)

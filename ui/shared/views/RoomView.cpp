@@ -2507,7 +2507,7 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     {
         emoji_picker_->set_current_room_id(info.id);
         // A bridge drops custom emoticons (reactions and inline images).
-        const bool allowed = !(info.is_bridged && !info.bridge_overridden);
+        const bool allowed = !info.is_bridged || info.bridge_overridden;
         emoji_picker_->set_custom_emoticons_allowed(allowed);
         emoji_picker_->refresh_emoticon_packs();
         // An open picker rebuilds its pack tabs and search results in place.
@@ -2864,7 +2864,7 @@ void RoomView::refresh_thread_follow_state_()
         return;
     }
     thread_view_->set_follow_state(thread_subscriptions_supported_,
-                                   followed_threads_.count(thread_panel_root_) != 0);
+                                   followed_threads_.contains(thread_panel_root_));
     if (repaint_requester_)
     {
         repaint_requester_();

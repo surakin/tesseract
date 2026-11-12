@@ -881,7 +881,7 @@ public:
         // wrapped line) — NOT size().width(), which after setTextWidth() is
         // exactly the constraint. Matches the Pango / DirectWrite / CoreText
         // backends, and message-bubble hugging relies on it.
-        const qreal h = single_line_ ? nominal_h_ : static_cast<qreal>(sz_.height());
+        const qreal h = single_line_ ? nominal_h_ : sz_.height();
         return {static_cast<float>(ideal_w_), static_cast<float>(h)};
     }
     int line_count() const override

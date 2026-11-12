@@ -512,10 +512,7 @@ void QuickSwitcher::move_selection(int delta)
     }
     const int n = static_cast<int>(active_count_());
     int cur = list_->selected_index();
-    if (cur < 0)
-    {
-        cur = 0;
-    }
+    cur = std::max(cur, 0);
     int next = cur + delta;
     next = std::max(0, std::min(n - 1, next));
     list_->set_selected_index(next);

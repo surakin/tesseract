@@ -46,7 +46,7 @@ MediaDiskCache::MediaDiskCache(fs::path dir, std::uintmax_t max_bytes)
     for (const auto& de : fs::directory_iterator(parent.empty() ? fs::path(".") : parent, ec))
     {
         const std::string name = de.path().filename().string();
-        if (name.compare(0, prefix.size(), prefix) == 0)
+        if (name.starts_with(prefix))
         {
             std::error_code rm_ec;
             fs::remove_all(de.path(), rm_ec);

@@ -137,7 +137,7 @@ TEST_CASE("parent_spaces_for_room_ walks nested spaces and survives cycles", "[s
     CHECK(parents[1] == "!outer");
 
     // A cycle (outer is also inside inner) terminates.
-    s.space_children_cache_["!inner"].push_back("!outer");
+    s.space_children_cache_["!inner"].emplace_back("!outer");
     parents = s.parent_spaces_for_room_("!room");
     CHECK(parents.size() == 2);
 }

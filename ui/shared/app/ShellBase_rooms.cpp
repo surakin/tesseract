@@ -1247,7 +1247,7 @@ void ShellBase::refresh_room_list_()
         filtered.reserve(child_ids.size());
         for (const auto& r : rooms_)
         {
-            if (child_set.count(r.id))
+            if (child_set.contains(r.id))
             {
                 filtered.push_back(r);
             }

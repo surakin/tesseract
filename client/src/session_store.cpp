@@ -745,7 +745,7 @@ void SessionStore::sweep_orphaned_account_dirs()
             continue;
         }
         const std::string name = it->path().filename().string();
-        if (in_use.count(name))
+        if (in_use.contains(name))
         {
             continue;
         }

@@ -242,7 +242,7 @@ TEST_CASE("a failed edit reports on the status line", "[roompane][compose]")
     bool edit_failed = false;
     for (const auto& st : f.s.statuses)
     {
-        edit_failed |= st.rfind("Edit failed", 0) == 0;
+        edit_failed |= st.starts_with("Edit failed");
     }
     CHECK(edit_failed);
 }

@@ -360,7 +360,7 @@ TEST_CASE("Fresh: Save to file is offered only when the shell wires it", "[encry
         {
             if (auto* b = dynamic_cast<tk::Button*>(ch.get()))
             {
-                if (b->label().rfind("Save to file", 0) == 0)
+                if (b->label().starts_with("Save to file"))
                 {
                     return b->visible();
                 }

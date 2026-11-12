@@ -276,14 +276,8 @@ public:
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.25f)
-        {
-            rate = 0.25f;
-        }
-        if (rate > 4.0f)
-        {
-            rate = 4.0f;
-        }
+        rate = std::max(rate, 0.25f);
+        rate = std::min(rate, 4.0f);
         rate_ = rate;
         if (!pipeline_)
         {

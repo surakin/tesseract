@@ -12,9 +12,6 @@
 #include <vector>
 
 using namespace tk;
-using tesseract::ImagePack;
-using tesseract::ImagePackImage;
-using tesseract::PackSourceKind;
 using tesseract::PackUsage;
 using tesseract::PackUsageFilter;
 using tesseract::views::StickerPicker;

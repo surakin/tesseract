@@ -101,7 +101,7 @@ struct AccountSession
     /// instead of applied; our own echo clears it, otherwise it is adopted
     /// once the window has passed (another device wrote after us, or our
     /// save never landed). See apply_synced_emoji_skin_tone() below.
-    std::chrono::steady_clock::time_point emoji_skin_tone_set_at{};
+    std::chrono::steady_clock::time_point emoji_skin_tone_set_at;
     std::optional<emoji::SkinTone> emoji_skin_tone_deferred;
 
     /// True once `client->start_sync(bridge.get())` has been called for this

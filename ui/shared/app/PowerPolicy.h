@@ -99,7 +99,7 @@ private:
     bool on_battery_ = false;
     bool active_ = false;
     std::optional<bool> pending_;
-    Clock::time_point pending_since_{};
+    Clock::time_point pending_since_;
     std::chrono::seconds debounce_{20};
 };
 

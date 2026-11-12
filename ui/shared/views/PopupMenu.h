@@ -57,7 +57,7 @@ public:
         // Optional SVG icon (embedded k*Svg byte span). When non-empty it is
         // rasterized + tinted and drawn instead of `glyph`. Points at static
         // data, so the span stays valid for the menu's lifetime.
-        std::span<const std::uint8_t> svg_icon{};
+        std::span<const std::uint8_t> svg_icon;
         std::string label;
         bool destructive = false; // draws label in pal.destructive colour
         std::function<void()> on_selected;

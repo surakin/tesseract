@@ -55,7 +55,7 @@ void ShellBase::update_space_children_cache_()
                 std::vector<std::string> unjoined;
                 for (const auto& child : all)
                 {
-                    if (!joined_set.count(child))
+                    if (!joined_set.contains(child))
                     {
                         unjoined.push_back(child);
                     }
@@ -96,7 +96,7 @@ void ShellBase::update_space_children_cache_()
                                                [this, &child_set](const tesseract::RoomSummary& s)
                                                {
                                                    return room_by_id_(s.room_id) != nullptr ||
-                                                          !child_set.count(s.room_id);
+                                                          !child_set.contains(s.room_id);
                                                }),
                                 summaries.end());
                         }
@@ -445,7 +445,7 @@ void ShellBase::refresh_space_root_children_(const std::string& space_id)
         const std::unordered_set<std::string> child_set(it->second.begin(), it->second.end());
         for (const auto& r : rooms_)
         {
-            if (!child_set.count(r.id))
+            if (!child_set.contains(r.id))
             {
                 continue;
             }
@@ -593,7 +593,7 @@ void ShellBase::request_summary_fetch_(const std::string& space_id, const std::s
     {
         st.gen = ++unjoined_fetch_gen_counter_;
     }
-    if (st.pending.count(room_id))
+    if (st.pending.contains(room_id))
     {
         return;
     }
@@ -642,7 +642,7 @@ ShellBase::get_cached_unjoined_summaries_(const std::string& space_id)
         // (request_summary_fetch_); they will be retried on the next refresh.
         for (const auto& id : child_it->second)
         {
-            if (!loaded.count(id))
+            if (!loaded.contains(id))
             {
                 request_summary_fetch_(space_id, id);
             }

@@ -396,10 +396,7 @@ void MessageSearchView::move_selection(int delta)
         cur = delta > 0 ? -1 : 0;
     }
     int next = cur + delta;
-    if (next < 0)
-    {
-        next = 0;
-    }
+    next = std::max(next, 0);
     if (next >= n)
     {
         next = n - 1;

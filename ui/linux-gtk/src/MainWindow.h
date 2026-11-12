@@ -63,7 +63,7 @@ public:
                         std::filesystem::path screenshot_dir = {}
 #endif
     );
-    ~MainWindow();
+    ~MainWindow() override;
 
     GtkWidget* widget() const
     {

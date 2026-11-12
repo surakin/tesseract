@@ -41,7 +41,7 @@ FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb, std::vector<std::
     // file (see host_win32.cpp/host_macos.mm/host_gtk.cpp/host_qt.cpp's
     // drop loops), so this is the single chokepoint that turns "drop
     // multiple files" into a queued multi-attachment send.
-    if (mime.rfind("image/", 0) == 0)
+    if (mime.starts_with("image/"))
     {
         // Animation (GIF, WebP, APNG, AVIF, JXL) is read straight from the
         // header, so the flag is right at attach time: the preview animates
@@ -49,12 +49,12 @@ FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb, std::vector<std::
         const bool animated = is_animated_image(bytes, mime);
         cb.add_pending_image(std::move(bytes), std::move(mime), std::move(filename), animated);
     }
-    else if (mime.rfind("video/", 0) == 0)
+    else if (mime.starts_with("video/"))
     {
         cb.add_pending_video(bytes, mime, filename);
         probe(std::move(bytes), std::move(mime));
     }
-    else if (mime.rfind("audio/", 0) == 0)
+    else if (mime.starts_with("audio/"))
     {
         cb.add_pending_audio(bytes, mime, filename);
         probe(std::move(bytes), std::move(mime));

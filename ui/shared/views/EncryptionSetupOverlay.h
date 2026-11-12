@@ -593,7 +593,7 @@ private:
     tk::IconCache done_check_icon_;
 
     // Spinner animation clock; reset when the Progress step is entered.
-    std::chrono::steady_clock::time_point progress_start_{};
+    std::chrono::steady_clock::time_point progress_start_;
 };
 
 } // namespace tesseract::views

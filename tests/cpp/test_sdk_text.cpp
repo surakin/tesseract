@@ -6,7 +6,7 @@ using tesseract::views::sdk_text::localize;
 
 TEST_CASE("sdk_text passes ordinary text through unchanged", "[sdk_text]")
 {
-    CHECK(localize("") == "");
+    CHECK(localize("").empty());
     CHECK(localize("hello") == "hello");
     CHECK(localize("(image)") == "(image)"); // a preview cached before codes existed
 }

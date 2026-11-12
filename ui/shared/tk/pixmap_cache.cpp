@@ -127,7 +127,7 @@ const Image* PixmapCache::peek(const CacheKey& key)
 bool PixmapCache::contains(const CacheKey& key) const
 {
     std::lock_guard<std::mutex> lock(mu_);
-    return entries_.find(key) != entries_.end();
+    return entries_.contains(key);
 }
 
 void PixmapCache::evict(const CacheKey& key)

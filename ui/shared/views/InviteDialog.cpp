@@ -675,12 +675,12 @@ void InviteDialog::reconcile_()
             {
                 const InviteFieldToken& tok = *it;
                 const int before = static_cast<int>(search_field_->text().size());
-                if (have.count(tok.text))
+                if (have.contains(tok.text))
                 {
                     // Already selected — drop the duplicate text.
                     search_field_->replace_range(tok.start, tok.end, "");
                 }
-                else if (existing_members_.count(tok.text))
+                else if (existing_members_.contains(tok.text))
                 {
                     continue; // left as text; its row says "Already in room"
                 }
@@ -691,7 +691,7 @@ void InviteDialog::reconcile_()
                 }
                 else
                 {
-                    if (!resolved_.count(tok.text) && on_resolve_user)
+                    if (!resolved_.contains(tok.text) && on_resolve_user)
                     {
                         on_resolve_user(tok.text, /*debounce=*/false);
                     }
@@ -714,8 +714,8 @@ void InviteDialog::reconcile_()
     reconciling_ = false;
 
     const std::string& q = parse_.query.text;
-    if (is_complete_mxid(q) && !existing_members_.count(q) && !known_entry_(q) &&
-        !resolved_.count(q) && on_resolve_user)
+    if (is_complete_mxid(q) && !existing_members_.contains(q) && !known_entry_(q) &&
+        !resolved_.contains(q) && on_resolve_user)
     {
         on_resolve_user(q, /*debounce=*/true);
     }
@@ -749,7 +749,7 @@ void InviteDialog::rebuild_rows_()
         }
         auto known = known_entry_(id);
         RowState st;
-        if (existing_members_.count(id))
+        if (existing_members_.contains(id))
         {
             st = RowState::AlreadyMember;
         }
@@ -794,7 +794,7 @@ void InviteDialog::rebuild_rows_()
             {
                 continue;
             }
-            if (existing_members_.count(e.user_id))
+            if (existing_members_.contains(e.user_id))
             {
                 members.push_back({std::move(e), RowState::AlreadyMember});
             }
@@ -855,7 +855,8 @@ std::vector<std::string> InviteDialog::selected_user_ids() const
         }
     }
     const std::string& q = parse_.query.text;
-    if (is_complete_mxid(q) && !seen.count(q) && !existing_members_.count(q) && known_entry_(q))
+    if (is_complete_mxid(q) && !seen.contains(q) && !existing_members_.contains(q) &&
+        known_entry_(q))
     {
         ids.push_back(q);
     }

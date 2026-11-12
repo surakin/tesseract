@@ -153,6 +153,7 @@ namespace
 std::vector<tesseract::Client::Device> many_devices(int n)
 {
     std::vector<tesseract::Client::Device> devs;
+    devs.reserve(n);
     for (int i = 0; i < n; ++i)
     {
         devs.push_back(

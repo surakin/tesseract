@@ -386,7 +386,7 @@ void ShellBase::forget_thread_receipts_(const std::string& room_id)
     const std::string prefix = room_id + "\x1F";
     for (auto it = last_sent_thread_receipt_.begin(); it != last_sent_thread_receipt_.end();)
     {
-        if (it->first.rfind(prefix, 0) == 0)
+        if (it->first.starts_with(prefix))
         {
             it = last_sent_thread_receipt_.erase(it);
         }
