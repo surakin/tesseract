@@ -1904,7 +1904,6 @@ void ShellBase::send_current_location_(std::string room_id,
                                        const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
-    Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || !acting || !acting->client)
     {

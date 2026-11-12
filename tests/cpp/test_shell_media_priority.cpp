@@ -60,7 +60,7 @@ TEST_CASE("begin_media_req_ registers its priority key; resolve finds the id",
           "[shell][media-priority]")
 {
     PriorityShell s;
-    auto id = s.begin_media_req_(/*group=*/7, noop_bytes, {}, "mxc://a");
+    auto id = s.begin_media_req_(/*group_id=*/7, noop_bytes, {}, "mxc://a");
 
     CHECK(s.resolve_visible_request_ids_({"mxc://a"}) == std::vector<std::uint64_t>{id});
     // An unknown key resolves to nothing.
@@ -71,7 +71,7 @@ TEST_CASE("begin_media_req_ with an empty priority key registers nothing",
           "[shell][media-priority]")
 {
     PriorityShell s;
-    s.begin_media_req_(/*group=*/7, noop_bytes); // no key
+    s.begin_media_req_(/*group_id=*/7, noop_bytes); // no key
     CHECK(s.media_key_to_req_.empty());
     CHECK(s.resolve_visible_request_ids_({"mxc://a"}).empty());
 }
@@ -79,7 +79,7 @@ TEST_CASE("begin_media_req_ with an empty priority key registers nothing",
 TEST_CASE("completing a request drops its reverse-map entry", "[shell][media-priority]")
 {
     PriorityShell s;
-    auto id = s.begin_media_req_(/*group=*/7, noop_bytes, {}, "mxc://a");
+    auto id = s.begin_media_req_(/*group_id=*/7, noop_bytes, {}, "mxc://a");
     REQUIRE(s.resolve_visible_request_ids_({"mxc://a"}) == std::vector<std::uint64_t>{id});
 
     s.handle_media_ready_ui_(id, {}); // delivery completes the request
@@ -94,8 +94,8 @@ TEST_CASE("cancel_media_group_ drops only the cancelled group's keys", "[shell][
     tesseract::Client client; // real, session-less — the FFI call is a no-op
     s.client_ = &client;
 
-    auto id1 = s.begin_media_req_(/*group=*/11, noop_bytes, {}, "mxc://k1");
-    auto id2 = s.begin_media_req_(/*group=*/22, noop_bytes, {}, "mxc://k2");
+    auto id1 = s.begin_media_req_(/*group_id=*/11, noop_bytes, {}, "mxc://k1");
+    auto id2 = s.begin_media_req_(/*group_id=*/22, noop_bytes, {}, "mxc://k2");
 
     s.cancel_media_group_(11);
 
@@ -107,8 +107,8 @@ TEST_CASE("resolve_visible_request_ids_ keeps found keys and skips misses",
           "[shell][media-priority]")
 {
     PriorityShell s;
-    auto id1 = s.begin_media_req_(/*group=*/7, noop_bytes, {}, "mxc://k1");
-    auto id3 = s.begin_media_req_(/*group=*/7, noop_bytes, {}, "mxc://k3");
+    auto id1 = s.begin_media_req_(/*group_id=*/7, noop_bytes, {}, "mxc://k1");
+    auto id3 = s.begin_media_req_(/*group_id=*/7, noop_bytes, {}, "mxc://k3");
 
     // Middle key was never requested (e.g. already cached) → skipped.
     auto ids = s.resolve_visible_request_ids_({"mxc://k1", "mxc://k2", "mxc://k3"});

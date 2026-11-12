@@ -341,7 +341,7 @@ private:
     // wired once per distinct instance encountered while walking the tree.
     void hook_selection_changed(tk::Widget* widget)
     {
-        if (!widget || selection_hooked_.count(widget))
+        if (!widget || selection_hooked_.contains(widget))
         {
             return;
         }
@@ -839,7 +839,7 @@ public:
             return S_OK;
         }
 
-        int rt_id[2] = {static_cast<int>(UiaAppendRuntimeId), runtime_id_};
+        int rt_id[2] = {UiaAppendRuntimeId, runtime_id_};
         SAFEARRAY* sa = SafeArrayCreateVector(VT_I4, 0, 2);
         if (!sa)
         {
@@ -1313,7 +1313,7 @@ void AccessBridge::rebuild_if_dirty()
     // QAccessible::deleteAccessibleInterface().
     for (auto it = providers_.begin(); it != providers_.end();)
     {
-        if (new_index.find(it->first) == new_index.end())
+        if (!new_index.contains(it->first))
         {
             UiaDisconnectProvider(it->second.Get());
             it->second->detach();
@@ -1366,7 +1366,7 @@ void AccessBridge::rebuild_if_dirty()
     }
     for (const auto& [key, kids] : children_of_)
     {
-        if (key == root_key || new_children.count(key))
+        if (key == root_key || new_children.contains(key))
         {
             continue;
         }
@@ -1504,8 +1504,9 @@ void AccessBridge::raise_rect_changed_(const AccessKey& key)
     newv.parray = SafeArrayCreateVector(VT_R8, 0, 4);
     if (newv.parray)
     {
-        double vals[4] = {double(rc.left), double(rc.top), double(rc.right - rc.left),
-                          double(rc.bottom - rc.top)};
+        double vals[4] = {static_cast<double>(rc.left), static_cast<double>(rc.top),
+                          static_cast<double>(rc.right - rc.left),
+                          static_cast<double>(rc.bottom - rc.top)};
         for (LONG i = 0; i < 4; ++i)
         {
             SafeArrayPutElement(newv.parray, &i, &vals[i]);
@@ -1542,7 +1543,7 @@ void AccessBridge::notify_current_row(tk::Widget* owner, int idx)
 AccessNodeProvider* AccessBridge::provider_for(const AccessKey& key)
 {
     rebuild_if_dirty();
-    if (index_.find(key) == index_.end())
+    if (!index_.contains(key))
     {
         return nullptr;
     }
@@ -1750,7 +1751,7 @@ class NativeEditProvider final : public IRawElementProviderSimple, public IValue
 {
 public:
     NativeEditProvider(HWND hwnd, NativeEditAccessible::Callbacks cb)
-        : hwnd_(hwnd), cb_(std::move(cb)), live_(true)
+        : hwnd_(hwnd), cb_(std::move(cb))
     {
     }
     void detach()
@@ -1903,7 +1904,7 @@ private:
 
     HWND hwnd_;
     NativeEditAccessible::Callbacks cb_;
-    bool live_;
+    bool live_ = true;
     std::atomic<ULONG> refs_{1};
 };
 

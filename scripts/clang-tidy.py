@@ -33,7 +33,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCOPE = ("client/", "ui/", "tests/cpp/")
-SKIP = ("/build/", "/third_party/", "/_deps/", "/.qt/", "xdg-activation-v1-protocol")
+SKIP = ("/build/", "/third_party/", "/_deps/", "/.qt/", "xdg-activation-v1-protocol", "/nanosvg")
 # Targets that generate headers/sources the analysed TUs include.
 GENERATED = (
     "tesseract_sdk_bridge_cxx",

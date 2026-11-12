@@ -149,7 +149,7 @@ PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
 }
 
 float PollCardDisplay::height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
-                              bool show_end) const
+                              bool show_end)
 {
     return layout_(m, factory, col_w, show_end).h;
 }

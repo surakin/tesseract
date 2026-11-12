@@ -2026,6 +2026,7 @@ nlohmann::json parse_json_obj(const std::string& json)
     }
     catch (const nlohmann::json::exception&)
     {
+        // Unparseable: fall through to the empty object below.
     }
     return nlohmann::json::object();
 }

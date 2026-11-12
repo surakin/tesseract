@@ -2772,7 +2772,7 @@ public:
                 out.push_back({pango_font_family_get_name(fams[i]),
                                pango_font_family_is_monospace(fams[i]) != FALSE});
             }
-            g_free(fams);
+            g_free(static_cast<void*>(fams));
             std::sort(out.begin(), out.end(),
                       [](const FontFamilyInfo& a, const FontFamilyInfo& b)
                       {

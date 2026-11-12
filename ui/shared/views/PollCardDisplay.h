@@ -43,8 +43,8 @@ public:
 
     // Card height for the row at `col_w`, without painting. `factory` is used
     // only for text measurement.
-    float height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
-                 bool show_end) const;
+    static float height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
+                        bool show_end);
     static float width(float col_w); // min(col_w, kPollCardMaxW)
 
     // Paints at (x, y); returns the bottom y. When `interactive`, records hit

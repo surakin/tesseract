@@ -126,7 +126,7 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
                                           decode_ac_value(q_b, max_ac)};
     }
 
-    out_rgba.resize(static_cast<size_t>(w * h * 4));
+    out_rgba.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
 
     for (int py = 0; py < h; ++py)
     {
@@ -142,13 +142,15 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
                     float basis =
                         basis_y * std::cos((M_PI * static_cast<float>(i) * static_cast<float>(px)) /
                                            static_cast<float>(w));
-                    const Color3& c = colors[static_cast<size_t>(j * comp_x + i)];
+                    const Color3& c = colors[static_cast<size_t>(j) * static_cast<size_t>(comp_x) +
+                                             static_cast<size_t>(i)];
                     r += c.r * basis;
                     g += c.g * basis;
                     b += c.b * basis;
                 }
             }
-            size_t idx = static_cast<size_t>((py * w + px) * 4);
+            size_t idx =
+                (static_cast<size_t>(py) * static_cast<size_t>(w) + static_cast<size_t>(px)) * 4;
             out_rgba[idx + 0] = linear_to_srgb(r);
             out_rgba[idx + 1] = linear_to_srgb(g);
             out_rgba[idx + 2] = linear_to_srgb(b);

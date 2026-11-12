@@ -13,8 +13,6 @@
 // GdiplusTypes.h calls unqualified min()/max(); with NOMINMAX the Win32 macros
 // are gone, so std::min/std::max must be brought into scope before the include.
 // Mirrors the trick in MainWindow.h.
-using std::max;
-using std::min;
 #include <gdiplus.h>
 
 namespace win32

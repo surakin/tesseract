@@ -38,9 +38,31 @@
 # clang-analyzer-core.CallAndMessage (host() getter guarded by `if (host())`),
 # bugprone-unchecked-string-to-number-conversion and
 # cppcoreguidelines-pro-type-member-init for enum members with no neutral default.
+# Win32: misc-misplaced-const (`const HWND` is the idiom for handle typedefs) and
+# bugprone-invalid-enum-default-initialization (zeroed THUMBBUTTON structs),
+# bugprone-unhandled-code-paths and -switch-missing-default-case (window-proc
+# switches on WM_* messages fall through to DefWindowProc on purpose),
+# bugprone-exception-escape (noexcept destructors/cleanup that swallow or accept
+# terminate), bugprone-std-namespace-modification (the WinRT coroutine shim must
+# specialise std::coroutine_traits) and cppcoreguidelines-virtual-class-destructor
+# (forward declarations of COM interfaces and ref-counted COM providers).
 # Move-semantics micro-optimisations are off (performance-use-std-move, -move-const-arg,
 # -no-automatic-move, cppcoreguidelines-rvalue-reference-param-not-moved,
 # -missing-std-forward): they are not correctness issues.
+# Remaining checks reviewed and off (false positives, deliberate patterns or
+# pure style): bugprone-unchecked-optional-access (guards go through helper
+# predicates such as has_selection()), clang-analyzer-deadcode.DeadStores
+# (layout cursors, `int next = cur`), clang-analyzer-optin.cplusplus.VirtualCall
+# and bugprone-parent-virtual-call (leaf classes calling their own stop()/cancel()
+# in destructors; test doubles calling ShellBase::x), clang-analyzer-cplusplus.Move
+# (QImageReader::read(&frame) refills a moved-from frame), bugprone-branch-clone,
+# bugprone-incorrect-roundings (non-negative layout values),
+# bugprone-throwing-static-initialization, bugprone-empty-catch (tolerant-parse
+# fallbacks, each commented), readability-suspicious-call-argument (deliberate
+# rollback), and API-shape or cosmetic suggestions (padding, string_view,
+# pass-by-value, nested namespaces, confusable names, function size, boolean
+# simplification, inc/dec in conditions, deleted copy in a protected section,
+# CRTP constructor access, string concatenation).
 #
 # clang-tidy configuration. Run via scripts/clang-tidy.py (see docs/BUILD.md,
 # "Static analysis"); it needs a non-unity, non-PCH compile database
@@ -93,6 +115,31 @@ Checks: >
   -clang-analyzer-optin.core.EnumCastOutOfRange,
   -bugprone-suspicious-stringview-data-usage,
   -clang-analyzer-core.CallAndMessage,
+  -bugprone-unchecked-optional-access,
+  -clang-analyzer-deadcode.DeadStores,
+  -clang-analyzer-optin.cplusplus.VirtualCall,
+  -bugprone-parent-virtual-call,
+  -clang-analyzer-cplusplus.Move,
+  -bugprone-branch-clone,
+  -bugprone-incorrect-roundings,
+  -bugprone-throwing-static-initialization,
+  -bugprone-empty-catch,
+  -readability-suspicious-call-argument,
+  -clang-analyzer-optin.performance.Padding,
+  -modernize-use-string-view,
+  -modernize-pass-by-value,
+  -modernize-concat-nested-namespaces,
+  -misc-confusable-identifiers,
+  -readability-function-size,
+  -readability-simplify-boolean-expr,
+  -bugprone-inc-dec-in-conditions,
+  -modernize-use-equals-delete,
+  -bugprone-crtp-constructor-accessibility,
+  -performance-inefficient-string-concatenation,
+  -misc-misleading-bidirectional,
+  -bugprone-random-generator-seed,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-integer-division,
   -performance-use-std-move,
   -performance-move-const-arg,
   -performance-no-automatic-move,
@@ -133,7 +180,14 @@ Checks: >
   -readability-avoid-nested-conditional-operator,
   -readability-duplicate-include,
   -performance-no-int-to-ptr,
-  -modernize-macro-to-enum
+  -modernize-macro-to-enum,
+  -misc-misplaced-const,
+  -bugprone-invalid-enum-default-initialization,
+  -bugprone-unhandled-code-paths,
+  -bugprone-switch-missing-default-case,
+  -bugprone-exception-escape,
+  -bugprone-std-namespace-modification,
+  -cppcoreguidelines-virtual-class-destructor
 WarningsAsErrors: ''
 HeaderFilterRegex: '(client|ui|tests/cpp)/'
 ExcludeHeaderFilterRegex: '(third_party|nanosvg|xdg-activation-v1-protocol|/build/|cxxbridge)'

@@ -28,6 +28,7 @@ static constexpr int kEmojiFontResourceId = 201;
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -1927,8 +1928,9 @@ private:
 
     ID2D1SolidColorBrush* brush(Color c)
     {
-        std::uint32_t key = (std::uint32_t(c.r) << 24) | (std::uint32_t(c.g) << 16) |
-                            (std::uint32_t(c.b) << 8) | std::uint32_t(c.a);
+        std::uint32_t key =
+            (static_cast<std::uint32_t>(c.r) << 24) | (static_cast<std::uint32_t>(c.g) << 16) |
+            (static_cast<std::uint32_t>(c.b) << 8) | static_cast<std::uint32_t>(c.a);
         auto it = brush_cache_.find(key);
         if (it != brush_cache_.end())
         {
@@ -1980,14 +1982,8 @@ private:
         float y0 = std::max(a.y, b.y);
         float x1 = std::min(a.x + a.w, b.x + b.w);
         float y1 = std::min(a.y + a.h, b.y + b.h);
-        if (x1 < x0)
-        {
-            x1 = x0;
-        }
-        if (y1 < y0)
-        {
-            y1 = y0;
-        }
+        x1 = std::max(x1, x0);
+        y1 = std::max(y1, y0);
         return {x0, y0, x1 - x0, y1 - y0};
     }
 };
@@ -2494,14 +2490,12 @@ public:
         std::vector<std::uint8_t> bgra(static_cast<size_t>(n));
         for (int i = 0; i < w * h; ++i)
         {
-            const unsigned a = pixels[i * 4 + 3];
-            bgra[static_cast<size_t>(i * 4 + 0)] =
-                static_cast<std::uint8_t>((pixels[i * 4 + 2] * a + 127) / 255); // B
-            bgra[static_cast<size_t>(i * 4 + 1)] =
-                static_cast<std::uint8_t>((pixels[i * 4 + 1] * a + 127) / 255); // G
-            bgra[static_cast<size_t>(i * 4 + 2)] =
-                static_cast<std::uint8_t>((pixels[i * 4 + 0] * a + 127) / 255); // R
-            bgra[static_cast<size_t>(i * 4 + 3)] = static_cast<std::uint8_t>(a);
+            const size_t o = static_cast<size_t>(i) * 4;
+            const unsigned a = pixels[o + 3];
+            bgra[o + 0] = static_cast<std::uint8_t>((pixels[o + 2] * a + 127) / 255); // B
+            bgra[o + 1] = static_cast<std::uint8_t>((pixels[o + 1] * a + 127) / 255); // G
+            bgra[o + 2] = static_cast<std::uint8_t>((pixels[o + 0] * a + 127) / 255); // R
+            bgra[o + 3] = static_cast<std::uint8_t>(a);
         }
         ComPtr<IWICBitmap> bitmap;
         if (FAILED(backend_.wic->CreateBitmapFromMemory(
@@ -2860,7 +2854,7 @@ public:
     // TagSequenceInlineObject (see above). Call after all per-range font
     // sizes are set: the object takes the layout's size at the sequence.
     // Sequences Noto doesn't ligate to one glyph are left alone.
-    void apply_tag_sequences_(IDWriteTextLayout* layout, const std::wstring& wide)
+    void apply_tag_sequences_(IDWriteTextLayout* layout, const std::wstring& wide) const
     {
         IDWriteFontFace* face = backend_.noto_emoji_face.Get();
         if (!face)
@@ -3646,7 +3640,8 @@ std::unique_ptr<Image> decode_image(Backend& /*b*/, std::span<const std::uint8_t
 static std::unique_ptr<Image> scale_wic_bitmap(IWICImagingFactory* wic, IWICBitmap* src, UINT w,
                                                UINT h, int max_w, int max_h)
 {
-    if (max_w <= 0 || max_h <= 0 || (static_cast<int>(w) <= max_w && static_cast<int>(h) <= max_h))
+    if (max_w <= 0 || max_h <= 0 ||
+        (std::cmp_less_equal(w, max_w) && std::cmp_less_equal(h, max_h)))
     {
         return nullptr;
     }
@@ -4386,7 +4381,7 @@ bool decode_animation_windowed(
 
     frame_count = std::min<UINT>(frame_count, tk::kAnimDecodeMaxFrames);
 
-    if (static_cast<int>(frame_count) <= window_threshold_frames)
+    if (std::cmp_less_equal(frame_count, window_threshold_frames))
     {
         // Short enough that windowing isn't worth it — fall back to the
         // existing whole-batch streaming decode. `decoder`/`owned_bytes`

@@ -816,15 +816,15 @@ void draw_button(DRAWITEMSTRUCT* dis)
     g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
 
     Gdiplus::SolidBrush erase(gpc(pal.compose_card_bg));
-    g.FillRectangle(&erase, (INT)dis->rcItem.left, (INT)dis->rcItem.top,
-                    (INT)(dis->rcItem.right - dis->rcItem.left),
-                    (INT)(dis->rcItem.bottom - dis->rcItem.top));
+    g.FillRectangle(&erase, static_cast<INT>(dis->rcItem.left), static_cast<INT>(dis->rcItem.top),
+                    static_cast<INT>(dis->rcItem.right - dis->rcItem.left),
+                    static_cast<INT>(dis->rcItem.bottom - dis->rcItem.top));
 
     Gdiplus::SolidBrush fillBrush(gpc(fill));
-    float fx = (float)dis->rcItem.left + 1.0f;
-    float fy = (float)dis->rcItem.top + 1.0f;
-    float fw = (float)(dis->rcItem.right - dis->rcItem.left) - 2.0f;
-    float fh = (float)(dis->rcItem.bottom - dis->rcItem.top) - 2.0f;
+    float fx = static_cast<float>(dis->rcItem.left) + 1.0f;
+    float fy = static_cast<float>(dis->rcItem.top) + 1.0f;
+    float fw = static_cast<float>(dis->rcItem.right - dis->rcItem.left) - 2.0f;
+    float fh = static_cast<float>(dis->rcItem.bottom - dis->rcItem.top) - 2.0f;
     float radius = (info.style == ButtonStyle::Icon) ? std::min(fw, fh) / 2.0f - 2.0f : 4.0f;
     fill_rounded(g, fillBrush, fx, fy, fw, fh, radius);
 
@@ -834,9 +834,9 @@ void draw_button(DRAWITEMSTRUCT* dis)
     {
         SetBkMode(dis->hDC, TRANSPARENT);
         SetTextColor(dis->hDC, text);
-        HFONT old = (HFONT)SelectObject(
+        HFONT old = static_cast<HFONT>(SelectObject(
             dis->hDC,
-            font(info.style == ButtonStyle::Primary ? FontRole::UiSemibold : FontRole::Ui));
+            font(info.style == ButtonStyle::Primary ? FontRole::UiSemibold : FontRole::Ui)));
         DrawTextW(dis->hDC, label, -1, &dis->rcItem,
                   DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
         SelectObject(dis->hDC, old);

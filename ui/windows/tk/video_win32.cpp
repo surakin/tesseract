@@ -63,7 +63,7 @@ namespace
 {
 // Rotate a tightly-packed BGRA pixel buffer in place, updating w and h.
 // deg must be 90, 180, or 270; any other value is a no-op.
-static void rotate_pixels_inplace(std::vector<uint8_t>& pixels, UINT32& w, UINT32& h, UINT32 deg)
+void rotate_pixels_inplace(std::vector<uint8_t>& pixels, UINT32& w, UINT32& h, UINT32 deg)
 {
     if (deg == 0 || w == 0 || h == 0)
     {
@@ -750,10 +750,7 @@ public:
         {
             target = dur;
         }
-        if (target < 0.0)
-        {
-            target = 0.0;
-        }
+        target = std::max(target, 0.0);
         engine_->SetCurrentTime(target);
 
         // The video decode thread is independent of the audio engine and
@@ -790,14 +787,8 @@ public:
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.25f)
-        {
-            rate = 0.25f;
-        }
-        if (rate > 4.0f)
-        {
-            rate = 4.0f;
-        }
+        rate = std::max(rate, 0.25f);
+        rate = std::min(rate, 4.0f);
         rate_ = rate;
         if (engine_)
         {

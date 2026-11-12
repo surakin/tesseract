@@ -882,7 +882,7 @@ void Win32Taskbar::record_recent_room_avatar(const std::wstring& room_id,
     }
 }
 
-std::wstring Win32Taskbar::packaged_avatar_uri_(const std::wstring& room_id) const
+std::wstring Win32Taskbar::packaged_avatar_uri_(const std::wstring& room_id)
 {
     const auto directory = package_context::local_state_path() / L"jump-list";
     const auto stem = L"room-" + hash_name(room_id);

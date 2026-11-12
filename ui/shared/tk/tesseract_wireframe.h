@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <cstddef>
 
 namespace tk
@@ -45,7 +46,7 @@ inline std::array<LineSegment, 32> tesseract_wireframe_edges(float phase01, Poin
         };
     }
 
-    const float angle = phase01 * 2.0f * 3.14159265f;
+    const float angle = phase01 * 2.0f * std::numbers::pi_v<float>;
     const float ca = std::cos(angle);
     const float sa = std::sin(angle);
 

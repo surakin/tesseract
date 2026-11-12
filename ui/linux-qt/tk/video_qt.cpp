@@ -319,7 +319,7 @@ public:
         if (stream_device_)
         {
             stream_device_->cancel();
-            stream_device_.reset();
+            stream_device_ = nullptr;
         }
         buffer_.close();
         bytes_ = QByteArray(reinterpret_cast<const char*>(data), static_cast<qsizetype>(size));
@@ -416,7 +416,7 @@ public:
             stream_device_->cancel();
             player_.stop();
             player_.setSourceDevice(nullptr);
-            stream_device_.reset();
+            stream_device_ = nullptr;
         }
         else
         {

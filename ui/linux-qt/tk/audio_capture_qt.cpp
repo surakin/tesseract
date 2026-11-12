@@ -211,7 +211,7 @@ private:
         // Final poll to capture any remaining bytes.
         poll();
 
-        source_.reset();
+        source_ = nullptr;
         recording_ = false;
 
         using namespace std::chrono;
@@ -232,7 +232,7 @@ private:
 
         pcm_.clear();
         waveform_.clear();
-        buffer_.reset();
+        buffer_ = nullptr;
     }
 
     PostFn post_;

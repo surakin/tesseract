@@ -113,6 +113,7 @@ static std::string extract_string(std::string_view json, std::string_view key)
     }
     catch (const nlohmann::json::exception&)
     {
+        // Not valid JSON: no value to report.
     }
     return {};
 }

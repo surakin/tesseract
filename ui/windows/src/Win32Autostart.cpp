@@ -102,7 +102,7 @@ bool Win32Autostart::set_enabled(bool enabled)
     std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" --autostart";
     for (const auto& arg : tesseract::profile_relaunch_args(tesseract::profile()))
     {
-        cmd += L" ";
+        cmd += L' ';
         for (char c : arg)
         {
             cmd.push_back(static_cast<wchar_t>(c));

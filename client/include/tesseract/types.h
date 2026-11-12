@@ -198,7 +198,7 @@ struct UrlPreview
     /// True when this entry carries something worth rendering as a card.
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image);
+        return !title.empty() || !description.empty() || static_cast<bool>(image);
     }
 };
 

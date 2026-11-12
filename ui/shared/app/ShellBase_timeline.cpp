@@ -252,7 +252,6 @@ void ShellBase::maybe_send_read_receipt_(const std::string& room_id, const std::
                                          const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
-    Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || event_id.empty())
     {
@@ -403,7 +402,6 @@ void ShellBase::maybe_send_thread_read_receipt_(const std::string& room_id,
                                                 const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
-    Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty() || thread_root.empty() || event_id.empty())
     {
@@ -430,7 +428,6 @@ void ShellBase::mark_all_threads_read_(const std::string& room_id,
                                        const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
-    Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (room_id.empty())
     {

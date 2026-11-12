@@ -781,6 +781,7 @@ std::string trf(const std::string& fmt, std::initializer_list<std::string> args)
                     }
                     catch (const std::exception&)
                     {
+                        // Not a number: idx keeps its default.
                     }
                     if (idx < argv.size())
                     {

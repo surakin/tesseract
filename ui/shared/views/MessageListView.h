@@ -72,7 +72,7 @@ struct UrlPreviewData
     int image_h = 0;
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image_source);
+        return !title.empty() || !description.empty() || static_cast<bool>(image_source);
     }
 };
 
@@ -233,7 +233,7 @@ struct MessageRowData
     }
     bool has_reply_image() const
     {
-        return has_reply() && bool(in_reply_to_image_source);
+        return has_reply() && static_cast<bool>(in_reply_to_image_source);
     }
 
     // MSC4553 forwarded message. `body`/`formatted_body`/kind already hold the
