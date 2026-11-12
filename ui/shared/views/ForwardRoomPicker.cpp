@@ -670,11 +670,13 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
         }
         else if (!error_lines_.empty())
         {
-            constexpr float kLineH = 24.0f;
+            constexpr float kLineGap = 8.0f;
             constexpr float kPad = 16.0f;
             float ey = body_y_f + kPad;
             tk::TextStyle ts{};
             ts.role = tk::FontRole::Body;
+            ts.wrap = true;
+            ts.max_width = card_rect_.w - 2.0f * kPad;
             for (const auto& line : error_lines_)
             {
                 auto lo = ctx.factory.build_text(line, ts);
@@ -682,8 +684,9 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
                 {
                     ctx.canvas.draw_text(*lo, {card_rect_.x + kPad, ey},
                                          ctx.theme.palette.destructive);
+                    ey += lo->measure().h;
                 }
-                ey += kLineH;
+                ey += kLineGap;
             }
 
             if (dismiss_btn_->visible())
