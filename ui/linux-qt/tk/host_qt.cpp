@@ -27,6 +27,7 @@
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
 #include <QtGui/QPaintEvent>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QWheelEvent>
@@ -1947,7 +1948,7 @@ public:
         {
             if (!first_block)
             {
-                pending += "\n";
+                pending += '\n';
             }
             first_block = false;
             for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
@@ -3564,7 +3565,7 @@ void Surface::wheelEvent(QWheelEvent* e)
     // per notch). A wheel reports no scroll phase; trackpads on compositors
     // that send phases do, so only phase-less events are treated as wheels.
     const bool is_touchpad =
-        !pd.isNull() && !(e->phase() == Qt::NoScrollPhase && !e->angleDelta().isNull());
+        !pd.isNull() && (e->phase() != Qt::NoScrollPhase || e->angleDelta().isNull());
     if (is_touchpad)
     {
         // Smooth-scroll device (trackpad): pixel delta is already in px.

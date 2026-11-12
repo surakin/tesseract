@@ -94,6 +94,7 @@
 #endif
 #include <QFile>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QDir>
 
 #include <algorithm>

@@ -143,8 +143,11 @@ void HistoryExportController::begin(Request req)
         return;
     }
 
+    // Evaluated before `req` is moved into the lambda: argument evaluation order
+    // is unspecified.
+    std::string suggested_name = suggested_folder_name(req);
     show_save_folder_dialog(
-        suggested_folder_name(req),
+        std::move(suggested_name),
         guarded(
             [this, req = std::move(req)](std::string path) mutable
             {

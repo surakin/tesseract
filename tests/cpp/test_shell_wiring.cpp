@@ -5,6 +5,7 @@
 // callbacks the views expose, asserting the resulting shell/Settings state.
 // Settings I/O is redirected to a temp dir by test_isolation_listener.
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/CallWindowBase.h"
@@ -316,7 +317,7 @@ struct WiringShell : tesseract::test::TestShellBase
     // Theme: the shared apply runs; the shell's own parts are recorded.
     void apply_native_theme_(const tk::Theme&) override
     {
-        theme_log.push_back("native");
+        theme_log.emplace_back("native");
     }
     void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn) override
     {
@@ -324,11 +325,11 @@ struct WiringShell : tesseract::test::TestShellBase
         {
             fn(*own_surface);
         }
-        theme_log.push_back("surfaces");
+        theme_log.emplace_back("surfaces");
     }
     void after_theme_applied_(const tk::Theme& t) override
     {
-        theme_log.push_back("after");
+        theme_log.emplace_back("after");
         after_theme_ptr = &t;
     }
     const tk::Theme* after_theme_ptr = nullptr;
@@ -1477,6 +1478,7 @@ namespace
 std::vector<std::string> wiring_tab_ids(const WiringShell& s)
 {
     std::vector<std::string> v;
+    v.reserve(s.tabs_.size());
     for (const auto& t : s.tabs_)
     {
         v.push_back(t.room_id);
@@ -3540,6 +3542,7 @@ TEST_CASE("account switch: tabs restore at once from the cached rooms", "[shell]
     CHECK(f.s.pending_restore_rooms_.empty());
     REQUIRE(f.s.tabs_.size() == 2);
     std::vector<std::string> tab_ids;
+    tab_ids.reserve(f.s.tabs_.size());
     for (const auto& t : f.s.tabs_)
     {
         tab_ids.push_back(t.room_id);
