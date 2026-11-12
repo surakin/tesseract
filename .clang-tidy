@@ -1,0 +1,70 @@
+# clang-tidy configuration. Checks switched off below are style churn that adds
+# thousands of findings (const-correctness, anonymous-namespace, nodiscard,
+# parentheses, named-parameter, ...) or contradict deliberate patterns
+# (shells narrow ShellBase hook visibility; #pragma once everywhere).
+# clang-tidy configuration. Run via scripts/clang-tidy.py (see docs/BUILD.md,
+# "Static analysis"); it needs a non-unity, non-PCH compile database
+# (cmake --preset linux-tidy). Checks are tuned in Phase 1 of the tidy pass.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  performance-*,
+  portability-*,
+  modernize-*,
+  readability-*,
+  misc-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-special-member-functions,
+  cppcoreguidelines-virtual-class-destructor,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-missing-std-forward,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  -modernize-use-trailing-return-type,
+  -modernize-use-designated-initializers,
+  -modernize-avoid-c-arrays,
+  -readability-identifier-length,
+  -readability-identifier-naming,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-implicit-bool-conversion,
+  -readability-uppercase-literal-suffix,
+  -readability-braces-around-statements,
+  -bugprone-easily-swappable-parameters,
+  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-const-correctness,
+  -misc-use-anonymous-namespace,
+  -misc-use-internal-linkage,
+  -misc-multiple-inheritance,
+  -misc-override-with-different-visibility,
+  -modernize-use-nodiscard,
+  -modernize-use-ranges,
+  -modernize-use-scoped-lock,
+  -portability-avoid-pragma-once,
+  -performance-enum-size,
+  -concurrency-mt-unsafe,
+  -readability-math-missing-parentheses,
+  -readability-named-parameter,
+  -readability-trailing-comma,
+  -readability-redundant-lambda-parameter-list,
+  -readability-isolate-declaration,
+  -readability-use-concise-preprocessor-directives,
+  -readability-avoid-nested-conditional-operator,
+  -readability-duplicate-include,
+  -performance-no-int-to-ptr,
+  -modernize-macro-to-enum
+CheckOptions:
+  # Rule of three/five only where a class actually owns something: interfaces
+  # with a defaulted virtual destructor and no move members are fine.
+  cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
+  cppcoreguidelines-special-member-functions.AllowMissingMoveFunctions: true
+  cppcoreguidelines-special-member-functions.AllowMissingMoveFunctionsWhenCopyIsDeleted: true
+WarningsAsErrors: ''
+HeaderFilterRegex: '(client|ui|tests/cpp)/'
+ExcludeHeaderFilterRegex: '(third_party|nanosvg|xdg-activation-v1-protocol|/build/|cxxbridge)'
+FormatStyle: file
