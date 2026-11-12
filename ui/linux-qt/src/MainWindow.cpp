@@ -274,7 +274,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             onUserStripContextMenu(mainAppSurface_->mapToGlobal(
                 QPoint(static_cast<int>(world.x), static_cast<int>(world.y))));
         };
-        main_app_->user_info()->on_primary = [this](tk::Point world)
+        main_app_->user_info()->on_primary = [this](tk::Point /*world*/)
         {
             open_account_picker_();
         };

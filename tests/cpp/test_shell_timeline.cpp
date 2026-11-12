@@ -206,7 +206,7 @@ struct TlMainFixture
     {
         return view->message_list();
     }
-    std::vector<std::string> ids()
+    std::vector<std::string> ids() const
     {
         std::vector<std::string> v;
         for (const auto& m : ml()->messages())

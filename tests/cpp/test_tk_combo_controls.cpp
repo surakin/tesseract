@@ -33,13 +33,13 @@ struct ComboStage
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
-    void layout(Widget& w, Rect r = {10, 10, 200, 40})
+    void layout(Widget& w, Rect r = {10, 10, 200, 40}) const
     {
         auto l = lc();
         w.measure(l, {r.w, r.h});
         w.arrange(l, r);
     }
-    void paint(Widget& w)
+    void paint(Widget& w) const
     {
         auto p = pc();
         w.paint(p);

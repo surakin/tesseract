@@ -16,7 +16,7 @@ struct TkFormLayoutStage
         return {surface->factory(), tk::Theme::light()};
     }
 
-    void run(tk::Widget& root)
+    void run(tk::Widget& root) const
     {
         auto ctx = lc();
         root.measure(ctx, {640.0f, 800.0f});

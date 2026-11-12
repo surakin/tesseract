@@ -522,7 +522,7 @@ private:
         (*ctx)->need_data(appsrc, length);
     }
     // appsrc's seek-data callback trampoline.
-    static gboolean appsrc_seek_data_(GstAppSrc* appsrc, guint64 offset, gpointer user_data)
+    static gboolean appsrc_seek_data_(GstAppSrc* /*appsrc*/, guint64 offset, gpointer user_data)
     {
         auto* ctx = static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
         return (*ctx)->seek_data(offset) ? TRUE : FALSE;

@@ -184,7 +184,7 @@ struct TtFx
         auto* tv = view->thread_view();
         return tv ? tv->message_list() : nullptr;
     }
-    std::vector<std::string> thread_ids()
+    std::vector<std::string> thread_ids() const
     {
         std::vector<std::string> v;
         if (auto* ml = thread_list())

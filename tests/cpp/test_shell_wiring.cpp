@@ -1290,7 +1290,6 @@ TEST_CASE("wiring: quick switcher lists rooms most-recent-first", "[shell][wirin
                   wiring_make_room("!mid:x", 50)};
     auto* qs = f.app->quick_switcher();
     REQUIRE(qs != nullptr);
-    std::string picked;
     qs->on_room_avatar_needed = [](const tesseract::RoomInfo&) {};
     // The provider is private to the widget; opening it exercises it.
     f.app->show_quick_switch(true);

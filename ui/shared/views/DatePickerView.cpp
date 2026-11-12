@@ -20,8 +20,8 @@ namespace
 {
 
 // UTF-8 single angle quotation marks used as prev/next navigation glyphs.
-static constexpr char kPrevGlyph[] = "\xE2\x80\xB9"; // U+2039 ‹
-static constexpr char kNextGlyph[] = "\xE2\x80\xBA"; // U+203A ›
+constexpr char kPrevGlyph[] = "\xE2\x80\xB9"; // U+2039 ‹
+constexpr char kNextGlyph[] = "\xE2\x80\xBA"; // U+203A ›
 
 } // namespace
 

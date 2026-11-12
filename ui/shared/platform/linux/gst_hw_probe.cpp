@@ -61,7 +61,7 @@ void ensure_gst_init()
                            xdg ? std::string(xdg) + "/tesseract-avlog"
                                : "/tmp/tesseract-avlog-" + std::to_string(getuid());
 
-                       struct stat st;
+                       struct stat st{};
                        if (lstat(sentinel.c_str(), &st) == 0 && S_ISREG(st.st_mode))
                        {
                            return;
@@ -115,7 +115,7 @@ namespace
 // Hardware decoder element names to probe.  Only factories that are actually
 // installed (gst_element_factory_find succeeds) are recorded in the cache, so
 // a future plugin install is detected automatically on the next TTL expiry.
-static const char* const kHwDecoders[] = {
+const char* const kHwDecoders[] = {
     // VA-API (Intel / AMD / Mesa)
     "vaapih264dec",
     "vaapih265dec",

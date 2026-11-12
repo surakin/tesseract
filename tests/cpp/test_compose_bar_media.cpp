@@ -20,7 +20,7 @@ struct ComposeBarMediaStage
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    void run(tk::Widget& root, tk::Rect bounds)
+    void run(tk::Widget& root, tk::Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});

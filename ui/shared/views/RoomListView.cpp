@@ -1983,7 +1983,7 @@ void RoomListView::scroll_to_offset(float t)
 
 std::array<bool, RoomListView::kNumSections> RoomListView::collapsed_state() const
 {
-    std::array<bool, kNumSections> s;
+    std::array<bool, kNumSections> s{};
     std::copy(collapsed_, collapsed_ + kNumSections, s.begin());
     return s;
 }

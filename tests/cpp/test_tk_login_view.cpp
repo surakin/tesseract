@@ -22,7 +22,7 @@ struct TkLoginViewStage
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});

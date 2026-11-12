@@ -799,7 +799,7 @@ bool QuickSwitcher::on_pointer_down(tk::Point local)
     return true;
 }
 
-void QuickSwitcher::on_pointer_up(tk::Point local, bool inside_self)
+void QuickSwitcher::on_pointer_up(tk::Point /*local*/, bool inside_self)
 {
     if (press_outside_)
     {

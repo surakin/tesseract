@@ -89,7 +89,7 @@ struct MemberMenuStage
         return *panel.body_for_test();
     }
 
-    tk::Point row_center(int i)
+    tk::Point row_center(int i) const
     {
         const tk::Rect r = body().member_row_rect_for_test(i);
         REQUIRE_FALSE(r.empty());

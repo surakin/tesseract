@@ -92,8 +92,8 @@ private:
         tk::Rect end_rect; // card-relative; empty when no button
     };
 
-    Layout layout_(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
-                   bool show_end) const;
+    static Layout layout_(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
+                          bool show_end);
 
     std::vector<Hit> geom_;
 };

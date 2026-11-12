@@ -462,7 +462,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
         wire_main_app_widget_(main_app_);
 
         // Wire UserInfo callbacks (replaces native GTK user-strip gestures).
-        main_app_->user_info()->on_primary = [this](tk::Point world)
+        main_app_->user_info()->on_primary = [this](tk::Point /*world*/)
         {
             open_account_picker_();
         };
@@ -3759,7 +3759,7 @@ void MainWindow::hide_forward_picker_field_()
 }
 
 gboolean MainWindow::on_window_key_pressed_(GtkEventControllerKey*, guint keyval, guint,
-                                            GdkModifierType state, gpointer user_data)
+                                            GdkModifierType /*state*/, gpointer user_data)
 {
     auto* self = static_cast<MainWindow*>(user_data);
     // Ctrl+K is handled by a global-scope GtkShortcutController (see ctor) so

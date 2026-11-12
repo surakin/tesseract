@@ -29,7 +29,7 @@ struct TabBarStage
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    void layout(float w = 600)
+    void layout(float w = 600) const
     {
         auto l = lc();
         bar->measure(l, {w, TabBar::kHeight});

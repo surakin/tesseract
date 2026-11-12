@@ -1,5 +1,7 @@
 #include "host.h"
 
+#include <memory>
+
 #include "access_tree.h" // find_topmost_modal (modal-scoped Tab traversal)
 #include "key_chord.h"
 #include "scrollable_base.h" // keyboard paging fallback (scroll_by_key)
@@ -533,7 +535,8 @@ void Host::begin_drag(DragPayload payload, DragVisual visual, Point source_local
         Rect b = p->bounds();
         world = Point{b.x + source_local.x, b.y + source_local.y};
     }
-    active_drag_.reset(new ActiveDrag{std::move(payload), std::move(visual), world, {}});
+    active_drag_ =
+        std::make_unique<ActiveDrag>(ActiveDrag{std::move(payload), std::move(visual), world, {}});
     request_repaint();
 }
 

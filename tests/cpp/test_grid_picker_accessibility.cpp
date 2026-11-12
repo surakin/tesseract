@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 
 // Exercises the generic GridAdapterAccessibility mechanism (mirrors
 // ListAdapterAccessibility for tk::GridView) and its real consumer,
@@ -30,7 +31,7 @@ struct GridPickerAccessibilityStage
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});

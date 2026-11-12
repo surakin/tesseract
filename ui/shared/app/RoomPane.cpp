@@ -3288,7 +3288,7 @@ void RoomPane::on_message_removed(std::size_t idx)
     deps_.relayout();
 }
 
-void RoomPane::on_typing_changed(const std::string& text, bool visible)
+void RoomPane::on_typing_changed(const std::string& text, bool /*visible*/)
 {
     if (room_view_)
     {

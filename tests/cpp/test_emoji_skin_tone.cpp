@@ -417,6 +417,7 @@ TEST_CASE("Emoji 18.0 additions and renamed-flag shortcodes", "[emoji][skin_tone
 #include "tk/emoji_support.h"
 
 #include <set>
+#include <utility>
 
 namespace
 {

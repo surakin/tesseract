@@ -26,7 +26,7 @@ struct TkQuickSwitcherStage
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    void run(Widget& w, Rect bounds)
+    void run(Widget& w, Rect bounds) const
     {
         auto l = lc();
         w.measure(l, {bounds.w, bounds.h});

@@ -11,8 +11,8 @@ namespace tesseract::views
 
 struct SlashCommandMatch
 {
-    int start;          ///< UTF-8 byte offset of the leading '/'.
-    int end;            ///< UTF-8 byte offset one past the last typed char.
+    int start = 0;      ///< UTF-8 byte offset of the leading '/'.
+    int end = 0;        ///< UTF-8 byte offset one past the last typed char.
     std::string prefix; ///< Characters typed after '/' (no slash).
 };
 

@@ -273,17 +273,16 @@ void ShellBase::handle_space_child_summary_ready_ui_(std::uint64_t request_id,
     }
 
     auto& cached = unjoined_summaries_cache_[space_id];
-    bool found = false;
-    for (auto& entry : cached)
+    const auto existing = std::find_if(cached.begin(), cached.end(),
+                                       [&](const auto& entry)
+                                       {
+                                           return entry.room_id == room_id;
+                                       });
+    if (existing != cached.end())
     {
-        if (entry.room_id == room_id)
-        {
-            entry = std::move(summary);
-            found = true;
-            break;
-        }
+        *existing = std::move(summary);
     }
-    if (!found)
+    else
     {
         cached.push_back(std::move(summary));
     }

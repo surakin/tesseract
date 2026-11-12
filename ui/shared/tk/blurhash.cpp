@@ -14,8 +14,8 @@ namespace
 {
 
 // Base83 character set used by BlurHash.
-static const char kBase83Chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg"
-                                   "hijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
+const char kBase83Chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg"
+                            "hijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
 
 int base83_decode_char(char c)
 {
@@ -30,7 +30,7 @@ int base83_decode_char(char c)
 }
 
 // Decode `num_chars` characters from `hash` starting at `start` as a base83 integer.
-static uint32_t decode_b83(const std::string& hash, int start, int num_chars)
+uint32_t decode_b83(const std::string& hash, int start, int num_chars)
 {
     uint32_t val = 0;
     for (int i = start; i < start + num_chars; ++i)
@@ -46,14 +46,14 @@ static uint32_t decode_b83(const std::string& hash, int start, int num_chars)
 }
 
 // sRGB gamma expansion (0..255 → 0..1 linear).
-static float srgb_to_linear(int value)
+float srgb_to_linear(int value)
 {
     float f = value / 255.0f;
     return (f <= 0.04045f) ? (f / 12.92f) : std::pow((f + 0.055f) / 1.055f, 2.4f);
 }
 
 // Linear → sRGB, clamped to 0..255.
-static uint8_t linear_to_srgb(float value)
+uint8_t linear_to_srgb(float value)
 {
     float clamped = std::fmax(0.0f, std::fmin(1.0f, value));
     float encoded = (clamped <= 0.0031308f) ? (clamped * 12.92f)
@@ -62,7 +62,7 @@ static uint8_t linear_to_srgb(float value)
 }
 
 // Decode a quantised AC component value into a signed float in [-1, 1].
-static float decode_ac_value(int quantised, float max_ac)
+float decode_ac_value(int quantised, float max_ac)
 {
     float f = static_cast<float>(quantised) / 9.0f - 1.0f;
     return (f < 0.0f ? -1.0f : 1.0f) * f * f * max_ac;

@@ -33,7 +33,7 @@ class Surface : public tk::SurfaceBase
 {
 public:
     explicit Surface(const Theme& theme = Theme::light(), bool transparent = false);
-    ~Surface();
+    ~Surface() override;
     Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;
 

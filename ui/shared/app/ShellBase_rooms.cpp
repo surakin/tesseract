@@ -1534,7 +1534,7 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id, bool o
 // tab triggered this action — closes the dialog on success or surfaces
 // the failure in JoinRoomView on failure. No shell needs to override
 // this; it's virtual only so a shell could extend it if ever needed.
-void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& room_id,
+void ShellBase::on_join_room_outcome_ui_(bool ok, const std::string& /*room_id*/,
                                          const std::string& message)
 {
     if (!ok && main_app_ && main_app_->room_preview())

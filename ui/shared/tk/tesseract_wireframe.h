@@ -34,7 +34,7 @@ inline std::array<LineSegment, 32> tesseract_wireframe_edges(float phase01, Poin
     {
         float x, y, z, w;
     };
-    std::array<Vec4, 16> verts;
+    std::array<Vec4, 16> verts{};
     for (int i = 0; i < 16; ++i)
     {
         verts[static_cast<std::size_t>(i)] = {

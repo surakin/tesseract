@@ -1246,7 +1246,7 @@ struct FileIconInfo
     std::string label; // uppercase extension, ≤4 chars
 };
 
-static FileIconInfo file_icon_info(std::string_view filename)
+FileIconInfo file_icon_info(std::string_view filename)
 {
     auto dot = filename.rfind('.');
     std::string ext;
@@ -1789,9 +1789,9 @@ struct RowPaintCtx
     const MessageRowData& m;
     tk::PaintCtx& ctx;
     tk::Rect bounds;
-    std::size_t index;
-    bool hovered;
-    bool cont;
+    std::size_t index = 0;
+    bool hovered = false;
+    bool cont = false;
 };
 
 class MessageRowRenderer
@@ -3173,7 +3173,7 @@ public:
                     // centering for the whole glyph cluster — centre by
                     // ascent() rather than full line-height because the
                     // colour-emoji font's descent region is empty.
-                    const RowLayoutCache::GlyphRun* reference = &rxc.glyph_runs[0];
+                    const RowLayoutCache::GlyphRun* reference = rxc.glyph_runs.data();
                     for (const auto& run : rxc.glyph_runs)
                     {
                         if (run.is_emoji)
@@ -5668,7 +5668,7 @@ private:
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
-                sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
+                sz.w = std::max(sz.w, std::min({pill_min.w, col_w, kImageMaxW}));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
             float h = sz.h;
@@ -6089,7 +6089,7 @@ private:
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
-                sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
+                sz.w = std::max(sz.w, std::min({pill_min.w, col_w, kImageMaxW}));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
             tk::Rect r{x, y, sz.w, sz.h};
@@ -6267,14 +6267,14 @@ private:
     }
 
     // Height of the line plus the gap that follows it.
-    float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
+    static float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w)
     {
         auto lo = forward_layout_(m, ctx.factory, col_w);
         return std::max(lo ? lo->measure().h : 0.0f, kForwardIconPx) + kForwardGapAfter;
     }
 
     // Width the line wants when it has all the room it needs (bubble hugging).
-    float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w) const
+    static float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w)
     {
         if (!m.forwarded)
         {

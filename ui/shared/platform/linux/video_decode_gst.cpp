@@ -51,13 +51,13 @@ constexpr GstClockTime kBusTimeoutNs = 30 * GST_SECOND;
 struct DecodeCtx
 {
     std::vector<VideoFrame> frames;
-    int max_w;
-    int max_h;
+    int max_w = 0;
+    int max_h = 0;
     int frame_cap = kMaxFrames;
 };
 
 // Called on the GStreamer streaming thread each time appsink has a new frame.
-static GstFlowReturn on_new_sample_(GstAppSink* sink, gpointer user_data)
+GstFlowReturn on_new_sample_(GstAppSink* sink, gpointer user_data)
 {
     auto* ctx = static_cast<DecodeCtx*>(user_data);
     if (std::cmp_greater_equal(ctx->frames.size(), ctx->frame_cap))
@@ -120,7 +120,7 @@ static GstFlowReturn on_new_sample_(GstAppSink* sink, gpointer user_data)
 }
 
 // Links decodebin's dynamic video src pad to the videoconvert sink pad.
-static void on_pad_added_(GstElement* /*dec*/, GstPad* pad, gpointer user_data)
+void on_pad_added_(GstElement* /*dec*/, GstPad* pad, gpointer user_data)
 {
     GstElement* pipe = static_cast<GstElement*>(user_data);
     GstCaps* caps = gst_pad_get_current_caps(pad);

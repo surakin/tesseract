@@ -273,7 +273,7 @@ private:
     // push_frame_locked_(). Caller holds mu_ and has already resolved
     // `entry` (including, for append_frame_from_session(), verified the
     // session identity).
-    void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
+    static void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
 
     // Windowed-entry bookkeeping run from advance(), caller holds mu_:
     // drop frames more than kKeepBehindFrames behind `entry.current`,

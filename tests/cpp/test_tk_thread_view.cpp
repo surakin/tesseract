@@ -32,7 +32,7 @@ struct TkThreadViewStage
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    void arrange(tk::Widget& w, tk::Rect bounds)
+    void arrange(tk::Widget& w, tk::Rect bounds) const
     {
         auto lc = layout_ctx();
         w.measure(lc, {bounds.w, bounds.h});

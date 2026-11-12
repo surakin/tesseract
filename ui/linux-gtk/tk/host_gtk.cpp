@@ -3655,7 +3655,7 @@ void draw_cb(GtkDrawingArea*, cairo_t* cr, int w, int h, gpointer p)
 // GDestroyNotify), so its lifetime is tied to the widget's, not the Host's.
 struct AnimOverlayDrawCtx
 {
-    Host* host;
+    Host* host = nullptr;
     tk::CacheKey key;
 };
 
@@ -3765,7 +3765,7 @@ gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy, g
 // Popup shield (see GtkOcclusionRegistry): its controllers run the drawing
 // area's own callbacks, translated from shield-local to drawing-area
 // coordinates.
-static void shield_to_canvas(GtkEventController* c, double& x, double& y)
+void shield_to_canvas(GtkEventController* c, double& x, double& y)
 {
     GtkWidget* shield = gtk_event_controller_get_widget(c);
     GtkWidget* overlay = gtk_widget_get_parent(shield);

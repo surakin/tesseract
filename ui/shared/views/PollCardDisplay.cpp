@@ -47,7 +47,7 @@ float PollCardDisplay::width(float col_w)
 
 PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
                                                  tk::CanvasFactory& factory, float col_w,
-                                                 bool show_end) const
+                                                 bool show_end)
 {
     Layout L;
     L.card_w = width(col_w);

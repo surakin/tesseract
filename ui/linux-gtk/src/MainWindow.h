@@ -187,7 +187,7 @@ private:
     // dispatch_key_down (owned by its GtkCallbackAction, freed with it).
     struct ShortcutBinding_
     {
-        MainWindow* self;
+        MainWindow* self = nullptr;
         tk::KeyEvent event;
     };
     static GtkShortcutTrigger* gtk_trigger_from_chord_(const tk::KeyChord& chord);

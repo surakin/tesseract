@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <utility>
 
 using tesseract::MentionSeg;
 using tesseract::views::InviteDialog;

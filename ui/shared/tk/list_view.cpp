@@ -836,8 +836,8 @@ void ListView::paint(PaintCtx& ctx)
             {
                 continue;
             }
-            bool selected = (std::cmp_equal(i, selected_index_));
-            bool hovered = (std::cmp_equal(i, hovered_index_));
+            bool selected = std::cmp_equal(i, selected_index_);
+            bool hovered = std::cmp_equal(i, hovered_index_);
             adapter_->paint_row(i, ctx, row_bounds, selected, hovered);
         }
     }

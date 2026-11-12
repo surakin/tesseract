@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+using namespace std::string_literals;
+
 namespace
 {
 
@@ -20,7 +22,7 @@ std::vector<std::uint8_t> bytes_of(const std::string& s)
 // RIFF....WEBPVP8X<size=10><flags><reserved...>
 std::vector<std::uint8_t> webp_vp8x(std::uint8_t flags)
 {
-    std::string s = "RIFF\x1a\0\0\0WEBPVP8X\x0a\0\0\0";
+    std::string s;
     s.assign("RIFF\x1a\x00\x00\x00WEBPVP8X\x0a\x00\x00\x00", 20);
     s.push_back(static_cast<char>(flags));
     s.append(9, '\0');
@@ -134,7 +136,7 @@ TEST_CASE("decode_size_allowed: oversize JXL rejected", "[image-sniff]")
 
 TEST_CASE("bytes_may_be_animated: GIF", "[image-sniff]")
 {
-    CHECK(tk::bytes_may_be_animated(bytes_of("GIF89a\x01\x00\x01\x00")));
+    CHECK(tk::bytes_may_be_animated(bytes_of("GIF89a\x01\x00\x01\x00"s)));
     CHECK(tk::bytes_may_be_animated(bytes_of("GIF87a")));
 }
 
@@ -296,7 +298,7 @@ TEST_CASE("probe_image_dimensions: JPEG SOF after large APP1 and DQT")
 TEST_CASE("probe_image_dimensions: unknown or truncated input")
 {
     CHECK_FALSE(tk::probe_image_dimensions({}));
-    CHECK_FALSE(tk::probe_image_dimensions(bytes_of("BM6\x00\x00\x00")));
+    CHECK_FALSE(tk::probe_image_dimensions(bytes_of("BM6\x00\x00\x00"s)));
     auto png = png_ihdr(10, 10);
     png.resize(20);
     CHECK_FALSE(tk::probe_image_dimensions(png));
@@ -389,9 +391,9 @@ TEST_CASE("probe_image_dimensions: junk byte before SOF does not hide the size")
 
 TEST_CASE("sniff_image_mime: labels a file by its signature, not its name", "[image-sniff]")
 {
-    CHECK(tk::sniff_image_mime(bytes_of("\x89PNG\r\n\x1a\n\0\0\0\rIHDR")) == "image/png");
-    CHECK(tk::sniff_image_mime(bytes_of("\xFF\xD8\xFF\xE0\0\x10JFIF")) == "image/jpeg");
-    CHECK(tk::sniff_image_mime(bytes_of("GIF89a\x01\0\x01\0")) == "image/gif");
+    CHECK(tk::sniff_image_mime(bytes_of("\x89PNG\r\n\x1a\n\0\0\0\rIHDR"s)) == "image/png");
+    CHECK(tk::sniff_image_mime(bytes_of("\xFF\xD8\xFF\xE0\0\x10JFIF"s)) == "image/jpeg");
+    CHECK(tk::sniff_image_mime(bytes_of("GIF89a\x01\0\x01\0"s)) == "image/gif");
     CHECK(tk::sniff_image_mime(webp_vp8x(0)) == "image/webp");
 }
 
@@ -399,7 +401,7 @@ TEST_CASE("sniff_image_mime: anything else is refused, not labelled", "[image-sn
 {
     CHECK(tk::sniff_image_mime(bytes_of("<html>not an image</html>")).empty());
     // A JPEG XL file is not in the picker's set, so it is refused too.
-    CHECK(tk::sniff_image_mime(bytes_of("\xFF\x0A\x00\x00")).empty());
+    CHECK(tk::sniff_image_mime(bytes_of("\xFF\x0A\x00\x00"s)).empty());
     CHECK(tk::sniff_image_mime(bytes_of("\x89PN")).empty()); // truncated signature
     CHECK(tk::sniff_image_mime({}).empty());
 }

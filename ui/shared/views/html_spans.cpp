@@ -223,7 +223,7 @@ struct Tag
 // Parse a horizontal alignment from a <td>/<th> `style="text-align:…"` value
 // (pulldown-cmark's form) or a legacy `align="…"` attribute. Case-insensitive;
 // anything other than left/center/right (e.g. `justify`) yields Default.
-static TableAlign parse_cell_align(std::string_view style, std::string_view align_attr)
+TableAlign parse_cell_align(std::string_view style, std::string_view align_attr)
 {
     auto classify = [](std::string_view v) -> TableAlign
     {
@@ -304,7 +304,7 @@ static TableAlign parse_cell_align(std::string_view style, std::string_view alig
 // "language-rust" or "lang-py hljs" → "rust"/"py". The class may carry several
 // space-separated tokens. The result is lower-cased and restricted to a safe
 // charset so it is never interpreted as markup downstream.
-static std::string lang_from_class(std::string_view cls)
+std::string lang_from_class(std::string_view cls)
 {
     std::size_t i = 0;
     while (i < cls.size())
@@ -349,7 +349,7 @@ static std::string lang_from_class(std::string_view cls)
 // Scan [p, end) for the attribute named `target` (case-insensitive).
 // Returns the attribute value when found (empty string for boolean attributes
 // with no value), or std::nullopt when the attribute is absent entirely.
-static std::optional<std::string> extract_attr(const char* p, const char* end, const char* target)
+std::optional<std::string> extract_attr(const char* p, const char* end, const char* target)
 {
     const std::size_t tlen = std::strlen(target);
     while (p < end)
@@ -637,7 +637,7 @@ struct FmtState
 // real navigation target, and it lets the Matrix-agnostic tk layer's
 // "pill_kind==Room && url.empty()" rule apply uniformly to both spellings
 // of a room self-mention — see MessageListView::paint_span_images).
-static bool is_room_mention_sentinel_href(const std::string& href)
+bool is_room_mention_sentinel_href(const std::string& href)
 {
     return href == "https://matrix.to/#/@room" || href == "http://matrix.to/#/@room";
 }
@@ -648,7 +648,7 @@ static bool is_room_mention_sentinel_href(const std::string& href)
 // same parser ShellBase::open_matrix_link() uses for click dispatch, so
 // "what renders as a pill" and "what's clickable as a Matrix link" never
 // drift apart.
-static tk::PillKind pill_kind_for_link(const std::string& url)
+tk::PillKind pill_kind_for_link(const std::string& url)
 {
     // parse_matrix_link() correctly rejects the @room sentinel as
     // Kind::Unknown (see is_room_mention_sentinel_href's comment); special-
@@ -681,7 +681,7 @@ static tk::PillKind pill_kind_for_link(const std::string& url)
 // untouched. Applied to the *displayed* label only — outgoing messages this
 // client sends still spell the conventional "@room" in the wire HTML
 // (client/src/mentions.cpp), so other clients see the usual text.
-static std::string strip_leading_at(std::string s)
+std::string strip_leading_at(std::string s)
 {
     if (!s.empty() && s.front() == '@')
     {

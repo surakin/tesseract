@@ -24,7 +24,7 @@ struct TkStorageGroupStage
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light(), nullptr,
                             host};
     }
-    void run(tk::Widget& root, tk::Rect bounds, tk::Host* host)
+    void run(tk::Widget& root, tk::Rect bounds, tk::Host* host) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});
