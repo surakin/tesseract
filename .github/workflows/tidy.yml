@@ -1,0 +1,83 @@
+# Static analysis gate: clang-tidy over client/, ui/ and tests/cpp/ with the
+# checks in .clang-tidy, on the Linux (Qt6 + GTK4) tree. The build uses the
+# linux-tidy preset (no unity build, no PCH) so clang-tidy sees real sources.
+#
+# clang-tidy is pinned to the LLVM major the .clang-tidy check names were
+# written against; another major may not know every check name. The Win32
+# shell is checked locally (windows-xwin-tidy), not here.
+
+name: clang-tidy
+
+on:
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'sdk/**'
+      - 'ui/**'
+      - 'tests/**'
+      - 'cmake/**'
+      - 'scripts/clang-tidy.py'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.clang-tidy'
+      - '.github/workflows/tidy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: tidy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    name: clang-tidy (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up clang
+        uses: ./.github/actions/setup-clang
+        with:
+          version: '23'
+
+      - name: Install clang-tidy
+        run: sudo apt-get install -y clang-tidy-23 clang-tools-23
+
+      # The same build dependencies as the Tests workflow (cpp-tests job).
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            libgtk-4-dev ninja-build libgl-dev libopus-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libsecret-1-dev libwayland-dev libxtst-dev
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: . -> build/linux-tidy/cargo/build
+
+      - name: Run clang-tidy
+        env:
+          CLANG_TIDY: /usr/lib/llvm-23/bin/clang-tidy
+        run: |
+          export PATH="/usr/lib/llvm-23/bin:$PATH"
+          python3 scripts/clang-tidy.py
+
+      - name: Upload findings
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: clang-tidy-summary
+          path: build/linux-tidy/clang-tidy/summary.txt

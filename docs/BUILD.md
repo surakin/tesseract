@@ -274,6 +274,14 @@ de-duplicated `summary.txt` (counts per check and directory) to
 review the diff. Non-unity builds also surface missing `#include`s that unity
 batching and PCH hide, reported as `clang-diagnostic-error`.
 
+The tree is kept at zero findings and gated twice: the `clang_tidy_check` ctest
+(only registered in a non-unity, non-PCH tree, so
+`ctest --test-dir build/linux-tidy -R clang_tidy_check`; it assumes the generated
+headers exist, i.e. the tree has been built) and the `clang-tidy` CI workflow
+(`.github/workflows/tidy.yml`, pinned to LLVM 23). The Win32 shell is checked
+locally with `windows-xwin-tidy`. Disable a check only in `.clang-tidy`, with the
+reason in its header comment.
+
 ## Build internals
 
 - **Corrosion** (the CMake↔Cargo bridge) is fetched automatically via

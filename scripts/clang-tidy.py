@@ -11,6 +11,8 @@ Usage: clang-tidy.py [--preset linux-tidy] [--checks GLOBS] [--fix]
   --checks    extra -checks= globs appended to .clang-tidy's list
   --fix       apply fix-its (run on a clean tree, review the diff)
   --jobs N    parallel clang-tidy processes (default: CPU count)
+  --build-dir analyse this configured tree instead of build/<preset>
+  --skip-unsuitable  exit 77 when clang-tidy is missing or the tree is unity/PCH
   --no-build  skip configuring and generating bridge/autogen headers
   PATH ...    only analyse TUs under these repo-relative paths (default: all of
               client/, ui/, tests/cpp/)
@@ -61,15 +63,19 @@ def main():
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--no-build", action="store_true")
     ap.add_argument("--list", action="store_true", help="print the TUs and exit")
+    ap.add_argument("--build-dir", help="use this configured tree instead of build/<preset>")
+    ap.add_argument("--skip-unsuitable", action="store_true",
+                    help="exit 77 (ctest skip) when clang-tidy is missing or the tree is unity/PCH")
     a = ap.parse_args()
 
     tidy = os.environ.get("CLANG_TIDY") or shutil.which("clang-tidy")
     runner = shutil.which("run-clang-tidy")
     if not tidy or not runner:
         print("clang-tidy / run-clang-tidy not found", file=sys.stderr)
-        return 2
+        return 77 if a.skip_unsuitable else 2
 
-    build_dir = os.path.join(ROOT, "build", a.preset)
+    build_dir = os.path.abspath(a.build_dir) if a.build_dir \
+        else os.path.join(ROOT, "build", a.preset)
     if not a.no_build and not a.list:
         if run(["cmake", "--preset", a.preset]).returncode:
             return 2
@@ -83,6 +89,9 @@ def main():
     if not os.path.exists(db_path):
         print(f"{db_path} missing; configure {a.preset} first", file=sys.stderr)
         return 2
+    if a.skip_unsuitable and re.search(r"/Unity/|cmake_pch", open(db_path).read()):
+        print("skipped: this tree uses unity builds or PCH (configure a *-tidy preset)")
+        return 77
     prefixes = tuple(p.rstrip("/") + "/" if os.path.isdir(os.path.join(ROOT, p)) else p
                      for p in a.paths) or SCOPE
     files = []
