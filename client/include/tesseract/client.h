@@ -715,7 +715,7 @@ public:
     /// already be the coerced, schema-conformant `{key: value}` argument
     /// map serialised as JSON — this call does no schema validation;
     /// callers validate against the command's `CommandDescription` first
-    /// (see `match_bot_command_arguments`, ui/shared/app/SlashCommands.h).
+    /// (see `match_bot_command_arguments`, ui/shared/views/SlashCommands.h).
     Result send_bot_command(const std::string& room_id, const std::string& body,
                             const std::string& formatted_body,
                             const std::vector<std::string>& mentioned_user_ids,
@@ -1997,7 +1997,7 @@ public:
     /// have no significant position" generality, which would need
     /// type-directed backtracking this client doesn't attempt in v1 — a
     /// documented limitation. Pure, no I/O; does not coerce token values to
-    /// their schema type (see `ui/shared/app/SlashCommands.cpp`'s per-token
+    /// their schema type (see `ui/shared/views/SlashCommands.cpp`'s per-token
     /// coercion, which runs on this method's output).
     static BotCommandMatchResult
     match_bot_command_arguments(const CommandDescription& desc,

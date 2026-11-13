@@ -7734,3 +7734,11 @@ msgstr "Стікерів не знайдено"
 
 msgid "Copy image"
 msgstr "Копіювати зображення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Bot command: {0}"
+msgstr "Команда бота: {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "bot command {0}"
+msgstr "команда бота {0}"

@@ -184,6 +184,8 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         forwarded_room_id: String::new(),
         forwarded_event_id: String::new(),
         forwarded_origin_ts: 0,
+        bot_command: String::new(),
+        bot_command_arguments_json: String::new(),
         profile_id: String::new(),
         profile_name: String::new(),
         profile_avatar_set: false,
@@ -1405,6 +1407,22 @@ fn original_forward(
     }
     let json: serde_json::Value = serde_json::from_str(raw).ok()?;
     forward_view(&json["content"], event_type)
+}
+
+/// The MSC4391 invocation `(command, arguments JSON)` of a timeline item, from
+/// its original JSON (an edit's top-level content is only fallback). Parses
+/// the JSON only when it mentions a command key at all.
+#[cfg(not(test))]
+fn original_bot_command(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+) -> Option<(String, String)> {
+    let raw = event_item.original_json()?.json().get();
+    if !crate::bot_commands::might_be_invocation(raw) {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let (command, arguments) = crate::bot_commands::parse_invocation(&json["content"])?;
+    Some((command, arguments.to_string()))
 }
 
 /// The raw `content.info` object of a timeline item's original JSON.
@@ -2635,6 +2653,13 @@ pub(super) async fn timeline_item_to_ffi_opts(
             String::new()
         };
         apply_forward(&mut msg_fields, &view.forwarded, name, verified);
+    }
+    // MSC4391: a forward shows another event's content, not an invocation.
+    if forward.is_none() {
+        if let Some((command, arguments_json)) = original_bot_command(event_item) {
+            msg_fields.bot_command = command;
+            msg_fields.bot_command_arguments_json = arguments_json;
+        }
     }
     if let Some(view) = &profile {
         if strip_profile {

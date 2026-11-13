@@ -627,6 +627,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-arrow-up.svg"
     "${_lucide_dir}/lucide-shield-check.svg"
     "${_lucide_dir}/lucide-shield-alert.svg"
+    "${_lucide_dir}/lucide-terminal.svg"
 )
 
 add_custom_command(

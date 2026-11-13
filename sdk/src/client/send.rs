@@ -30,6 +30,78 @@ use std::sync::Arc;
 
 use super::strip_meta::StripScope;
 
+/// Resolve the `room_id` / `event_id` references in a bot-command invocation's
+/// arguments: aliases become room ids and every reference gets a `via` list
+/// (the spec routing algorithm for joined rooms, `resolve_route_via` otherwise).
+/// The rewrite itself is the pure `bot_commands::resolve_reference_arguments`;
+/// this only performs the lookups it needs.
+#[cfg(not(test))]
+async fn resolve_bot_command_references(
+    client: &matrix_sdk::Client,
+    arguments: &mut serde_json::Value,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::{RoomAliasId, RoomId, RoomOrAliasId};
+    use std::collections::HashMap;
+
+    let mut aliases: HashMap<String, Result<(String, Vec<String>), String>> = HashMap::new();
+    for a in crate::bot_commands::reference_aliases(arguments) {
+        if aliases.contains_key(&a) {
+            continue;
+        }
+        let looked_up = match RoomAliasId::parse(&a) {
+            Err(e) => Err(format!("Invalid room alias {a}: {e}")),
+            Ok(alias) => client
+                .resolve_room_alias(&alias)
+                .await
+                .map(|r| {
+                    (
+                        r.room_id.to_string(),
+                        r.servers.iter().map(|s| s.to_string()).collect(),
+                    )
+                })
+                .map_err(|e| format!("Could not resolve room alias {a}: {e}")),
+        };
+        aliases.insert(a, looked_up);
+    }
+    let mut lookup_alias = |a: &str| {
+        aliases
+            .get(a)
+            .cloned()
+            .unwrap_or_else(|| Err(format!("Could not resolve room alias {a}")))
+    };
+
+    // Dry run to learn which rooms still need a `via` once aliases resolve.
+    let mut needed: Vec<String> = Vec::new();
+    let mut probe = arguments.clone();
+    crate::bot_commands::resolve_reference_arguments(&mut probe, &mut lookup_alias, &mut |r| {
+        if !needed.iter().any(|n| n == r) {
+            needed.push(r.to_owned());
+        }
+        Vec::new()
+    })?;
+
+    let mut routes: HashMap<String, Vec<String>> = HashMap::new();
+    for rid in needed {
+        let Ok(id) = RoomId::parse(&rid) else {
+            continue;
+        };
+        let servers = match client.get_room(&id) {
+            Some(room) if room.state() == matrix_sdk::RoomState::Joined => {
+                room.route().await.unwrap_or_default()
+            }
+            _ => {
+                let target: &RoomOrAliasId = (&*id).into();
+                super::room_list::resolve_route_via(client, target, Vec::new()).await
+            }
+        };
+        routes.insert(rid, servers.iter().map(|s| s.to_string()).collect());
+    }
+
+    crate::bot_commands::resolve_reference_arguments(arguments, &mut lookup_alias, &mut |r| {
+        routes.get(r).cloned().unwrap_or_default()
+    })
+}
+
 #[cfg(not(test))]
 fn begin_upload_progress(
     handler: &Option<Arc<parking_lot::Mutex<super::SendHandler>>>,
@@ -734,7 +806,7 @@ impl ClientFfi {
         };
         let (_, room) = try_op!(require_room(&client, room_id));
 
-        let arguments: serde_json::Value = match serde_json::from_str(arguments_json) {
+        let mut arguments: serde_json::Value = match serde_json::from_str(arguments_json) {
             Ok(v) => v,
             Err(e) => return err(format!("invalid arguments JSON: {e}")),
         };
@@ -753,14 +825,9 @@ impl ClientFfi {
         }
         let formatted = (!html.is_empty()).then_some(html.as_str());
 
-        let content = crate::bot_commands::build_invocation_content(
-            body,
-            formatted,
-            &mention_ids,
-            mention_room,
-            command,
-            arguments,
-        );
+        let formatted = formatted.map(str::to_owned);
+        let body = body.to_owned();
+        let command = command.to_owned();
 
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
@@ -770,11 +837,25 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "send/bot_command".to_string(),
         );
-        match self
-            .block_on_cancellable(async move { room.send_raw("m.room.message", content).await })
-        {
-            Some(Ok(_)) => ok(""),
-            Some(Err(e)) => err(e.to_string()),
+        match self.block_on_cancellable(async move {
+            if let Err(e) = resolve_bot_command_references(&client, &mut arguments).await {
+                return Err(e);
+            }
+            let content = crate::bot_commands::build_invocation_content(
+                &body,
+                formatted.as_deref(),
+                &mention_ids,
+                mention_room,
+                &command,
+                arguments,
+            );
+            room.send_raw("m.room.message", content)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }) {
+            Some(Ok(())) => ok(""),
+            Some(Err(e)) => err(e),
             None => err("cancelled"),
         }
     }

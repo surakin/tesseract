@@ -14,9 +14,10 @@
 namespace tesseract
 {
 
-/// The six primitive parameter value types MSC4391 defines. `String`/
-/// `Integer`/`Boolean` are unconstrained; `UserId`/`ServerName`/`RoomAlias`
-/// are strings additionally constrained to valid Matrix identifier grammar.
+/// The primitive parameter value types MSC4391 defines. `String`/`Integer`/
+/// `Boolean` are unconstrained; `UserId`/`ServerName`/`RoomAlias` are strings
+/// additionally constrained to valid Matrix identifier grammar. `RoomId`/
+/// `EventId` are references whose wire *value* shape is fixed by the MSC.
 enum class ParamPrimitiveType
 {
     String,
@@ -25,13 +26,6 @@ enum class ParamPrimitiveType
     UserId,
     ServerName,
     RoomAlias,
-};
-
-/// The two object parameter value types. The wire *value* shape for each is
-/// fixed by the MSC (`room_id`: `{id, via?}`; `event_id`: `{id, via?,
-/// event_id}`).
-enum class ParamObjectType
-{
     RoomId,
     EventId,
 };
@@ -48,12 +42,11 @@ enum class ParamLiteralType
 enum class ParamSchemaKind
 {
     Primitive,
-    Object,
     /// Top-level only per the MSC.
     Array,
     Literal,
-    /// Only legal as an array's item schema or nested inside one, never at
-    /// the top level of a parameter's own schema.
+    /// Legal at the top level of a parameter and as an array's item schema.
+    /// Unions never nest inside unions (those are `Invalid`).
     Union,
     /// `schema_json` failed to parse or used illegal nesting — the caller
     /// should skip this parameter rather than guess a type for it.
@@ -66,7 +59,6 @@ struct ParamSchema
 {
     ParamSchemaKind kind = ParamSchemaKind::Invalid;
     ParamPrimitiveType primitive_type = ParamPrimitiveType::String; ///< Primitive
-    ParamObjectType object_type = ParamObjectType::RoomId;          ///< Object
     std::shared_ptr<ParamSchema> array_item;                        ///< Array
     std::vector<ParamSchema> union_variants;                        ///< Union
     std::string literal_value_json;                                 ///< Literal — raw JSON scalar
@@ -98,8 +90,9 @@ struct CommandDescription
     std::vector<CommandParameter> parameters;
     std::string description;
     /// `false` when the content is structurally parseable but violates a
-    /// value-level invariant (duplicate parameter keys, or a `literal`
-    /// node whose value doesn't match its `literal_type`). Callers should
+    /// value-level invariant (duplicate parameter keys, a `literal` node
+    /// whose value doesn't match its `literal_type`, a command name outside
+    /// `[a-z0-9_-]{1,32}`, or more than 16 parameters). Callers should
     /// filter these out before offering the command for autocomplete/
     /// dispatch.
     bool valid = false;

@@ -3,6 +3,7 @@
 #include "views/poll_logic.h"
 #include "views/sdk_text.h"
 #include "views/send_block.h"
+#include "SlashCommands.h"
 #include "format.h"
 #include "html_spans.h"
 #include "IrcFormat.h"
@@ -719,6 +720,8 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.forwarded_sender_name = ev.forwarded_sender_name;
     row.forwarded_room_id = ev.forwarded_room_id;
     row.forwarded_event_id = ev.forwarded_event_id;
+    row.bot_command_display =
+        tesseract::format_bot_command_display(ev.bot_command, ev.bot_command_arguments_json);
 
     row.thread_root_id = ev.thread_root_id;
     row.is_thread_root = ev.is_thread_root;
@@ -1165,6 +1168,10 @@ constexpr float kQuoteGapAfter = 4.0f; // gap between quote and body
 constexpr float kForwardIconPx = 12.0f;  // forward glyph, drawn in text_muted
 constexpr float kForwardIconGap = 4.0f;  // glyph -> label
 constexpr float kForwardGapAfter = 4.0f; // gap between the line and what follows
+// Received bot command line (MSC4391) — glyph + muted label above the body.
+constexpr float kBotCommandIconPx = 12.0f;
+constexpr float kBotCommandIconGap = 4.0f;
+constexpr float kBotCommandGapAfter = 4.0f;
 // Reply hover button ("↩") — right-aligned in the chip strip.
 constexpr float kReplyBtnW = 28.0f;
 constexpr float kReplyBtnPadX = 8.0f;
@@ -1866,6 +1873,13 @@ public:
                                           const Adapter&) const;
     virtual float paint_forward_context(const MessageRowData& m, tk::PaintCtx&, float x, float y,
                                         float col_w, const Adapter&) const;
+
+    // Bot command line — the MSC4391 invocation a row carries, after the
+    // forward line. Defaults draw glyph + muted label; IRC draws a plain line.
+    virtual float measure_bot_command_context(const MessageRowData& m, tk::LayoutCtx&, float col_w,
+                                              const Adapter&) const;
+    virtual float paint_bot_command_context(const MessageRowData& m, tk::PaintCtx&, float x,
+                                            float y, float col_w, const Adapter&) const;
 
     // Reply context — the message this row is a reply to.
     virtual float measure_reply_context(const MessageRowData& m, tk::LayoutCtx&, float /*col_w*/,
@@ -3676,6 +3690,10 @@ public:
         {
             nat = std::max(nat, forward_natural_width_(m, ctx, w));
         }
+        if (!m.bot_command_display.empty())
+        {
+            nat = std::max(nat, bot_command_natural_width_(m, ctx, w));
+        }
         // No lower bound: the bubble hugs its content (see msgbubble::layout).
         return std::min(nat, w);
     }
@@ -4138,6 +4156,10 @@ public:
             extras.push_back(m.forwarded_author().empty()
                                  ? tk::tr("forwarded message")
                                  : tk::trf(tk::tr("forwarded from {0}"), {m.forwarded_author()}));
+        }
+        if (!m.bot_command_display.empty())
+        {
+            extras.push_back(tk::trf(tk::tr("bot command {0}"), {m.bot_command_display}));
         }
         if (m.is_edited)
         {
@@ -5559,6 +5581,7 @@ private:
         // mIRC scrollback line) and its height.
         // The forward attribution (MSC4553) sits above the reply context.
         float quote_h = row_renderer_->measure_forward_context(m, ctx, col_w, *this) +
+                        row_renderer_->measure_bot_command_context(m, ctx, col_w, *this) +
                         row_renderer_->measure_reply_context(m, ctx, col_w, *this);
         switch (m.kind)
         {
@@ -5784,6 +5807,10 @@ private:
         if (m.forwarded)
         {
             y = row_renderer_->paint_forward_context(m, ctx, x, y, col_w, *this);
+        }
+        if (!m.bot_command_display.empty())
+        {
+            y = row_renderer_->paint_bot_command_context(m, ctx, x, y, col_w, *this);
         }
         if (m.has_reply())
         {
@@ -6343,6 +6370,73 @@ private:
             ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_muted);
         }
         record_forward_geom_(m, {x, y, lo ? std::min(col_w, lo->measure().w) : col_w, h});
+        return y + h + msgirc::kIrcPrefixGap;
+    }
+
+    // ── Bot command line (MSC4391) ──────────────────────────────────────
+    static std::string bot_command_label_(const MessageRowData& m)
+    {
+        return tk::trf(tk::tr("Bot command: {0}"), {m.bot_command_display});
+    }
+
+    static std::unique_ptr<tk::TextLayout> bot_command_layout_(const MessageRowData& m,
+                                                               tk::CanvasFactory& f, float col_w)
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width =
+            col_w < 0.0f ? -1.0f : std::max(0.0f, col_w - kBotCommandIconPx - kBotCommandIconGap);
+        return f.build_text(bot_command_label_(m), st);
+    }
+
+    static float bot_command_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w)
+    {
+        auto lo = bot_command_layout_(m, ctx.factory, col_w);
+        return std::max(lo ? lo->measure().h : 0.0f, kBotCommandIconPx) + kBotCommandGapAfter;
+    }
+
+    static float bot_command_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w)
+    {
+        auto lo = bot_command_layout_(m, ctx.factory, -1.0f);
+        return std::min(w, kBotCommandIconPx + kBotCommandIconGap + (lo ? lo->measure().w : 0.0f));
+    }
+
+    float paint_bot_command_line_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                  float col_w) const
+    {
+        auto lo = bot_command_layout_(m, ctx.factory, col_w);
+        const float text_h = lo ? lo->measure().h : 0.0f;
+        const float h = std::max(text_h, kBotCommandIconPx);
+        const tk::Color col = ctx.theme.palette.text_muted;
+        ic_bot_command_.draw(
+            ctx.canvas, ctx.factory, kTerminalSvg,
+            {x, y + (h - kBotCommandIconPx) * 0.5f, kBotCommandIconPx, kBotCommandIconPx},
+            kBotCommandIconPx, col);
+        if (lo)
+        {
+            ctx.canvas.draw_text(
+                *lo, {x + kBotCommandIconPx + kBotCommandIconGap, y + (h - text_h) * 0.5f}, col);
+        }
+        return y + h + kBotCommandGapAfter;
+    }
+
+    // IRC: a plain dim scrollback line ("-> Bot command: /ban ...").
+    float irc_bot_command_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
+    {
+        auto lo = ctx.factory.build_text("-> " + bot_command_label_(m), body_style(col_w));
+        return (lo ? lo->measure().h : 0.0f) + msgirc::kIrcPrefixGap;
+    }
+
+    float paint_irc_bot_command_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                 float col_w) const
+    {
+        auto lo = ctx.factory.build_text("-> " + bot_command_label_(m), body_style(col_w));
+        const float h = lo ? lo->measure().h : 0.0f;
+        if (lo)
+        {
+            ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_muted);
+        }
         return y + h + msgirc::kIrcPrefixGap;
     }
 
@@ -8269,6 +8363,7 @@ private:
     mutable tk::IconCache ic_call_phone_, ic_call_video_;
     mutable tk::IconCache ic_add_reaction_;
     mutable tk::IconCache ic_forward_;
+    mutable tk::IconCache ic_bot_command_;
 
     MessageListView& owner_;
 
@@ -8337,6 +8432,20 @@ inline float MessageRowRenderer::paint_forward_context(const MessageRowData& m, 
                                                        const Adapter& ad) const
 {
     return ad.paint_forward_line_(m, ctx, x, y, col_w);
+}
+
+inline float MessageRowRenderer::measure_bot_command_context(const MessageRowData& m,
+                                                             tk::LayoutCtx& ctx, float col_w,
+                                                             const Adapter& ad) const
+{
+    return m.bot_command_display.empty() ? 0.0f : ad.bot_command_line_height_(m, ctx, col_w);
+}
+
+inline float MessageRowRenderer::paint_bot_command_context(const MessageRowData& m,
+                                                           tk::PaintCtx& ctx, float x, float y,
+                                                           float col_w, const Adapter& ad) const
+{
+    return ad.paint_bot_command_line_(m, ctx, x, y, col_w);
 }
 
 inline float MessageRowRenderer::paint_reply_context(const MessageRowData& m, tk::PaintCtx& ctx,
@@ -8517,6 +8626,17 @@ public:
                                 float col_w, const Adapter& ad) const override
     {
         return m.forwarded ? ad.paint_irc_forward_(m, ctx, x, y, col_w) : y;
+    }
+
+    float measure_bot_command_context(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
+                                      const Adapter& ad) const override
+    {
+        return m.bot_command_display.empty() ? 0.0f : ad.irc_bot_command_height_(m, ctx, col_w);
+    }
+    float paint_bot_command_context(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                    float col_w, const Adapter& ad) const override
+    {
+        return m.bot_command_display.empty() ? y : ad.paint_irc_bot_command_(m, ctx, x, y, col_w);
     }
 
     float measure_reply_context(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,

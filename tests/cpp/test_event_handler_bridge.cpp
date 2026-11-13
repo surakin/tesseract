@@ -48,6 +48,8 @@ tesseract_ffi::TimelineEvent make_ffi_event(const std::string& msg_type)
     ev.forwarded_room_id = "!origroom:other";
     ev.forwarded_event_id = "$orig";
     ev.forwarded_origin_ts = 1690000000000LL;
+    ev.bot_command = "ban";
+    ev.bot_command_arguments_json = R"({"n":1})";
     ev.thread_root_id = "$root";
     ev.is_thread_root = true;
     ev.thread_reply_count = 7;
@@ -405,6 +407,10 @@ TEST_CASE("assign_base copies every shared base field", "[ffi][assign_base]")
     CHECK(ev->forwarded_room_id == "!origroom:other");
     CHECK(ev->forwarded_event_id == "$orig");
     CHECK(ev->forwarded_origin_ts == 1690000000000LL);
+
+    // MSC4391 bot command invocation.
+    CHECK(ev->bot_command == "ban");
+    CHECK(ev->bot_command_arguments_json == R"({"n":1})");
 
     // Thread fields — the regression guard that would have caught any
     // future drop of these when assign_base evolves.

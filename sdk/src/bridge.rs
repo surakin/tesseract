@@ -825,6 +825,11 @@ pub mod ffi {
         forwarded_event_id: String,
         /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
         forwarded_origin_ts: i64,
+        // ----- MSC4391 bot command invocations -----
+        /// Command of the invocation the message carries; empty when none.
+        bot_command: String,
+        /// The invocation's `arguments` object as JSON; empty when none.
+        bot_command_arguments_json: String,
         // ----- MSC4144 per-message profiles -----
         /// The `id` of the event's per-message profile; empty when it has none
         /// (or an invalid one). The UI groups consecutive messages by it.
@@ -1222,7 +1227,7 @@ pub mod ffi {
     }
 
     /// One MSC4391 `m.bot.command_description` state event, aggregated and
-    /// validated by `bot_commands.rs` / `collect_room_bot_commands`. `sender`
+    /// validated by `bot_commands.rs` / `fetch_room_bot_commands`. `sender`
     /// is the bot's mxid (from the state event, not its content); `valid` is
     /// false when the content is structurally parseable but violates a
     /// value-level invariant (duplicate parameter keys, literal value/type
@@ -1936,13 +1941,15 @@ pub mod ffi {
         fn on_knock_requests_updated(self: &EventHandlerBridge, room_id: &str);
 
         /// Fired when the cached set of MSC4391 bot command descriptions for
-        /// `room_id` changes (an `m.bot.command_description` state event was
-        /// added/changed, or the room's joined-member set changed such that a
-        /// previously-non-joined sender's commands become visible or vice
-        /// versa). Room-scoped, unlike the global `on_image_packs_updated` —
-        /// command descriptions have no cross-room aggregation. The UI
-        /// re-queries via `list_room_bot_commands` and refreshes any open
-        /// slash-command popup for that room.
+        /// `room_id` is (re)built: after the room becomes newly active
+        /// (`set_active_room`'s fetch, the source of truth), and, best effort,
+        /// after a description state event (stable or unstable type) or a
+        /// membership change of a known bot sender arrives in that room's
+        /// timeline (debounced, only for rooms already cached or active). It
+        /// fires even if the list is unchanged. Room-scoped, unlike the global
+        /// `on_image_packs_updated` — command descriptions have no cross-room
+        /// aggregation. The UI re-queries via `list_room_bot_commands` and
+        /// refreshes any open slash-command popup for that room.
         fn on_bot_commands_updated(self: &EventHandlerBridge, room_id: &str);
 
         /// Fired when an async media download started via `fetch_media_async`

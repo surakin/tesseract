@@ -117,3 +117,52 @@ TEST_CASE("SlashCommandController: without send_command the old path is a no-op 
     CHECK(r.sent.empty());
     CHECK(r.failures.empty());
 }
+
+TEST_CASE("SlashCommandController: arg hint stays on a parameter inside an open quote",
+          "[slash][bot_commands]")
+{
+    Rig rig;
+    rig.build(true);
+    rig.ctl.reset();
+    // Rebuild with a bot command exposing two string parameters.
+    SlashCommandController::Hooks h;
+    h.show = [](tk::Rect, int) {};
+    h.hide = [] {};
+    h.repaint = [] {};
+    h.bot_commands = []
+    {
+        tesseract::CommandDescription d;
+        d.command = "zzbot";
+        d.valid = true;
+        d.sender = "@bot:h";
+        for (const char* key : {"first", "second"})
+        {
+            tesseract::CommandParameter p;
+            p.key = key;
+            p.schema.kind = tesseract::ParamSchemaKind::Primitive;
+            p.schema.primitive_type = tesseract::ParamPrimitiveType::String;
+            d.parameters.push_back(p);
+        }
+        return std::vector<tesseract::CommandDescription>{d};
+    };
+    rig.ctl = std::make_unique<SlashCommandController>(rig.area.get(), &rig.popup, std::move(h));
+
+    rig.area->set_text("/zzbot");
+    REQUIRE(rig.ctl->on_text_changed("/zzbot", 6));
+    REQUIRE(rig.ctl->on_submit());
+    REQUIRE(rig.ctl->collecting_bot_command_args());
+
+    auto hint = [&](const std::string& text)
+    {
+        REQUIRE(rig.ctl->on_text_changed(text, static_cast<int>(text.size())));
+        return rig.popup.access_name_for_widget_row(0);
+    };
+    CHECK(hint("/zzbot ").starts_with("first"));
+    CHECK(hint("/zzbot hel").starts_with("first"));
+    CHECK(hint("/zzbot \"hello ").starts_with("first"));
+    CHECK(hint("/zzbot \"hello wor").starts_with("first"));
+    CHECK(hint("/zzbot \"hello world\"").starts_with("first"));
+    CHECK(hint("/zzbot \"hello world\" ").starts_with("second"));
+    CHECK(hint("/zzbot hello ").starts_with("second"));
+    CHECK(hint("/zzbot 'a b' 'c ").starts_with("second"));
+}

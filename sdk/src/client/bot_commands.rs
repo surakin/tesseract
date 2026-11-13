@@ -9,6 +9,27 @@
 //! `send.rs` alongside the other message-sending methods, not here.
 
 use super::ClientFfi;
+use matrix_sdk::ruma::events::macros::EventContent;
+use serde::{Deserialize, Serialize};
+
+/// `m.bot.command_description` as received, kept as raw JSON. Only used to
+/// route the live-refresh handler (the content is never parsed here; the room's
+/// state is refetched), so it matches whatever the sender wrote.
+#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
+#[ruma_event(type = "m.bot.command_description", kind = State, state_key_type = String)]
+pub struct CommandDescriptionStableRawEventContent {
+    #[serde(default, flatten)]
+    pub fields: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `org.matrix.msc4391.command_description` as received; see
+/// [`CommandDescriptionStableRawEventContent`].
+#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
+#[ruma_event(type = "org.matrix.msc4391.command_description", kind = State, state_key_type = String)]
+pub struct CommandDescriptionUnstableRawEventContent {
+    #[serde(default, flatten)]
+    pub fields: serde_json::Map<String, serde_json::Value>,
+}
 
 impl ClientFfi {
     /// Snapshot of every MSC4391 bot command description currently cached

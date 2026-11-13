@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(messages): a received bot command shows as a "Bot command: /name args" line above the message in every layout. Linux build, ctest 3944/3944, cargo 1724/1724
+- feat(composer): bot command arguments can be quoted ("two words"), and room and event arguments are sent with the correct id and via. Linux build, ctest 3944/3944
+- feat(composer): slash-command autocomplete picks up a bot's new or changed commands while the room is open. Linux build, ctest 3944/3944, cargo 1724/1724
+- fix(bots): bot command descriptions that use the current MSC4391 draft (room_id/event_id types, top-level unions) are accepted. Linux build, cargo 1724/1724
 - feat(messages): the message menu has "Copy image" on images and stickers, and copied GIFs keep their animation where the target app supports it. Linux build
 - fix(ui): long error messages in the forward dialog now word-wrap instead of running off the card. Linux build
 - fix(ui): right-clicking in the media viewer no longer opens the message menu behind it. Linux build, ctest media viewer tests

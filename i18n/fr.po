@@ -7153,3 +7153,11 @@ msgstr "Aucun sticker trouvé"
 
 msgid "Copy image"
 msgstr "Copier l'image"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Bot command: {0}"
+msgstr "Commande de bot : {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "bot command {0}"
+msgstr "commande de bot {0}"

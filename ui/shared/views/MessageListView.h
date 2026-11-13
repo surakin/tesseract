@@ -244,6 +244,9 @@ struct MessageRowData
     std::string forwarded_sender_name; // display name, when known
     std::string forwarded_room_id;
     std::string forwarded_event_id;
+    // MSC4391 invocation the message carries, pre-formatted for display
+    // ("/ban target_room: !r:x"); empty when it carries none.
+    std::string bot_command_display;
     // Name to show for the original author: display name, else mxid, else
     // empty (unknown).
     const std::string& forwarded_author() const

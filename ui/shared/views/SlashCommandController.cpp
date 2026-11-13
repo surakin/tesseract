@@ -32,25 +32,40 @@ SlashCommandController::~SlashCommandController() = default;
 namespace
 {
 
-// Count whitespace-delimited tokens in `s` that are already "closed" by a
-// trailing space — a token still being typed (no trailing whitespace yet)
-// doesn't count, so the hint keeps pointing at the parameter currently
-// being entered rather than jumping ahead on the first keystroke.
+// Count tokens in `s` already "closed" by a trailing space outside any quote.
+// A token still being typed doesn't count, nor does one inside an open
+// (unterminated) quote, so the hint stays on the parameter being entered.
 std::size_t completed_token_count(const std::string& s)
 {
     std::size_t count = 0;
     bool in_token = false;
+    char quote = '\0';
     for (char c : s)
     {
-        bool space = (c == ' ' || c == '\t');
-        if (!space && !in_token)
+        if (quote != '\0')
         {
+            if (c == quote)
+            {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (c == '"' || c == '\'')
+        {
+            quote = c;
             in_token = true;
         }
-        else if (space && in_token)
+        else if (c == ' ' || c == '\t')
         {
-            in_token = false;
-            ++count;
+            if (in_token)
+            {
+                in_token = false;
+                ++count;
+            }
+        }
+        else
+        {
+            in_token = true;
         }
     }
     return count;

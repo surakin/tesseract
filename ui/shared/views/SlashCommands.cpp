@@ -99,24 +99,13 @@ std::optional<std::string> parse_slash_arg(const std::string& body, const char* 
     return std::string(arg.substr(start, end - start + 1));
 }
 
-std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd)
+std::vector<std::string> tokenize_args(std::string_view text)
 {
-    std::string prefix = std::string("/") + cmd + " ";
-    if (body.size() <= prefix.size())
-    {
-        return std::nullopt;
-    }
-    if (!body.starts_with(prefix))
-    {
-        return std::nullopt;
-    }
-    std::string_view rest(body.c_str() + prefix.size(), body.size() - prefix.size());
-
     std::vector<std::string> args;
     std::string cur;
     bool in_token = false;
     char quote = '\0';
-    for (char c : rest)
+    for (char c : text)
     {
         if (quote != '\0')
         {
@@ -154,6 +143,21 @@ std::optional<std::vector<std::string>> parse_slash_args(const std::string& body
         args.push_back(std::move(cur));
     }
     return args;
+}
+
+std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd)
+{
+    std::string prefix = std::string("/") + cmd + " ";
+    if (body.size() <= prefix.size())
+    {
+        return std::nullopt;
+    }
+    if (!body.starts_with(prefix))
+    {
+        return std::nullopt;
+    }
+    return tokenize_args(
+        std::string_view(body.c_str() + prefix.size(), body.size() - prefix.size()));
 }
 
 std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
@@ -478,30 +482,6 @@ Result dispatch_compose_send(Client& client, const std::string& room_id, const s
 namespace
 {
 
-std::vector<std::string> split_whitespace(const std::string& s)
-{
-    std::vector<std::string> out;
-    std::size_t i = 0;
-    while (i < s.size())
-    {
-        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i])))
-        {
-            ++i;
-        }
-        if (i >= s.size())
-        {
-            break;
-        }
-        std::size_t start = i;
-        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i])))
-        {
-            ++i;
-        }
-        out.push_back(s.substr(start, i - start));
-    }
-    return out;
-}
-
 std::vector<std::string> split_comma(const std::string& s)
 {
     std::vector<std::string> out;
@@ -614,7 +594,65 @@ bool looks_like_server_name(const std::string& t)
     return t.find('.') != std::string::npos || t.find(':') != std::string::npos;
 }
 
-std::optional<nlohmann::json> coerce_primitive(const std::string& t, ParamPrimitiveType ty)
+// A `room_id` / `event_id` argument value (MSC4391): `{type, id, via?}` for a
+// room, `{type, id, event_id, via?}` for an event, where `id` is always the
+// room. Accepts a bare `!room` / `#alias` (room) or `$event` (event, in the
+// current room), or a matrix.to / `matrix:` permalink carrying `via`. Aliases
+// and missing `via` are resolved by the SDK at send time.
+std::optional<nlohmann::json> coerce_reference(const std::string& t,
+                                               const std::string& current_room_id, bool want_event)
+{
+    std::string room;
+    std::string event;
+    std::vector<std::string> via;
+    if (want_event && looks_like_event_id(t))
+    {
+        room = current_room_id;
+        event = t;
+    }
+    else if (!want_event && (looks_like_room_id(t) || looks_like_room_alias(t)))
+    {
+        room = t;
+    }
+    else
+    {
+        const auto link = Client::parse_matrix_link(t);
+        using Kind = Client::MatrixLink::Kind;
+        if (want_event && link.kind == Kind::Event)
+        {
+            room = link.primary;
+            event = link.event_id;
+        }
+        else if (!want_event && (link.kind == Kind::Room || link.kind == Kind::RoomAlias))
+        {
+            room = link.primary;
+        }
+        else
+        {
+            return std::nullopt;
+        }
+        via = link.via;
+    }
+    if (room.empty() || (want_event && event.empty()))
+    {
+        return std::nullopt;
+    }
+    nlohmann::json obj;
+    obj["type"] = want_event ? "event_id" : "room_id";
+    obj["id"] = room;
+    if (want_event)
+    {
+        obj["event_id"] = event;
+    }
+    if (!via.empty())
+    {
+        obj["via"] = via;
+    }
+    return obj;
+}
+
+std::optional<nlohmann::json> coerce_primitive(const std::string& t, ParamPrimitiveType ty,
+                                               const std::string& current_room_id)
 {
     switch (ty)
     {
@@ -644,44 +682,26 @@ std::optional<nlohmann::json> coerce_primitive(const std::string& t, ParamPrimit
         return looks_like_room_alias(t) ? std::optional(nlohmann::json(t)) : std::nullopt;
     case ParamPrimitiveType::ServerName:
         return looks_like_server_name(t) ? std::optional(nlohmann::json(t)) : std::nullopt;
+    case ParamPrimitiveType::RoomId:
+        return coerce_reference(t, current_room_id, /*want_event=*/false);
+    case ParamPrimitiveType::EventId:
+        return coerce_reference(t, current_room_id, /*want_event=*/true);
     }
     return std::nullopt;
 }
 
-// `room_id`/`event_id` object-typed values — MSC4391 shape is `{id, via?}`
-// (room_id) or `{id, via?, event_id}` (event_id). `via` is left empty; v1's
-// text-entry UX has no server-list picker to source it from.
-std::optional<nlohmann::json> coerce_object(const std::string& t, ParamObjectType ty)
-{
-    if (ty == ParamObjectType::RoomId)
-    {
-        if (!looks_like_room_id(t) && !looks_like_room_alias(t))
-        {
-            return std::nullopt;
-        }
-        nlohmann::json obj;
-        obj["id"] = t;
-        return obj;
-    }
-    if (!looks_like_event_id(t))
-    {
-        return std::nullopt;
-    }
-    nlohmann::json obj;
-    obj["id"] = t;
-    obj["event_id"] = t;
-    return obj;
-}
+std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema,
+                                            const std::string& current_room_id);
 
-std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema);
-
-std::optional<nlohmann::json>
-coerce_literal(const std::string& t, const std::string& literal_value_json, ParamLiteralType lt)
+std::optional<nlohmann::json> coerce_literal(const std::string& t,
+                                             const std::string& literal_value_json,
+                                             ParamLiteralType lt,
+                                             const std::string& current_room_id)
 {
     ParamPrimitiveType prim = lt == ParamLiteralType::String    ? ParamPrimitiveType::String
                               : lt == ParamLiteralType::Integer ? ParamPrimitiveType::Integer
                                                                 : ParamPrimitiveType::Boolean;
-    auto coerced = coerce_primitive(t, prim);
+    auto coerced = coerce_primitive(t, prim, current_room_id);
     if (!coerced)
     {
         return std::nullopt;
@@ -694,20 +714,19 @@ coerce_literal(const std::string& t, const std::string& literal_value_json, Para
     return coerced;
 }
 
-std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema)
+std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSchema& schema,
+                                            const std::string& current_room_id)
 {
     switch (schema.kind)
     {
     case ParamSchemaKind::Primitive:
-        return coerce_primitive(t, schema.primitive_type);
-    case ParamSchemaKind::Object:
-        return coerce_object(t, schema.object_type);
+        return coerce_primitive(t, schema.primitive_type, current_room_id);
     case ParamSchemaKind::Literal:
-        return coerce_literal(t, schema.literal_value_json, schema.literal_type);
+        return coerce_literal(t, schema.literal_value_json, schema.literal_type, current_room_id);
     case ParamSchemaKind::Union:
         for (const auto& variant : schema.union_variants)
         {
-            if (auto v = coerce_scalar(t, variant))
+            if (auto v = coerce_scalar(t, variant, current_room_id))
             {
                 return v;
             }
@@ -721,8 +740,13 @@ std::optional<nlohmann::json> coerce_scalar(const std::string& t, const ParamSch
 }
 
 // A whole parameter's token: arrays comma-split into scalars first, matching
-// the v1 "one whitespace token, comma-separated" array convention.
-std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSchema& schema)
+// the "one token, comma-separated" array convention. Tokens come from
+// tokenize_args, so a quoted span arrives unquoted: for a string parameter
+// `"hello, big world"` is one argument verbatim (no comma splitting); for an
+// array parameter the same span is comma-split and each element keeps its
+// inner spaces ("hello", " big world").
+std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSchema& schema,
+                                           const std::string& current_room_id)
 {
     if (schema.kind == ParamSchemaKind::Array)
     {
@@ -733,7 +757,7 @@ std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSche
         nlohmann::json arr = nlohmann::json::array();
         for (const auto& piece : split_comma(t))
         {
-            auto v = coerce_scalar(piece, *schema.array_item);
+            auto v = coerce_scalar(piece, *schema.array_item, current_room_id);
             if (!v)
             {
                 return std::nullopt;
@@ -742,10 +766,22 @@ std::optional<nlohmann::json> coerce_token(const std::string& t, const ParamSche
         }
         return arr;
     }
-    return coerce_scalar(t, schema);
+    return coerce_scalar(t, schema, current_room_id);
 }
 
 } // namespace
+
+std::optional<std::string> coerce_bot_command_argument(const std::string& token,
+                                                       const ParamSchema& schema,
+                                                       const std::string& current_room_id)
+{
+    auto v = coerce_token(token, schema, current_room_id);
+    if (!v)
+    {
+        return std::nullopt;
+    }
+    return v->dump();
+}
 
 std::string describe_param_type(const ParamSchema& schema)
 {
@@ -765,11 +801,12 @@ std::string describe_param_type(const ParamSchema& schema)
         case ParamPrimitiveType::ServerName:
             return tk::tr("server");
         case ParamPrimitiveType::RoomAlias:
+        case ParamPrimitiveType::RoomId:
             return tk::tr("room");
+        case ParamPrimitiveType::EventId:
+            return tk::tr("event");
         }
         return tk::tr("text");
-    case ParamSchemaKind::Object:
-        return schema.object_type == ParamObjectType::RoomId ? tk::tr("room") : tk::tr("event");
     case ParamSchemaKind::Array:
         return schema.array_item ? tk::trf(tk::tr("{0} (comma-separated)"),
                                            {describe_param_type(*schema.array_item)})
@@ -810,11 +847,32 @@ std::string next_bot_command_arg_hint(const CommandDescription& desc, std::size_
     return label;
 }
 
+std::string bot_command_fallback_body(const std::string& command,
+                                      const std::vector<std::string>& tokens)
+{
+    std::string body = "/" + command;
+    for (const auto& t : tokens)
+    {
+        // Re-wrap tokens that tokenize_args unquoted so the body re-parses to
+        // the same tokens: double quotes, or single quotes if it holds a `"`.
+        if (t.empty() || t.find_first_of(" \t\r\n\"'") != std::string::npos)
+        {
+            const char q = t.find('"') != std::string::npos ? '\'' : '"';
+            body += std::string(" ") + q + t + q;
+        }
+        else
+        {
+            body += " " + t;
+        }
+    }
+    return body;
+}
+
 BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string& room_id,
                                                const CommandDescription& desc,
                                                const std::string& args_text)
 {
-    std::vector<std::string> tokens = split_whitespace(args_text);
+    std::vector<std::string> tokens = tokenize_args(args_text);
     BotCommandMatchResult match = client.match_bot_command_arguments(desc, tokens);
     if (!match.ok)
     {
@@ -834,7 +892,7 @@ BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string
         {
             continue; // omitted trailing optional parameter
         }
-        auto coerced = coerce_token(*match.tokens_by_parameter[i], p.schema);
+        auto coerced = coerce_token(*match.tokens_by_parameter[i], p.schema, room_id);
         if (!coerced)
         {
             return {false, tk::trf(tk::tr("{0} must be a valid {1}"),
@@ -845,11 +903,7 @@ BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string
 
     // Fallback body for clients/bots that don't render structured commands —
     // reconstructs the typed command line.
-    std::string body = "/" + desc.command;
-    for (const auto& t : tokens)
-    {
-        body += " " + t;
-    }
+    const std::string body = bot_command_fallback_body(desc.command, tokens);
     std::vector<std::string> mentions = {desc.sender};
     Result r = client.send_bot_command(room_id, body, "", mentions, desc.command, args_obj.dump());
     if (!r.ok)
@@ -857,6 +911,72 @@ BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string
         return {false, r.message};
     }
     return {true, ""};
+}
+
+namespace
+{
+
+std::string display_argument_value(const nlohmann::json& v)
+{
+    if (v.is_string())
+    {
+        return v.get<std::string>();
+    }
+    if (v.is_object())
+    {
+        // room_id / event_id reference: show the thing it points at.
+        const auto type = v.find("type");
+        const char* key =
+            (type != v.end() && type->is_string() && type->get<std::string>() == "event_id")
+                ? "event_id"
+                : "id";
+        const auto it = v.find(key);
+        if (it != v.end() && it->is_string())
+        {
+            return it->get<std::string>();
+        }
+        return v.dump();
+    }
+    if (v.is_array())
+    {
+        std::string out;
+        for (const auto& item : v)
+        {
+            if (!out.empty())
+            {
+                out += ", ";
+            }
+            out += display_argument_value(item);
+        }
+        return out;
+    }
+    return v.dump();
+}
+
+} // namespace
+
+std::string format_bot_command_display(const std::string& command,
+                                       const std::string& arguments_json)
+{
+    if (command.empty())
+    {
+        return {};
+    }
+    std::string out = "/" + command;
+    if (arguments_json.empty())
+    {
+        return out;
+    }
+    const auto args = nlohmann::json::parse(arguments_json, nullptr, /*allow_exceptions=*/false);
+    if (!args.is_object())
+    {
+        return out;
+    }
+    for (const auto& [name, value] : args.items())
+    {
+        out += " " + name + ": " + display_argument_value(value);
+    }
+    return out;
 }
 
 } // namespace tesseract

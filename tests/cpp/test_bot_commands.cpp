@@ -16,7 +16,6 @@
 using tesseract::CommandDescription;
 using tesseract::CommandParameter;
 using tesseract::ParamLiteralType;
-using tesseract::ParamObjectType;
 using tesseract::ParamPrimitiveType;
 using tesseract::ParamSchema;
 using tesseract::ParamSchemaKind;
@@ -51,17 +50,30 @@ TEST_CASE("parse_param_schema rejects an unrecognized primitive type", "[bot_com
     REQUIRE(s.kind == ParamSchemaKind::Invalid);
 }
 
-TEST_CASE("parse_param_schema decodes object subtypes", "[bot_commands][schema]")
+TEST_CASE("parse_param_schema decodes room_id/event_id primitives", "[bot_commands][schema]")
+{
+    auto room = tesseract::parse_param_schema(
+        nlohmann::json{{"schema_type", "primitive"}, {"type", "room_id"}});
+    REQUIRE(room.kind == ParamSchemaKind::Primitive);
+    REQUIRE(room.primitive_type == ParamPrimitiveType::RoomId);
+
+    auto ev = tesseract::parse_param_schema(
+        nlohmann::json{{"schema_type", "primitive"}, {"type", "event_id"}});
+    REQUIRE(ev.kind == ParamSchemaKind::Primitive);
+    REQUIRE(ev.primitive_type == ParamPrimitiveType::EventId);
+}
+
+TEST_CASE("parse_param_schema maps legacy object schemas to primitives", "[bot_commands][schema]")
 {
     auto room = tesseract::parse_param_schema(
         nlohmann::json{{"schema_type", "object"}, {"type", "room_id"}});
-    REQUIRE(room.kind == ParamSchemaKind::Object);
-    REQUIRE(room.object_type == ParamObjectType::RoomId);
+    REQUIRE(room.kind == ParamSchemaKind::Primitive);
+    REQUIRE(room.primitive_type == ParamPrimitiveType::RoomId);
 
     auto ev = tesseract::parse_param_schema(
         nlohmann::json{{"schema_type", "object"}, {"type", "event_id"}});
-    REQUIRE(ev.kind == ParamSchemaKind::Object);
-    REQUIRE(ev.object_type == ParamObjectType::EventId);
+    REQUIRE(ev.kind == ParamSchemaKind::Primitive);
+    REQUIRE(ev.primitive_type == ParamPrimitiveType::EventId);
 }
 
 TEST_CASE("parse_param_schema decodes an array of primitives", "[bot_commands][schema]")
@@ -326,8 +338,8 @@ TEST_CASE("dispatch_bot_command_send accepts a well-formed command and reaches t
     desc.sender = "@bot:h";
     CommandParameter target;
     target.key = "target_room";
-    target.schema.kind = ParamSchemaKind::Object;
-    target.schema.object_type = ParamObjectType::RoomId;
+    target.schema.kind = ParamSchemaKind::Primitive;
+    target.schema.primitive_type = ParamPrimitiveType::RoomId;
     desc.parameters.push_back(target);
     CommandParameter timeout;
     timeout.key = "timeout_seconds";
@@ -338,6 +350,118 @@ TEST_CASE("dispatch_bot_command_send accepts a well-formed command and reaches t
     auto r = tesseract::dispatch_bot_command_send(client, "!room:h", desc, "!target:h 42");
     REQUIRE_FALSE(r.ok);
     CHECK(r.error == "not logged in");
+}
+
+TEST_CASE("tokenize_args: edge cases", "[bot_commands][tokenize]")
+{
+    using V = std::vector<std::string>;
+    CHECK(tesseract::tokenize_args("").empty());
+    CHECK(tesseract::tokenize_args("  \t ").empty());
+    CHECK(tesseract::tokenize_args("a  b") == V{"a", "b"});
+    CHECK(tesseract::tokenize_args("a\tb") == V{"a", "b"});
+    CHECK(tesseract::tokenize_args("\"hello world\" x") == V{"hello world", "x"});
+    CHECK(tesseract::tokenize_args("'it has \"dq\"'") == V{"it has \"dq\""});
+    // Unterminated quote runs to the end.
+    CHECK(tesseract::tokenize_args("a \"b c") == V{"a", "b c"});
+    // Adjacent quoted/unquoted pieces form one token.
+    CHECK(tesseract::tokenize_args("\"a b\"\"c d\"") == V{"a bc d"});
+    CHECK(tesseract::tokenize_args("pre\"a b\"post") == V{"prea bpost"});
+    // Empty quotes make an empty token.
+    CHECK(tesseract::tokenize_args("\"\" x") == V{"", "x"});
+}
+
+TEST_CASE("dispatch_bot_command_send treats a quoted span as one argument",
+          "[bot_commands][dispatch]")
+{
+    tesseract::Client client;
+    auto desc = make_desc({{"a", false}});
+    desc.sender = "@bot:h";
+    // Unquoted: two tokens for one parameter.
+    auto r1 = tesseract::dispatch_bot_command_send(client, "!room:h", desc, "hello world");
+    REQUIRE_FALSE(r1.ok);
+    CHECK(r1.error == "Too many arguments");
+    // Quoted: one argument, reaches the SDK stub.
+    auto r2 = tesseract::dispatch_bot_command_send(client, "!room:h", desc, "\"hello world\"");
+    REQUIRE_FALSE(r2.ok);
+    CHECK(r2.error == "not logged in");
+    // Quoted string containing commas is a single string argument.
+    auto r3 = tesseract::dispatch_bot_command_send(client, "!room:h", desc, "'a, b, c'");
+    REQUIRE_FALSE(r3.ok);
+    CHECK(r3.error == "not logged in");
+}
+
+TEST_CASE("bot_command_fallback_body re-quotes tokens with whitespace", "[bot_commands][dispatch]")
+{
+    CHECK(tesseract::bot_command_fallback_body("cmd", {}) == "/cmd");
+    CHECK(tesseract::bot_command_fallback_body("cmd", {"a", "b"}) == "/cmd a b");
+    CHECK(tesseract::bot_command_fallback_body("cmd", {"hello world", "x"}) ==
+          "/cmd \"hello world\" x");
+    CHECK(tesseract::bot_command_fallback_body("cmd", {"say \"hi\" now"}) ==
+          "/cmd 'say \"hi\" now'");
+    CHECK(tesseract::bot_command_fallback_body("cmd", {""}) == "/cmd \"\"");
+}
+
+namespace
+{
+ParamSchema primitive_schema(ParamPrimitiveType t)
+{
+    ParamSchema s;
+    s.kind = ParamSchemaKind::Primitive;
+    s.primitive_type = t;
+    return s;
+}
+
+nlohmann::json coerce_arg(const std::string& token, ParamPrimitiveType t,
+                          const std::string& room = "!cur:h")
+{
+    auto r = tesseract::coerce_bot_command_argument(token, primitive_schema(t), room);
+    REQUIRE(r.has_value());
+    return nlohmann::json::parse(*r);
+}
+} // namespace
+
+TEST_CASE("room_id argument: bare room id has no via", "[bot_commands][coerce]")
+{
+    CHECK(coerce_arg("!r:h", ParamPrimitiveType::RoomId) ==
+          nlohmann::json{{"type", "room_id"}, {"id", "!r:h"}});
+}
+
+TEST_CASE("room_id argument: alias is passed through for the SDK to resolve",
+          "[bot_commands][coerce]")
+{
+    CHECK(coerce_arg("#a:h", ParamPrimitiveType::RoomId) ==
+          nlohmann::json{{"type", "room_id"}, {"id", "#a:h"}});
+}
+
+TEST_CASE("room_id argument: room permalink carries via", "[bot_commands][coerce]")
+{
+    CHECK(coerce_arg("https://matrix.to/#/!r:h?via=a.org&via=b.org", ParamPrimitiveType::RoomId) ==
+          nlohmann::json{{"type", "room_id"}, {"id", "!r:h"}, {"via", {"a.org", "b.org"}}});
+}
+
+TEST_CASE("event_id argument: event permalink gives room, event and via", "[bot_commands][coerce]")
+{
+    CHECK(coerce_arg("https://matrix.to/#/!r:h/$e:h?via=a.org", ParamPrimitiveType::EventId) ==
+          nlohmann::json{
+              {"type", "event_id"}, {"id", "!r:h"}, {"event_id", "$e:h"}, {"via", {"a.org"}}});
+}
+
+TEST_CASE("event_id argument: bare event uses the current room", "[bot_commands][coerce]")
+{
+    CHECK(coerce_arg("$e:h", ParamPrimitiveType::EventId) ==
+          nlohmann::json{{"type", "event_id"}, {"id", "!cur:h"}, {"event_id", "$e:h"}});
+}
+
+TEST_CASE("room_id/event_id arguments reject bad tokens", "[bot_commands][coerce]")
+{
+    const auto room = primitive_schema(ParamPrimitiveType::RoomId);
+    const auto ev = primitive_schema(ParamPrimitiveType::EventId);
+    CHECK_FALSE(tesseract::coerce_bot_command_argument("nonsense", room, "!cur:h"));
+    CHECK_FALSE(tesseract::coerce_bot_command_argument("@user:h", room, "!cur:h"));
+    CHECK_FALSE(tesseract::coerce_bot_command_argument("$e:h", room, "!cur:h"));
+    CHECK_FALSE(tesseract::coerce_bot_command_argument("!r:h", ev, "!cur:h"));
+    CHECK_FALSE(tesseract::coerce_bot_command_argument("https://matrix.to/#/!r:h", ev, "!cur:h"));
+    CHECK_FALSE(tesseract::coerce_bot_command_argument("https://matrix.to/#/@u:h", room, "!cur:h"));
 }
 
 TEST_CASE("dispatch_bot_command_send accepts a comma-separated array token",
@@ -403,4 +527,22 @@ TEST_CASE("next_bot_command_arg_hint signals readiness once every parameter is t
 {
     auto desc = make_desc({{"a", false}});
     CHECK(tesseract::next_bot_command_arg_hint(desc, 1) == "Press Enter to send");
+}
+
+TEST_CASE("format_bot_command_display renders a received invocation", "[bot_commands][display]")
+{
+    using tesseract::format_bot_command_display;
+    CHECK(format_bot_command_display("", R"({"a":1})").empty());
+    CHECK(format_bot_command_display("ping", "") == "/ping");
+    CHECK(format_bot_command_display("ping", "not json") == "/ping");
+    CHECK(format_bot_command_display("ping", "[1]") == "/ping");
+    CHECK(format_bot_command_display("say", R"({"text":"hi there","n":42,"ok":true})") ==
+          "/say n: 42 ok: true text: hi there");
+    CHECK(format_bot_command_display("ban", R"({"target_room":{"type":"room_id","id":"!room:x",)"
+                                            R"("via":["x"]},"timeout_seconds":42})") ==
+          "/ban target_room: !room:x timeout_seconds: 42");
+    CHECK(format_bot_command_display(
+              "pin", R"({"ev":{"type":"event_id","id":"!r:x","event_id":"$e"}})") == "/pin ev: $e");
+    CHECK(format_bot_command_display("add", R"({"users":["@a:x","@b:x"]})") ==
+          "/add users: @a:x, @b:x");
 }

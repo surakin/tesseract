@@ -7251,3 +7251,11 @@ msgstr "No se encontraron stickers"
 
 msgid "Copy image"
 msgstr "Copiar imagen"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Bot command: {0}"
+msgstr "Comando de bot: {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "bot command {0}"
+msgstr "comando de bot {0}"

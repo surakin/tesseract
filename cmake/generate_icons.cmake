@@ -29,7 +29,7 @@ foreach(_entry
         "languages|kLanguagesSvg" "music|kMusicSvg" "file|kFileSvg"
         "bell|kBellSvg" "bell-off|kBellOffSvg"
         "house|kHomeSvg" "pin-off|kUnpinSvg"
-        "shield-check|kShieldCheckSvg" "shield-alert|kShieldAlertSvg")
+        "shield-check|kShieldCheckSvg" "shield-alert|kShieldAlertSvg" "terminal|kTerminalSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

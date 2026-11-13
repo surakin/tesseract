@@ -5515,3 +5515,11 @@ msgstr "Fant ingen klistremerker"
 
 msgid "Copy image"
 msgstr "Kopier bilde"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Bot command: {0}"
+msgstr "Bot-kommando: {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "bot command {0}"
+msgstr "bot-kommando {0}"

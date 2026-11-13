@@ -158,7 +158,7 @@ fn parse_server_names(raw: &[String]) -> Vec<matrix_sdk::ruma::OwnedServerName> 
 /// another server — and the join fails. The space scan is local state-store
 /// reads only; no network I/O.
 #[cfg(not(test))]
-async fn resolve_route_via(
+pub(super) async fn resolve_route_via(
     client: &matrix_sdk::Client,
     target: &matrix_sdk::ruma::RoomOrAliasId,
     seed: Vec<matrix_sdk::ruma::OwnedServerName>,
