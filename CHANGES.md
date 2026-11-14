@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(messages): side panels cover your bubbles without moving them to the left. Linux build, focused tests
+
 ## v0.9.8 — 2026-11-10
 
 ### Summary

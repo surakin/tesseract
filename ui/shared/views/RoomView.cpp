@@ -1187,7 +1187,6 @@ void RoomView::wire_internal_callbacks()
     };
     room_info_panel_->on_layout_changed = [this]()
     {
-        sync_side_panel_state_();
         if (on_layout_changed)
         {
             on_layout_changed();
@@ -1542,16 +1541,6 @@ void RoomView::confirm_and_report_(std::string event_id)
                               on_report_requested(event_id, std::move(*reason));
                           }
                       });
-}
-
-void RoomView::sync_side_panel_state_()
-{
-    if (!message_list_)
-    {
-        return;
-    }
-    message_list_->set_side_panel_open(thread_panel_state_ != ThreadPanelState::Closed ||
-                                       (room_info_panel_ && room_info_panel_->is_open()));
 }
 
 void RoomView::show_room_info()
@@ -3037,8 +3026,6 @@ void RoomView::set_thread_panel(ThreadPanelState state, const std::string& root_
         message_list_->set_highlighted_event(state == ThreadPanelState::Open ? root_event_id
                                                                              : std::string{});
     }
-    sync_side_panel_state_();
-
     if (on_layout_changed)
     {
         on_layout_changed();
