@@ -233,7 +233,7 @@ public:
         const tesseract::RoomInfo& info = entry->info;
         const bool loading = !entry->joined && info.name.empty();
 
-        if (loading && owner_.on_unjoined_summary_needed && !requested_.count(info.id))
+        if (loading && owner_.on_unjoined_summary_needed && !requested_.contains(info.id))
         {
             requested_.insert(info.id);
             owner_.on_unjoined_summary_needed(info.id);
@@ -491,7 +491,7 @@ tk::DragVisual SpaceChildRoomGrid::build_drag_visual_(const ChildRoomEntry& entr
     return visual;
 }
 
-std::string SpaceChildRoomGrid::tooltip_text_(const ChildRoomEntry& entry) const
+std::string SpaceChildRoomGrid::tooltip_text_(const ChildRoomEntry& entry)
 {
     const tesseract::RoomInfo& info = entry.info;
     if (!entry.joined && info.name.empty())

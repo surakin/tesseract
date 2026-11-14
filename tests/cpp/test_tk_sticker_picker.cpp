@@ -12,9 +12,6 @@
 #include <vector>
 
 using namespace tk;
-using tesseract::ImagePack;
-using tesseract::ImagePackImage;
-using tesseract::PackSourceKind;
 using tesseract::PackUsage;
 using tesseract::PackUsageFilter;
 using tesseract::views::StickerPicker;
@@ -25,15 +22,15 @@ namespace
 struct TkStickerPickerStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(360, 420);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});

@@ -267,7 +267,7 @@ private:
     // Rect (world coords) for cell index i in cells_.
     tk::Rect cell_world_rect(int i) const;
     // Circular highlight rect centred inside a cell world rect.
-    tk::Rect circle_rect_in(tk::Rect cell) const;
+    static tk::Rect circle_rect_in(tk::Rect cell);
 
     // Whether today's date is selectable (within max_date).
     bool today_enabled() const;

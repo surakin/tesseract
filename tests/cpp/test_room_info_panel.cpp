@@ -84,12 +84,12 @@ struct MemberMenuStage
         panel.arrange(lc, {0, 0, 1000, 800});
     }
 
-    tesseract::views::RoomInfoPanelBody& body()
+    tesseract::views::RoomInfoPanelBody& body() const
     {
         return *panel.body_for_test();
     }
 
-    tk::Point row_center(int i)
+    tk::Point row_center(int i) const
     {
         const tk::Rect r = body().member_row_rect_for_test(i);
         REQUIRE_FALSE(r.empty());
@@ -190,7 +190,7 @@ TEST_CASE("ConfirmDialog: reason field hands its trimmed text to on_reason befor
     dlg->open(std::move(opts),
               [&]
               {
-                  order.push_back("confirm");
+                  order.emplace_back("confirm");
               });
     CHECK(dlg->reason_field()->own_visible());
 

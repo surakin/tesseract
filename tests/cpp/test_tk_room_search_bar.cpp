@@ -18,24 +18,24 @@ struct TkRoomSearchBarStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 44);
 
-    tk::LayoutCtx layout_ctx()
+    tk::LayoutCtx layout_ctx() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
 
-    tk::PaintCtx paint_ctx()
+    tk::PaintCtx paint_ctx() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
 
-    void arrange(tk::Widget& w, tk::Rect bounds)
+    void arrange(tk::Widget& w, tk::Rect bounds) const
     {
         auto lc = layout_ctx();
         w.measure(lc, {bounds.w, bounds.h});
         w.arrange(lc, bounds);
     }
 
-    void paint(tk::Widget& w)
+    void paint(tk::Widget& w) const
     {
         auto pc = paint_ctx();
         w.paint(pc);

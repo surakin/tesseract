@@ -107,7 +107,7 @@ struct ReadReceipt
     std::string user_id;
     std::string display_name;
     std::string avatar_url;
-    uint64_t timestamp_ms;
+    uint64_t timestamp_ms = 0;
 };
 
 /// A joined member of a room. `display_name` resolves to the user's
@@ -198,7 +198,7 @@ struct UrlPreview
     /// True when this entry carries something worth rendering as a card.
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image);
+        return !title.empty() || !description.empty() || static_cast<bool>(image);
     }
 };
 
@@ -263,6 +263,10 @@ struct Event
     std::string forwarded_event_id;
     /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
     std::int64_t forwarded_origin_ts = 0;
+    /// MSC4391 invocation the message carries: the command name and its
+    /// `arguments` object as JSON. Both empty when the message has none.
+    std::string bot_command;
+    std::string bot_command_arguments_json;
     /// MSC4144 per-message profile (a bridge or relay account speaking as
     /// someone else). `profile_id` is empty when the event has none. The name
     /// is empty when the profile gives none (show the member's). With

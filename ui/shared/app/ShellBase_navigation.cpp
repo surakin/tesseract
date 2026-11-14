@@ -1060,7 +1060,7 @@ void ShellBase::open_room_version_(const std::string& room_id, const std::vector
             try_scroll_to_room_event_(highlight_event);
         }
     };
-    if (room_by_id_(room_id) && !hidden_rooms_.count(room_id))
+    if (room_by_id_(room_id) && !hidden_rooms_.contains(room_id))
     {
         reveal();
         return;
@@ -1084,7 +1084,7 @@ void ShellBase::open_room_version_(const std::string& room_id, const std::vector
                            {
                                // Still listed (e.g. its successor was left meanwhile):
                                // the live entry wins.
-                               if (!room_by_id_(room_id) || hidden_rooms_.count(room_id))
+                               if (!room_by_id_(room_id) || hidden_rooms_.contains(room_id))
                                {
                                    hidden_rooms_[room_id] = std::move(*info);
                                }
@@ -1325,7 +1325,7 @@ ShellBase::select_warm_evictions_(const std::unordered_set<std::string>& keep, s
     std::size_t warm_kept = 0;
     for (const auto& r : visited_lru_) // front = most recent
     {
-        if (keep.count(r) != 0)
+        if (keep.contains(r))
         {
             retained.push_back(r); // active / open tab / pinned: always kept
         }
@@ -1403,7 +1403,7 @@ std::vector<std::string> ShellBase::select_idle_room_evictions_(
     std::vector<std::string> evicted;
     for (const auto& [room_id, last] : last_active)
     {
-        if (currently_visible.count(room_id) != 0)
+        if (currently_visible.contains(room_id))
         {
             continue; // genuinely on-screen right now: never idle-evicted
         }
@@ -1424,7 +1424,7 @@ std::vector<std::pair<std::string, std::string>> ShellBase::select_idle_thread_e
     std::vector<std::pair<std::string, std::string>> evicted;
     for (const auto& [key, last] : last_active)
     {
-        if (currently_visible.count(key) != 0)
+        if (currently_visible.contains(key))
         {
             continue;
         }

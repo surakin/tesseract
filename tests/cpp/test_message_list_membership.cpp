@@ -104,8 +104,9 @@ std::vector<std::uint32_t> render_system_row(Settings::MessageLayout layout,
         for (int x = 0; x < 320; ++x)
         {
             const tk::Color c = surface->read_pixel(x, y);
-            pixels.push_back((std::uint32_t(c.r) << 24) | (std::uint32_t(c.g) << 16) |
-                             (std::uint32_t(c.b) << 8) | c.a);
+            pixels.push_back((static_cast<std::uint32_t>(c.r) << 24) |
+                             (static_cast<std::uint32_t>(c.g) << 16) |
+                             (static_cast<std::uint32_t>(c.b) << 8) | c.a);
         }
     }
     return pixels;

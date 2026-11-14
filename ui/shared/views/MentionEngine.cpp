@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -31,7 +32,8 @@ bool icontains(std::string_view hay, std::string_view needle)
         bool ok = true;
         for (std::size_t k = 0; k < needle.size(); ++k)
         {
-            if (std::tolower((unsigned char)hay[i + k]) != std::tolower((unsigned char)needle[k]))
+            if (std::tolower(static_cast<unsigned char>(hay[i + k])) !=
+                std::tolower(static_cast<unsigned char>(needle[k])))
             {
                 ok = false;
                 break;
@@ -54,7 +56,8 @@ int match_rank(std::string_view hay, std::string_view needle)
     }
     auto ieq = [](char a, char b)
     {
-        return std::tolower((unsigned char)a) == std::tolower((unsigned char)b);
+        return std::tolower(static_cast<unsigned char>(a)) ==
+               std::tolower(static_cast<unsigned char>(b));
     };
     if (hay.size() == needle.size() && std::equal(hay.begin(), hay.end(), needle.begin(), ieq))
     {
@@ -85,9 +88,9 @@ std::string_view localpart(std::string_view user_id)
 
 } // namespace
 
-std::optional<MentionMatch> MentionEngine::find_prefix(std::string_view text, int cursor) const
+std::optional<MentionMatch> MentionEngine::find_prefix(std::string_view text, int cursor)
 {
-    cursor = std::min(cursor, (int)text.size());
+    cursor = std::min(cursor, static_cast<int>(text.size()));
     if (cursor < 0)
     {
         return std::nullopt;
@@ -117,7 +120,7 @@ std::optional<MentionMatch> MentionEngine::find_prefix(std::string_view text, in
 
 std::vector<MentionCandidate>
 MentionEngine::lookup(std::string_view prefix, const std::vector<tesseract::RoomMember>& members,
-                      int max_results, bool include_room) const
+                      int max_results, bool include_room)
 {
     using Ranked = std::pair<int, MentionCandidate>;
     std::vector<Ranked> ranked;
@@ -154,7 +157,7 @@ MentionEngine::lookup(std::string_view prefix, const std::vector<tesseract::Room
     }
     for (auto& [r, c] : ranked)
     {
-        if ((int)out.size() >= max_results)
+        if (std::cmp_greater_equal(out.size(), max_results))
         {
             break;
         }

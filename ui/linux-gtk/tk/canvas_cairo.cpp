@@ -520,7 +520,7 @@ public:
         else
         {
             static thread_local std::vector<unsigned char> buf;
-            buf.resize(static_cast<std::size_t>(stride * ih));
+            buf.resize(static_cast<std::size_t>(stride) * static_cast<std::size_t>(ih));
             for (int y = 0; y < ih; ++y)
             {
                 std::memcpy(buf.data() + y * stride, pixels + static_cast<std::size_t>(y) * iw * 4,
@@ -574,7 +574,7 @@ public:
         // Reuse a thread-local buffer to avoid per-frame heap allocation
         // (GTK4 drawing always runs on the main thread).
         static thread_local std::vector<unsigned char> buf;
-        buf.resize(static_cast<std::size_t>(stride * ih));
+        buf.resize(static_cast<std::size_t>(stride) * static_cast<std::size_t>(ih));
         // Video frames are always fully opaque (a=255). In that case
         // premultiplication is an identity (r*255/255 = r), so skip the
         // multiply/divide and just pack the channels directly. The resulting
@@ -1318,7 +1318,7 @@ public:
                 }
                 else
                 {
-                    image_ranges.push_back({start, end});
+                    image_ranges.emplace_back(start, end);
                 }
                 markup += pango_escape(sp.text);
                 byte_offset = end;

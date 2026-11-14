@@ -1,4 +1,5 @@
 #include "i18n.h"
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -351,10 +352,7 @@ struct Catalog
     long pick_plural_form(long n) const
     {
         long form = eval_plural(plural_expr_, n);
-        if (form < 0)
-        {
-            form = 0;
-        }
+        form = std::max<long>(form, 0);
         if (form >= nplurals_)
         {
             form = nplurals_ - 1;
@@ -467,8 +465,8 @@ bool load_mo(Catalog& cat, const std::string& path)
     uint32_t trans_offset = read_u32(buf + 16, swap);
 
     // Sanity: each table entry is 8 bytes (length + offset)
-    if ((uint64_t)orig_offset + (uint64_t)num_strings * 8 > size ||
-        (uint64_t)trans_offset + (uint64_t)num_strings * 8 > size)
+    if (static_cast<uint64_t>(orig_offset) + static_cast<uint64_t>(num_strings) * 8 > size ||
+        static_cast<uint64_t>(trans_offset) + static_cast<uint64_t>(num_strings) * 8 > size)
     {
         return false;
     }
@@ -480,7 +478,8 @@ bool load_mo(Catalog& cat, const std::string& path)
         uint32_t trans_len = read_u32(buf + trans_offset + i * 8, swap);
         uint32_t trans_off = read_u32(buf + trans_offset + i * 8 + 4, swap);
 
-        if ((uint64_t)orig_off + orig_len > size || (uint64_t)trans_off + trans_len > size)
+        if (static_cast<uint64_t>(orig_off) + orig_len > size ||
+            static_cast<uint64_t>(trans_off) + trans_len > size)
         {
             continue;
         }
@@ -566,14 +565,7 @@ void set_locale(const std::string& i18n_dir, const std::string& lang)
         if (sep != std::string::npos)
         {
             std::string prefix = lang.substr(0, sep);
-            if (!try_load(cat, i18n_dir, prefix))
-            {
-                cat.identity_mode_ = true;
-            }
-            else
-            {
-                cat.identity_mode_ = false;
-            }
+            cat.identity_mode_ = !try_load(cat, i18n_dir, prefix);
         }
         else
         {
@@ -789,6 +781,7 @@ std::string trf(const std::string& fmt, std::initializer_list<std::string> args)
                     }
                     catch (const std::exception&)
                     {
+                        // Not a number: idx keeps its default.
                     }
                     if (idx < argv.size())
                     {

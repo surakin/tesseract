@@ -584,3 +584,15 @@ TEST_CASE("media_decode_clamp_ takes a picker sticker's size from its key", "[me
     CHECK(picker != tk::CacheKey::media("mxc://b/s"));
     CHECK(picker != tk::CacheKey::picker_sticker("mxc://b/s", 96, 96));
 }
+
+TEST_CASE("media_decode_clamp_ takes a profile avatar's size from its key", "[media-prefetch]")
+{
+    const auto profile = tk::CacheKey::profile_avatar("mxc://b/a", 320, 320);
+    CHECK(MediaPrefetchTestShell::media_decode_clamp_(ShellBase::MediaKind::MediaImage, profile) ==
+          std::pair<int, int>{320, 320});
+    // Never shares an entry with the list-size avatar or another scale.
+    CHECK(profile != tk::CacheKey::media("mxc://b/a"));
+    CHECK(profile != tk::CacheKey::thumbnail("mxc://b/a", 320, 320));
+    CHECK(profile != tk::CacheKey::profile_avatar("mxc://b/a", 160, 160));
+    CHECK(profile.to_string() != tk::CacheKey::picker_sticker("mxc://b/a", 320, 320).to_string());
+}

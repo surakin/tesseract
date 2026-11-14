@@ -9,6 +9,7 @@
 #include <tesseract/visual.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace tk
 {
@@ -156,7 +157,7 @@ public:
             layouts_.resize(options_->size());
         }
 
-        for (int i = 0; i < static_cast<int>(options_->size()); ++i)
+        for (int i = 0; std::cmp_less(i, options_->size()); ++i)
         {
             const auto& opt = (*options_)[static_cast<std::size_t>(i)];
             const float ry = bounds_.y + kDropRowH * static_cast<float>(i);
@@ -289,7 +290,7 @@ private:
             return -1;
         }
         const int idx = static_cast<int>((local.y - bounds_.y) / kDropRowH);
-        return (idx >= 0 && idx < static_cast<int>(options_->size())) ? idx : -1;
+        return (idx >= 0 && std::cmp_less(idx, options_->size())) ? idx : -1;
     }
 
     const std::vector<Option>* options_ = nullptr; // borrowed from the owning ComboButton
@@ -614,7 +615,7 @@ void ComboButton::on_pointer_up(Point local, bool inside_self)
             else
             {
                 set_hovered_(-1);
-                for (int i = 0; i < static_cast<int>(options_.size()); ++i)
+                for (int i = 0; std::cmp_less(i, options_.size()); ++i)
                 {
                     if (options_[static_cast<std::size_t>(i)].value == selected_value_)
                     {
@@ -703,7 +704,7 @@ bool ComboButton::on_key_down(const KeyEvent& e)
         if (e.key == Key::Down)
         {
             int start = -1;
-            for (int i = 0; i < static_cast<int>(options_.size()); ++i)
+            for (int i = 0; std::cmp_less(i, options_.size()); ++i)
             {
                 if (options_[static_cast<std::size_t>(i)].value == selected_value_)
                 {
@@ -738,7 +739,7 @@ bool ComboButton::on_key_down(const KeyEvent& e)
     }
     if (e.key == Key::Enter || e.key == Key::Space)
     {
-        if (hovered_option_ >= 0 && hovered_option_ < static_cast<int>(options_.size()))
+        if (hovered_option_ >= 0 && std::cmp_less(hovered_option_, options_.size()))
         {
             commit_(static_cast<std::size_t>(hovered_option_));
         }

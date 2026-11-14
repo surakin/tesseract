@@ -49,7 +49,7 @@ void SlashCommandPopup::set_selected_index(int index)
     }
     else
     {
-        selected_index_ = std::clamp(index, 0, (int)total_rows() - 1);
+        selected_index_ = std::clamp(index, 0, static_cast<int>(total_rows()) - 1);
         ensure_row_visible(selected_index_);
     }
 }

@@ -11,8 +11,8 @@ namespace tesseract::views
 
 struct SlashCommandMatch
 {
-    int start;          ///< UTF-8 byte offset of the leading '/'.
-    int end;            ///< UTF-8 byte offset one past the last typed char.
+    int start = 0;      ///< UTF-8 byte offset of the leading '/'.
+    int end = 0;        ///< UTF-8 byte offset one past the last typed char.
     std::string prefix; ///< Characters typed after '/' (no slash).
 };
 
@@ -43,7 +43,7 @@ public:
     /// of the composer: `^/[A-Za-z_]*$` with the cursor at end-of-text.
     /// Returns nullopt for empty text, mid-message slashes, slashes
     /// followed by a space (args entered), or non-letter chars after '/'.
-    std::optional<SlashCommandMatch> find_prefix(std::string_view text, int cursor_byte_pos) const;
+    static std::optional<SlashCommandMatch> find_prefix(std::string_view text, int cursor_byte_pos);
 
     /// Filter the canonical command list (from
     /// `tesseract::available_commands()`) plus `bot_commands` (already
@@ -59,9 +59,9 @@ public:
     /// The default is comfortably above the registry size — filtering and
     /// display windowing are decoupled, so this is not a practical cap; the
     /// popup handles scrolling/windowing for the visible rows itself.
-    std::vector<SlashCommandSuggestion>
+    static std::vector<SlashCommandSuggestion>
     lookup(std::string_view prefix, const std::vector<tesseract::CommandDescription>& bot_commands,
-           int max_results = 64) const;
+           int max_results = 64);
 };
 
 } // namespace tesseract::views

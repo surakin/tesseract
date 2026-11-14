@@ -88,6 +88,7 @@ void QRGrantView::rebuild_tree_()
             }
             catch (...)
             {
+                // Not a number; handled below.
             }
             // A bad or empty code keeps Confirm enabled so it can be corrected.
             if (!client_ || v < 0 || v > 255)

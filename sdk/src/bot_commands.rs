@@ -26,7 +26,7 @@
 //! [`MAX_COMMAND_PARAMETERS`] parameters also clears it.
 //! Positional-argument-to-schema *matching* (required params stay ordered,
 //! optional params don't) and user-input *coercion* are UI/client-layer
-//! concerns and live in `client/` and `ui/shared/app/SlashCommands.cpp`.
+//! concerns and live in `client/` and `ui/shared/views/SlashCommands.cpp`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -56,8 +56,8 @@ pub const KEY_COMMAND_STABLE: &str = "m.bot.command";
 /// Unstable (MSC4391-prefixed) content key. Written alongside the stable key
 /// during the unstable period (see [`build_invocation_content`]) to maximize
 /// compatibility with bots still on the unstable name; drop this write path
-/// once MSC4391 stabilizes. Unstable *reads* are not relevant here since
-/// invocation content is never read back by the client.
+/// once MSC4391 stabilizes. Received invocations are read back only for
+/// timeline display, not through this module.
 pub const KEY_COMMAND_UNSTABLE: &str = "org.matrix.msc4391.command";
 
 /// MSC1767-style extensible plain-text representation used for
@@ -85,10 +85,12 @@ impl RichText {
     }
 }
 
-/// The six primitive parameter value types MSC4391 defines. `String`/
-/// `Integer`/`Boolean` are unconstrained; `UserId`/`ServerName`/`RoomAlias`
-/// are strings additionally constrained to valid Matrix identifier grammar
-/// (validated by the caller when coercing user input, not here).
+/// The primitive parameter value types MSC4391 defines. `String`/`Integer`/
+/// `Boolean` are unconstrained; `UserId`/`ServerName`/`RoomAlias` are strings
+/// additionally constrained to valid Matrix identifier grammar (validated by
+/// the caller when coercing user input, not here). `RoomId`/`EventId` are
+/// reference types whose wire *value* shape is fixed by the MSC rather than
+/// being schema-configurable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrimitiveType {
@@ -98,12 +100,15 @@ pub enum PrimitiveType {
     UserId,
     ServerName,
     RoomAlias,
+    RoomId,
+    EventId,
 }
 
-/// The two object parameter value types. The wire *value* shape for each is
-/// fixed by the MSC (`room_id`: `{id, via?}`; `event_id`: `{id, via?,
-/// event_id}`) rather than being schema-configurable, so this enum only
-/// records which shape applies.
+/// Legacy `schema_type: "object"` value types, read-only. Earlier MSC4391
+/// drafts declared room/event references as `{"schema_type":"object",
+/// "type":"room_id"}`; the current draft makes them primitives. Such schemas
+/// are normalised to [`PrimitiveType`] in [`parse_command_description`], so
+/// the legacy form is never emitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObjectType {
@@ -132,13 +137,15 @@ fn literal_value_matches(value: &Value, ty: LiteralType) -> bool {
     }
 }
 
-/// A parameter's declared type, restricted to what's legal at the top level
-/// of a parameter (`primitive`, `object`, `array`, `literal`). `union` is
-/// deliberately absent from this enum — per the MSC it is "only permitted
-/// outside top-level within arrays" — so a top-level `"schema_type":"union"`
-/// fails to deserialize into `ParamSchema` and the whole command description
-/// is dropped by [`parse_command_description`] (structurally malformed, not
+/// A parameter's declared type, as legal at the top level of a parameter
+/// (`primitive`, `array`, `literal`, `union`). A top-level `union` is allowed;
+/// the MSC only prohibits *nested* unions, which are unrepresentable here
+/// since [`UnionVariantSchema`] has no `union` variant (a parse error, not
 /// merely `valid = false`).
+///
+/// `Object` is the legacy pre-primitive form of room/event references; it is
+/// only ever produced by deserialising and is normalised away by
+/// [`parse_command_description`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "schema_type", rename_all = "snake_case")]
 pub enum ParamSchema {
@@ -146,6 +153,7 @@ pub enum ParamSchema {
         #[serde(rename = "type")]
         ty: PrimitiveType,
     },
+    /// Legacy read-only form; see [`ObjectType`].
     Object {
         #[serde(rename = "type")]
         ty: ObjectType,
@@ -158,12 +166,14 @@ pub enum ParamSchema {
         value: Value,
         literal_type: LiteralType,
     },
+    /// Allowed at the top level. Nested unions are prohibited by the MSC and
+    /// unrepresentable here, see [`UnionVariantSchema`].
+    Union { variants: Vec<UnionVariantSchema> },
 }
 
 /// The schema types legal inside an array's `items` — `union`, `primitive`,
-/// or `literal` per the MSC. Notably excludes `object`: MSC4391's array
-/// schema section restricts items to these three, so a `room_id`/`event_id`
-/// parameter can never be array-typed.
+/// or `literal` per the MSC. `room_id`/`event_id` are primitives, so arrays
+/// of them are legal.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "schema_type", rename_all = "snake_case")]
 pub enum ArrayItemSchema {
@@ -231,6 +241,7 @@ fn schema_well_formed(schema: &ParamSchema) -> bool {
             literal_type,
         } => literal_value_matches(value, *literal_type),
         ParamSchema::Array { items } => array_item_well_formed(items),
+        ParamSchema::Union { variants } => variants.iter().all(union_variant_well_formed),
         ParamSchema::Primitive { .. } | ParamSchema::Object { .. } => true,
     }
 }
@@ -303,6 +314,17 @@ fn command_name_well_formed(name: &str) -> bool {
             .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'))
 }
 
+/// Rewrite a legacy `object` schema to the equivalent room/event primitive.
+fn normalise_schema(schema: &mut ParamSchema) {
+    if let ParamSchema::Object { ty } = schema {
+        let ty = match ty {
+            ObjectType::RoomId => PrimitiveType::RoomId,
+            ObjectType::EventId => PrimitiveType::EventId,
+        };
+        *schema = ParamSchema::Primitive { ty };
+    }
+}
+
 /// Parse one command-description state event's `content` into a
 /// [`CommandDescription`]. Returns `None` when the content doesn't even
 /// match the base wire shape (missing `command`, or a schema using illegal
@@ -317,7 +339,10 @@ pub fn parse_command_description(
     room_id: &str,
     content: &Value,
 ) -> Option<CommandDescription> {
-    let raw: CommandDescriptionContent = serde_json::from_value(content.clone()).ok()?;
+    let mut raw: CommandDescriptionContent = serde_json::from_value(content.clone()).ok()?;
+    for p in &mut raw.parameters {
+        normalise_schema(&mut p.schema);
+    }
 
     let mut valid =
         command_name_well_formed(&raw.command) && raw.parameters.len() <= MAX_COMMAND_PARAMETERS;
@@ -428,12 +453,287 @@ pub fn build_invocation_content(
     content
 }
 
+/// True if `v` is a `room_id` / `event_id` reference object (`"type"` tag).
+fn is_reference_object(v: &Value) -> bool {
+    matches!(
+        v.get("type").and_then(Value::as_str),
+        Some("room_id" | "event_id")
+    )
+}
+
+/// Every reference object among the top-level argument values (directly or as
+/// array items), in argument order.
+fn reference_objects_mut(arguments: &mut Value) -> Vec<&mut Value> {
+    let mut out = Vec::new();
+    let Some(map) = arguments.as_object_mut() else {
+        return out;
+    };
+    for v in map.values_mut() {
+        match v {
+            Value::Array(items) => out.extend(items.iter_mut().filter(|i| is_reference_object(i))),
+            other if is_reference_object(other) => out.push(other),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The `id` strings of all reference objects that are room aliases (`#…`).
+pub fn reference_aliases(arguments: &mut Value) -> Vec<String> {
+    reference_objects_mut(arguments)
+        .into_iter()
+        .filter_map(|o| o.get("id").and_then(Value::as_str))
+        .filter(|id| id.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Resolve the room/event references in an invocation's `arguments` before
+/// sending (MSC4391 `room_id` / `event_id` objects):
+///
+///  * an `id` that is a room alias is replaced by the resolved room id and
+///    `via` is seeded from the lookup's server list;
+///  * an empty or missing `via` is filled from `route_for_room`.
+///
+/// Pure: the lookups are injected. `resolve_alias` maps an alias to
+/// `(room_id, via)` or an error message; `route_for_room` maps a room id to a
+/// via list. Non-reference values are left untouched. The first alias that
+/// fails to resolve aborts with its error.
+pub fn resolve_reference_arguments(
+    arguments: &mut Value,
+    resolve_alias: &mut dyn FnMut(&str) -> Result<(String, Vec<String>), String>,
+    route_for_room: &mut dyn FnMut(&str) -> Vec<String>,
+) -> Result<(), String> {
+    for obj in reference_objects_mut(arguments) {
+        let Some(id) = obj.get("id").and_then(Value::as_str).map(str::to_owned) else {
+            continue;
+        };
+        let mut room_id = id.clone();
+        let mut via: Vec<Value> = obj
+            .get("via")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if id.starts_with('#') {
+            let (resolved, servers) = resolve_alias(&id)?;
+            room_id = resolved;
+            if via.is_empty() {
+                via = servers.into_iter().map(Value::String).collect();
+            }
+        }
+        if via.is_empty() {
+            via = route_for_room(&room_id)
+                .into_iter()
+                .map(Value::String)
+                .collect();
+        }
+        obj["id"] = Value::String(room_id);
+        if via.is_empty() {
+            if let Some(m) = obj.as_object_mut() {
+                m.remove("via");
+            }
+        } else {
+            obj["via"] = Value::Array(via);
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Received invocations
+
+/// Whether raw event JSON could carry an MSC4391 invocation. A cheap substring
+/// check done before any JSON parsing.
+pub fn might_be_invocation(raw_json: &str) -> bool {
+    raw_json.contains(KEY_COMMAND_STABLE) || raw_json.contains(KEY_COMMAND_UNSTABLE)
+}
+
+/// The invocation `(command, arguments)` carried by an event `content`, when
+/// it has a well-formed one. The stable key wins over the unstable one; a
+/// malformed block under the stable key falls through to the unstable one.
+/// `arguments` is the JSON object, or `{}` when absent.
+pub fn parse_invocation(content: &Value) -> Option<(String, Value)> {
+    [KEY_COMMAND_STABLE, KEY_COMMAND_UNSTABLE]
+        .iter()
+        .find_map(|key| {
+            let block = content.get(*key)?;
+            let command = block.get("command")?.as_str()?;
+            if command.is_empty() {
+                return None;
+            }
+            let arguments = match block.get("arguments") {
+                None | Some(Value::Null) => Value::Object(Default::default()),
+                Some(a @ Value::Object(_)) => a.clone(),
+                Some(_) => return None,
+            };
+            Some((command.to_owned(), arguments))
+        })
+}
+
+// ---------------------------------------------------------------------------
+// Live refresh decisions (pure; the event handlers live in client/sync.rs)
+
+/// Quiet window the refresh consumer waits for after the last trigger in a
+/// room before refetching its state, so a join burst or a bot publishing many
+/// descriptions costs one fetch.
+pub const REFRESH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Whether a member event for `state_key` should trigger a description
+/// refresh: the user must already be a description sender in the room's cached
+/// list, and their membership must have actually changed. `prev_membership` is
+/// `None` when the server omitted `prev_content`; treated as a change.
+pub fn member_event_needs_refresh(
+    cached: Option<&[CommandDescription]>,
+    state_key: &str,
+    prev_membership: Option<&str>,
+    new_membership: &str,
+) -> bool {
+    let Some(cached) = cached else {
+        return false;
+    };
+    if !cached.iter().any(|d| d.sender == state_key) {
+        return false;
+    }
+    prev_membership != Some(new_membership)
+}
+
+/// Whether a refresh request for a room should be served: only rooms that
+/// already have a cache entry or are active, so a bot event in some unvisited
+/// room never costs a full-state fetch.
+pub fn should_refresh_room(has_cache_entry: bool, is_active: bool) -> bool {
+    has_cache_entry || is_active
+}
+
+/// Per-room trailing-edge debounce: each [`note`](Self::note) restarts that
+/// room's quiet window; [`take_due`](Self::take_due) yields rooms whose window
+/// has elapsed. Time is passed in so the logic is testable.
+#[derive(Debug, Default)]
+pub struct RefreshDebouncer {
+    quiet: std::time::Duration,
+    pending: std::collections::HashMap<String, std::time::Instant>,
+}
+
+impl RefreshDebouncer {
+    pub fn new(quiet: std::time::Duration) -> Self {
+        Self {
+            quiet,
+            pending: Default::default(),
+        }
+    }
+
+    /// Record a trigger for `room` at `now`, restarting its quiet window.
+    pub fn note(&mut self, room: String, now: std::time::Instant) {
+        self.pending.insert(room, now + self.quiet);
+    }
+
+    /// Earliest deadline among pending rooms, if any.
+    pub fn next_deadline(&self) -> Option<std::time::Instant> {
+        self.pending.values().min().copied()
+    }
+
+    /// Remove and return every room whose deadline is at or before `now`.
+    pub fn take_due(&mut self, now: std::time::Instant) -> Vec<String> {
+        let due: Vec<String> = self
+            .pending
+            .iter()
+            .filter(|(_, d)| **d <= now)
+            .map(|(r, _)| r.clone())
+            .collect();
+        for r in &due {
+            self.pending.remove(r);
+        }
+        due
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn resolve(args: &mut Value) -> Result<(), String> {
+        resolve_reference_arguments(
+            args,
+            &mut |a| match a {
+                "#ok:h" => Ok(("!resolved:h".to_owned(), vec!["h".to_owned()])),
+                _ => Err(format!("no such alias {a}")),
+            },
+            &mut |r| vec![format!("route-{}", r.trim_start_matches('!'))],
+        )
+    }
+
+    #[test]
+    fn reference_alias_is_replaced_and_via_seeded() {
+        let mut a = json!({"t": {"type": "room_id", "id": "#ok:h"}});
+        resolve(&mut a).unwrap();
+        assert_eq!(
+            a["t"],
+            json!({"type": "room_id", "id": "!resolved:h", "via": ["h"]})
+        );
+    }
+
+    #[test]
+    fn reference_missing_via_is_filled_from_route() {
+        let mut a = json!({"t": {"type": "room_id", "id": "!r:h", "via": []}});
+        resolve(&mut a).unwrap();
+        assert_eq!(a["t"]["via"], json!(["route-r:h"]));
+    }
+
+    #[test]
+    fn reference_existing_via_is_kept() {
+        let mut a = json!({"t": {"type": "room_id", "id": "!r:h", "via": ["x"]}});
+        resolve(&mut a).unwrap();
+        assert_eq!(a["t"]["via"], json!(["x"]));
+    }
+
+    #[test]
+    fn reference_event_object_keeps_event_id() {
+        let mut a = json!({"e": {"type": "event_id", "id": "!r:h", "event_id": "$e:h"}});
+        resolve(&mut a).unwrap();
+        assert_eq!(a["e"]["event_id"], "$e:h");
+        assert_eq!(a["e"]["id"], "!r:h");
+        assert_eq!(a["e"]["via"], json!(["route-r:h"]));
+    }
+
+    #[test]
+    fn reference_arrays_are_walked_and_other_values_untouched() {
+        let mut a = json!({
+            "rooms": [{"type": "room_id", "id": "#ok:h"}, {"type": "room_id", "id": "!b:h"}],
+            "n": 42,
+            "s": "#not-a-ref",
+            "o": {"type": "other", "id": "#ok:h"},
+            "users": ["@a:h"],
+        });
+        resolve(&mut a).unwrap();
+        assert_eq!(a["rooms"][0]["id"], "!resolved:h");
+        assert_eq!(a["rooms"][1]["via"], json!(["route-b:h"]));
+        assert_eq!(a["n"], 42);
+        assert_eq!(a["s"], "#not-a-ref");
+        assert_eq!(a["o"], json!({"type": "other", "id": "#ok:h"}));
+        assert_eq!(a["users"], json!(["@a:h"]));
+    }
+
+    #[test]
+    fn reference_alias_failure_is_an_error() {
+        let mut a = json!({"t": {"type": "room_id", "id": "#bad:h"}});
+        assert_eq!(resolve(&mut a).unwrap_err(), "no such alias #bad:h");
+    }
+
+    #[test]
+    fn reference_empty_route_leaves_no_via_key() {
+        let mut a = json!({"t": {"type": "room_id", "id": "!r:h", "via": []}});
+        resolve_reference_arguments(&mut a, &mut |_| Err(String::new()), &mut |_| vec![]).unwrap();
+        assert!(a["t"].get("via").is_none());
+    }
+
+    #[test]
+    fn reference_aliases_lists_only_alias_ids() {
+        let mut a =
+            json!({"r": [{"type": "room_id", "id": "#a:h"}, {"type": "room_id", "id": "!b:h"}]});
+        assert_eq!(reference_aliases(&mut a), vec!["#a:h".to_owned()]);
+    }
 
     fn joined(ids: &[&str]) -> std::collections::HashMap<String, String> {
         ids.iter().map(|s| (s.to_string(), String::new())).collect()
@@ -459,7 +759,7 @@ mod tests {
             "parameters": [
                 {
                     "key": "target_room",
-                    "schema": { "schema_type": "object", "type": "room_id" },
+                    "schema": { "schema_type": "primitive", "type": "room_id" },
                     "description": { "m.text": [{ "body": "The room ID" }] }
                 },
                 {
@@ -492,6 +792,93 @@ mod tests {
         assert_eq!(d.description, "An example command with arguments");
         assert!(d.parameters[2].optional); // apply_to_policy
         assert!(!d.parameters[0].optional); // target_room
+        assert!(matches!(
+            d.parameters[0].schema,
+            ParamSchema::Primitive {
+                ty: PrimitiveType::RoomId
+            }
+        ));
+    }
+
+    #[test]
+    fn legacy_object_schema_is_normalised_to_primitive() {
+        let c = json!({
+            "command": "x",
+            "parameters": [
+                { "key": "r", "schema": { "schema_type": "object", "type": "room_id" } },
+                { "key": "e", "schema": { "schema_type": "object", "type": "event_id" } }
+            ]
+        });
+        let d = parse_command_description("@bot:h", "s", "!r:h", &c).unwrap();
+        assert!(d.valid);
+        assert!(matches!(
+            d.parameters[0].schema,
+            ParamSchema::Primitive {
+                ty: PrimitiveType::RoomId
+            }
+        ));
+        assert!(matches!(
+            d.parameters[1].schema,
+            ParamSchema::Primitive {
+                ty: PrimitiveType::EventId
+            }
+        ));
+        let out = serde_json::to_value(&d.parameters[1].schema).unwrap();
+        assert_eq!(
+            out,
+            json!({ "schema_type": "primitive", "type": "event_id" })
+        );
+    }
+
+    #[test]
+    fn array_of_room_id_is_legal() {
+        let c = json!({
+            "command": "x",
+            "parameters": [{
+                "key": "p",
+                "schema": {
+                    "schema_type": "array",
+                    "items": { "schema_type": "primitive", "type": "room_id" }
+                }
+            }]
+        });
+        let d = parse_command_description("@bot:h", "s", "!r:h", &c).unwrap();
+        assert!(d.valid);
+    }
+
+    #[test]
+    fn top_level_union_is_legal_and_checked() {
+        let c = json!({
+            "command": "x",
+            "parameters": [{
+                "key": "p",
+                "schema": { "schema_type": "union", "variants": [
+                    { "schema_type": "primitive", "type": "room_id" },
+                    { "schema_type": "literal", "value": "all", "literal_type": "string" }
+                ] }
+            }]
+        });
+        let d = parse_command_description("@bot:h", "s", "!r:h", &c).unwrap();
+        assert!(d.valid);
+        assert!(matches!(
+            d.parameters[0].schema,
+            ParamSchema::Union { ref variants } if variants.len() == 2
+        ));
+
+        let bad = json!({
+            "command": "x",
+            "parameters": [{
+                "key": "p",
+                "schema": { "schema_type": "union", "variants": [
+                    { "schema_type": "literal", "value": "nope", "literal_type": "integer" }
+                ] }
+            }]
+        });
+        assert!(
+            !parse_command_description("@bot:h", "s", "!r:h", &bad)
+                .unwrap()
+                .valid
+        );
     }
 
     #[test]
@@ -501,15 +888,14 @@ mod tests {
     }
 
     #[test]
-    fn top_level_union_schema_fails_to_parse() {
-        // Per the MSC, union is only legal inside an array's items, never
-        // at the top level of a parameter's schema.
+    fn nested_union_in_top_level_union_fails_to_parse() {
+        // Only top-level unions are legal; a union inside a union is not.
         let c = json!({
             "command": "x",
             "parameters": [{
                 "key": "p",
                 "schema": { "schema_type": "union", "variants": [
-                    { "schema_type": "primitive", "type": "string" }
+                    { "schema_type": "union", "variants": [] }
                 ] }
             }]
         });
@@ -573,8 +959,8 @@ mod tests {
 
     #[test]
     fn array_of_object_fails_to_parse() {
-        // MSC restricts array items to union/primitive/literal — object
-        // (room_id/event_id) is not a legal array item type.
+        // The legacy `object` form is only read at the top level of a
+        // parameter; it is not accepted as an array item.
         let c = json!({
             "command": "x",
             "parameters": [{
@@ -828,5 +1214,138 @@ mod tests {
     fn build_invocation_content_omits_formatted_body_when_empty() {
         let content = build_invocation_content("plain", Some(""), &[], false, "cmd", json!({}));
         assert!(content.get("formatted_body").is_none());
+    }
+
+    fn desc_from(sender: &str) -> CommandDescription {
+        parse_command_description(
+            sender,
+            "k",
+            "!r:h",
+            &json!({"command": "ban", "description": {"m.text": [{"body": "x"}]}}),
+        )
+        .expect("valid description")
+    }
+
+    #[test]
+    fn member_refresh_requires_known_sender_and_change() {
+        let cached = vec![desc_from("@bot:h")];
+        assert!(member_event_needs_refresh(
+            Some(&cached),
+            "@bot:h",
+            Some("join"),
+            "leave"
+        ));
+        assert!(member_event_needs_refresh(
+            Some(&cached),
+            "@bot:h",
+            None,
+            "join"
+        ));
+        // Same membership (e.g. a displayname-only update).
+        assert!(!member_event_needs_refresh(
+            Some(&cached),
+            "@bot:h",
+            Some("join"),
+            "join"
+        ));
+        // Unknown user, and no cache entry at all.
+        assert!(!member_event_needs_refresh(
+            Some(&cached),
+            "@human:h",
+            Some("join"),
+            "leave"
+        ));
+        assert!(!member_event_needs_refresh(
+            None,
+            "@bot:h",
+            Some("join"),
+            "leave"
+        ));
+    }
+
+    #[test]
+    fn refresh_only_for_cached_or_active_rooms() {
+        assert!(should_refresh_room(true, false));
+        assert!(should_refresh_room(false, true));
+        assert!(!should_refresh_room(false, false));
+    }
+
+    #[test]
+    fn debouncer_coalesces_and_restarts_window() {
+        use std::time::{Duration, Instant};
+        let q = Duration::from_millis(500);
+        let t0 = Instant::now();
+        let mut d = RefreshDebouncer::new(q);
+        assert_eq!(d.next_deadline(), None);
+        d.note("!a".into(), t0);
+        d.note("!b".into(), t0 + Duration::from_millis(100));
+        // Re-noting !a restarts its window and does not duplicate it.
+        d.note("!a".into(), t0 + Duration::from_millis(300));
+        assert_eq!(d.next_deadline(), Some(t0 + Duration::from_millis(600)));
+        assert!(d.take_due(t0 + Duration::from_millis(599)).is_empty());
+        assert_eq!(d.take_due(t0 + Duration::from_millis(600)), vec!["!b"]);
+        assert_eq!(d.take_due(t0 + Duration::from_millis(800)), vec!["!a"]);
+        assert_eq!(d.next_deadline(), None);
+        assert!(d.take_due(t0 + Duration::from_secs(5)).is_empty());
+    }
+
+    #[test]
+    fn invocation_stable_key() {
+        let c = json!({"m.bot.command": {"command": "ban", "arguments": {"n": 1}}});
+        assert_eq!(
+            parse_invocation(&c),
+            Some(("ban".to_owned(), json!({"n": 1})))
+        );
+    }
+
+    #[test]
+    fn invocation_unstable_key() {
+        let c = json!({"org.matrix.msc4391.command": {"command": "ban", "arguments": {}}});
+        assert_eq!(parse_invocation(&c), Some(("ban".to_owned(), json!({}))));
+    }
+
+    #[test]
+    fn invocation_prefers_stable_key() {
+        let c = json!({
+            "m.bot.command": {"command": "stable", "arguments": {}},
+            "org.matrix.msc4391.command": {"command": "unstable", "arguments": {}},
+        });
+        assert_eq!(parse_invocation(&c).unwrap().0, "stable");
+    }
+
+    #[test]
+    fn invocation_malformed_stable_falls_back_to_unstable() {
+        let c = json!({
+            "m.bot.command": {"command": 5},
+            "org.matrix.msc4391.command": {"command": "unstable", "arguments": {}},
+        });
+        assert_eq!(parse_invocation(&c).unwrap().0, "unstable");
+    }
+
+    #[test]
+    fn invocation_malformed_is_ignored() {
+        assert!(parse_invocation(&json!({"m.bot.command": "ban"})).is_none());
+        assert!(parse_invocation(&json!({"m.bot.command": {"command": 3}})).is_none());
+        assert!(parse_invocation(&json!({"m.bot.command": {"command": ""}})).is_none());
+        assert!(
+            parse_invocation(&json!({"m.bot.command": {"command": "x", "arguments": [1]}}))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn invocation_missing_is_none_and_missing_arguments_is_empty() {
+        assert!(parse_invocation(&json!({"body": "hi"})).is_none());
+        let c = json!({"m.bot.command": {"command": "ping"}});
+        assert_eq!(parse_invocation(&c), Some(("ping".to_owned(), json!({}))));
+    }
+
+    #[test]
+    fn might_be_invocation_spots_either_key() {
+        assert!(might_be_invocation(r#"{"content":{"m.bot.command":{}}}"#));
+        assert!(might_be_invocation(
+            r#"{"content":{"org.matrix.msc4391.command":{}}}"#
+        ));
+        assert!(!might_be_invocation(r#"{"content":{"body":"hi"}}"#));
     }
 }

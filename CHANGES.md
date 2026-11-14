@@ -5,12 +5,31 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(messages): a received bot command shows as a "Bot command: /name args" line above the message in every layout. Linux build, ctest 3944/3944, cargo 1724/1724
+- feat(composer): bot command arguments can be quoted ("two words"), and room and event arguments are sent with the correct id and via. Linux build, ctest 3944/3944
+- feat(composer): slash-command autocomplete picks up a bot's new or changed commands while the room is open. Linux build, ctest 3944/3944, cargo 1724/1724
+- fix(bots): bot command descriptions that use the current MSC4391 draft (room_id/event_id types, top-level unions) are accepted. Linux build, cargo 1724/1724
+- feat(messages): the message menu has "Copy image" on images and stickers, and copied GIFs keep their animation where the target app supports it. Linux build
+- fix(ui): long error messages in the forward dialog now word-wrap instead of running off the card. Linux build
+- fix(ui): right-clicking in the media viewer no longer opens the message menu behind it. Linux build, ctest media viewer tests
+- fix(ui): the Windows status bar no longer flickers when its text or indicator updates. Windows build
+- fix(ui): the emoji picker and `:shortcode:` suggestions no longer offer custom image packs in bridged rooms. Windows build
+- fix(ui): pack names in the image pack editor show on Windows, and renaming uses the same font size as the displayed names. Linux build
+- fix(ui): copying an image to the clipboard on Windows can be pasted into other apps and back into the composer. Windows build
+- fix(sync): server details and features are re-read after reconnecting, so a server upgrade is picked up without restarting. Linux release build
+- fix(ui): the avatar in the user info panel is sharp, and animated avatars stay animated there. Linux build
+- feat(composer): `/sticker <text>` shows matching stickers above the composer; arrows or Tab pick one and Enter sends it. Linux release build, ctest 3921/3921
+- fix(ui): context menus widen to fit longer translated labels. Linux release build, ctest popup-menu tests
+- build: clang-tidy now runs over the tree via `scripts/clang-tidy.py`, a ctest and a CI workflow, and the code is clean of findings. Linux release build, ctest 3929/3929
+- fix(settings): a device sign-out error or re-authentication prompt could be lost when it was handed to more than one device row. Linux release build
+
 - fix(messages): side panels cover your bubbles without moving them to the left. Linux build, focused tests
 
 ## v0.9.8 — 2026-11-10
 
 ### Summary
 
+- feat(ui): a "Show deleted messages" option in Settings → Messages lets you hide deleted messages from the timeline. Linux build
 - fix(messages): in the IRC layout a forwarded emote names who forwarded it ("* Bob forwarded: Carol waves"). Linux build, ctest 3913/3913
 - fix(security): linking a device by QR now refuses to open a sign-in address that isn't https. Linux build, ctest 3912/3912
 - fix(security): mention pills show the member's real name (or Matrix ID) with the ID on hover, not the sender's link text. Linux build, ctest 3911/3911
@@ -48,6 +67,7 @@ Tagged releases summarize all changes since the previous tag.
 - fix(macos): a DMG install's sessions carry over to the App Store edition when the DMG is built with a Developer ID provisioning profile. User-verified macOS (DMG → TestFlight)
 - feat(ui): the sign-in screen explains when a saved sign-in could not be found on this computer. Linux build + ctest
 - build(macos): release builds ship a stripped binary with a separate dSYM, about a third smaller. Unverified, pending CI
+- fix(ci): the GitHub release no longer includes the macOS dSYM zips. Workflow YAML change, not run
 - ci(smoke): new `smoke.yml` runs each shell against a throwaway Synapse: sign-in, messages (plain and encrypted), session restore, sign-out. CI green on Linux, macOS and Windows
 - fix(gtk): closing a screen with text fields, such as the sign-in screen after signing in, no longer touches freed GTK widgets. Linux CI smoke test
 - fix(macos): signed-in sessions are stored in the login keychain, not in plaintext on disk, when the build lacks the data-protection keychain entitlement. macOS CI smoke test (ad-hoc signed build)
@@ -129,7 +149,6 @@ Tagged releases summarize all changes since the previous tag.
 - chore(ci): the manually-run test workflow adds an AddressSanitizer build and a keyring for the keychain tests. YAML parse only
 - feat(ui): right-clicking a message offers the same actions as its hover toolbar. Linux Qt6 build
 - chore(ci): the Flatpak job retries its source and runtime downloads, so a transient crates.io or Flathub error no longer cancels the release run. YAML parse only
-- feat(ui): a "Show deleted messages" option in Settings → Messages lets you hide deleted messages from the timeline. Linux build
 
 ## v0.9.5 — 2026-10-26
 

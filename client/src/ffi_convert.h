@@ -181,7 +181,9 @@ inline ParamSchema parse_param_schema(const nlohmann::json& j)
     }
     const auto schema_type = j.value("schema_type", std::string());
 
-    if (schema_type == "primitive")
+    // Legacy MSC4391 drafts spelled room/event references as schema_type
+    // "object"; they are primitives in the current draft.
+    if (schema_type == "primitive" || schema_type == "object")
     {
         out.kind = ParamSchemaKind::Primitive;
         const auto t = j.value("type", std::string());
@@ -209,22 +211,13 @@ inline ParamSchema parse_param_schema(const nlohmann::json& j)
         {
             out.primitive_type = ParamPrimitiveType::RoomAlias;
         }
-        else
+        else if (t == "room_id")
         {
-            out.kind = ParamSchemaKind::Invalid;
-        }
-    }
-    else if (schema_type == "object")
-    {
-        out.kind = ParamSchemaKind::Object;
-        const auto t = j.value("type", std::string());
-        if (t == "room_id")
-        {
-            out.object_type = ParamObjectType::RoomId;
+            out.primitive_type = ParamPrimitiveType::RoomId;
         }
         else if (t == "event_id")
         {
-            out.object_type = ParamObjectType::EventId;
+            out.primitive_type = ParamPrimitiveType::EventId;
         }
         else
         {
@@ -717,6 +710,8 @@ inline void assign_base(Event& ev, const tesseract_ffi::TimelineEvent& e)
     ev.forwarded_room_id = std::string(e.forwarded_room_id);
     ev.forwarded_event_id = std::string(e.forwarded_event_id);
     ev.forwarded_origin_ts = e.forwarded_origin_ts;
+    ev.bot_command = std::string(e.bot_command);
+    ev.bot_command_arguments_json = std::string(e.bot_command_arguments_json);
     ev.profile_id = std::string(e.profile_id);
     ev.profile_name = std::string(e.profile_name);
     ev.profile_avatar_set = e.profile_avatar_set;

@@ -86,7 +86,7 @@ public:
 
 private:
     // Selection-only repaint: hooks_.repaint_selection if set, else hooks_.repaint.
-    void repaint_selection_();
+    void repaint_selection_() const;
     void accept(const ShortcodeSuggestion& s);
     // Replace the active `:prefix` range with `r` and dismiss the popup.
     void replace_with(const std::string& r);

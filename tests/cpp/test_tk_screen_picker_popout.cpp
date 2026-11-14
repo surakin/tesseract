@@ -17,6 +17,7 @@ namespace
 std::vector<tk::ScreenSource> sp_sources(int n_screens, int n_windows)
 {
     std::vector<tk::ScreenSource> v;
+    v.reserve(n_screens);
     for (int i = 0; i < n_screens; ++i)
     {
         v.push_back({"screen-" + std::to_string(i), "Display " + std::to_string(i), false});

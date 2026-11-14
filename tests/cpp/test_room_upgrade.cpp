@@ -78,7 +78,7 @@ namespace
 struct UpgradeStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 300);
-    void run(tk::Widget& root, tk::Rect bounds)
+    void run(tk::Widget& root, tk::Rect bounds) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});

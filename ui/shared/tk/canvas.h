@@ -63,8 +63,9 @@ struct Color
 
     static constexpr Color rgb(std::uint32_t hex)
     {
-        return {std::uint8_t((hex >> 16) & 0xff), std::uint8_t((hex >> 8) & 0xff),
-                std::uint8_t(hex & 0xff), 255};
+        return {static_cast<std::uint8_t>((hex >> 16) & 0xff),
+                static_cast<std::uint8_t>((hex >> 8) & 0xff), static_cast<std::uint8_t>(hex & 0xff),
+                255};
     }
     static constexpr Color rgba(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a)
     {

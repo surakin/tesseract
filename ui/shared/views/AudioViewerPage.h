@@ -101,7 +101,7 @@ private:
     bool active_ = false;
     bool is_loading_ = false;
     bool has_error_ = false;
-    std::chrono::steady_clock::time_point loading_start_{};
+    std::chrono::steady_clock::time_point loading_start_;
     std::string filename_;
     std::string caption_;
     std::string mime_type_;

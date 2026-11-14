@@ -137,7 +137,7 @@ TEST_CASE("parent_spaces_for_room_ walks nested spaces and survives cycles", "[s
     CHECK(parents[1] == "!outer");
 
     // A cycle (outer is also inside inner) terminates.
-    s.space_children_cache_["!inner"].push_back("!outer");
+    s.space_children_cache_["!inner"].emplace_back("!outer");
     parents = s.parent_spaces_for_room_("!room");
     CHECK(parents.size() == 2);
 }
@@ -406,6 +406,34 @@ TEST_CASE("server info updates capability flags", "[shell][spaces]")
     CHECK(s.server_info_.supports_calls);
     CHECK(s.server_info_.supports_qr_grant);
     CHECK_FALSE(s.server_info_.supports_profile_fields);
+    CHECK(s.server_info_ready == 1);
+}
+
+TEST_CASE("a degraded server info refetch keeps the previous info", "[shell][spaces]")
+{
+    SpacesShell s;
+    tesseract::ServerInfo good;
+    good.homeserver_url = "https://hs.invalid";
+    good.supports_calls = true;
+    good.spec_versions.push_back({1, 11});
+    s.handle_server_info_async_ready_ui_(1, good);
+    CHECK(s.server_info_ready == 1);
+
+    tesseract::ServerInfo degraded;
+    degraded.homeserver_url = "https://hs.invalid";
+    s.handle_server_info_async_ready_ui_(2, degraded);
+    CHECK(s.server_info_.supports_calls);
+    CHECK(s.server_info_.spec_versions.size() == 1);
+    CHECK(s.server_info_ready == 1);
+}
+
+TEST_CASE("an empty server info is accepted when there was none before", "[shell][spaces]")
+{
+    SpacesShell s;
+    tesseract::ServerInfo info;
+    info.homeserver_url = "https://hs.invalid";
+    s.handle_server_info_async_ready_ui_(1, info);
+    CHECK(s.server_info_.homeserver_url == "https://hs.invalid");
     CHECK(s.server_info_ready == 1);
 }
 

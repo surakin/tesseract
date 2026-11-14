@@ -21,7 +21,7 @@ struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
 
     void post(std::vector<std::function<void()>>* queue, int* touched)
     {
-        queue->push_back(guarded(
+        queue->emplace_back(guarded(
             [this, touched]
             {
                 *touched += 1;
@@ -33,7 +33,7 @@ struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
     void post_self_destroying(std::vector<std::function<void()>>* queue,
                               std::unique_ptr<WeakSelfProbe>* owner)
     {
-        queue->push_back(guarded(
+        queue->emplace_back(guarded(
             [owner]
             {
                 owner->reset();

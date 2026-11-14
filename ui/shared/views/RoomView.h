@@ -553,6 +553,8 @@ public:
                        const std::string& info_json)>
         on_save_sticker_requested;
     std::function<bool(const std::string& mxc_url, const std::string& info_json)> is_sticker_saved;
+    // "Copy image" on an image or sticker row (see MessageListView).
+    std::function<void(const std::string& source_token)> on_copy_image_requested;
     // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
     // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
     // non-empty → `Client::send_reaction_custom`.

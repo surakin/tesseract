@@ -17,6 +17,35 @@ use matrix_sdk_ui::sync_service::SyncService;
 /// Concurrent `GET /presence/{user}/status` requests per poll pass.
 const PRESENCE_POLL_CONCURRENCY: usize = 16;
 
+/// Fetch a room's MSC4391 bot command descriptions, store them in the
+/// per-room cache and fire `on_bot_commands_updated`. Shared by
+/// `set_active_room`'s first-visit fetch and the live-refresh task in
+/// `start_sync`; the caller invalidates the room-state cache first if it
+/// needs fresh state.
+async fn refresh_room_bot_commands(
+    client: &Client,
+    room_state_cache: &super::RoomStateCache,
+    bot_commands: &Mutex<
+        std::collections::HashMap<OwnedRoomId, Vec<crate::bot_commands::CommandDescription>>,
+    >,
+    handler: Option<&Arc<Mutex<SendHandler>>>,
+    in_flight: &super::InFlightCtx,
+    room_id: &str,
+) {
+    let Ok(rid) = room_id.parse::<OwnedRoomId>() else {
+        return;
+    };
+    let commands = {
+        let _in_flight = in_flight.guard("bot-commands");
+        super::fetch_room_bot_commands(client, room_state_cache, &rid, room_id).await
+    };
+    bot_commands.lock().insert(rid, commands);
+    if let Some(h) = handler {
+        let guard = h.lock();
+        guard.on_bot_commands_updated(room_id);
+    }
+}
+
 impl ClientFfi {
     /// Spawn a long-lived sync task and record its abort handle so
     /// `stop_sync` can cancel it before the C++ handler is destroyed.
@@ -975,6 +1004,123 @@ impl ClientFfi {
             ));
         }
 
+        // Live refresh of MSC4391 bot command descriptions. Sliding sync never
+        // delivers custom state, so `set_active_room`'s fetch is the source of
+        // truth; these handlers catch description events and bot membership
+        // changes that arrive in a room's timeline afterwards (best effort).
+        // They only send the room ID; a debounced task does the refetch.
+        {
+            use matrix_sdk::ruma::events::{room::member::SyncRoomMemberEvent, SyncStateEvent};
+            let (bot_refresh_tx, mut bot_refresh_rx) =
+                tokio::sync::mpsc::unbounded_channel::<OwnedRoomId>();
+
+            let tx = bot_refresh_tx.clone();
+            self.event_handler_handles.push(client.add_event_handler(
+                move |_ev: SyncStateEvent<
+                    super::bot_commands::CommandDescriptionStableRawEventContent,
+                >,
+                      room: Room| {
+                    let tx = tx.clone();
+                    async move {
+                        let _ = tx.send(room.room_id().to_owned());
+                    }
+                },
+            ));
+            let tx = bot_refresh_tx.clone();
+            self.event_handler_handles.push(client.add_event_handler(
+                move |_ev: SyncStateEvent<
+                    super::bot_commands::CommandDescriptionUnstableRawEventContent,
+                >,
+                      room: Room| {
+                    let tx = tx.clone();
+                    async move {
+                        let _ = tx.send(room.room_id().to_owned());
+                    }
+                },
+            ));
+
+            let tx = bot_refresh_tx;
+            let cache = Arc::clone(&self.bot_commands);
+            self.event_handler_handles.push(client.add_event_handler(
+                move |ev: SyncRoomMemberEvent, room: Room| {
+                    let tx = tx.clone();
+                    let cache = Arc::clone(&cache);
+                    async move {
+                        let SyncStateEvent::Original(ev) = ev else {
+                            return;
+                        };
+                        let new = ev.content.membership.as_str();
+                        let prev = ev
+                            .unsigned
+                            .prev_content
+                            .as_ref()
+                            .map(|c| c.membership.as_str());
+                        let needs = {
+                            let g = cache.lock();
+                            crate::bot_commands::member_event_needs_refresh(
+                                g.get(room.room_id()).map(|v| v.as_slice()),
+                                ev.state_key.as_str(),
+                                prev,
+                                new,
+                            )
+                        };
+                        if needs {
+                            let _ = tx.send(room.room_id().to_owned());
+                        }
+                    }
+                },
+            ));
+
+            let client_clone = client.clone();
+            let room_state_cache = Arc::clone(&self.room_state_cache);
+            let bot_commands = Arc::clone(&self.bot_commands);
+            let active_rooms = Arc::clone(&self.active_rooms);
+            let handler = self.handler.clone();
+            let in_flight = self.in_flight_ctx();
+            let mut stop_rx_bot = stop_rx.clone();
+            self.spawn_tracked("bot-commands-refresh", async move {
+                let mut debouncer = crate::bot_commands::RefreshDebouncer::new(
+                    crate::bot_commands::REFRESH_DEBOUNCE,
+                );
+                loop {
+                    let sleep = match debouncer.next_deadline() {
+                        Some(d) => tokio::time::sleep_until(d.into()),
+                        // Nothing pending: park far in the future.
+                        None => tokio::time::sleep(std::time::Duration::from_secs(3600)),
+                    };
+                    tokio::select! {
+                        _ = stop_rx_bot.changed() => {
+                            if *stop_rx_bot.borrow() { break; }
+                        }
+                        got = bot_refresh_rx.recv() => {
+                            let Some(rid) = got else { break };
+                            debouncer.note(rid.to_string(), std::time::Instant::now());
+                        }
+                        _ = sleep => {
+                            for room_id in debouncer.take_due(std::time::Instant::now()) {
+                                let Ok(rid) = room_id.parse::<OwnedRoomId>() else { continue };
+                                let has_cache = bot_commands.lock().contains_key(&rid);
+                                let is_active = active_rooms.lock().iter().any(|r| *r == room_id);
+                                if !crate::bot_commands::should_refresh_room(has_cache, is_active) {
+                                    continue;
+                                }
+                                super::invalidate_room_state_cache(&room_state_cache, &rid);
+                                refresh_room_bot_commands(
+                                    &client_clone,
+                                    &room_state_cache,
+                                    &bot_commands,
+                                    handler.as_ref(),
+                                    &in_flight,
+                                    &room_id,
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // Recovery state watcher (Step 6).
         //
         // `client.encryption().recovery().state()` starts as `Unknown` and is
@@ -1542,27 +1688,18 @@ impl ClientFfi {
                     // pack fetch above just warmed (or warms it itself if
                     // there were no packs to discover), same "fetch on first
                     // visit" cadence as image packs — see `bot_commands`
-                    // field's doc comment in mod.rs.
-                    if let Ok(rid) = room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
-                        let commands = {
-                            let _in_flight = in_flight.guard("bot-commands");
-                            super::fetch_room_bot_commands(
-                                &client,
-                                &room_state_cache,
-                                &rid,
-                                &room_id,
-                            )
-                            .await
-                        };
-                        {
-                            let mut g = bot_commands.lock();
-                            g.insert(rid, commands);
-                        }
-                        if let Some(h) = &handler {
-                            let guard = h.lock();
-                            guard.on_bot_commands_updated(&room_id);
-                        }
-                    }
+                    // field's doc comment in mod.rs. Live changes after this
+                    // are handled by the debounced refresh task in
+                    // `start_sync`, which uses the same helper.
+                    refresh_room_bot_commands(
+                        &client,
+                        &room_state_cache,
+                        &bot_commands,
+                        handler.as_ref(),
+                        &in_flight,
+                        &room_id,
+                    )
+                    .await;
                 });
             }
         }

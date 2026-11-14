@@ -1475,7 +1475,7 @@ void LoginView::update_form_visibility_()
     if (cancel_btn_)
     {
         cancel_btn_->set_visible((mode_ == Mode::AddAccount || state_ == State::Waiting) &&
-                                 !(state_ == State::Waiting && form_kind_ == FormKind::Password));
+                                 (state_ != State::Waiting || form_kind_ != FormKind::Password));
     }
 }
 

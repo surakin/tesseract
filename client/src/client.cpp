@@ -2026,6 +2026,7 @@ nlohmann::json parse_json_obj(const std::string& json)
     }
     catch (const nlohmann::json::exception&)
     {
+        // Unparseable: fall through to the empty object below.
     }
     return nlohmann::json::object();
 }
@@ -2903,7 +2904,7 @@ MediaPreviewConfig MediaPreviewConfig::from_json(const std::string& json)
     }
     auto j = parse_json_obj(json);
     // Use nlohmann .value() so missing keys yield the MSC defaults (On / true).
-    auto raw = j.value("media_previews", uint32_t(2));
+    auto raw = j.value("media_previews", static_cast<uint32_t>(2));
     cfg.media_previews =
         raw <= 2 ? static_cast<MediaPreviewConfig::Mode>(raw) : MediaPreviewConfig::Mode::On;
     cfg.invite_avatars = j.value("invite_avatars", true);
@@ -2919,7 +2920,7 @@ MediaPreviewOverride MediaPreviewOverride::from_json(const std::string& json)
     }
     auto j = parse_json_obj(json);
     ov.has_media_previews = j.value("has_media_previews", false);
-    auto raw = j.value("media_previews", uint32_t(2));
+    auto raw = j.value("media_previews", static_cast<uint32_t>(2));
     ov.media_previews =
         raw <= 2 ? static_cast<MediaPreviewConfig::Mode>(raw) : MediaPreviewConfig::Mode::On;
     ov.join_rule = js_str(j, "join_rule");
@@ -2958,9 +2959,8 @@ std::vector<CommandDescription> Client::list_room_bot_commands(const std::string
     return ffi_vec<CommandDescription>(impl_->ffi->list_room_bot_commands(room_id));
 }
 
-BotCommandMatchResult
-Client::match_bot_command_arguments(const CommandDescription& desc,
-                                    const std::vector<std::string>& tokens) const
+BotCommandMatchResult Client::match_bot_command_arguments(const CommandDescription& desc,
+                                                          const std::vector<std::string>& tokens)
 {
     BotCommandMatchResult r;
     const auto& params = desc.parameters;

@@ -40,14 +40,14 @@ bool contains(const tk::Rect& r, tk::Point p)
 }
 } // namespace
 
-float PollCardDisplay::width(float col_w) const
+float PollCardDisplay::width(float col_w)
 {
     return std::min(col_w, kPollCardMaxW);
 }
 
 PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
                                                  tk::CanvasFactory& factory, float col_w,
-                                                 bool show_end) const
+                                                 bool show_end)
 {
     Layout L;
     L.card_w = width(col_w);
@@ -149,7 +149,7 @@ PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
 }
 
 float PollCardDisplay::height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
-                              bool show_end) const
+                              bool show_end)
 {
     return layout_(m, factory, col_w, show_end).h;
 }

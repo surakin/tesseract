@@ -16,15 +16,15 @@ namespace
 struct TkUserProfilePanelStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(300, 400);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return LayoutCtx{surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});
@@ -193,6 +193,7 @@ TEST_CASE("UserProfilePanel: common rooms hook", "[tk][view][user_profile_panel]
     auto make_rooms = [](int n)
     {
         std::vector<UserProfilePanel::CommonRoom> rooms;
+        rooms.reserve(n);
         for (int i = 0; i < n; ++i)
         {
             rooms.push_back({"!r" + std::to_string(i) + ":example.org",

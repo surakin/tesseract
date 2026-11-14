@@ -275,8 +275,17 @@ set(_views_sources
     views/ShortcodeController.cpp
     views/GifEngine.h
     views/GifEngine.cpp
+    views/ImageStripPopup.h
+    views/ImageStripPopup.cpp
     views/GifPopup.h
     views/GifPopup.cpp
+    views/StickerEngine.h
+    views/StickerEngine.cpp
+    views/StickerPopup.h
+    views/StickerPopup.cpp
+    views/StickerController.h
+    views/StickerController.cpp
+    views/text_match.h
     views/GifController.h
     views/GifController.cpp
     views/MentionEngine.h
@@ -618,6 +627,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-arrow-up.svg"
     "${_lucide_dir}/lucide-shield-check.svg"
     "${_lucide_dir}/lucide-shield-alert.svg"
+    "${_lucide_dir}/lucide-terminal.svg"
 )
 
 add_custom_command(

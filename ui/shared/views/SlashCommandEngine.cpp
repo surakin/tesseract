@@ -1,4 +1,6 @@
 #include "views/SlashCommandEngine.h"
+
+#include <utility>
 #include "views/SlashCommands.h"
 
 namespace tesseract::views
@@ -54,7 +56,7 @@ bool shadowed_by_builtin(const std::vector<SlashCommandSuggestion>& out, const s
 } // namespace
 
 std::optional<SlashCommandMatch> SlashCommandEngine::find_prefix(std::string_view text,
-                                                                 int cursor_byte_pos) const
+                                                                 int cursor_byte_pos)
 {
     // Activate only when the slash is at position 0 (start of composer)
     // and the cursor is at end-of-text. Anything else is a literal slash
@@ -63,7 +65,7 @@ std::optional<SlashCommandMatch> SlashCommandEngine::find_prefix(std::string_vie
     {
         return std::nullopt;
     }
-    if (cursor_byte_pos != (int)text.size())
+    if (std::cmp_not_equal(cursor_byte_pos, text.size()))
     {
         return std::nullopt;
     }
@@ -80,7 +82,7 @@ std::optional<SlashCommandMatch> SlashCommandEngine::find_prefix(std::string_vie
     }
     SlashCommandMatch m;
     m.start = 0;
-    m.end = (int)text.size();
+    m.end = static_cast<int>(text.size());
     m.prefix = std::string(text.substr(1));
     return m;
 }
@@ -88,7 +90,7 @@ std::optional<SlashCommandMatch> SlashCommandEngine::find_prefix(std::string_vie
 std::vector<SlashCommandSuggestion>
 SlashCommandEngine::lookup(std::string_view prefix,
                            const std::vector<tesseract::CommandDescription>& bot_commands,
-                           int max_results) const
+                           int max_results)
 {
     std::vector<SlashCommandSuggestion> out;
     const auto& all = ::tesseract::available_commands();
@@ -133,7 +135,7 @@ SlashCommandEngine::lookup(std::string_view prefix,
     // exact one, then bot commands.
     for (const auto& c : all)
     {
-        if ((int)out.size() >= max_results)
+        if (std::cmp_greater_equal(out.size(), max_results))
         {
             break;
         }
@@ -145,7 +147,7 @@ SlashCommandEngine::lookup(std::string_view prefix,
         {
             continue;
         }
-        if (c.name.compare(0, prefix.size(), prefix) != 0)
+        if (!c.name.starts_with(prefix))
         {
             continue;
         }
@@ -153,7 +155,7 @@ SlashCommandEngine::lookup(std::string_view prefix,
     }
     for (const auto& d : bot_commands)
     {
-        if ((int)out.size() >= max_results)
+        if (std::cmp_greater_equal(out.size(), max_results))
         {
             break;
         }
@@ -165,7 +167,7 @@ SlashCommandEngine::lookup(std::string_view prefix,
         {
             continue;
         }
-        if (d.command.compare(0, prefix.size(), prefix) != 0)
+        if (!d.command.starts_with(prefix))
         {
             continue;
         }

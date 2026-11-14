@@ -24,7 +24,7 @@ std::string tmp_dir()
     return dir;
 }
 
-static void write_u32(std::vector<uint8_t>& v, uint32_t x)
+void write_u32(std::vector<uint8_t>& v, uint32_t x)
 {
     v.push_back(static_cast<uint8_t>(x));
     v.push_back(static_cast<uint8_t>(x >> 8));

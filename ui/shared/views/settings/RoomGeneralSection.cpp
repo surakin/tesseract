@@ -603,7 +603,7 @@ void RoomGeneralSection::refresh_address_display_()
     address_value_->set_colour(muted ? cached_muted_ : cached_primary_);
 }
 
-void RoomGeneralSection::relayout_and_notify_()
+void RoomGeneralSection::relayout_and_notify_() const
 {
     if (on_layout_changed)
     {

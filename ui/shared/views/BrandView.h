@@ -37,7 +37,7 @@ private:
     tk::CachedTextLayout version_layout_;
     tk::CachedTextLayout status_layout_;
     std::string status_text_;
-    std::chrono::steady_clock::time_point spinner_start_{};
+    std::chrono::steady_clock::time_point spinner_start_;
 
     // Very subtle rotating tesseract wireframe drawn behind everything else,
     // for as long as this view is on-screen (idle "no room open" splash,

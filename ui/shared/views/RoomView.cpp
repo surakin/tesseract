@@ -573,6 +573,13 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
             on_save_sticker_requested(mxc, body, info);
         }
     };
+    ml->on_copy_image_requested = [this](const std::string& token)
+    {
+        if (on_copy_image_requested)
+        {
+            on_copy_image_requested(token);
+        }
+    };
     ml->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
     {
         return is_sticker_saved && is_sticker_saved(mxc, info);
@@ -1997,10 +2004,6 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     {
         room_settings_view_->set_avatar_provider(p);
     }
-    if (user_profile_panel_)
-    {
-        user_profile_panel_->set_avatar_provider(p);
-    }
     if (thread_view_ && thread_view_->message_list())
     {
         thread_view_->message_list()->set_avatar_provider(p);
@@ -2492,6 +2495,15 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     if (emoji_picker_)
     {
         emoji_picker_->set_current_room_id(info.id);
+        // A bridge drops custom emoticons (reactions and inline images).
+        const bool allowed = !info.is_bridged || info.bridge_overridden;
+        emoji_picker_->set_custom_emoticons_allowed(allowed);
+        emoji_picker_->refresh_emoticon_packs();
+        // An open picker rebuilds its pack tabs and search results in place.
+        if (emoji_picker_visible_ && repaint_requester_)
+        {
+            repaint_requester_();
+        }
     }
     if (sticker_picker_)
     {
@@ -2841,7 +2853,7 @@ void RoomView::refresh_thread_follow_state_()
         return;
     }
     thread_view_->set_follow_state(thread_subscriptions_supported_,
-                                   followed_threads_.count(thread_panel_root_) != 0);
+                                   followed_threads_.contains(thread_panel_root_));
     if (repaint_requester_)
     {
         repaint_requester_();

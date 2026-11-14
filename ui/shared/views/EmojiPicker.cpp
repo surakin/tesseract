@@ -240,7 +240,7 @@ void EmojiPicker::show_frequents_page()
 void EmojiPicker::refresh_emoticon_packs()
 {
     custom_packs_.clear();
-    if (client_)
+    if (client_ && custom_emoticons_allowed_)
     {
         std::vector<tesseract::ImagePack> filtered;
         for (auto& p : client_->list_image_packs())
@@ -323,7 +323,7 @@ std::vector<tk::MediaPrefetchKey> EmojiPicker::collect_prefetchable_media_keys()
     {
         return keys;
     }
-    keys.reserve(static_cast<std::size_t>(hi - lo + 1));
+    keys.reserve(static_cast<std::size_t>(hi) - static_cast<std::size_t>(lo) + 1); // hi >= lo
     for (int i = lo; i <= hi; ++i)
     {
         const auto* entry = emoticon_at_(static_cast<std::size_t>(i));

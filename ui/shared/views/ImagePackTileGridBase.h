@@ -94,8 +94,8 @@ protected:
     // a pack's header for a stacked multi-section widget). Pure math — no
     // side effects, cheap enough to recompute on every paint/hit-test given
     // how few images a pack realistically has.
-    std::vector<tk::Rect> layout_tile_row_(float width, std::size_t tile_count,
-                                           float y_start) const;
+    static std::vector<tk::Rect> layout_tile_row_(float width, std::size_t tile_count,
+                                                  float y_start);
 
     // Shared tile paint: rounded background, thumbnail (img.local_preview or
     // image_provider_(img.existing_url)), shortcode label (unless
@@ -106,12 +106,13 @@ protected:
 
     // Shared "Drop image" placeholder tile, painted for the trailing
     // slot after every real image tile.
-    void paint_hint_tile_shared_(tk::PaintCtx&, const tk::Rect& cell_local, tk::Point origin) const;
+    static void paint_hint_tile_shared_(tk::PaintCtx&, const tk::Rect& cell_local,
+                                        tk::Point origin);
 
     // Circular remove-chip hit-test at `image_rect`'s top-right corner.
     // `local`/`y_content` are the same (widget-local x, content-space y)
     // coordinates each subclass's on_pointer_down already computes.
-    bool hit_remove_chip_(tk::Point local, float y_content, const tk::Rect& image_rect) const;
+    static bool hit_remove_chip_(tk::Point local, float y_content, const tk::Rect& image_rect);
 
     ImagePackImageProvider image_provider_;
 

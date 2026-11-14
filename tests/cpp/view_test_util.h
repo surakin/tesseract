@@ -30,21 +30,21 @@ struct Stage
     {
     }
 
-    tk::LayoutCtx lc()
+    tk::LayoutCtx lc() const
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
-    tk::PaintCtx pc()
+    tk::PaintCtx pc() const
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
-    void layout(tk::Widget& w, tk::Rect r)
+    void layout(tk::Widget& w, tk::Rect r) const
     {
         auto l = lc();
         w.measure(l, {r.w, r.h});
         w.arrange(l, r);
     }
-    void paint(tk::Widget& w)
+    void paint(tk::Widget& w) const
     {
         auto p = pc();
         w.paint(p);
@@ -56,7 +56,7 @@ struct Stage
         layout(w, r);
         paint(w);
     }
-    void relayout_paint(tk::Widget& w, tk::Rect r)
+    void relayout_paint(tk::Widget& w, tk::Rect r) const
     {
         layout(w, r);
         paint(w);

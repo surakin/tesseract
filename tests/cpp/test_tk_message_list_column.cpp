@@ -36,7 +36,7 @@ struct ColumnStage
         s.timeline_column_pct = 50;
         s.timeline_column_anchor = Anchor::Left;
     }
-    void run(tk::Widget& root, float w)
+    void run(tk::Widget& root, float w) const
     {
         const tk::Rect bounds{0, 0, w, 600};
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};

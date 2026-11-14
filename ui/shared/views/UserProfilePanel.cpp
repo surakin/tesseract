@@ -251,6 +251,9 @@ void UserProfilePanel::open(std::string user_id, std::string display_name, std::
     user_id_ = std::move(user_id);
     display_name_ = std::move(display_name);
     avatar_url_ = std::move(avatar_url);
+    // Re-ask on every open: the shell's fetch is idempotent, and the image may
+    // have been evicted since the last time this avatar was shown.
+    fullres_requested_for_.clear();
     open_ = true;
     set_visible(true);
     name_layout_.reset();

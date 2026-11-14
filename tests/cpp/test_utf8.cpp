@@ -9,7 +9,7 @@ using tesseract::utf8_lossy;
 
 TEST_CASE("utf8_lossy returns valid UTF-8 unchanged", "[utf8]")
 {
-    CHECK(utf8_lossy("") == "");
+    CHECK(utf8_lossy("").empty());
     CHECK(utf8_lossy("plain ascii") == "plain ascii");
     CHECK(utf8_lossy("caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80") ==
           "caf\xC3\xA9 \xE2\x82\xAC \xF0\x9F\x98\x80");

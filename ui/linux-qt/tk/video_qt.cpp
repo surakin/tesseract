@@ -28,9 +28,6 @@
 namespace tk::qt6
 {
 
-// Forward-declared in canvas_qpainter.h:
-std::unique_ptr<Image> make_image(QImage img);
-
 // ─────────────────────────────────────────────────────────────────────────
 //  GrowableQIODevice — a read-only, growable, seekable QIODevice backing a
 //  progressive/streaming video fetch. Fed via feed()/end()/fail() on the UI
@@ -320,7 +317,7 @@ public:
         if (stream_device_)
         {
             stream_device_->cancel();
-            stream_device_.reset();
+            stream_device_ = nullptr;
         }
         buffer_.close();
         bytes_ = QByteArray(reinterpret_cast<const char*>(data), static_cast<qsizetype>(size));
@@ -417,7 +414,7 @@ public:
             stream_device_->cancel();
             player_.stop();
             player_.setSourceDevice(nullptr);
-            stream_device_.reset();
+            stream_device_ = nullptr;
         }
         else
         {
@@ -444,24 +441,15 @@ public:
         {
             target = dur;
         }
-        if (target < 0)
-        {
-            target = 0;
-        }
+        target = std::max<qint64>(target, 0);
         player_.setPosition(target);
         fire_progress();
     }
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.25f)
-        {
-            rate = 0.25f;
-        }
-        if (rate > 4.0f)
-        {
-            rate = 4.0f;
-        }
+        rate = std::max(rate, 0.25f);
+        rate = std::min(rate, 4.0f);
         rate_ = rate;
         player_.setPlaybackRate(static_cast<qreal>(rate_));
     }

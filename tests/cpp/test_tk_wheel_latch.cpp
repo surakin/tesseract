@@ -112,7 +112,7 @@ struct Stage
         target = scroller->add_child(create_widget<WheelProbe>(scroller, Rect{0, 300, 400, 40}));
     }
     // Content "scrolls": the target slides under the pointer at y=100.
-    void slide_target_under_pointer()
+    void slide_target_under_pointer() const
     {
         target->move_to({0, 90, 400, 40});
     }

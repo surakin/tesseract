@@ -8,6 +8,12 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-10**
 > lines in the content column. Avatars stay clickable and expanded groups keep
 > their timestamps.
 
+> **Show deleted messages (2026-11-06, v0.9.8).**
+> Deleted messages are hidden from room and thread timelines by default;
+> "Show deleted messages" under Settings → Messages → Timeline brings back
+> their placeholders. A live deletion removes its row, and a reply quote whose
+> original is a hidden deleted message is no longer clickable.
+
 > **Security review hardening (2026-11-06, v0.9.8).**
 > Fixes from the 2026-11-06 review. Huge tables, long code spans, damaged
 > voice messages, oversized images and remote call video are bounded so they

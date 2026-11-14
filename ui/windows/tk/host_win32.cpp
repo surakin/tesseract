@@ -7,6 +7,7 @@
 #include "emoji_segmentation.h"
 #include "pill.h"
 #include "pixmap_cache.h"
+#include "tk/image_sniff.h"
 
 #include <BetterText/BetterText.h>
 
@@ -59,6 +60,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <new>
 #include <vector>
 
 namespace tk::win32
@@ -215,8 +217,10 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
         DWORD entries = bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
         palette_bytes = entries * sizeof(RGBQUAD);
     }
-    else if (bih->biCompression == BI_BITFIELDS)
+    else if (bih->biCompression == BI_BITFIELDS && header_size == sizeof(BITMAPINFOHEADER))
     {
+        // Only the plain 40-byte header keeps its masks outside the header;
+        // V4/V5 headers embed them, so adding 12 here would skew the offset.
         palette_bytes = 3 * sizeof(DWORD);
     }
     bfh->bfOffBits = sizeof(BITMAPFILEHEADER) + header_size + palette_bytes;
@@ -436,9 +440,9 @@ inline std::optional<tk::FileDropPayload> read_local_file_for_paste(const std::w
 // Used by BetterTextArea for replace_range().
 // Returns the number of UTF-16 code units in the first `byte_offset` bytes
 // of `utf8`; clamped to [0, utf8.size()].
-static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
+int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
 {
-    byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
+    byte_offset = std::clamp(byte_offset, 0, static_cast<int>(utf8.size()));
     int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
     return wlen < 0 ? 0 : wlen;
 }
@@ -3040,7 +3044,7 @@ static std::unordered_set<HWND>& live_popup_hwnds()
 
 bool is_popup_surface_hwnd(HWND hwnd)
 {
-    return hwnd && live_popup_hwnds().count(hwnd) != 0;
+    return hwnd && live_popup_hwnds().contains(hwnd);
 }
 
 class Win32PopupSurfaceHandle : public tk::PopupSurfaceHandle
@@ -3088,12 +3092,12 @@ public:
         // point on the very first call.
         UINT dpi = GetDpiForWindow(anchor_hwnd_);
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
-        const int w = std::max(1, int(std::round(size.w * scale)));
-        const int h = std::max(1, int(std::round(size.h * scale)));
-        const int anchor_h_px = int(std::round(anchor_world_rect.h * scale));
-        const int gap_px = int(std::round(4.0f * scale));
-        POINT pt{LONG(std::round(anchor_world_rect.x * scale)),
-                 LONG(std::round(anchor_world_rect.y * scale))};
+        const int w = std::max(1, static_cast<int>(std::round(size.w * scale)));
+        const int h = std::max(1, static_cast<int>(std::round(size.h * scale)));
+        const int anchor_h_px = static_cast<int>(std::round(anchor_world_rect.h * scale));
+        const int gap_px = static_cast<int>(std::round(4.0f * scale));
+        POINT pt{static_cast<LONG>(std::round(anchor_world_rect.x * scale)),
+                 static_cast<LONG>(std::round(anchor_world_rect.y * scale))};
         ClientToScreen(anchor_hwnd_, &pt);
         HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{};
@@ -3111,8 +3115,8 @@ public:
         {
             y = (y_below + h <= mi.rcWork.bottom) ? y_below : y_above;
         }
-        x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-        y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+        x = std::clamp(x, static_cast<int>(mi.rcWork.left), static_cast<int>(mi.rcWork.right) - w);
+        y = std::clamp(y, static_cast<int>(mi.rcWork.top), static_cast<int>(mi.rcWork.bottom) - h);
         // No show/hide flags — visibility is set_visible()'s job alone, so
         // repositioning an already-open popup (e.g. row count changed) never
         // has a side effect on whether it's shown.
@@ -3381,7 +3385,7 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
     } mono_info{};
     mono_info.header.biSize = sizeof(BITMAPINFOHEADER);
     mono_info.header.biWidth = width;
-    mono_info.header.biHeight = -(bm.bmHeight); // top-down
+    mono_info.header.biHeight = -bm.bmHeight; // top-down
     mono_info.header.biPlanes = 1;
     mono_info.header.biBitCount = 1;
     mono_info.header.biCompression = BI_RGB;
@@ -3536,6 +3540,7 @@ public:
                 reinterpret_cast<LPARAM>(&c), 0);
             ReleaseDC(nullptr, hdc);
             std::vector<FontFamilyInfo> out;
+            out.reserve(c.fams.size());
             for (auto& [name, mono] : c.fams)
             {
                 out.push_back({name, mono});
@@ -3866,7 +3871,7 @@ public:
                 }
                 devices[i]->Release();
             }
-            CoTaskMemFree(devices);
+            CoTaskMemFree(static_cast<void*>(devices));
         }
         attrs->Release();
         return result;
@@ -4200,57 +4205,198 @@ public:
 
         const SIZE_T stride = static_cast<SIZE_T>(w) * 4;
         const SIZE_T pixel_bytes = stride * h;
-        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, sizeof(BITMAPV5HEADER) + pixel_bytes);
-        if (!hg)
+
+        // Top-down BGRA pixels, flipped per format below (apps disagree on
+        // negative-height DIBs, so every DIB we publish is bottom-up).
+        // Dimensions come from remote media: cap the size and never let an
+        // allocation failure escape into the UI thread.
+        constexpr SIZE_T kMaxClipboardPixelBytes = 512u * 1024u * 1024u;
+        if (pixel_bytes > kMaxClipboardPixelBytes)
         {
             return false;
         }
-        auto* base = static_cast<std::uint8_t*>(GlobalLock(hg));
-        if (!base)
+        std::vector<std::uint8_t> top_down;
+        try
         {
-            GlobalFree(hg);
+            top_down.resize(pixel_bytes);
+        }
+        catch (const std::bad_alloc&)
+        {
             return false;
         }
-
-        auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
-        std::memset(hdr, 0, sizeof(BITMAPV5HEADER));
-        hdr->bV5Size = sizeof(BITMAPV5HEADER);
-        hdr->bV5Width = static_cast<LONG>(w);
-        hdr->bV5Height = -static_cast<LONG>(h); // top-down
-        hdr->bV5Planes = 1;
-        hdr->bV5BitCount = 32;
-        hdr->bV5Compression = BI_BITFIELDS;
-        hdr->bV5RedMask = 0x00FF0000;
-        hdr->bV5GreenMask = 0x0000FF00;
-        hdr->bV5BlueMask = 0x000000FF;
-        hdr->bV5AlphaMask = 0xFF000000;
-        hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
-
-        std::uint8_t* pixels = base + sizeof(BITMAPV5HEADER);
         if (FAILED(bgra->CopyPixels(nullptr, static_cast<UINT>(stride),
-                                    static_cast<UINT>(pixel_bytes), pixels)))
+                                    static_cast<UINT>(pixel_bytes), top_down.data())))
         {
-            GlobalUnlock(hg);
-            GlobalFree(hg);
             return false;
         }
-        GlobalUnlock(hg);
+
+        // One movable global holding `header_bytes` of header then the
+        // bottom-up pixels; `fill_header` writes the header in place.
+        auto make_dib = [&](SIZE_T header_bytes, auto&& fill_header) -> HGLOBAL
+        {
+            HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, header_bytes + pixel_bytes);
+            if (!g)
+            {
+                return nullptr;
+            }
+            auto* base = static_cast<std::uint8_t*>(GlobalLock(g));
+            if (!base)
+            {
+                GlobalFree(g);
+                return nullptr;
+            }
+            fill_header(base);
+            std::uint8_t* dst = base + header_bytes;
+            for (UINT row = 0; row < h; ++row)
+            {
+                std::memcpy(dst + static_cast<SIZE_T>(row) * stride,
+                            top_down.data() + static_cast<SIZE_T>(h - 1 - row) * stride, stride);
+            }
+            GlobalUnlock(g);
+            return g;
+        };
+
+        HGLOBAL hg_v5 = make_dib(sizeof(BITMAPV5HEADER),
+                                 [&](std::uint8_t* base)
+                                 {
+                                     auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
+                                     hdr->bV5Size = sizeof(BITMAPV5HEADER);
+                                     hdr->bV5Width = static_cast<LONG>(w);
+                                     hdr->bV5Height = static_cast<LONG>(h); // bottom-up
+                                     hdr->bV5Planes = 1;
+                                     hdr->bV5BitCount = 32;
+                                     hdr->bV5Compression = BI_BITFIELDS;
+                                     hdr->bV5SizeImage = static_cast<DWORD>(pixel_bytes);
+                                     hdr->bV5RedMask = 0x00FF0000;
+                                     hdr->bV5GreenMask = 0x0000FF00;
+                                     hdr->bV5BlueMask = 0x000000FF;
+                                     hdr->bV5AlphaMask = 0xFF000000;
+                                     hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
+                                     hdr->bV5Intent = LCS_GM_IMAGES;
+                                 });
+        HGLOBAL hg_dib = make_dib(sizeof(BITMAPINFOHEADER),
+                                  [&](std::uint8_t* base)
+                                  {
+                                      auto* hdr = reinterpret_cast<BITMAPINFOHEADER*>(base);
+                                      hdr->biSize = sizeof(BITMAPINFOHEADER);
+                                      hdr->biWidth = static_cast<LONG>(w);
+                                      hdr->biHeight = static_cast<LONG>(h); // bottom-up
+                                      hdr->biPlanes = 1;
+                                      hdr->biBitCount = 32;
+                                      hdr->biCompression = BI_RGB;
+                                      hdr->biSizeImage = static_cast<DWORD>(pixel_bytes);
+                                  });
+
+        // Registered "PNG" format (alpha-preserving; browsers, Discord,
+        // Office, Element read it). Re-encode the decoded pixels via WIC.
+        HGLOBAL hg_png = nullptr;
+        {
+            ComPtr<IStream> mem;
+            ComPtr<IWICBitmapEncoder> encoder;
+            ComPtr<IWICBitmapFrameEncode> out_frame;
+            ComPtr<IPropertyBag2> props;
+            WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA;
+            if (SUCCEEDED(CreateStreamOnHGlobal(nullptr, FALSE, mem.GetAddressOf())) &&
+                SUCCEEDED(
+                    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())) &&
+                SUCCEEDED(encoder->Initialize(mem.Get(), WICBitmapEncoderNoCache)) &&
+                SUCCEEDED(
+                    encoder->CreateNewFrame(out_frame.GetAddressOf(), props.GetAddressOf())) &&
+                SUCCEEDED(out_frame->Initialize(props.Get())) &&
+                SUCCEEDED(out_frame->SetSize(w, h)) && SUCCEEDED(out_frame->SetPixelFormat(&fmt)) &&
+                SUCCEEDED(out_frame->WritePixels(h, static_cast<UINT>(stride),
+                                                 static_cast<UINT>(pixel_bytes),
+                                                 top_down.data())) &&
+                SUCCEEDED(out_frame->Commit()) && SUCCEEDED(encoder->Commit()))
+            {
+                GetHGlobalFromStream(mem.Get(), &hg_png);
+            }
+            else
+            {
+                // Stream owns no HGLOBAL we kept (DeleteOnRelease=FALSE):
+                // release it if it was created.
+                HGLOBAL leaked = nullptr;
+                if (mem && SUCCEEDED(GetHGlobalFromStream(mem.Get(), &leaked)) && leaked)
+                {
+                    GlobalFree(leaked);
+                }
+            }
+        }
+
+        // An animated GIF also goes out as its original bytes under the
+        // registered "GIF" format (browsers, Office and chat apps read it) so
+        // the animation survives; the DIB/PNG stills stay the fallback.
+        HGLOBAL hg_gif = nullptr;
+        if (tk::bytes_may_be_animated(encoded_bytes) &&
+            tk::sniff_image_mime(encoded_bytes) == "image/gif")
+        {
+            hg_gif = GlobalAlloc(GMEM_MOVEABLE, encoded_bytes.size());
+            if (hg_gif)
+            {
+                if (void* dst = GlobalLock(hg_gif))
+                {
+                    std::memcpy(dst, encoded_bytes.data(), encoded_bytes.size());
+                    GlobalUnlock(hg_gif);
+                }
+                else
+                {
+                    GlobalFree(hg_gif);
+                    hg_gif = nullptr;
+                }
+            }
+        }
+
+        if (!hg_v5 && !hg_dib)
+        {
+            if (hg_gif)
+            {
+                GlobalFree(hg_gif);
+            }
+            if (hg_png)
+            {
+                GlobalFree(hg_png);
+            }
+            return false;
+        }
 
         if (!OpenClipboard(hwnd_))
         {
-            GlobalFree(hg);
+            for (HGLOBAL g : {hg_v5, hg_dib, hg_png, hg_gif})
+            {
+                if (g)
+                {
+                    GlobalFree(g);
+                }
+            }
             return false;
         }
         EmptyClipboard();
-        if (!SetClipboardData(CF_DIBV5, hg))
+        // Each successful SetClipboardData transfers ownership; free only
+        // the handles the clipboard refused.
+        bool any = false;
+        auto publish = [&](UINT format, HGLOBAL g)
         {
-            // Clipboard did not take ownership; free our copy.
-            GlobalFree(hg);
-            CloseClipboard();
-            return false;
-        }
+            if (!g)
+            {
+                return;
+            }
+            if (SetClipboardData(format, g))
+            {
+                any = true;
+            }
+            else
+            {
+                GlobalFree(g);
+            }
+        };
+        static const UINT png_format = RegisterClipboardFormatW(L"PNG");
+        static const UINT gif_format = RegisterClipboardFormatW(L"GIF");
+        publish(gif_format, hg_gif);
+        publish(png_format, hg_png);
+        publish(CF_DIBV5, hg_v5);
+        publish(CF_DIB, hg_dib);
         CloseClipboard();
-        return true;
+        return any;
     }
 
     Win32TextAreaBase* area_by_id(int id)
@@ -4843,8 +4989,7 @@ constexpr LPARAM kTouchInjectedSignature = 0xFF515700; // MI_WP_SIGNATURE
 
 bool wheel_event_is_touchpad()
 {
-    return (static_cast<LPARAM>(GetMessageExtraInfo()) & kTouchInjectedSignatureMask) ==
-           kTouchInjectedSignature;
+    return (GetMessageExtraInfo() & kTouchInjectedSignatureMask) == kTouchInjectedSignature;
 }
 
 Key key_from_win32(WPARAM vk, bool shift)

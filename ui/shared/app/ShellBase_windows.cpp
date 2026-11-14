@@ -1,4 +1,5 @@
 #include "app/ShellBase.h"
+#include "views/MainAppWidget.h"
 #include <algorithm>
 
 namespace tesseract
@@ -137,7 +138,7 @@ void ShellBase::unregister_room_window_(RoomWindowBase* w)
         }
         secondary_windows_.erase(it);
         // Another account's pop-out of the same room still needs the group.
-        if (secondary_windows_.count(w->room_id()) == 0)
+        if (!secondary_windows_.contains(w->room_id()))
         {
             active_popout_media_groups_.erase(media_group_for_room_(w->room_id()));
         }
@@ -430,6 +431,10 @@ void ShellBase::notify_secondary_media_ready_(const std::string& cache_key, Medi
     if (kind == MediaKind::Sticker)
     {
         repaint_pickers_();
+        for (const auto& [owner, repaint] : sticker_strip_repaints_)
+        {
+            repaint();
+        }
     }
     for (const auto& [rid, w] : secondary_windows_)
     {

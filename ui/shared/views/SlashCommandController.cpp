@@ -32,25 +32,40 @@ SlashCommandController::~SlashCommandController() = default;
 namespace
 {
 
-// Count whitespace-delimited tokens in `s` that are already "closed" by a
-// trailing space — a token still being typed (no trailing whitespace yet)
-// doesn't count, so the hint keeps pointing at the parameter currently
-// being entered rather than jumping ahead on the first keystroke.
+// Count tokens in `s` already "closed" by a trailing space outside any quote.
+// A token still being typed doesn't count, nor does one inside an open
+// (unterminated) quote, so the hint stays on the parameter being entered.
 std::size_t completed_token_count(const std::string& s)
 {
     std::size_t count = 0;
     bool in_token = false;
+    char quote = '\0';
     for (char c : s)
     {
-        bool space = (c == ' ' || c == '\t');
-        if (!space && !in_token)
+        if (quote != '\0')
         {
+            if (c == quote)
+            {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (c == '"' || c == '\'')
+        {
+            quote = c;
             in_token = true;
         }
-        else if (space && in_token)
+        else if (c == ' ' || c == '\t')
         {
-            in_token = false;
-            ++count;
+            if (in_token)
+            {
+                in_token = false;
+                ++count;
+            }
+        }
+        else
+        {
+            in_token = true;
         }
     }
     return count;
@@ -68,7 +83,7 @@ bool SlashCommandController::on_text_changed(const std::string& text, int cursor
     if (active_bot_command_)
     {
         std::string prefix = "/" + active_bot_command_->name + " ";
-        if (text.rfind(prefix, 0) == 0)
+        if (text.starts_with(prefix))
         {
             update_arg_hint(text.substr(prefix.size()));
             return true;
@@ -131,7 +146,7 @@ bool SlashCommandController::on_nav(tk::NavKey nk)
         return false;
     }
     int cur = popup_->selected_index();
-    int n = (int)popup_->total_rows();
+    int n = static_cast<int>(popup_->total_rows());
     if (n <= 0)
     {
         return true;
@@ -148,7 +163,7 @@ bool SlashCommandController::on_nav(tk::NavKey nk)
     case tk::NavKey::Tab:
     {
         int sel = popup_->selected_index();
-        if (sel >= 0 && sel < (int)popup_->total_rows())
+        if (sel >= 0 && std::cmp_less(sel, popup_->total_rows()))
         {
             accept(popup_->suggestion_at(sel));
         }
@@ -183,7 +198,7 @@ bool SlashCommandController::on_submit()
         return submit_bot_command();
     }
     int sel = popup_->selected_index();
-    if (sel >= 0 && sel < (int)popup_->total_rows())
+    if (sel >= 0 && std::cmp_less(sel, popup_->total_rows()))
     {
         accept(popup_->suggestion_at(sel));
         return true;
@@ -332,7 +347,7 @@ bool SlashCommandController::submit_bot_command()
 
     std::string prefix = "/" + active_bot_command_->name + " ";
     std::string text = text_area_->text();
-    std::string args_text = text.rfind(prefix, 0) == 0 ? text.substr(prefix.size()) : std::string{};
+    std::string args_text = text.starts_with(prefix) ? text.substr(prefix.size()) : std::string{};
 
     tesseract::CommandDescription desc;
     desc.command = active_bot_command_->name;
@@ -358,7 +373,7 @@ bool SlashCommandController::submit_bot_command()
     return true;
 }
 
-void SlashCommandController::repaint_selection_()
+void SlashCommandController::repaint_selection_() const
 {
     if (hooks_.repaint_selection)
     {

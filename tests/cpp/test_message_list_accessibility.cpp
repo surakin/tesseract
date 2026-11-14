@@ -503,3 +503,28 @@ TEST_CASE("an ambiguous sender reads with their Matrix ID",
     CHECK(row_name("") == "Alice (@mallory:evil.org): hi");
     CHECK(row_name("cat") == "cat via Alice (@mallory:evil.org): hi");
 }
+
+TEST_CASE("a bot command row's name carries the command line", "[message_list][accessibility]")
+{
+    auto surface = TestSurface::create(500, 600);
+    MessageListView v;
+    auto row = text_row("$c", "Bob", "/ban x");
+    row.bot_command_display = "/ban target_room: !room:x";
+    v.set_messages({std::move(row)}, false);
+    LayoutCtx lc{surface->factory(), Theme::light()};
+    v.measure(lc, {500, 600});
+    v.arrange(lc, {0, 0, 500, 600});
+
+    AccessNode tree = build_access_tree(&v);
+    const AccessNode* list = find_role_msg(tree, Role::List);
+    REQUIRE(list != nullptr);
+    std::string name;
+    for (const auto& ch : list->children)
+    {
+        if (ch.role == Role::ListItem)
+        {
+            name = ch.name;
+        }
+    }
+    CHECK(name.find("bot command /ban target_room: !room:x") != std::string::npos);
+}

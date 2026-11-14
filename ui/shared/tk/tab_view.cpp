@@ -33,7 +33,7 @@ void TabView::set_items(std::vector<std::string> labels)
 
 void TabView::set_selected_index(int idx)
 {
-    if (idx < 0 || idx >= static_cast<int>(items_.size()))
+    if (idx < 0 || std::cmp_greater_equal(idx, items_.size()))
     {
         return;
     }
@@ -101,7 +101,7 @@ void TabView::paint_before_children(PaintCtx& ctx)
 {
     const auto& pal = ctx.theme.palette;
 
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         auto& item = items_[i];
         const bool is_selected = (i == selected_idx_);
@@ -167,7 +167,7 @@ void TabView::paint_before_children(PaintCtx& ctx)
 int TabView::hit_test_(Point local) const
 {
     const Point world{local.x + bounds_.x, local.y + bounds_.y};
-    for (int i = 0; i < static_cast<int>(items_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, items_.size()); ++i)
     {
         const Rect& r = items_[i].bounds;
         if (world.x >= r.x && world.x < r.x + r.w && world.y >= r.y && world.y < r.y + r.h)

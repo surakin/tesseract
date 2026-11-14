@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <utility>
 
 namespace tesseract
 {
@@ -258,7 +259,7 @@ bool RoomPane::restore_upload_draft_(const UploadDraft& draft)
 
 void RoomPane::stash_upload_draft_(const UploadDraft& draft)
 {
-    if (draft.room_id.empty() || room_compose_drafts_.count(draft.room_id))
+    if (draft.room_id.empty() || room_compose_drafts_.contains(draft.room_id))
     {
         return;
     }
@@ -268,7 +269,7 @@ void RoomPane::stash_upload_draft_(const UploadDraft& draft)
 
 void RoomPane::stash_unsent_draft_(const std::string& room_id, const std::string& text)
 {
-    if (room_id.empty() || text.empty() || room_compose_drafts_.count(room_id))
+    if (room_id.empty() || text.empty() || room_compose_drafts_.contains(room_id))
     {
         return;
     }
@@ -489,6 +490,17 @@ void RoomPane::wire_room_view_()
     // per pane so pop-outs get it too, each on its own account.
     if (auto* panel = rv->user_profile_panel())
     {
+        // The big avatar uses its own widget-sized thumbnail, not the shared
+        // list-size avatar provider RoomView hands the other panels.
+        panel->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                return shell_->profile_avatar_image_(mxc);
+            });
+        panel->on_avatar_needed = [this](const std::string& mxc)
+        {
+            shell_->ensure_profile_avatar_(mxc);
+        };
         panel->on_trust_requested = [this](std::string user_id)
         {
             refresh_profile_trust_(user_id);
@@ -1282,6 +1294,10 @@ void RoomPane::wire_room_view_()
     {
         save_sticker_(mxc, body, info);
     };
+    rv->on_copy_image_requested = [this](const std::string& token)
+    {
+        copy_source_to_clipboard_(token);
+    };
     rv->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
     {
         auto* c = pane_client_();
@@ -1405,7 +1421,7 @@ void RoomPane::wire_room_view_()
             return;
         }
         const auto& msgs = ml->messages();
-        for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+        for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
         {
             const auto& row = msgs[static_cast<std::size_t>(i)];
             if (visible_media_prepped_.insert(row.event_id).second)
@@ -2689,7 +2705,7 @@ void RoomPane::retry_stale_reply_previews_(views::MessageListView* list, const s
     for (const auto& row : list->messages())
     {
         if (row.has_reply() && row.in_reply_to_sender_name.empty() &&
-            targets.count(row.in_reply_to_id))
+            targets.contains(row.in_reply_to_id))
         {
             shell_->reply_details_requested_.erase(
                 ShellBase::reply_details_key_(pane_user_id_(), row.event_id));
@@ -3272,7 +3288,7 @@ void RoomPane::on_message_removed(std::size_t idx)
     deps_.relayout();
 }
 
-void RoomPane::on_typing_changed(const std::string& text, bool visible)
+void RoomPane::on_typing_changed(const std::string& text, bool /*visible*/)
 {
     if (room_view_)
     {
@@ -4042,7 +4058,7 @@ void RoomPane::open_dm_(std::string user_id)
         return;
     }
 
-    if (shell_->dm_in_flight_user_ids_.count(user_id))
+    if (shell_->dm_in_flight_user_ids_.contains(user_id))
     {
         return;
     }
@@ -4622,7 +4638,7 @@ void RoomPane::feed_gallery_reset_(const std::string& event_room_id,
 
 bool RoomPane::handle_forward_done_(std::uint64_t request_id)
 {
-    if (!pending_forwards_.count(request_id))
+    if (!pending_forwards_.contains(request_id))
     {
         return false;
     }
@@ -4698,6 +4714,32 @@ const tk::Image* RoomPane::shell_gif_strip_image_(const GifResult& result,
                                                   const std::function<void()>& repaint)
 {
     return shell_->gif_strip_image_(result, repaint);
+}
+
+const tk::Image* RoomPane::shell_sticker_strip_image_(const tesseract::ImagePackImage& sticker)
+{
+    return shell_->make_picker_image_provider_(true)(sticker.url, sticker.url, false);
+}
+
+tk::CacheKey RoomPane::shell_picker_sticker_key_(const std::string& url) const
+{
+    return shell_->picker_sticker_key_(url);
+}
+
+void RoomPane::shell_set_sticker_strip_repaint_(const void* owner, std::function<void()> fn)
+{
+    if (!shell_)
+    {
+        return;
+    }
+    if (fn)
+    {
+        shell_->sticker_strip_repaints_[owner] = std::move(fn);
+    }
+    else
+    {
+        shell_->sticker_strip_repaints_.erase(owner);
+    }
 }
 
 std::vector<std::uint8_t> RoomPane::shell_cached_gif_bytes_(const std::string& url)
@@ -4918,6 +4960,35 @@ void RoomPane::wire_gif_hooks_(views::GifController::Hooks& hooks)
     hooks.get_cached_gif_bytes = [this](const std::string& url) -> std::vector<std::uint8_t>
     {
         return shell_cached_gif_bytes_(url);
+    };
+}
+
+void RoomPane::wire_sticker_hooks_(views::StickerController::Hooks& hooks)
+{
+    hooks.search = [this](const std::string& query) -> std::vector<tesseract::ImagePackImage>
+    {
+        auto* client = pane_client_();
+        if (!client)
+        {
+            return {};
+        }
+        return views::search_room_stickers(*client, room_id_, shell_parent_spaces_for_room_(),
+                                           query);
+    };
+    hooks.send = [this](const tesseract::ImagePackImage& img)
+    {
+        send_sticker_(img.body.empty() ? img.shortcode : img.body, img.url, img.info_json);
+    };
+    hooks.clear_composer = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->clear_compose_text();
+        }
     };
 }
 

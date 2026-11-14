@@ -61,7 +61,7 @@ std::string dedupe_pack_shortcode(const std::vector<StagedPackImage>& siblings,
 }
 
 std::vector<tk::Rect> ImagePackTileGridBase::layout_tile_row_(float width, std::size_t tile_count,
-                                                              float y_start) const
+                                                              float y_start)
 {
     std::vector<tk::Rect> out;
     const float grid_w = std::max(0.0f, width - 2.0f * kTilePad);
@@ -81,7 +81,7 @@ std::vector<tk::Rect> ImagePackTileGridBase::layout_tile_row_(float width, std::
 }
 
 bool ImagePackTileGridBase::hit_remove_chip_(tk::Point local, float y_content,
-                                             const tk::Rect& image_rect) const
+                                             const tk::Rect& image_rect)
 {
     const float ccx = image_rect.x + image_rect.w - kRemoveChipR;
     const float ccy = image_rect.y + kRemoveChipR;
@@ -151,7 +151,7 @@ void ImagePackTileGridBase::paint_tile_shared_(tk::PaintCtx& ctx, const StagedPa
 }
 
 void ImagePackTileGridBase::paint_hint_tile_shared_(tk::PaintCtx& ctx, const tk::Rect& cell_local,
-                                                    tk::Point origin) const
+                                                    tk::Point origin)
 {
     const tk::Rect cell{origin.x + cell_local.x, origin.y + cell_local.y, cell_local.w,
                         cell_local.h};

@@ -44,6 +44,12 @@ std::optional<std::string> parse_slash_arg(const std::string& body, const char* 
 // `/invite <user> [reason]`) don't need their own bespoke splitter.
 std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd);
 
+// Splits `text` on spaces/tabs, treating a `"..."` or `'...'` span as part of
+// one token (quotes stripped, no escapes). An unterminated quote runs to the
+// end of the text. `""` yields an empty token. Shared by parse_slash_args and
+// the bot-command argument path.
+std::vector<std::string> tokenize_args(std::string_view text);
+
 // The plain + HTML pair produced by `/spoiler`.
 struct SpoilerMessage
 {
@@ -137,6 +143,20 @@ struct BotCommandSendResult
     std::string error;
 };
 
+// Coerce one typed argument token to the JSON value `schema` expects, as a
+// compact JSON string; nullopt when the token does not fit. `current_room_id`
+// is the room a bare `$event` token refers to. Exposed for tests; the send
+// path uses it via `dispatch_bot_command_send`.
+std::optional<std::string> coerce_bot_command_argument(const std::string& token,
+                                                       const ParamSchema& schema,
+                                                       const std::string& current_room_id);
+
+// Fallback plain-text body for a structured bot command: "/command" plus the
+// tokens, re-quoting any that contain whitespace or quote characters (double
+// quotes, or single quotes when the token itself holds a `"`).
+std::string bot_command_fallback_body(const std::string& command,
+                                      const std::vector<std::string>& tokens);
+
 // Tokenize `args_text` (whitespace-delimited; an array-typed parameter takes
 // a single comma-separated token — see Client::match_bot_command_arguments's
 // doc comment for the full v1 positional convention), match the tokens
@@ -147,5 +167,13 @@ struct BotCommandSendResult
 BotCommandSendResult dispatch_bot_command_send(Client& client, const std::string& room_id,
                                                const CommandDescription& desc,
                                                const std::string& args_text);
+
+// One-line display of a received MSC4391 invocation for the timeline:
+// "/command key: value key2: value2". Room/event reference objects show their
+// `id` / `event_id`, arrays are comma-joined, strings are shown as-is, other
+// scalars in their JSON form. `arguments_json` that is not a JSON object is
+// treated as no arguments. Empty when `command` is empty.
+std::string format_bot_command_display(const std::string& command,
+                                       const std::string& arguments_json);
 
 } // namespace tesseract

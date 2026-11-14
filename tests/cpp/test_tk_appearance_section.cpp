@@ -35,7 +35,7 @@ struct AsStage : vt::Stage
     {
         relayout_paint(*sec, {0, 0, 700, 1200});
     }
-    tk::CheckButton* check(const std::string& label)
+    tk::CheckButton* check(const std::string& label) const
     {
         for (auto* c : vt::find_all<tk::CheckButton>(*sec))
         {

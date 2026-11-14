@@ -46,18 +46,19 @@ EmojiOnlyClassification classify_emoji_only_utf8(std::string_view utf8)
         }
         else if ((c & 0xE0) == 0xC0 && p + 1 < end)
         {
-            cp = uint32_t(c & 0x1F) << 6 | (p[1] & 0x3F);
+            cp = static_cast<uint32_t>(c & 0x1F) << 6 | (p[1] & 0x3F);
             p += 2;
         }
         else if ((c & 0xF0) == 0xE0 && p + 2 < end)
         {
-            cp = uint32_t(c & 0x0F) << 12 | uint32_t(p[1] & 0x3F) << 6 | (p[2] & 0x3F);
+            cp = static_cast<uint32_t>(c & 0x0F) << 12 | static_cast<uint32_t>(p[1] & 0x3F) << 6 |
+                 (p[2] & 0x3F);
             p += 3;
         }
         else if ((c & 0xF8) == 0xF0 && p + 3 < end)
         {
-            cp = uint32_t(c & 0x07) << 18 | uint32_t(p[1] & 0x3F) << 12 |
-                 uint32_t(p[2] & 0x3F) << 6 | (p[3] & 0x3F);
+            cp = static_cast<uint32_t>(c & 0x07) << 18 | static_cast<uint32_t>(p[1] & 0x3F) << 12 |
+                 static_cast<uint32_t>(p[2] & 0x3F) << 6 | (p[3] & 0x3F);
             p += 4;
         }
         else
@@ -243,18 +244,19 @@ std::vector<TextSpan> segment_emoji_runs(const TextSpan& src)
         }
         else if ((c & 0xE0) == 0xC0 && p + 1 < end)
         {
-            cp = uint32_t(c & 0x1F) << 6 | (p[1] & 0x3F);
+            cp = static_cast<uint32_t>(c & 0x1F) << 6 | (p[1] & 0x3F);
             p += 2;
         }
         else if ((c & 0xF0) == 0xE0 && p + 2 < end)
         {
-            cp = uint32_t(c & 0x0F) << 12 | uint32_t(p[1] & 0x3F) << 6 | (p[2] & 0x3F);
+            cp = static_cast<uint32_t>(c & 0x0F) << 12 | static_cast<uint32_t>(p[1] & 0x3F) << 6 |
+                 (p[2] & 0x3F);
             p += 3;
         }
         else if ((c & 0xF8) == 0xF0 && p + 3 < end)
         {
-            cp = uint32_t(c & 0x07) << 18 | uint32_t(p[1] & 0x3F) << 12 |
-                 uint32_t(p[2] & 0x3F) << 6 | (p[3] & 0x3F);
+            cp = static_cast<uint32_t>(c & 0x07) << 18 | static_cast<uint32_t>(p[1] & 0x3F) << 12 |
+                 static_cast<uint32_t>(p[2] & 0x3F) << 6 | (p[3] & 0x3F);
             p += 4;
         }
         else

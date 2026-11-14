@@ -103,7 +103,7 @@ struct BarStage : vt::Stage
         const Rect r = slider()->bounds();
         return {r.x + r.w * frac, r.y + r.h * 0.5f};
     }
-    void press(float frac)
+    void press(float frac) const
     {
         Widget* hit = root->dispatch_pointer_down(at(frac));
         REQUIRE(hit == slider());

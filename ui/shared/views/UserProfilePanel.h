@@ -39,6 +39,9 @@ public:
     UserProfilePanel();
     ~UserProfilePanel() override;
 
+    // Edge of the big avatar in DIPs; the shell sizes its thumbnail to this.
+    static constexpr float kAvatarDiameter = 160.0f;
+
     void open(std::string user_id, std::string display_name, std::string avatar_url);
     void close();
     bool is_open() const
@@ -53,7 +56,7 @@ public:
     // has nothing for it yet — lets the shell kick off a fetch. Unlike the
     // small per-mxc avatar used everywhere else (room list, message senders),
     // this panel displays the avatar large enough that the shell should fetch
-    // the actual source image rather than a thumbnail.
+    // a thumbnail sized to the widget (kAvatarDiameter × display scale).
     std::function<void(const std::string& mxc)> on_avatar_needed;
 
     // Set extended profile fields (called async after open())
@@ -255,7 +258,7 @@ private:
     float layout_ext_rows_(tk::LayoutCtx& lc, float max_val_w);
 
     static constexpr float kLeftW = 200.0f; // left column (avatar, name, buttons)
-    static constexpr float kAvatarD = 160.0f;
+    static constexpr float kAvatarD = kAvatarDiameter;
     static constexpr float kPadX = 16.0f;
     static constexpr float kPadY = 12.0f;
     static constexpr float kButtonH = 36.0f;

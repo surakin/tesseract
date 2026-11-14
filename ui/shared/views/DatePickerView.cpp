@@ -20,8 +20,8 @@ namespace
 {
 
 // UTF-8 single angle quotation marks used as prev/next navigation glyphs.
-static constexpr char kPrevGlyph[] = "\xE2\x80\xB9"; // U+2039 ‹
-static constexpr char kNextGlyph[] = "\xE2\x80\xBA"; // U+203A ›
+constexpr char kPrevGlyph[] = "\xE2\x80\xB9"; // U+2039 ‹
+constexpr char kNextGlyph[] = "\xE2\x80\xBA"; // U+203A ›
 
 } // namespace
 
@@ -200,7 +200,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
     // ── header: prev button / month-year label / next button ─────────────────
     {
         // Prev button
-        const bool can_prev = !(view_year_ == 1970 && view_month_ == 1);
+        const bool can_prev = view_year_ != 1970 || view_month_ != 1;
         const bool prev_hov = hovered_zone_ == Zone::PrevBtn;
         const bool prev_prs = pressed_zone_ == Zone::PrevBtn;
         if (can_prev)
@@ -225,7 +225,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
         }
 
         // Next button
-        const bool can_next = !(view_year_ == max_year_ && view_month_ == max_month_);
+        const bool can_next = view_year_ != max_year_ || view_month_ != max_month_;
         const bool next_hov = hovered_zone_ == Zone::NextBtn;
         const bool next_prs = pressed_zone_ == Zone::NextBtn;
         if (can_next)
@@ -272,7 +272,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
 
     // ── day-of-week row ───────────────────────────────────────────────────────
     {
-        const float cell_w = kWidth / float(kCols);
+        const float cell_w = kWidth / static_cast<float>(kCols);
         for (int col = 0; col < kCols; ++col)
         {
             auto& layout = layouts_[1 + col]; // slots 1-7
@@ -281,7 +281,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
                 continue;
             }
             const tk::Size lsz = layout->measure();
-            const float cx = bounds_.x + (float(col) + 0.5f) * cell_w - lsz.w * 0.5f;
+            const float cx = bounds_.x + (static_cast<float>(col) + 0.5f) * cell_w - lsz.w * 0.5f;
             const float cy = dow_rect_.y + (kDowH - layout->ascent()) * 0.5f;
             c.draw_text(*layout, {cx, cy}, pal.text_secondary);
         }
@@ -523,8 +523,8 @@ void DatePickerView::set_cursor_(int y, int m, int d)
 {
     m = std::clamp(m, 1, 12);
     d = std::clamp(d, 1, days_in_month(y, m));
-    const long key = long(y) * 10000 + m * 100 + d;
-    const long max_key = long(max_year_) * 10000 + max_month_ * 100 + max_day_;
+    const long key = static_cast<long>(y) * 10000 + m * 100 + d;
+    const long max_key = static_cast<long>(max_year_) * 10000 + max_month_ * 100 + max_day_;
     if (key < 19700101L)
     {
         y = 1970;
@@ -591,9 +591,9 @@ bool DatePickerView::part_enabled_(FocusPart p) const
     switch (p)
     {
     case FocusPart::PrevBtn:
-        return !(view_year_ == 1970 && view_month_ == 1);
+        return view_year_ != 1970 || view_month_ != 1;
     case FocusPart::NextBtn:
-        return !(view_year_ == max_year_ && view_month_ == max_month_);
+        return view_year_ != max_year_ || view_month_ != max_month_;
     case FocusPart::TodayBtn:
         return today_enabled();
     default:
@@ -836,14 +836,8 @@ bool DatePickerView::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is
     if (over_year)
     {
         int y = view_year_ + steps;
-        if (y < 1970)
-        {
-            y = 1970;
-        }
-        if (y > max_year_)
-        {
-            y = max_year_;
-        }
+        y = std::max(y, 1970);
+        y = std::min(y, max_year_);
         if (y == view_year_)
         {
             return true;
@@ -1069,8 +1063,9 @@ void DatePickerView::compute_zones_()
 
     header_rect_ = {bx, by, kWidth, kHeaderH};
     dow_rect_ = {bx, by + kHeaderH, kWidth, kDowH};
-    grid_rect_ = {bx, by + kHeaderH + kDowH, kWidth, float(kRows) * kDayH};
-    footer_rect_ = {bx, by + kHeaderH + kDowH + float(kRows) * kDayH, kWidth, kFooterH};
+    grid_rect_ = {bx, by + kHeaderH + kDowH, kWidth, static_cast<float>(kRows) * kDayH};
+    footer_rect_ = {bx, by + kHeaderH + kDowH + static_cast<float>(kRows) * kDayH, kWidth,
+                    kFooterH};
 
     // Navigation buttons: vertically centred in header, 6px from edges.
     const float btn_y = by + (kHeaderH - kNavBtnSz) * 0.5f;
@@ -1259,7 +1254,7 @@ DatePickerView::Zone DatePickerView::hit_zone(tk::Point local, int* cell_idx_out
     if (w.x >= grid_rect_.x && w.x < grid_rect_.x + grid_rect_.w && w.y >= grid_rect_.y &&
         w.y < grid_rect_.y + grid_rect_.h)
     {
-        const float cell_w = kWidth / float(kCols);
+        const float cell_w = kWidth / static_cast<float>(kCols);
         const int col = static_cast<int>((w.x - grid_rect_.x) / cell_w);
         const int row = static_cast<int>((w.y - grid_rect_.y) / kDayH);
         if (col >= 0 && col < kCols && row >= 0 && row < kRows)
@@ -1274,13 +1269,14 @@ DatePickerView::Zone DatePickerView::hit_zone(tk::Point local, int* cell_idx_out
 
 tk::Rect DatePickerView::cell_world_rect(int i) const
 {
-    const float cell_w = kWidth / float(kCols);
+    const float cell_w = kWidth / static_cast<float>(kCols);
     const int col = i % kCols;
     const int row = i / kCols;
-    return {grid_rect_.x + float(col) * cell_w, grid_rect_.y + float(row) * kDayH, cell_w, kDayH};
+    return {grid_rect_.x + static_cast<float>(col) * cell_w,
+            grid_rect_.y + static_cast<float>(row) * kDayH, cell_w, kDayH};
 }
 
-tk::Rect DatePickerView::circle_rect_in(tk::Rect cell) const
+tk::Rect DatePickerView::circle_rect_in(tk::Rect cell)
 {
     // Centre a kCellCircleD × kCellCircleD square inside the cell.
     return {cell.x + (cell.w - kCellCircleD) * 0.5f, cell.y + (kDayH - kCellCircleD) * 0.5f,

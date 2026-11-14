@@ -569,6 +569,11 @@ bool MediaViewerOverlay::on_wheel(tk::Point local, float dx, float dy, bool is_t
     return active_->on_wheel({local.x - content_inset_x_(), local.y}, dx, dy, is_touchpad);
 }
 
+bool MediaViewerOverlay::on_right_click(tk::Point /*local*/)
+{
+    return is_open_;
+}
+
 bool MediaViewerOverlay::on_content_pointer_down_(tk::Point world, tk::Point local)
 {
     return active_ && active_->on_content_pointer_down(world, local);

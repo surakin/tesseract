@@ -155,6 +155,9 @@ public:
     // through the overlay stack to the room timeline underneath (see
     // RoomView::MessageBlocker for the same hazard).
     bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    // Swallows right-clicks whenever the lightbox is open so they never reach
+    // the timeline's message menu behind it (chrome buttons still go first).
+    bool on_right_click(tk::Point local) override;
 
 protected:
     bool on_content_pointer_down_(tk::Point world, tk::Point local) override;

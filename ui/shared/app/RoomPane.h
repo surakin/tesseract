@@ -8,6 +8,7 @@
 #include "views/media_viewer_items.h"
 #include "views/RoomView.h"
 #include "views/ShortcodeController.h"
+#include "views/StickerController.h"
 #include "views/SlashCommandController.h"
 #include "tk/host.h"
 #include "tk/weak_self.h"
@@ -454,6 +455,7 @@ public:
     void wire_shortcode_hooks_(views::ShortcodePopup* popup,
                                views::ShortcodeController::Hooks& hooks);
     void wire_gif_hooks_(views::GifController::Hooks& hooks);
+    void wire_sticker_hooks_(views::StickerController::Hooks& hooks);
     // Room Settings → Moderation: fetch room_id's banned members on a worker
     // (Client::get_banned_members syncs members first, so it can take a
     // moment) and push them into rv's settings view if it still shows that
@@ -645,6 +647,12 @@ public:
     // Render one GIF strip cell via the shell's backend-specific provider.
     const tk::Image* shell_gif_strip_image_(const GifResult& result,
                                             const std::function<void()>& repaint);
+    // Render one /sticker strip cell via the shell's sticker-picker provider
+    // (fetches on a miss), and the cache key it is stored under.
+    const tk::Image* shell_sticker_strip_image_(const tesseract::ImagePackImage& sticker);
+    tk::CacheKey shell_picker_sticker_key_(const std::string& url) const;
+    // Register / drop the repaint callback run when a sticker image lands.
+    void shell_set_sticker_strip_repaint_(const void* owner, std::function<void()> fn);
     // Source bytes the GIF strip cached on fetch.
     std::vector<std::uint8_t> shell_cached_gif_bytes_(const std::string& url);
 

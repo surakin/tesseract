@@ -56,6 +56,7 @@ BodyTable make_table(std::vector<std::vector<std::string>> rows, std::vector<Tab
     for (auto& r : rows)
     {
         std::vector<TableCell> row;
+        row.reserve(ncols);
         for (std::size_t c = 0; c < ncols; ++c)
         {
             row.push_back(cell(c < r.size() ? r[c] : std::string{}));
@@ -238,6 +239,7 @@ TEST_CASE("table_to_gfm: clamps columns of an oversized table", "[table_layout]"
     BodyTable t;
     t.col_align.resize(200, TableAlign::Default);
     std::vector<TableCell> row;
+    row.reserve(200);
     for (int i = 0; i < 200; ++i)
     {
         row.push_back(cell("x"));
