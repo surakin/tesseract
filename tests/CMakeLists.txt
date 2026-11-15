@@ -442,6 +442,7 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
     endif()
     target_sources(tesseract_tests PRIVATE
         cpp/test_win32_taskbar_progress.cpp
+        cpp/test_win32_dropped_files.cpp
         cpp/tk_test_surface_win32.cpp
         "${CMAKE_SOURCE_DIR}/ui/windows/tk/canvas_d2d.cpp")
     target_include_directories(tesseract_tests PRIVATE

@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(composer): files dragged or pasted from phones, zip archives or other virtual folders attach on Windows without freezing the window. Windows debug build, ctest 3916/3916, manual test
 - feat(messages): a received bot command shows as a "Bot command: /name args" line above the message in every layout. Linux build, ctest 3944/3944, cargo 1724/1724
 - feat(composer): bot command arguments can be quoted ("two words"), and room and event arguments are sent with the correct id and via. Linux build, ctest 3944/3944
 - feat(composer): slash-command autocomplete picks up a bot's new or changed commands while the room is open. Linux build, ctest 3944/3944, cargo 1724/1724

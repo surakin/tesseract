@@ -8,6 +8,7 @@
 #include "pill.h"
 #include "pixmap_cache.h"
 #include "tk/image_sniff.h"
+#include "platform/win32/dropped_files_win32.h"
 
 #include <BetterText/BetterText.h>
 
@@ -36,6 +37,7 @@
 #include <shellapi.h> // CF_HDROP / DragQueryFileW
 #include <shlwapi.h>
 #include <shlobj.h>
+#include <shobjidl.h> // IDataObjectAsyncCapability
 #include <wrl/client.h>
 #include <initguid.h>
 #include <netlistmgr.h>
@@ -47,6 +49,7 @@
 #include <mfidl.h>
 
 #include <atomic>
+#include <memory>
 #include <chrono>
 #include <optional>
 #include <thread>
@@ -118,6 +121,18 @@ UINT post_to_ui_message()
 {
     static UINT msg = RegisterWindowMessageW(L"tk_post_to_ui");
     return msg;
+}
+
+// Posts `fn` to `hwnd`'s UI thread from any thread. Captures nothing but the
+// handle, so a window that died meanwhile just fails the post and the heap
+// copy is freed.
+void post_to_hwnd(HWND hwnd, std::function<void()> fn)
+{
+    auto* heap = new std::function<void()>(std::move(fn));
+    if (!PostMessageW(hwnd, post_to_ui_message(), 0, reinterpret_cast<LPARAM>(heap)))
+    {
+        delete heap;
+    }
 }
 
 // Process-wide font for native EDIT overlays — sized to FontRole::Body so
@@ -309,132 +324,7 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     return true;
 }
 
-// Extension → MIME table used as a fallback when content-sniffing via
-// FindMimeFromData isn't conclusive. Covers the common chat payloads; the
-// rest fall back to application/octet-stream. Shared by DropTarget (real
-// drag-drop) and the CF_HDROP clipboard-paste path below (files copied in
-// Explorer, not dragged).
-inline const char* mime_from_ext(const std::wstring& ext_lower)
-{
-    if (ext_lower == L"png")
-    {
-        return "image/png";
-    }
-    if (ext_lower == L"jpg" || ext_lower == L"jpeg")
-    {
-        return "image/jpeg";
-    }
-    if (ext_lower == L"webp")
-    {
-        return "image/webp";
-    }
-    if (ext_lower == L"bmp")
-    {
-        return "image/bmp";
-    }
-    if (ext_lower == L"gif")
-    {
-        return "image/gif";
-    }
-    if (ext_lower == L"pdf")
-    {
-        return "application/pdf";
-    }
-    if (ext_lower == L"zip")
-    {
-        return "application/zip";
-    }
-    if (ext_lower == L"txt")
-    {
-        return "text/plain";
-    }
-    if (ext_lower == L"json")
-    {
-        return "application/json";
-    }
-    return nullptr;
-}
-
-inline std::wstring path_extension_lower(const std::wstring& p)
-{
-    size_t slash = p.find_last_of(L"\\/");
-    size_t dot = p.find_last_of(L'.');
-    if (dot == std::wstring::npos || (slash != std::wstring::npos && dot < slash))
-    {
-        return {};
-    }
-    std::wstring ext = p.substr(dot + 1);
-    for (wchar_t& c : ext)
-    {
-        if (c >= L'A' && c <= L'Z')
-        {
-            c = static_cast<wchar_t>(c + (L'a' - L'A'));
-        }
-    }
-    return ext;
-}
-
-inline std::wstring basename(const std::wstring& p)
-{
-    size_t slash = p.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? p : p.substr(slash + 1);
-}
-
-// Reads a single local file into a tk::FileDropPayload for a clipboard
-// CF_HDROP paste (files copied in Explorer, not dragged). Mirrors
-// DropTarget::try_dispatch_file's size guard/read/mime logic below, minus
-// the position-based dispatch (paste has no drop point) and the
-// fire_file_drop_error reporting (this call site has no Host handy at the
-// point it runs — an unreadable file is just skipped, same as an unreadable
-// dropped file that never reaches a widget).
-inline std::optional<tk::FileDropPayload> read_local_file_for_paste(const std::wstring& path)
-{
-    WIN32_FILE_ATTRIBUTE_DATA fa{};
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
-    {
-        return std::nullopt;
-    }
-    ULARGE_INTEGER sz{};
-    sz.LowPart = fa.nFileSizeLow;
-    sz.HighPart = fa.nFileSizeHigh;
-    if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
-    {
-        return std::nullopt;
-    }
-
-    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE)
-    {
-        return std::nullopt;
-    }
-    std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-    DWORD read_total = 0;
-    while (read_total < bytes.size())
-    {
-        DWORD got = 0;
-        BOOL ok = ReadFile(h, bytes.data() + read_total,
-                           static_cast<DWORD>(bytes.size() - read_total), &got, nullptr);
-        if (!ok || got == 0)
-        {
-            break;
-        }
-        read_total += got;
-    }
-    CloseHandle(h);
-    if (read_total != bytes.size())
-    {
-        return std::nullopt;
-    }
-
-    std::string mime = "application/octet-stream";
-    if (const char* m = mime_from_ext(path_extension_lower(path)))
-    {
-        mime = m;
-    }
-
-    return tk::FileDropPayload{std::move(bytes), std::move(mime), wide_to_utf8(basename(path))};
-}
+namespace wd = tesseract::win32_drop;
 
 // ── UTF-8 byte offset to UTF-16 code unit count ──────────────────────────
 // Used by BetterTextArea for replace_range().
@@ -2341,56 +2231,34 @@ public:
     }
 
 private:
-    // Ctrl+V of files copied in Explorer ("Copy", not a drag): reads
-    // CF_HDROP directly off the clipboard (no GlobalLock needed — unlike
-    // the drag-drop STGMEDIUM path in DropTarget::Drop above, a
-    // clipboard-vended CF_HDROP handle is usable as an HDROP as-is) and
-    // forwards one FileDropPayload per file to on_file_paste_.
-    bool paste_files_from_clipboard_()
+    // Ctrl+V of files copied in Explorer ("Copy", not a drag) or from a
+    // virtual folder (phone, zip, Outlook). A worker reads them (network
+    // shares and cloud placeholders can block) and posts the payloads back
+    // to the parent Host window; nothing is attached if none could be read.
+    void paste_files_from_clipboard_()
     {
-        if (!OpenClipboard(hwnd_))
+        HWND target = parent_;
+        if (!target)
         {
-            return false;
+            return;
         }
-        struct CloseGuard
-        {
-            ~CloseGuard()
+        std::weak_ptr<bool> alive = alive_;
+        std::thread(
+            [this, target, alive]()
             {
-                CloseClipboard();
-            }
-        } guard;
-
-        HANDLE hg = GetClipboardData(CF_HDROP);
-        if (!hg)
-        {
-            return false;
-        }
-        HDROP hdrop = static_cast<HDROP>(hg);
-        UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-        std::vector<tk::FileDropPayload> files;
-        for (UINT i = 0; i < n_files; ++i)
-        {
-            UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
-            if (len == 0)
-            {
-                continue;
-            }
-            std::wstring path(len, L'\0');
-            if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
-            {
-                continue;
-            }
-            if (auto payload = read_local_file_for_paste(path))
-            {
-                files.push_back(std::move(*payload));
-            }
-        }
-        if (files.empty())
-        {
-            return false;
-        }
-        on_file_paste_(std::move(files));
-        return true;
+                auto result = std::make_shared<wd::ReadResult>(wd::read_clipboard());
+                post_to_hwnd(target,
+                             [this, alive, result]()
+                             {
+                                 // The area may be gone by the time we land.
+                                 if (alive.expired() || !on_file_paste_ || result->files.empty())
+                                 {
+                                     return;
+                                 }
+                                 on_file_paste_(std::move(result->files));
+                             });
+            })
+            .detach();
     }
 
     void refresh_height()
@@ -2609,17 +2477,15 @@ private:
                 }
             }
             // Files copied in Explorer ("Copy", not a drag) land on the
-            // clipboard as CF_HDROP — the same format a real drag-drop
-            // carries. Checked after the image case above (an image format
+            // clipboard as CF_HDROP, or as file descriptors for virtual
+            // folders. Checked after the image case above (an image format
             // takes priority when a payload somehow offers both).
             if ((is_ctrl_v || is_shift_ins) && self->on_file_paste_ &&
                 !IsClipboardFormatAvailable(CF_DIBV5) && !IsClipboardFormatAvailable(CF_DIB) &&
-                IsClipboardFormatAvailable(CF_HDROP))
+                wd::clipboard_has_files())
             {
-                if (self->paste_files_from_clipboard_())
-                {
-                    return 0;
-                }
+                self->paste_files_from_clipboard_();
+                return 0;
             }
         }
         // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
@@ -2638,12 +2504,10 @@ private:
             }
         }
         if (msg == WM_PASTE && self->on_file_paste_ && !IsClipboardFormatAvailable(CF_DIBV5) &&
-            !IsClipboardFormatAvailable(CF_DIB) && IsClipboardFormatAvailable(CF_HDROP))
+            !IsClipboardFormatAvailable(CF_DIB) && wd::clipboard_has_files())
         {
-            if (self->paste_files_from_clipboard_())
-            {
-                return 0;
-            }
+            self->paste_files_from_clipboard_();
+            return 0;
         }
         // Custom-emoji images resolve asynchronously (the shell kicks off a
         // fetch as a side effect of set_image_resolver's callback and has no
@@ -2942,6 +2806,8 @@ private:
 
     HWND parent_ = nullptr;
     HWND hwnd_ = nullptr;
+    // Expires with this area; paste workers check it before calling back.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     // UIA identity for hwnd_ (BetterText has none of its own).
     std::unique_ptr<NativeEditAccessible> access_;
     std::string access_name_;
@@ -4450,6 +4316,11 @@ public:
     {
         return hwnd_;
     }
+    // Expires with the Host; drop workers check it before touching it.
+    std::weak_ptr<bool> alive_token() const
+    {
+        return alive_;
+    }
 
     void relayout()
     {
@@ -4754,6 +4625,7 @@ protected:
 
 private:
     HWND hwnd_;
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     const Theme* theme_;
     bool transparent_ = false;
     std::unique_ptr<d2d::Surface> d2d_surface_;
@@ -5339,39 +5211,15 @@ public:
         // relative) — convert once, same pipeline WM_MOUSEWHEEL uses.
         const tk::Point drop_pos = host_->screen_to_tk_point(POINT{pt.x, pt.y});
 
-        FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-        STGMEDIUM stg{};
-        if (FAILED(data->GetData(&fe, &stg)))
+        // Files can sit on a network share, a cloud placeholder or a phone,
+        // so reading happens on a worker (not the UI thread). The data
+        // object is marshalled to it; results come back via post_to_ui.
+        if (!start_read_worker(data, drop_pos))
         {
+            host_->fire_file_drop_error(tk::tr("Could not read file"));
             return S_OK;
         }
-        HDROP hdrop = static_cast<HDROP>(GlobalLock(stg.hGlobal));
-        bool dispatched = false;
-        if (hdrop)
-        {
-            UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-            for (UINT i = 0; i < n_files; ++i)
-            {
-                UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
-                if (len == 0)
-                {
-                    continue;
-                }
-                std::wstring path(len, L'\0');
-                if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
-                {
-                    continue;
-                }
-                if (try_dispatch_file(path, drop_pos))
-                {
-                    dispatched = true;
-                }
-            }
-            GlobalUnlock(stg.hGlobal);
-        }
-        ReleaseStgMedium(&stg);
-
-        if (dispatched && pdwEffect)
+        if (pdwEffect)
         {
             *pdwEffect = DROPEFFECT_COPY;
         }
@@ -5384,83 +5232,111 @@ public:
     }
 
 private:
-    // Returns true when the drop carries at least one local file.
+    // Returns true when the drop carries files (CF_HDROP or descriptors).
     static bool acceptable(IDataObject* data)
     {
-        if (!data)
-        {
-            return false;
-        }
-        FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-        return data->QueryGetData(&fe) == S_OK;
+        return wd::has_files(data);
     }
 
-    bool try_dispatch_file(const std::wstring& path, tk::Point pos)
+    // Marshals `data` (and its async capability, if the source has one) to a
+    // detached worker that reads every file and posts the result back.
+    // Worker apartment: MTA. It only makes cross-process calls on proxies
+    // (no window, no message pump needed), and an MTA thread can't deadlock
+    // against our UI thread unless the source is in-process, in which case
+    // the UI thread is pumping again once Drop returns.
+    bool start_read_worker(IDataObject* data, tk::Point pos)
     {
-        if (!host_)
+        IStream* data_stream = nullptr;
+        if (FAILED(CoMarshalInterThreadInterfaceInStream(IID_IDataObject, data, &data_stream)))
         {
             return false;
         }
-
-        // Size guard via GetFileAttributesEx — single syscall, no open.
-        WIN32_FILE_ATTRIBUTE_DATA fa{};
-        if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+        // Async-capable sources (Explorer's shell data objects) expect the
+        // target to bracket the copy with StartOperation/EndOperation, so
+        // the source keeps the data alive past Drop's return.
+        IStream* async_stream = nullptr;
         {
-            if (host_)
+            Microsoft::WRL::ComPtr<IDataObjectAsyncCapability> async;
+            BOOL is_async = FALSE;
+            if (SUCCEEDED(data->QueryInterface(IID_PPV_ARGS(&async))) &&
+                SUCCEEDED(async->GetAsyncMode(&is_async)) && is_async &&
+                SUCCEEDED(async->StartOperation(nullptr)))
             {
-                host_->fire_file_drop_error(tk::tr("Could not read file"));
+                if (FAILED(CoMarshalInterThreadInterfaceInStream(IID_IDataObjectAsyncCapability,
+                                                                 async.Get(), &async_stream)))
+                {
+                    async->EndOperation(E_FAIL, nullptr, DROPEFFECT_NONE);
+                    async_stream = nullptr;
+                }
             }
-            return false;
-        }
-        ULARGE_INTEGER sz{};
-        sz.LowPart = fa.nFileSizeLow;
-        sz.HighPart = fa.nFileSizeHigh;
-        if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
-        {
-            return false;
         }
 
-        HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                               FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h == INVALID_HANDLE_VALUE)
-        {
-            if (host_)
+        HWND hwnd = host_->hwnd();
+        std::weak_ptr<bool> alive = host_->alive_token();
+        Host* host = host_;
+        std::thread(
+            [hwnd, alive, host, pos, data_stream, async_stream]()
             {
-                host_->fire_file_drop_error(tk::tr("Could not read file"));
-            }
-            return false;
-        }
-
-        std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-        DWORD read_total = 0;
-        while (read_total < bytes.size())
-        {
-            DWORD got = 0;
-            BOOL ok = ReadFile(h, bytes.data() + read_total,
-                               static_cast<DWORD>(bytes.size() - read_total), &got, nullptr);
-            if (!ok || got == 0)
-            {
-                break;
-            }
-            read_total += got;
-        }
-        CloseHandle(h);
-        if (read_total != bytes.size())
-        {
-            return false;
-        }
-
-        // Mime: extension table first (cheap), default to
-        // application/octet-stream when unknown. FindMimeFromData would
-        // need urlmon.lib; the table covers the common chat payloads.
-        std::string mime = "application/octet-stream";
-        if (const char* m = mime_from_ext(path_extension_lower(path)))
-        {
-            mime = m;
-        }
-
-        return host_->fire_file_drop(std::move(bytes), std::move(mime),
-                                     wide_to_utf8(basename(path)), pos);
+                auto result = std::make_shared<wd::ReadResult>();
+                if (SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)))
+                {
+                    IDataObject* obj = nullptr;
+                    if (SUCCEEDED(CoGetInterfaceAndReleaseStream(data_stream, IID_IDataObject,
+                                                                 reinterpret_cast<void**>(&obj))) &&
+                        obj)
+                    {
+                        *result = wd::read_all(obj);
+                        obj->Release();
+                    }
+                    if (async_stream)
+                    {
+                        IDataObjectAsyncCapability* async = nullptr;
+                        if (SUCCEEDED(CoGetInterfaceAndReleaseStream(
+                                async_stream, IID_IDataObjectAsyncCapability,
+                                reinterpret_cast<void**>(&async))) &&
+                            async)
+                        {
+                            async->EndOperation(result->files.empty() ? E_FAIL : S_OK, nullptr,
+                                                DROPEFFECT_COPY);
+                            async->Release();
+                        }
+                    }
+                    CoUninitialize();
+                }
+                else
+                {
+                    // Release the marshalled refs even though we can't use them.
+                    data_stream->Release();
+                    if (async_stream)
+                    {
+                        async_stream->Release();
+                    }
+                }
+                post_to_hwnd(hwnd,
+                             [alive, host, pos, result]()
+                             {
+                                 if (alive.expired())
+                                 {
+                                     return;
+                                 }
+                                 if (result->files.empty())
+                                 {
+                                     // Only real read errors; skipped items stay silent.
+                                     if (result->any_failed)
+                                     {
+                                         host->fire_file_drop_error(tk::tr("Could not read file"));
+                                     }
+                                     return;
+                                 }
+                                 for (auto& f : result->files)
+                                 {
+                                     host->fire_file_drop(std::move(f.bytes), std::move(f.mime),
+                                                          std::move(f.filename), pos);
+                                 }
+                             });
+            })
+            .detach();
+        return true;
     }
 
     Host* host_;
