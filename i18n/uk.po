@@ -7742,3 +7742,7 @@ msgstr "Команда бота: {0}"
 #: ui/shared/views/MessageListView.cpp
 msgid "bot command {0}"
 msgstr "команда бота {0}"
+
+#: ui/linux-qt/tk/host_qt.cpp ui/linux-gtk/tk/host_gtk.cpp
+msgid "Could not read the remote file (is kio-fuse installed?)"
+msgstr "Не вдалося прочитати віддалений файл (чи встановлено kio-fuse?)"

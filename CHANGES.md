@@ -22,6 +22,7 @@ Tagged releases summarize all changes since the previous tag.
 - fix(ui): context menus widen to fit longer translated labels. Linux release build, ctest popup-menu tests
 - build: clang-tidy now runs over the tree via `scripts/clang-tidy.py`, a ctest and a CI workflow, and the code is clean of findings. Linux release build, ctest 3929/3929
 - fix(settings): a device sign-out error or re-authentication prompt could be lost when it was handed to more than one device row. Linux release build
+- feat(composer): files dragged or pasted from remote locations in Dolphin (SFTP, SMB, MTP) attach on KDE via kio-fuse. Linux build, ctest 3945/3946
 
 ## v0.9.8 — 2026-11-10
 

@@ -7582,3 +7582,7 @@ msgstr "[Symbölsx]"
 #: client/src/emoji.cpp:187
 msgid "Flags"
 msgstr "[Flàgsx]"
+
+#: ui/linux-qt/tk/host_qt.cpp ui/linux-gtk/tk/host_gtk.cpp
+msgid "Could not read the remote file (is kio-fuse installed?)"
+msgstr "[Çöùld ñöt réàd thé rémöté fïlé (ïs kïö-fùsé ïñstàlléd?)xxxxxxxxxxx]"

@@ -8,6 +8,8 @@
 #include "qt_accessible.h"
 #include "emoji_segmentation.h"
 #include "tk/image_sniff.h"
+#include "platform/linux/kio_fuse.h"
+#include "tk/i18n.h"
 
 #include <tesseract/settings.h>
 
@@ -55,6 +57,8 @@
 #include <QtGui/QSyntaxHighlighter>
 #include <QtGui/QImageWriter>
 #include <QtCore/QBuffer>
+#include <QtCore/QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtCore/QByteArray>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -930,6 +934,47 @@ std::optional<tk::FileDropPayload> read_local_file_for_paste(const QString& path
     return tk::FileDropPayload{std::move(bytes), mime.toStdString(), fi.fileName().toStdString()};
 }
 
+// A URL naming a remote file (sftp://, smb://, ... from Dolphin's network
+// places) that kio-fuse can expose as a local path.
+bool is_remote_url(const QUrl& u)
+{
+    return !u.isLocalFile() && tesseract::kio_fuse::is_remote_uri(u.toEncoded().toStdString());
+}
+
+struct RemoteLoad
+{
+    std::vector<tk::FileDropPayload> files;
+    bool kio_fuse_missing = false;
+};
+
+// Mounts each URL through kio-fuse and reads it on a pool thread: both the
+// D-Bus call and the FUSE read wait on the network, so neither may run on
+// the UI thread.
+QFuture<RemoteLoad> load_remote_files_async(std::vector<std::string> uris)
+{
+    return QtConcurrent::run(
+        [uris = std::move(uris)]()
+        {
+            RemoteLoad out;
+            for (const std::string& uri : uris)
+            {
+                const auto r = tesseract::kio_fuse::mount_url(uri);
+                if (r.status == tesseract::kio_fuse::Status::Ok)
+                {
+                    if (auto p = read_local_file_for_paste(QString::fromStdString(r.path)))
+                    {
+                        out.files.push_back(std::move(*p));
+                    }
+                }
+                else if (r.status == tesseract::kio_fuse::Status::Unavailable)
+                {
+                    out.kio_fuse_missing = true;
+                }
+            }
+            return out;
+        });
+}
+
 class ComposeTextEdit : public QTextEdit
 {
 public:
@@ -982,8 +1027,14 @@ protected:
             if (source && source->hasUrls() && !source->hasImage())
             {
                 std::vector<tk::FileDropPayload> files;
+                std::vector<std::string> remote;
                 for (const QUrl& url : source->urls())
                 {
+                    if (is_remote_url(url))
+                    {
+                        remote.push_back(url.toEncoded().toStdString());
+                        continue;
+                    }
                     if (!url.isLocalFile())
                     {
                         continue;
@@ -993,9 +1044,29 @@ protected:
                         files.push_back(std::move(*payload));
                     }
                 }
-                if (!files.empty())
+                const bool has_remote = !remote.empty();
+                if (has_remote)
                 {
-                    on_file_paste_(std::move(files));
+                    // Remote files arrive later, in their own paste.
+                    auto* watcher = new QFutureWatcher<RemoteLoad>(this);
+                    connect(watcher, &QFutureWatcher<RemoteLoad>::finished, this,
+                            [this, watcher]()
+                            {
+                                RemoteLoad r = watcher->result();
+                                watcher->deleteLater();
+                                if (!r.files.empty() && on_file_paste_)
+                                {
+                                    on_file_paste_(std::move(r.files));
+                                }
+                            });
+                    watcher->setFuture(load_remote_files_async(std::move(remote)));
+                }
+                if (!files.empty() || has_remote)
+                {
+                    if (!files.empty())
+                    {
+                        on_file_paste_(std::move(files));
+                    }
                     e->accept();
                     return;
                 }
@@ -3297,7 +3368,7 @@ bool drop_is_acceptable(const QMimeData* md)
     {
         for (const QUrl& u : md->urls())
         {
-            if (u.isLocalFile())
+            if (u.isLocalFile() || is_remote_url(u))
             {
                 return true;
             }
@@ -3655,8 +3726,14 @@ void Surface::dropEvent(QDropEvent* e)
     if (md->hasUrls())
     {
         QMimeDatabase db;
+        std::vector<std::string> remote;
         for (const QUrl& u : md->urls())
         {
+            if (is_remote_url(u))
+            {
+                remote.push_back(u.toEncoded().toStdString());
+                continue;
+            }
             if (!u.isLocalFile())
             {
                 continue;
@@ -3704,6 +3781,33 @@ void Surface::dropEvent(QDropEvent* e)
             {
                 handled = true;
             }
+        }
+
+        if (!remote.empty())
+        {
+            // The drop is accepted now; the files are mounted via kio-fuse
+            // and read off the UI thread, then dispatched to the drop point.
+            auto* watcher = new QFutureWatcher<RemoteLoad>(this);
+            connect(
+                watcher, &QFutureWatcher<RemoteLoad>::finished, this,
+                [this, watcher, drop_pos]()
+                {
+                    RemoteLoad r = watcher->result();
+                    watcher->deleteLater();
+                    for (tk::FileDropPayload& payload : r.files)
+                    {
+                        host_->on_file_drop(drop_pos, payload);
+                    }
+                    if (r.files.empty() && on_file_drop_error_)
+                    {
+                        on_file_drop_error_(
+                            r.kio_fuse_missing
+                                ? tk::tr("Could not read the remote file (is kio-fuse installed?)")
+                                : tk::tr("Could not read file"));
+                    }
+                });
+            watcher->setFuture(load_remote_files_async(std::move(remote)));
+            handled = true;
         }
     }
 

@@ -5,6 +5,7 @@
 #include "emoji_support.h"
 #include "device_listing.h"
 #include "platform/linux/gst_device_listing.h"
+#include "platform/linux/kio_fuse.h"
 #include "gtk_accessible.h"
 #include "emoji_segmentation.h"
 #include "pill.h"
@@ -22,6 +23,7 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace tk::gtk4
@@ -830,6 +832,143 @@ private:
 // Enter inserts a newline. natural_height() asks Pango for the natural
 // height of the TextView; on_height_changed fires whenever the buffer's
 // changed signal produces a height delta.
+
+namespace
+{
+
+// Loads a GFile into a payload (size/empty guards, content-type sniff).
+// Blocks on I/O and is safe on a worker thread. Returns nullopt when the
+// file is unreadable, empty or over kMaxDroppedFileBytes.
+std::optional<tk::FileDropPayload> read_gfile_payload(GFile* file)
+{
+    if (!file)
+    {
+        return std::nullopt;
+    }
+    GFileInfo* info =
+        g_file_query_info(file,
+                          G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_STANDARD_NAME
+                                                         "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+                          G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
+    if (!info)
+    {
+        return std::nullopt;
+    }
+    const goffset sz = g_file_info_get_size(info);
+    if (sz <= 0 || std::cmp_greater(sz, kMaxDroppedFileBytes))
+    {
+        g_object_unref(info);
+        return std::nullopt;
+    }
+    GBytes* gb = g_file_load_bytes(file, nullptr, nullptr, nullptr);
+    if (!gb)
+    {
+        g_object_unref(info);
+        return std::nullopt;
+    }
+    gsize len = 0;
+    gconstpointer data = g_bytes_get_data(gb, &len);
+    if (!data || len == 0)
+    {
+        g_bytes_unref(gb);
+        g_object_unref(info);
+        return std::nullopt;
+    }
+
+    const char* declared = g_file_info_get_content_type(info);
+    gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
+                                          static_cast<const guchar*>(data), len, nullptr);
+    const char* content_type = declared ? declared : guessed;
+    gchar* mime_c = content_type ? g_content_type_get_mime_type(content_type) : nullptr;
+    std::string mime = mime_c ? mime_c : "application/octet-stream";
+
+    std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
+                                    static_cast<const std::uint8_t*>(data) + len);
+
+    char* basename = g_file_get_basename(file);
+    std::string filename = basename ? basename : "";
+    if (basename)
+    {
+        g_free(basename);
+    }
+
+    if (mime_c)
+    {
+        g_free(mime_c);
+    }
+    if (guessed)
+    {
+        g_free(guessed);
+    }
+    g_bytes_unref(gb);
+    g_object_unref(info);
+
+    return tk::FileDropPayload{std::move(bytes), std::move(mime), std::move(filename)};
+}
+
+struct RemoteFileLoad
+{
+    std::optional<tk::FileDropPayload> payload;
+    bool kio_fuse_missing = false;
+};
+
+// Reads a non-native GFile (sftp://, smb://, ...) on a worker thread, then
+// delivers the outcome on the main loop. A remote URI kio-fuse can serve
+// is read through its FUSE mount; otherwise (or on failure) GIO/GVfs is
+// asked directly. `done` is skipped if `alive` expired meanwhile.
+void load_remote_gfile_async(GFile* file, std::weak_ptr<bool> alive,
+                             std::function<void(RemoteFileLoad)> done)
+{
+    char* uri_c = g_file_get_uri(file);
+    std::string uri = uri_c ? uri_c : "";
+    g_free(uri_c);
+    GFile* held = G_FILE(g_object_ref(file));
+    std::thread(
+        [held, uri = std::move(uri), alive = std::move(alive), done = std::move(done)]() mutable
+        {
+            RemoteFileLoad out;
+            if (tesseract::kio_fuse::is_remote_uri(uri))
+            {
+                const auto r = tesseract::kio_fuse::mount_url(uri);
+                if (r.status == tesseract::kio_fuse::Status::Ok)
+                {
+                    GFile* local = g_file_new_for_path(r.path.c_str());
+                    out.payload = read_gfile_payload(local);
+                    g_object_unref(local);
+                }
+                else if (r.status == tesseract::kio_fuse::Status::Unavailable)
+                {
+                    out.kio_fuse_missing = true;
+                }
+            }
+            if (!out.payload)
+            {
+                out.payload = read_gfile_payload(held);
+            }
+            g_object_unref(held);
+
+            auto* task = new std::function<void()>(
+                [alive = std::move(alive), done = std::move(done), out = std::move(out)]() mutable
+                {
+                    if (alive.lock())
+                    {
+                        done(std::move(out));
+                    }
+                });
+            g_idle_add(
+                [](gpointer p) -> gboolean
+                {
+                    std::unique_ptr<std::function<void()>> fn(
+                        static_cast<std::function<void()>*>(p));
+                    (*fn)();
+                    return G_SOURCE_REMOVE;
+                },
+                task);
+        })
+        .detach();
+}
+
+} // namespace
 
 class GtkNativeTextArea : public NativeTextArea, public GtkOcclusionClient
 {
@@ -2266,69 +2405,7 @@ private:
     // that never reaches a widget).
     static std::optional<tk::FileDropPayload> read_gfile_for_paste(GFile* file)
     {
-        if (!file)
-        {
-            return std::nullopt;
-        }
-        GFileInfo* info = g_file_query_info(file,
-                                            G_FILE_ATTRIBUTE_STANDARD_SIZE
-                                            "," G_FILE_ATTRIBUTE_STANDARD_NAME
-                                            "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-                                            G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
-        if (!info)
-        {
-            return std::nullopt;
-        }
-        const goffset sz = g_file_info_get_size(info);
-        if (sz <= 0 || std::cmp_greater(sz, kMaxDroppedFileBytes))
-        {
-            g_object_unref(info);
-            return std::nullopt;
-        }
-        GBytes* gb = g_file_load_bytes(file, nullptr, nullptr, nullptr);
-        if (!gb)
-        {
-            g_object_unref(info);
-            return std::nullopt;
-        }
-        gsize len = 0;
-        gconstpointer data = g_bytes_get_data(gb, &len);
-        if (!data || len == 0)
-        {
-            g_bytes_unref(gb);
-            g_object_unref(info);
-            return std::nullopt;
-        }
-
-        const char* declared = g_file_info_get_content_type(info);
-        gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
-                                              static_cast<const guchar*>(data), len, nullptr);
-        const char* content_type = declared ? declared : guessed;
-        gchar* mime_c = content_type ? g_content_type_get_mime_type(content_type) : nullptr;
-        std::string mime = mime_c ? mime_c : "application/octet-stream";
-
-        std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
-                                        static_cast<const std::uint8_t*>(data) + len);
-
-        char* basename = g_file_get_basename(file);
-        std::string filename = basename ? basename : "";
-        if (basename)
-        {
-            g_free(basename);
-        }
-
-        if (mime_c)
-        {
-            g_free(mime_c);
-        }
-        if (guessed)
-        {
-            g_free(guessed);
-        }
-        g_bytes_unref(gb);
-        g_object_unref(info);
-
-        return tk::FileDropPayload{std::move(bytes), std::move(mime), std::move(filename)};
+        return read_gfile_payload(file);
     }
 
     static void on_file_list_ready_cb(GObject* source, GAsyncResult* res, gpointer p)
@@ -2351,7 +2428,26 @@ private:
             GSList* list = static_cast<GSList*>(g_value_get_boxed(value));
             for (GSList* it = list; it != nullptr; it = it->next)
             {
-                if (auto payload = read_gfile_for_paste(G_FILE(it->data)))
+                GFile* f = G_FILE(it->data);
+                if (!g_file_is_native(f))
+                {
+                    // Remote file: read off the main thread, delivered as a
+                    // paste of its own once it arrives.
+                    static const std::shared_ptr<bool> kAlways = std::make_shared<bool>(true);
+                    const FilePasteHandler h = *handler;
+                    load_remote_gfile_async(f, kAlways,
+                                            [h](RemoteFileLoad r)
+                                            {
+                                                if (r.payload)
+                                                {
+                                                    std::vector<tk::FileDropPayload> one;
+                                                    one.push_back(std::move(*r.payload));
+                                                    h(std::move(one));
+                                                }
+                                            });
+                    continue;
+                }
+                if (auto payload = read_gfile_for_paste(f))
                 {
                     files.push_back(std::move(*payload));
                 }
@@ -3266,6 +3362,30 @@ public:
             return false;
         }
 
+        if (!g_file_is_native(file))
+        {
+            // Remote file (sftp://, smb://, ...): the drop is accepted now,
+            // the bytes are fetched off the main thread and dispatched to
+            // the drop point when they arrive.
+            load_remote_gfile_async(file, alive_,
+                                    [this, pos](RemoteFileLoad r)
+                                    {
+                                        if (r.payload)
+                                        {
+                                            dispatch_file_drop(pos, *r.payload);
+                                        }
+                                        else if (on_file_drop_error_)
+                                        {
+                                            on_file_drop_error_(
+                                                r.kio_fuse_missing
+                                                    ? tk::tr("Could not read the remote file (is "
+                                                             "kio-fuse installed?)")
+                                                    : tk::tr("Could not read file"));
+                                        }
+                                    });
+            return true;
+        }
+
         GError* err = nullptr;
         GFileInfo* info = g_file_query_info(file,
                                             G_FILE_ATTRIBUTE_STANDARD_SIZE
@@ -3590,6 +3710,9 @@ private:
     }
 
     GtkWidget* overlay_;
+    // Expires with the Host; lets worker-thread results (remote file drops)
+    // notice the Host is gone before touching it.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     GtkWidget* drawing_area_;
     const Theme* theme_;
     std::unique_ptr<CanvasFactory> factory_;

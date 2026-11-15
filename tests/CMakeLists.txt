@@ -370,6 +370,7 @@ endif()
 if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI STREQUAL "linux")
     target_sources(tesseract_tests PRIVATE
         cpp/test_tk_gst_device_listing.cpp
+        cpp/test_kio_fuse.cpp
         cpp/test_linux_autostart.cpp
         cpp/test_linux_up_connector_core.cpp)
 endif()

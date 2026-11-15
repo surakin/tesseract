@@ -40,6 +40,8 @@ if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI ST
         # Transport-independent half of the Qt6/GTK4 UnifiedPush connectors.
         linux/linux_up_connector_core.h
         linux/linux_up_connector_core.cpp
+        linux/kio_fuse.h
+        linux/kio_fuse.cpp
         linux/linux_autostart.h
         linux/linux_portal.h
         linux/linux_notification_reply.h
