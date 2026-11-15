@@ -89,6 +89,14 @@ public:
     // Test-only: display names of the rows laid out, in list order (regular
     // members, then service members).
     std::vector<std::string> shown_member_names_for_test() const;
+    // Test-only: the user id the cached text layout of member row `row` was
+    // built for ("" if none has been painted).
+    std::string member_layout_owner_for_test(int row) const
+    {
+        return row >= 0 && std::cmp_less(row, member_layouts_.size())
+                   ? member_layouts_[static_cast<std::size_t>(row)].user_id
+                   : std::string{};
+    }
     // Test-only: whether the "Service members" section is laid out.
     bool service_section_shown_for_test() const
     {
@@ -286,6 +294,10 @@ private:
     void update_badges_();
     struct MemberLayout
     {
+        // Whose text this is: rows are re-indexed when the list expands or the
+        // service-member section moves, so a layout is only reused for the
+        // member it was built for.
+        std::string user_id;
         tk::CachedTextLayout name;
         tk::CachedTextLayout uid;
     };

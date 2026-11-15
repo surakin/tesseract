@@ -347,3 +347,55 @@ TEST_CASE("RoomInfoPanel: service members are listed apart from and below the re
     CHECK_FALSE(body->service_section_shown_for_test());
     CHECK(body->shown_member_names_for_test() == std::vector<std::string>{"alice"});
 }
+
+TEST_CASE("RoomInfoPanel: expanding the roster does not reuse a service member's cached text",
+          "[room_info_panel]")
+{
+    auto surface = TestSurface::create(1000, 800);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    TestHost host(nullptr);
+    auto panel_owner = tk::create_root_widget<RoomInfoPanel>(&host);
+    host.set_root(panel_owner.get());
+    RoomInfoPanel& panel = *panel_owner;
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    info.name = "Room";
+    panel.open(info);
+
+    auto member = [](const std::string& name, bool service)
+    {
+        tesseract::RoomMember m;
+        m.user_id = "@" + name + ":example.org";
+        m.display_name = name;
+        m.is_service_member = service;
+        return m;
+    };
+    // Six regular members: collapsed, row 5 is the service bot; expanded, it is
+    // the sixth regular member.
+    std::vector<tesseract::RoomMember> members;
+    for (const char* n : {"a", "b", "c", "d", "e", "f"})
+    {
+        members.push_back(member(n, false));
+    }
+    members.push_back(member("bridgebot", true));
+    panel.set_members(members);
+
+    const tk::Rect bounds{0, 0, 1000, 800};
+    auto* body = panel.body_for_test();
+    REQUIRE(body);
+    tk::PaintCtx pc{surface->canvas(), surface->factory(), tk::Theme::light(), nullptr, &host};
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    panel.paint(pc);
+    CHECK(body->member_layout_owner_for_test(5) == "@bridgebot:example.org");
+
+    body->expand_members_for_test();
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    panel.paint(pc);
+    const auto names = body->shown_member_names_for_test();
+    REQUIRE(names.size() == 7);
+    CHECK(names[5] == "f");
+    CHECK(body->member_layout_owner_for_test(5) == "@f:example.org");
+    CHECK(body->member_layout_owner_for_test(6) == "@bridgebot:example.org");
+}

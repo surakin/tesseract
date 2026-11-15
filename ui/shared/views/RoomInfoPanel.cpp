@@ -1366,6 +1366,11 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         const float uid_ty = name_ty + 14.0f + 2.0f;
 
         auto& ml = member_layouts_[static_cast<std::size_t>(i)];
+        if (ml.user_id != mem.user_id)
+        {
+            ml = {};
+            ml.user_id = mem.user_id;
+        }
 
         if (!ml.name)
         {
