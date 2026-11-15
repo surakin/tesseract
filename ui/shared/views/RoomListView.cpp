@@ -1749,11 +1749,11 @@ int RoomListView::unjoined_room_count() const
 
 bool RoomListView::unjoined_rows_visible() const
 {
-    if (space_unjoined_rooms_.empty())
-    {
-        return false;
-    }
-    return !collapsed_[kSecSpaceUnjoined];
+    return std::ranges::any_of(items_,
+                               [](const Item& it)
+                               {
+                                   return it.kind == Item::Kind::SpaceUnjoined;
+                               });
 }
 
 void RoomListView::refresh()
@@ -2395,12 +2395,22 @@ void RoomListView::rebuild_items()
 
     // "Available to Join" — driven by space_unjoined_rooms_, not section_rooms_.
     // Only shown when the caller has populated it (i.e. drilled into a space).
-    if (!space_unjoined_rooms_.empty())
+    // The search filter applies here too; items index the unfiltered vector.
+    std::vector<int> unjoined_matches;
+    for (int i = 0; std::cmp_less(i, space_unjoined_rooms_.size()); ++i)
+    {
+        const auto& u = space_unjoined_rooms_[static_cast<std::size_t>(i)];
+        if (search_text_.empty() || name_matches(u.name.empty() ? u.room_id : u.name, search_text_))
+        {
+            unjoined_matches.push_back(i);
+        }
+    }
+    if (!unjoined_matches.empty())
     {
         items_.push_back({Item::Kind::Header, kSecSpaceUnjoined, 0});
-        if (!collapsed_[kSecSpaceUnjoined])
+        if (!collapsed_[kSecSpaceUnjoined] || !search_text_.empty())
         {
-            for (int i = 0; std::cmp_less(i, space_unjoined_rooms_.size()); ++i)
+            for (const int i : unjoined_matches)
             {
                 items_.push_back({Item::Kind::SpaceUnjoined, kSecSpaceUnjoined, i});
             }

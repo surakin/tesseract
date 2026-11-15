@@ -387,3 +387,23 @@ TEST_CASE("filter_root_rooms: muted space-child not included (unread_style=None)
     REQUIRE(out.size() == 1);
     CHECK(out[0].id == "S");
 }
+
+TEST_CASE("set_space_unjoined_rooms: search filter applies", "[roomlist][space-unjoined]")
+{
+    auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
+    RoomListView& v = *v_owner;
+    std::vector<tesseract::RoomSummary> summaries;
+    summaries.push_back(unjoined_summary("!a:s", "Alpha"));
+    summaries.push_back(unjoined_summary("!b:s", "Beta"));
+    v.set_space_unjoined_rooms(std::move(summaries));
+
+    v.set_search_text("alp");
+    CHECK(v.unjoined_rows_visible() == true);
+
+    v.set_search_text("zzz");
+    CHECK(v.unjoined_rows_visible() == false);
+    CHECK(v.unjoined_room_count() == 2); // data unchanged
+
+    v.set_search_text("");
+    CHECK(v.unjoined_rows_visible() == true);
+}
