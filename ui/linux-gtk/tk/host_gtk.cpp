@@ -916,6 +916,13 @@ struct RemoteFileLoad
 // delivers the outcome on the main loop. A remote URI kio-fuse can serve
 // is read through its FUSE mount; otherwise (or on failure) GIO/GVfs is
 // asked directly. `done` is skipped if `alive` expired meanwhile.
+// Handler plus liveness token handed to the async clipboard file-list read.
+struct PendingFilePaste
+{
+    std::function<void(std::vector<tk::FileDropPayload>)> handler;
+    std::weak_ptr<bool> alive;
+};
+
 void load_remote_gfile_async(GFile* file, std::weak_ptr<bool> alive,
                              std::function<void(RemoteFileLoad)> done)
 {
@@ -2391,9 +2398,10 @@ private:
         {
             g_signal_stop_emission_by_name(view, "paste-clipboard");
 
-            gdk_clipboard_read_value_async(clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
-                                           &GtkNativeTextArea::on_file_list_ready_cb,
-                                           new FilePasteHandler(self->on_file_paste_));
+            gdk_clipboard_read_value_async(
+                clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
+                &GtkNativeTextArea::on_file_list_ready_cb,
+                new PendingFilePaste{self->on_file_paste_, self->alive_});
         }
     }
 
@@ -2410,7 +2418,12 @@ private:
 
     static void on_file_list_ready_cb(GObject* source, GAsyncResult* res, gpointer p)
     {
-        std::unique_ptr<FilePasteHandler> handler(static_cast<FilePasteHandler*>(p));
+        std::unique_ptr<PendingFilePaste> pending(static_cast<PendingFilePaste*>(p));
+        if (pending->alive.expired())
+        {
+            return; // the text area was destroyed while the clipboard read ran
+        }
+        const auto* handler = &pending->handler;
         GError* err = nullptr;
         const GValue* value = gdk_clipboard_read_value_finish(GDK_CLIPBOARD(source), res, &err);
         if (!value || err)
@@ -2433,9 +2446,8 @@ private:
                 {
                     // Remote file: read off the main thread, delivered as a
                     // paste of its own once it arrives.
-                    static const std::shared_ptr<bool> kAlways = std::make_shared<bool>(true);
                     const FilePasteHandler h = *handler;
-                    load_remote_gfile_async(f, kAlways,
+                    load_remote_gfile_async(f, pending->alive,
                                             [h](RemoteFileLoad r)
                                             {
                                                 if (r.payload)
@@ -2549,6 +2561,9 @@ private:
     std::function<void(float)> on_height_changed_;
     ImagePasteHandler on_image_paste_;
     FilePasteHandler on_file_paste_;
+    // Expires with this widget; lets async clipboard/remote-file reads
+    // notice it is gone before invoking on_file_paste_.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;

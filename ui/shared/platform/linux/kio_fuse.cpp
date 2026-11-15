@@ -13,6 +13,12 @@ namespace
 
 // Schemes that name a remote file system. Deliberately a whitelist: a link
 // dragged out of a browser (http/https) must not become an attachment.
+//
+// Known tradeoff: a text/uri-list drag looks the same whether it comes from
+// Dolphin or from a web page, so dropping a page-supplied smb:// or sftp://
+// URL on the composer makes kio-fuse connect to that host (SMB can expose an
+// NTLM hash). It takes a deliberate drop and is accepted rather than gated
+// behind a confirmation dialog.
 constexpr std::array<std::string_view, 16> kRemoteSchemes = {
     "sftp", "fish", "smb", "ftp",    "ftps", "webdav",     "webdavs", "dav",
     "davs", "nfs",  "mtp", "gdrive", "afc",  "kdeconnect", "gphoto2", "camera",
