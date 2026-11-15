@@ -520,6 +520,11 @@ public:
     // (unchecking developer mode keeps this value).
     bool show_unhandled_events = false;
 
+    // Settings → Advanced → "Show state events in the timeline": rows for state
+    // events such as server ACL changes, bridge information and service members.
+    // Off by default; independent of developer mode.
+    bool show_state_events = false;
+
     // When true, install a native crash handler + Rust panic hook
     // (tesseract::install_crash_handler / set_crash_reporting_enabled) that
     // write a local, plain-text crash report (stack trace + basic metadata)

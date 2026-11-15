@@ -5,6 +5,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(timeline): new Advanced setting "Show state events in the timeline" (off by default) shows server ACL, bridge information, service member and room feature changes. Linux build, ctest, cargo
+- feat(ui): the room info panel lists a room's service members (bridge bots and the like) under the regular members. Linux build, ctest, cargo
+- feat(bridges): rooms that publish the stable m.bridge state event are detected as bridged, like uk.half-shot.bridge. Linux build, cargo
 - fix(ui): the room search now filters the "Available to Join" rooms when browsing a space. Linux release build, manual test
 - feat(composer): files dragged or pasted from phones, zip archives or other virtual folders attach on Windows without freezing the window. Windows debug build, ctest 3916/3916, manual test
 - feat(messages): a received bot command shows as a "Bot command: /name args" line above the message in every layout. Linux build, ctest 3944/3944, cargo 1724/1724

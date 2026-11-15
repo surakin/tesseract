@@ -7746,3 +7746,75 @@ msgstr "команда бота {0}"
 #: ui/linux-qt/tk/host_qt.cpp ui/linux-gtk/tk/host_gtk.cpp
 msgid "Could not read the remote file (is kio-fuse installed?)"
 msgstr "Не вдалося прочитати віддалений файл (чи встановлено kio-fuse?)"
+
+msgid "Bridge information"
+msgstr "Інформація про міст"
+
+msgid "Service members"
+msgstr "Службові учасники"
+
+msgid "Bridge room features"
+msgstr "Можливості кімнати мосту"
+
+msgid "Custom emoji pack"
+msgstr "Власний набір емодзі"
+
+#, c++-format
+msgid "Room state updated: {0}"
+msgstr "Стан кімнати оновлено: {0}"
+
+#, c++-format
+msgid "{0} updated the room state: {1}"
+msgstr "{0}: стан кімнати оновлено — {1}"
+
+msgid "IP literals now allowed"
+msgstr "IP-літерали тепер дозволені"
+
+msgid "IP literals no longer allowed"
+msgstr "IP-літерали більше не дозволені"
+
+
+
+
+
+msgid "The server ACL was changed"
+msgstr "ACL серверів було змінено"
+
+#, c++-format
+msgid "{0} changed the server ACL"
+msgstr "{0} змінив(-ла) ACL серверів"
+
+#, c++-format
+msgid "{0} server now denied"
+msgid_plural "{0} servers now denied"
+msgstr[0] "{0} сервер тепер заборонено"
+msgstr[1] "{0} сервери тепер заборонено"
+msgstr[2] "{0} серверів тепер заборонено"
+
+#, c++-format
+msgid "{0} server no longer denied"
+msgid_plural "{0} servers no longer denied"
+msgstr[0] "{0} сервер більше не заборонено"
+msgstr[1] "{0} сервери більше не заборонено"
+msgstr[2] "{0} серверів більше не заборонено"
+
+#, c++-format
+msgid "{0} server now allowed"
+msgid_plural "{0} servers now allowed"
+msgstr[0] "{0} сервер тепер дозволено"
+msgstr[1] "{0} сервери тепер дозволено"
+msgstr[2] "{0} серверів тепер дозволено"
+
+#, c++-format
+msgid "{0} server no longer allowed"
+msgid_plural "{0} servers no longer allowed"
+msgstr[0] "{0} сервер більше не дозволено"
+msgstr[1] "{0} сервери більше не дозволено"
+msgstr[2] "{0} серверів більше не дозволено"
+
+msgid "Show state events in the timeline"
+msgstr "Показувати події стану на часовій шкалі"
+
+#, c++-format
+msgid "Service members ({0})"
+msgstr "Службові учасники ({0})"

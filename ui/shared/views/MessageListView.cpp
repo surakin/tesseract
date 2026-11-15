@@ -22,6 +22,8 @@
 #include "tk/siphash.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
+#include <cstdlib>
+#include <sstream>
 #include <tesseract/client.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -914,6 +916,9 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
         row.membership_reason = mem.reason;
         break;
     }
+    case tesseract::EventType::RoomServerAcl:
+        row.kind = Kind::RoomServerAcl; // `body` lists the ACL changes
+        break;
     case tesseract::EventType::RoomTombstone:
     {
         row.kind = Kind::RoomTombstone;
@@ -1040,6 +1045,37 @@ std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs, s
         --index;
     }
     return index;
+}
+
+namespace
+{
+// Event type and state key of a developer row body ("type" or "type [state_key]").
+std::pair<std::string, std::string> split_dev_body(const std::string& body)
+{
+    const auto cut = body.find(" [");
+    return cut == std::string::npos ? std::pair{body, std::string{}}
+                                    : std::pair{body.substr(0, cut), body.substr(cut)};
+}
+
+bool is_bridge_info_row(const MessageRowData& m)
+{
+    if (m.kind != MessageRowData::Kind::DevUnhandled)
+    {
+        return false;
+    }
+    const std::string type = split_dev_body(m.body).first;
+    return type == "m.bridge" || type == "uk.half-shot.bridge";
+}
+} // namespace
+
+bool is_absorbed_bridge_info_row(const std::vector<MessageRowData>& msgs, std::size_t index)
+{
+    if (index == 0 || !is_bridge_info_row(msgs[index]) || !is_bridge_info_row(msgs[index - 1]))
+    {
+        return false;
+    }
+    return msgs[index].sender == msgs[index - 1].sender &&
+           split_dev_body(msgs[index].body).second == split_dev_body(msgs[index - 1].body).second;
 }
 
 namespace
@@ -1532,10 +1568,109 @@ std::string room_tombstone_phrase(const MessageRowData& m)
     return line;
 }
 
-// Phrase for a developer "unhandled event" row; `body` is the event type.
+// Phrase for an m.room.server_acl row, e.g. "Alice changed the server ACL: 3 servers now denied;
+// IP literals no longer allowed". `body` holds one count per line (see RoomServerAclStateEvent);
+// the ACL itself can be huge, so the row never lists hostnames.
+std::string room_server_acl_phrase(const MessageRowData& m)
+{
+    std::vector<std::string> parts;
+    std::istringstream lines(m.body);
+    for (std::string line; std::getline(lines, line);)
+    {
+        const auto cut = line.find_first_of("+-");
+        if (cut == std::string::npos)
+        {
+            continue;
+        }
+        const std::string tag = line.substr(0, cut);
+        const bool added = line[cut] == '+';
+        const std::string count_text = line.substr(cut + 1);
+        const long n = count_text.empty() ? 0 : std::strtol(count_text.c_str(), nullptr, 10);
+        if (tag == "deny")
+        {
+            parts.push_back(
+                added ? tk::trf(tk::trn("{0} server now denied", "{0} servers now denied", n),
+                                {count_text})
+                      : tk::trf(tk::trn("{0} server no longer denied",
+                                        "{0} servers no longer denied", n),
+                                {count_text}));
+        }
+        else if (tag == "allow")
+        {
+            parts.push_back(
+                added ? tk::trf(tk::trn("{0} server now allowed", "{0} servers now allowed", n),
+                                {count_text})
+                      : tk::trf(tk::trn("{0} server no longer allowed",
+                                        "{0} servers no longer allowed", n),
+                                {count_text}));
+        }
+        else if (tag == "ip")
+        {
+            parts.push_back(added ? tk::tr("IP literals now allowed")
+                                  : tk::tr("IP literals no longer allowed"));
+        }
+    }
+
+    const std::string s = m.member_label();
+    std::string line = s.empty() ? tk::tr("The server ACL was changed")
+                                 : tk::trf(tk::tr("{0} changed the server ACL"), {s});
+    if (!parts.empty())
+    {
+        std::string detail;
+        for (const auto& p : parts)
+        {
+            detail += detail.empty() ? p : "; " + p;
+        }
+        line = tk::trf(tk::tr("{0}: {1}"), {line, detail});
+    }
+    return line;
+}
+
+// State event types Tesseract reads into room state rather than rendering as timeline rows,
+// with the label a developer row shows for them. Only these are reported as "handled": the
+// row exists solely under the "Show unhandled events" setting. Keep in step with the Rust
+// readers (bridge info, service members, room features, emote packs).
+struct KnownStateType
+{
+    const char* type;
+    const char* label; // marked for extraction, translated where shown
+};
+
+constexpr KnownStateType kKnownStateTypes[] = {
+    {"m.bridge", tk::N_("Bridge information")},
+    {"uk.half-shot.bridge", tk::N_("Bridge information")},
+    {"io.element.functional_members", tk::N_("Service members")},
+    {"com.beeper.room_features", tk::N_("Bridge room features")},
+    {"im.ponies.room_emotes", tk::N_("Custom emoji pack")},
+};
+
+// Label for a known state event type (`body` is "type" or "type [state_key]"), or empty.
+std::string known_state_label(const std::string& body)
+{
+    const std::string type = body.substr(0, body.find(" ["));
+    for (const auto& k : kKnownStateTypes)
+    {
+        if (type == k.type)
+        {
+            return tk::tr(k.label);
+        }
+    }
+    return {};
+}
+
+// Phrase for a developer row; `body` is the event type. Event types Tesseract understands read
+// as a room-state update, the rest as an unhandled event.
 std::string dev_unhandled_phrase(const MessageRowData& m)
 {
     const std::string s = m.member_label();
+    if (const std::string label = known_state_label(m.body); !label.empty())
+    {
+        if (s.empty())
+        {
+            return tk::trf(tk::tr("Room state updated: {0}"), {label});
+        }
+        return tk::trf(tk::tr("{0} updated the room state: {1}"), {s, label});
+    }
     if (s.empty())
     {
         return tk::trf(tk::tr("Unhandled event: {0}"), {m.body});
@@ -1708,7 +1843,8 @@ static bool is_virtual_event(MessageRowData::Kind k)
     using Kind = MessageRowData::Kind;
     return k == Kind::DaySeparator || k == Kind::ReadMarker || k == Kind::TimelineStart ||
            k == Kind::PinnedEvent || k == Kind::CallNotification || k == Kind::Membership ||
-           k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled;
+           k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled ||
+           k == Kind::RoomServerAcl;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -2334,8 +2470,12 @@ public:
         {
             return kPinnedEventH;
         }
+        if (is_absorbed_bridge_info_row(owner_.messages_, index))
+        {
+            return 0.0f; // grouped into the previous bridge-information row
+        }
         if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone ||
-            m.kind == Kind::DevUnhandled)
+            m.kind == Kind::DevUnhandled || m.kind == Kind::RoomServerAcl)
         {
             return kPinnedEventH;
         }
@@ -2521,7 +2661,16 @@ public:
         }
         if (m.kind == Kind::DevUnhandled)
         {
+            if (is_absorbed_bridge_info_row(owner_.messages_, index))
+            {
+                return; // grouped into the previous bridge-information row
+            }
             paint_room_name_change(m, ctx, bounds, dev_unhandled_phrase(m));
+            return;
+        }
+        if (m.kind == Kind::RoomServerAcl)
+        {
+            paint_room_name_change(m, ctx, bounds, room_server_acl_phrase(m));
             return;
         }
         if (m.kind == Kind::Membership)
@@ -4068,6 +4217,8 @@ public:
             return room_tombstone_phrase(m);
         case Kind::DevUnhandled:
             return dev_unhandled_phrase(m);
+        case Kind::RoomServerAcl:
+            return room_server_acl_phrase(m);
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -4883,6 +5034,7 @@ private:
         case Kind::RoomName:
         case Kind::RoomTombstone:
         case Kind::DevUnhandled:
+        case Kind::RoomServerAcl:
             return tk::Role::StaticText;
         default:
             return tk::Role::ListItem;
@@ -5796,6 +5948,7 @@ private:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
+        case MessageRowData::Kind::RoomServerAcl:
             return 0.0f;
         }
         return quote_h;
@@ -6264,6 +6417,7 @@ private:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
+        case MessageRowData::Kind::RoomServerAcl:
             break;
         }
         return y;

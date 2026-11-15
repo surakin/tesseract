@@ -454,6 +454,9 @@ pub mod ffi {
         display_name: String,
         avatar_url: String,
         power_level: i64,
+        /// Listed in the room's service-member hints (MSC4171, e.g. a bridge
+        /// bot); the room info panel shows these apart from regular members.
+        is_service_member: bool,
     }
 
     /// One banned member of a room, for the Room Settings → Moderation
@@ -4327,6 +4330,10 @@ pub mod ffi {
         /// reusable live timelines: callers must re-`subscribe_room` every open
         /// room afterwards, which then rebuilds the timeline.
         fn set_show_unhandled_events(self: &ClientFfi, enabled: bool);
+        /// Show or hide state-event rows (server ACL, bridge information,
+        /// service members, …) in room and thread timelines; off by default.
+        /// Same refresh rule as `set_show_membership_events`.
+        fn set_show_state_events(self: &ClientFfi, enabled: bool);
         /// Show or hide redacted (deleted) event rows in room and thread
         /// timelines; on by default. Same refresh rule as
         /// `set_show_membership_events`.

@@ -86,8 +86,14 @@ public:
     // (empty if that row isn't laid out).
     const std::vector<PopupMenu::Item>& member_menu_items_for_test() const;
     tk::Rect member_row_rect_for_test(int i) const;
-    // Test-only: display names of the rows laid out, in list order.
+    // Test-only: display names of the rows laid out, in list order (regular
+    // members, then service members).
     std::vector<std::string> shown_member_names_for_test() const;
+    // Test-only: whether the "Service members" section is laid out.
+    bool service_section_shown_for_test() const
+    {
+        return service_hdr_y_ >= 0.0f;
+    }
     // Test-only: expands the member list as its "Show all" button does.
     void expand_members_for_test()
     {
@@ -192,6 +198,14 @@ private:
     // Members
     std::vector<tesseract::RoomMember> members_;
     std::size_t members_ordered_ = 0; // leading members_ entries in display order
+    // MSC4171 service members (bridge bots and the like), listed apart from and
+    // below the regular members. Rows share one index space with `members_`:
+    // laid-out regular rows first (`regular_rows_` of them), then these.
+    std::vector<tesseract::RoomMember> service_members_;
+    std::size_t regular_rows_ = 0; // regular member rows laid out by the last arrange
+    float service_hdr_y_ = -1.0f;  // content-local y of the section header; < 0 = none
+    const tesseract::RoomMember* member_at_(std::size_t row) const;
+    std::size_t shown_member_count_() const;
     void order_members_(std::size_t count);
     void expand_members_();
     bool members_expanded_ = false;

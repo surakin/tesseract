@@ -303,3 +303,47 @@ TEST_CASE("RoomInfoPanel: a collapsed roster lists the top five in display order
     CHECK(all[2] == "Mod");
     CHECK(all.back() == "m39");
 }
+
+TEST_CASE("RoomInfoPanel: service members are listed apart from and below the regular members",
+          "[room_info_panel]")
+{
+    auto surface = TestSurface::create(1000, 800);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    TestHost host(nullptr);
+    auto panel_owner = tk::create_root_widget<RoomInfoPanel>(&host);
+    host.set_root(panel_owner.get());
+    RoomInfoPanel& panel = *panel_owner;
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    info.name = "Room";
+    panel.open(info);
+
+    auto member = [](const char* name, bool service)
+    {
+        tesseract::RoomMember m;
+        m.user_id = std::string("@") + name + ":example.org";
+        m.display_name = name;
+        m.is_service_member = service;
+        return m;
+    };
+    // A bot sorts first alphabetically but is listed under the regular members.
+    panel.set_members({member("bridgebot", true), member("carol", false), member("alice", false)});
+
+    const tk::Rect bounds{0, 0, 1000, 800};
+    auto* body = panel.body_for_test();
+    REQUIRE(body);
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    CHECK(body->service_section_shown_for_test());
+    CHECK(body->shown_member_names_for_test() ==
+          std::vector<std::string>{"alice", "carol", "bridgebot"});
+    // The service row is laid out below the last regular row.
+    CHECK(body->member_row_rect_for_test(2).y > body->member_row_rect_for_test(1).y);
+
+    // Without service members there is no section.
+    panel.set_members({member("alice", false)});
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    CHECK_FALSE(body->service_section_shown_for_test());
+    CHECK(body->shown_member_names_for_test() == std::vector<std::string>{"alice"});
+}

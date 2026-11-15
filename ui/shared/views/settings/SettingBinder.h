@@ -77,6 +77,7 @@ enum class SettingKey
     Msc2545Compat,
     DeveloperMode,
     ShowUnhandledEvents,
+    ShowStateEvents,
     CrashReporting,
     Proxy,
     Language,

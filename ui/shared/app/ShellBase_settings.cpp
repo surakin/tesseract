@@ -564,6 +564,19 @@ void ShellBase::apply_show_membership_events_()
     }
 }
 
+void ShellBase::apply_show_state_events_()
+{
+    const bool show = tesseract::Settings::instance().show_state_events;
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (sess && sess->client)
+        {
+            sess->client->set_show_state_events(show);
+        }
+    }
+    resubscribe_open_rooms_();
+}
+
 void ShellBase::apply_show_unhandled_events_()
 {
     const auto& s = tesseract::Settings::instance();
@@ -768,6 +781,9 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
             apply_show_unhandled_events_();
         }
         break;
+    case K::ShowStateEvents:
+        apply_show_state_events_();
+        break;
     case K::ShowUnhandledEvents:
         if (s.developer_mode)
         {
@@ -904,6 +920,15 @@ void ShellBase::apply_unhandled_events_pref_(tesseract::Client& client)
     if (s.developer_mode && s.show_unhandled_events)
     {
         client.set_show_unhandled_events(true);
+    }
+}
+
+void ShellBase::apply_state_events_pref_(tesseract::Client& client)
+{
+    // Rust-side flag defaults to off; push only when the preference is on.
+    if (tesseract::Settings::instance().show_state_events)
+    {
+        client.set_show_state_events(true);
     }
 }
 

@@ -219,6 +219,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         msc2545_legacy_compat = j.value("msc2545_legacy_compat", true);
         developer_mode = j.value("developer_mode", false);
         show_unhandled_events = j.value("show_unhandled_events", false);
+        show_state_events = j.value("show_state_events", false);
         crash_reporting_enabled = j.value("crash_reporting_enabled", false);
 
         audio_input_device_id = j.value("audio_input_device_id", std::string{});
@@ -546,6 +547,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"msc2545_legacy_compat", msc2545_legacy_compat},
         {"developer_mode", developer_mode},
         {"show_unhandled_events", show_unhandled_events},
+        {"show_state_events", show_state_events},
         {"crash_reporting_enabled", crash_reporting_enabled},
         {"room_section_invites_collapsed", room_section_invites_collapsed},
         {"room_section_favorites_collapsed", room_section_favorites_collapsed},

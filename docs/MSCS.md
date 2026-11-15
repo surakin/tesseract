@@ -33,7 +33,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC3440](https://github.com/matrix-org/matrix-spec-proposals/pull/3440) — threads, with [MSC3771](https://github.com/matrix-org/matrix-spec-proposals/pull/3771) threaded read receipts driving the per-thread unread indicator (delivered over sliding sync's [MSC3960](https://github.com/matrix-org/matrix-spec-proposals/pull/3960) receipts extension)
 - [MSC3030](https://github.com/matrix-org/matrix-spec-proposals/pull/3030) — jump-to-date
 - [MSC3266](https://github.com/matrix-org/matrix-spec-proposals/pull/3266) — room / space summaries
-- [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection, alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts)
+- [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection (`m.bridge` and the unstable `uk.half-shot.bridge`), alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts and DM avatars, and lists them apart from the regular members in the room info panel)
 - [MSC2403](https://github.com/matrix-org/matrix-spec-proposals/pull/2403) — room knocking: request to join a knock-restricted room, with admin/moderator review (accept / deny / deny-and-ban)
 - [MSC3488](https://github.com/matrix-org/matrix-spec-proposals/pull/3488) — location messages
 - [MSC3489](https://github.com/matrix-org/matrix-spec-proposals/pull/3489) — live location sharing (display only): a shared live location shows its latest position on the map and moves as updates arrive, until the share ends or times out

@@ -979,6 +979,9 @@ pub struct ClientFfi {
     /// single-line `dev.unhandled` rows. Controlled by
     /// `set_show_unhandled_events`.
     pub(super) show_unhandled_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// "Show state events in the timeline": server-ACL rows and the rows of
+    /// state events Tesseract reads. Controlled by `set_show_state_events`.
+    pub(super) show_state_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Bumped whenever `show_unhandled_events` changes value; see
     /// `TimelineHandle::unhandled_generation`.
     pub(super) unhandled_generation: std::sync::atomic::AtomicU64,
@@ -1547,6 +1550,7 @@ impl ClientFfi {
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_state_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unhandled_generation: std::sync::atomic::AtomicU64::new(0),
             show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
@@ -1670,6 +1674,7 @@ impl ClientFfi {
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             show_unhandled_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_state_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             unhandled_generation: std::sync::atomic::AtomicU64::new(0),
             show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
@@ -1848,6 +1853,7 @@ impl ClientFfi {
             membership: std::sync::Arc::clone(&self.show_membership_events),
             redacted: std::sync::Arc::clone(&self.show_redacted_events),
             unhandled: std::sync::Arc::clone(&self.show_unhandled_events),
+            state_events: std::sync::Arc::clone(&self.show_state_events),
         }
     }
 
@@ -3072,6 +3078,10 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
     }
 }
 
+/// MSC2346 bridge-information state event types, stable name first. Bridges
+/// publish one or both, so every lookup tries them in this order.
+pub(crate) const BRIDGE_INFO_EVENT_TYPES: [&str; 2] = ["m.bridge", "uk.half-shot.bridge"];
+
 /// Pick the "other user" of a DM room, skipping the current user and any
 /// functional members (bridge bots, per MSC4171). Returns None when no real
 /// counterpart can be identified.
@@ -3109,6 +3119,7 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
             display_name,
             avatar_url,
             power_level,
+            is_service_member: false,
         }
     };
 
@@ -3628,10 +3639,16 @@ pub(super) async fn build_room_info_unfiltered(
 
         // Fast path: local SSS state store (populated if the server ever
         // delivers the event via required_state — currently always empty).
-        let local_events = room
-            .get_state_events(StateEventType::from("uk.half-shot.bridge"))
-            .await
-            .unwrap_or_default();
+        let mut local_events = Vec::new();
+        for event_type in BRIDGE_INFO_EVENT_TYPES {
+            local_events = room
+                .get_state_events(StateEventType::from(event_type))
+                .await
+                .unwrap_or_default();
+            if !local_events.is_empty() {
+                break;
+            }
+        }
 
         if let Some(raw_state) = local_events.first() {
             let content = match raw_state {

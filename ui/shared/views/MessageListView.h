@@ -112,6 +112,7 @@ struct MessageRowData
         Poll,          // m.poll.start (MSC3381)
         Gallery,       // m.gallery, MSC4274 inline media gallery
         DevUnhandled,  // developer "show unhandled events" row; `body` is the event type
+        RoomServerAcl, // m.room.server_acl state-event row; `body` lists the changes
     };
 
     /// One item inside a Kind::Gallery row. Field vocabulary deliberately
@@ -456,6 +457,11 @@ bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::siz
 // Exclusive end index of the group starting at `start` (which must satisfy
 // is_membership_group_start(msgs, start)).
 std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::size_t start);
+// True for a developer row of the bridge-information state (`m.bridge` or
+// `uk.half-shot.bridge`) that directly follows another one from the same sender
+// with the same state key: bridges publish both names together, so the second is
+// grouped into the first (zero height, not painted).
+bool is_absorbed_bridge_info_row(const std::vector<MessageRowData>& msgs, std::size_t index);
 // Walk backward from any Membership row to the start of its group.
 std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs, std::size_t index);
 // One collapsed-summary line: an action and the rows (indices into msgs)

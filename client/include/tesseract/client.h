@@ -2291,6 +2291,11 @@ public:
     /// (the next subscribe rebuilds the timeline).
     void set_show_unhandled_events(bool enabled);
 
+    /// Show or hide state-event rows (server ACL, bridge information, service
+    /// members, …) in room and thread timelines. Off by default. Thread-safe;
+    /// takes effect on the next timeline reset, like `set_show_membership_events`.
+    void set_show_state_events(bool enabled);
+
     /// Show or hide redacted (deleted) events, which render as a tombstone row,
     /// in room and thread timelines. On by default. Thread-safe; takes effect
     /// on the next timeline reset, like `set_show_membership_events`.

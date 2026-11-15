@@ -1045,6 +1045,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.room.server_acl")
+    {
+        auto ev = std::make_unique<RoomServerAclStateEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     if (msg_type == "org.matrix.msc4075.rtc.notification")
     {
         auto ev = std::make_unique<CallNotificationEvent>();

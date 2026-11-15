@@ -7165,3 +7165,71 @@ msgstr "commande de bot {0}"
 #: ui/linux-qt/tk/host_qt.cpp ui/linux-gtk/tk/host_gtk.cpp
 msgid "Could not read the remote file (is kio-fuse installed?)"
 msgstr "Impossible de lire le fichier distant (kio-fuse est-il installé ?)"
+
+msgid "Bridge information"
+msgstr "Informations du pont"
+
+msgid "Service members"
+msgstr "Membres de service"
+
+msgid "Bridge room features"
+msgstr "Fonctionnalités du salon du pont"
+
+msgid "Custom emoji pack"
+msgstr "Pack d'émojis personnalisé"
+
+#, c++-format
+msgid "Room state updated: {0}"
+msgstr "État du salon mis à jour : {0}"
+
+#, c++-format
+msgid "{0} updated the room state: {1}"
+msgstr "{0} a mis à jour l'état du salon : {1}"
+
+msgid "IP literals now allowed"
+msgstr "littéraux IP désormais autorisés"
+
+msgid "IP literals no longer allowed"
+msgstr "littéraux IP non autorisés désormais"
+
+
+
+
+
+msgid "The server ACL was changed"
+msgstr "L'ACL des serveurs a été modifiée"
+
+#, c++-format
+msgid "{0} changed the server ACL"
+msgstr "{0} a modifié l'ACL des serveurs"
+
+#, c++-format
+msgid "{0} server now denied"
+msgid_plural "{0} servers now denied"
+msgstr[0] "{0} serveur désormais refusé"
+msgstr[1] "{0} serveurs désormais refusés"
+
+#, c++-format
+msgid "{0} server no longer denied"
+msgid_plural "{0} servers no longer denied"
+msgstr[0] "{0} serveur n'est plus refusé"
+msgstr[1] "{0} serveurs ne sont plus refusés"
+
+#, c++-format
+msgid "{0} server now allowed"
+msgid_plural "{0} servers now allowed"
+msgstr[0] "{0} serveur désormais autorisé"
+msgstr[1] "{0} serveurs désormais autorisés"
+
+#, c++-format
+msgid "{0} server no longer allowed"
+msgid_plural "{0} servers no longer allowed"
+msgstr[0] "{0} serveur n'est plus autorisé"
+msgstr[1] "{0} serveurs ne sont plus autorisés"
+
+msgid "Show state events in the timeline"
+msgstr "Afficher les événements d'état dans la chronologie"
+
+#, c++-format
+msgid "Service members ({0})"
+msgstr "Membres de service ({0})"

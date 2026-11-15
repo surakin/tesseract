@@ -4784,6 +4784,9 @@ protected:
     // their timelines are rebuilt under the new filter. Callers invoke it only
     // when the effective value changed.
     void apply_show_unhandled_events_();
+    // "Show state events in the timeline": pushes the value to every account's
+    // client and re-subscribes the open rooms.
+    void apply_show_state_events_();
     // Re-subscribes the open room and the active account's pop-out rooms so
     // their timelines are rebuilt under a changed timeline filter.
     void resubscribe_open_rooms_();
@@ -4841,6 +4844,8 @@ protected:
     // Pushes the effective "Show unhandled events" value to a freshly created
     // account client (no re-subscribe: nothing is open yet).
     static void apply_unhandled_events_pref_(tesseract::Client& client);
+    // Same for the persisted "show state events" preference.
+    static void apply_state_events_pref_(tesseract::Client& client);
     // Same for the persisted "show deleted messages" preference.
     static void apply_deleted_messages_pref_(tesseract::Client& client);
 

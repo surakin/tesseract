@@ -1595,6 +1595,15 @@ impl ClientFfi {
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Show or hide state-event rows (server ACL, bridge information, service
+    /// members and the like) in room and thread timelines; off by default.
+    /// Thread-safe; takes effect on the next timeline reset, so callers
+    /// re-`subscribe_room` the active room after toggling.
+    pub fn set_show_state_events(&self, enabled: bool) {
+        self.show_state_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Developer setting: render events the timeline does not otherwise
     /// handle as single-line `dev.unhandled` rows. Thread-safe. matrix-sdk-ui
     /// discards filtered events when they arrive, so a change bumps a

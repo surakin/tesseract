@@ -28,6 +28,7 @@ public:
 private:
     tk::CheckButton* developer_mode_cb_ = nullptr;
     tk::CheckButton* show_unhandled_events_cb_ = nullptr;
+    tk::CheckButton* show_state_events_cb_ = nullptr;
 };
 
 } // namespace tesseract::views

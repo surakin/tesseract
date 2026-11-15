@@ -2345,7 +2345,7 @@ std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
     for (const auto& m : raw)
     {
         out.push_back({std::string(m.user_id), std::string(m.display_name),
-                       std::string(m.avatar_url), m.power_level});
+                       std::string(m.avatar_url), m.power_level, m.is_service_member});
     }
     return out;
 }
@@ -3320,6 +3320,12 @@ void Client::set_show_unhandled_events(bool enabled)
 {
     SH_FFI;
     impl_->ffi->set_show_unhandled_events(enabled);
+}
+
+void Client::set_show_state_events(bool enabled)
+{
+    SH_FFI;
+    impl_->ffi->set_show_state_events(enabled);
 }
 
 void Client::set_show_redacted_events(bool enabled)

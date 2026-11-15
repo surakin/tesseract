@@ -95,11 +95,10 @@ RoomInfoPanelBody::RoomInfoPanelBody()
     members_target_ = add_child(tk::create_widget<tk::KeyboardTarget>(this));
     members_target_->on_activate = [this]
     {
-        const auto i = static_cast<std::size_t>(member_cursor_);
-        if (i < members_.size() && on_member_clicked)
+        const auto* mem = member_at_(static_cast<std::size_t>(member_cursor_));
+        if (mem && on_member_clicked)
         {
-            const auto& mem = members_[i];
-            on_member_clicked(mem.user_id, mem.display_name, mem.avatar_url);
+            on_member_clicked(mem->user_id, mem->display_name, mem->avatar_url);
         }
     };
     // The context-menu key's right-click at the target (the cursor row)
@@ -345,6 +344,9 @@ void RoomInfoPanelBody::open(const tesseract::RoomInfo& info)
     scroll_y_ = 0.0f;
 
     members_.clear();
+    service_members_.clear();
+    regular_rows_ = 0;
+    service_hdr_y_ = -1.0f;
     members_ordered_ = 0;
     member_layouts_.clear();
     member_rects_.clear();
@@ -539,11 +541,11 @@ void RoomInfoPanelBody::expand_members_()
 std::vector<std::string> RoomInfoPanelBody::shown_member_names_for_test() const
 {
     std::vector<std::string> names;
-    const std::size_t rows = std::min(member_rects_.size(), members_.size());
+    const std::size_t rows = shown_member_count_();
     names.reserve(rows);
     for (std::size_t i = 0; i < rows; ++i)
     {
-        names.push_back(members_[i].display_name);
+        names.push_back(member_at_(i)->display_name);
     }
     return names;
 }
@@ -564,8 +566,37 @@ void RoomInfoPanelBody::set_presence_provider(PresenceProvider p)
     presence_provider_ = std::move(p);
 }
 
+const tesseract::RoomMember* RoomInfoPanelBody::member_at_(std::size_t row) const
+{
+    if (row < regular_rows_)
+    {
+        return row < members_.size() ? &members_[row] : nullptr;
+    }
+    const std::size_t i = row - regular_rows_;
+    return i < service_members_.size() ? &service_members_[i] : nullptr;
+}
+
+std::size_t RoomInfoPanelBody::shown_member_count_() const
+{
+    const std::size_t regular = std::min(regular_rows_, members_.size());
+    return std::min(member_rects_.size(), regular + service_members_.size());
+}
+
 void RoomInfoPanelBody::set_members(std::vector<tesseract::RoomMember> members)
 {
+    // Service members are listed apart from the regular roster, never mixed in.
+    const auto service_begin = std::stable_partition(members.begin(), members.end(),
+                                                     [](const auto& m)
+                                                     {
+                                                         return !m.is_service_member;
+                                                     });
+    service_members_.assign(std::make_move_iterator(service_begin),
+                            std::make_move_iterator(members.end()));
+    members.erase(service_begin, members.end());
+    std::sort(service_members_.begin(), service_members_.end(), member_before);
+    regular_rows_ = 0;
+    service_hdr_y_ = -1.0f;
+
     members_ = std::move(members);
     members_ordered_ = 0;
     // An already-expanded list shows every row, so every row needs ordering.
@@ -832,6 +863,7 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         member_rects_.push_back({0.0f, y, kPanelW, kMemberRowH});
         y += kMemberRowH;
     }
+    regular_rows_ = static_cast<std::size_t>(visible_members);
 
     // Expand button (shown when >5 members and not expanded)
     const bool show_expand =
@@ -843,6 +875,19 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         {
             expand_btn_->arrange(lc, {px + kPadX, origin_y + y, iw, kButtonH});
             y += kButtonH + kPadY;
+        }
+    }
+
+    // "Service members (N)" section below the regular members (MSC4171).
+    service_hdr_y_ = -1.0f;
+    if (!service_members_.empty())
+    {
+        service_hdr_y_ = y + 4.0f;
+        y += 4.0f + 12.0f + 4.0f;
+        for (std::size_t i = 0; i < service_members_.size(); ++i)
+        {
+            member_rects_.push_back({0.0f, y, kPanelW, kMemberRowH});
+            y += kMemberRowH;
         }
     }
 
@@ -913,7 +958,7 @@ bool RoomInfoPanelBody::move_member_cursor_(const tk::KeyEvent& e)
     {
         return false;
     }
-    const int rows = static_cast<int>(std::min(member_rects_.size(), members_.size()));
+    const int rows = static_cast<int>(shown_member_count_());
     if (rows == 0)
     {
         return false;
@@ -944,7 +989,7 @@ bool RoomInfoPanelBody::move_member_cursor_(const tk::KeyEvent& e)
                      r.h - 2.0f};
     members_target_->set_target_rect(w);
     scroll_into_view(w);
-    const auto& mem = members_[static_cast<std::size_t>(next)];
+    const auto& mem = *member_at_(static_cast<std::size_t>(next));
     members_target_->set_accessible_name(mem.display_name.empty() ? mem.user_id : mem.display_name);
     if (auto* h = host())
     {
@@ -989,11 +1034,11 @@ void RoomInfoPanelBody::place_keyboard_targets_(tk::LayoutCtx& lc)
     knock_target_->arrange(lc, open_ && knock_row_visible_ ? inset(world(knock_row_rect_))
                                                            : tk::Rect{});
 
-    const int rows = static_cast<int>(std::min(member_rects_.size(), members_.size()));
+    const int rows = static_cast<int>(shown_member_count_());
     member_cursor_ = rows > 0 ? std::clamp(member_cursor_, 0, rows - 1) : 0;
     if (rows > 0 && open_)
     {
-        const auto& mem = members_[static_cast<std::size_t>(member_cursor_)];
+        const auto& mem = *member_at_(static_cast<std::size_t>(member_cursor_));
         members_target_->set_accessible_name(mem.display_name.empty() ? mem.user_id
                                                                       : mem.display_name);
         members_target_->set_accessible_description(
@@ -1211,9 +1256,24 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         }
     }
 
+    // "Service members (N)" section header, above the service rows
+    if (service_hdr_y_ >= 0.0f)
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.max_width = text_max_w;
+        const std::string hdr =
+            tk::trf(tk::tr("Service members ({0})"),
+                    {std::to_string(static_cast<int>(service_members_.size()))});
+        if (auto lbl = ctx.factory.build_text(hdr, st))
+        {
+            cv.draw_text(*lbl, {bounds_.x + kPadX, origin_y + service_hdr_y_}, pal.text_muted);
+        }
+    }
+
     // Member rows
     // Rebuild member layouts lazily as the cache may be empty
-    const int visible_count = static_cast<int>(member_rects_.size());
+    const int visible_count = static_cast<int>(shown_member_count_());
     if (std::cmp_less(member_layouts_.size(), visible_count))
     {
         member_layouts_.resize(static_cast<std::size_t>(visible_count));
@@ -1234,7 +1294,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         {
             continue;
         }
-        const auto& mem = members_[static_cast<std::size_t>(i)];
+        const auto& mem = *member_at_(static_cast<std::size_t>(i));
 
         // Hover highlight
         if (i == hover_member_)
@@ -1526,12 +1586,11 @@ void RoomInfoPanelBody::on_pointer_up(tk::Point local, bool inside_self)
     {
         const int idx = press_member_;
         press_member_ = -1;
-        if (inside_self && std::cmp_less(idx, members_.size()))
+        if (inside_self && std::cmp_less(idx, shown_member_count_()))
         {
-            if (std::cmp_less(idx, member_rects_.size()) &&
-                rect_contains(member_rects_[static_cast<std::size_t>(idx)], c))
+            if (rect_contains(member_rects_[static_cast<std::size_t>(idx)], c))
             {
-                const auto& mem = members_[static_cast<std::size_t>(idx)];
+                const auto& mem = *member_at_(static_cast<std::size_t>(idx));
                 if (on_member_clicked)
                 {
                     on_member_clicked(mem.user_id, mem.display_name, mem.avatar_url);
@@ -1681,8 +1740,7 @@ bool RoomInfoPanelBody::on_right_click(tk::Point local)
     // Same viewport-local → content-local conversion as on_pointer_down.
     const tk::Point c{local.x, local.y + scroll_y_};
     int idx = -1;
-    for (int i = 0; std::cmp_less(i, member_rects_.size()) && std::cmp_less(i, members_.size());
-         ++i)
+    for (int i = 0; std::cmp_less(i, shown_member_count_()); ++i)
     {
         if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
         {
@@ -1695,7 +1753,7 @@ bool RoomInfoPanelBody::on_right_click(tk::Point local)
         return false;
     }
 
-    const auto& mem = members_[static_cast<std::size_t>(idx)];
+    const auto& mem = *member_at_(static_cast<std::size_t>(idx));
     const std::string room_id = room_id_;
     const std::string user_id = mem.user_id;
     const std::string name = mem.display_name;

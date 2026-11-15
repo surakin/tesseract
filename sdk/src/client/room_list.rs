@@ -1980,6 +1980,7 @@ impl ClientFfi {
         // members fill in as sync progresses.
         use matrix_sdk::ruma::events::room::power_levels::UserPowerLevel;
 
+        let service_members = room.service_members().unwrap_or_default();
         match self
             .rt
             .block_on(room.members_no_sync(matrix_sdk::RoomMemberships::JOIN))
@@ -2004,6 +2005,7 @@ impl ClientFfi {
                             .unwrap_or_else(|| m.user_id().localpart().to_string()),
                         avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
                         power_level,
+                        is_service_member: service_members.contains(m.user_id()),
                     }
                 })
                 .collect(),
