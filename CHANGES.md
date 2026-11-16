@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(ui): the quick switcher shows the spaces a room belongs to under its name. Linux release build, ctest 3950/3950, manual test
 - feat(messages): links to rooms and events show as pills with the room's name and avatar, also in plain-text messages. Linux release build, ctest 3950/3950, manual test
 - feat(messages): an event link pill reads "room › message", so it no longer looks like a room pill. Linux release build, ctest 3950/3950
 - fix(ui): the thread panel now has the same mention pills, voice playback and hidden-media handling as the main timeline. Linux release build, ctest 3950/3950

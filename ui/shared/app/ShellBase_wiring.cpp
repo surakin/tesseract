@@ -792,6 +792,24 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 }
                 return out;
             });
+        qs->set_space_names_provider(
+            [this](const std::string& room_id) -> std::vector<std::string>
+            {
+                std::vector<std::string> names;
+                for (const auto& space_id : parent_spaces_for_room_(room_id))
+                {
+                    const auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                                                 [&](const tesseract::RoomInfo& r)
+                                                 {
+                                                     return r.id == space_id;
+                                                 });
+                    if (it != rooms_.end() && !it->name.empty())
+                    {
+                        names.push_back(it->name);
+                    }
+                }
+                return names;
+            });
         qs->on_room_avatar_needed = [this](const tesseract::RoomInfo& r)
         {
             ensure_room_avatar_(r);

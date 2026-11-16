@@ -104,11 +104,23 @@ public:
         ns.max_width = text_w;
         auto name_lo =
             ctx.factory.build_text(room.name.empty() ? tk::tr("Unnamed room") : room.name, ns);
+        const std::string& space_label = owner_.space_label_(room.id);
+        tk::TextStyle ss{};
+        ss.role = tk::FontRole::Small;
+        ss.trim = tk::TextTrim::Ellipsis;
+        ss.max_width = text_w;
+        auto space_lo = space_label.empty() ? nullptr : ctx.factory.build_text(space_label, ss);
         if (name_lo)
         {
-            const tk::Size sz = name_lo->measure();
-            ctx.canvas.draw_text(*name_lo, {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
-                                 pal.text_primary);
+            const float name_h = name_lo->measure().h;
+            const float sp_h = space_lo ? space_lo->measure().h : 0.0f;
+            const float gap = space_lo ? 1.0f : 0.0f;
+            float y = bounds.y + (bounds.h - (name_h + gap + sp_h)) * 0.5f;
+            ctx.canvas.draw_text(*name_lo, {text_x, y}, pal.text_primary);
+            if (space_lo)
+            {
+                ctx.canvas.draw_text(*space_lo, {text_x, y + name_h + gap}, pal.text_muted);
+            }
         }
     }
 
@@ -333,8 +345,33 @@ void QuickSwitcher::set_avatar_provider(AvatarProvider p)
     avatar_provider_ = std::move(p);
 }
 
+void QuickSwitcher::set_space_names_provider(SpaceNamesProvider p)
+{
+    space_names_provider_ = std::move(p);
+    space_label_cache_.clear();
+}
+
+const std::string& QuickSwitcher::space_label_(const std::string& room_id)
+{
+    auto it = space_label_cache_.find(room_id);
+    if (it != space_label_cache_.end())
+    {
+        return it->second;
+    }
+    std::string label;
+    if (space_names_provider_)
+    {
+        for (const auto& n : space_names_provider_(room_id))
+        {
+            label += label.empty() ? n : ", " + n;
+        }
+    }
+    return space_label_cache_.emplace(room_id, std::move(label)).first->second;
+}
+
 void QuickSwitcher::open()
 {
+    space_label_cache_.clear();
     all_rooms_ = rooms_provider_ ? rooms_provider_() : std::vector<tesseract::RoomInfo>{};
     recent_ = recent_provider_ ? recent_provider_() : std::vector<tesseract::RoomInfo>{};
     // An upgraded (tombstoned) room is a dead end once its successor is
