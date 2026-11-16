@@ -119,6 +119,13 @@ impl MediaStore for UpsertMediaStore {
         self.0.optimize().await
     }
 
+    async fn media_sizes(
+        &self,
+        uris: &[matrix_sdk::ruma::OwnedMxcUri],
+    ) -> Result<std::collections::BTreeMap<matrix_sdk::ruma::OwnedMxcUri, u64>, Self::Error> {
+        self.0.media_sizes(uris).await
+    }
+
     async fn get_size(&self) -> Result<Option<usize>, Self::Error> {
         self.0.get_size().await
     }

@@ -75,8 +75,11 @@ fn livekit_service_url(
     transports: &[matrix_sdk::ruma::api::client::rtc::RtcTransport],
 ) -> Option<String> {
     use matrix_sdk::ruma::api::client::rtc::RtcTransport;
+    // `livekit` (legacy) and `m.livekit` both carry `livekit_service_url`.
+    #[allow(deprecated)]
     transports.iter().find_map(|t| match t {
-        RtcTransport::LiveKit(info) => Some(info.service_url.clone()),
+        RtcTransport::LiveKit(info) => info.service_url.clone(),
+        RtcTransport::LegacyLiveKit(info) => info.service_url.clone(),
         _ => None,
     })
 }

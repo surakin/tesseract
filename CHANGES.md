@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- chore(sdk): update matrix-rust-sdk to the 2026-11-16 fork head, with SQLite and ruma updates. Linux release build, ctest 3950/3950, cargo 1731/1731
 - feat(ui): the quick switcher shows the spaces a room belongs to under its name. Linux release build, ctest 3950/3950, manual test
 - feat(messages): links to rooms and events show as pills with the room's name and avatar, also in plain-text messages. Linux release build, ctest 3950/3950, manual test
 - feat(messages): an event link pill reads "room › message", so it no longer looks like a room pill. Linux release build, ctest 3950/3950

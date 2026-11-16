@@ -2444,7 +2444,7 @@ mod invitation_staleness_tests {
     use matrix_sdk::ruma::{
         events::call::member::{
             ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
-            CallMemberEventContent, CallScope, Focus, LivekitFocus,
+            CallMemberEventContent, CallScope,
         },
         owned_device_id, MilliSecondsSinceUnixEpoch,
     };
@@ -2457,10 +2457,10 @@ mod invitation_staleness_tests {
             )),
             owned_device_id!("ABCDE"),
             ActiveFocus::Livekit(ActiveLivekitFocus::new()),
-            vec![Focus::Livekit(LivekitFocus::new(
-                "1".to_owned(),
-                "https://livekit.example.org".to_owned(),
-            ))],
+            vec![crate::client::rtc::signaling::legacy_livekit_focus(
+                "1",
+                "https://livekit.example.org",
+            )],
             Some(created_ts),
             Some(Duration::from_secs(60)), // 1 minute TTL
         )

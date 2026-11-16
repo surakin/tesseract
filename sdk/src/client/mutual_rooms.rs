@@ -63,7 +63,7 @@ impl ClientFfi {
     /// `on_mutual_rooms_ready(request_id, json)`. `from` is the previous page's
     /// `next_batch` (empty for the first page). Does not pin a thread.
     pub fn get_mutual_rooms_async(&self, request_id: u64, user_id: &str, from: &str) {
-        use matrix_sdk::ruma::api::client::membership::get_mutual_rooms::{unstable, v1};
+        use matrix_sdk::ruma::api::client::membership::get_mutual_rooms::{msc2666, v1};
         use std::sync::atomic::Ordering;
 
         macro_rules! deliver {
@@ -119,7 +119,7 @@ impl ClientFfi {
                     Err(e) => mutual_rooms_json(&[], None, None, &e.to_string()),
                 }
             } else {
-                let mut req = unstable::Request::new(uid);
+                let mut req = msc2666::Request::new(uid);
                 req.from = from;
                 match client.send(req).await {
                     Ok(r) => {

@@ -217,7 +217,7 @@ pub(crate) fn utd_message_for_cause(
         UtdCause::WithheldForUnverifiedOrInsecureDevice => "\u{1}utd_withheld_insecure",
         UtdCause::WithheldBySender => "\u{1}utd_withheld_sender",
         UtdCause::HistoricalMessageAndDeviceIsUnverified => "\u{1}utd_verify_device",
-        UtdCause::Unknown => "\u{1}utd_unknown",
+        UtdCause::Unknown | UtdCause::Malformed => "\u{1}utd_unknown",
     }
 }
 

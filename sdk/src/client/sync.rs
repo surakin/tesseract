@@ -214,7 +214,7 @@ impl ClientFfi {
         let _rt_guard = self.rt.enter();
         self.register_verification_request_handler(&client, &handler);
 
-        use matrix_sdk::ruma::api::client::sync::sync_events::v5 as http;
+        use matrix_sdk::ruma::api::client::sync::sync_events::msc4186 as http;
         use matrix_sdk::ruma::assign;
         let built = self.rt.block_on(async {
             client

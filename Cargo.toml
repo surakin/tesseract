@@ -12,15 +12,14 @@ resolver = "2"
 [profile.dev.package."*"]
 debug = "line-tables-only"
 
-# Use our fork instead of the upstream crates.io releases (pinned to 50801276e,
-# upstream main's "Upgrade ruma" commit of 2026-10-25, the first after the
-# matrix-sdk-ffi/20261020 tag to use ruma 0.17.2). matrix-sdk-base and
+# Use our fork instead of the upstream crates.io releases (pinned to 1278a0d74,
+# upstream main of 2026-11-16, which uses ruma 0.17.2 at 5133d4ec2). matrix-sdk-base and
 # matrix-sdk-ui come along via path deps within the fork's own workspace, as do
 # the transitive matrix-sdk-crypto/-common/-sqlite/-qrcode/-indexeddb/
 # -store-encryption crates. The fork takes ruma from git, so ruma is patched to
-# the same rev (f99fc5c53, ruma 0.17.2) to keep a single ruma copy.
+# the same rev (5133d4ec2, ruma 0.17.2) to keep a single ruma copy.
 [patch.crates-io]
-matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "50801276e8d2808d0dd51f37921e0354c82eae37" }
-matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "50801276e8d2808d0dd51f37921e0354c82eae37" }
-matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "50801276e8d2808d0dd51f37921e0354c82eae37" }
-ruma            = { git = "https://github.com/ruma/ruma", rev = "f99fc5c53a7ee3057a9203f76a0ad12839d67be6" }
+matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1278a0d747d772b387fd301afbf7ac788c3dfae8" }
+matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1278a0d747d772b387fd301afbf7ac788c3dfae8" }
+matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "1278a0d747d772b387fd301afbf7ac788c3dfae8" }
+ruma            = { git = "https://github.com/ruma/ruma", rev = "5133d4ec2846884b1d80a3769004524c34273c02" }
