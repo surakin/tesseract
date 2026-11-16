@@ -11047,23 +11047,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
     const bool over_active_pill = hovered_row_index() >= 0 &&
                                   hovered_row_geom_.action_pill_bounds.w > 0.0f &&
                                   rect_contains(hovered_row_geom_.action_pill_bounds, pill_probe);
-    if (!over_active_pill)
+    if (!over_active_pill && !hover_locked_)
     {
         tk::ListView::on_pointer_move(local);
-    }
-
-    if (!pill_menu_event_id_.empty())
-    {
-        const int row = hovered_row_index();
-        if (row >= 0 && std::cmp_less(row, messages_.size()) &&
-            messages_[static_cast<std::size_t>(row)].event_id != pill_menu_event_id_)
-        {
-            pill_menu_event_id_.clear();
-            if (on_pill_menu_row_left)
-            {
-                on_pill_menu_row_left();
-            }
-        }
     }
 
     // Map pan: apply drag delta while a pan is active.
@@ -12370,11 +12356,6 @@ bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full, bo
         return false;
     }
     on_actions_menu_requested(req);
-    // The pill's "more" menu belongs to its row; a right-click menu stays.
-    if (!full && hover_locked_)
-    {
-        pill_menu_event_id_ = m.event_id;
-    }
     return true;
 }
 

@@ -584,13 +584,6 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         return is_sticker_saved && is_sticker_saved(mxc, info);
     };
-    ml->on_pill_menu_row_left = [this]
-    {
-        if (overflow_menu_ && overflow_menu_->is_open() && overflow_menu_->on_dismissed)
-        {
-            overflow_menu_->on_dismissed();
-        }
-    };
     ml->on_actions_menu_requested = [this, ml](const MessageListView::MessageMenuRequest& req)
     {
         std::vector<PopupMenu::Item> items;

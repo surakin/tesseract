@@ -10,6 +10,7 @@ Tagged releases summarize all changes since the previous tag.
 - feat(messages): links to rooms and events show as pills with the room's name and avatar, also in plain-text messages. Linux release build, ctest 3950/3950, manual test
 - feat(messages): an event link pill reads "room › message", so it no longer looks like a room pill. Linux release build, ctest 3950/3950
 - fix(ui): the thread panel now has the same mention pills, voice playback and hidden-media handling as the main timeline. Linux release build, ctest 3950/3950
+- fix(ui): the hovered message stays fixed while a popup (reaction picker, message menu, receipts) is open. Linux release build, manual test
 - fix(ui): the left half of a link or pill in the middle of a message is clickable on Qt. Linux release build, manual test
 - feat(timeline): new Advanced setting "Show state events in the timeline" (off by default) shows server ACL, bridge information, service member and room feature changes. Linux build, ctest, cargo
 - feat(ui): the room info panel lists a room's service members (bridge bots and the like) under the regular members. Linux build, ctest, cargo

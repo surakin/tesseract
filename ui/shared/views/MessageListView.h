@@ -1522,19 +1522,13 @@ public:
         thread_button_visible_ = v;
     }
 
-    // When true, on_pointer_leave() is suppressed so the hover-action pill
-    // stays visible while an associated popup is open over this widget.
+    // When true, the hovered message is frozen (pointer move and leave no
+    // longer change it) so the hover-action pill stays on the message an
+    // open non-modal popup belongs to.
     void set_hover_locked(bool v)
     {
         hover_locked_ = v;
-        if (!v)
-        {
-            pill_menu_event_id_.clear();
-        }
     }
-    // Fired when the pointer moves onto a different message than the one whose
-    // pill "more" menu is open; the host closes that menu.
-    std::function<void()> on_pill_menu_row_left;
 
     // Paint a coloured 2px outline around the row whose event_id matches.
     // Pass the empty string to clear the highlight.
@@ -1991,8 +1985,6 @@ private:
     std::string press_more_event_id_;
 
     bool hover_locked_ = false;
-    // Row whose pill "more" menu is open (empty when none).
-    std::string pill_menu_event_id_;
 
     // Thread button press state.
     bool press_thread_btn_ = false;
