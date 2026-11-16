@@ -2316,6 +2316,46 @@ protected:
         return is_pinned_window_;
     }
 
+    // ── Open-window persistence ──────────────────────────────────────────────
+    // Every open main window has an entry in Settings::open_windows (account +
+    // geometry), keyed by this id. 0 = not registered yet.
+    int window_id_ = 0;
+
+    // Id the next spawned window adopts (a saved entry being reopened); 0 makes
+    // hand_account_to_spawned_window_ append a fresh entry.
+    int spawn_entry_id_ = 0;
+
+    // Startup window only: takes the first saved entry (creating one from the
+    // legacy main-window geometry if the list is empty), then reopens a window
+    // for each remaining entry whose account is restored and not already shown.
+    // One-shot: runs when the startup window first shows its account.
+    void restore_open_windows_();
+    bool open_windows_restored_ = false;
+
+    // The account a saved first entry names, if it is restored; picks the
+    // startup window's account ahead of the session index's hint.
+    std::string saved_startup_account_() const;
+
+    // Where this window's size and position are saved. Shells call this from
+    // their resize/move handlers instead of writing the setting directly.
+    void save_window_geometry_(int x, int y, int w, int h, int dpi = 0);
+
+    // The saved geometry for this window (see save_window_geometry_), unclamped.
+    Settings::WindowGeometry saved_window_geometry_() const;
+
+    // Moves/resizes the native window. Called on a spawned window before it is
+    // shown, with geometry already clamped to the connected screens.
+    virtual void set_window_geometry_(const Settings::WindowGeometry& /*g*/)
+    {
+    }
+
+    // Records the account this window now shows in its saved entry.
+    void note_window_account_();
+
+    // Drops this window's saved entry unless the app is quitting or this is the
+    // last open window (closing that one is quitting).
+    void forget_window_();
+
     // Central picker routing. Each platform's on_select lambda delegates here.
     // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.
     void on_account_picker_select_(const std::string& uid);

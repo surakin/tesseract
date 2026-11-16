@@ -398,11 +398,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
     // The login page is created lazily by ShellBase::ensure_login_view_
     // (through create_login_surface_ui_) before each show.
 
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-
     // Apply saved window size (GTK4/Wayland: position is compositor-managed).
     {
-        const auto& saved = tesseract::Settings::instance().main_window_geometry;
+        const auto saved = saved_window_geometry_();
         if (saved.valid && saved.w > 0 && saved.h > 0)
         {
             gtk_window_set_default_size(GTK_WINDOW(window_), saved.w, saved.h);
@@ -420,11 +418,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                      G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
                                 {
                                     auto* self = static_cast<MainWindow*>(data);
-                                    auto& g = tesseract::Settings::instance().main_window_geometry;
-                                    g.w = gtk_widget_get_width(GTK_WIDGET(self->window_));
-                                    g.h = gtk_widget_get_height(GTK_WIDGET(self->window_));
-                                    g.valid = (g.w > 0 && g.h > 0);
-                                    self->save_settings_debounced_();
+                                    self->save_window_geometry_(
+                                        0, 0, gtk_widget_get_width(GTK_WIDGET(self->window_)),
+                                        gtk_widget_get_height(GTK_WIDGET(self->window_)));
                                     self->dismiss_popups_on_resize_();
                                 }),
                      this);
@@ -432,11 +428,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
                      G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
                                 {
                                     auto* self = static_cast<MainWindow*>(data);
-                                    auto& g = tesseract::Settings::instance().main_window_geometry;
-                                    g.w = gtk_widget_get_width(GTK_WIDGET(self->window_));
-                                    g.h = gtk_widget_get_height(GTK_WIDGET(self->window_));
-                                    g.valid = (g.w > 0 && g.h > 0);
-                                    self->save_settings_debounced_();
+                                    self->save_window_geometry_(
+                                        0, 0, gtk_widget_get_width(GTK_WIDGET(self->window_)),
+                                        gtk_widget_get_height(GTK_WIDGET(self->window_)));
                                     self->dismiss_popups_on_resize_();
                                 }),
                      this);
@@ -3858,6 +3852,12 @@ void MainWindow::start_platform_services_ui_()
 }
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
+
+void MainWindow::set_window_geometry_(const tesseract::Settings::WindowGeometry& g)
+{
+    // Position is compositor-managed under GTK4; only the size applies.
+    gtk_window_set_default_size(GTK_WINDOW(window_), g.w, g.h);
+}
 
 std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
 {

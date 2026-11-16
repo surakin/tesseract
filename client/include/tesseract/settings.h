@@ -375,8 +375,19 @@ public:
         WindowGeometry geometry;
     };
 
+    // One open main window: the account it shows and where it sits. The list
+    // holds every open main window in order; the first is the startup window.
+    // Reopened on the next launch.
+    struct WindowEntry
+    {
+        int id = 0; // stable key for the window, unique within the list
+        std::string user_id;
+        WindowGeometry geometry;
+    };
+
     WindowGeometry main_window_geometry;
     std::vector<PopoutEntry> popout_windows;
+    std::vector<WindowEntry> open_windows;
 
     // ── Encryption reminder ──────────────────────────────────────────
     // user_id → unix seconds until which the "set up recovery / unlock this

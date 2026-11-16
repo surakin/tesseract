@@ -136,6 +136,18 @@ public:
     // every later caller gets false and skips tray creation. Multi-window: keeps
     // one tray icon regardless of how many windows are open.
     bool claim_tray_owner(ShellBase* w);
+
+    // Set by a shell's quit path before the app tears its windows down. A pinned
+    // window destroyed while this is set was not closed by the user, so it stays
+    // in Settings::open_windows and reopens on the next launch.
+    void set_app_quitting()
+    {
+        app_quitting_ = true;
+    }
+    bool app_quitting() const
+    {
+        return app_quitting_;
+    }
     void release_tray_owner(ShellBase* w);
     bool is_tray_owner(ShellBase* w) const;
     ShellBase* tray_owner() const;
@@ -188,6 +200,7 @@ private:
     std::vector<ShellBase*> all_windows_;
     std::unordered_map<std::string, ShellBase*> dedicated_windows_;
     ShellBase* primary_window_ = nullptr;
+    bool app_quitting_ = false;
     ShellBase* tray_owner_ = nullptr;
     ShellBase* search_provider_owner_ = nullptr;
     ShellBase* mpris_owner_ = nullptr;

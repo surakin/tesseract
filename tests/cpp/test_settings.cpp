@@ -1045,3 +1045,28 @@ TEST_CASE("Settings timezone flags round-trip and default to false", "[settings]
 
     fs::remove_all(dir);
 }
+
+TEST_CASE("Settings open_windows round-trip")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("open_windows");
+
+    auto& s = tesseract::Settings::instance();
+    s.open_windows = {{1, "@a:x", {10, 20, 800, 600, 96, true}}, {2, "@b:x", {}}};
+    s.save_to_disk(dir);
+    s.open_windows.clear();
+    s.load_from_disk(dir);
+
+    REQUIRE(s.open_windows.size() == 2);
+    CHECK(s.open_windows[0].id == 1);
+    CHECK(s.open_windows[0].user_id == "@a:x");
+    CHECK(s.open_windows[0].geometry.x == 10);
+    CHECK(s.open_windows[0].geometry.w == 800);
+    CHECK(s.open_windows[0].geometry.dpi == 96);
+    CHECK(s.open_windows[0].geometry.valid);
+    CHECK(s.open_windows[1].user_id == "@b:x");
+    CHECK_FALSE(s.open_windows[1].geometry.valid);
+
+    s.open_windows.clear();
+    fs::remove_all(dir);
+}

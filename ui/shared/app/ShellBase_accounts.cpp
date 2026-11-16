@@ -206,6 +206,10 @@ ShellBase::RestoreResult ShellBase::finish_restore_accounts_ui_(RestoreIOResult&
     }
 
     result.any_accounts = !account_manager_.accounts().empty();
+    if (const auto saved = saved_startup_account_(); !saved.empty())
+    {
+        result.active_uid = saved; // the startup window reopens on its last account
+    }
     if (result.active_uid.empty() && result.any_accounts)
     {
         result.active_uid = account_manager_.accounts().front()->user_id;
@@ -497,6 +501,7 @@ void ShellBase::finish_login_ui_(const std::string& uid)
     {
         start_platform_services_ui_();
     }
+    restore_open_windows_();
 }
 
 bool ShellBase::switch_and_show_main_(const std::string& uid)
@@ -1481,6 +1486,7 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     auto index = tesseract::SessionStore::load_index();
     index.active_user_id = my_user_id_;
     tesseract::SessionStore::save_index(index);
+    note_window_account_();
 
     // Multi-window: this window now owns the incoming account — register it so the
     // account picker raises this window instead of switching in place elsewhere.
@@ -1551,6 +1557,183 @@ void ShellBase::hand_account_to_spawned_window_(
     win->seed_account_caches_from_(this, session->user_id);
     win->mark_pinned_window_();
     account_manager_.set_dedicated(session->user_id, win);
+
+    // Remember the window, and reopen it where it was last time if we know.
+    win->window_id_ = spawn_entry_id_;
+    spawn_entry_id_ = 0;
+    auto& wins = Settings::instance().open_windows;
+    auto it = std::find_if(wins.begin(), wins.end(),
+                           [&](const Settings::WindowEntry& e)
+                           {
+                               return e.id == win->window_id_ && win->window_id_ != 0;
+                           });
+    if (it == wins.end())
+    {
+        int next = 1;
+        for (const auto& e : wins)
+        {
+            next = std::max(next, e.id + 1);
+        }
+        win->window_id_ = next;
+        wins.push_back({next, session->user_id, {}});
+        save_settings_debounced_();
+    }
+    else
+    {
+        it->user_id = session->user_id;
+        if (it->geometry.valid)
+        {
+            const auto g =
+                clamp_to_screens_(it->geometry, 1100, 768, win->get_screen_work_areas_());
+            if (g.valid)
+            {
+                win->set_window_geometry_(g);
+            }
+        }
+    }
+}
+
+namespace
+{
+Settings::WindowEntry* find_window_entry(int id)
+{
+    for (auto& e : Settings::instance().open_windows)
+    {
+        if (id != 0 && e.id == id)
+        {
+            return &e;
+        }
+    }
+    return nullptr;
+}
+} // namespace
+
+void ShellBase::save_window_geometry_(int x, int y, int w, int h, int dpi)
+{
+    Settings::WindowGeometry* g = &Settings::instance().main_window_geometry;
+    if (window_id_ != 0)
+    {
+        auto* e = find_window_entry(window_id_);
+        if (!e)
+        {
+            return; // closed by the user already; a late resize must not resurrect it
+        }
+        g = &e->geometry;
+    }
+    else if (auto& wins = Settings::instance().open_windows; !wins.empty() && !is_pinned_window_)
+    {
+        g = &wins.front().geometry; // startup window, before it registered
+    }
+    g->x = x;
+    g->y = y;
+    g->w = w;
+    g->h = h;
+    if (dpi > 0)
+    {
+        g->dpi = dpi;
+    }
+    g->valid = (w > 0 && h > 0);
+    save_settings_debounced_();
+}
+
+Settings::WindowGeometry ShellBase::saved_window_geometry_() const
+{
+    if (const auto* e = find_window_entry(window_id_))
+    {
+        return e->geometry;
+    }
+    const auto& wins = Settings::instance().open_windows;
+    if (window_id_ == 0 && !is_pinned_window_ && !wins.empty())
+    {
+        return wins.front().geometry; // startup window
+    }
+    return Settings::instance().main_window_geometry;
+}
+
+void ShellBase::note_window_account_()
+{
+    auto* e = find_window_entry(window_id_);
+    if (e && active_account_ && e->user_id != active_account_->user_id)
+    {
+        e->user_id = active_account_->user_id;
+        save_settings_debounced_();
+    }
+}
+
+void ShellBase::forget_window_()
+{
+    if (window_id_ == 0 || account_manager_.app_quitting() || account_manager_.window_count() <= 1)
+    {
+        return;
+    }
+    auto& wins = Settings::instance().open_windows;
+    const auto before = wins.size();
+    wins.erase(std::remove_if(wins.begin(), wins.end(),
+                              [&](const Settings::WindowEntry& e)
+                              {
+                                  return e.id == window_id_;
+                              }),
+               wins.end());
+    if (wins.size() != before)
+    {
+        save_settings_debounced_();
+    }
+}
+
+std::string ShellBase::saved_startup_account_() const
+{
+    const auto& wins = Settings::instance().open_windows;
+    if (!wins.empty() && account_manager_.find(wins.front().user_id))
+    {
+        return wins.front().user_id;
+    }
+    return {};
+}
+
+void ShellBase::restore_open_windows_()
+{
+    if (open_windows_restored_ || is_pinned_window_)
+    {
+        return;
+    }
+    open_windows_restored_ = true;
+    auto& wins = Settings::instance().open_windows;
+    if (wins.empty())
+    {
+        wins.push_back({1, {}, Settings::instance().main_window_geometry});
+    }
+    window_id_ = wins.front().id;
+    wins.front().user_id = active_account_ ? active_account_->user_id : std::string{};
+
+    // spawn_main_window_ -> hand_account_to_spawned_window_ edits the list.
+    const auto saved = wins;
+    std::vector<int> drop;
+    std::vector<std::string> shown{wins.front().user_id};
+    for (std::size_t i = 1; i < saved.size(); ++i)
+    {
+        const auto& e = saved[i];
+        auto session = account_manager_.find(e.user_id);
+        if (!session || std::find(shown.begin(), shown.end(), e.user_id) != shown.end())
+        {
+            drop.push_back(e.id); // logged out since, or its account is already open
+            continue;
+        }
+        shown.push_back(e.user_id);
+        spawn_entry_id_ = e.id;
+        spawn_main_window_(session);
+        spawn_entry_id_ = 0;
+    }
+    if (!drop.empty())
+    {
+        wins.erase(std::remove_if(wins.begin(), wins.end(),
+                                  [&](const Settings::WindowEntry& e)
+                                  {
+                                      return std::find(drop.begin(), drop.end(), e.id) !=
+                                             drop.end();
+                                  }),
+                   wins.end());
+    }
+    save_settings_debounced_();
 }
 
 void ShellBase::claim_dedicated_for_active_()
@@ -1696,6 +1879,7 @@ void ShellBase::on_window_closing_()
     // when nothing changed since the last debounced save, and otherwise
     // waits (bounded) for the PUT to actually land before returning.
     const bool is_last_window = account_manager_.window_count() <= 1;
+    forget_window_();
     persist_room_layout_pref_(/*blocking=*/is_last_window);
     window_closing_handled_ = true;
     hand_over_accounts_();

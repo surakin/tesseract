@@ -1134,14 +1134,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             self->on_size(LOWORD(lParam), HIWORD(lParam));
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
-            auto& g = tesseract::Settings::instance().main_window_geometry;
-            g.x = wrc.left;
-            g.y = wrc.top;
-            g.w = wrc.right - wrc.left;
-            g.h = wrc.bottom - wrc.top;
-            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
-            g.valid = true;
-            self->save_settings_debounced_();
+            self->save_window_geometry_(wrc.left, wrc.top, wrc.right - wrc.left,
+                                        wrc.bottom - wrc.top,
+                                        static_cast<int>(GetDpiForWindow(hwnd)));
             self->start_anim_tick_(); // restart after restore from minimized
         }
         self->update_video_playback_suspension_();
@@ -1161,14 +1156,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         {
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
-            auto& g = tesseract::Settings::instance().main_window_geometry;
-            g.x = wrc.left;
-            g.y = wrc.top;
-            g.w = wrc.right - wrc.left;
-            g.h = wrc.bottom - wrc.top;
-            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
-            g.valid = true;
-            self->save_settings_debounced_();
+            self->save_window_geometry_(wrc.left, wrc.top, wrc.right - wrc.left,
+                                        wrc.bottom - wrc.top,
+                                        static_cast<int>(GetDpiForWindow(hwnd)));
         }
         return 0;
     }
@@ -1616,10 +1606,10 @@ bool MainWindow::create(int nCmdShow)
     {
         return false;
     }
-    // WM_CREATE fires synchronously inside CreateWindowExW, which calls
-    // on_create() → load_from_disk(), so saved geometry is available here.
+    // Settings were loaded once by prepare_launch(), so saved geometry is
+    // available here.
     {
-        auto g = tesseract::Settings::instance().main_window_geometry;
+        auto g = saved_window_geometry_();
         // If the save DPI is known, rescale w/h to the target monitor's DPI
         // before clamping so the window opens at the right logical size even
         // when moved to a different-DPI screen or a Remote Desktop session.
@@ -1717,8 +1707,6 @@ void MainWindow::on_create(HWND hwnd)
 
         // 30 s periodic tick — paired with WM_TIMER below.
         SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);
-
-        tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
         create_main_room_pane_();
 
@@ -3917,8 +3905,7 @@ void MainWindow::start_platform_services_ui_()
             },
             [this]
             {
-                quitting_ = true;
-                DestroyWindow(hwnd_);
+                quit_app_();
             });
         if (tray_ && tray_->is_available())
         {
@@ -3955,8 +3942,7 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
         },
         [this]
         {
-            quitting_ = true;
-            DestroyWindow(hwnd_);
+            quit_app_();
         },
         verify_session_menu_callback_());
 
@@ -4272,8 +4258,11 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
 
 void MainWindow::quit_app_()
 {
-    // The "Quit" menu item only destroys its own window; the app exits when
-    // the last one goes (WM_DESTROY). Restarting must close them all.
+    // Windows destroyed from here on were not closed by the user: keep their
+    // saved-window entries for the next launch.
+    account_manager_.set_app_quitting();
+    // The app exits when the last window goes (WM_DESTROY), so quitting and
+    // restarting must close them all.
     // Close the others first, re-reading the registry each time (WM_DESTROY
     // unregisters a window, and closing one may tear down others), and this
     // window last, since nothing may touch `this` after it is destroyed.

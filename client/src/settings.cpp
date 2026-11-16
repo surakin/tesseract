@@ -340,6 +340,36 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
             }
         }
 
+        open_windows.clear();
+        if (j.contains("open_windows") && j["open_windows"].is_array())
+        {
+            for (const auto& pw : j["open_windows"])
+            {
+                if (!pw.is_object())
+                {
+                    continue;
+                }
+                WindowEntry e;
+                e.id = pw.value("id", 0);
+                e.user_id = pw.value("user_id", std::string{});
+                e.geometry.x = pw.value("x", 0);
+                e.geometry.y = pw.value("y", 0);
+                e.geometry.w = pw.value("w", 0);
+                e.geometry.h = pw.value("h", 0);
+                e.geometry.dpi = pw.value("dpi", 0);
+                e.geometry.valid = (e.geometry.w > 0 && e.geometry.h > 0);
+                const bool dup = std::any_of(open_windows.begin(), open_windows.end(),
+                                             [&](const WindowEntry& o)
+                                             {
+                                                 return o.id == e.id;
+                                             });
+                if (e.id > 0 && !dup)
+                {
+                    open_windows.push_back(std::move(e));
+                }
+            }
+        }
+
         auto lang = j.value("language", std::string{});
         if (!lang.empty())
         {
@@ -632,6 +662,21 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
             pws.push_back(std::move(pw));
         }
         j["popout_windows"] = std::move(pws);
+    }
+
+    {
+        nlohmann::json pws = nlohmann::json::array();
+        for (const auto& e : open_windows)
+        {
+            pws.push_back({{"id", e.id},
+                           {"user_id", e.user_id},
+                           {"x", e.geometry.x},
+                           {"y", e.geometry.y},
+                           {"w", e.geometry.w},
+                           {"h", e.geometry.h},
+                           {"dpi", e.geometry.dpi}});
+        }
+        j["open_windows"] = std::move(pws);
     }
 
     if (!encryption_reminder_snoozed_until.empty())

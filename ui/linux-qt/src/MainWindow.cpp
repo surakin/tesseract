@@ -241,12 +241,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             });
     presence_tick_timer_->start(30000);
 
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    // Windows destroyed by app exit or session end were not closed by the user:
+    // their saved-window entries must survive for the next launch.
+    connect(qApp, &QCoreApplication::aboutToQuit, this,
+            [this]
+            {
+                account_manager_.set_app_quitting();
+            });
+    if (auto* gui = qGuiApp)
+    {
+        connect(gui, &QGuiApplication::commitDataRequest, this,
+                [this]
+                {
+                    account_manager_.set_app_quitting();
+                });
+    }
 
     // Apply saved window geometry, or use the platform default.
     {
-        const auto geom = clamp_to_screens_(tesseract::Settings::instance().main_window_geometry,
-                                            1100, 768, get_screen_work_areas_());
+        const auto geom =
+            clamp_to_screens_(saved_window_geometry_(), 1100, 768, get_screen_work_areas_());
         if (geom.valid)
         {
             setGeometry(geom.x, geom.y, geom.w, geom.h);
@@ -911,14 +925,8 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
 void MainWindow::resizeEvent(QResizeEvent* ev)
 {
     QMainWindow::resizeEvent(ev);
-    auto& g = tesseract::Settings::instance().main_window_geometry;
     const QRect r = geometry();
-    g.x = r.x();
-    g.y = r.y();
-    g.w = r.width();
-    g.h = r.height();
-    g.valid = (g.w > 0 && g.h > 0);
-    save_settings_debounced_();
+    save_window_geometry_(r.x(), r.y(), r.width(), r.height());
 
     // A popup's screen position is captured once when it opens and never
     // recomputed — leaving one open across a resize would strand it away
@@ -938,14 +946,13 @@ void MainWindow::resizeEvent(QResizeEvent* ev)
 void MainWindow::moveEvent(QMoveEvent* ev)
 {
     QMainWindow::moveEvent(ev);
-    auto& g = tesseract::Settings::instance().main_window_geometry;
     const QRect r = geometry();
-    g.x = r.x();
-    g.y = r.y();
-    g.w = r.width();
-    g.h = r.height();
-    g.valid = (g.w > 0 && g.h > 0);
-    save_settings_debounced_();
+    save_window_geometry_(r.x(), r.y(), r.width(), r.height());
+}
+
+void MainWindow::set_window_geometry_(const tesseract::Settings::WindowGeometry& g)
+{
+    setGeometry(g.x, g.y, g.w, g.h);
 }
 
 std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
@@ -1285,6 +1292,7 @@ void MainWindow::do_quit_()
     // Explicit quit (tray menu or userinfo "Quit"): bypass the hide-to-tray
     // logic in closeEvent so the app actually exits instead of just hiding.
     explicitly_quitting_ = true;
+    account_manager_.set_app_quitting();
     qApp->quit();
 }
 

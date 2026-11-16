@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/ShellBase.h"
+#include "settings_guard.h"
 #include "shell_test_double.h"
 
 #include <tesseract/account_session.h>
@@ -84,8 +85,10 @@ struct AccountsShell : tesseract::test::TestShellBase
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession> s) override
     {
         spawned.push_back(s->user_id);
+        spawned_ids.push_back(spawn_entry_id_);
     }
     std::vector<std::string> spawned;
+    std::vector<int> spawned_ids;
 
     bool is_ctrl_held_() const override
     {
@@ -107,7 +110,14 @@ struct AccountsShell : tesseract::test::TestShellBase
     using ShellBase::mut_pool_;
     using ShellBase::is_pinned_window_;
     using ShellBase::is_secondary_window_startup_;
+    using ShellBase::forget_window_;
     using ShellBase::my_user_id_;
+    using ShellBase::restore_open_windows_;
+    using ShellBase::saved_startup_account_;
+    using ShellBase::spawn_entry_id_;
+    using ShellBase::window_id_;
+    using ShellBase::save_window_geometry_;
+    using ShellBase::saved_window_geometry_;
     using ShellBase::on_account_picker_select_;
     using ShellBase::release_dedicated_for_active_;
     using ShellBase::restart_account_sync_;
@@ -407,4 +417,108 @@ TEST_CASE("dedicated-window claim never steals another live window's account", "
     mine.account_manager_.set_dedicated("@a:x", &mine);
     mine.release_dedicated_for_active_();
     CHECK(mine.account_manager_.dedicated_window("@a:x") == nullptr);
+}
+
+TEST_CASE("startup takes the first saved window and reopens the others",
+          "[shell][accounts][windows]")
+{
+    tesseract::test::SettingsGuard guard;
+    auto& wins = tesseract::Settings::instance().open_windows;
+    wins = {{1, "@a:x", {1, 2, 300, 400, 0, true}},
+            {2, "@b:x", {10, 20, 800, 600, 0, true}},
+            {3, "@gone:x", {}},
+            {4, "@a:x", {}}}; // @a is already open in the startup window
+
+    AccountsShell s;
+    s.account_manager_.add_account(acct("@a:x", false));
+    s.account_manager_.add_account(acct("@b:x", false));
+    CHECK(s.saved_startup_account_() == "@a:x");
+    s.set_initial_account(s.account_manager_.find("@a:x"));
+
+    s.restore_open_windows_();
+    CHECK(s.window_id_ == 1);
+    CHECK(s.spawned == std::vector<std::string>{"@b:x"});
+    CHECK(s.spawned_ids == std::vector<int>{2});
+    REQUIRE(wins.size() == 2);
+    CHECK(wins[0].id == 1);
+    CHECK(wins[1].id == 2);
+
+    // One-shot.
+    s.restore_open_windows_();
+    CHECK(s.spawned.size() == 1);
+}
+
+TEST_CASE("startup with no saved windows adopts the legacy main geometry",
+          "[shell][accounts][windows]")
+{
+    tesseract::test::SettingsGuard guard;
+    auto& cfg = tesseract::Settings::instance();
+    cfg.open_windows.clear();
+    cfg.main_window_geometry = {5, 6, 700, 500, 0, true};
+
+    AccountsShell s;
+    s.account_manager_.add_account(acct("@a:x", false));
+    s.set_initial_account(s.account_manager_.find("@a:x"));
+    CHECK(s.saved_startup_account_().empty());
+    s.restore_open_windows_();
+    REQUIRE(cfg.open_windows.size() == 1);
+    CHECK(cfg.open_windows[0].user_id == "@a:x");
+    CHECK(cfg.open_windows[0].geometry.w == 700);
+}
+
+TEST_CASE("each window saves its own geometry", "[shell][accounts][windows]")
+{
+    tesseract::test::SettingsGuard guard;
+    auto& cfg = tesseract::Settings::instance();
+    cfg.open_windows = {{1, "@a:x", {}}, {2, "@b:x", {}}};
+
+    AccountsShell first;
+    first.window_id_ = 1;
+    AccountsShell second;
+    second.window_id_ = 2;
+    first.save_window_geometry_(1, 2, 300, 400);
+    second.save_window_geometry_(5, 6, 700, 500, 96);
+    CHECK(cfg.open_windows[0].geometry.w == 300);
+    CHECK(cfg.open_windows[1].geometry.w == 700);
+    CHECK(cfg.open_windows[1].geometry.dpi == 96);
+    CHECK(second.saved_window_geometry_().x == 5);
+}
+
+TEST_CASE("closing a window forgets it unless the app quits or it is the last",
+          "[shell][accounts][windows]")
+{
+    tesseract::test::SettingsGuard guard;
+    auto& cfg = tesseract::Settings::instance();
+    cfg.open_windows = {{1, "@a:x", {}}, {2, "@b:x", {}}};
+
+    AccountsShell first;
+    AccountsShell second(first.account_manager_);
+    first.account_manager_.register_window(&first);
+    first.account_manager_.register_window(&second);
+    second.window_id_ = 2;
+
+    // Last open window: closing it is quitting, so the list stays.
+    first.window_id_ = 1;
+    first.account_manager_.unregister_window(&first);
+    first.forget_window_();
+    CHECK(cfg.open_windows.size() == 2);
+
+    // A window closed while another stays open is forgotten, and a late
+    // resize does not bring it back.
+    first.account_manager_.register_window(&first);
+    second.forget_window_();
+    REQUIRE(cfg.open_windows.size() == 1);
+    CHECK(cfg.open_windows[0].id == 1);
+    second.save_window_geometry_(5, 6, 700, 500);
+    CHECK(cfg.open_windows.size() == 1);
+
+    // Quitting keeps everything.
+    cfg.open_windows.push_back({3, "@c:x", {}});
+    second.window_id_ = 3;
+    second.account_manager_.set_app_quitting();
+    second.forget_window_();
+    CHECK(cfg.open_windows.size() == 2);
+
+    first.account_manager_.unregister_window(&first);
+    first.account_manager_.unregister_window(&second);
 }
