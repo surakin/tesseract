@@ -823,6 +823,24 @@ public:
         mention_name_provider_ = std::move(p);
     }
 
+    // Resolves a linked room's name by its matrix.to/matrix: URL, for the label of a received room or
+    // event mention pill. A miss (empty string) shows the id/alias. May
+    // trigger an async room-summary fetch; the view repaints on arrival.
+    using MentionRoomNameProvider = std::function<std::string(const std::string& link_url)>;
+    void set_mention_room_name_provider(MentionRoomNameProvider p)
+    {
+        mention_room_name_provider_ = std::move(p);
+    }
+
+    // Resolves a linked room's avatar for a room or event mention pill: the
+    // joined room's own avatar, else the one from its room summary. Cache
+    // peek, nullptr on a miss (the owner kicks off the fetch).
+    using MentionRoomAvatarProvider = std::function<const tk::Image*(const std::string& link_url)>;
+    void set_mention_room_avatar_provider(MentionRoomAvatarProvider p)
+    {
+        mention_room_avatar_provider_ = std::move(p);
+    }
+
     // Resolves the CURRENT room's own avatar image, for drawing inside an
     // @room mention pill (see paint_span_images's PillKind::Room branch).
     // No argument — always means "whichever room this view is showing
@@ -1823,6 +1841,8 @@ private:
     bool open_link_(const std::string& url) const;
     MentionAvatarProvider mention_avatar_provider_;
     MentionNameProvider mention_name_provider_;
+    MentionRoomNameProvider mention_room_name_provider_;
+    MentionRoomAvatarProvider mention_room_avatar_provider_;
     RoomAvatarProvider room_avatar_provider_;
     std::string room_language_;
     bool predecessor_available_ = false;

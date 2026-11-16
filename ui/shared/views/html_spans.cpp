@@ -695,7 +695,40 @@ std::string strip_leading_at(std::string s)
 // Bare http(s):// and matrix: URLs in HTML text nodes (senders such as Element
 // leave them unwrapped in formatted_body). Only plain text runs are split;
 // existing links, code, pills and images are left alone.
-static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spans)
+std::vector<tk::TextSpan> pillify_matrix_links(std::vector<tk::TextSpan> spans, bool dark)
+{
+    for (auto& sp : spans)
+    {
+        if (sp.url.empty() || sp.is_mention || sp.is_image || sp.code || sp.text.empty())
+        {
+            continue;
+        }
+        const tk::PillKind kind = pill_kind_for_link(sp.url);
+        if (kind == tk::PillKind::Generic)
+        {
+            continue;
+        }
+        // Same shape as an <a> mention: an is_image leaf whose label (the URL
+        // text; MessageListView relabels it with the real target's name).
+        sp.is_mention = true;
+        sp.pill_kind = kind;
+        sp.is_image = true;
+        sp.image_alt = strip_leading_at(sp.text);
+        sp.text.clear();
+        sp.has_color = true;
+        sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF} : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+        sp.has_background = true;
+        sp.background =
+            dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF} : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+        if (is_room_mention_sentinel_href(sp.url))
+        {
+            sp.url.clear();
+        }
+    }
+    return spans;
+}
+
+static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spans, bool dark)
 {
     std::vector<tk::TextSpan> out;
     out.reserve(spans.size());
@@ -734,7 +767,7 @@ static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spa
             piece(pos, sp.text.size(), {});
         }
     }
-    return out;
+    return pillify_matrix_links(std::move(out), dark);
 }
 
 // Split plain (non-link, non-code) spans on a word-bounded literal "@room"
@@ -1213,7 +1246,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         }
     }
 
-    return split_room_mentions(linkify_bare_urls(std::move(spans)), dark);
+    return split_room_mentions(linkify_bare_urls(std::move(spans), dark), dark);
 }
 
 // ── URL extraction helpers ────────────────────────────────────────────────
@@ -1596,7 +1629,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         trim_leading_blank_spans(cur.spans);
         if (!cur.spans.empty())
         {
-            cur.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
+            cur.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans), dark), dark);
             blocks.push_back(std::move(cur));
         }
         else if (keep_empty_item)
@@ -1632,7 +1665,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         TableCell cell;
         if (!cur.spans.empty())
         {
-            cell.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
+            cell.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans), dark), dark);
         }
         cur_row.push_back(std::move(cell));
         cur.spans.clear();

@@ -907,16 +907,14 @@ public:
 
     std::string link_at(tk::Point local) const override
     {
-        int pos = doc_->documentLayout()->hitTest(
-            QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)), Qt::FuzzyHit);
-        if (pos < 0)
-        {
-            return {};
-        }
-        QTextCursor cur(doc_.get());
-        cur.setPosition(pos);
-        QTextCharFormat fmt = cur.charFormat();
-        return fmt.isAnchor() ? fmt.anchorHref().toStdString() : "";
+        // anchorAt() hit-tests exactly and reads the anchor of the character
+        // *under* the point. A FuzzyHit cursor position is the nearest
+        // boundary between characters instead, whose charFormat() is the
+        // character before it: the left half of a link's first character
+        // (a whole pill, when it follows other text) would resolve to no link.
+        return doc_->documentLayout()
+            ->anchorAt(QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)))
+            .toStdString();
     }
 
     int char_index_at(tk::Point local) const override
@@ -1414,13 +1412,7 @@ public:
             tk::PillSpec pspec;
             pspec.text = sp.image_alt;
             pspec.kind = sp.pill_kind;
-            // A Room-kind pill with no url is the @room self-mention
-            // (html_spans.cpp clears url for both its plain-text and link
-            // spellings) and shows the current room's own avatar, same
-            // slot-reservation treatment as a User pill; a Room-kind pill
-            // WITH a url is a permalink to some other room and has no avatar.
-            pspec.reserve_leading_visual = (sp.pill_kind == PillKind::User) ||
-                                           (sp.pill_kind == PillKind::Room && sp.url.empty());
+            pspec.reserve_leading_visual = pill_reserves_leading_visual(sp.pill_kind);
             pspec.text_role = s.role;
             return static_cast<qreal>(
                 tk::measure_pill(*this, pspec, role_ascent, role_descent).width);

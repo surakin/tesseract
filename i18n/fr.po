@@ -7233,3 +7233,8 @@ msgstr "Afficher les événements d'état dans la chronologie"
 #, c++-format
 msgid "Service members ({0})"
 msgstr "Membres de service ({0})"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} › message"
+msgstr "{0} › message"

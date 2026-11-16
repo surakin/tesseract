@@ -509,25 +509,44 @@ static std::string mention_user_id_from_url(const std::string& url)
     return link.kind == Kind::User ? link.primary : std::string{};
 }
 
-// Relabel user mention pills with the member's real display name (else the
-// Matrix id). A pill's anchor text is whatever the sender wrote, so
-// "[Alice](https://matrix.to/#/@bob:x)" would otherwise read as Alice.
-static void relabel_user_pills(std::vector<tk::TextSpan>& spans,
-                               const std::function<std::string(const std::string&)>& name_of)
+// Relabel mention pills with the real target's name: a user's display name
+// (else the Matrix id), a room's name (else its id/alias). Event pills take
+// the name of the room they point into. A pill's anchor text is whatever the
+// sender wrote, so "[Alice](https://matrix.to/#/@bob:x)" would otherwise read
+// as Alice. The @room self-mention has no url and keeps its own label.
+static void relabel_mention_pills(std::vector<tk::TextSpan>& spans,
+                                  const std::function<std::string(const std::string&)>& user_name,
+                                  const MessageListView::MentionRoomNameProvider& room_name)
 {
+    using Kind = tesseract::Client::MatrixLink::Kind;
     for (auto& sp : spans)
     {
-        if (!sp.is_mention || sp.pill_kind != tk::PillKind::User)
+        if (!sp.is_mention || sp.url.empty() || sp.pill_kind == tk::PillKind::Generic)
         {
             continue;
         }
-        const std::string uid = mention_user_id_from_url(sp.url);
-        if (uid.empty())
+        const auto link = tesseract::Client::parse_matrix_link(sp.url);
+        if (link.primary.empty())
         {
             continue;
         }
-        std::string name = name_of ? name_of(uid) : std::string{};
-        sp.image_alt = name.empty() ? uid : std::move(name);
+        std::string name;
+        if (link.kind == Kind::User)
+        {
+            name = user_name ? user_name(link.primary) : std::string{};
+        }
+        else
+        {
+            name = room_name ? room_name(sp.url) : std::string{};
+        }
+        if (name.empty())
+        {
+            name = link.primary;
+        }
+        // An event pill reads "<room> › message" so it can't pass for a room.
+        sp.image_alt = link.kind == Kind::Event
+                           ? tk::trf(tk::tr("{0} › message"), {std::move(name)})
+                           : std::move(name);
     }
 }
 
@@ -6702,7 +6721,8 @@ private:
             if (!unresolved && !m.in_reply_to_formatted_body.empty())
             {
                 spans = html_to_spans(m.in_reply_to_formatted_body, dark);
-                relabel_user_pills(spans, owner_.mention_name_provider_);
+                relabel_mention_pills(spans, owner_.mention_name_provider_,
+                                      owner_.mention_room_name_provider_);
                 if (ctx.theme.high_contrast)
                 {
                     flatten_span_colours(spans);
@@ -6844,7 +6864,8 @@ private:
     std::vector<tk::TextSpan> prepare_spans(const MessageRowData& m, bool revealed, bool dark) const
     {
         auto spans = html_to_spans(m.formatted_body, dark);
-        relabel_user_pills(spans, owner_.mention_name_provider_);
+        relabel_mention_pills(spans, owner_.mention_name_provider_,
+                              owner_.mention_room_name_provider_);
         if (hc_)
         {
             flatten_span_colours(spans);
@@ -6919,7 +6940,8 @@ private:
         }
         auto prep_spans = [&](std::vector<tk::TextSpan>& spans)
         {
-            relabel_user_pills(spans, owner_.mention_name_provider_);
+            relabel_mention_pills(spans, owner_.mention_name_provider_,
+                                  owner_.mention_room_name_provider_);
             if (!revealed)
             {
                 for (auto& sp : spans)
@@ -7263,6 +7285,9 @@ private:
                         // still needs to pill-ify — see split_room_mentions's
                         // doc comment.
                         link_spans = split_room_mentions(std::move(link_spans), dark);
+                        link_spans = pillify_matrix_links(std::move(link_spans), dark);
+                        relabel_mention_pills(link_spans, owner_.mention_name_provider_,
+                                              owner_.mention_room_name_provider_);
                         substitute_image_placeholders(link_spans);
                         apply_emoji_segmentation(link_spans);
                         slot.layout = f.build_rich_text(link_spans, body_style(w, eo));
@@ -7539,6 +7564,15 @@ private:
                             avatar = owner_.mention_avatar_provider_(uid);
                         }
                     }
+                    else if (sp.pill_kind != tk::PillKind::User && !sp.url.empty())
+                    {
+                        // A permalink to a room (or an event in one): that
+                        // room's avatar, joined or not.
+                        if (owner_.mention_room_avatar_provider_)
+                        {
+                            avatar = owner_.mention_room_avatar_provider_(sp.url);
+                        }
+                    }
                     else if (sp.pill_kind == tk::PillKind::Room && sp.url.empty() &&
                              owner_.room_avatar_provider_)
                     {
@@ -7565,9 +7599,10 @@ private:
                     // Reserving the same slot regardless of resolution state
                     // keeps the bitmap's width constant; an unresolved (or
                     // absent) avatar gets an initials disc in that slot.
-                    spec.reserve_leading_visual =
-                        (sp.pill_kind == tk::PillKind::User) ||
-                        (sp.pill_kind == tk::PillKind::Room && sp.url.empty());
+                    spec.reserve_leading_visual = tk::pill_reserves_leading_visual(sp.pill_kind);
+                    // A permalink to a room shows initials of its name while
+                    // the avatar loads; only the @room self-mention gets "@".
+                    spec.initials_from_text = sp.pill_kind != tk::PillKind::User && !sp.url.empty();
                     // The theme's live accent colors, not sp.background/
                     // sp.color (html_spans.cpp's hardcoded dark/light blue,
                     // kept there only for has_background/has_color gating

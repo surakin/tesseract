@@ -7818,3 +7818,8 @@ msgstr "Показувати події стану на часовій шкал�
 #, c++-format
 msgid "Service members ({0})"
 msgstr "Службові учасники ({0})"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} › message"
+msgstr "{0} › повідомлення"

@@ -84,12 +84,28 @@ public:
     void set_media_failed_provider(std::function<bool(const std::string&)> p);
     void set_shortcode_provider(MessageListView::ShortcodeProvider p);
     void set_preview_provider(MessageListView::PreviewProvider p);
-    void set_audio_player(std::unique_ptr<tk::AudioPlayer> player);
+    // Called once per message list (the main timeline and the thread panel
+    // each own their player), so both lists can play voice messages.
+    void set_audio_player_factory(std::function<std::unique_ptr<tk::AudioPlayer>()> f);
     void set_voice_bytes_provider(MessageListView::VoiceBytesProvider p);
     void set_repaint_requester(std::function<void()> f);
     void set_post_delayed(std::function<void(int, std::function<void()>)> f);
     void set_video_player_factory(MessageListView::VideoPlayerFactory f);
     void set_video_fetch_provider(MessageListView::VideoFetchProvider f);
+    // Mention-pill resolvers (see the MessageListView setters of the same
+    // names). Like every provider above they reach both the main timeline and
+    // the thread panel's list, so a pill looks the same in either.
+    void set_mention_avatar_provider(MessageListView::MentionAvatarProvider p);
+    void set_mention_name_provider(MessageListView::MentionNameProvider p);
+    void set_mention_room_name_provider(MessageListView::MentionRoomNameProvider p);
+    void set_mention_room_avatar_provider(MessageListView::MentionRoomAvatarProvider p);
+    void set_room_avatar_provider(MessageListView::RoomAvatarProvider p);
+    // Anything else an owner configures on a message list (callbacks, gating
+    // predicates, ...). `setup` runs now on the main timeline's list, and on
+    // the thread panel's list whenever that is created, so the two always have
+    // the same capabilities. Set message-list state here, never directly on
+    // message_list(). The list is passed in: capture nothing list-specific.
+    void add_message_list_setup(std::function<void(MessageListView&)> setup);
 
     // Closure that opens a confirmation dialog with the given options. Set by
     // MainAppWidget to route through its shared ConfirmDialog overlay; if
@@ -1010,9 +1026,39 @@ private:
     // show_knock_requests()/KnockRequestsPanel's own header doc comment.
     KnockRequestsPanel* knock_requests_panel_ = nullptr;
     // Stored so they can be forwarded to the lazily-created thread view.
+    // The main timeline and the thread panel's list must always have the same
+    // capabilities: every set_*_provider above stores here and applies to
+    // both lists, and apply_stored_message_list_providers_ replays the lot onto
+    // the thread list when it is created.
     MessageListView::ImageProvider stored_avatar_provider_;
     MessageListView::MediaImageProvider stored_image_provider_;
     std::function<bool(const std::string&)> stored_media_failed_provider_;
+    MessageListView::ShortcodeProvider stored_shortcode_provider_;
+    MessageListView::PreviewProvider stored_preview_provider_;
+    MessageListView::VoiceBytesProvider stored_voice_bytes_provider_;
+    MessageListView::VideoPlayerFactory stored_video_player_factory_;
+    MessageListView::VideoFetchProvider stored_video_fetch_provider_;
+    std::function<std::unique_ptr<tk::AudioPlayer>()> stored_audio_player_factory_;
+    MessageListView::MentionAvatarProvider stored_mention_avatar_provider_;
+    MessageListView::MentionNameProvider stored_mention_name_provider_;
+    MessageListView::MentionRoomNameProvider stored_mention_room_name_provider_;
+    MessageListView::MentionRoomAvatarProvider stored_mention_room_avatar_provider_;
+    MessageListView::RoomAvatarProvider stored_room_avatar_provider_;
+    // Runs `f` on the main timeline's list and the thread panel's, if open.
+    template <class F>
+    void for_each_message_list_(F&& f)
+    {
+        if (message_list_)
+        {
+            f(*message_list_);
+        }
+        if (thread_view_ && thread_view_->message_list())
+        {
+            f(*thread_view_->message_list());
+        }
+    }
+    void apply_stored_message_list_providers_(MessageListView& ml);
+    std::vector<std::function<void(MessageListView&)>> message_list_setups_;
     // Lazily created when the thread panel first opens. Owned by the tk
     // child list (add_child); we keep a borrowed pointer for access.
     ThreadView* thread_view_ = nullptr;

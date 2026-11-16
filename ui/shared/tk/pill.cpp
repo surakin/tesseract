@@ -86,7 +86,7 @@ void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& /*factory*/, const
     {
         // Stand-in avatar for a slot whose image hasn't resolved (or never
         // will): initials, like every other avatar without an image.
-        if (spec.kind == PillKind::Room)
+        if (spec.kind == PillKind::Room && !spec.initials_from_text)
         {
             canvas.draw_initials_circle("@", centre, diameter, spec.initials_bg, spec.initials_fg,
                                         AvatarText::Literal);

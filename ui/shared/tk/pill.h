@@ -25,6 +25,14 @@
 namespace tk
 {
 
+// Every Matrix pill (user, room, event) reserves a leading avatar slot, so the
+// layout-time box and the painted bitmap agree. Shared by every canvas backend
+// and MessageListView; Generic is not a pill.
+inline bool pill_reserves_leading_visual(PillKind kind)
+{
+    return kind != PillKind::Generic;
+}
+
 struct PillSpec
 {
     std::string text; // resolved display label, e.g. "Alice" or "#general"
@@ -44,6 +52,10 @@ struct PillSpec
     // the same width for a given (kind, text, scale) or the timeline's
     // reserved box and the painted bitmap will mismatch.
     bool reserve_leading_visual = false;
+    // Draw the stand-in disc from the label's initials even for a Room pill
+    // (which otherwise shows "@", the @room self-mention's glyph) — set for a
+    // permalink to a named room.
+    bool initials_from_text = false;
     Color bg{};
     Color fg{};
     // Initials-disc colors for a reserved leading slot with no image and no

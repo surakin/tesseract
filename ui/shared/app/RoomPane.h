@@ -634,6 +634,21 @@ public:
     // -> cached thumbnail, kicking a fetch on miss. Mirrors
     // mention_avatar_for_user_'s shape, just room- instead of member-scoped.
     const tk::Image* room_self_avatar_() const;
+    // Room/event mention pills: the linked room's name and avatar, from the
+    // joined room when we are in it, else from a once-per-target MSC3266
+    // room summary (linked_rooms_, keyed by room id/alias; failures are kept
+    // so a paint never refetches).
+    struct LinkedRoom
+    {
+        bool settled = false;
+        tesseract::RoomSummary summary;
+    };
+    mutable std::unordered_map<std::string, LinkedRoom> linked_rooms_;
+    const tesseract::RoomInfo* linked_room_joined_(const tesseract::Client::MatrixLink& link) const;
+    const tesseract::RoomSummary*
+    linked_room_summary_(const tesseract::Client::MatrixLink& link) const;
+    std::string linked_room_name_(const tesseract::Client::MatrixLink& link) const;
+    const tk::Image* linked_room_avatar_(const tesseract::Client::MatrixLink& link) const;
     void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
     // This pane's own shortcode-popup suggestion source (personal + this

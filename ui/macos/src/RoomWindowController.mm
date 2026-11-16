@@ -281,10 +281,11 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell, const std::string& roo
     media_viewer_->on_request_fullscreen = set_fs;
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────────
-    if (auto player = surface_->host().make_audio_player())
-    {
-        room_view_->set_audio_player(std::move(player));
-    }
+    room_view_->set_audio_player_factory(
+        [this]()
+        {
+            return surface_->host().make_audio_player();
+        });
 
     // Drag-and-drop file ingest is now tree-dispatched automatically (see
     // Host::ingest_native_file_drop -> Host::dispatch_file_drop);

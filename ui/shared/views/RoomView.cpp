@@ -2015,101 +2015,98 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     {
         room_settings_view_->set_avatar_provider(p);
     }
-    if (thread_view_ && thread_view_->message_list())
-    {
-        thread_view_->message_list()->set_avatar_provider(p);
-    }
     if (receipt_popup_)
     {
         receipt_popup_->set_image_provider(p);
     }
-    if (message_list_)
-    {
-        message_list_->set_avatar_provider(std::move(p));
-    }
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_avatar_provider(p);
+        });
 }
 
 void RoomView::set_image_provider(MessageListView::MediaImageProvider p)
 {
-    stored_image_provider_ = p;
-    if (thread_view_ && thread_view_->message_list())
-    {
-        thread_view_->message_list()->set_image_provider(p);
-    }
-    if (message_list_)
-    {
-        message_list_->set_image_provider(std::move(p));
-    }
+    stored_image_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_image_provider(stored_image_provider_);
+        });
 }
 
 void RoomView::set_media_failed_provider(std::function<bool(const std::string&)> p)
 {
-    stored_media_failed_provider_ = p;
-    if (thread_view_ && thread_view_->message_list())
-    {
-        thread_view_->message_list()->set_media_failed_provider(p);
-    }
-    if (message_list_)
-    {
-        message_list_->set_media_failed_provider(std::move(p));
-    }
+    stored_media_failed_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_media_failed_provider(stored_media_failed_provider_);
+        });
 }
 
 void RoomView::set_shortcode_provider(MessageListView::ShortcodeProvider p)
 {
-    if (message_list_)
-    {
-        message_list_->set_shortcode_provider(std::move(p));
-    }
+    stored_shortcode_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_shortcode_provider(stored_shortcode_provider_);
+        });
 }
 
 void RoomView::set_preview_provider(MessageListView::PreviewProvider p)
 {
-    if (message_list_)
-    {
-        message_list_->set_preview_provider(std::move(p));
-    }
+    stored_preview_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_preview_provider(stored_preview_provider_);
+        });
 }
 
-void RoomView::set_audio_player(std::unique_ptr<tk::AudioPlayer> player)
+void RoomView::set_audio_player_factory(std::function<std::unique_ptr<tk::AudioPlayer>()> f)
 {
-    if (message_list_)
-    {
-        message_list_->set_audio_player(std::move(player));
-    }
+    stored_audio_player_factory_ = std::move(f);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            if (auto player = stored_audio_player_factory_())
+            {
+                ml.set_audio_player(std::move(player));
+            }
+        });
 }
 
 void RoomView::set_voice_bytes_provider(MessageListView::VoiceBytesProvider p)
 {
-    if (message_list_)
-    {
-        message_list_->set_voice_bytes_provider(std::move(p));
-    }
+    stored_voice_bytes_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_voice_bytes_provider(stored_voice_bytes_provider_);
+        });
 }
 
 void RoomView::set_repaint_requester(std::function<void()> f)
 {
-    repaint_requester_ = f;
-    if (message_list_)
-    {
-        message_list_->set_repaint_requester(std::move(f));
-    }
+    repaint_requester_ = std::move(f);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_repaint_requester(repaint_requester_);
+        });
 }
 
 void RoomView::set_post_delayed(std::function<void(int, std::function<void()>)> f)
 {
-    post_delayed_ = f;
-    if (thread_view_)
-    {
-        if (auto* ml = thread_view_->message_list())
+    post_delayed_ = std::move(f);
+    for_each_message_list_(
+        [&](MessageListView& ml)
         {
-            ml->set_post_delayed(f);
-        }
-    }
-    if (message_list_)
-    {
-        message_list_->set_post_delayed(std::move(f));
-    }
+            ml.set_post_delayed(post_delayed_);
+        });
 }
 
 void RoomView::set_confirm_provider(ConfirmProvider p)
@@ -2318,17 +2315,155 @@ bool RoomView::room_search_open() const
 
 void RoomView::set_video_player_factory(MessageListView::VideoPlayerFactory f)
 {
-    if (message_list_)
-    {
-        message_list_->set_video_player_factory(std::move(f));
-    }
+    stored_video_player_factory_ = std::move(f);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_video_player_factory(stored_video_player_factory_);
+        });
 }
 
 void RoomView::set_video_fetch_provider(MessageListView::VideoFetchProvider f)
 {
-    if (message_list_)
+    stored_video_fetch_provider_ = std::move(f);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_video_fetch_provider(stored_video_fetch_provider_);
+        });
+}
+
+void RoomView::set_mention_avatar_provider(MessageListView::MentionAvatarProvider p)
+{
+    stored_mention_avatar_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_mention_avatar_provider(stored_mention_avatar_provider_);
+        });
+}
+
+void RoomView::set_mention_name_provider(MessageListView::MentionNameProvider p)
+{
+    stored_mention_name_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_mention_name_provider(stored_mention_name_provider_);
+        });
+}
+
+void RoomView::set_mention_room_name_provider(MessageListView::MentionRoomNameProvider p)
+{
+    stored_mention_room_name_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_mention_room_name_provider(stored_mention_room_name_provider_);
+        });
+}
+
+void RoomView::set_mention_room_avatar_provider(MessageListView::MentionRoomAvatarProvider p)
+{
+    stored_mention_room_avatar_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_mention_room_avatar_provider(stored_mention_room_avatar_provider_);
+        });
+}
+
+void RoomView::set_room_avatar_provider(MessageListView::RoomAvatarProvider p)
+{
+    stored_room_avatar_provider_ = std::move(p);
+    for_each_message_list_(
+        [&](MessageListView& ml)
+        {
+            ml.set_room_avatar_provider(stored_room_avatar_provider_);
+        });
+}
+
+void RoomView::add_message_list_setup(std::function<void(MessageListView&)> setup)
+{
+    message_list_setups_.push_back(setup);
+    for_each_message_list_(setup);
+}
+
+void RoomView::apply_stored_message_list_providers_(MessageListView& ml)
+{
+    for (const auto& setup : message_list_setups_)
     {
-        message_list_->set_video_fetch_provider(std::move(f));
+        setup(ml);
+    }
+    if (stored_avatar_provider_)
+    {
+        ml.set_avatar_provider(stored_avatar_provider_);
+    }
+    if (stored_image_provider_)
+    {
+        ml.set_image_provider(stored_image_provider_);
+    }
+    if (stored_media_failed_provider_)
+    {
+        ml.set_media_failed_provider(stored_media_failed_provider_);
+    }
+    if (stored_shortcode_provider_)
+    {
+        ml.set_shortcode_provider(stored_shortcode_provider_);
+    }
+    if (stored_preview_provider_)
+    {
+        ml.set_preview_provider(stored_preview_provider_);
+    }
+    if (stored_voice_bytes_provider_)
+    {
+        ml.set_voice_bytes_provider(stored_voice_bytes_provider_);
+    }
+    if (stored_audio_player_factory_)
+    {
+        if (auto player = stored_audio_player_factory_())
+        {
+            ml.set_audio_player(std::move(player));
+        }
+    }
+    if (stored_video_player_factory_)
+    {
+        ml.set_video_player_factory(stored_video_player_factory_);
+    }
+    if (stored_video_fetch_provider_)
+    {
+        ml.set_video_fetch_provider(stored_video_fetch_provider_);
+    }
+    if (stored_mention_avatar_provider_)
+    {
+        ml.set_mention_avatar_provider(stored_mention_avatar_provider_);
+    }
+    if (stored_mention_name_provider_)
+    {
+        ml.set_mention_name_provider(stored_mention_name_provider_);
+    }
+    if (stored_mention_room_name_provider_)
+    {
+        ml.set_mention_room_name_provider(stored_mention_room_name_provider_);
+    }
+    if (stored_mention_room_avatar_provider_)
+    {
+        ml.set_mention_room_avatar_provider(stored_mention_room_avatar_provider_);
+    }
+    if (stored_room_avatar_provider_)
+    {
+        ml.set_room_avatar_provider(stored_room_avatar_provider_);
+    }
+    if (repaint_requester_)
+    {
+        ml.set_repaint_requester(repaint_requester_);
+    }
+    // Without this the room-switch gate armed by each thread reset has no
+    // timeout fallback, so one unresolved dependency holds the thread list
+    // invisible forever.
+    if (post_delayed_)
+    {
+        ml.set_post_delayed(post_delayed_);
     }
 }
 
@@ -2933,25 +3068,7 @@ void RoomView::set_thread_panel(ThreadPanelState state, const std::string& root_
         // Forward the providers that were set before this lazy creation.
         if (auto* ml = thread_view_->message_list())
         {
-            if (stored_avatar_provider_)
-            {
-                ml->set_avatar_provider(stored_avatar_provider_);
-            }
-            if (stored_image_provider_)
-            {
-                ml->set_image_provider(stored_image_provider_);
-            }
-            if (stored_media_failed_provider_)
-            {
-                ml->set_media_failed_provider(stored_media_failed_provider_);
-            }
-            // Without this the room-switch gate armed by each thread reset
-            // has no timeout fallback, so one unresolved dependency holds
-            // the thread list invisible forever.
-            if (post_delayed_)
-            {
-                ml->set_post_delayed(post_delayed_);
-            }
+            apply_stored_message_list_providers_(*ml);
             // Wire the same hover-action / media / reaction callbacks as the
             // main timeline so reply / edit / redact (and friends) work
             // inside the thread panel. Reply sends are routed through the

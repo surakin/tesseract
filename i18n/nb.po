@@ -5595,3 +5595,8 @@ msgstr "Vis tilstandshendelser i tidslinjen"
 #, c++-format
 msgid "Service members ({0})"
 msgstr "Tjenestemedlemmer ({0})"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} › message"
+msgstr "{0} › melding"

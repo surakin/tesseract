@@ -44,6 +44,12 @@ std::string first_preview_url(std::string_view html, std::string_view body);
 // callers can keep the cheaper plain-text layout path in that common case.
 std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text);
 
+// Turns every plain link span whose URL is a matrix.to / matrix: permalink
+// (user, room, alias, event) into a mention pill, like an <a> mention in
+// formatted_body. For message bodies only — the caller must run
+// substitute_image_placeholders() afterward. Other links are untouched.
+std::vector<tk::TextSpan> pillify_matrix_links(std::vector<tk::TextSpan> spans, bool dark);
+
 // Split a plain-text TextSpan list on word-bounded literal "@room" tokens,
 // turning each match into a Room-kind mention pill (is_mention/is_image
 // set, text cleared — the caller must run substitute_image_placeholders()

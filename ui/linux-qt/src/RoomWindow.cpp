@@ -152,10 +152,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     media_viewer_->on_request_fullscreen = set_fs;
 
     // ── Surface-bound providers (need this shell's own surface_) ─────────
-    if (auto player = surface_->host().make_audio_player())
-    {
-        room_view_->set_audio_player(std::move(player));
-    }
+    room_view_->set_audio_player_factory(
+        [this]()
+        {
+            return surface_->host().make_audio_player();
+        });
     room_view_->set_post_delayed(
         [this](int ms, std::function<void()> fn)
         {
