@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(calls): sticky call members are no longer ignored when the room's call slot was written before Tesseract started. Linux release build, manual test
 - feat(timeline): room topic changes now show in the timeline, like room name changes. Windows debug build, ctest 3926/3927
 - fix(windows): text drawn after an avatar no longer goes missing after a GPU reset. Windows debug build, ctest
 

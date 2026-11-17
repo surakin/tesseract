@@ -295,7 +295,91 @@ pub async fn read_slot_state_keyed(room: &Room) -> (SlotState, &'static str) {
             events.push((key, event));
         }
     }
+    if events.is_empty() {
+        // The sync's required_state has no slot type, so the store only holds a slot that
+        // arrived live: a client that started later reads every room as slotless and drops
+        // every sticky member. Ask the server, as Element's reference backend does.
+        if let Some(from_server) = slot_events_from_server(room).await {
+            events = from_server;
+        }
+    }
     slot_state_of(&events)
+}
+
+/// Slot events as `slot_state_of` reads them: `(state key, {"content": …})`.
+type SlotEvents = Vec<(&'static str, serde_json::Value)>;
+
+/// How long a server answer stands in for another one: sticky updates arrive in bursts and
+/// each triggers a read.
+const SERVER_SLOT_TTL: std::time::Duration = std::time::Duration::from_secs(5);
+
+type SlotCacheKey = (String, String);
+type SlotCache = std::collections::HashMap<SlotCacheKey, (std::time::Instant, SlotEvents)>;
+
+fn server_slot_cache() -> &'static parking_lot::Mutex<SlotCache> {
+    static CACHE: std::sync::OnceLock<parking_lot::Mutex<SlotCache>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// The room's slot events as the homeserver has them, cached for [`SERVER_SLOT_TTL`] per
+/// account and room. `None` when the server could not be asked and nothing is cached; a
+/// failed read keeps the last answer (stale beats "no slot", which would drop members).
+async fn slot_events_from_server(room: &Room) -> Option<SlotEvents> {
+    let id: SlotCacheKey = (
+        room.client()
+            .user_id()
+            .map(|u| u.to_string())
+            .unwrap_or_default(),
+        room.room_id().to_string(),
+    );
+    if let Some((at, events)) = server_slot_cache().lock().get(&id) {
+        if at.elapsed() < SERVER_SLOT_TTL {
+            return Some(events.clone());
+        }
+    }
+    match fetch_slot_events(room).await {
+        Some(events) => {
+            server_slot_cache()
+                .lock()
+                .insert(id, (std::time::Instant::now(), events.clone()));
+            Some(events)
+        }
+        None => server_slot_cache()
+            .lock()
+            .get(&id)
+            .map(|(_, events)| events.clone()),
+    }
+}
+
+/// The content a server returns for a state event, in the event shape `slot_state_of` reads;
+/// content that is not JSON reads as an unreadable slot.
+fn slot_event_of_content(content: &str) -> serde_json::Value {
+    let content = serde_json::from_str(content).unwrap_or(serde_json::Value::Null);
+    serde_json::json!({ "content": content })
+}
+
+/// One request per slot key; a key the server has no event for is skipped. `None` when any
+/// request fails for another reason.
+async fn fetch_slot_events(room: &Room) -> Option<SlotEvents> {
+    use matrix_sdk::ruma::api::client::state::get_state_event_for_key::v3 as api;
+    use matrix_sdk::ruma::api::error::ErrorKind;
+    let mut out: SlotEvents = Vec::new();
+    for key in SLOT_KEYS {
+        let request = api::Request::new(
+            room.room_id().to_owned(),
+            StateEventType::from(SLOT_TYPE),
+            key.to_owned(),
+        );
+        match room.client().send(request).await {
+            Ok(response) => out.push((key, slot_event_of_content(response.event_or_content.get()))),
+            Err(e) if e.client_api_error_kind() == Some(&ErrorKind::NotFound) => {}
+            Err(e) => {
+                tracing::warn!("rtc: could not read the m.rtc.slot {key:?} from the server: {e}");
+                return None;
+            }
+        }
+    }
+    Some(out)
 }
 
 /// The room's `m.call` slot state; see [`read_slot_state_keyed`].
@@ -844,6 +928,23 @@ mod tests {
         assert_eq!(state_of(&[serde_json::Value::Null]), SlotState::Unreadable);
         // A readable slot under the other state key beats an unreadable one.
         assert!(matches!(state_of(&[cleared, open]), SlotState::Present(_)));
+    }
+
+    #[test]
+    fn slot_content_from_the_server_reads_like_a_synced_slot() {
+        let open = slot_event_of_content(r#"{"status":"open","application":{"type":"m.call"}}"#);
+        assert!(matches!(state_of(&[open]), SlotState::Present(s) if s.is_open()));
+        let closed = slot_event_of_content(r#"{"status":"closed"}"#);
+        assert!(matches!(state_of(&[closed]), SlotState::Present(s) if !s.is_open()));
+        // A cleared slot (empty content) and a body that is not JSON are unreadable, not absent.
+        assert_eq!(
+            state_of(&[slot_event_of_content("{}")]),
+            SlotState::Unreadable
+        );
+        assert_eq!(
+            state_of(&[slot_event_of_content("not json")]),
+            SlotState::Unreadable
+        );
     }
 
     #[test]
