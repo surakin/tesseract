@@ -4827,8 +4827,12 @@ msgid "When enabled, a plain-text stack trace is written to a file on this devic
 msgstr "[Whéñ éñàbléd, à plàïñ-téxt stàçk tràçé ïs wrïttéñ tö à fïlé öñ thïs dévïçé ïf thé àpp çràshés. Ñöthïñg ïs séñt àñywhéré àùtömàtïçàlly — yöù çàñ fïñd àñd shàré thé fïlé yöùrsélf ïf yöù wàñt tö répört à bùg.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr "[Yöùr öwñ méssàgés àppéàr öñ thé rïght, ïñ à sùbtlé röùñdéd bùbblé.xxxxxxxxxxxxx]"
+msgid "Messages appear in subtle rounded bubbles."
+msgstr "[Méssàgés àppéàr ïñ sùbtlé röùñdéd bùbblés.xxxxxxxx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:167
+msgid "Align my messages to the right"
+msgstr "[Àlïgñ my méssàgés tö thé rïghtxxxxxx]"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:38
 msgid "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a colour per person."

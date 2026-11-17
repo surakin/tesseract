@@ -4634,8 +4634,12 @@ msgid ""
 msgstr "Якщо ввімкнено, у разі аварійного завершення програми на цьому пристрої у файл записується звичайний текстовий трасувальний звіт. Нічого не надсилається автоматично — за бажання повідомити про помилку ви можете самостійно знайти цей файл і поділитися ним."
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr "Ваші повідомлення відображаються праворуч у стриманій заокругленій бульбашці."
+msgid "Messages appear in subtle rounded bubbles."
+msgstr "Повідомлення відображаються у стриманих заокруглених бульбашках."
+
+#: ui/shared/views/settings/AppearanceSection.cpp:167
+msgid "Align my messages to the right"
+msgstr "Вирівнювати мої повідомлення праворуч"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:38
 msgid ""

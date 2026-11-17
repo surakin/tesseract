@@ -280,6 +280,15 @@ TEST_CASE("sender status, layout and density changes relayout", "[shell][setting
     st.room_list_density = RD::Normal;
 }
 
+TEST_CASE("bubble own alignment changes relayout", "[shell][settings_handlers][bubbles]")
+{
+    tesseract::test::SettingsGuard guard;
+    SettingsShell s;
+    Settings::instance().bubbles_align_own_messages_right = false;
+    changed(s, tesseract::views::SettingKey::BubblesAlignOwnMessagesRight);
+    CHECK(s.relayouts == 1);
+}
+
 TEST_CASE("timeline column width and anchor changes relayout", "[shell][settings_handlers]")
 {
     tesseract::test::SettingsGuard guard;

@@ -754,6 +754,61 @@ TEST_CASE("bubble mode renders own + other rows without crashing", "[message_lis
     CHECK(own_bubble_h < cv.row_world_rect(1).h);
 }
 
+TEST_CASE("bubble own alignment updates live without moving other rows",
+          "[message_list][layout_cache][bubble]")
+{
+    auto& settings = tesseract::Settings::instance();
+    struct Restore
+    {
+        tesseract::Settings& s;
+        bool align = s.bubbles_align_own_messages_right;
+        bool avatar = s.bubbles_show_own_avatar;
+        ~Restore()
+        {
+            s.bubbles_align_own_messages_right = align;
+            s.bubbles_show_own_avatar = avatar;
+        }
+    } restore{settings};
+    using ML = tesseract::Settings::MessageLayout;
+    for (ML layout : {ML::Bubbles, ML::Classic, ML::Irc})
+    {
+        LayoutGuard layout_guard{layout};
+        for (bool avatar : {false, true})
+        {
+            settings.bubbles_show_own_avatar = avatar;
+            settings.bubbles_align_own_messages_right = true;
+            TkMessageListLayoutCacheStage stage;
+            MessageListView list;
+            list.set_messages({make_rich("$other", "hello"), make_own("$own", "hello")}, false);
+            stage.run(list, {0, 0, 600, 400});
+            const float own_right = list.body_origin_x_for_test("$own");
+            const float other_before = list.body_origin_x_for_test("$other");
+            REQUIRE(own_right >= 0);
+            REQUIRE(other_before >= 0);
+
+            settings.bubbles_align_own_messages_right = false;
+            list.on_display_prefs_changed();
+            stage.run(list, {0, 0, 600, 400});
+            const float own_left = list.body_origin_x_for_test("$own");
+            const float other_after = list.body_origin_x_for_test("$other");
+            CHECK(other_after == Catch::Approx(other_before));
+            if (layout == ML::Bubbles)
+            {
+                CHECK(own_left < own_right);
+                CHECK(own_left == Catch::Approx(other_after));
+            }
+            else
+            {
+                CHECK(own_left == Catch::Approx(own_right));
+            }
+            settings.bubbles_align_own_messages_right = true;
+            list.on_display_prefs_changed();
+            stage.run(list, {0, 0, 600, 400});
+            CHECK(list.body_origin_x_for_test("$own") == Catch::Approx(own_right));
+        }
+    }
+}
+
 TEST_CASE("on_display_prefs_changed re-measures the timeline for bubble mode",
           "[message_list][bubble]")
 {

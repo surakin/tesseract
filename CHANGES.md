@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(settings): choose whether your messages align right in the Bubbles layout. Linux build, focused ctest 237/238; user-verified
+
 ## v0.9.8 — 2026-11-10
 
 ### Summary

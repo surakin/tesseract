@@ -2,6 +2,7 @@
 
 #include "views/settings/SettingsController.h"
 #include "views/SettingsView.h"
+#include "views/MessageListView.h"
 #include "views/settings/AppearanceSection.h"
 #include "views/settings/DevicesSection.h"
 #include "views/settings/ImagePacksSection.h"
@@ -607,6 +608,73 @@ struct ColumnSettingsGuard
 };
 
 } // namespace
+
+TEST_CASE("AppearanceSection: own bubble alignment binds, previews and follows layout",
+          "[settings-view][bubbles]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    using K = tesseract::views::SettingKey;
+    ColumnSettingsGuard guard;
+    auto& st = tesseract::Settings::instance();
+    struct Restore
+    {
+        tesseract::Settings& s;
+        bool align = s.bubbles_align_own_messages_right;
+        bool avatar = s.bubbles_show_own_avatar;
+        ~Restore()
+        {
+            s.bubbles_align_own_messages_right = align;
+            s.bubbles_show_own_avatar = avatar;
+        }
+    } restore{st};
+    st.message_layout = ML::Bubbles;
+    st.bubbles_align_own_messages_right = true;
+    st.bubbles_show_own_avatar = false;
+
+    tesseract::views::SettingBinder binder;
+    tesseract::views::AppearanceSection section(binder);
+    auto* check = find_check_by_label(section, "Align my messages to the right");
+    auto* preview = find_widget<tesseract::views::MessageListView>(section);
+    REQUIRE(check);
+    REQUIRE(preview);
+    std::vector<K> fired;
+    binder.on_changed = [&](K key)
+    {
+        fired.push_back(key);
+    };
+    binder.reload();
+    CHECK(check->checked());
+    CHECK(check->visible());
+    CHECK(fired.empty());
+
+    TkSettingsViewStage stage;
+    stage.run(*preview, {0, 0, 260, 140});
+    const float right_height = preview->row_world_rect(1).h;
+    REQUIRE(right_height > 0);
+    check->on_change(false);
+    CHECK_FALSE(st.bubbles_align_own_messages_right);
+    REQUIRE(fired.size() == 1);
+    CHECK(fired[0] == K::BubblesAlignOwnMessagesRight);
+    stage.run(*preview, {0, 0, 260, 140});
+    CHECK(preview->row_world_rect(1).h > right_height);
+
+    st.bubbles_align_own_messages_right = true;
+    binder.reload();
+    CHECK(check->checked());
+    CHECK(fired.size() == 1);
+    stage.run(*preview, {0, 0, 260, 140});
+    CHECK(preview->row_world_rect(1).h == right_height);
+
+    st.message_layout = ML::Classic;
+    binder.reload();
+    CHECK_FALSE(check->visible());
+    st.message_layout = ML::Irc;
+    binder.reload();
+    CHECK_FALSE(check->visible());
+    st.message_layout = ML::Bubbles;
+    binder.reload();
+    CHECK(check->visible());
+}
 
 TEST_CASE("AppearanceSection: the timeline width slider persists and reads out a percentage",
           "[settings-view]")
