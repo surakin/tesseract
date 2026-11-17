@@ -458,3 +458,38 @@ TEST_CASE("Canvas::draw_initials_circle fills bg and draws letter", "[tk][canvas
     // The corner sits outside the disc, so it stays white.
     CHECK(nearly_white(s->read_pixel(1, 1)));
 }
+
+// One Image drawn on a series of short-lived surfaces, as the process-wide
+// avatar-initials cache is. A backend that caches its per-target bitmap by
+// raw target pointer can be handed a dead target's bitmap when a new target
+// reuses the address, which on D2D drops everything painted after it.
+TEST_CASE("Canvas::draw_image keeps working on successive surfaces", "[tk][canvas][image]")
+{
+    std::vector<std::uint8_t> rgba;
+    for (int i = 0; i < 4 * 4; ++i)
+    {
+        rgba.insert(rgba.end(), {0xff, 0x00, 0x00, 0xff}); // opaque red
+    }
+
+    // The image's owner outlives it, as the app's backend outlives every image.
+    auto owner = TestSurface::create(4, 4);
+    REQUIRE(owner);
+    auto img = owner->factory().create_image_rgba(rgba.data(), 4, 4);
+    if (!img)
+    {
+        SKIP("backend has no create_image_rgba");
+    }
+
+    for (int round = 0; round < 32; ++round)
+    {
+        auto s = TestSurface::create(32, 32);
+        REQUIRE(s);
+        auto& c = s->canvas();
+        c.clear(Color::rgb(0xffffff));
+        c.draw_image(*img, Rect{0, 0, 8, 8});
+        c.fill_rect(Rect{16, 16, 8, 8}, Color::rgb(0xff0000));
+        INFO("round " << round);
+        CHECK(nearly_red(s->read_pixel(4, 4)));
+        CHECK(nearly_red(s->read_pixel(20, 20)));
+    }
+}

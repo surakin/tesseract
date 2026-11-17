@@ -1256,6 +1256,14 @@ msgstr "{0} a défini le nom du salon : {1}"
 msgid "{0} changed the room name to {1}"
 msgstr "{0} a changé le nom du salon en {1}"
 
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} removed the topic"
+msgstr "{0} a supprimé le sujet"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} changed the topic to {1}"
+msgstr "{0} a changé le sujet en {1}"
+
 #: ui/shared/views/MessageListView.cpp:1284
 msgid "{0} removed the room name"
 msgstr "{0} a supprimé le nom du salon"

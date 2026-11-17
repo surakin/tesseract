@@ -158,6 +158,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Room settings: name, topic, avatar, join rule, guest access, history visibility, encryption, and power-level thresholds (permissions)
 - Full room-history export to plain text or HTML, optionally with images
 - Optional room join/leave event display in the timeline
+- Room name and topic changes shown in the timeline
 
 ### Security & privacy
 

@@ -690,16 +690,16 @@ public:
     // ID2D1Bitmap is bound to a particular ID2D1RenderTarget. We keep the
     // decoded pixels as the source of truth (in an in-memory IWICBitmap)
     // and lazily construct the D2D bitmap for the render target that
-    // draws us. The cache is invalidated when the render target is
-    // recreated (lost device).
+    // draws us. The cache is invalidated when a different render target
+    // draws us (another window, or a recreated target after device loss).
     ID2D1Bitmap* bitmap_for(ID2D1RenderTarget* rt)
     {
-        if (bitmap_ && rt_cached_ == rt)
+        if (bitmap_ && rt_cached_.Get() == rt)
         {
             return bitmap_.Get();
         }
         bitmap_.Reset();
-        rt_cached_ = nullptr;
+        rt_cached_.Reset();
         HRESULT hr;
         if (opaque_)
         {
@@ -722,7 +722,7 @@ public:
     void release_device_resources()
     {
         bitmap_.Reset();
-        rt_cached_ = nullptr;
+        rt_cached_.Reset();
     }
 
 private:
@@ -736,7 +736,12 @@ private:
     int height_;
     bool opaque_ = false;
     ComPtr<ID2D1Bitmap> bitmap_;
-    ID2D1RenderTarget* rt_cached_ = nullptr;
+    // Owning, so a destroyed render target's address can't be reused by a
+    // new one (e.g. after device loss) while bitmap_ still points into the
+    // old target's resource domain: a pointer match would then hand out a
+    // foreign bitmap, which puts the new target into an error state and
+    // drops everything drawn after it in the frame.
+    ComPtr<ID2D1RenderTarget> rt_cached_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

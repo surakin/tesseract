@@ -339,3 +339,20 @@ TEST_CASE("make_event turns m.room.server_acl into RoomServerAclStateEvent", "[f
     CHECK(ev->body == "deny+3\nip-");
     CHECK(ev->sender_name == "Alice");
 }
+
+TEST_CASE("make_event turns m.room.topic into RoomTopicStateEvent", "[ffi][topic]")
+{
+    tesseract_ffi::TimelineEvent in{};
+    in.msg_type = "m.room.topic";
+    in.sender = "@alice:server";
+    in.sender_name = "Alice";
+    in.body = "Welcome!\nBe nice.";
+
+    auto ev = tesseract::make_event(in);
+    REQUIRE(ev);
+    CHECK(ev->type == tesseract::EventType::RoomTopic);
+    CHECK(static_cast<int>(tesseract::EventType::RoomTopic) ==
+          static_cast<int>(tesseract::EventType::RoomServerAcl) + 1);
+    CHECK(ev->body == "Welcome!\nBe nice.");
+    CHECK(ev->sender_name == "Alice");
+}

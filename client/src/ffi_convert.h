@@ -1037,6 +1037,13 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.room.topic")
+    {
+        auto ev = std::make_unique<RoomTopicStateEvent>();
+        assign_base(*ev, e);
+        return ev;
+    }
+
     if (msg_type == "m.room.tombstone")
     {
         auto ev = std::make_unique<RoomTombstoneStateEvent>();

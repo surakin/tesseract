@@ -1256,6 +1256,14 @@ msgstr "{0} hat den Namen des Chats auf {1} gesetzt"
 msgid "{0} changed the room name to {1}"
 msgstr "{0} hat den Namen des Chats zu {1} geändert"
 
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} removed the topic"
+msgstr "{0} hat das Thema entfernt"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} changed the topic to {1}"
+msgstr "{0} hat das Thema zu {1} geändert"
+
 #: ui/shared/views/MessageListView.cpp:1284
 msgid "{0} removed the room name"
 msgstr "{0} hat den Namen des Chats entfernt"

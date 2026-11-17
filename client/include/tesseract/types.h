@@ -37,6 +37,7 @@ enum class EventType
     Gallery,          // m.gallery, MSC4274 inline media gallery
     DevUnhandled,     // developer "show unhandled events" row; `body` is the event type
     RoomServerAcl,    // m.room.server_acl: server ACL changed; `body` lists the changes
+    RoomTopic,        // m.room.topic state-event row; `body` is the new topic
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -609,6 +610,17 @@ struct RoomServerAclStateEvent : public Event
     RoomServerAclStateEvent()
     {
         type = EventType::RoomServerAcl;
+    }
+};
+
+/// m.room.topic state event surfaced as a timeline row. `sender`/`sender_name`
+/// identify who changed the topic; `body` is the new plain-text topic, empty
+/// when it was removed.
+struct RoomTopicStateEvent : public Event
+{
+    RoomTopicStateEvent()
+    {
+        type = EventType::RoomTopic;
     }
 };
 

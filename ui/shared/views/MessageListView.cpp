@@ -938,6 +938,9 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     case tesseract::EventType::RoomServerAcl:
         row.kind = Kind::RoomServerAcl; // `body` lists the ACL changes
         break;
+    case tesseract::EventType::RoomTopic:
+        row.kind = Kind::RoomTopic; // `body` is the new topic
+        break;
     case tesseract::EventType::RoomTombstone:
     {
         row.kind = Kind::RoomTombstone;
@@ -1574,6 +1577,36 @@ std::string room_name_change_phrase(const MessageRowData& m)
     return tk::trf(tk::tr("{0} changed the room name to {1}"), {s, m.room_name_new});
 }
 
+// Per-event phrase for an m.room.topic row, e.g. "Alice changed the topic to
+// Welcome!". The row is one line, so line breaks in the topic collapse to
+// spaces; the accessible name carries the same text.
+std::string room_topic_change_phrase(const MessageRowData& m)
+{
+    const std::string s = m.member_label();
+    std::string topic;
+    topic.reserve(m.body.size());
+    bool pending_space = false;
+    for (const char c : m.body)
+    {
+        if (c == '\n' || c == '\r' || c == '\t' || c == ' ')
+        {
+            pending_space = !topic.empty();
+            continue;
+        }
+        if (pending_space)
+        {
+            topic.push_back(' ');
+            pending_space = false;
+        }
+        topic.push_back(c);
+    }
+    if (topic.empty())
+    {
+        return tk::trf(tk::tr("{0} removed the topic"), {s});
+    }
+    return tk::trf(tk::tr("{0} changed the topic to {1}"), {s, topic});
+}
+
 // Per-event phrase for an m.room.tombstone row, e.g. "Alice upgraded this
 // room: moving to the new version".
 std::string room_tombstone_phrase(const MessageRowData& m)
@@ -1863,7 +1896,7 @@ static bool is_virtual_event(MessageRowData::Kind k)
     return k == Kind::DaySeparator || k == Kind::ReadMarker || k == Kind::TimelineStart ||
            k == Kind::PinnedEvent || k == Kind::CallNotification || k == Kind::Membership ||
            k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled ||
-           k == Kind::RoomServerAcl;
+           k == Kind::RoomServerAcl || k == Kind::RoomTopic;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -2494,7 +2527,8 @@ public:
             return 0.0f; // grouped into the previous bridge-information row
         }
         if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone ||
-            m.kind == Kind::DevUnhandled || m.kind == Kind::RoomServerAcl)
+            m.kind == Kind::DevUnhandled || m.kind == Kind::RoomServerAcl ||
+            m.kind == Kind::RoomTopic)
         {
             return kPinnedEventH;
         }
@@ -2676,6 +2710,11 @@ public:
         if (m.kind == Kind::RoomTombstone)
         {
             paint_room_name_change(m, ctx, bounds, room_tombstone_phrase(m));
+            return;
+        }
+        if (m.kind == Kind::RoomTopic)
+        {
+            paint_room_name_change(m, ctx, bounds, room_topic_change_phrase(m));
             return;
         }
         if (m.kind == Kind::DevUnhandled)
@@ -4238,6 +4277,8 @@ public:
             return dev_unhandled_phrase(m);
         case Kind::RoomServerAcl:
             return room_server_acl_phrase(m);
+        case Kind::RoomTopic:
+            return room_topic_change_phrase(m);
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -5054,6 +5095,7 @@ private:
         case Kind::RoomTombstone:
         case Kind::DevUnhandled:
         case Kind::RoomServerAcl:
+        case Kind::RoomTopic:
             return tk::Role::StaticText;
         default:
             return tk::Role::ListItem;
@@ -5968,6 +6010,7 @@ private:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
         case MessageRowData::Kind::RoomServerAcl:
+        case MessageRowData::Kind::RoomTopic:
             return 0.0f;
         }
         return quote_h;
@@ -6437,6 +6480,7 @@ private:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
         case MessageRowData::Kind::RoomServerAcl:
+        case MessageRowData::Kind::RoomTopic:
             break;
         }
         return y;

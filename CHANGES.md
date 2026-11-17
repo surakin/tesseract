@@ -5,6 +5,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(timeline): room topic changes now show in the timeline, like room name changes. Windows debug build, ctest 3926/3927
+- fix(windows): text drawn after an avatar no longer goes missing after a GPU reset. Windows debug build, ctest
+
 ## v0.9.9 — 2026-11-17
 
 ### Summary

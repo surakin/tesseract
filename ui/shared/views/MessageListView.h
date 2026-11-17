@@ -113,6 +113,7 @@ struct MessageRowData
         Gallery,       // m.gallery, MSC4274 inline media gallery
         DevUnhandled,  // developer "show unhandled events" row; `body` is the event type
         RoomServerAcl, // m.room.server_acl state-event row; `body` lists the changes
+        RoomTopic,     // m.room.topic state-event row; `body` is the new topic
     };
 
     /// One item inside a Kind::Gallery row. Field vocabulary deliberately

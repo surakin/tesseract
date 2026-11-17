@@ -2020,8 +2020,8 @@ pub(super) async fn timeline_item_to_ffi_opts(
         }
     };
 
-    // m.room.pinned_events and m.room.name state events: surface as a
-    // labelled timeline row. All other state events (membership excluded,
+    // m.room.pinned_events, m.room.name and m.room.topic state events: surface
+    // as a labelled timeline row. All other state events (membership excluded,
     // handled separately below) remain filtered.
     if let TimelineItemContent::OtherState(state) = event_item.content() {
         use matrix_sdk::ruma::events::StateEventContentChange;
@@ -2098,6 +2098,35 @@ pub(super) async fn timeline_item_to_ffi_opts(
                     sender_status_text,
                     room_name_new,
                     room_name_old,
+                    timestamp: event_item.timestamp().get().into(),
+                    ..ffi_event_defaults()
+                });
+            }
+        }
+        if let AnyOtherStateEventContentChange::RoomTopic(full) = state.content() {
+            if let StateEventContentChange::Original { content, .. } = full {
+                let SenderProfileFfi {
+                    sender_name,
+                    sender_name_ambiguous,
+                    sender_avatar_url,
+                    sender_status_emoji,
+                    sender_status_text,
+                } = sender_profile_ffi(event_item.sender_profile());
+                return Some(TimelineEvent {
+                    room_id: room_id.to_owned(),
+                    msg_type: "m.room.topic".to_owned(),
+                    event_id: event_item
+                        .event_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    sender: event_item.sender().to_string(),
+                    sender_name,
+                    sender_name_ambiguous,
+                    sender_avatar_url,
+                    sender_status_emoji,
+                    sender_status_text,
+                    // The raw plain-text topic; empty when it was removed.
+                    body: content.topic.clone(),
                     timestamp: event_item.timestamp().get().into(),
                     ..ffi_event_defaults()
                 });

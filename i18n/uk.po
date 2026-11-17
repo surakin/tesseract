@@ -3195,6 +3195,16 @@ msgstr "{0}: назву кімнати встановлено як «{1}»"
 msgid "{0} changed the room name to {1}"
 msgstr "{0}: назву кімнати змінено на «{1}»"
 
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} removed the topic"
+msgstr "{0} вилучив тему"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} changed the topic to {1}"
+msgstr "{0}: тему змінено на «{1}»"
+
 #: ui/shared/views/MessageListView.cpp:1295
 #, c++-format
 msgid "{0} upgraded this room"
