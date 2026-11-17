@@ -5,10 +5,12 @@
 #include "emoji_support.h"
 #include "device_listing.h"
 #include "platform/linux/gst_device_listing.h"
+#include "platform/linux/kio_fuse.h"
 #include "gtk_accessible.h"
 #include "emoji_segmentation.h"
 #include "pill.h"
 #include "pixmap_cache.h"
+#include "tk/image_sniff.h"
 
 #include <gio/gio.h>
 #include <gtk/gtk.h>
@@ -21,6 +23,7 @@
 #include <cstring>
 #include <functional>
 #include <optional>
+#include <thread>
 #include <utility>
 
 namespace tk::gtk4
@@ -830,6 +833,150 @@ private:
 // height of the TextView; on_height_changed fires whenever the buffer's
 // changed signal produces a height delta.
 
+namespace
+{
+
+// Loads a GFile into a payload (size/empty guards, content-type sniff).
+// Blocks on I/O and is safe on a worker thread. Returns nullopt when the
+// file is unreadable, empty or over kMaxDroppedFileBytes.
+std::optional<tk::FileDropPayload> read_gfile_payload(GFile* file)
+{
+    if (!file)
+    {
+        return std::nullopt;
+    }
+    GFileInfo* info =
+        g_file_query_info(file,
+                          G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_STANDARD_NAME
+                                                         "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+                          G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
+    if (!info)
+    {
+        return std::nullopt;
+    }
+    const goffset sz = g_file_info_get_size(info);
+    if (sz <= 0 || std::cmp_greater(sz, kMaxDroppedFileBytes))
+    {
+        g_object_unref(info);
+        return std::nullopt;
+    }
+    GBytes* gb = g_file_load_bytes(file, nullptr, nullptr, nullptr);
+    if (!gb)
+    {
+        g_object_unref(info);
+        return std::nullopt;
+    }
+    gsize len = 0;
+    gconstpointer data = g_bytes_get_data(gb, &len);
+    if (!data || len == 0)
+    {
+        g_bytes_unref(gb);
+        g_object_unref(info);
+        return std::nullopt;
+    }
+
+    const char* declared = g_file_info_get_content_type(info);
+    gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
+                                          static_cast<const guchar*>(data), len, nullptr);
+    const char* content_type = declared ? declared : guessed;
+    gchar* mime_c = content_type ? g_content_type_get_mime_type(content_type) : nullptr;
+    std::string mime = mime_c ? mime_c : "application/octet-stream";
+
+    std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
+                                    static_cast<const std::uint8_t*>(data) + len);
+
+    char* basename = g_file_get_basename(file);
+    std::string filename = basename ? basename : "";
+    if (basename)
+    {
+        g_free(basename);
+    }
+
+    if (mime_c)
+    {
+        g_free(mime_c);
+    }
+    if (guessed)
+    {
+        g_free(guessed);
+    }
+    g_bytes_unref(gb);
+    g_object_unref(info);
+
+    return tk::FileDropPayload{std::move(bytes), std::move(mime), std::move(filename)};
+}
+
+struct RemoteFileLoad
+{
+    std::optional<tk::FileDropPayload> payload;
+    bool kio_fuse_missing = false;
+};
+
+// Reads a non-native GFile (sftp://, smb://, ...) on a worker thread, then
+// delivers the outcome on the main loop. A remote URI kio-fuse can serve
+// is read through its FUSE mount; otherwise (or on failure) GIO/GVfs is
+// asked directly. `done` is skipped if `alive` expired meanwhile.
+// Handler plus liveness token handed to the async clipboard file-list read.
+struct PendingFilePaste
+{
+    std::function<void(std::vector<tk::FileDropPayload>)> handler;
+    std::weak_ptr<bool> alive;
+};
+
+void load_remote_gfile_async(GFile* file, std::weak_ptr<bool> alive,
+                             std::function<void(RemoteFileLoad)> done)
+{
+    char* uri_c = g_file_get_uri(file);
+    std::string uri = uri_c ? uri_c : "";
+    g_free(uri_c);
+    GFile* held = G_FILE(g_object_ref(file));
+    std::thread(
+        [held, uri = std::move(uri), alive = std::move(alive), done = std::move(done)]() mutable
+        {
+            RemoteFileLoad out;
+            if (tesseract::kio_fuse::is_remote_uri(uri))
+            {
+                const auto r = tesseract::kio_fuse::mount_url(uri);
+                if (r.status == tesseract::kio_fuse::Status::Ok)
+                {
+                    GFile* local = g_file_new_for_path(r.path.c_str());
+                    out.payload = read_gfile_payload(local);
+                    g_object_unref(local);
+                }
+                else if (r.status == tesseract::kio_fuse::Status::Unavailable)
+                {
+                    out.kio_fuse_missing = true;
+                }
+            }
+            if (!out.payload)
+            {
+                out.payload = read_gfile_payload(held);
+            }
+            g_object_unref(held);
+
+            auto* task = new std::function<void()>(
+                [alive = std::move(alive), done = std::move(done), out = std::move(out)]() mutable
+                {
+                    if (alive.lock())
+                    {
+                        done(std::move(out));
+                    }
+                });
+            g_idle_add(
+                [](gpointer p) -> gboolean
+                {
+                    std::unique_ptr<std::function<void()>> fn(
+                        static_cast<std::function<void()>*>(p));
+                    (*fn)();
+                    return G_SOURCE_REMOVE;
+                },
+                task);
+        })
+        .detach();
+}
+
+} // namespace
+
 class GtkNativeTextArea : public NativeTextArea, public GtkOcclusionClient
 {
 public:
@@ -1208,7 +1355,8 @@ public:
             ox = pt_out.x;
             oy = pt_out.y;
         }
-        return {float(ox), float(oy), float(rect.width), float(rect.height)};
+        return {static_cast<float>(ox), static_cast<float>(oy), static_cast<float>(rect.width),
+                static_cast<float>(rect.height)};
     }
     // gtk_text_view_set_cursor_visible(FALSE) in the ctor means GTK never
     // draws a caret into the capture — the canvas draws its own, driven by
@@ -1270,7 +1418,7 @@ public:
         gtk_text_buffer_get_iter_at_offset(buffer_, &si, char_start);
         gtk_text_buffer_get_iter_at_offset(buffer_, &ej, char_end);
         gtk_text_buffer_delete(buffer_, &si, &ej);
-        gtk_text_buffer_insert(buffer_, &si, text.c_str(), (int)text.size());
+        gtk_text_buffer_insert(buffer_, &si, text.c_str(), static_cast<int>(text.size()));
     }
 
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
@@ -1307,7 +1455,7 @@ public:
         gtk_text_buffer_get_iter_at_mark(buffer_, &it, ins);
         gtk_text_buffer_get_start_iter(buffer_, &start);
         gchar* slice = gtk_text_buffer_get_slice(buffer_, &start, &it, FALSE);
-        int n = slice ? (int)std::strlen(slice) : 0;
+        int n = slice ? static_cast<int>(std::strlen(slice)) : 0;
         g_free(slice);
         return n;
     }
@@ -1842,7 +1990,7 @@ private:
         while (bytes < byte_offset && *p)
         {
             const gchar* next = g_utf8_next_char(p);
-            bytes += (int)(next - p);
+            bytes += static_cast<int>(next - p);
             p = next;
             ++chars;
         }
@@ -2250,9 +2398,10 @@ private:
         {
             g_signal_stop_emission_by_name(view, "paste-clipboard");
 
-            gdk_clipboard_read_value_async(clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
-                                           &GtkNativeTextArea::on_file_list_ready_cb,
-                                           new FilePasteHandler(self->on_file_paste_));
+            gdk_clipboard_read_value_async(
+                clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
+                &GtkNativeTextArea::on_file_list_ready_cb,
+                new PendingFilePaste{self->on_file_paste_, self->alive_});
         }
     }
 
@@ -2264,74 +2413,17 @@ private:
     // that never reaches a widget).
     static std::optional<tk::FileDropPayload> read_gfile_for_paste(GFile* file)
     {
-        if (!file)
-        {
-            return std::nullopt;
-        }
-        GFileInfo* info = g_file_query_info(file,
-                                            G_FILE_ATTRIBUTE_STANDARD_SIZE
-                                            "," G_FILE_ATTRIBUTE_STANDARD_NAME
-                                            "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-                                            G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
-        if (!info)
-        {
-            return std::nullopt;
-        }
-        const goffset sz = g_file_info_get_size(info);
-        if (sz <= 0 || static_cast<std::size_t>(sz) > kMaxDroppedFileBytes)
-        {
-            g_object_unref(info);
-            return std::nullopt;
-        }
-        GBytes* gb = g_file_load_bytes(file, nullptr, nullptr, nullptr);
-        if (!gb)
-        {
-            g_object_unref(info);
-            return std::nullopt;
-        }
-        gsize len = 0;
-        gconstpointer data = g_bytes_get_data(gb, &len);
-        if (!data || len == 0)
-        {
-            g_bytes_unref(gb);
-            g_object_unref(info);
-            return std::nullopt;
-        }
-
-        const char* declared = g_file_info_get_content_type(info);
-        gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
-                                              static_cast<const guchar*>(data), len, nullptr);
-        const char* content_type = declared ? declared : guessed;
-        gchar* mime_c = content_type ? g_content_type_get_mime_type(content_type) : nullptr;
-        std::string mime = mime_c ? mime_c : "application/octet-stream";
-
-        std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
-                                        static_cast<const std::uint8_t*>(data) + len);
-
-        char* basename = g_file_get_basename(file);
-        std::string filename = basename ? basename : "";
-        if (basename)
-        {
-            g_free(basename);
-        }
-
-        if (mime_c)
-        {
-            g_free(mime_c);
-        }
-        if (guessed)
-        {
-            g_free(guessed);
-        }
-        g_bytes_unref(gb);
-        g_object_unref(info);
-
-        return tk::FileDropPayload{std::move(bytes), std::move(mime), std::move(filename)};
+        return read_gfile_payload(file);
     }
 
     static void on_file_list_ready_cb(GObject* source, GAsyncResult* res, gpointer p)
     {
-        std::unique_ptr<FilePasteHandler> handler(static_cast<FilePasteHandler*>(p));
+        std::unique_ptr<PendingFilePaste> pending(static_cast<PendingFilePaste*>(p));
+        if (pending->alive.expired())
+        {
+            return; // the text area was destroyed while the clipboard read ran
+        }
+        const auto* handler = &pending->handler;
         GError* err = nullptr;
         const GValue* value = gdk_clipboard_read_value_finish(GDK_CLIPBOARD(source), res, &err);
         if (!value || err)
@@ -2349,7 +2441,25 @@ private:
             GSList* list = static_cast<GSList*>(g_value_get_boxed(value));
             for (GSList* it = list; it != nullptr; it = it->next)
             {
-                if (auto payload = read_gfile_for_paste(G_FILE(it->data)))
+                GFile* f = G_FILE(it->data);
+                if (!g_file_is_native(f))
+                {
+                    // Remote file: read off the main thread, delivered as a
+                    // paste of its own once it arrives.
+                    const FilePasteHandler h = *handler;
+                    load_remote_gfile_async(f, pending->alive,
+                                            [h](RemoteFileLoad r)
+                                            {
+                                                if (r.payload)
+                                                {
+                                                    std::vector<tk::FileDropPayload> one;
+                                                    one.push_back(std::move(*r.payload));
+                                                    h(std::move(one));
+                                                }
+                                            });
+                    continue;
+                }
+                if (auto payload = read_gfile_for_paste(f))
                 {
                     files.push_back(std::move(*payload));
                 }
@@ -2451,6 +2561,9 @@ private:
     std::function<void(float)> on_height_changed_;
     ImagePasteHandler on_image_paste_;
     FilePasteHandler on_file_paste_;
+    // Expires with this widget; lets async clipboard/remote-file reads
+    // notice it is gone before invoking on_file_paste_.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     std::function<bool(NativeTextArea::NavKey)> popup_nav_;
     std::function<void(bool)> on_focus_changed_;
     std::function<void()> on_pointer_down_;
@@ -2470,14 +2583,8 @@ Rect intersect_rect(const Rect& a, const Rect& b)
     float y0 = std::max(a.y, b.y);
     float x1 = std::min(a.right(), b.right());
     float y1 = std::min(a.bottom(), b.bottom());
-    if (x1 < x0)
-    {
-        x1 = x0;
-    }
-    if (y1 < y0)
-    {
-        y1 = y0;
-    }
+    x1 = std::max(x1, x0);
+    y1 = std::max(y1, y0);
     return {x0, y0, x1 - x0, y1 - y0};
 }
 } // namespace
@@ -2573,11 +2680,11 @@ public:
         gtk_popover_set_position(GTK_POPOVER(popover_), placement == tk::PopupPlacement::PreferAbove
                                                             ? GTK_POS_TOP
                                                             : GTK_POS_BOTTOM);
-        gtk_widget_set_size_request(surface_->widget(), std::max(1, int(size.w)),
-                                    std::max(1, int(size.h)));
-        GdkRectangle r{int(anchor_world_rect.x), int(anchor_world_rect.y),
-                       std::max(1, int(anchor_world_rect.w)),
-                       std::max(1, int(anchor_world_rect.h))};
+        gtk_widget_set_size_request(surface_->widget(), std::max(1, static_cast<int>(size.w)),
+                                    std::max(1, static_cast<int>(size.h)));
+        GdkRectangle r{static_cast<int>(anchor_world_rect.x), static_cast<int>(anchor_world_rect.y),
+                       std::max(1, static_cast<int>(anchor_world_rect.w)),
+                       std::max(1, static_cast<int>(anchor_world_rect.h))};
         gtk_popover_set_pointing_to(GTK_POPOVER(popover_), &r);
         // Explicit, not left to GTK's "resize" signal — that only fires when
         // the size actually changes, but the popup's content can change
@@ -2770,12 +2877,13 @@ public:
             PangoFontFamily** fams = nullptr;
             int n = 0;
             pango_font_map_list_families(pango_cairo_font_map_get_default(), &fams, &n);
+            out.reserve(n);
             for (int i = 0; i < n; ++i)
             {
                 out.push_back({pango_font_family_get_name(fams[i]),
                                pango_font_family_is_monospace(fams[i]) != FALSE});
             }
-            g_free(fams);
+            g_free(static_cast<void*>(fams));
             std::sort(out.begin(), out.end(),
                       [](const FontFamilyInfo& a, const FontFamilyInfo& b)
                       {
@@ -3142,22 +3250,54 @@ public:
 
         // Decode the encoded blob straight into a GdkTexture (GTK 4.6+). Its
         // built-in loaders cover PNG/JPEG/TIFF; anything it can't decode (e.g.
-        // some GIF/WebP) fails gracefully and we report false.
+        // some GIF/WebP) fails gracefully.
         GBytes* gb = g_bytes_new(encoded_bytes.data(), encoded_bytes.size());
         GError* err = nullptr;
         GdkTexture* tex = gdk_texture_new_from_bytes(gb, &err);
-        g_bytes_unref(gb);
-        if (!tex)
+        if (err)
         {
-            if (err)
+            g_error_free(err);
+        }
+
+        // An animated GIF/WebP also goes out as its original bytes so apps
+        // that understand it keep the animation; the texture stays the
+        // fallback for the rest.
+        std::string anim_mime;
+        if (tk::bytes_may_be_animated(encoded_bytes))
+        {
+            const std::string_view m = tk::sniff_image_mime(encoded_bytes);
+            if (m == "image/gif" || m == "image/webp")
             {
-                g_error_free(err);
+                anim_mime = std::string(m);
             }
+        }
+        GdkContentProvider* anim_provider =
+            anim_mime.empty() ? nullptr : gdk_content_provider_new_for_bytes(anim_mime.c_str(), gb);
+        g_bytes_unref(gb);
+
+        GdkContentProvider* tex_provider =
+            tex ? gdk_content_provider_new_typed(GDK_TYPE_TEXTURE, tex) : nullptr;
+        if (tex)
+        {
+            g_object_unref(tex);
+        }
+        if (!tex_provider && !anim_provider)
+        {
             return false;
         }
-        gdk_clipboard_set_texture(cb, tex);
-        g_object_unref(tex);
-        return true;
+        GdkContentProvider* provider = nullptr;
+        if (tex_provider && anim_provider)
+        {
+            GdkContentProvider* both[] = {anim_provider, tex_provider};
+            provider = gdk_content_provider_new_union(both, 2);
+        }
+        else
+        {
+            provider = tex_provider ? tex_provider : anim_provider;
+        }
+        const bool ok = gdk_clipboard_set_content(cb, provider);
+        g_object_unref(provider);
+        return ok;
     }
 
     // ── Internal ──────────────────────────────────────────────────────
@@ -3237,6 +3377,30 @@ public:
             return false;
         }
 
+        if (!g_file_is_native(file))
+        {
+            // Remote file (sftp://, smb://, ...): the drop is accepted now,
+            // the bytes are fetched off the main thread and dispatched to
+            // the drop point when they arrive.
+            load_remote_gfile_async(file, alive_,
+                                    [this, pos](RemoteFileLoad r)
+                                    {
+                                        if (r.payload)
+                                        {
+                                            dispatch_file_drop(pos, *r.payload);
+                                        }
+                                        else if (on_file_drop_error_)
+                                        {
+                                            on_file_drop_error_(
+                                                r.kio_fuse_missing
+                                                    ? tk::tr("Could not read the remote file (is "
+                                                             "kio-fuse installed?)")
+                                                    : tk::tr("Could not read file"));
+                                        }
+                                    });
+            return true;
+        }
+
         GError* err = nullptr;
         GFileInfo* info = g_file_query_info(file,
                                             G_FILE_ATTRIBUTE_STANDARD_SIZE
@@ -3257,7 +3421,7 @@ public:
             return false;
         }
         const goffset sz = g_file_info_get_size(info);
-        if (sz <= 0 || static_cast<std::size_t>(sz) > kMaxDroppedFileBytes)
+        if (sz <= 0 || std::cmp_greater(sz, kMaxDroppedFileBytes))
         {
             g_object_unref(info);
             return false;
@@ -3552,7 +3716,7 @@ private:
     void ensure_popup_shield_();
 
     // Shared by both the create and reposition paths in sync_anim_overlays_.
-    void position_anim_overlay_(GtkWidget* w, const Rect& visible)
+    static void position_anim_overlay_(GtkWidget* w, const Rect& visible)
     {
         gtk_widget_set_margin_start(w, static_cast<int>(std::floor(visible.x)));
         gtk_widget_set_margin_top(w, static_cast<int>(std::floor(visible.y)));
@@ -3561,6 +3725,9 @@ private:
     }
 
     GtkWidget* overlay_;
+    // Expires with the Host; lets worker-thread results (remote file drops)
+    // notice the Host is gone before touching it.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     GtkWidget* drawing_area_;
     const Theme* theme_;
     std::unique_ptr<CanvasFactory> factory_;
@@ -3626,7 +3793,7 @@ void draw_cb(GtkDrawingArea*, cairo_t* cr, int w, int h, gpointer p)
 // GDestroyNotify), so its lifetime is tied to the widget's, not the Host's.
 struct AnimOverlayDrawCtx
 {
-    Host* host;
+    Host* host = nullptr;
     tk::CacheKey key;
 };
 
@@ -3736,7 +3903,7 @@ gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy, g
 // Popup shield (see GtkOcclusionRegistry): its controllers run the drawing
 // area's own callbacks, translated from shield-local to drawing-area
 // coordinates.
-static void shield_to_canvas(GtkEventController* c, double& x, double& y)
+void shield_to_canvas(GtkEventController* c, double& x, double& y)
 {
     GtkWidget* shield = gtk_event_controller_get_widget(c);
     GtkWidget* overlay = gtk_widget_get_parent(shield);
@@ -4036,7 +4203,7 @@ void Host::sync_anim_overlays_()
     // scrolled off, the image stopped animating, or the row was removed.
     for (auto it = live_overlays_.begin(); it != live_overlays_.end();)
     {
-        if (painted_this_pass_.count(it->first) == 0)
+        if (!painted_this_pass_.contains(it->first))
         {
             if (overlay_ && it->second.widget)
             {

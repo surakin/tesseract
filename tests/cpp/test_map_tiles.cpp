@@ -89,7 +89,8 @@ TEST_CASE("osm_view_url uses '.' decimals under a comma-decimal locale", "[map_t
     for (const char* name :
          {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8", "fr_FR.utf8", "es_ES.UTF-8", "es_ES.utf8"})
     {
-        if ((applied = std::setlocale(LC_NUMERIC, name)))
+        applied = std::setlocale(LC_NUMERIC, name);
+        if (applied)
         {
             break;
         }

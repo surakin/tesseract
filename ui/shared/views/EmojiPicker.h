@@ -74,6 +74,14 @@ public:
         current_room_id_ = std::move(room_id);
     }
 
+    /// False in rooms whose bridge cannot carry custom emoticons: the
+    /// picker then shows no pack tabs and no custom search matches. Set
+    /// before `refresh_emoticon_packs()`.
+    void set_custom_emoticons_allowed(bool allowed)
+    {
+        custom_emoticons_allowed_ = allowed;
+    }
+
     /// Every Space (direct and ancestor) that the current room is in — see
     /// `ShellBase::parent_spaces_for_room_`. Read by
     /// `refresh_emoticon_packs()` to surface those spaces' own packs right
@@ -245,6 +253,7 @@ private:
 
     tesseract::Client* client_ = nullptr;
     std::string current_room_id_;
+    bool custom_emoticons_allowed_ = true;
     std::vector<std::string> current_room_parent_spaces_;
 
     Page page_ = Page::Category;

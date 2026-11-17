@@ -84,12 +84,12 @@ struct MemberMenuStage
         panel.arrange(lc, {0, 0, 1000, 800});
     }
 
-    tesseract::views::RoomInfoPanelBody& body()
+    tesseract::views::RoomInfoPanelBody& body() const
     {
         return *panel.body_for_test();
     }
 
-    tk::Point row_center(int i)
+    tk::Point row_center(int i) const
     {
         const tk::Rect r = body().member_row_rect_for_test(i);
         REQUIRE_FALSE(r.empty());
@@ -190,7 +190,7 @@ TEST_CASE("ConfirmDialog: reason field hands its trimmed text to on_reason befor
     dlg->open(std::move(opts),
               [&]
               {
-                  order.push_back("confirm");
+                  order.emplace_back("confirm");
               });
     CHECK(dlg->reason_field()->own_visible());
 
@@ -302,4 +302,100 @@ TEST_CASE("RoomInfoPanel: a collapsed roster lists the top five in display order
     CHECK(all[0] == "adam");
     CHECK(all[2] == "Mod");
     CHECK(all.back() == "m39");
+}
+
+TEST_CASE("RoomInfoPanel: service members are listed apart from and below the regular members",
+          "[room_info_panel]")
+{
+    auto surface = TestSurface::create(1000, 800);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    TestHost host(nullptr);
+    auto panel_owner = tk::create_root_widget<RoomInfoPanel>(&host);
+    host.set_root(panel_owner.get());
+    RoomInfoPanel& panel = *panel_owner;
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    info.name = "Room";
+    panel.open(info);
+
+    auto member = [](const char* name, bool service)
+    {
+        tesseract::RoomMember m;
+        m.user_id = std::string("@") + name + ":example.org";
+        m.display_name = name;
+        m.is_service_member = service;
+        return m;
+    };
+    // A bot sorts first alphabetically but is listed under the regular members.
+    panel.set_members({member("bridgebot", true), member("carol", false), member("alice", false)});
+
+    const tk::Rect bounds{0, 0, 1000, 800};
+    auto* body = panel.body_for_test();
+    REQUIRE(body);
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    CHECK(body->service_section_shown_for_test());
+    CHECK(body->shown_member_names_for_test() ==
+          std::vector<std::string>{"alice", "carol", "bridgebot"});
+    // The service row is laid out below the last regular row.
+    CHECK(body->member_row_rect_for_test(2).y > body->member_row_rect_for_test(1).y);
+
+    // Without service members there is no section.
+    panel.set_members({member("alice", false)});
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    CHECK_FALSE(body->service_section_shown_for_test());
+    CHECK(body->shown_member_names_for_test() == std::vector<std::string>{"alice"});
+}
+
+TEST_CASE("RoomInfoPanel: expanding the roster does not reuse a service member's cached text",
+          "[room_info_panel]")
+{
+    auto surface = TestSurface::create(1000, 800);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    TestHost host(nullptr);
+    auto panel_owner = tk::create_root_widget<RoomInfoPanel>(&host);
+    host.set_root(panel_owner.get());
+    RoomInfoPanel& panel = *panel_owner;
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    info.name = "Room";
+    panel.open(info);
+
+    auto member = [](const std::string& name, bool service)
+    {
+        tesseract::RoomMember m;
+        m.user_id = "@" + name + ":example.org";
+        m.display_name = name;
+        m.is_service_member = service;
+        return m;
+    };
+    // Six regular members: collapsed, row 5 is the service bot; expanded, it is
+    // the sixth regular member.
+    std::vector<tesseract::RoomMember> members;
+    for (const char* n : {"a", "b", "c", "d", "e", "f"})
+    {
+        members.push_back(member(n, false));
+    }
+    members.push_back(member("bridgebot", true));
+    panel.set_members(members);
+
+    const tk::Rect bounds{0, 0, 1000, 800};
+    auto* body = panel.body_for_test();
+    REQUIRE(body);
+    tk::PaintCtx pc{surface->canvas(), surface->factory(), tk::Theme::light(), nullptr, &host};
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    panel.paint(pc);
+    CHECK(body->member_layout_owner_for_test(5) == "@bridgebot:example.org");
+
+    body->expand_members_for_test();
+    panel.measure(lc, {bounds.w, bounds.h});
+    panel.arrange(lc, bounds);
+    panel.paint(pc);
+    const auto names = body->shown_member_names_for_test();
+    REQUIRE(names.size() == 7);
+    CHECK(names[5] == "f");
+    CHECK(body->member_layout_owner_for_test(5) == "@f:example.org");
+    CHECK(body->member_layout_owner_for_test(6) == "@bridgebot:example.org");
 }

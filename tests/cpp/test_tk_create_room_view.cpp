@@ -147,7 +147,7 @@ TEST_CASE("CreateRoomView switching to Create Space disables encryption and "
     CHECK(got.is_call_room);
 
     s.name().set_text("keep?");
-    s.view->reset();
+    (*s.view).reset();
     CHECK(s.name().text().empty());
     CHECK(combo->selected_value() == "room");
     CHECK(check->enabled());

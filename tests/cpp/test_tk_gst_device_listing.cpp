@@ -26,7 +26,7 @@ TEST_CASE("clean_device_display_name leaves other providers alone", "[tk][gst_de
 {
     // Non-v4l2 display names have no suffix to strip and must survive intact.
     CHECK(clean_device_display_name("Built-in Microphone") == "Built-in Microphone");
-    CHECK(clean_device_display_name("") == "");
+    CHECK(clean_device_display_name("").empty());
 
     // A name that legitimately ends in the word V4L2 is not mangled.
     CHECK(clean_device_display_name("V4L2") == "V4L2");

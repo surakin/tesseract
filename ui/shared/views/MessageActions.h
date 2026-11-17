@@ -24,6 +24,7 @@ enum class MessageActionId
     Report,
     CopyEventSource,
     SaveSticker,
+    CopyImage,
 };
 
 struct MessageAction
@@ -57,6 +58,7 @@ struct MessageActionInputs
     // is offered whether or not developer mode is on.
     bool unhandled = false;
     bool saveable_sticker = false; // a sticker not yet in the Saved Stickers pack
+    bool copyable_image = false;   // an image or sticker with a fetchable source
 };
 
 // Pill actions first (display order), then overflow actions.

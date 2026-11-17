@@ -494,7 +494,7 @@ private:
         // Retire widgets for keys no longer present.
         for (auto it = nodes_.begin(); it != nodes_.end();)
         {
-            if (new_index.find(it->first) == new_index.end())
+            if (!new_index.contains(it->first))
             {
                 gtk_widget_unparent(it->second);
                 it = nodes_.erase(it);
@@ -568,7 +568,7 @@ private:
         push_if_changed(data, widget, node);
     }
 
-    void push_if_changed(NodeData* data, GtkWidget* widget, const AccessNode& node)
+    static void push_if_changed(NodeData* data, GtkWidget* widget, const AccessNode& node)
     {
         const bool first = !data->pushed_once;
         const bool disabled = node_disabled(node);
@@ -669,7 +669,7 @@ private:
     // models "current item without moving real focus".
     void hook_selection_changed(Widget* widget)
     {
-        if (!widget || selection_hooked_.count(widget))
+        if (!widget || selection_hooked_.contains(widget))
         {
             return;
         }

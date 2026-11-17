@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <utility>
 
 using tk::Color;
 using tk::Point;
@@ -210,7 +211,7 @@ TEST_CASE("build_text layout char_index_at returns valid offset for plain text",
     tk::Point mid{sz.w * 0.5f, sz.h * 0.5f};
     int idx = layout->char_index_at(mid);
     CHECK(idx >= 0);
-    CHECK(idx <= static_cast<int>(std::string("Hello world").size()));
+    CHECK(std::cmp_less_equal(idx, std::string("Hello world").size()));
 }
 
 TEST_CASE("build_text layout selection_rects returns non-empty rects", "[tk][canvas][selection]")

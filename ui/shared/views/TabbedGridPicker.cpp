@@ -4,6 +4,7 @@
 #include "tk/theme.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -236,14 +237,8 @@ public:
         }
         float delta = (dx != 0.0f) ? dx : dy;
         scroll_offset_ += delta;
-        if (scroll_offset_ < 0.0f)
-        {
-            scroll_offset_ = 0.0f;
-        }
-        if (scroll_offset_ > max_offset)
-        {
-            scroll_offset_ = max_offset;
-        }
+        scroll_offset_ = std::max(scroll_offset_, 0.0f);
+        scroll_offset_ = std::min(scroll_offset_, max_offset);
         return true; // host repaints on true
     }
 
@@ -361,7 +356,7 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         int total = owner_.tab_count();
-        if (total <= 0 || index >= static_cast<std::size_t>(total))
+        if (total <= 0 || std::cmp_greater_equal(index, total))
         {
             return false;
         }
@@ -371,7 +366,7 @@ public:
     tk::Rect access_rect_for_widget_row(std::size_t index) const override
     {
         int total = owner_.tab_count();
-        if (total <= 0 || index >= static_cast<std::size_t>(total))
+        if (total <= 0 || std::cmp_greater_equal(index, total))
         {
             return {};
         }

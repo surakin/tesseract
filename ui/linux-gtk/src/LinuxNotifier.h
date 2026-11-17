@@ -41,7 +41,7 @@ private:
     // the matching ActionInvoked arrives.
     static void on_activation_token_cb(GDBusConnection*, const char*, const char*, const char*,
                                        const char*, GVariant*, gpointer);
-    bool use_portal() const;
+    static bool use_portal();
 
     GDBusConnection* bus_ = nullptr;
     guint action_sub_ = 0;

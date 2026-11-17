@@ -64,6 +64,25 @@
       }
     },
     {
+      "name": "tidy",
+      "hidden": true,
+      "description": "Compile database for clang-tidy: real TUs, no unity batching, no PCH",
+      "cacheVariables": {
+        "TESSERACT_UNITY_BUILD": "OFF",
+        "TESSERACT_ENABLE_PCH": "OFF"
+      }
+    },
+    {
+      "name": "linux-tidy",
+      "displayName": "Linux – GTK4 + Qt6, clang-tidy compile database",
+      "inherits": ["linux-debug", "tidy"]
+    },
+    {
+      "name": "windows-xwin-tidy",
+      "displayName": "Windows – xwin cross build, clang-tidy compile database",
+      "inherits": ["windows-xwin-debug", "tidy"]
+    },
+    {
       "name": "macos-appkit-arm64-debug",
       "displayName": "macOS – AppKit arm64 (Debug)",
       "inherits": "base",
@@ -123,6 +142,8 @@
     { "name": "windows-xwin-release",       "configurePreset": "windows-xwin-release"       },
     { "name": "linux-debug",                "configurePreset": "linux-debug"                },
     { "name": "linux-release",              "configurePreset": "linux-release"              },
+    { "name": "linux-tidy",                "configurePreset": "linux-tidy"                },
+    { "name": "windows-xwin-tidy",         "configurePreset": "windows-xwin-tidy"         },
     { "name": "macos-appkit-arm64-debug",   "configurePreset": "macos-appkit-arm64-debug"   },
     { "name": "macos-appkit-arm64-release", "configurePreset": "macos-appkit-arm64-release" },
     { "name": "macos-appkit-x86_64-debug",  "configurePreset": "macos-appkit-x86_64-debug"  },

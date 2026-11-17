@@ -106,11 +106,11 @@ struct PopupsRig
             "!room:x");
         popups = std::make_unique<tesseract::ComposerPopups>(host, area.get(), pane.get(), nullptr,
                                                              std::move(options));
-        REQUIRE(host.popups_created.size() == 4);
+        REQUIRE(host.popups_created.size() == 5);
     }
 
     // Simulate the user typing `t` (native change event).
-    void type(const std::string& t)
+    void type(const std::string& t) const
     {
         host.native->text_ = t;
         host.native->on_changed(t);

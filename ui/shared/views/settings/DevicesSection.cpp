@@ -53,7 +53,7 @@ std::string format_relative_ts(std::uint64_t ts_ms)
     }
 
     const auto delta_ms =
-        (now > static_cast<std::int64_t>(ts_ms)) ? (now - static_cast<std::int64_t>(ts_ms)) : 0;
+        std::cmp_greater(now, ts_ms) ? (now - static_cast<std::int64_t>(ts_ms)) : 0;
     const auto secs = delta_ms / 1000;
     if (secs < 60)
     {
@@ -829,6 +829,7 @@ void DevicesSection::set_device_error(const std::string& device_id, std::string 
         if (row && row->device_id() == device_id)
         {
             row->set_error(std::move(error));
+            return; // device ids are unique; `error` has been moved
         }
     }
 }
@@ -841,6 +842,7 @@ void DevicesSection::enter_uia_state(const std::string& device_id, std::string f
         if (row && row->device_id() == device_id)
         {
             row->enter_uia(std::move(fallback_url), std::move(session));
+            return; // device ids are unique; the arguments have been moved
         }
     }
 }

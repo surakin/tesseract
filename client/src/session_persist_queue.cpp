@@ -101,7 +101,7 @@ void SessionPersistQueue::enqueue(std::string user_id, std::string json)
 {
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        if (tombstones_.count(user_id) != 0)
+        if (tombstones_.contains(user_id))
         {
             return; // logged out: a late refresh must not recreate the account
         }
@@ -222,7 +222,7 @@ void SessionPersistQueue::revive(const std::string& user_id)
 bool SessionPersistQueue::is_discarded(const std::string& user_id)
 {
     std::lock_guard<std::mutex> lk(mutex_);
-    return tombstones_.count(user_id) != 0;
+    return tombstones_.contains(user_id);
 }
 
 namespace

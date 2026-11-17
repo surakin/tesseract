@@ -104,7 +104,7 @@ public:
 
 private:
     // Selection-only repaint: hooks_.repaint_selection if set, else hooks_.repaint.
-    void repaint_selection_();
+    void repaint_selection_() const;
     void accept(const MentionCandidate& c);
 
     tk::TextArea* text_area_;
@@ -116,7 +116,7 @@ private:
     std::vector<MentionCandidate> candidates_;
     std::vector<tesseract::RoomMember> cached_members_;
     std::string cached_members_room_;
-    std::chrono::steady_clock::time_point cached_members_at_{};
+    std::chrono::steady_clock::time_point cached_members_at_;
     std::string fetching_room_;
     bool visible_ = false;
 };

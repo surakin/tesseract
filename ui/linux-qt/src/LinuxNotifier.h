@@ -38,7 +38,7 @@ private slots:
     void onActivationToken(uint id, const QString& token);
 
 private:
-    bool use_portal() const;
+    static bool use_portal();
 
     QDBusInterface iface_;
     QDBusInterface portal_;

@@ -104,7 +104,8 @@ struct ShellEncryptionSetupTestShell : tesseract::test::TestShellBase
     {
         if (!keychain_readable_)
         {
-            return done({Lookup::Status::Unreadable, {}});
+            done({Lookup::Status::Unreadable, {}});
+            return;
         }
         auto it = keychain_.find(uid);
         done(it == keychain_.end() ? Lookup{Lookup::Status::Missing, {}}

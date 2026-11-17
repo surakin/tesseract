@@ -158,7 +158,7 @@ fn parse_server_names(raw: &[String]) -> Vec<matrix_sdk::ruma::OwnedServerName> 
 /// another server — and the join fails. The space scan is local state-store
 /// reads only; no network I/O.
 #[cfg(not(test))]
-async fn resolve_route_via(
+pub(super) async fn resolve_route_via(
     client: &matrix_sdk::Client,
     target: &matrix_sdk::ruma::RoomOrAliasId,
     seed: Vec<matrix_sdk::ruma::OwnedServerName>,
@@ -1980,6 +1980,7 @@ impl ClientFfi {
         // members fill in as sync progresses.
         use matrix_sdk::ruma::events::room::power_levels::UserPowerLevel;
 
+        let service_members = room.service_members().unwrap_or_default();
         match self
             .rt
             .block_on(room.members_no_sync(matrix_sdk::RoomMemberships::JOIN))
@@ -2004,6 +2005,7 @@ impl ClientFfi {
                             .unwrap_or_else(|| m.user_id().localpart().to_string()),
                         avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
                         power_level,
+                        is_service_member: service_members.contains(m.user_id()),
                     }
                 })
                 .collect(),

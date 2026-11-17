@@ -266,26 +266,26 @@ private:
 
     // Shared by append_frame() and the internal top-up-delivery path: push
     // one frame onto `entry`. Caller holds mu_.
-    void push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
+    static void push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
 
     // Shared by append_frame() and append_frame_from_session(): handles the
     // `restarting` placeholder-replacement case, else defers to
     // push_frame_locked_(). Caller holds mu_ and has already resolved
     // `entry` (including, for append_frame_from_session(), verified the
     // session identity).
-    void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
+    static void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
 
     // Windowed-entry bookkeeping run from advance(), caller holds mu_:
     // drop frames more than kKeepBehindFrames behind `entry.current`,
     // shifting window_start/current to match.
-    void trim_window_locked_(Entry& entry);
+    static void trim_window_locked_(Entry& entry);
 
     // Windowed-entry bookkeeping run from advance(), caller holds mu_: when
     // playback has reached the last resident frame and the session is
     // exhausted with frame 0 no longer resident (window_start != 0), restart
     // the session and drop all resident frames so collect_topups() re-fills
     // starting at frame 0 on the next tick.
-    void restart_loop_locked_(Entry& entry);
+    static void restart_loop_locked_(Entry& entry);
 
     std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::function<std::int64_t()> clock_;

@@ -7,6 +7,8 @@
 #include "emoji_segmentation.h"
 #include "pill.h"
 #include "pixmap_cache.h"
+#include "tk/image_sniff.h"
+#include "platform/win32/dropped_files_win32.h"
 
 #include <BetterText/BetterText.h>
 
@@ -35,6 +37,7 @@
 #include <shellapi.h> // CF_HDROP / DragQueryFileW
 #include <shlwapi.h>
 #include <shlobj.h>
+#include <shobjidl.h> // IDataObjectAsyncCapability
 #include <wrl/client.h>
 #include <initguid.h>
 #include <netlistmgr.h>
@@ -46,6 +49,7 @@
 #include <mfidl.h>
 
 #include <atomic>
+#include <memory>
 #include <chrono>
 #include <optional>
 #include <thread>
@@ -59,6 +63,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <new>
 #include <vector>
 
 namespace tk::win32
@@ -116,6 +121,18 @@ UINT post_to_ui_message()
 {
     static UINT msg = RegisterWindowMessageW(L"tk_post_to_ui");
     return msg;
+}
+
+// Posts `fn` to `hwnd`'s UI thread from any thread. Captures nothing but the
+// handle, so a window that died meanwhile just fails the post and the heap
+// copy is freed.
+void post_to_hwnd(HWND hwnd, std::function<void()> fn)
+{
+    auto* heap = new std::function<void()>(std::move(fn));
+    if (!PostMessageW(hwnd, post_to_ui_message(), 0, reinterpret_cast<LPARAM>(heap)))
+    {
+        delete heap;
+    }
 }
 
 // Process-wide font for native EDIT overlays — sized to FontRole::Body so
@@ -215,8 +232,10 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
         DWORD entries = bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
         palette_bytes = entries * sizeof(RGBQUAD);
     }
-    else if (bih->biCompression == BI_BITFIELDS)
+    else if (bih->biCompression == BI_BITFIELDS && header_size == sizeof(BITMAPINFOHEADER))
     {
+        // Only the plain 40-byte header keeps its masks outside the header;
+        // V4/V5 headers embed them, so adding 12 here would skew the offset.
         palette_bytes = 3 * sizeof(DWORD);
     }
     bfh->bfOffBits = sizeof(BITMAPFILEHEADER) + header_size + palette_bytes;
@@ -305,140 +324,15 @@ inline bool clipboard_image_to_png(IWICImagingFactory* wic, HWND owner,
     return true;
 }
 
-// Extension → MIME table used as a fallback when content-sniffing via
-// FindMimeFromData isn't conclusive. Covers the common chat payloads; the
-// rest fall back to application/octet-stream. Shared by DropTarget (real
-// drag-drop) and the CF_HDROP clipboard-paste path below (files copied in
-// Explorer, not dragged).
-inline const char* mime_from_ext(const std::wstring& ext_lower)
-{
-    if (ext_lower == L"png")
-    {
-        return "image/png";
-    }
-    if (ext_lower == L"jpg" || ext_lower == L"jpeg")
-    {
-        return "image/jpeg";
-    }
-    if (ext_lower == L"webp")
-    {
-        return "image/webp";
-    }
-    if (ext_lower == L"bmp")
-    {
-        return "image/bmp";
-    }
-    if (ext_lower == L"gif")
-    {
-        return "image/gif";
-    }
-    if (ext_lower == L"pdf")
-    {
-        return "application/pdf";
-    }
-    if (ext_lower == L"zip")
-    {
-        return "application/zip";
-    }
-    if (ext_lower == L"txt")
-    {
-        return "text/plain";
-    }
-    if (ext_lower == L"json")
-    {
-        return "application/json";
-    }
-    return nullptr;
-}
-
-inline std::wstring path_extension_lower(const std::wstring& p)
-{
-    size_t slash = p.find_last_of(L"\\/");
-    size_t dot = p.find_last_of(L'.');
-    if (dot == std::wstring::npos || (slash != std::wstring::npos && dot < slash))
-    {
-        return {};
-    }
-    std::wstring ext = p.substr(dot + 1);
-    for (wchar_t& c : ext)
-    {
-        if (c >= L'A' && c <= L'Z')
-        {
-            c = static_cast<wchar_t>(c + (L'a' - L'A'));
-        }
-    }
-    return ext;
-}
-
-inline std::wstring basename(const std::wstring& p)
-{
-    size_t slash = p.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? p : p.substr(slash + 1);
-}
-
-// Reads a single local file into a tk::FileDropPayload for a clipboard
-// CF_HDROP paste (files copied in Explorer, not dragged). Mirrors
-// DropTarget::try_dispatch_file's size guard/read/mime logic below, minus
-// the position-based dispatch (paste has no drop point) and the
-// fire_file_drop_error reporting (this call site has no Host handy at the
-// point it runs — an unreadable file is just skipped, same as an unreadable
-// dropped file that never reaches a widget).
-inline std::optional<tk::FileDropPayload> read_local_file_for_paste(const std::wstring& path)
-{
-    WIN32_FILE_ATTRIBUTE_DATA fa{};
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
-    {
-        return std::nullopt;
-    }
-    ULARGE_INTEGER sz{};
-    sz.LowPart = fa.nFileSizeLow;
-    sz.HighPart = fa.nFileSizeHigh;
-    if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
-    {
-        return std::nullopt;
-    }
-
-    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE)
-    {
-        return std::nullopt;
-    }
-    std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-    DWORD read_total = 0;
-    while (read_total < bytes.size())
-    {
-        DWORD got = 0;
-        BOOL ok = ReadFile(h, bytes.data() + read_total,
-                           static_cast<DWORD>(bytes.size() - read_total), &got, nullptr);
-        if (!ok || got == 0)
-        {
-            break;
-        }
-        read_total += got;
-    }
-    CloseHandle(h);
-    if (read_total != bytes.size())
-    {
-        return std::nullopt;
-    }
-
-    std::string mime = "application/octet-stream";
-    if (const char* m = mime_from_ext(path_extension_lower(path)))
-    {
-        mime = m;
-    }
-
-    return tk::FileDropPayload{std::move(bytes), std::move(mime), wide_to_utf8(basename(path))};
-}
+namespace wd = tesseract::win32_drop;
 
 // ── UTF-8 byte offset to UTF-16 code unit count ──────────────────────────
 // Used by BetterTextArea for replace_range().
 // Returns the number of UTF-16 code units in the first `byte_offset` bytes
 // of `utf8`; clamped to [0, utf8.size()].
-static int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
+int utf8_byte_to_utf16_len(const std::string& utf8, int byte_offset)
 {
-    byte_offset = std::clamp(byte_offset, 0, (int)utf8.size());
+    byte_offset = std::clamp(byte_offset, 0, static_cast<int>(utf8.size()));
     int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), byte_offset, nullptr, 0);
     return wlen < 0 ? 0 : wlen;
 }
@@ -2337,56 +2231,34 @@ public:
     }
 
 private:
-    // Ctrl+V of files copied in Explorer ("Copy", not a drag): reads
-    // CF_HDROP directly off the clipboard (no GlobalLock needed — unlike
-    // the drag-drop STGMEDIUM path in DropTarget::Drop above, a
-    // clipboard-vended CF_HDROP handle is usable as an HDROP as-is) and
-    // forwards one FileDropPayload per file to on_file_paste_.
-    bool paste_files_from_clipboard_()
+    // Ctrl+V of files copied in Explorer ("Copy", not a drag) or from a
+    // virtual folder (phone, zip, Outlook). A worker reads them (network
+    // shares and cloud placeholders can block) and posts the payloads back
+    // to the parent Host window; nothing is attached if none could be read.
+    void paste_files_from_clipboard_()
     {
-        if (!OpenClipboard(hwnd_))
+        HWND target = parent_;
+        if (!target)
         {
-            return false;
+            return;
         }
-        struct CloseGuard
-        {
-            ~CloseGuard()
+        std::weak_ptr<bool> alive = alive_;
+        std::thread(
+            [this, target, alive]()
             {
-                CloseClipboard();
-            }
-        } guard;
-
-        HANDLE hg = GetClipboardData(CF_HDROP);
-        if (!hg)
-        {
-            return false;
-        }
-        HDROP hdrop = static_cast<HDROP>(hg);
-        UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-        std::vector<tk::FileDropPayload> files;
-        for (UINT i = 0; i < n_files; ++i)
-        {
-            UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
-            if (len == 0)
-            {
-                continue;
-            }
-            std::wstring path(len, L'\0');
-            if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
-            {
-                continue;
-            }
-            if (auto payload = read_local_file_for_paste(path))
-            {
-                files.push_back(std::move(*payload));
-            }
-        }
-        if (files.empty())
-        {
-            return false;
-        }
-        on_file_paste_(std::move(files));
-        return true;
+                auto result = std::make_shared<wd::ReadResult>(wd::read_clipboard());
+                post_to_hwnd(target,
+                             [this, alive, result]()
+                             {
+                                 // The area may be gone by the time we land.
+                                 if (alive.expired() || !on_file_paste_ || result->files.empty())
+                                 {
+                                     return;
+                                 }
+                                 on_file_paste_(std::move(result->files));
+                             });
+            })
+            .detach();
     }
 
     void refresh_height()
@@ -2605,17 +2477,15 @@ private:
                 }
             }
             // Files copied in Explorer ("Copy", not a drag) land on the
-            // clipboard as CF_HDROP — the same format a real drag-drop
-            // carries. Checked after the image case above (an image format
+            // clipboard as CF_HDROP, or as file descriptors for virtual
+            // folders. Checked after the image case above (an image format
             // takes priority when a payload somehow offers both).
             if ((is_ctrl_v || is_shift_ins) && self->on_file_paste_ &&
                 !IsClipboardFormatAvailable(CF_DIBV5) && !IsClipboardFormatAvailable(CF_DIB) &&
-                IsClipboardFormatAvailable(CF_HDROP))
+                wd::clipboard_has_files())
             {
-                if (self->paste_files_from_clipboard_())
-                {
-                    return 0;
-                }
+                self->paste_files_from_clipboard_();
+                return 0;
             }
         }
         // Intercept Ctrl+V / Shift+Insert / right-click "Paste" before
@@ -2634,12 +2504,10 @@ private:
             }
         }
         if (msg == WM_PASTE && self->on_file_paste_ && !IsClipboardFormatAvailable(CF_DIBV5) &&
-            !IsClipboardFormatAvailable(CF_DIB) && IsClipboardFormatAvailable(CF_HDROP))
+            !IsClipboardFormatAvailable(CF_DIB) && wd::clipboard_has_files())
         {
-            if (self->paste_files_from_clipboard_())
-            {
-                return 0;
-            }
+            self->paste_files_from_clipboard_();
+            return 0;
         }
         // Custom-emoji images resolve asynchronously (the shell kicks off a
         // fetch as a side effect of set_image_resolver's callback and has no
@@ -2938,6 +2806,8 @@ private:
 
     HWND parent_ = nullptr;
     HWND hwnd_ = nullptr;
+    // Expires with this area; paste workers check it before calling back.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     // UIA identity for hwnd_ (BetterText has none of its own).
     std::unique_ptr<NativeEditAccessible> access_;
     std::string access_name_;
@@ -3040,7 +2910,7 @@ static std::unordered_set<HWND>& live_popup_hwnds()
 
 bool is_popup_surface_hwnd(HWND hwnd)
 {
-    return hwnd && live_popup_hwnds().count(hwnd) != 0;
+    return hwnd && live_popup_hwnds().contains(hwnd);
 }
 
 class Win32PopupSurfaceHandle : public tk::PopupSurfaceHandle
@@ -3088,12 +2958,12 @@ public:
         // point on the very first call.
         UINT dpi = GetDpiForWindow(anchor_hwnd_);
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
-        const int w = std::max(1, int(std::round(size.w * scale)));
-        const int h = std::max(1, int(std::round(size.h * scale)));
-        const int anchor_h_px = int(std::round(anchor_world_rect.h * scale));
-        const int gap_px = int(std::round(4.0f * scale));
-        POINT pt{LONG(std::round(anchor_world_rect.x * scale)),
-                 LONG(std::round(anchor_world_rect.y * scale))};
+        const int w = std::max(1, static_cast<int>(std::round(size.w * scale)));
+        const int h = std::max(1, static_cast<int>(std::round(size.h * scale)));
+        const int anchor_h_px = static_cast<int>(std::round(anchor_world_rect.h * scale));
+        const int gap_px = static_cast<int>(std::round(4.0f * scale));
+        POINT pt{static_cast<LONG>(std::round(anchor_world_rect.x * scale)),
+                 static_cast<LONG>(std::round(anchor_world_rect.y * scale))};
         ClientToScreen(anchor_hwnd_, &pt);
         HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi{};
@@ -3111,8 +2981,8 @@ public:
         {
             y = (y_below + h <= mi.rcWork.bottom) ? y_below : y_above;
         }
-        x = std::clamp(x, (int)mi.rcWork.left, (int)mi.rcWork.right - w);
-        y = std::clamp(y, (int)mi.rcWork.top, (int)mi.rcWork.bottom - h);
+        x = std::clamp(x, static_cast<int>(mi.rcWork.left), static_cast<int>(mi.rcWork.right) - w);
+        y = std::clamp(y, static_cast<int>(mi.rcWork.top), static_cast<int>(mi.rcWork.bottom) - h);
         // No show/hide flags — visibility is set_visible()'s job alone, so
         // repositioning an already-open popup (e.g. row count changed) never
         // has a side effect on whether it's shown.
@@ -3381,7 +3251,7 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
     } mono_info{};
     mono_info.header.biSize = sizeof(BITMAPINFOHEADER);
     mono_info.header.biWidth = width;
-    mono_info.header.biHeight = -(bm.bmHeight); // top-down
+    mono_info.header.biHeight = -bm.bmHeight; // top-down
     mono_info.header.biPlanes = 1;
     mono_info.header.biBitCount = 1;
     mono_info.header.biCompression = BI_RGB;
@@ -3536,6 +3406,7 @@ public:
                 reinterpret_cast<LPARAM>(&c), 0);
             ReleaseDC(nullptr, hdc);
             std::vector<FontFamilyInfo> out;
+            out.reserve(c.fams.size());
             for (auto& [name, mono] : c.fams)
             {
                 out.push_back({name, mono});
@@ -3866,7 +3737,7 @@ public:
                 }
                 devices[i]->Release();
             }
-            CoTaskMemFree(devices);
+            CoTaskMemFree(static_cast<void*>(devices));
         }
         attrs->Release();
         return result;
@@ -4200,57 +4071,198 @@ public:
 
         const SIZE_T stride = static_cast<SIZE_T>(w) * 4;
         const SIZE_T pixel_bytes = stride * h;
-        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, sizeof(BITMAPV5HEADER) + pixel_bytes);
-        if (!hg)
+
+        // Top-down BGRA pixels, flipped per format below (apps disagree on
+        // negative-height DIBs, so every DIB we publish is bottom-up).
+        // Dimensions come from remote media: cap the size and never let an
+        // allocation failure escape into the UI thread.
+        constexpr SIZE_T kMaxClipboardPixelBytes = 512u * 1024u * 1024u;
+        if (pixel_bytes > kMaxClipboardPixelBytes)
         {
             return false;
         }
-        auto* base = static_cast<std::uint8_t*>(GlobalLock(hg));
-        if (!base)
+        std::vector<std::uint8_t> top_down;
+        try
         {
-            GlobalFree(hg);
+            top_down.resize(pixel_bytes);
+        }
+        catch (const std::bad_alloc&)
+        {
             return false;
         }
-
-        auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
-        std::memset(hdr, 0, sizeof(BITMAPV5HEADER));
-        hdr->bV5Size = sizeof(BITMAPV5HEADER);
-        hdr->bV5Width = static_cast<LONG>(w);
-        hdr->bV5Height = -static_cast<LONG>(h); // top-down
-        hdr->bV5Planes = 1;
-        hdr->bV5BitCount = 32;
-        hdr->bV5Compression = BI_BITFIELDS;
-        hdr->bV5RedMask = 0x00FF0000;
-        hdr->bV5GreenMask = 0x0000FF00;
-        hdr->bV5BlueMask = 0x000000FF;
-        hdr->bV5AlphaMask = 0xFF000000;
-        hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
-
-        std::uint8_t* pixels = base + sizeof(BITMAPV5HEADER);
         if (FAILED(bgra->CopyPixels(nullptr, static_cast<UINT>(stride),
-                                    static_cast<UINT>(pixel_bytes), pixels)))
+                                    static_cast<UINT>(pixel_bytes), top_down.data())))
         {
-            GlobalUnlock(hg);
-            GlobalFree(hg);
             return false;
         }
-        GlobalUnlock(hg);
+
+        // One movable global holding `header_bytes` of header then the
+        // bottom-up pixels; `fill_header` writes the header in place.
+        auto make_dib = [&](SIZE_T header_bytes, auto&& fill_header) -> HGLOBAL
+        {
+            HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, header_bytes + pixel_bytes);
+            if (!g)
+            {
+                return nullptr;
+            }
+            auto* base = static_cast<std::uint8_t*>(GlobalLock(g));
+            if (!base)
+            {
+                GlobalFree(g);
+                return nullptr;
+            }
+            fill_header(base);
+            std::uint8_t* dst = base + header_bytes;
+            for (UINT row = 0; row < h; ++row)
+            {
+                std::memcpy(dst + static_cast<SIZE_T>(row) * stride,
+                            top_down.data() + static_cast<SIZE_T>(h - 1 - row) * stride, stride);
+            }
+            GlobalUnlock(g);
+            return g;
+        };
+
+        HGLOBAL hg_v5 = make_dib(sizeof(BITMAPV5HEADER),
+                                 [&](std::uint8_t* base)
+                                 {
+                                     auto* hdr = reinterpret_cast<BITMAPV5HEADER*>(base);
+                                     hdr->bV5Size = sizeof(BITMAPV5HEADER);
+                                     hdr->bV5Width = static_cast<LONG>(w);
+                                     hdr->bV5Height = static_cast<LONG>(h); // bottom-up
+                                     hdr->bV5Planes = 1;
+                                     hdr->bV5BitCount = 32;
+                                     hdr->bV5Compression = BI_BITFIELDS;
+                                     hdr->bV5SizeImage = static_cast<DWORD>(pixel_bytes);
+                                     hdr->bV5RedMask = 0x00FF0000;
+                                     hdr->bV5GreenMask = 0x0000FF00;
+                                     hdr->bV5BlueMask = 0x000000FF;
+                                     hdr->bV5AlphaMask = 0xFF000000;
+                                     hdr->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
+                                     hdr->bV5Intent = LCS_GM_IMAGES;
+                                 });
+        HGLOBAL hg_dib = make_dib(sizeof(BITMAPINFOHEADER),
+                                  [&](std::uint8_t* base)
+                                  {
+                                      auto* hdr = reinterpret_cast<BITMAPINFOHEADER*>(base);
+                                      hdr->biSize = sizeof(BITMAPINFOHEADER);
+                                      hdr->biWidth = static_cast<LONG>(w);
+                                      hdr->biHeight = static_cast<LONG>(h); // bottom-up
+                                      hdr->biPlanes = 1;
+                                      hdr->biBitCount = 32;
+                                      hdr->biCompression = BI_RGB;
+                                      hdr->biSizeImage = static_cast<DWORD>(pixel_bytes);
+                                  });
+
+        // Registered "PNG" format (alpha-preserving; browsers, Discord,
+        // Office, Element read it). Re-encode the decoded pixels via WIC.
+        HGLOBAL hg_png = nullptr;
+        {
+            ComPtr<IStream> mem;
+            ComPtr<IWICBitmapEncoder> encoder;
+            ComPtr<IWICBitmapFrameEncode> out_frame;
+            ComPtr<IPropertyBag2> props;
+            WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppBGRA;
+            if (SUCCEEDED(CreateStreamOnHGlobal(nullptr, FALSE, mem.GetAddressOf())) &&
+                SUCCEEDED(
+                    wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())) &&
+                SUCCEEDED(encoder->Initialize(mem.Get(), WICBitmapEncoderNoCache)) &&
+                SUCCEEDED(
+                    encoder->CreateNewFrame(out_frame.GetAddressOf(), props.GetAddressOf())) &&
+                SUCCEEDED(out_frame->Initialize(props.Get())) &&
+                SUCCEEDED(out_frame->SetSize(w, h)) && SUCCEEDED(out_frame->SetPixelFormat(&fmt)) &&
+                SUCCEEDED(out_frame->WritePixels(h, static_cast<UINT>(stride),
+                                                 static_cast<UINT>(pixel_bytes),
+                                                 top_down.data())) &&
+                SUCCEEDED(out_frame->Commit()) && SUCCEEDED(encoder->Commit()))
+            {
+                GetHGlobalFromStream(mem.Get(), &hg_png);
+            }
+            else
+            {
+                // Stream owns no HGLOBAL we kept (DeleteOnRelease=FALSE):
+                // release it if it was created.
+                HGLOBAL leaked = nullptr;
+                if (mem && SUCCEEDED(GetHGlobalFromStream(mem.Get(), &leaked)) && leaked)
+                {
+                    GlobalFree(leaked);
+                }
+            }
+        }
+
+        // An animated GIF also goes out as its original bytes under the
+        // registered "GIF" format (browsers, Office and chat apps read it) so
+        // the animation survives; the DIB/PNG stills stay the fallback.
+        HGLOBAL hg_gif = nullptr;
+        if (tk::bytes_may_be_animated(encoded_bytes) &&
+            tk::sniff_image_mime(encoded_bytes) == "image/gif")
+        {
+            hg_gif = GlobalAlloc(GMEM_MOVEABLE, encoded_bytes.size());
+            if (hg_gif)
+            {
+                if (void* dst = GlobalLock(hg_gif))
+                {
+                    std::memcpy(dst, encoded_bytes.data(), encoded_bytes.size());
+                    GlobalUnlock(hg_gif);
+                }
+                else
+                {
+                    GlobalFree(hg_gif);
+                    hg_gif = nullptr;
+                }
+            }
+        }
+
+        if (!hg_v5 && !hg_dib)
+        {
+            if (hg_gif)
+            {
+                GlobalFree(hg_gif);
+            }
+            if (hg_png)
+            {
+                GlobalFree(hg_png);
+            }
+            return false;
+        }
 
         if (!OpenClipboard(hwnd_))
         {
-            GlobalFree(hg);
+            for (HGLOBAL g : {hg_v5, hg_dib, hg_png, hg_gif})
+            {
+                if (g)
+                {
+                    GlobalFree(g);
+                }
+            }
             return false;
         }
         EmptyClipboard();
-        if (!SetClipboardData(CF_DIBV5, hg))
+        // Each successful SetClipboardData transfers ownership; free only
+        // the handles the clipboard refused.
+        bool any = false;
+        auto publish = [&](UINT format, HGLOBAL g)
         {
-            // Clipboard did not take ownership; free our copy.
-            GlobalFree(hg);
-            CloseClipboard();
-            return false;
-        }
+            if (!g)
+            {
+                return;
+            }
+            if (SetClipboardData(format, g))
+            {
+                any = true;
+            }
+            else
+            {
+                GlobalFree(g);
+            }
+        };
+        static const UINT png_format = RegisterClipboardFormatW(L"PNG");
+        static const UINT gif_format = RegisterClipboardFormatW(L"GIF");
+        publish(gif_format, hg_gif);
+        publish(png_format, hg_png);
+        publish(CF_DIBV5, hg_v5);
+        publish(CF_DIB, hg_dib);
         CloseClipboard();
-        return true;
+        return any;
     }
 
     Win32TextAreaBase* area_by_id(int id)
@@ -4303,6 +4315,11 @@ public:
     HWND hwnd() const
     {
         return hwnd_;
+    }
+    // Expires with the Host; drop workers check it before touching it.
+    std::weak_ptr<bool> alive_token() const
+    {
+        return alive_;
     }
 
     void relayout()
@@ -4608,6 +4625,7 @@ protected:
 
 private:
     HWND hwnd_;
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     const Theme* theme_;
     bool transparent_ = false;
     std::unique_ptr<d2d::Surface> d2d_surface_;
@@ -4843,8 +4861,7 @@ constexpr LPARAM kTouchInjectedSignature = 0xFF515700; // MI_WP_SIGNATURE
 
 bool wheel_event_is_touchpad()
 {
-    return (static_cast<LPARAM>(GetMessageExtraInfo()) & kTouchInjectedSignatureMask) ==
-           kTouchInjectedSignature;
+    return (GetMessageExtraInfo() & kTouchInjectedSignatureMask) == kTouchInjectedSignature;
 }
 
 Key key_from_win32(WPARAM vk, bool shift)
@@ -5194,39 +5211,15 @@ public:
         // relative) — convert once, same pipeline WM_MOUSEWHEEL uses.
         const tk::Point drop_pos = host_->screen_to_tk_point(POINT{pt.x, pt.y});
 
-        FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-        STGMEDIUM stg{};
-        if (FAILED(data->GetData(&fe, &stg)))
+        // Files can sit on a network share, a cloud placeholder or a phone,
+        // so reading happens on a worker (not the UI thread). The data
+        // object is marshalled to it; results come back via post_to_ui.
+        if (!start_read_worker(data, drop_pos))
         {
+            host_->fire_file_drop_error(tk::tr("Could not read file"));
             return S_OK;
         }
-        HDROP hdrop = static_cast<HDROP>(GlobalLock(stg.hGlobal));
-        bool dispatched = false;
-        if (hdrop)
-        {
-            UINT n_files = DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
-            for (UINT i = 0; i < n_files; ++i)
-            {
-                UINT len = DragQueryFileW(hdrop, i, nullptr, 0);
-                if (len == 0)
-                {
-                    continue;
-                }
-                std::wstring path(len, L'\0');
-                if (DragQueryFileW(hdrop, i, path.data(), len + 1) == 0)
-                {
-                    continue;
-                }
-                if (try_dispatch_file(path, drop_pos))
-                {
-                    dispatched = true;
-                }
-            }
-            GlobalUnlock(stg.hGlobal);
-        }
-        ReleaseStgMedium(&stg);
-
-        if (dispatched && pdwEffect)
+        if (pdwEffect)
         {
             *pdwEffect = DROPEFFECT_COPY;
         }
@@ -5239,83 +5232,111 @@ public:
     }
 
 private:
-    // Returns true when the drop carries at least one local file.
+    // Returns true when the drop carries files (CF_HDROP or descriptors).
     static bool acceptable(IDataObject* data)
     {
-        if (!data)
-        {
-            return false;
-        }
-        FORMATETC fe{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
-        return data->QueryGetData(&fe) == S_OK;
+        return wd::has_files(data);
     }
 
-    bool try_dispatch_file(const std::wstring& path, tk::Point pos)
+    // Marshals `data` (and its async capability, if the source has one) to a
+    // detached worker that reads every file and posts the result back.
+    // Worker apartment: MTA. It only makes cross-process calls on proxies
+    // (no window, no message pump needed), and an MTA thread can't deadlock
+    // against our UI thread unless the source is in-process, in which case
+    // the UI thread is pumping again once Drop returns.
+    bool start_read_worker(IDataObject* data, tk::Point pos)
     {
-        if (!host_)
+        IStream* data_stream = nullptr;
+        if (FAILED(CoMarshalInterThreadInterfaceInStream(IID_IDataObject, data, &data_stream)))
         {
             return false;
         }
-
-        // Size guard via GetFileAttributesEx — single syscall, no open.
-        WIN32_FILE_ATTRIBUTE_DATA fa{};
-        if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
+        // Async-capable sources (Explorer's shell data objects) expect the
+        // target to bracket the copy with StartOperation/EndOperation, so
+        // the source keeps the data alive past Drop's return.
+        IStream* async_stream = nullptr;
         {
-            if (host_)
+            Microsoft::WRL::ComPtr<IDataObjectAsyncCapability> async;
+            BOOL is_async = FALSE;
+            if (SUCCEEDED(data->QueryInterface(IID_PPV_ARGS(&async))) &&
+                SUCCEEDED(async->GetAsyncMode(&is_async)) && is_async &&
+                SUCCEEDED(async->StartOperation(nullptr)))
             {
-                host_->fire_file_drop_error(tk::tr("Could not read file"));
+                if (FAILED(CoMarshalInterThreadInterfaceInStream(IID_IDataObjectAsyncCapability,
+                                                                 async.Get(), &async_stream)))
+                {
+                    async->EndOperation(E_FAIL, nullptr, DROPEFFECT_NONE);
+                    async_stream = nullptr;
+                }
             }
-            return false;
-        }
-        ULARGE_INTEGER sz{};
-        sz.LowPart = fa.nFileSizeLow;
-        sz.HighPart = fa.nFileSizeHigh;
-        if (sz.QuadPart == 0 || sz.QuadPart > kMaxDroppedFileBytes)
-        {
-            return false;
         }
 
-        HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                               FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h == INVALID_HANDLE_VALUE)
-        {
-            if (host_)
+        HWND hwnd = host_->hwnd();
+        std::weak_ptr<bool> alive = host_->alive_token();
+        Host* host = host_;
+        std::thread(
+            [hwnd, alive, host, pos, data_stream, async_stream]()
             {
-                host_->fire_file_drop_error(tk::tr("Could not read file"));
-            }
-            return false;
-        }
-
-        std::vector<std::uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
-        DWORD read_total = 0;
-        while (read_total < bytes.size())
-        {
-            DWORD got = 0;
-            BOOL ok = ReadFile(h, bytes.data() + read_total,
-                               static_cast<DWORD>(bytes.size() - read_total), &got, nullptr);
-            if (!ok || got == 0)
-            {
-                break;
-            }
-            read_total += got;
-        }
-        CloseHandle(h);
-        if (read_total != bytes.size())
-        {
-            return false;
-        }
-
-        // Mime: extension table first (cheap), default to
-        // application/octet-stream when unknown. FindMimeFromData would
-        // need urlmon.lib; the table covers the common chat payloads.
-        std::string mime = "application/octet-stream";
-        if (const char* m = mime_from_ext(path_extension_lower(path)))
-        {
-            mime = m;
-        }
-
-        return host_->fire_file_drop(std::move(bytes), std::move(mime),
-                                     wide_to_utf8(basename(path)), pos);
+                auto result = std::make_shared<wd::ReadResult>();
+                if (SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)))
+                {
+                    IDataObject* obj = nullptr;
+                    if (SUCCEEDED(CoGetInterfaceAndReleaseStream(data_stream, IID_IDataObject,
+                                                                 reinterpret_cast<void**>(&obj))) &&
+                        obj)
+                    {
+                        *result = wd::read_all(obj);
+                        obj->Release();
+                    }
+                    if (async_stream)
+                    {
+                        IDataObjectAsyncCapability* async = nullptr;
+                        if (SUCCEEDED(CoGetInterfaceAndReleaseStream(
+                                async_stream, IID_IDataObjectAsyncCapability,
+                                reinterpret_cast<void**>(&async))) &&
+                            async)
+                        {
+                            async->EndOperation(result->files.empty() ? E_FAIL : S_OK, nullptr,
+                                                DROPEFFECT_COPY);
+                            async->Release();
+                        }
+                    }
+                    CoUninitialize();
+                }
+                else
+                {
+                    // Release the marshalled refs even though we can't use them.
+                    data_stream->Release();
+                    if (async_stream)
+                    {
+                        async_stream->Release();
+                    }
+                }
+                post_to_hwnd(hwnd,
+                             [alive, host, pos, result]()
+                             {
+                                 if (alive.expired())
+                                 {
+                                     return;
+                                 }
+                                 if (result->files.empty())
+                                 {
+                                     // Only real read errors; skipped items stay silent.
+                                     if (result->any_failed)
+                                     {
+                                         host->fire_file_drop_error(tk::tr("Could not read file"));
+                                     }
+                                     return;
+                                 }
+                                 for (auto& f : result->files)
+                                 {
+                                     host->fire_file_drop(std::move(f.bytes), std::move(f.mime),
+                                                          std::move(f.filename), pos);
+                                 }
+                             });
+            })
+            .detach();
+        return true;
     }
 
     Host* host_;

@@ -485,7 +485,7 @@ private:
     void begin_editing_shortcode_(std::size_t pack_idx, std::size_t tile_idx);
     void begin_editing_pack_name_(std::size_t pack_idx);
     void remove_tile_(std::size_t pack_idx, std::size_t tile_idx);
-    void layout_changed_();
+    void layout_changed_() const;
     // Common tail of add_pending_image_to_active/add_pending_image_at once
     // the target pack index is known. `filename` empty means no suggested
     // shortcode (paste).

@@ -1,0 +1,15 @@
+# Tests: Catch2 TEST_CASE registrations are throwing static initialisers by
+# design, and REQUIRE-guarded optional access is not understood by the check.
+# Float loop counters are pixel-grid hit scans; CHECK(f(std::move(x))) macros
+# look like a use after move to the analyzer. count(x) == 0 inside CHECK() cannot
+# be auto-converted to contains().
+InheritParentConfig: true
+Checks: >
+  -bugprone-throwing-static-initialization,
+  -bugprone-unchecked-optional-access,
+  -cppcoreguidelines-special-member-functions,
+  -bugprone-float-loop-counter,
+  -clang-analyzer-security.FloatLoopCounter,
+  -bugprone-use-after-move,
+  -clang-analyzer-cplusplus.Move,
+  -readability-container-contains

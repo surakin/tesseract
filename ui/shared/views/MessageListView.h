@@ -72,7 +72,7 @@ struct UrlPreviewData
     int image_h = 0;
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image_source);
+        return !title.empty() || !description.empty() || static_cast<bool>(image_source);
     }
 };
 
@@ -112,6 +112,7 @@ struct MessageRowData
         Poll,          // m.poll.start (MSC3381)
         Gallery,       // m.gallery, MSC4274 inline media gallery
         DevUnhandled,  // developer "show unhandled events" row; `body` is the event type
+        RoomServerAcl, // m.room.server_acl state-event row; `body` lists the changes
     };
 
     /// One item inside a Kind::Gallery row. Field vocabulary deliberately
@@ -233,7 +234,7 @@ struct MessageRowData
     }
     bool has_reply_image() const
     {
-        return has_reply() && bool(in_reply_to_image_source);
+        return has_reply() && static_cast<bool>(in_reply_to_image_source);
     }
 
     // MSC4553 forwarded message. `body`/`formatted_body`/kind already hold the
@@ -244,6 +245,9 @@ struct MessageRowData
     std::string forwarded_sender_name; // display name, when known
     std::string forwarded_room_id;
     std::string forwarded_event_id;
+    // MSC4391 invocation the message carries, pre-formatted for display
+    // ("/ban target_room: !r:x"); empty when it carries none.
+    std::string bot_command_display;
     // Name to show for the original author: display name, else mxid, else
     // empty (unknown).
     const std::string& forwarded_author() const
@@ -453,6 +457,11 @@ bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::siz
 // Exclusive end index of the group starting at `start` (which must satisfy
 // is_membership_group_start(msgs, start)).
 std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::size_t start);
+// True for a developer row of the bridge-information state (`m.bridge` or
+// `uk.half-shot.bridge`) that directly follows another one from the same sender
+// with the same state key: bridges publish both names together, so the second is
+// grouped into the first (zero height, not painted).
+bool is_absorbed_bridge_info_row(const std::vector<MessageRowData>& msgs, std::size_t index);
 // Walk backward from any Membership row to the start of its group.
 std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs, std::size_t index);
 // One collapsed-summary line: an action and the rows (indices into msgs)
@@ -814,6 +823,24 @@ public:
         mention_name_provider_ = std::move(p);
     }
 
+    // Resolves a linked room's name by its matrix.to/matrix: URL, for the label of a received room or
+    // event mention pill. A miss (empty string) shows the id/alias. May
+    // trigger an async room-summary fetch; the view repaints on arrival.
+    using MentionRoomNameProvider = std::function<std::string(const std::string& link_url)>;
+    void set_mention_room_name_provider(MentionRoomNameProvider p)
+    {
+        mention_room_name_provider_ = std::move(p);
+    }
+
+    // Resolves a linked room's avatar for a room or event mention pill: the
+    // joined room's own avatar, else the one from its room summary. Cache
+    // peek, nullptr on a miss (the owner kicks off the fetch).
+    using MentionRoomAvatarProvider = std::function<const tk::Image*(const std::string& link_url)>;
+    void set_mention_room_avatar_provider(MentionRoomAvatarProvider p)
+    {
+        mention_room_avatar_provider_ = std::move(p);
+    }
+
     // Resolves the CURRENT room's own avatar image, for drawing inside an
     // @room mention pill (see paint_span_images's PillKind::Room branch).
     // No argument — always means "whichever room this view is showing
@@ -925,6 +952,9 @@ public:
     std::function<void(const std::string& mxc_url, const std::string& body,
                        const std::string& info_json)>
         on_save_sticker_requested;
+    // "Copy image" on an image or sticker row; `source_token` is the row's
+    // MediaSource::fetch_token(). Hosts fetch the bytes and set the clipboard.
+    std::function<void(const std::string& source_token)> on_copy_image_requested;
     // True when the sticker is already in the Saved Stickers pack, so the
     // action is not offered. Unset means "not saved".
     std::function<bool(const std::string& mxc_url, const std::string& info_json)> is_sticker_saved;
@@ -1237,7 +1267,8 @@ public:
     // events. Stored in world coordinates. Public for tests.
     struct RowChipGeom
     {
-        std::size_t row_index = static_cast<std::size_t>(-1);
+        static constexpr std::size_t kNoRow = static_cast<std::size_t>(-1);
+        std::size_t row_index = kNoRow;
         std::vector<tk::Rect> chips;         // one per Reaction in row
         std::vector<tk::Rect> receipt_discs; // one per visible read-receipt disc
         tk::Rect add_button{};               // 0-area when not painted
@@ -1491,19 +1522,13 @@ public:
         thread_button_visible_ = v;
     }
 
-    // When true, on_pointer_leave() is suppressed so the hover-action pill
-    // stays visible while an associated popup is open over this widget.
+    // When true, the hovered message is frozen (pointer move and leave no
+    // longer change it) so the hover-action pill stays on the message an
+    // open non-modal popup belongs to.
     void set_hover_locked(bool v)
     {
         hover_locked_ = v;
-        if (!v)
-        {
-            pill_menu_event_id_.clear();
-        }
     }
-    // Fired when the pointer moves onto a different message than the one whose
-    // pill "more" menu is open; the host closes that menu.
-    std::function<void()> on_pill_menu_row_left;
 
     // Paint a coloured 2px outline around the row whose event_id matches.
     // Pass the empty string to clear the highlight.
@@ -1804,12 +1829,14 @@ private:
     // Whether the reply quote of `m` can be followed. The original of a
     // deleted message is filtered out of the timeline while deleted messages
     // are hidden, so it can never be scrolled to.
-    bool reply_jump_available_(const MessageRowData& m) const;
+    static bool reply_jump_available_(const MessageRowData& m);
     // A clicked link: a matrix.to user link opens the profile, anything else
     // goes to on_link_clicked. False when neither callback is set.
-    bool open_link_(const std::string& url);
+    bool open_link_(const std::string& url) const;
     MentionAvatarProvider mention_avatar_provider_;
     MentionNameProvider mention_name_provider_;
+    MentionRoomNameProvider mention_room_name_provider_;
+    MentionRoomAvatarProvider mention_room_avatar_provider_;
     RoomAvatarProvider room_avatar_provider_;
     std::string room_language_;
     bool predecessor_available_ = false;
@@ -1958,8 +1985,6 @@ private:
     std::string press_more_event_id_;
 
     bool hover_locked_ = false;
-    // Row whose pill "more" menu is open (empty when none).
-    std::string pill_menu_event_id_;
 
     // Thread button press state.
     bool press_thread_btn_ = false;

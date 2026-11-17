@@ -42,7 +42,7 @@ MessageRowData code_collapse_wrapped_row(const std::string& id)
         {
             code += "word" + std::to_string(j) + " ";
         }
-        code += "\n";
+        code += '\n';
     }
     MessageRowData r;
     r.kind = MessageRowData::Kind::Text;

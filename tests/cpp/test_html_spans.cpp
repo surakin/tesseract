@@ -181,7 +181,7 @@ TEST_CASE("autolink: matrix: word boundary guard — preceded by alphanumeric no
 TEST_CASE("autolink: matrix: URI trailing punctuation stripped", "[html_spans][autolink]")
 {
     auto s = autolink_plain_to_spans("see matrix:r/general:example.org.");
-    REQUIRE(s.size() >= 1);
+    REQUIRE(!s.empty());
     bool found = false;
     for (const auto& span : s)
     {
@@ -586,7 +586,7 @@ TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes", "[h
         {
             html += "<i>";
         }
-        html += "x";
+        html += 'x';
         for (int i = 0; i < kHuge; ++i)
         {
             html += "</i>";

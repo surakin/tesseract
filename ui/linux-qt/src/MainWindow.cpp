@@ -94,6 +94,7 @@
 #endif
 #include <QFile>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QDir>
 
 #include <algorithm>
@@ -240,12 +241,26 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             });
     presence_tick_timer_->start(30000);
 
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
+    // Windows destroyed by app exit or session end were not closed by the user:
+    // their saved-window entries must survive for the next launch.
+    connect(qApp, &QCoreApplication::aboutToQuit, this,
+            [this]
+            {
+                account_manager_.set_app_quitting();
+            });
+    if (auto* gui = qGuiApp)
+    {
+        connect(gui, &QGuiApplication::commitDataRequest, this,
+                [this]
+                {
+                    account_manager_.set_app_quitting();
+                });
+    }
 
     // Apply saved window geometry, or use the platform default.
     {
-        const auto geom = clamp_to_screens_(tesseract::Settings::instance().main_window_geometry,
-                                            1100, 768, get_screen_work_areas_());
+        const auto geom =
+            clamp_to_screens_(saved_window_geometry_(), 1100, 768, get_screen_work_areas_());
         if (geom.valid)
         {
             setGeometry(geom.x, geom.y, geom.w, geom.h);
@@ -273,7 +288,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
             onUserStripContextMenu(mainAppSurface_->mapToGlobal(
                 QPoint(static_cast<int>(world.x), static_cast<int>(world.y))));
         };
-        main_app_->user_info()->on_primary = [this](tk::Point world)
+        main_app_->user_info()->on_primary = [this](tk::Point /*world*/)
         {
             open_account_picker_();
         };
@@ -910,14 +925,8 @@ void MainWindow::keyPressEvent(QKeyEvent* ev)
 void MainWindow::resizeEvent(QResizeEvent* ev)
 {
     QMainWindow::resizeEvent(ev);
-    auto& g = tesseract::Settings::instance().main_window_geometry;
     const QRect r = geometry();
-    g.x = r.x();
-    g.y = r.y();
-    g.w = r.width();
-    g.h = r.height();
-    g.valid = (g.w > 0 && g.h > 0);
-    save_settings_debounced_();
+    save_window_geometry_(r.x(), r.y(), r.width(), r.height());
 
     // A popup's screen position is captured once when it opens and never
     // recomputed — leaving one open across a resize would strand it away
@@ -937,14 +946,13 @@ void MainWindow::resizeEvent(QResizeEvent* ev)
 void MainWindow::moveEvent(QMoveEvent* ev)
 {
     QMainWindow::moveEvent(ev);
-    auto& g = tesseract::Settings::instance().main_window_geometry;
     const QRect r = geometry();
-    g.x = r.x();
-    g.y = r.y();
-    g.w = r.width();
-    g.h = r.height();
-    g.valid = (g.w > 0 && g.h > 0);
-    save_settings_debounced_();
+    save_window_geometry_(r.x(), r.y(), r.width(), r.height());
+}
+
+void MainWindow::set_window_geometry_(const tesseract::Settings::WindowGeometry& g)
+{
+    setGeometry(g.x, g.y, g.w, g.h);
 }
 
 std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
@@ -1284,6 +1292,7 @@ void MainWindow::do_quit_()
     // Explicit quit (tray menu or userinfo "Quit"): bypass the hide-to-tray
     // logic in closeEvent so the app actually exits instead of just hiding.
     explicitly_quitting_ = true;
+    account_manager_.set_app_quitting();
     qApp->quit();
 }
 
@@ -1946,36 +1955,36 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::u
     auto state = std::make_shared<State>();
     state->info.pending_gen = pending_gen;
 
-    QObject::connect(sink, &QVideoSink::videoFrameChanged, sink,
-                     [this, player, state, target, target_alive](const QVideoFrame& frame)
-                     {
-                         if (state->done || !frame.isValid())
-                         {
-                             return;
-                         }
-                         state->done = true;
-                         state->info.duration_ms =
-                             static_cast<std::uint64_t>(std::max(qint64(0), player->duration()));
-                         player->stop();
-                         player->deleteLater();
-                         QImage img = frame.toImage();
-                         if (!img.isNull())
-                         {
-                             state->info.video_w = static_cast<std::uint32_t>(img.width());
-                             state->info.video_h = static_cast<std::uint32_t>(img.height());
-                             state->info.thumb_w = state->info.video_w;
-                             state->info.thumb_h = state->info.video_h;
-                             QByteArray enc;
-                             QBuffer encbuf(&enc);
-                             encbuf.open(QIODevice::WriteOnly);
-                             img.save(&encbuf, "JPEG", 85);
-                             state->info.thumb_bytes.assign(
-                                 reinterpret_cast<const std::uint8_t*>(enc.constData()),
-                                 reinterpret_cast<const std::uint8_t*>(enc.constData()) +
-                                     enc.size());
-                         }
-                         post_pending_attachment_(state->info, target, target_alive);
-                     });
+    QObject::connect(
+        sink, &QVideoSink::videoFrameChanged, sink,
+        [this, player, state, target, target_alive](const QVideoFrame& frame)
+        {
+            if (state->done || !frame.isValid())
+            {
+                return;
+            }
+            state->done = true;
+            state->info.duration_ms =
+                static_cast<std::uint64_t>(std::max(static_cast<qint64>(0), player->duration()));
+            player->stop();
+            player->deleteLater();
+            QImage img = frame.toImage();
+            if (!img.isNull())
+            {
+                state->info.video_w = static_cast<std::uint32_t>(img.width());
+                state->info.video_h = static_cast<std::uint32_t>(img.height());
+                state->info.thumb_w = state->info.video_w;
+                state->info.thumb_h = state->info.video_h;
+                QByteArray enc;
+                QBuffer encbuf(&enc);
+                encbuf.open(QIODevice::WriteOnly);
+                img.save(&encbuf, "JPEG", 85);
+                state->info.thumb_bytes.assign(
+                    reinterpret_cast<const std::uint8_t*>(enc.constData()),
+                    reinterpret_cast<const std::uint8_t*>(enc.constData()) + enc.size());
+            }
+            post_pending_attachment_(state->info, target, target_alive);
+        });
     QObject::connect(
         player, qOverload<QMediaPlayer::Error, const QString&>(&QMediaPlayer::errorOccurred),
         player,
@@ -2037,7 +2046,8 @@ void MainWindow::probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::u
             *done = true;
             tesseract::views::MediaInfo info;
             info.pending_gen = pending_gen;
-            info.duration_ms = static_cast<std::uint64_t>(std::max(qint64(0), player->duration()));
+            info.duration_ms =
+                static_cast<std::uint64_t>(std::max(static_cast<qint64>(0), player->duration()));
             player->stop();
             player->deleteLater();
             post_pending_attachment_(info, target, target_alive);

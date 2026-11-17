@@ -15,6 +15,11 @@ AdvancedSection::AdvancedSection(SettingBinder& binder)
     using S = tesseract::Settings;
     const auto& s = S::instance();
 
+    auto* timeline_group = add_group(tk::tr("Timeline"));
+    show_state_events_cb_ = timeline_group->add_widget(tk::create_widget<tk::CheckButton>(
+        this, tk::tr("Show state events in the timeline"), s.show_state_events));
+    binder.bind(show_state_events_cb_, &S::show_state_events, SettingKey::ShowStateEvents);
+
     auto* dev_group = add_group(tk::tr("Developer"));
 
     auto dev_cb =

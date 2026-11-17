@@ -113,6 +113,7 @@ static std::string extract_string(std::string_view json, std::string_view key)
     }
     catch (const nlohmann::json::exception&)
     {
+        // Not valid JSON: no value to report.
     }
     return {};
 }
@@ -745,7 +746,7 @@ void SessionStore::sweep_orphaned_account_dirs()
             continue;
         }
         const std::string name = it->path().filename().string();
-        if (in_use.count(name))
+        if (in_use.contains(name))
         {
             continue;
         }

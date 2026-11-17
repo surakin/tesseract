@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <utility>
 
 namespace tesseract
 {
@@ -258,7 +259,7 @@ bool RoomPane::restore_upload_draft_(const UploadDraft& draft)
 
 void RoomPane::stash_upload_draft_(const UploadDraft& draft)
 {
-    if (draft.room_id.empty() || room_compose_drafts_.count(draft.room_id))
+    if (draft.room_id.empty() || room_compose_drafts_.contains(draft.room_id))
     {
         return;
     }
@@ -268,7 +269,7 @@ void RoomPane::stash_upload_draft_(const UploadDraft& draft)
 
 void RoomPane::stash_unsent_draft_(const std::string& room_id, const std::string& text)
 {
-    if (room_id.empty() || text.empty() || room_compose_drafts_.count(room_id))
+    if (room_id.empty() || text.empty() || room_compose_drafts_.contains(room_id))
     {
         return;
     }
@@ -395,12 +396,16 @@ void RoomPane::finish_init()
                 !pane_client_()->list_room_threads(room_id_).empty());
         }
     }
-    if (room_view_ && room_view_->message_list())
+    if (room_view_)
     {
-        room_view_->message_list()->on_tile_needed = [this](int z, int x, int y)
-        {
-            shell_->ensure_tile_async(z, x, y);
-        };
+        room_view_->add_message_list_setup(
+            [this](views::MessageListView& ml)
+            {
+                ml.on_tile_needed = [this](int z, int x, int y)
+                {
+                    shell_->ensure_tile_async(z, x, y);
+                };
+            });
     }
     // Pasting an image attaches it to the composer rather than inserting the
     // bitmap as text. Wired here (not in wire_room_view_) because the caller
@@ -446,26 +451,27 @@ void RoomPane::wire_room_view_()
     // Failed-send hover actions and the identity-change banner: wired here
     // (not in finish_init, which only pop-outs call) so the main window gets
     // them too.
-    if (auto* ml = rv->message_list())
-    {
-        ml->on_retry_send = [this](const std::string& txn_id)
+    rv->add_message_list_setup(
+        [this](views::MessageListView& ml)
         {
-            retry_send_(txn_id);
-        };
-        ml->on_abort_send = [this](const std::string& txn_id)
-        {
-            abort_send_(txn_id);
-        };
-        ml->on_retry_blocked_send = [this](const std::string& txn_id, const std::string& code,
-                                           const std::vector<std::string>& users)
-        {
-            retry_blocked_send_(txn_id, code, users);
-        };
-        ml->user_name_for = [this](const std::string& uid)
-        {
-            return member_label_(uid);
-        };
-    }
+            ml.on_retry_send = [this](const std::string& txn_id)
+            {
+                retry_send_(txn_id);
+            };
+            ml.on_abort_send = [this](const std::string& txn_id)
+            {
+                abort_send_(txn_id);
+            };
+            ml.on_retry_blocked_send = [this](const std::string& txn_id, const std::string& code,
+                                              const std::vector<std::string>& users)
+            {
+                retry_blocked_send_(txn_id, code, users);
+            };
+            ml.user_name_for = [this](const std::string& uid)
+            {
+                return member_label_(uid);
+            };
+        });
     rv->on_resolve_identity_warning = [this](const tesseract::IdentityWarning& w)
     {
         resolve_identity_warning_(w);
@@ -489,6 +495,17 @@ void RoomPane::wire_room_view_()
     // per pane so pop-outs get it too, each on its own account.
     if (auto* panel = rv->user_profile_panel())
     {
+        // The big avatar uses its own widget-sized thumbnail, not the shared
+        // list-size avatar provider RoomView hands the other panels.
+        panel->set_avatar_provider(
+            [this](const std::string& mxc) -> const tk::Image*
+            {
+                return shell_->profile_avatar_image_(mxc);
+            });
+        panel->on_avatar_needed = [this](const std::string& mxc)
+        {
+            shell_->ensure_profile_avatar_(mxc);
+        };
         panel->on_trust_requested = [this](std::string user_id)
         {
             refresh_profile_trust_(user_id);
@@ -603,14 +620,15 @@ void RoomPane::wire_room_view_()
                                         shell_->media_group_for_room_(room_id_));
             return nullptr;
         });
-    if (auto* ml = rv->message_list())
-    {
-        ml->on_video_thumbnail_needed =
-            [this](const std::string& event_id, const std::string& source_token)
+    rv->add_message_list_setup(
+        [this](views::MessageListView& ml)
         {
-            shell_->request_video_thumbnail_(event_id, source_token);
-        };
-    }
+            ml.on_video_thumbnail_needed =
+                [this](const std::string& event_id, const std::string& source_token)
+            {
+                shell_->request_video_thumbnail_(event_id, source_token);
+            };
+        });
     rv->set_shortcode_provider(
         [this](const std::string& mxc) -> std::string
         {
@@ -620,14 +638,14 @@ void RoomPane::wire_room_view_()
     // mxc -> cached image, kicking a fetch on miss (room-scoped, so it
     // cancels along with the rest of this room's media on switch/close). The
     // row repaints when the bytes arrive.
-    rv->message_list()->set_mention_avatar_provider(
+    rv->set_mention_avatar_provider(
         [this](const std::string& user_id) -> const tk::Image*
         {
             return mention_avatar_for_user_(user_id);
         });
     // Label of received user mention pills: the member's own display name,
     // never the sender's anchor text.
-    rv->message_list()->set_mention_name_provider(
+    rv->set_mention_name_provider(
         [this](const std::string& user_id) -> std::string
         {
             for (const auto& m : cached_room_members_)
@@ -639,9 +657,21 @@ void RoomPane::wire_room_view_()
             }
             return {};
         });
+    // Label and avatar of received room/event mention pills: the joined
+    // room's own, else from its room summary (fetched once per link target).
+    rv->set_mention_room_name_provider(
+        [this](const std::string& url) -> std::string
+        {
+            return linked_room_name_(tesseract::Client::parse_matrix_link(url));
+        });
+    rv->set_mention_room_avatar_provider(
+        [this](const std::string& url) -> const tk::Image*
+        {
+            return linked_room_avatar_(tesseract::Client::parse_matrix_link(url));
+        });
     // Avatar inside received @room mention pills: this room's own avatar,
     // cache-peeked and fetched-on-miss exactly like the header's avatar.
-    rv->message_list()->set_room_avatar_provider(
+    rv->set_room_avatar_provider(
         [this]() -> const tk::Image*
         {
             return room_self_avatar_();
@@ -1282,6 +1312,10 @@ void RoomPane::wire_room_view_()
     {
         save_sticker_(mxc, body, info);
     };
+    rv->on_copy_image_requested = [this](const std::string& token)
+    {
+        copy_source_to_clipboard_(token);
+    };
     rv->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
     {
         auto* c = pane_client_();
@@ -1405,7 +1439,7 @@ void RoomPane::wire_room_view_()
             return;
         }
         const auto& msgs = ml->messages();
-        for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+        for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
         {
             const auto& row = msgs[static_cast<std::size_t>(i)];
             if (visible_media_prepped_.insert(row.event_id).second)
@@ -2689,7 +2723,7 @@ void RoomPane::retry_stale_reply_previews_(views::MessageListView* list, const s
     for (const auto& row : list->messages())
     {
         if (row.has_reply() && row.in_reply_to_sender_name.empty() &&
-            targets.count(row.in_reply_to_id))
+            targets.contains(row.in_reply_to_id))
         {
             shell_->reply_details_requested_.erase(
                 ShellBase::reply_details_key_(pane_user_id_(), row.event_id));
@@ -3272,7 +3306,7 @@ void RoomPane::on_message_removed(std::size_t idx)
     deps_.relayout();
 }
 
-void RoomPane::on_typing_changed(const std::string& text, bool visible)
+void RoomPane::on_typing_changed(const std::string& text, bool /*visible*/)
 {
     if (room_view_)
     {
@@ -4042,7 +4076,7 @@ void RoomPane::open_dm_(std::string user_id)
         return;
     }
 
-    if (shell_->dm_in_flight_user_ids_.count(user_id))
+    if (shell_->dm_in_flight_user_ids_.contains(user_id))
     {
         return;
     }
@@ -4622,7 +4656,7 @@ void RoomPane::feed_gallery_reset_(const std::string& event_room_id,
 
 bool RoomPane::handle_forward_done_(std::uint64_t request_id)
 {
-    if (!pending_forwards_.count(request_id))
+    if (!pending_forwards_.contains(request_id))
     {
         return false;
     }
@@ -4698,6 +4732,32 @@ const tk::Image* RoomPane::shell_gif_strip_image_(const GifResult& result,
                                                   const std::function<void()>& repaint)
 {
     return shell_->gif_strip_image_(result, repaint);
+}
+
+const tk::Image* RoomPane::shell_sticker_strip_image_(const tesseract::ImagePackImage& sticker)
+{
+    return shell_->make_picker_image_provider_(true)(sticker.url, sticker.url, false);
+}
+
+tk::CacheKey RoomPane::shell_picker_sticker_key_(const std::string& url) const
+{
+    return shell_->picker_sticker_key_(url);
+}
+
+void RoomPane::shell_set_sticker_strip_repaint_(const void* owner, std::function<void()> fn)
+{
+    if (!shell_)
+    {
+        return;
+    }
+    if (fn)
+    {
+        shell_->sticker_strip_repaints_[owner] = std::move(fn);
+    }
+    else
+    {
+        shell_->sticker_strip_repaints_.erase(owner);
+    }
 }
 
 std::vector<std::uint8_t> RoomPane::shell_cached_gif_bytes_(const std::string& url)
@@ -4921,6 +4981,35 @@ void RoomPane::wire_gif_hooks_(views::GifController::Hooks& hooks)
     };
 }
 
+void RoomPane::wire_sticker_hooks_(views::StickerController::Hooks& hooks)
+{
+    hooks.search = [this](const std::string& query) -> std::vector<tesseract::ImagePackImage>
+    {
+        auto* client = pane_client_();
+        if (!client)
+        {
+            return {};
+        }
+        return views::search_room_stickers(*client, room_id_, shell_parent_spaces_for_room_(),
+                                           query);
+    };
+    hooks.send = [this](const tesseract::ImagePackImage& img)
+    {
+        send_sticker_(img.body.empty() ? img.shortcode : img.body, img.url, img.info_json);
+    };
+    hooks.clear_composer = [this]
+    {
+        if (auto* ta = compose_text_area_())
+        {
+            ta->set_text("");
+        }
+        if (room_view_)
+        {
+            room_view_->clear_compose_text();
+        }
+    };
+}
+
 void RoomPane::position_dropdown_popup_(tk::PopupSurfaceHandle* popup, tk::Rect cursor_local,
                                         int rows, float row_height, float width)
 {
@@ -4958,6 +5047,118 @@ const tk::Image* RoomPane::mention_avatar_for_user_(const std::string& user_id) 
         return shell_->avatar_image_(m.avatar_url);
     }
     return nullptr;
+}
+
+const tesseract::RoomInfo*
+RoomPane::linked_room_joined_(const tesseract::Client::MatrixLink& link) const
+{
+    if (link.primary.starts_with('!'))
+    {
+        return pane_room_by_id_(link.primary);
+    }
+    // An alias is joined only if its summary says which room it is.
+    const auto it = linked_rooms_.find(link.primary);
+    if (it == linked_rooms_.end() || !it->second.summary.ok())
+    {
+        return nullptr;
+    }
+    return pane_room_by_id_(it->second.summary.room_id);
+}
+
+const tesseract::RoomSummary*
+RoomPane::linked_room_summary_(const tesseract::Client::MatrixLink& link) const
+{
+    auto it = linked_rooms_.find(link.primary);
+    if (it == linked_rooms_.end())
+    {
+        // A joined room needs no summary; an alias always needs one to be
+        // resolved to an id first.
+        if (link.primary.starts_with('!') && pane_room_by_id_(link.primary))
+        {
+            return nullptr;
+        }
+        auto sess = session_();
+        if (!sess || !sess->client)
+        {
+            return nullptr;
+        }
+        it = linked_rooms_.emplace(link.primary, LinkedRoom{}).first;
+        const std::string key = link.primary;
+        std::vector<std::string> via = link.via;
+        if (via.empty())
+        {
+            via = shell_helpers::alias_server_via(key);
+        }
+        auto done = guarded(
+            [this, key](tesseract::RoomSummary summary)
+            {
+                auto found = linked_rooms_.find(key);
+                if (found == linked_rooms_.end())
+                {
+                    return;
+                }
+                found->second.settled = true;
+                found->second.summary = std::move(summary);
+                deps_.repaint();
+            });
+        const_cast<RoomPane*>(this)->run_async_(
+            [sess, key, via, done = std::move(done), ui = ui_poster(shell_poster(shell_))]() mutable
+            {
+                if (!ui.owner_alive())
+                {
+                    return;
+                }
+                auto summary = sess->client->get_room_summary(key, via);
+                ui(
+                    [done = std::move(done), summary = std::move(summary)]() mutable
+                    {
+                        done(std::move(summary));
+                    });
+            });
+    }
+    return it->second.settled && it->second.summary.ok() ? &it->second.summary : nullptr;
+}
+
+std::string RoomPane::linked_room_name_(const tesseract::Client::MatrixLink& link) const
+{
+    if (const auto* info = linked_room_joined_(link))
+    {
+        return info->name;
+    }
+    const auto* summary = linked_room_summary_(link);
+    return summary ? summary->name : std::string{};
+}
+
+const tk::Image* RoomPane::linked_room_avatar_(const tesseract::Client::MatrixLink& link) const
+{
+    const std::uint64_t group = shell_->media_group_for_room_(room_id_);
+    if (const auto* info = linked_room_joined_(link))
+    {
+        const std::string& mxc = !info->avatar_url.empty() ? info->avatar_url : info->dm_avatar_url;
+        if (mxc.empty())
+        {
+            return nullptr;
+        }
+        shell_->ensure_room_avatar_(*info);
+        return shell_->avatar_image_(mxc);
+    }
+    const auto* summary = linked_room_summary_(link);
+    if (!summary)
+    {
+        return nullptr;
+    }
+    // Summary of an alias for a room we are in: use the room's own avatar.
+    if (const auto* info = pane_room_by_id_(summary->room_id))
+    {
+        return linked_room_avatar_(tesseract::Client::MatrixLink{
+            .kind = tesseract::Client::MatrixLink::Kind::Room, .primary = info->id});
+    }
+    if (summary->avatar_url.empty())
+    {
+        return nullptr;
+    }
+    shell_->ensure_user_avatar_(summary->avatar_url, group);
+    return shell_->avatar_image_(summary->avatar_url);
 }
 
 const tk::Image* RoomPane::room_self_avatar_() const

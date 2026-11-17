@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -131,7 +132,7 @@ std::optional<EmoticonMatch> find_emoticon(std::string_view text, int cursor,
         --token_end;
         delimited = true;
     }
-    else if (cursor < static_cast<int>(text.size()))
+    else if (std::cmp_less(cursor, text.size()))
     {
         return std::nullopt;
     }

@@ -17,7 +17,7 @@ namespace
 struct TkMediaSectionStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(640, 800);
-    void run(tk::Widget& root)
+    void run(tk::Widget& root) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         root.measure(lc, {640.0f, 800.0f});

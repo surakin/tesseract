@@ -476,14 +476,21 @@ fn members_from_call_member_inner(
             let foci_preferred = m
                 .foci_preferred()
                 .iter()
-                .filter_map(|f| match f {
-                    Focus::Livekit(lk) if !lk.service_url.is_empty() => Some(LkFocus {
-                        service_url: lk.service_url.clone(),
-                        alias: lk.alias.clone(),
-                        sfu_url: None,
-                        server_name: None,
-                    }),
-                    _ => None,
+                .filter_map(|f| {
+                    // `livekit` (legacy) and `m.livekit` share one payload.
+                    #[allow(deprecated)]
+                    match f {
+                        Focus::Livekit(lk) | Focus::LegacyLivekit(lk) => {
+                            let service_url = lk.service_url.clone().unwrap_or_default();
+                            (!service_url.is_empty()).then(|| LkFocus {
+                                service_url,
+                                alias: lk.alias.clone().unwrap_or_default(),
+                                sfu_url: lk.url.clone(),
+                                server_name: lk.server_name.as_ref().map(|s| s.to_string()),
+                            })
+                        }
+                        _ => None,
+                    }
                 })
                 .collect();
             CallMember {
@@ -841,7 +848,7 @@ mod tests {
     use matrix_sdk::ruma::{
         events::call::member::{
             ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
-            CallMemberEventContent, CallScope, Focus, LivekitFocus,
+            CallMemberEventContent, CallScope,
         },
         owned_device_id, user_id, UInt,
     };
@@ -870,10 +877,10 @@ mod tests {
             Application::Call(CallApplicationContent::new(String::new(), CallScope::Room)),
             device.into(),
             ActiveFocus::Livekit(ActiveLivekitFocus::new()),
-            vec![Focus::Livekit(LivekitFocus::new(
-                "!room:a.org".to_owned(),
-                url.to_owned(),
-            ))],
+            vec![crate::client::rtc::signaling::legacy_livekit_focus(
+                "!room:a.org",
+                url,
+            )],
             created,
             Some(Duration::from_secs(3600)),
         );

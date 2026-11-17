@@ -152,7 +152,7 @@ private:
     void load_recent_rooms_();
     void save_recent_rooms_() const;
     void import_legacy_recent_rooms_();
-    std::wstring packaged_avatar_uri_(const std::wstring& room_id) const;
+    static std::wstring packaged_avatar_uri_(const std::wstring& room_id);
     void prune_packaged_avatars_() const;
 
     struct RecentRoom

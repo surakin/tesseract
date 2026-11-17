@@ -14,7 +14,7 @@ namespace
 struct TipStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 300);
-    PaintCtx pc()
+    PaintCtx pc() const
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
     }

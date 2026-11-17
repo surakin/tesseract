@@ -3,6 +3,7 @@
 #include "views/GifController.h"
 #include "views/MentionController.h"
 #include "views/ShortcodeController.h"
+#include "views/StickerController.h"
 #include "views/SlashCommandController.h"
 
 #include <string>
@@ -10,10 +11,10 @@
 namespace tesseract::views
 {
 
-// The composer's four autocomplete popups (GIF strip, /command, :shortcode:,
+// The composer's five autocomplete popups (GIF strip, sticker strip, /command, :shortcode:,
 // @mention) share one text area and are mutually exclusive — at most one is
 // visible at a time. These helpers centralise the priority order
-// (gif > slash > shortcode > mention) and the mutual-exclusion bookkeeping so
+// (gif > sticker > slash > shortcode > mention) and the mutual-exclusion bookkeeping so
 // every shell (main window + each pop-out, on every platform) drives them
 // identically instead of re-implementing the orchestration. Any controller
 // pointer may be null (a shell that lacks that popup just passes nullptr).
@@ -22,14 +23,15 @@ namespace tesseract::views
 // consumes the change wins and every other popup is hidden. Returns true if any
 // popup handled the change.
 inline bool dispatch_compose_text_changed(const std::string& text, int cursor, GifController* gif,
-                                          SlashCommandController* slash,
+                                          StickerController* sticker, SlashCommandController* slash,
                                           ShortcodeController* shortcode,
                                           MentionController* mention)
 {
     bool g = gif && gif->on_text_changed(text);
-    bool sl = !g && slash && slash->on_text_changed(text, cursor);
-    bool sc = !g && !sl && shortcode && shortcode->on_text_changed(text, cursor);
-    bool me = !g && !sl && !sc && mention && mention->on_text_changed(text, cursor);
+    bool st = !g && sticker && sticker->on_text_changed(text);
+    bool sl = !g && !st && slash && slash->on_text_changed(text, cursor);
+    bool sc = !g && !st && !sl && shortcode && shortcode->on_text_changed(text, cursor);
+    bool me = !g && !st && !sl && !sc && mention && mention->on_text_changed(text, cursor);
     // Hide every popup that isn't the winner. Short-circuit && means a
     // lower-priority controller may not have been polled this tick, so its
     // popup could still be showing from a previous keystroke. hide() is
@@ -39,6 +41,10 @@ inline bool dispatch_compose_text_changed(const std::string& text, int cursor, G
     if (gif && !g)
     {
         gif->hide();
+    }
+    if (sticker && !st)
+    {
+        sticker->hide();
     }
     if (slash && !sl)
     {
@@ -52,16 +58,21 @@ inline bool dispatch_compose_text_changed(const std::string& text, int cursor, G
     {
         mention->hide();
     }
-    return g || sl || sc || me;
+    return g || st || sl || sc || me;
 }
 
 // on_submit (Enter): let the visible popup consume the keystroke. Returns true
 // if a popup accepted a selection — the caller must NOT send the message. Only
 // one popup is ever visible, so the polling order here is immaterial.
-inline bool dispatch_compose_submit(GifController* gif, SlashCommandController* slash,
-                                    ShortcodeController* shortcode, MentionController* mention)
+inline bool dispatch_compose_submit(GifController* gif, StickerController* sticker,
+                                    SlashCommandController* slash, ShortcodeController* shortcode,
+                                    MentionController* mention)
 {
     if (gif && gif->on_submit())
+    {
+        return true;
+    }
+    if (sticker && sticker->on_submit())
     {
         return true;
     }
@@ -83,22 +94,29 @@ inline bool dispatch_compose_submit(GifController* gif, SlashCommandController* 
 // popup-nav (Up/Down/Tab/Esc/ShiftTab): route to whichever popup is open. Each
 // controller's on_nav returns false when it isn't visible, so a single shared
 // handler can replace the per-popup reinstall dance.
-inline bool dispatch_compose_nav(tk::NavKey nk, GifController* gif, SlashCommandController* slash,
-                                 ShortcodeController* shortcode, MentionController* mention)
+inline bool dispatch_compose_nav(tk::NavKey nk, GifController* gif, StickerController* sticker,
+                                 SlashCommandController* slash, ShortcodeController* shortcode,
+                                 MentionController* mention)
 {
-    return (gif && gif->on_nav(nk)) || (slash && slash->on_nav(nk)) ||
-           (shortcode && shortcode->on_nav(nk)) || (mention && mention->on_nav(nk));
+    return (gif && gif->on_nav(nk)) || (sticker && sticker->on_nav(nk)) ||
+           (slash && slash->on_nav(nk)) || (shortcode && shortcode->on_nav(nk)) ||
+           (mention && mention->on_nav(nk));
 }
 
-// Hide all four popups unconditionally — e.g. on window resize, where a
+// Hide all five popups unconditionally — e.g. on window resize, where a
 // stale-positioned popup should just close rather than stay open in the
 // wrong place. Mirrors the nullable-pointer convention above.
-inline void hide_all_compose_popups(GifController* gif, SlashCommandController* slash,
-                                    ShortcodeController* shortcode, MentionController* mention)
+inline void hide_all_compose_popups(GifController* gif, StickerController* sticker,
+                                    SlashCommandController* slash, ShortcodeController* shortcode,
+                                    MentionController* mention)
 {
     if (gif)
     {
         gif->hide();
+    }
+    if (sticker)
+    {
+        sticker->hide();
     }
     if (slash)
     {

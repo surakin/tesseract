@@ -301,7 +301,7 @@ private:
                     const std::uint32_t stride_uv = (w + 1) / 2;
                     const std::uint32_t h_uv = (h + 1) / 2;
 
-                    tk::VideoCapture::Frame f;
+                    tk::VideoCapture::Frame f{};
                     f.y = map.data;
                     f.u = map.data + stride_y * h;
                     f.v = map.data + stride_y * h + stride_uv * h_uv;

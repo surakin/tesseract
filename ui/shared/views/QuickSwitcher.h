@@ -35,6 +35,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tesseract::views
@@ -85,6 +86,10 @@ public:
 
     // ── Data + query ──────────────────────────────────────────────────────
     void set_rooms_provider(RoomsProvider p);
+    // Names of the spaces containing a room (empty if none). Called lazily
+    // for visible rows only; results are memoised until the next open().
+    using SpaceNamesProvider = std::function<std::vector<std::string>(const std::string& room_id)>;
+    void set_space_names_provider(SpaceNamesProvider p);
     // Recent (most-recently-visited) rooms, in visit order — feeds the
     // horizontal "Recent" strip shown when the query is empty.
     void set_recent_provider(RoomsProvider p);
@@ -211,6 +216,10 @@ private:
     RoomsProvider rooms_provider_;
     RoomsProvider recent_provider_;
     AvatarProvider avatar_provider_;
+    SpaceNamesProvider space_names_provider_;
+    // room_id -> "Space A, Space B" (empty string = in no space). Cleared on open().
+    std::unordered_map<std::string, std::string> space_label_cache_;
+    const std::string& space_label_(const std::string& room_id);
 
     std::unique_ptr<Adapter> adapter_;
     tk::ListView* list_ = nullptr;

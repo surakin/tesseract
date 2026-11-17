@@ -559,7 +559,7 @@ impl ClientFfi {
     // -----------------------------------------------------------------------
 
     /// For each room_id in the list that has no entry in the bridge_status
-    /// SQLite cache, fetch GET /rooms/{id}/state, filter for uk.half-shot.bridge,
+    /// SQLite cache, fetch GET /rooms/{id}/state, filter for m.bridge / uk.half-shot.bridge,
     /// and persist the result. If any new bridged room is found, emits
     /// on_rooms_updated so the call button / threads UI updates immediately.
     /// Idempotent: if a check is still in flight the call is a no-op.
@@ -957,7 +957,7 @@ struct BridgeStatus {
     capabilities: crate::ffi::BridgeCapabilities,
 }
 
-/// Read `uk.half-shot.bridge` and `com.beeper.room_features` from the room's
+/// Read `m.bridge` / `uk.half-shot.bridge` and `com.beeper.room_features` from the room's
 /// full state on the server. A failed lookup is not an answer: returning None
 /// keeps it out of the table, so the next check asks again instead of
 /// recording "not bridged" for a room whose state was never read.
@@ -979,7 +979,9 @@ async fn fetch_bridge_status(
             raw.get_field::<String>("type").ok().flatten().as_deref() == Some(event_type)
         })
     };
-    let bridge_event = find_event("uk.half-shot.bridge");
+    let bridge_event = super::BRIDGE_INFO_EVENT_TYPES
+        .iter()
+        .find_map(|t| find_event(t));
     let bridged = bridge_event.is_some();
     let bridge_content =
         bridge_event.and_then(|raw| raw.get_field::<serde_json::Value>("content").ok().flatten());
@@ -1034,12 +1036,14 @@ pub(super) async fn room_is_bridged(
     db: &parking_lot::Mutex<Option<rusqlite::Connection>>,
 ) -> bool {
     use matrix_sdk::ruma::events::StateEventType;
-    let local = room
-        .get_state_events(StateEventType::from("uk.half-shot.bridge"))
-        .await
-        .unwrap_or_default();
-    if !local.is_empty() {
-        return true;
+    for event_type in super::BRIDGE_INFO_EVENT_TYPES {
+        let local = room
+            .get_state_events(StateEventType::from(event_type))
+            .await
+            .unwrap_or_default();
+        if !local.is_empty() {
+            return true;
+        }
     }
     let cached = {
         let guard = db.lock();

@@ -1,6 +1,7 @@
 #include "blurhash.h"
 #include <cmath>
 #include <cstdint>
+#include <utility>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -13,8 +14,8 @@ namespace
 {
 
 // Base83 character set used by BlurHash.
-static const char kBase83Chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg"
-                                   "hijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
+const char kBase83Chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg"
+                            "hijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~";
 
 int base83_decode_char(char c)
 {
@@ -29,7 +30,7 @@ int base83_decode_char(char c)
 }
 
 // Decode `num_chars` characters from `hash` starting at `start` as a base83 integer.
-static uint32_t decode_b83(const std::string& hash, int start, int num_chars)
+uint32_t decode_b83(const std::string& hash, int start, int num_chars)
 {
     uint32_t val = 0;
     for (int i = start; i < start + num_chars; ++i)
@@ -45,14 +46,14 @@ static uint32_t decode_b83(const std::string& hash, int start, int num_chars)
 }
 
 // sRGB gamma expansion (0..255 → 0..1 linear).
-static float srgb_to_linear(int value)
+float srgb_to_linear(int value)
 {
     float f = value / 255.0f;
     return (f <= 0.04045f) ? (f / 12.92f) : std::pow((f + 0.055f) / 1.055f, 2.4f);
 }
 
 // Linear → sRGB, clamped to 0..255.
-static uint8_t linear_to_srgb(float value)
+uint8_t linear_to_srgb(float value)
 {
     float clamped = std::fmax(0.0f, std::fmin(1.0f, value));
     float encoded = (clamped <= 0.0031308f) ? (clamped * 12.92f)
@@ -61,7 +62,7 @@ static uint8_t linear_to_srgb(float value)
 }
 
 // Decode a quantised AC component value into a signed float in [-1, 1].
-static float decode_ac_value(int quantised, float max_ac)
+float decode_ac_value(int quantised, float max_ac)
 {
     float f = static_cast<float>(quantised) / 9.0f - 1.0f;
     return (f < 0.0f ? -1.0f : 1.0f) * f * f * max_ac;
@@ -84,7 +85,7 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
 
     // Minimum length: 1 (flag) + 1 (quant max) + 4 (DC) + 2*(total-1) (AC).
     int expected = 4 + 2 * (total - 1) + 2;
-    if (static_cast<int>(hash.size()) < expected)
+    if (std::cmp_less(hash.size(), expected))
     {
         return false;
     }
@@ -125,7 +126,7 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
                                           decode_ac_value(q_b, max_ac)};
     }
 
-    out_rgba.resize(static_cast<size_t>(w * h * 4));
+    out_rgba.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
 
     for (int py = 0; py < h; ++py)
     {
@@ -141,13 +142,15 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
                     float basis =
                         basis_y * std::cos((M_PI * static_cast<float>(i) * static_cast<float>(px)) /
                                            static_cast<float>(w));
-                    const Color3& c = colors[static_cast<size_t>(j * comp_x + i)];
+                    const Color3& c = colors[static_cast<size_t>(j) * static_cast<size_t>(comp_x) +
+                                             static_cast<size_t>(i)];
                     r += c.r * basis;
                     g += c.g * basis;
                     b += c.b * basis;
                 }
             }
-            size_t idx = static_cast<size_t>((py * w + px) * 4);
+            size_t idx =
+                (static_cast<size_t>(py) * static_cast<size_t>(w) + static_cast<size_t>(px)) * 4;
             out_rgba[idx + 0] = linear_to_srgb(r);
             out_rgba[idx + 1] = linear_to_srgb(g);
             out_rgba[idx + 2] = linear_to_srgb(b);

@@ -67,7 +67,7 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
     {
         return;
     }
-    if (players_.count(info.event_id))
+    if (players_.contains(info.event_id))
     {
         return;
     }
@@ -202,7 +202,7 @@ void TimelineVideoPlaylist::touch(const std::string& event_id)
     // Copy first: ensure_playing() may run arbitrary callbacks.
     const VideoSourceInfo info = sleeping->second;
     ensure_playing(info);
-    if (players_.count(event_id))
+    if (players_.contains(event_id))
     {
         gc_sleeping_.erase(event_id);
     }

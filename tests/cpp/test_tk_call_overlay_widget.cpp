@@ -48,7 +48,7 @@ struct CowStage : vt::Stage
         ov->set_post_delayed(
             [this](int ms, std::function<void()> f)
             {
-                delayed.push_back({ms, std::move(f)});
+                delayed.emplace_back(ms, std::move(f));
             });
         ov->set_local_user_id("@me:x");
         ov->set_display_name_provider(

@@ -364,7 +364,7 @@ fn msc3401_member_body(
         events::{
             call::member::{
                 ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
-                CallMemberEventContent, CallScope, Focus, LivekitFocus,
+                CallMemberEventContent, CallScope,
             },
             rtc::notification::CallIntent,
         },
@@ -382,10 +382,7 @@ fn msc3401_member_body(
         Application::Call(app_content),
         matrix_device_id.into(), // Real Matrix device ID so EC can target key delivery
         ActiveFocus::Livekit(ActiveLivekitFocus::new()),
-        vec![Focus::Livekit(LivekitFocus::new(
-            livekit_alias.to_owned(),
-            service_url.to_owned(),
-        ))],
+        vec![legacy_livekit_focus(livekit_alias, service_url)],
         created_ts,
         // The membership is valid for 4h after joining; extend it on every
         // refresh so a long call does not expire while created_ts stays fixed.
@@ -494,6 +491,19 @@ pub enum DelayedRestart {
     Unsupported,
 }
 
+/// The `livekit` (pre-`m.livekit`) focus Element Call reads: the JWT service
+/// URL and the room alias, with no SFU `url`.
+#[allow(deprecated)]
+pub(crate) fn legacy_livekit_focus(
+    alias: &str,
+    service_url: &str,
+) -> matrix_sdk::ruma::events::call::member::Focus {
+    use matrix_sdk::ruma::events::call::member::{Focus, LivekitFocus};
+    let mut focus = LivekitFocus::with_service_url(service_url.to_owned());
+    focus.alias = Some(alias.to_owned());
+    Focus::LegacyLivekit(focus)
+}
+
 /// Schedule the MSC3401 leave as an MSC4140 delayed event (dead-man's switch):
 /// if we crash or lose connectivity, the homeserver sends the leave for us.
 /// Returns the `delay_id`, or `None` when delayed events are unavailable.
@@ -513,7 +523,7 @@ pub async fn schedule_delayed_msc3401_leave(
     let raw = matrix_sdk::ruma::serde::Raw::<AnyStateEventContent>::from_json(
         serde_json::value::to_raw_value(&body).ok()?,
     );
-    let request = delayed_state_event::unstable::Request::new_raw(
+    let request = delayed_state_event::msc4140::Request::new_raw(
         room.room_id().to_owned(),
         state_key.as_ref().to_owned(),
         StateEventType::from("org.matrix.msc3401.call.member"),
@@ -540,15 +550,15 @@ async fn update_delayed_event(
     action: matrix_sdk::ruma::api::client::delayed_events::update_delayed_event::UpdateAction,
 ) -> Result<(), matrix_sdk::Error> {
     use matrix_sdk::ruma::api::{
-        client::delayed_events::update_delayed_event::{unstable_v1, unstable_v2},
+        client::delayed_events::update_delayed_event::{msc4140_v1, msc4140_v2},
         error::ErrorKind,
     };
 
-    let v1 = unstable_v1::Request::new(delay_id.to_owned(), action.clone());
+    let v1 = msc4140_v1::Request::new(delay_id.to_owned(), action.clone());
     match client.send(v1).await {
         Ok(_) => Ok(()),
         Err(e) if matches!(e.client_api_error_kind(), Some(ErrorKind::Unrecognized)) => {
-            let v2 = unstable_v2::Request::new(delay_id.to_owned(), action);
+            let v2 = msc4140_v2::Request::new(delay_id.to_owned(), action);
             client.send(v2).await.map(|_| ()).map_err(Into::into)
         }
         Err(e) => Err(e.into()),

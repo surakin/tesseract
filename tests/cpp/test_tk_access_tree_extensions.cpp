@@ -113,7 +113,6 @@ using access_ext_test::AccessExtProbe;
 using access_ext_test::AccessExtCellAdapter;
 using access_ext_test::AccessExtAnnounceHost;
 using access_test::find_named;
-using access_test::find_prefix;
 
 TEST_CASE("detached children are walked after real children, hidden ones skipped",
           "[tk][access_tree][accessibility]")

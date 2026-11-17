@@ -11,6 +11,7 @@
 #include <glib.h>
 #include <gst/gst.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -190,14 +191,8 @@ public:
 
     void set_playback_rate(float rate) override
     {
-        if (rate < 0.5f)
-        {
-            rate = 0.5f;
-        }
-        if (rate > 3.0f)
-        {
-            rate = 3.0f;
-        }
+        rate = std::max(rate, 0.5f);
+        rate = std::min(rate, 3.0f);
         rate_ = rate;
         if (!current_pipeline_)
         {

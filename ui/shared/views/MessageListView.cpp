@@ -3,6 +3,7 @@
 #include "views/poll_logic.h"
 #include "views/sdk_text.h"
 #include "views/send_block.h"
+#include "SlashCommands.h"
 #include "format.h"
 #include "html_spans.h"
 #include "IrcFormat.h"
@@ -21,6 +22,8 @@
 #include "tk/siphash.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
+#include <cstdlib>
+#include <sstream>
 #include <tesseract/client.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -37,6 +40,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -505,25 +509,44 @@ static std::string mention_user_id_from_url(const std::string& url)
     return link.kind == Kind::User ? link.primary : std::string{};
 }
 
-// Relabel user mention pills with the member's real display name (else the
-// Matrix id). A pill's anchor text is whatever the sender wrote, so
-// "[Alice](https://matrix.to/#/@bob:x)" would otherwise read as Alice.
-static void relabel_user_pills(std::vector<tk::TextSpan>& spans,
-                               const std::function<std::string(const std::string&)>& name_of)
+// Relabel mention pills with the real target's name: a user's display name
+// (else the Matrix id), a room's name (else its id/alias). Event pills take
+// the name of the room they point into. A pill's anchor text is whatever the
+// sender wrote, so "[Alice](https://matrix.to/#/@bob:x)" would otherwise read
+// as Alice. The @room self-mention has no url and keeps its own label.
+static void relabel_mention_pills(std::vector<tk::TextSpan>& spans,
+                                  const std::function<std::string(const std::string&)>& user_name,
+                                  const MessageListView::MentionRoomNameProvider& room_name)
 {
+    using Kind = tesseract::Client::MatrixLink::Kind;
     for (auto& sp : spans)
     {
-        if (!sp.is_mention || sp.pill_kind != tk::PillKind::User)
+        if (!sp.is_mention || sp.url.empty() || sp.pill_kind == tk::PillKind::Generic)
         {
             continue;
         }
-        const std::string uid = mention_user_id_from_url(sp.url);
-        if (uid.empty())
+        const auto link = tesseract::Client::parse_matrix_link(sp.url);
+        if (link.primary.empty())
         {
             continue;
         }
-        std::string name = name_of ? name_of(uid) : std::string{};
-        sp.image_alt = name.empty() ? uid : std::move(name);
+        std::string name;
+        if (link.kind == Kind::User)
+        {
+            name = user_name ? user_name(link.primary) : std::string{};
+        }
+        else
+        {
+            name = room_name ? room_name(sp.url) : std::string{};
+        }
+        if (name.empty())
+        {
+            name = link.primary;
+        }
+        // An event pill reads "<room> › message" so it can't pass for a room.
+        sp.image_alt = link.kind == Kind::Event
+                           ? tk::trf(tk::tr("{0} › message"), {std::move(name)})
+                           : std::move(name);
     }
 }
 
@@ -718,6 +741,8 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     row.forwarded_sender_name = ev.forwarded_sender_name;
     row.forwarded_room_id = ev.forwarded_room_id;
     row.forwarded_event_id = ev.forwarded_event_id;
+    row.bot_command_display =
+        tesseract::format_bot_command_display(ev.bot_command, ev.bot_command_arguments_json);
 
     row.thread_root_id = ev.thread_root_id;
     row.is_thread_root = ev.is_thread_root;
@@ -910,6 +935,9 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
         row.membership_reason = mem.reason;
         break;
     }
+    case tesseract::EventType::RoomServerAcl:
+        row.kind = Kind::RoomServerAcl; // `body` lists the ACL changes
+        break;
     case tesseract::EventType::RoomTombstone:
     {
         row.kind = Kind::RoomTombstone;
@@ -1040,6 +1068,37 @@ std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs, s
 
 namespace
 {
+// Event type and state key of a developer row body ("type" or "type [state_key]").
+std::pair<std::string, std::string> split_dev_body(const std::string& body)
+{
+    const auto cut = body.find(" [");
+    return cut == std::string::npos ? std::pair{body, std::string{}}
+                                    : std::pair{body.substr(0, cut), body.substr(cut)};
+}
+
+bool is_bridge_info_row(const MessageRowData& m)
+{
+    if (m.kind != MessageRowData::Kind::DevUnhandled)
+    {
+        return false;
+    }
+    const std::string type = split_dev_body(m.body).first;
+    return type == "m.bridge" || type == "uk.half-shot.bridge";
+}
+} // namespace
+
+bool is_absorbed_bridge_info_row(const std::vector<MessageRowData>& msgs, std::size_t index)
+{
+    if (index == 0 || !is_bridge_info_row(msgs[index]) || !is_bridge_info_row(msgs[index - 1]))
+    {
+        return false;
+    }
+    return msgs[index].sender == msgs[index - 1].sender &&
+           split_dev_body(msgs[index].body).second == split_dev_body(msgs[index - 1].body).second;
+}
+
+namespace
+{
 
 constexpr float kMsgListPadX = tesseract::visual::kSpaceMD;           // 12
 constexpr float kMsgListPadY = tesseract::visual::kMsgRowVerticalPad; // 6
@@ -1164,6 +1223,10 @@ constexpr float kQuoteGapAfter = 4.0f; // gap between quote and body
 constexpr float kForwardIconPx = 12.0f;  // forward glyph, drawn in text_muted
 constexpr float kForwardIconGap = 4.0f;  // glyph -> label
 constexpr float kForwardGapAfter = 4.0f; // gap between the line and what follows
+// Received bot command line (MSC4391) — glyph + muted label above the body.
+constexpr float kBotCommandIconPx = 12.0f;
+constexpr float kBotCommandIconGap = 4.0f;
+constexpr float kBotCommandGapAfter = 4.0f;
 // Reply hover button ("↩") — right-aligned in the chip strip.
 constexpr float kReplyBtnW = 28.0f;
 constexpr float kReplyBtnPadX = 8.0f;
@@ -1245,7 +1308,7 @@ struct FileIconInfo
     std::string label; // uppercase extension, ≤4 chars
 };
 
-static FileIconInfo file_icon_info(std::string_view filename)
+FileIconInfo file_icon_info(std::string_view filename)
 {
     auto dot = filename.rfind('.');
     std::string ext;
@@ -1409,7 +1472,7 @@ std::string format_day_label(std::uint64_t timestamp_ms)
     {
         return tk::tr("Yesterday");
     }
-    if (now_t > t && static_cast<std::uint64_t>(now_t - t) < 7u * 86400u)
+    if (now_t > t && std::cmp_less(now_t - t, 7u * 86400u))
     {
         return tk::format_date(sep_tm, "%A");
     }
@@ -1524,10 +1587,109 @@ std::string room_tombstone_phrase(const MessageRowData& m)
     return line;
 }
 
-// Phrase for a developer "unhandled event" row; `body` is the event type.
+// Phrase for an m.room.server_acl row, e.g. "Alice changed the server ACL: 3 servers now denied;
+// IP literals no longer allowed". `body` holds one count per line (see RoomServerAclStateEvent);
+// the ACL itself can be huge, so the row never lists hostnames.
+std::string room_server_acl_phrase(const MessageRowData& m)
+{
+    std::vector<std::string> parts;
+    std::istringstream lines(m.body);
+    for (std::string line; std::getline(lines, line);)
+    {
+        const auto cut = line.find_first_of("+-");
+        if (cut == std::string::npos)
+        {
+            continue;
+        }
+        const std::string tag = line.substr(0, cut);
+        const bool added = line[cut] == '+';
+        const std::string count_text = line.substr(cut + 1);
+        const long n = count_text.empty() ? 0 : std::strtol(count_text.c_str(), nullptr, 10);
+        if (tag == "deny")
+        {
+            parts.push_back(
+                added ? tk::trf(tk::trn("{0} server now denied", "{0} servers now denied", n),
+                                {count_text})
+                      : tk::trf(tk::trn("{0} server no longer denied",
+                                        "{0} servers no longer denied", n),
+                                {count_text}));
+        }
+        else if (tag == "allow")
+        {
+            parts.push_back(
+                added ? tk::trf(tk::trn("{0} server now allowed", "{0} servers now allowed", n),
+                                {count_text})
+                      : tk::trf(tk::trn("{0} server no longer allowed",
+                                        "{0} servers no longer allowed", n),
+                                {count_text}));
+        }
+        else if (tag == "ip")
+        {
+            parts.push_back(added ? tk::tr("IP literals now allowed")
+                                  : tk::tr("IP literals no longer allowed"));
+        }
+    }
+
+    const std::string s = m.member_label();
+    std::string line = s.empty() ? tk::tr("The server ACL was changed")
+                                 : tk::trf(tk::tr("{0} changed the server ACL"), {s});
+    if (!parts.empty())
+    {
+        std::string detail;
+        for (const auto& p : parts)
+        {
+            detail += detail.empty() ? p : "; " + p;
+        }
+        line = tk::trf(tk::tr("{0}: {1}"), {line, detail});
+    }
+    return line;
+}
+
+// State event types Tesseract reads into room state rather than rendering as timeline rows,
+// with the label a developer row shows for them. Only these are reported as "handled": the
+// row exists solely under the "Show unhandled events" setting. Keep in step with the Rust
+// readers (bridge info, service members, room features, emote packs).
+struct KnownStateType
+{
+    const char* type;
+    const char* label; // marked for extraction, translated where shown
+};
+
+constexpr KnownStateType kKnownStateTypes[] = {
+    {"m.bridge", tk::N_("Bridge information")},
+    {"uk.half-shot.bridge", tk::N_("Bridge information")},
+    {"io.element.functional_members", tk::N_("Service members")},
+    {"com.beeper.room_features", tk::N_("Bridge room features")},
+    {"im.ponies.room_emotes", tk::N_("Custom emoji pack")},
+};
+
+// Label for a known state event type (`body` is "type" or "type [state_key]"), or empty.
+std::string known_state_label(const std::string& body)
+{
+    const std::string type = body.substr(0, body.find(" ["));
+    for (const auto& k : kKnownStateTypes)
+    {
+        if (type == k.type)
+        {
+            return tk::tr(k.label);
+        }
+    }
+    return {};
+}
+
+// Phrase for a developer row; `body` is the event type. Event types Tesseract understands read
+// as a room-state update, the rest as an unhandled event.
 std::string dev_unhandled_phrase(const MessageRowData& m)
 {
     const std::string s = m.member_label();
+    if (const std::string label = known_state_label(m.body); !label.empty())
+    {
+        if (s.empty())
+        {
+            return tk::trf(tk::tr("Room state updated: {0}"), {label});
+        }
+        return tk::trf(tk::tr("{0} updated the room state: {1}"), {s, label});
+    }
     if (s.empty())
     {
         return tk::trf(tk::tr("Unhandled event: {0}"), {m.body});
@@ -1700,7 +1862,8 @@ static bool is_virtual_event(MessageRowData::Kind k)
     using Kind = MessageRowData::Kind;
     return k == Kind::DaySeparator || k == Kind::ReadMarker || k == Kind::TimelineStart ||
            k == Kind::PinnedEvent || k == Kind::CallNotification || k == Kind::Membership ||
-           k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled;
+           k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled ||
+           k == Kind::RoomServerAcl;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -1788,9 +1951,9 @@ struct RowPaintCtx
     const MessageRowData& m;
     tk::PaintCtx& ctx;
     tk::Rect bounds;
-    std::size_t index;
-    bool hovered;
-    bool cont;
+    std::size_t index = 0;
+    bool hovered = false;
+    bool cont = false;
 };
 
 class MessageRowRenderer
@@ -1865,6 +2028,13 @@ public:
                                           const Adapter&) const;
     virtual float paint_forward_context(const MessageRowData& m, tk::PaintCtx&, float x, float y,
                                         float col_w, const Adapter&) const;
+
+    // Bot command line — the MSC4391 invocation a row carries, after the
+    // forward line. Defaults draw glyph + muted label; IRC draws a plain line.
+    virtual float measure_bot_command_context(const MessageRowData& m, tk::LayoutCtx&, float col_w,
+                                              const Adapter&) const;
+    virtual float paint_bot_command_context(const MessageRowData& m, tk::PaintCtx&, float x,
+                                            float y, float col_w, const Adapter&) const;
 
     // Reply context — the message this row is a reply to.
     virtual float measure_reply_context(const MessageRowData& m, tk::LayoutCtx&, float /*col_w*/,
@@ -2319,8 +2489,12 @@ public:
         {
             return kPinnedEventH;
         }
+        if (is_absorbed_bridge_info_row(owner_.messages_, index))
+        {
+            return 0.0f; // grouped into the previous bridge-information row
+        }
         if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone ||
-            m.kind == Kind::DevUnhandled)
+            m.kind == Kind::DevUnhandled || m.kind == Kind::RoomServerAcl)
         {
             return kPinnedEventH;
         }
@@ -2506,7 +2680,16 @@ public:
         }
         if (m.kind == Kind::DevUnhandled)
         {
+            if (is_absorbed_bridge_info_row(owner_.messages_, index))
+            {
+                return; // grouped into the previous bridge-information row
+            }
             paint_room_name_change(m, ctx, bounds, dev_unhandled_phrase(m));
+            return;
+        }
+        if (m.kind == Kind::RoomServerAcl)
+        {
+            paint_room_name_change(m, ctx, bounds, room_server_acl_phrase(m));
             return;
         }
         if (m.kind == Kind::Membership)
@@ -2599,7 +2782,7 @@ public:
         // Search match tint — subtle accent fill behind the row.
         // Painted before the hover highlight so hover layers on top.
         if (!owner_.search_match_ids_.empty() && !m.event_id.empty() &&
-            owner_.search_match_ids_.count(m.event_id))
+            owner_.search_match_ids_.contains(m.event_id))
         {
             ctx.canvas.fill_rounded_rect(highlight_bounds, tesseract::visual::kRadiusSM,
                                          ctx.theme.palette.accent.with_alpha(25));
@@ -3025,7 +3208,7 @@ public:
                     rc.reactions.resize(ri + 1);
                 }
                 auto& rxc = rc.reactions[ri];
-                if (rxc.key != r.key || rxc.count != r.count)
+                if (rxc.key != r.key || std::cmp_not_equal(rxc.count, r.count))
                 {
                     rxc.key = r.key;
                     rxc.count = r.count;
@@ -3116,7 +3299,7 @@ public:
                 }
 
                 bool chip_hovered = hovered && owner_.hover_target_ == HoverTarget::Chip &&
-                                    owner_.hover_chip_idx_ == static_cast<int>(ri);
+                                    std::cmp_equal(owner_.hover_chip_idx_, ri);
                 tk::Color bg =
                     r.reacted_by_me ? ctx.theme.palette.chip_bg_me : ctx.theme.palette.chip_bg;
                 tk::Color border = r.reacted_by_me ? ctx.theme.palette.chip_border_me
@@ -3172,7 +3355,7 @@ public:
                     // centering for the whole glyph cluster — centre by
                     // ascent() rather than full line-height because the
                     // colour-emoji font's descent region is empty.
-                    const RowLayoutCache::GlyphRun* reference = &rxc.glyph_runs[0];
+                    const RowLayoutCache::GlyphRun* reference = rxc.glyph_runs.data();
                     for (const auto& run : rxc.glyph_runs)
                     {
                         if (run.is_emoji)
@@ -3675,6 +3858,10 @@ public:
         {
             nat = std::max(nat, forward_natural_width_(m, ctx, w));
         }
+        if (!m.bot_command_display.empty())
+        {
+            nat = std::max(nat, bot_command_natural_width_(m, ctx, w));
+        }
         // No lower bound: the bubble hugs its content (see msgbubble::layout).
         return std::min(nat, w);
     }
@@ -4049,6 +4236,8 @@ public:
             return room_tombstone_phrase(m);
         case Kind::DevUnhandled:
             return dev_unhandled_phrase(m);
+        case Kind::RoomServerAcl:
+            return room_server_acl_phrase(m);
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -4137,6 +4326,10 @@ public:
             extras.push_back(m.forwarded_author().empty()
                                  ? tk::tr("forwarded message")
                                  : tk::trf(tk::tr("forwarded from {0}"), {m.forwarded_author()}));
+        }
+        if (!m.bot_command_display.empty())
+        {
+            extras.push_back(tk::trf(tk::tr("bot command {0}"), {m.bot_command_display}));
         }
         if (m.is_edited)
         {
@@ -4860,6 +5053,7 @@ private:
         case Kind::RoomName:
         case Kind::RoomTombstone:
         case Kind::DevUnhandled:
+        case Kind::RoomServerAcl:
             return tk::Role::StaticText;
         default:
             return tk::Role::ListItem;
@@ -4869,7 +5063,7 @@ private:
     // Plain-text description of a content row's body, independent of the
     // sender-name prefix access_name_for_row adds. Falls back to a generic
     // type description for media kinds with no caption.
-    std::string message_row_access_body_(const MessageRowData& m) const
+    static std::string message_row_access_body_(const MessageRowData& m)
     {
         return message_access_body(m);
     }
@@ -4999,7 +5193,7 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
-    void paint_pinned_event(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds) const
+    static void paint_pinned_event(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds)
     {
         // "{sender_name} {body}" e.g. "Alice pinned a message"
         std::string label = m.sender_name.empty() ? m.body : m.member_label() + " " + m.body;
@@ -5040,8 +5234,8 @@ private:
                              ctx.theme.palette.text_muted);
     }
 
-    void paint_room_name_change(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
-                                std::string label = {}) const
+    static void paint_room_name_change(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect bounds,
+                                       std::string label = {})
     {
         if (label.empty())
         {
@@ -5150,8 +5344,8 @@ private:
     // A one-line monospace system row for the IRC layout: left-aligned text
     // at the IRC column, vertically centred, with an optional 1px rule
     // filling the rest of the row (used by the day / read-marker separators).
-    void paint_irc_system_line_(tk::PaintCtx& ctx, tk::Rect bounds, float row_h,
-                                const std::string& text, tk::Color color, bool rule) const
+    static void paint_irc_system_line_(tk::PaintCtx& ctx, tk::Rect bounds, float row_h,
+                                       const std::string& text, tk::Color color, bool rule)
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
@@ -5188,11 +5382,11 @@ private:
         float timestamp_x = 0.0f;
     };
 
-    CenteredSystemMessageLayout centered_system_message_layout_(tk::CanvasFactory& factory,
-                                                                float width,
-                                                                const std::string& text,
-                                                                std::size_t avatar_count,
-                                                                const std::string& timestamp) const
+    static CenteredSystemMessageLayout centered_system_message_layout_(tk::CanvasFactory& factory,
+                                                                       float width,
+                                                                       const std::string& text,
+                                                                       std::size_t avatar_count,
+                                                                       const std::string& timestamp)
     {
         constexpr float kGap = 6.0f;
         constexpr float kStride = 12.0f;
@@ -5558,6 +5752,7 @@ private:
         // mIRC scrollback line) and its height.
         // The forward attribution (MSC4553) sits above the reply context.
         float quote_h = row_renderer_->measure_forward_context(m, ctx, col_w, *this) +
+                        row_renderer_->measure_bot_command_context(m, ctx, col_w, *this) +
                         row_renderer_->measure_reply_context(m, ctx, col_w, *this);
         switch (m.kind)
         {
@@ -5667,7 +5862,7 @@ private:
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
-                sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
+                sz.w = std::max(sz.w, std::min({pill_min.w, col_w, kImageMaxW}));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
             float h = sz.h;
@@ -5747,10 +5942,7 @@ private:
                                                     (kGalleryCellSize + kGalleryCellSpacing)));
             cols = std::min(cols, std::max(n, 1));
             int rows = (n + cols - 1) / cols;
-            if (rows < 1)
-            {
-                rows = 1;
-            }
+            rows = std::max(rows, 1);
             float grid_h = static_cast<float>(rows) * kGalleryCellSize +
                            static_cast<float>(std::max(0, rows - 1)) * kGalleryCellSpacing;
             if (owner_.media_is_hidden_(m))
@@ -5775,6 +5967,7 @@ private:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
+        case MessageRowData::Kind::RoomServerAcl:
             return 0.0f;
         }
         return quote_h;
@@ -5786,6 +5979,10 @@ private:
         if (m.forwarded)
         {
             y = row_renderer_->paint_forward_context(m, ctx, x, y, col_w, *this);
+        }
+        if (!m.bot_command_display.empty())
+        {
+            y = row_renderer_->paint_bot_command_context(m, ctx, x, y, col_w, *this);
         }
         if (m.has_reply())
         {
@@ -6091,7 +6288,7 @@ private:
             if (owner_.media_is_hidden_(m))
             {
                 tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
-                sz.w = std::max(sz.w, std::min(pill_min.w, std::min(col_w, kImageMaxW)));
+                sz.w = std::max(sz.w, std::min({pill_min.w, col_w, kImageMaxW}));
                 sz.h = std::max(sz.h, std::min(pill_min.h, kImageMaxH));
             }
             tk::Rect r{x, y, sz.w, sz.h};
@@ -6178,10 +6375,7 @@ private:
                                                     (kGalleryCellSize + kGalleryCellSpacing)));
             cols = std::min(cols, std::max(n, 1));
             int rows = (n + cols - 1) / cols;
-            if (rows < 1)
-            {
-                rows = 1;
-            }
+            rows = std::max(rows, 1);
             float grid_w = static_cast<float>(cols) * kGalleryCellSize +
                            static_cast<float>(std::max(0, cols - 1)) * kGalleryCellSpacing;
             float grid_h = static_cast<float>(rows) * kGalleryCellSize +
@@ -6242,6 +6436,7 @@ private:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
+        case MessageRowData::Kind::RoomServerAcl:
             break;
         }
         return y;
@@ -6260,8 +6455,8 @@ private:
 
     // Classic/Bubble line: glyph + one muted Small label, ellipsized to
     // `col_w`. A negative `col_w` asks for the unconstrained label.
-    std::unique_ptr<tk::TextLayout> forward_layout_(const MessageRowData& m, tk::CanvasFactory& f,
-                                                    float col_w) const
+    static std::unique_ptr<tk::TextLayout> forward_layout_(const MessageRowData& m,
+                                                           tk::CanvasFactory& f, float col_w)
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
@@ -6272,14 +6467,14 @@ private:
     }
 
     // Height of the line plus the gap that follows it.
-    float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
+    static float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w)
     {
         auto lo = forward_layout_(m, ctx.factory, col_w);
         return std::max(lo ? lo->measure().h : 0.0f, kForwardIconPx) + kForwardGapAfter;
     }
 
     // Width the line wants when it has all the room it needs (bubble hugging).
-    float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w) const
+    static float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w)
     {
         if (!m.forwarded)
         {
@@ -6348,6 +6543,73 @@ private:
             ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_muted);
         }
         record_forward_geom_(m, {x, y, lo ? std::min(col_w, lo->measure().w) : col_w, h});
+        return y + h + msgirc::kIrcPrefixGap;
+    }
+
+    // ── Bot command line (MSC4391) ──────────────────────────────────────
+    static std::string bot_command_label_(const MessageRowData& m)
+    {
+        return tk::trf(tk::tr("Bot command: {0}"), {m.bot_command_display});
+    }
+
+    static std::unique_ptr<tk::TextLayout> bot_command_layout_(const MessageRowData& m,
+                                                               tk::CanvasFactory& f, float col_w)
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width =
+            col_w < 0.0f ? -1.0f : std::max(0.0f, col_w - kBotCommandIconPx - kBotCommandIconGap);
+        return f.build_text(bot_command_label_(m), st);
+    }
+
+    static float bot_command_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w)
+    {
+        auto lo = bot_command_layout_(m, ctx.factory, col_w);
+        return std::max(lo ? lo->measure().h : 0.0f, kBotCommandIconPx) + kBotCommandGapAfter;
+    }
+
+    static float bot_command_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx, float w)
+    {
+        auto lo = bot_command_layout_(m, ctx.factory, -1.0f);
+        return std::min(w, kBotCommandIconPx + kBotCommandIconGap + (lo ? lo->measure().w : 0.0f));
+    }
+
+    float paint_bot_command_line_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                  float col_w) const
+    {
+        auto lo = bot_command_layout_(m, ctx.factory, col_w);
+        const float text_h = lo ? lo->measure().h : 0.0f;
+        const float h = std::max(text_h, kBotCommandIconPx);
+        const tk::Color col = ctx.theme.palette.text_muted;
+        ic_bot_command_.draw(
+            ctx.canvas, ctx.factory, kTerminalSvg,
+            {x, y + (h - kBotCommandIconPx) * 0.5f, kBotCommandIconPx, kBotCommandIconPx},
+            kBotCommandIconPx, col);
+        if (lo)
+        {
+            ctx.canvas.draw_text(
+                *lo, {x + kBotCommandIconPx + kBotCommandIconGap, y + (h - text_h) * 0.5f}, col);
+        }
+        return y + h + kBotCommandGapAfter;
+    }
+
+    // IRC: a plain dim scrollback line ("-> Bot command: /ban ...").
+    float irc_bot_command_height_(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w) const
+    {
+        auto lo = ctx.factory.build_text("-> " + bot_command_label_(m), body_style(col_w));
+        return (lo ? lo->measure().h : 0.0f) + msgirc::kIrcPrefixGap;
+    }
+
+    float paint_irc_bot_command_(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                 float col_w) const
+    {
+        auto lo = ctx.factory.build_text("-> " + bot_command_label_(m), body_style(col_w));
+        const float h = lo ? lo->measure().h : 0.0f;
+        if (lo)
+        {
+            ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_muted);
+        }
         return y + h + msgirc::kIrcPrefixGap;
     }
 
@@ -6459,7 +6721,8 @@ private:
             if (!unresolved && !m.in_reply_to_formatted_body.empty())
             {
                 spans = html_to_spans(m.in_reply_to_formatted_body, dark);
-                relabel_user_pills(spans, owner_.mention_name_provider_);
+                relabel_mention_pills(spans, owner_.mention_name_provider_,
+                                      owner_.mention_room_name_provider_);
                 if (ctx.theme.high_contrast)
                 {
                     flatten_span_colours(spans);
@@ -6528,7 +6791,7 @@ private:
 
     // "<nick> body" for the context line, or the muted fallback when the
     // replied-to event isn't in the local timeline cache.
-    std::string irc_quote_text_(const MessageRowData& m) const
+    static std::string irc_quote_text_(const MessageRowData& m)
     {
         if (m.in_reply_to_sender_name.empty())
         {
@@ -6601,7 +6864,8 @@ private:
     std::vector<tk::TextSpan> prepare_spans(const MessageRowData& m, bool revealed, bool dark) const
     {
         auto spans = html_to_spans(m.formatted_body, dark);
-        relabel_user_pills(spans, owner_.mention_name_provider_);
+        relabel_mention_pills(spans, owner_.mention_name_provider_,
+                              owner_.mention_room_name_provider_);
         if (hc_)
         {
             flatten_span_colours(spans);
@@ -6676,7 +6940,8 @@ private:
         }
         auto prep_spans = [&](std::vector<tk::TextSpan>& spans)
         {
-            relabel_user_pills(spans, owner_.mention_name_provider_);
+            relabel_mention_pills(spans, owner_.mention_name_provider_,
+                                  owner_.mention_room_name_provider_);
             if (!revealed)
             {
                 for (auto& sp : spans)
@@ -7020,6 +7285,9 @@ private:
                         // still needs to pill-ify — see split_room_mentions's
                         // doc comment.
                         link_spans = split_room_mentions(std::move(link_spans), dark);
+                        link_spans = pillify_matrix_links(std::move(link_spans), dark);
+                        relabel_mention_pills(link_spans, owner_.mention_name_provider_,
+                                              owner_.mention_room_name_provider_);
                         substitute_image_placeholders(link_spans);
                         apply_emoji_segmentation(link_spans);
                         slot.layout = f.build_rich_text(link_spans, body_style(w, eo));
@@ -7158,9 +7426,9 @@ private:
     // BEFORE the layout's own text draw — these are meant to sit behind the
     // glyphs. Image spans are handled separately by paint_span_images()
     // (see its comment for why they can't share this pass).
-    void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans, tk::TextLayout& layout,
-                                tk::PaintCtx& ctx, float ox, float oy,
-                                float code_clip_h = -1.0f) const
+    static void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans,
+                                       tk::TextLayout& layout, tk::PaintCtx& ctx, float ox,
+                                       float oy, float code_clip_h = -1.0f)
     {
         // code_clip_h >= 0: a collapsed code block, panel ends at that y.
         int boff = 0;
@@ -7296,6 +7564,15 @@ private:
                             avatar = owner_.mention_avatar_provider_(uid);
                         }
                     }
+                    else if (sp.pill_kind != tk::PillKind::User && !sp.url.empty())
+                    {
+                        // A permalink to a room (or an event in one): that
+                        // room's avatar, joined or not.
+                        if (owner_.mention_room_avatar_provider_)
+                        {
+                            avatar = owner_.mention_room_avatar_provider_(sp.url);
+                        }
+                    }
                     else if (sp.pill_kind == tk::PillKind::Room && sp.url.empty() &&
                              owner_.room_avatar_provider_)
                     {
@@ -7322,9 +7599,10 @@ private:
                     // Reserving the same slot regardless of resolution state
                     // keeps the bitmap's width constant; an unresolved (or
                     // absent) avatar gets an initials disc in that slot.
-                    spec.reserve_leading_visual =
-                        (sp.pill_kind == tk::PillKind::User) ||
-                        (sp.pill_kind == tk::PillKind::Room && sp.url.empty());
+                    spec.reserve_leading_visual = tk::pill_reserves_leading_visual(sp.pill_kind);
+                    // A permalink to a room shows initials of its name while
+                    // the avatar loads; only the @room self-mention gets "@".
+                    spec.initials_from_text = sp.pill_kind != tk::PillKind::User && !sp.url.empty();
                     // The theme's live accent colors, not sp.background/
                     // sp.color (html_spans.cpp's hardcoded dark/light blue,
                     // kept there only for has_background/has_color gating
@@ -7476,7 +7754,7 @@ private:
         tk::ClipScope clip(ctx.canvas, {ox, oy, tw, th});
 
         // Header-row tint (behind everything).
-        if (sec.header_rows > 0 && static_cast<std::size_t>(sec.header_rows) <= nr)
+        if (sec.header_rows > 0 && std::cmp_less_equal(sec.header_rows, nr))
         {
             const float top = oy + sec.row_y[0];
             const std::size_t hlast = static_cast<std::size_t>(sec.header_rows) - 1;
@@ -7505,9 +7783,9 @@ private:
         // empty ones), drawn over the grid lines.
         if (sel_here && !sel_single)
         {
-            for (int r = block_r0; r <= block_r1 && r < static_cast<int>(nr); ++r)
+            for (int r = block_r0; r <= block_r1 && std::cmp_less(r, nr); ++r)
             {
-                for (int c = block_c0; c <= block_c1 && c < static_cast<int>(nc); ++c)
+                for (int c = block_c0; c <= block_c1 && std::cmp_less(c, nc); ++c)
                 {
                     ctx.canvas.fill_rect({ox + sec.col_x[static_cast<std::size_t>(c)],
                                           oy + sec.row_y[static_cast<std::size_t>(r)],
@@ -7972,7 +8250,7 @@ private:
         owner_.map_panner_.paint(m, ctx, map_rect, /*fetch_tiles=*/!hidden);
     }
 
-    void paint_file_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst) const
+    static void paint_file_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst)
     {
         ctx.canvas.fill_rounded_rect(dst, 8.0f, ctx.theme.palette.chrome_bg);
         ctx.canvas.stroke_rounded_rect(dst, 8.0f, ctx.theme.palette.border, 1.0f);
@@ -8274,6 +8552,7 @@ private:
     mutable tk::IconCache ic_call_phone_, ic_call_video_;
     mutable tk::IconCache ic_add_reaction_;
     mutable tk::IconCache ic_forward_;
+    mutable tk::IconCache ic_bot_command_;
 
     MessageListView& owner_;
 
@@ -8342,6 +8621,20 @@ inline float MessageRowRenderer::paint_forward_context(const MessageRowData& m, 
                                                        const Adapter& ad) const
 {
     return ad.paint_forward_line_(m, ctx, x, y, col_w);
+}
+
+inline float MessageRowRenderer::measure_bot_command_context(const MessageRowData& m,
+                                                             tk::LayoutCtx& ctx, float col_w,
+                                                             const Adapter& ad) const
+{
+    return m.bot_command_display.empty() ? 0.0f : ad.bot_command_line_height_(m, ctx, col_w);
+}
+
+inline float MessageRowRenderer::paint_bot_command_context(const MessageRowData& m,
+                                                           tk::PaintCtx& ctx, float x, float y,
+                                                           float col_w, const Adapter& ad) const
+{
+    return ad.paint_bot_command_line_(m, ctx, x, y, col_w);
 }
 
 inline float MessageRowRenderer::paint_reply_context(const MessageRowData& m, tk::PaintCtx& ctx,
@@ -8522,6 +8815,17 @@ public:
                                 float col_w, const Adapter& ad) const override
     {
         return m.forwarded ? ad.paint_irc_forward_(m, ctx, x, y, col_w) : y;
+    }
+
+    float measure_bot_command_context(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
+                                      const Adapter& ad) const override
+    {
+        return m.bot_command_display.empty() ? 0.0f : ad.irc_bot_command_height_(m, ctx, col_w);
+    }
+    float paint_bot_command_context(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                                    float col_w, const Adapter& ad) const override
+    {
+        return m.bot_command_display.empty() ? y : ad.paint_irc_bot_command_(m, ctx, x, y, col_w);
     }
 
     float measure_reply_context(const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
@@ -9247,10 +9551,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     {
         return;
     }
-    if (index > messages_.size())
-    {
-        index = messages_.size();
-    }
+    index = std::min(index, messages_.size());
 
     const bool animated =
         msg.kind == MessageRowData::Kind::Video && (msg.video_autoplay || msg.video_gif);
@@ -9499,7 +9800,7 @@ bool MessageListView::suppress_read_marker_for_insert_(std::size_t index, bool a
             return false; // no marker, or one already showing: keep it
         }
     }
-    if (marker < 0 || index <= static_cast<std::size_t>(marker) || suppress_read_marker_)
+    if (marker < 0 || std::cmp_less_equal(index, marker) || suppress_read_marker_)
     {
         return false;
     }
@@ -9553,8 +9854,7 @@ void MessageListView::arm_live_location_expiry_(const MessageRowData& m)
         return;
     }
     const std::string key = m.event_id + ":" + std::to_string(m.location_live_expires_ms);
-    if (live_expiry_armed_.count(key) != 0 ||
-        live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
+    if (live_expiry_armed_.contains(key) || live_expiry_armed_.size() >= kMaxArmedLiveExpiryTimers)
     {
         return; // already armed, or the view's timers are full
     }
@@ -9644,7 +9944,7 @@ void MessageListView::set_highlighted_event(const std::string& event_id)
     }
 }
 
-bool MessageListView::reply_jump_available_(const MessageRowData& m) const
+bool MessageListView::reply_jump_available_(const MessageRowData& m)
 {
     return m.has_reply() &&
            (!m.in_reply_to_deleted || tesseract::Settings::instance().show_deleted_messages);
@@ -9682,7 +9982,7 @@ bool MessageListView::jump_to_reply_original_(const std::string& reply_event_id)
     return false;
 }
 
-bool MessageListView::open_link_(const std::string& url)
+bool MessageListView::open_link_(const std::string& url) const
 {
     // A matrix.to user link is a mention pill — open the profile panel
     // instead of a browser.
@@ -10540,7 +10840,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         const LinkLayout* le = link_cache_.peek(sel_->anchor_event_id);
         if (le && sel_->table_section >= 0 &&
-            sel_->table_section < static_cast<int>(le->sections.size()))
+            std::cmp_less(sel_->table_section, le->sections.size()))
         {
             const SectionLayout& sec = le->sections[sel_->table_section];
             auto [hr, hc] = table_row_col_at(sec, world);
@@ -10582,7 +10882,7 @@ void MessageListView::on_pointer_drag(tk::Point local)
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         int row_idx = index_at(local);
-        if (row_idx >= 0 && row_idx < static_cast<int>(messages_.size()))
+        if (row_idx >= 0 && std::cmp_less(row_idx, messages_.size()))
         {
             const auto& m = messages_[static_cast<std::size_t>(row_idx)];
             if (m.kind == MessageRowData::Kind::Text || m.kind == MessageRowData::Kind::Notice ||
@@ -10650,7 +10950,7 @@ static MessageListView::HoverTarget chip_hit_at(const MessageListView::RowChipGe
                                                 int& out_chip_idx)
 {
     out_chip_idx = -1;
-    if (g.row_index == static_cast<std::size_t>(-1))
+    if (g.row_index == MessageListView::RowChipGeom::kNoRow)
     {
         return MessageListView::HoverTarget::None;
     }
@@ -10747,23 +11047,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
     const bool over_active_pill = hovered_row_index() >= 0 &&
                                   hovered_row_geom_.action_pill_bounds.w > 0.0f &&
                                   rect_contains(hovered_row_geom_.action_pill_bounds, pill_probe);
-    if (!over_active_pill)
+    if (!over_active_pill && !hover_locked_)
     {
         tk::ListView::on_pointer_move(local);
-    }
-
-    if (!pill_menu_event_id_.empty())
-    {
-        const int row = hovered_row_index();
-        if (row >= 0 && row < static_cast<int>(messages_.size()) &&
-            messages_[static_cast<std::size_t>(row)].event_id != pill_menu_event_id_)
-        {
-            pill_menu_event_id_.clear();
-            if (on_pill_menu_row_left)
-            {
-                on_pill_menu_row_left();
-            }
-        }
     }
 
     // Map pan: apply drag delta while a pan is active.
@@ -10788,7 +11074,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
     // rebuild it. (Paint will populate hovered_row_geom_ on its next
     // frame; until then chip hit-tests will return None.)
     int row = hovered_row_index();
-    if (row < 0 || static_cast<std::size_t>(row) != hovered_row_geom_.row_index)
+    if (row < 0 || std::cmp_not_equal(row, hovered_row_geom_.row_index))
     {
         reset_hovered_row_geom_();
     }
@@ -10986,7 +11272,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
         ActionTooltip next = ActionTooltip::None;
         tk::Rect tip_anchor{};
 
-        if (hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
+        if (hovered_row_geom_.row_index != RowChipGeom::kNoRow)
         {
             struct
             {
@@ -11186,7 +11472,7 @@ void MessageListView::on_pointer_leave()
         return;
     }
     tk::ListView::on_pointer_leave();
-    hovered_row_geom_.row_index = static_cast<std::size_t>(-1);
+    hovered_row_geom_.row_index = RowChipGeom::kNoRow;
     hovered_row_geom_.chips.clear();
     hovered_row_geom_.receipt_discs.clear();
     hovered_row_geom_.add_visible = false;
@@ -11418,7 +11704,7 @@ MessageListView::DateBadge MessageListView::date_badge_() const
     // Push the pill up as the next real DaySeparator row approaches the top,
     // so it converges to fully off-screen right as the real separator takes
     // its place — mirrors RoomListView::sticky_header_()'s push math.
-    for (int i = first + 1; i < static_cast<int>(messages_.size()); ++i)
+    for (int i = first + 1; std::cmp_less(i, messages_.size()); ++i)
     {
         if (messages_[static_cast<std::size_t>(i)].kind == Kind::DaySeparator)
         {
@@ -11785,7 +12071,7 @@ void MessageListView::draw_switch_spinner_(tk::PaintCtx& ctx)
 
 int MessageListView::message_index_of(const std::string& event_id) const
 {
-    for (int i = 0; i < static_cast<int>(messages_.size()); ++i)
+    for (int i = 0; std::cmp_less(i, messages_.size()); ++i)
     {
         if (messages_[i].event_id == event_id)
         {
@@ -11863,7 +12149,7 @@ void MessageListView::copy_selection()
     {
         const LinkLayout* le = link_cache_.peek(sel_->anchor_event_id);
         if (le && sel_->table_section >= 0 &&
-            sel_->table_section < static_cast<int>(le->sections.size()))
+            std::cmp_less(sel_->table_section, le->sections.size()))
         {
             const SectionLayout& sec = le->sections[sel_->table_section];
             std::string out;
@@ -12010,7 +12296,7 @@ bool MessageListView::on_right_click(tk::Point local)
         return false;
     }
     // Opens like the member-list menu: right of the pointer.
-    return open_actions_menu_(idx, {world.x, world.y, PopupMenu::kWidth, 0.0f},
+    return open_actions_menu_(idx, {world.x, world.y, 0.0f, 0.0f},
                               /*full=*/true, selection, !context_link_url_.empty());
 }
 
@@ -12030,19 +12316,21 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.thread_button_visible = thread_button_visible_;
     in.can_redact_others = can_redact_others_;
     in.can_pin = can_pin_;
-    in.is_pinned = pinned_event_ids_.count(m.event_id) != 0;
+    in.is_pinned = pinned_event_ids_.contains(m.event_id);
     in.developer_mode = tesseract::Settings::instance().developer_mode;
     in.unhandled = m.kind == Kind::DevUnhandled;
     in.saveable_sticker =
         m.kind == Kind::Sticker && m.source && on_save_sticker_requested &&
         !(is_sticker_saved && is_sticker_saved(m.source->mxc_url(), m.sticker_info_json));
+    in.copyable_image =
+        (m.kind == Kind::Image || m.kind == Kind::Sticker) && m.source && on_copy_image_requested;
     return tesseract::views::build_message_actions(in);
 }
 
 bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full, bool copy_sel,
                                          bool copy_link)
 {
-    if (idx < 0 || idx >= static_cast<int>(messages_.size()) || !on_actions_menu_requested)
+    if (idx < 0 || std::cmp_greater_equal(idx, messages_.size()) || !on_actions_menu_requested)
     {
         return false;
     }
@@ -12068,11 +12356,6 @@ bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full, bo
         return false;
     }
     on_actions_menu_requested(req);
-    // The pill's "more" menu belongs to its row; a right-click menu stays.
-    if (!full && hover_locked_)
-    {
-        pill_menu_event_id_ = m.event_id;
-    }
     return true;
 }
 
@@ -12127,6 +12410,13 @@ bool MessageListView::invoke_message_action(tesseract::views::MessageActionId id
             return false;
         }
         on_save_sticker_requested(rowp->source->mxc_url(), rowp->body, rowp->sticker_info_json);
+        return true;
+    case Id::CopyImage:
+        if (!on_copy_image_requested || !rowp || !rowp->source)
+        {
+            return false;
+        }
+        on_copy_image_requested(rowp->source->fetch_token());
         return true;
     default:
         if (!on_overflow_action_requested)
@@ -12696,7 +12986,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                     // the pointer (or the nearest cell if the click landed in
                     // padding / a border). Dragging extends it into a
                     // rectangular block of cells.
-                    for (int si = 0; si < static_cast<int>(le->sections.size()); ++si)
+                    for (int si = 0; std::cmp_less(si, le->sections.size()); ++si)
                     {
                         const SectionLayout& sec = le->sections[si];
                         if (sec.kind != BodyBlock::Kind::Table ||
@@ -13787,7 +14077,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                 {
                     return; // nothing visible → reveal
                 }
-                for (int i = first; i <= last && i < static_cast<int>(messages_.size()); ++i)
+                for (int i = first; i <= last && std::cmp_less(i, messages_.size()); ++i)
                 {
                     visit(messages_[static_cast<std::size_t>(i)]);
                 }
@@ -13952,8 +14242,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     // chip_hit_at returns None even though the pointer is over a disc. Once
     // the geom is fresh we correct the state here so the tooltip paints in the
     // same frame without needing another mouse event.
-    if (hover_target_ == HoverTarget::None &&
-        hovered_row_geom_.row_index != static_cast<std::size_t>(-1))
+    if (hover_target_ == HoverTarget::None && hovered_row_geom_.row_index != RowChipGeom::kNoRow)
     {
         int re_idx = -1;
         HoverTarget re_t = chip_hit_at(hovered_row_geom_, bounds(), last_pointer_local_, re_idx);
@@ -14088,7 +14377,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         const auto& rrs = messages_[row].read_receipts;
         const std::size_t total = rrs.size();
         const std::size_t visible = std::min(total, kReceiptCap);
-        if (static_cast<std::size_t>(hover_chip_idx_) >= visible)
+        if (std::cmp_greater_equal(hover_chip_idx_, visible))
         {
             return;
         }
@@ -14129,10 +14418,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         {
             panel_x = view.x + view.w - panel_w - 4.0f;
         }
-        if (panel_x < view.x + 4.0f)
-        {
-            panel_x = view.x + 4.0f;
-        }
+        panel_x = std::max(panel_x, view.x + 4.0f);
 
         tk::Rect panel{panel_x, panel_y, panel_w, panel_h};
         ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);
@@ -14189,7 +14475,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
                 // append the extra punctuation colon the Unicode branch uses.
                 header = tk::tr("Reacted with :");
                 header += sc;
-                header += ":";
+                header += ':';
             }
         }
         if (header.empty())
@@ -14202,7 +14488,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
             {
                 header = tk::tr("Reacted with ");
                 header += r.key;
-                header += ":";
+                header += ':';
             }
         }
         lines.push_back(std::move(header));
@@ -14263,10 +14549,7 @@ void MessageListView::paint(tk::PaintCtx& ctx)
     {
         panel_x = view.x + view.w - panel_w - 4.0f;
     }
-    if (panel_x < view.x + 4.0f)
-    {
-        panel_x = view.x + 4.0f;
-    }
+    panel_x = std::max(panel_x, view.x + 4.0f);
 
     tk::Rect panel{panel_x, panel_y, panel_w, panel_h};
     ctx.canvas.fill_rounded_rect(panel, 6.0f, ctx.theme.palette.chrome_bg);
@@ -14326,7 +14609,7 @@ bool MessageListView::focusable() const
 
 bool MessageListView::kbd_row_navigable_(int idx) const
 {
-    if (idx < 0 || idx >= static_cast<int>(messages_.size()))
+    if (idx < 0 || std::cmp_greater_equal(idx, messages_.size()))
     {
         return false;
     }
@@ -14346,7 +14629,7 @@ bool MessageListView::kbd_row_navigable_(int idx) const
 
 int MessageListView::kbd_step_row_(int from, int dir) const
 {
-    for (int i = from + dir; i >= 0 && i < static_cast<int>(messages_.size()); i += dir)
+    for (int i = from + dir; i >= 0 && std::cmp_less(i, messages_.size()); i += dir)
     {
         if (kbd_row_navigable_(i))
         {
@@ -14471,7 +14754,7 @@ std::vector<tk::AccessNode> MessageListView::kbd_parts_() const
 {
     std::vector<tk::AccessNode> out;
     const int sel = selected_index();
-    if (sel < 0 || sel >= static_cast<int>(messages_.size()))
+    if (sel < 0 || std::cmp_greater_equal(sel, messages_.size()))
     {
         return out;
     }
@@ -14507,7 +14790,7 @@ tk::Rect MessageListView::anchor_for_event_(const std::string& event_id) const
 bool MessageListView::kbd_open_more_()
 {
     const int sel = selected_index();
-    if (sel < 0 || sel >= static_cast<int>(messages_.size()))
+    if (sel < 0 || std::cmp_greater_equal(sel, messages_.size()))
     {
         return false;
     }
@@ -14681,7 +14964,7 @@ bool MessageListView::copy_keyboard_cursor_message()
     }
     kbd_ensure_cursor_();
     const int sel = selected_index();
-    if (sel < 0 || sel >= static_cast<int>(messages_.size()))
+    if (sel < 0 || std::cmp_greater_equal(sel, messages_.size()))
     {
         return false;
     }

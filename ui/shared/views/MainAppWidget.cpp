@@ -1826,7 +1826,7 @@ bool MainAppWidget::handle_mru_shortcut_(const tk::KeyEvent& event)
     return true;
 }
 
-bool MainAppWidget::handle_history_shortcut_(const tk::KeyEvent& event)
+bool MainAppWidget::handle_history_shortcut_(const tk::KeyEvent& event) const
 {
     if (matches(ShortcutId::HistoryBack, event))
     {

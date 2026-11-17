@@ -23,6 +23,7 @@ bool has(const std::vector<MessageAction>& v, MessageActionId id)
 std::vector<MessageActionId> ids(const std::vector<MessageAction>& v)
 {
     std::vector<MessageActionId> out;
+    out.reserve(v.size());
     for (const auto& a : v)
     {
         out.push_back(a.id);
@@ -207,4 +208,12 @@ TEST_CASE("message actions: Report is destructive and lives in the overflow", "[
     REQUIRE(it != a.end());
     CHECK(it->destructive);
     CHECK_FALSE(it->in_pill);
+}
+
+TEST_CASE("message actions: an image offers Copy image", "[message_actions]")
+{
+    MessageActionInputs in;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::CopyImage));
+    in.copyable_image = true;
+    CHECK(has(build_message_actions(in), MessageActionId::CopyImage));
 }

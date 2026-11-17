@@ -120,7 +120,7 @@ public:
     // state, callbacks, and repaint behavior cannot diverge.
     void toggle_audio();
     void toggle_video();
-    void hang_up();
+    void hang_up() const;
 
     // Set the local user's Matrix user_id so the self tile can be mirrored.
     void set_local_user_id(std::string id)
@@ -188,7 +188,7 @@ private:
     // join / leave announcements.
     std::unordered_map<std::string, std::string> announced_participants_;
     bool participants_known_ = false;
-    std::chrono::steady_clock::time_point roster_baseline_at_{};
+    std::chrono::steady_clock::time_point roster_baseline_at_;
     void announce_participant_changes_(const std::vector<tesseract::RtcParticipantInfo>& ps);
 
     // ── Timer ─────────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ private:
     // + seconds since start_time_. Storing as double lets mode switches preserve
     // sub-second precision when snapshotting mid-tick.
     double elapsed_offset_ = 0.0;
-    std::chrono::steady_clock::time_point start_time_{};
+    std::chrono::steady_clock::time_point start_time_;
 
     // ── Participant tiles ──────────────────────────────────────────────────────
     // Borrowed pointers into children_; ownership is in the widget tree.

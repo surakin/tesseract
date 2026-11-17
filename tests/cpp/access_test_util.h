@@ -30,7 +30,7 @@ inline const tk::AccessNode* find_named(const tk::AccessNode& node, const std::s
 // Depth-first: the first node whose name starts with `prefix`.
 inline const tk::AccessNode* find_prefix(const tk::AccessNode& node, const std::string& prefix)
 {
-    if (node.name.rfind(prefix, 0) == 0)
+    if (node.name.starts_with(prefix))
     {
         return &node;
     }

@@ -16,7 +16,7 @@ public:
     /// Returns the trimmed search query when `text` is a `/gif <query>` command
     /// with at least one non-whitespace query character, or `nullopt` when it
     /// is not a `/gif` command (or has no query yet — e.g. bare `"/gif "`).
-    std::optional<std::string> match(std::string_view text) const;
+    static std::optional<std::string> match(std::string_view text);
 };
 
 } // namespace tesseract::views

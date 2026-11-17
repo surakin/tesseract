@@ -156,11 +156,7 @@ bool avif_is_sequence(std::span<const std::uint8_t> b)
 
 bool mime_rules_out(std::string_view mime)
 {
-    if (mime.empty() || mime.starts_with("image/") || mime == "application/octet-stream")
-    {
-        return false;
-    }
-    return true;
+    return !(mime.empty() || mime.starts_with("image/") || mime == "application/octet-stream");
 }
 
 } // namespace

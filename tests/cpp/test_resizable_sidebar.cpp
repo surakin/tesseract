@@ -184,7 +184,7 @@ struct AppStage
     std::unique_ptr<tesseract::views::MainAppWidget> app =
         tk::create_root_widget<tesseract::views::MainAppWidget>(nullptr);
 
-    void layout(float w = 1000.0f, float h = 700.0f)
+    void layout(float w = 1000.0f, float h = 700.0f) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         app->measure(lc, {w, h});

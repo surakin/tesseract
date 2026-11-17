@@ -156,6 +156,7 @@ protected:
     void showEvent(QShowEvent* ev) override;
     void hideEvent(QHideEvent* ev) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
+    void set_window_geometry_(const tesseract::Settings::WindowGeometry& g) override;
 
 private slots:
     void onUserStripContextMenu(const QPoint& pos);

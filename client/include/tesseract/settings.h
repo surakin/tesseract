@@ -377,8 +377,19 @@ public:
         WindowGeometry geometry;
     };
 
+    // One open main window: the account it shows and where it sits. The list
+    // holds every open main window in order; the first is the startup window.
+    // Reopened on the next launch.
+    struct WindowEntry
+    {
+        int id = 0; // stable key for the window, unique within the list
+        std::string user_id;
+        WindowGeometry geometry;
+    };
+
     WindowGeometry main_window_geometry;
     std::vector<PopoutEntry> popout_windows;
+    std::vector<WindowEntry> open_windows;
 
     // ── Encryption reminder ──────────────────────────────────────────
     // user_id → unix seconds until which the "set up recovery / unlock this
@@ -521,6 +532,11 @@ public:
     // action. Off by default; only effective while `developer_mode` is on
     // (unchecking developer mode keeps this value).
     bool show_unhandled_events = false;
+
+    // Settings → Advanced → "Show state events in the timeline": rows for state
+    // events such as server ACL changes, bridge information and service members.
+    // Off by default; independent of developer mode.
+    bool show_state_events = false;
 
     // When true, install a native crash handler + Rust panic hook
     // (tesseract::install_crash_handler / set_crash_reporting_enabled) that

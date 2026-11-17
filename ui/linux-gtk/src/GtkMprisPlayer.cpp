@@ -119,7 +119,7 @@ struct GtkMprisPlayer::Impl
         }
     }
 
-    void emit_properties_changed()
+    void emit_properties_changed() const
     {
         if (!conn)
         {

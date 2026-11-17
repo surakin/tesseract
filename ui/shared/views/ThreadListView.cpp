@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <ctime>
 #include <memory>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -88,7 +89,7 @@ std::string format_thread_date(std::uint64_t timestamp_ms)
         return tk::tr("Yesterday");
     }
 
-    if (now_t > t && static_cast<std::uint64_t>(now_t - t) < 7u * 86400u)
+    if (now_t > t && std::cmp_less(now_t - t, 7u * 86400u))
     {
         return tk::format_date(item_tm, "%a");
     }
@@ -112,7 +113,7 @@ ThreadListView::ThreadListView()
     // even while a search filter is narrowing the visible rows.
     on_row_clicked = [this](int idx)
     {
-        if (idx < 1 || idx > static_cast<int>(filtered_indices_.size()) || !on_thread_clicked)
+        if (idx < 1 || std::cmp_greater(idx, filtered_indices_.size()) || !on_thread_clicked)
         {
             return;
         }

@@ -722,7 +722,7 @@ protected:
     struct UnjoinedRetryState
     {
         int attempts = 0;
-        std::chrono::steady_clock::time_point next_retry{};
+        std::chrono::steady_clock::time_point next_retry;
     };
     std::unordered_map<std::string, UnjoinedRetryState> unjoined_fetch_retry_;
     // In-flight summary fetches for one space. The sidebar and the space-root
@@ -997,7 +997,7 @@ protected:
     // the fetch entirely.
     bool media_dep_known_failed_(const std::string& key, const std::string& room_id) const
     {
-        if (media_decode_failed_.count(key) || media_fetch_backed_off_(key))
+        if (media_decode_failed_.contains(key) || media_fetch_backed_off_(key))
         {
             return true;
         }
@@ -1220,7 +1220,7 @@ protected:
     std::unordered_set<std::string> room_list_running_accounts_;
     bool warmup_allowed_() const
     {
-        return active_account_ && room_list_running_accounts_.count(active_account_->user_id) != 0;
+        return active_account_ && room_list_running_accounts_.contains(active_account_->user_id);
     }
     void handle_room_list_running_ui_();
     void start_background_warming_();
@@ -1323,6 +1323,9 @@ protected:
     // ── Server capabilities ───────────────────────────────────────────────────
     tesseract::ServerInfo server_info_;      ///< populated after first sync
     bool server_info_fetch_started_ = false; ///< guards begin_server_info_fetch_
+    /// Accounts that lost contact with their homeserver since their server info
+    /// was last fetched; the next reconnect re-reads it.
+    std::unordered_set<std::string> server_info_stale_accounts_;
     /// Last fetched own extended profile (MSC4133). Populated by
     /// fetch_own_extended_profile_async_() after server_info_ confirms support,
     /// and kept in sync thereafter by handle_profile_field_result_ui_ applying
@@ -1386,7 +1389,7 @@ protected:
     std::atomic<std::uint32_t> status_msg_gen_{0};
     // Last status-line text spoken (see show_status_message_) and when.
     std::string last_announced_status_;
-    std::chrono::steady_clock::time_point last_announced_status_at_{};
+    std::chrono::steady_clock::time_point last_announced_status_at_;
     /// True while a persistent (auto_clear_ms=0) status override is active.
     /// refresh_sync_status_() checks this to avoid clobbering the override.
     bool status_override_active_ = false;
@@ -1662,12 +1665,12 @@ protected:
         thread_last_active_;
     // Pure selection: rooms in last_active but not in currently_visible whose
     // last-active timestamp is older than `now - ttl`.
-    std::vector<std::string> select_idle_room_evictions_(
+    static std::vector<std::string> select_idle_room_evictions_(
         const std::unordered_map<std::string, std::chrono::steady_clock::time_point>& last_active,
         const std::unordered_set<std::string>& currently_visible,
         std::chrono::steady_clock::time_point now, std::chrono::minutes ttl);
     // Same shape as select_idle_room_evictions_, keyed by (room_id, thread_root).
-    std::vector<std::pair<std::string, std::string>> select_idle_thread_evictions_(
+    static std::vector<std::pair<std::string, std::string>> select_idle_thread_evictions_(
         const std::map<std::pair<std::string, std::string>, std::chrono::steady_clock::time_point>&
             last_active,
         const std::set<std::pair<std::string, std::string>>& currently_visible,
@@ -2312,6 +2315,46 @@ protected:
     {
         return is_pinned_window_;
     }
+
+    // ── Open-window persistence ──────────────────────────────────────────────
+    // Every open main window has an entry in Settings::open_windows (account +
+    // geometry), keyed by this id. 0 = not registered yet.
+    int window_id_ = 0;
+
+    // Id the next spawned window adopts (a saved entry being reopened); 0 makes
+    // hand_account_to_spawned_window_ append a fresh entry.
+    int spawn_entry_id_ = 0;
+
+    // Startup window only: takes the first saved entry (creating one from the
+    // legacy main-window geometry if the list is empty), then reopens a window
+    // for each remaining entry whose account is restored and not already shown.
+    // One-shot: runs when the startup window first shows its account.
+    void restore_open_windows_();
+    bool open_windows_restored_ = false;
+
+    // The account a saved first entry names, if it is restored; picks the
+    // startup window's account ahead of the session index's hint.
+    std::string saved_startup_account_() const;
+
+    // Where this window's size and position are saved. Shells call this from
+    // their resize/move handlers instead of writing the setting directly.
+    void save_window_geometry_(int x, int y, int w, int h, int dpi = 0);
+
+    // The saved geometry for this window (see save_window_geometry_), unclamped.
+    Settings::WindowGeometry saved_window_geometry_() const;
+
+    // Moves/resizes the native window. Called on a spawned window before it is
+    // shown, with geometry already clamped to the connected screens.
+    virtual void set_window_geometry_(const Settings::WindowGeometry& /*g*/)
+    {
+    }
+
+    // Records the account this window now shows in its saved entry.
+    void note_window_account_();
+
+    // Drops this window's saved entry unless the app is quitting or this is the
+    // last open window (closing that one is quitting).
+    void forget_window_();
 
     // Central picker routing. Each platform's on_select lambda delegates here.
     // Ctrl+click → spawn_main_window_; plain click → switch_active_account_.
@@ -3842,7 +3885,7 @@ protected:
     // same mapping start_call() uses to pick the initial mode. Shared so
     // handle_call_room_navigation_()'s auto-restore-from-Floating path
     // restores the user's real preference rather than a hardcoded Docked.
-    views::CallOverlayWidget::Mode overlay_mode_from_settings_() const;
+    static views::CallOverlayWidget::Mode overlay_mode_from_settings_();
 
     // Called from after_active_room_changed_() on every room switch. Drives
     // auto-join (first switch into a call room), auto-leave-and-join
@@ -3965,7 +4008,7 @@ protected:
     struct CallOverlayRoster
     {
         std::string room_id;
-        std::chrono::steady_clock::time_point built_at{};
+        std::chrono::steady_clock::time_point built_at;
         std::unordered_map<std::string, std::pair<std::string, std::string>>
             people; // user id -> (name, avatar mxc)
     };
@@ -4638,8 +4681,17 @@ protected:
         own_extended_profile_ = {};
     }
 
+    /// Note that the event account lost contact with its homeserver, so its
+    /// server info is re-read once it is back.
+    void mark_server_info_stale_();
+
+    /// On reconnect, allow a new server-info fetch if the event account was
+    /// marked stale and is the active one. The old info stays until the new
+    /// result arrives.
+    void refresh_server_info_after_reconnect_();
+
     /// Fire an async server-info fetch. Result arrives via
-    /// handle_server_info_async_ready_ui_(). Only fetches once per session.
+    /// handle_server_info_async_ready_ui_(). Fetches once per session, again after a reconnect.
     void begin_server_info_fetch_()
     {
         if (server_info_fetch_started_ || !client_)
@@ -4772,6 +4824,9 @@ protected:
     // their timelines are rebuilt under the new filter. Callers invoke it only
     // when the effective value changed.
     void apply_show_unhandled_events_();
+    // "Show state events in the timeline": pushes the value to every account's
+    // client and re-subscribes the open rooms.
+    void apply_show_state_events_();
     // Re-subscribes the open room and the active account's pop-out rooms so
     // their timelines are rebuilt under a changed timeline filter.
     void resubscribe_open_rooms_();
@@ -4803,7 +4858,7 @@ protected:
     // Applies the stored font preferences (Settings → Appearance → Fonts).
     // Re-measures every window; widgets with their own caches drop them from
     // Widget::on_fonts_changed().
-    void apply_fonts_();
+    static void apply_fonts_();
 
     // The room-list density (Normal / Compact) changed.
     void apply_room_list_density_();
@@ -4817,28 +4872,30 @@ protected:
     // right after restore_session/start_sync, on whichever thread is doing
     // that work (background restore/finalize) — genuinely non-blocking
     // (fire-and-forget spawn on the Rust side), confirmed safe either way.
-    void apply_search_indexing_pref_(tesseract::Client& client);
+    static void apply_search_indexing_pref_(tesseract::Client& client);
 
     // Apply the persisted "show room join/leave events" preference to a
     // freshly-restored account's Rust client. Called right after
     // restore_session/start_sync so the very first room subscription already
     // reflects the setting instead of defaulting to the Rust-side AtomicBool's
     // off default. A plain atomic store on the Rust side — non-blocking.
-    void apply_membership_events_pref_(tesseract::Client& client);
+    static void apply_membership_events_pref_(tesseract::Client& client);
 
     // Pushes the effective "Show unhandled events" value to a freshly created
     // account client (no re-subscribe: nothing is open yet).
-    void apply_unhandled_events_pref_(tesseract::Client& client);
+    static void apply_unhandled_events_pref_(tesseract::Client& client);
+    // Same for the persisted "show state events" preference.
+    static void apply_state_events_pref_(tesseract::Client& client);
     // Same for the persisted "show deleted messages" preference.
-    void apply_deleted_messages_pref_(tesseract::Client& client);
+    static void apply_deleted_messages_pref_(tesseract::Client& client);
 
     // Apply the persisted "Link previews" preferences to a freshly-restored
     // account's Rust client, alongside apply_membership_events_pref_.
-    void apply_bundled_url_previews_pref_(tesseract::Client& client);
+    static void apply_bundled_url_previews_pref_(tesseract::Client& client);
 
     // Apply the persisted "Use historical MSC2545 compatibility" preference
     // to a freshly-restored account's Rust client.
-    void apply_msc2545_legacy_compat_pref_(tesseract::Client& client);
+    static void apply_msc2545_legacy_compat_pref_(tesseract::Client& client);
 
     // ── Search-index stats (Settings panel) ───────────────────────────────
     // Each shell points `settings_view_` at its shared SettingsView once, and
@@ -5094,6 +5151,11 @@ protected:
     // appear in several rooms), so notify all secondary windows.
     void notify_secondary_media_ready_(const std::string& cache_key, MediaKind kind);
 
+    // Repaint callbacks of the open /sticker strips (main composer + pop-outs),
+    // keyed by owner; run when a sticker image lands. Registered by
+    // ComposerPopups through RoomPane.
+    std::map<const void*, std::function<void()>> sticker_strip_repaints_;
+
     // Override in a platform shell to instantiate the concrete RoomWindow
     // subclass. The subclass constructor must call finish_init_() before
     // returning. Default: no-op (secondary windows are inert until a shell
@@ -5164,7 +5226,7 @@ protected:
     // so it can never collide with a same-mxc sticker / full-image entry).
     // Independent of the display scale: avatar animations are decoded at
     // kAvatarCacheSize whatever the scale, so a scale change keeps them valid.
-    tk::CacheKey avatar_anim_key_(const std::string& mxc) const;
+    static tk::CacheKey avatar_anim_key_(const std::string& mxc);
     // Avatar lookup used by every avatar provider: the current frame of an
     // animated avatar when one is cached (frozen while low power mode is on),
     // else the still from thumbnail_cache_. Pure cache read, never fetches.
@@ -5207,6 +5269,18 @@ protected:
     // size into its own cache entry (the downloaded bytes are shared with the
     // timeline's), so the picker never holds timeline-sized frames.
     void ensure_picker_sticker_(const std::string& url);
+
+    // Edge in device pixels of the user-profile panel's avatar (widget size ×
+    // display scale); its server thumbnail is requested and decoded at this
+    // size so the large avatar is not an upscaled list-size one.
+    int profile_avatar_px_() const;
+    tk::CacheKey profile_avatar_key_(const std::string& mxc) const;
+    // Fetch + decode the profile-panel avatar (animated when avatars animate).
+    // Idempotent; the panel falls back to the list-size avatar meanwhile.
+    void ensure_profile_avatar_(const std::string& mxc);
+    // Panel avatar lookup: the profile-size image when cached (current frame
+    // when animated, frozen in low power), else avatar_image_(). Never fetches.
+    const tk::Image* profile_avatar_image_(const std::string& mxc);
 
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
@@ -5616,8 +5690,8 @@ protected:
     // Called once per push_rooms_ tick so every downstream consumer
     // (call button, threads button, RoomInfoPanel via RoomView::set_room)
     // sees a consistent view without each needing its own override lookup.
-    void apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
-                                 const std::vector<std::string>& overrides) const;
+    static void apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
+                                        const std::vector<std::string>& overrides);
 
     // Toggles the local "not actually bridged" override for `room_id`,
     // persists it into the active account's im.gnomos.tesseract prefs, and
@@ -5849,7 +5923,7 @@ protected:
 
     // True when the saved encryption flags differ from the ones the running
     // clients were built with.
-    bool encryption_flags_pending_() const;
+    static bool encryption_flags_pending_();
 
     // Settings just closed: reload the clients if a flag changed (or, from the
     // login screen, only update the flags for the next client).

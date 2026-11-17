@@ -347,7 +347,7 @@ struct GtkSniTrayIcon::Impl
         }
     }
 
-    void emit(const char* iface, const char* signal, GVariant* args)
+    void emit(const char* iface, const char* signal, GVariant* args) const
     {
         if (!conn)
         {

@@ -219,6 +219,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         msc2545_legacy_compat = j.value("msc2545_legacy_compat", true);
         developer_mode = j.value("developer_mode", false);
         show_unhandled_events = j.value("show_unhandled_events", false);
+        show_state_events = j.value("show_state_events", false);
         crash_reporting_enabled = j.value("crash_reporting_enabled", false);
 
         audio_input_device_id = j.value("audio_input_device_id", std::string{});
@@ -335,6 +336,36 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
                 if (!e.room_id.empty())
                 {
                     popout_windows.push_back(std::move(e));
+                }
+            }
+        }
+
+        open_windows.clear();
+        if (j.contains("open_windows") && j["open_windows"].is_array())
+        {
+            for (const auto& pw : j["open_windows"])
+            {
+                if (!pw.is_object())
+                {
+                    continue;
+                }
+                WindowEntry e;
+                e.id = pw.value("id", 0);
+                e.user_id = pw.value("user_id", std::string{});
+                e.geometry.x = pw.value("x", 0);
+                e.geometry.y = pw.value("y", 0);
+                e.geometry.w = pw.value("w", 0);
+                e.geometry.h = pw.value("h", 0);
+                e.geometry.dpi = pw.value("dpi", 0);
+                e.geometry.valid = (e.geometry.w > 0 && e.geometry.h > 0);
+                const bool dup = std::any_of(open_windows.begin(), open_windows.end(),
+                                             [&](const WindowEntry& o)
+                                             {
+                                                 return o.id == e.id;
+                                             });
+                if (e.id > 0 && !dup)
+                {
+                    open_windows.push_back(std::move(e));
                 }
             }
         }
@@ -547,6 +578,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"msc2545_legacy_compat", msc2545_legacy_compat},
         {"developer_mode", developer_mode},
         {"show_unhandled_events", show_unhandled_events},
+        {"show_state_events", show_state_events},
         {"crash_reporting_enabled", crash_reporting_enabled},
         {"room_section_invites_collapsed", room_section_invites_collapsed},
         {"room_section_favorites_collapsed", room_section_favorites_collapsed},
@@ -632,6 +664,21 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
             pws.push_back(std::move(pw));
         }
         j["popout_windows"] = std::move(pws);
+    }
+
+    {
+        nlohmann::json pws = nlohmann::json::array();
+        for (const auto& e : open_windows)
+        {
+            pws.push_back({{"id", e.id},
+                           {"user_id", e.user_id},
+                           {"x", e.geometry.x},
+                           {"y", e.geometry.y},
+                           {"w", e.geometry.w},
+                           {"h", e.geometry.h},
+                           {"dpi", e.geometry.dpi}});
+        }
+        j["open_windows"] = std::move(pws);
     }
 
     if (!encryption_reminder_snoozed_until.empty())

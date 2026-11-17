@@ -8,6 +8,7 @@
 #include "views/media_viewer_items.h"
 #include "views/RoomView.h"
 #include "views/ShortcodeController.h"
+#include "views/StickerController.h"
 #include "views/SlashCommandController.h"
 #include "tk/host.h"
 #include "tk/weak_self.h"
@@ -454,6 +455,7 @@ public:
     void wire_shortcode_hooks_(views::ShortcodePopup* popup,
                                views::ShortcodeController::Hooks& hooks);
     void wire_gif_hooks_(views::GifController::Hooks& hooks);
+    void wire_sticker_hooks_(views::StickerController::Hooks& hooks);
     // Room Settings → Moderation: fetch room_id's banned members on a worker
     // (Client::get_banned_members syncs members first, so it can take a
     // moment) and push them into rv's settings view if it still shows that
@@ -632,6 +634,21 @@ public:
     // -> cached thumbnail, kicking a fetch on miss. Mirrors
     // mention_avatar_for_user_'s shape, just room- instead of member-scoped.
     const tk::Image* room_self_avatar_() const;
+    // Room/event mention pills: the linked room's name and avatar, from the
+    // joined room when we are in it, else from a once-per-target MSC3266
+    // room summary (linked_rooms_, keyed by room id/alias; failures are kept
+    // so a paint never refetches).
+    struct LinkedRoom
+    {
+        bool settled = false;
+        tesseract::RoomSummary summary;
+    };
+    mutable std::unordered_map<std::string, LinkedRoom> linked_rooms_;
+    const tesseract::RoomInfo* linked_room_joined_(const tesseract::Client::MatrixLink& link) const;
+    const tesseract::RoomSummary*
+    linked_room_summary_(const tesseract::Client::MatrixLink& link) const;
+    std::string linked_room_name_(const tesseract::Client::MatrixLink& link) const;
+    const tk::Image* linked_room_avatar_(const tesseract::Client::MatrixLink& link) const;
     void shell_show_status_message_(std::string msg, int auto_clear_ms = 4000);
 
     // This pane's own shortcode-popup suggestion source (personal + this
@@ -645,6 +662,12 @@ public:
     // Render one GIF strip cell via the shell's backend-specific provider.
     const tk::Image* shell_gif_strip_image_(const GifResult& result,
                                             const std::function<void()>& repaint);
+    // Render one /sticker strip cell via the shell's sticker-picker provider
+    // (fetches on a miss), and the cache key it is stored under.
+    const tk::Image* shell_sticker_strip_image_(const tesseract::ImagePackImage& sticker);
+    tk::CacheKey shell_picker_sticker_key_(const std::string& url) const;
+    // Register / drop the repaint callback run when a sticker image lands.
+    void shell_set_sticker_strip_repaint_(const void* owner, std::function<void()> fn);
     // Source bytes the GIF strip cached on fetch.
     std::vector<std::uint8_t> shell_cached_gif_bytes_(const std::string& url);
 

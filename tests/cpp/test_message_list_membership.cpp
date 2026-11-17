@@ -104,8 +104,9 @@ std::vector<std::uint32_t> render_system_row(Settings::MessageLayout layout,
         for (int x = 0; x < 320; ++x)
         {
             const tk::Color c = surface->read_pixel(x, y);
-            pixels.push_back((std::uint32_t(c.r) << 24) | (std::uint32_t(c.g) << 16) |
-                             (std::uint32_t(c.b) << 8) | c.a);
+            pixels.push_back((static_cast<std::uint32_t>(c.r) << 24) |
+                             (static_cast<std::uint32_t>(c.g) << 16) |
+                             (static_cast<std::uint32_t>(c.b) << 8) | c.a);
         }
     }
     return pixels;
@@ -614,4 +615,29 @@ TEST_CASE("update_member_profile keeps the ambiguity flag", "[message_list][prof
     CHECK(m.sender_name == "Bob");
     CHECK(m.sender_name_ambiguous);
     CHECK(m.member_label() == "Bob (@m:x)");
+}
+
+TEST_CASE("paired bridge-information rows are grouped into one", "[message_list][bridge]")
+{
+    using tesseract::views::is_absorbed_bridge_info_row;
+    auto dev = [](const char* body, const char* sender)
+    {
+        MessageRowData r;
+        r.kind = MessageRowData::Kind::DevUnhandled;
+        r.body = body;
+        r.sender = sender;
+        return r;
+    };
+    std::vector<MessageRowData> rows = {
+        dev("m.bridge [net/room]", "@bot:hs"),
+        dev("uk.half-shot.bridge [net/room]", "@bot:hs"),
+        dev("uk.half-shot.bridge [other/room]", "@bot:hs"),
+        dev("m.bridge [other/room]", "@bridge2:hs"),
+        dev("com.example.ping", "@bridge2:hs"),
+    };
+    CHECK_FALSE(is_absorbed_bridge_info_row(rows, 0));
+    CHECK(is_absorbed_bridge_info_row(rows, 1));
+    CHECK_FALSE(is_absorbed_bridge_info_row(rows, 2)); // different state key
+    CHECK_FALSE(is_absorbed_bridge_info_row(rows, 3)); // different sender
+    CHECK_FALSE(is_absorbed_bridge_info_row(rows, 4)); // not a bridge row
 }

@@ -8,6 +8,8 @@
 #include "qt_accessible.h"
 #include "emoji_segmentation.h"
 #include "tk/image_sniff.h"
+#include "platform/linux/kio_fuse.h"
+#include "tk/i18n.h"
 
 #include <tesseract/settings.h>
 
@@ -27,6 +29,7 @@
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
 #include <QtGui/QPaintEvent>
 #include <QtGui/QResizeEvent>
 #include <QtGui/QWheelEvent>
@@ -54,6 +57,8 @@
 #include <QtGui/QSyntaxHighlighter>
 #include <QtGui/QImageWriter>
 #include <QtCore/QBuffer>
+#include <QtCore/QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtCore/QByteArray>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -69,6 +74,7 @@
 #include <QMediaDevices>
 #include <QAudioDevice>
 #include <QtNetwork/QNetworkInformation>
+#include <utility>
 
 #include "platform/linux/gst_device_listing.h"
 
@@ -126,7 +132,7 @@ int emoji_cluster_start_before(const QString& text, int pos)
     {
         return -1;
     }
-    return int(start);
+    return static_cast<int>(start);
 }
 
 // Plain Backspace (Shift is ignored, as Qt does); Ctrl/Alt+Backspace delete
@@ -314,7 +320,7 @@ class QtOcclusionClient;
 struct QtOcclusionRegistry
 {
     std::vector<QtOcclusionClient*> clients;
-    void refresh_all();
+    void refresh_all() const;
 };
 
 class QtOcclusionClient
@@ -390,7 +396,7 @@ private:
     QRegion mask_;
 };
 
-void QtOcclusionRegistry::refresh_all()
+void QtOcclusionRegistry::refresh_all() const
 {
     // Copy: a refresh must not be able to invalidate the iteration.
     const std::vector<QtOcclusionClient*> snapshot = clients;
@@ -820,8 +826,9 @@ private:
         // soft/heavier text independent of the antialiasing mode above.
         // Mirrors insert_mention()'s pill-rasterization dpr handling.
         const qreal dpr = edit_->devicePixelRatioF();
-        QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
-                   has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
+        QImage img(
+            QSize(static_cast<int>(edit_->width() * dpr), static_cast<int>(edit_->height() * dpr)),
+            has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
         img.setDevicePixelRatio(dpr);
         img.fill(has_bg_ ? bg_color_ : Qt::transparent);
         QPainter p(&img);
@@ -901,7 +908,7 @@ std::optional<tk::FileDropPayload> read_local_file_for_paste(const QString& path
         return std::nullopt;
     }
     const qint64 size = fi.size();
-    if (size <= 0 || static_cast<std::size_t>(size) > tk::kMaxDroppedFileBytes)
+    if (size <= 0 || std::cmp_greater(size, tk::kMaxDroppedFileBytes))
     {
         return std::nullopt;
     }
@@ -925,6 +932,47 @@ std::optional<tk::FileDropPayload> read_local_file_for_paste(const QString& path
                                     reinterpret_cast<const std::uint8_t*>(ba.constData()) +
                                         ba.size());
     return tk::FileDropPayload{std::move(bytes), mime.toStdString(), fi.fileName().toStdString()};
+}
+
+// A URL naming a remote file (sftp://, smb://, ... from Dolphin's network
+// places) that kio-fuse can expose as a local path.
+bool is_remote_url(const QUrl& u)
+{
+    return !u.isLocalFile() && tesseract::kio_fuse::is_remote_uri(u.toEncoded().toStdString());
+}
+
+struct RemoteLoad
+{
+    std::vector<tk::FileDropPayload> files;
+    bool kio_fuse_missing = false;
+};
+
+// Mounts each URL through kio-fuse and reads it on a pool thread: both the
+// D-Bus call and the FUSE read wait on the network, so neither may run on
+// the UI thread.
+QFuture<RemoteLoad> load_remote_files_async(std::vector<std::string> uris)
+{
+    return QtConcurrent::run(
+        [uris = std::move(uris)]()
+        {
+            RemoteLoad out;
+            for (const std::string& uri : uris)
+            {
+                const auto r = tesseract::kio_fuse::mount_url(uri);
+                if (r.status == tesseract::kio_fuse::Status::Ok)
+                {
+                    if (auto p = read_local_file_for_paste(QString::fromStdString(r.path)))
+                    {
+                        out.files.push_back(std::move(*p));
+                    }
+                }
+                else if (r.status == tesseract::kio_fuse::Status::Unavailable)
+                {
+                    out.kio_fuse_missing = true;
+                }
+            }
+            return out;
+        });
 }
 
 class ComposeTextEdit : public QTextEdit
@@ -979,8 +1027,14 @@ protected:
             if (source && source->hasUrls() && !source->hasImage())
             {
                 std::vector<tk::FileDropPayload> files;
+                std::vector<std::string> remote;
                 for (const QUrl& url : source->urls())
                 {
+                    if (is_remote_url(url))
+                    {
+                        remote.push_back(url.toEncoded().toStdString());
+                        continue;
+                    }
                     if (!url.isLocalFile())
                     {
                         continue;
@@ -990,9 +1044,29 @@ protected:
                         files.push_back(std::move(*payload));
                     }
                 }
-                if (!files.empty())
+                const bool has_remote = !remote.empty();
+                if (has_remote)
                 {
-                    on_file_paste_(std::move(files));
+                    // Remote files arrive later, in their own paste.
+                    auto* watcher = new QFutureWatcher<RemoteLoad>(this);
+                    connect(watcher, &QFutureWatcher<RemoteLoad>::finished, this,
+                            [this, watcher]()
+                            {
+                                RemoteLoad r = watcher->result();
+                                watcher->deleteLater();
+                                if (!r.files.empty() && on_file_paste_)
+                                {
+                                    on_file_paste_(std::move(r.files));
+                                }
+                            });
+                    watcher->setFuture(load_remote_files_async(std::move(remote)));
+                }
+                if (!files.empty() || has_remote)
+                {
+                    if (!files.empty())
+                    {
+                        on_file_paste_(std::move(files));
+                    }
                     e->accept();
                     return;
                 }
@@ -1633,7 +1707,8 @@ public:
         }
         QRect cr = edit_->cursorRect();
         QPoint pt = edit_->viewport()->mapTo(edit_->parentWidget(), cr.topLeft());
-        return {float(pt.x()), float(pt.y()), float(cr.width()), float(cr.height())};
+        return {static_cast<float>(pt.x()), static_cast<float>(pt.y()),
+                static_cast<float>(cr.width()), static_cast<float>(cr.height())};
     }
     // setCursorWidth(0) in the ctor means Qt never draws a caret into the
     // capture — the canvas draws its own, driven by caret_rect()/
@@ -1947,7 +2022,7 @@ public:
         {
             if (!first_block)
             {
-                pending += "\n";
+                pending += '\n';
             }
             first_block = false;
             for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it)
@@ -2206,8 +2281,9 @@ private:
         // an opaque buffer, and why dpr matters — same rationale, mirrored
         // here.
         const qreal dpr = edit_->devicePixelRatioF();
-        QImage img(QSize(int(edit_->width() * dpr), int(edit_->height() * dpr)),
-                   has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
+        QImage img(
+            QSize(static_cast<int>(edit_->width() * dpr), static_cast<int>(edit_->height() * dpr)),
+            has_bg_ ? QImage::Format_RGB32 : QImage::Format_ARGB32_Premultiplied);
         img.setDevicePixelRatio(dpr);
         img.fill(has_bg_ ? bg_color_ : Qt::transparent);
         QPainter p(&img);
@@ -2254,7 +2330,7 @@ private:
     static int utf8_byte_to_qt_cursor(const QString& qs, int byte_offset)
     {
         QByteArray full = qs.toUtf8();
-        byte_offset = std::clamp(byte_offset, 0, (int)full.size());
+        byte_offset = std::clamp(byte_offset, 0, static_cast<int>(full.size()));
         return QString::fromUtf8(full.left(byte_offset)).size();
     }
 
@@ -2368,14 +2444,14 @@ public:
             return;
         }
         QWidget* window = anchor_surface_->window();
-        QPoint pc = anchor_surface_->mapTo(
-            window, QPoint(int(anchor_world_rect.x), int(anchor_world_rect.y)));
+        QPoint pc = anchor_surface_->mapTo(window, QPoint(static_cast<int>(anchor_world_rect.x),
+                                                          static_cast<int>(anchor_world_rect.y)));
         QRect work = window->rect();
-        const int w = std::max(1, int(size.w));
-        const int h = std::max(1, int(size.h));
+        const int w = std::max(1, static_cast<int>(size.w));
+        const int h = std::max(1, static_cast<int>(size.h));
         int x = pc.x();
         const int y_above = pc.y() - h - 4;
-        const int y_below = pc.y() + int(anchor_world_rect.h) + 4;
+        const int y_below = pc.y() + static_cast<int>(anchor_world_rect.h) + 4;
         int y;
         if (placement == tk::PopupPlacement::PreferAbove)
         {
@@ -2892,6 +2968,19 @@ public:
         // Klipper historymodel.cpp checkClipData). The flag is an inert extra
         // format on non-KDE platforms.
         mime->setData(QStringLiteral("x-kde-force-image-copy"), QByteArray());
+        // An animated GIF/WebP also goes out as its original bytes so apps
+        // that understand it keep the animation; the still above stays the
+        // fallback for the rest.
+        if (tk::bytes_may_be_animated(encoded_bytes))
+        {
+            const std::string_view anim_mime = tk::sniff_image_mime(encoded_bytes);
+            if (anim_mime == "image/gif" || anim_mime == "image/webp")
+            {
+                mime->setData(
+                    QString::fromLatin1(anim_mime.data(), static_cast<qsizetype>(anim_mime.size())),
+                    raw);
+            }
+        }
         // Also advertise a suggested filename so pasting into a save dialog /
         // Dolphin proposes a sensible name rather than "Untitled".
         mime->setData(QStringLiteral("application/x-kde-suggestedfilename"), "image." + fmt);
@@ -3279,7 +3368,7 @@ bool drop_is_acceptable(const QMimeData* md)
     {
         for (const QUrl& u : md->urls())
         {
-            if (u.isLocalFile())
+            if (u.isLocalFile() || is_remote_url(u))
             {
                 return true;
             }
@@ -3551,7 +3640,7 @@ void Surface::wheelEvent(QWheelEvent* e)
     // per notch). A wheel reports no scroll phase; trackpads on compositors
     // that send phases do, so only phase-less events are treated as wheels.
     const bool is_touchpad =
-        !pd.isNull() && !(e->phase() == Qt::NoScrollPhase && !e->angleDelta().isNull());
+        !pd.isNull() && (e->phase() != Qt::NoScrollPhase || e->angleDelta().isNull());
     if (is_touchpad)
     {
         // Smooth-scroll device (trackpad): pixel delta is already in px.
@@ -3637,8 +3726,14 @@ void Surface::dropEvent(QDropEvent* e)
     if (md->hasUrls())
     {
         QMimeDatabase db;
+        std::vector<std::string> remote;
         for (const QUrl& u : md->urls())
         {
+            if (is_remote_url(u))
+            {
+                remote.push_back(u.toEncoded().toStdString());
+                continue;
+            }
             if (!u.isLocalFile())
             {
                 continue;
@@ -3650,7 +3745,7 @@ void Surface::dropEvent(QDropEvent* e)
                 continue;
             }
             const qint64 size = fi.size();
-            if (size <= 0 || static_cast<std::size_t>(size) > kMaxDroppedFileBytes)
+            if (size <= 0 || std::cmp_greater(size, kMaxDroppedFileBytes))
             {
                 continue;
             }
@@ -3686,6 +3781,33 @@ void Surface::dropEvent(QDropEvent* e)
             {
                 handled = true;
             }
+        }
+
+        if (!remote.empty())
+        {
+            // The drop is accepted now; the files are mounted via kio-fuse
+            // and read off the UI thread, then dispatched to the drop point.
+            auto* watcher = new QFutureWatcher<RemoteLoad>(this);
+            connect(
+                watcher, &QFutureWatcher<RemoteLoad>::finished, this,
+                [this, watcher, drop_pos]()
+                {
+                    RemoteLoad r = watcher->result();
+                    watcher->deleteLater();
+                    for (tk::FileDropPayload& payload : r.files)
+                    {
+                        host_->on_file_drop(drop_pos, payload);
+                    }
+                    if (r.files.empty() && on_file_drop_error_)
+                    {
+                        on_file_drop_error_(
+                            r.kio_fuse_missing
+                                ? tk::tr("Could not read the remote file (is kio-fuse installed?)")
+                                : tk::tr("Could not read file"));
+                    }
+                });
+            watcher->setFuture(load_remote_files_async(std::move(remote)));
+            handled = true;
         }
     }
 

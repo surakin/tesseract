@@ -36,6 +36,7 @@ enum class EventType
     Poll,             // MSC3381 poll start (appended: enum ints are pinned by tests)
     Gallery,          // m.gallery, MSC4274 inline media gallery
     DevUnhandled,     // developer "show unhandled events" row; `body` is the event type
+    RoomServerAcl,    // m.room.server_acl: server ACL changed; `body` lists the changes
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -107,7 +108,7 @@ struct ReadReceipt
     std::string user_id;
     std::string display_name;
     std::string avatar_url;
-    uint64_t timestamp_ms;
+    uint64_t timestamp_ms = 0;
 };
 
 /// A joined member of a room. `display_name` resolves to the user's
@@ -121,6 +122,7 @@ struct RoomMember
     std::string display_name; ///< resolves to user_id localpart when unset
     std::string avatar_url;   ///< mxc:// or empty
     int64_t power_level = 0;
+    bool is_service_member = false; ///< listed in the room's service-member hints (MSC4171)
 };
 
 /// A banned member of a room (Room Settings → Moderation). `reason` and
@@ -198,7 +200,7 @@ struct UrlPreview
     /// True when this entry carries something worth rendering as a card.
     bool has_content() const
     {
-        return !title.empty() || !description.empty() || bool(image);
+        return !title.empty() || !description.empty() || static_cast<bool>(image);
     }
 };
 
@@ -263,6 +265,10 @@ struct Event
     std::string forwarded_event_id;
     /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
     std::int64_t forwarded_origin_ts = 0;
+    /// MSC4391 invocation the message carries: the command name and its
+    /// `arguments` object as JSON. Both empty when the message has none.
+    std::string bot_command;
+    std::string bot_command_arguments_json;
     /// MSC4144 per-message profile (a bridge or relay account speaking as
     /// someone else). `profile_id` is empty when the event has none. The name
     /// is empty when the profile gives none (show the member's). With
@@ -591,6 +597,19 @@ struct RoomTombstoneStateEvent : public Event
         type = EventType::RoomTombstone;
     }
     std::string replacement_room_id;
+};
+
+/// m.room.server_acl state event surfaced as a timeline row. `sender`/`sender_name`
+/// identify who changed the ACL; `body` holds one change count per line: `deny+N`,
+/// `deny-N`, `allow+N`, `allow-N` (N entries added/removed) and `ip+`/`ip-`
+/// (IP-literal servers now allowed/denied). Never the host lists themselves: an
+/// ACL can have thousands of entries. Empty when nothing changed.
+struct RoomServerAclStateEvent : public Event
+{
+    RoomServerAclStateEvent()
+    {
+        type = EventType::RoomServerAcl;
+    }
 };
 
 /// org.matrix.msc4075.rtc.notification — MatrixRTC call ring/notification event.

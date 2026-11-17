@@ -27,11 +27,11 @@ namespace
 struct TkRoomMediaViewStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return {surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return {surface->canvas(), surface->factory(), Theme::light()};
     }
@@ -105,6 +105,7 @@ TEST_CASE("RoomMediaView::content_fills_viewport reflects actual content vs boun
 
     // Enough rows to exceed 600px of grid content.
     std::vector<MessageRowData> many;
+    many.reserve(200);
     for (int i = 0; i < 200; ++i)
     {
         many.push_back(make_image_row("$ev" + std::to_string(i)));

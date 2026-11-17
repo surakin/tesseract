@@ -88,7 +88,7 @@ std::size_t name_budget(const fs::path& dir)
     constexpr std::size_t kZoneSuffix = 16; // ":Zone.Identifier"
     const std::size_t used =
         dir.native().size() + 1 /* separator */ + kZoneSuffix + 1 /* terminating NUL */;
-    return used >= kMaxPath ? 0 : std::min(kMaxNameBytes, kMaxPath - used);
+    return used >= kMaxPath ? 0 : (std::min)(kMaxNameBytes, kMaxPath - used);
 #else
     (void)dir;
     return kMaxNameBytes;

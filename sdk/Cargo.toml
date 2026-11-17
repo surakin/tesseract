@@ -1,6 +1,6 @@
 [package]
 name    = "tesseract-sdk-ffi"
-version = "0.9.8"
+version = "0.9.9"
 edition = "2021"
 
 [lib]
@@ -69,7 +69,7 @@ os_info       = "3.15"
 mime          = "0.3"
 audiopus      = "0.2"
 ogg           = "0.9"
-rusqlite      = "0.40"
+rusqlite      = "0.41"
 # Syntax highlighting for chat-message code blocks. Pure-Rust regex engine
 # (fancy-regex) to avoid the oniguruma C dependency.
 syntect       = { version = "5", default-features = false, features = ["default-fancy"] }

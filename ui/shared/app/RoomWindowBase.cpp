@@ -158,7 +158,7 @@ Settings::WindowGeometry RoomWindowBase::get_saved_popout_geometry_(int default_
     Settings::WindowGeometry g = it->geometry;
     if (g.valid && g.dpi > 0 && target_dpi > 0 && target_dpi != g.dpi)
     {
-        const double s = double(target_dpi) / double(g.dpi);
+        const double s = static_cast<double>(target_dpi) / static_cast<double>(g.dpi);
         g.w = static_cast<int>(std::lround(g.w * s));
         g.h = static_cast<int>(std::lround(g.h * s));
     }

@@ -9,6 +9,7 @@
 #include "views/SettingsView.h"
 #include "views/image_pack_order.h"
 #include <algorithm>
+#include <utility>
 
 namespace tesseract
 {
@@ -125,7 +126,7 @@ void ShellBase::handle_user_pack_pending_image_added_(std::uint64_t local_id,
 }
 
 void ShellBase::apply_bridge_overrides_(std::vector<RoomInfo>& rooms,
-                                        const std::vector<std::string>& overrides) const
+                                        const std::vector<std::string>& overrides)
 {
     // An empty list must still clear flags left from a removed override.
     for (auto& r : rooms)
@@ -448,8 +449,14 @@ std::string ShellBase::shortcode_for_mxc_(const std::string& mxc) const
 std::vector<tesseract::ImagePackImage>
 ShellBase::emoticons_for_room_(const std::string& room_id) const
 {
-    const std::vector<std::string> parent_space_ids = parent_spaces_for_room_(room_id);
     std::vector<tesseract::ImagePackImage> out;
+    // Bridged rooms cannot carry custom emoticons (see EmojiPicker).
+    const auto* room = room_by_id_(room_id);
+    if (room && room->is_bridged && !room->bridge_overridden)
+    {
+        return out;
+    }
+    const std::vector<std::string> parent_space_ids = parent_spaces_for_room_(room_id);
     for (const auto& [pack, imgs] : emoticon_packs_)
     {
         if (!views::is_pack_picker_visible(pack, room_id, parent_space_ids))
@@ -555,6 +562,19 @@ void ShellBase::apply_show_membership_events_()
             client_->subscribe_room(current_room_id_);
         }
     }
+}
+
+void ShellBase::apply_show_state_events_()
+{
+    const bool show = tesseract::Settings::instance().show_state_events;
+    for (const auto& sess : account_manager_.accounts())
+    {
+        if (sess && sess->client)
+        {
+            sess->client->set_show_state_events(show);
+        }
+    }
+    resubscribe_open_rooms_();
 }
 
 void ShellBase::apply_show_unhandled_events_()
@@ -761,6 +781,9 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
             apply_show_unhandled_events_();
         }
         break;
+    case K::ShowStateEvents:
+        apply_show_state_events_();
+        break;
     case K::ShowUnhandledEvents:
         if (s.developer_mode)
         {
@@ -825,7 +848,7 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
                     return;
                 }
                 const auto& msgs = ml->messages();
-                for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
+                for (int i = first; i <= last && std::cmp_less(i, msgs.size()); ++i)
                 {
                     ensure_row_media_(msgs[static_cast<std::size_t>(i)], /*fetch_avatars=*/false,
                                       room_id);
@@ -898,6 +921,15 @@ void ShellBase::apply_unhandled_events_pref_(tesseract::Client& client)
     if (s.developer_mode && s.show_unhandled_events)
     {
         client.set_show_unhandled_events(true);
+    }
+}
+
+void ShellBase::apply_state_events_pref_(tesseract::Client& client)
+{
+    // Rust-side flag defaults to off; push only when the preference is on.
+    if (tesseract::Settings::instance().show_state_events)
+    {
+        client.set_show_state_events(true);
     }
 }
 
@@ -1651,7 +1683,7 @@ ShellBase::apply_image_pack_changes_(tesseract::Client* client,
     std::vector<std::string> errors;
     if (!client)
     {
-        errors.push_back("image_packs: not logged in");
+        errors.emplace_back("image_packs: not logged in");
         return errors;
     }
 

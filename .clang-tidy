@@ -1,0 +1,194 @@
+# Checks switched off below are style churn that adds
+# thousands of findings (const-correctness, anonymous-namespace, nodiscard,
+# parentheses, named-parameter, ...) or contradict deliberate patterns
+# (shells narrow ShellBase hook visibility; #pragma once everywhere).
+# bugprone-signed-bitwise is off too: it flags every signed operand (promoted
+# bytes, flag enums) and a review of all hits found nothing real.
+# Also off: misc-static-assert (its fix-it turns runtime assert() into invalid
+# static_assert()), modernize-use-using (C-style forward typedefs of GTK/cairo
+# types are deliberate) and pure style checks with no bug value (use-auto,
+# qualified-auto, init-variables, prefer-member-initializer,
+# return-braced-init-list, raw-string-literal, loop-convert,
+# special-member-functions), bugprone-narrowing-conversions and
+# bugprone-implicit-widening-of-multiplication-result (reviewed: int->float layout
+# arithmetic and image/video buffer offsets far below 2 GB) and
+# readability-static-accessed-through-instance
+# (its fix-it makes `engine.lookup()` call sites in tests needlessly verbose).
+# clang-analyzer-cplusplus.NewDeleteLeaks is off: it reports every std::function
+# holding a lambda that captures a shared_ptr (false positive, 71 hits).
+# performance-unnecessary-value-param and -unnecessary-copy-initialization are
+# off: their fix-its turn deliberate snapshots into aliases (a member that is
+# cleared mid-call), which compiles but changes behaviour. Review such sites
+# by hand instead.
+# Off because the fix-it or the advice is unsafe or low value here:
+# readability-redundant-nested-if (merging into `if (a && b)` changes behaviour
+# when an outer `else` follows), readability-redundant-access-specifiers (drops
+# Qt `public slots:` after `public:`), readability-inconsistent-declaration-
+# parameter-name (renames to moc's `_t1`), readability-redundant-qualified-alias
+# (yields invalid block-scope using-declarations), readability-redundant-
+# declaration (macOS needs `extern char** environ;`), misc-explicit-constructor
+# (cannot be verified on the Windows/macOS shells) and readability-use-anyofallof.
+# Reviewed and off as false positives or deliberate design:
+# bugprone-derived-method-shadowing-base-method (Widget::set_visible is
+# deliberately non-virtual), bugprone-return-const-ref-from-parameter (QDBus
+# stream operators return their argument), bugprone-reserved-identifier
+# (forward typedefs of GTK/cairo `_GtkWidget`), clang-analyzer-optin.core.
+# EnumCastOutOfRange (GStreamer/GIO flag combinations),
+# bugprone-suspicious-stringview-data-usage (views over string literals),
+# clang-analyzer-core.CallAndMessage (host() getter guarded by `if (host())`),
+# bugprone-unchecked-string-to-number-conversion and
+# cppcoreguidelines-pro-type-member-init for enum members with no neutral default.
+# Win32: misc-misplaced-const (`const HWND` is the idiom for handle typedefs) and
+# bugprone-invalid-enum-default-initialization (zeroed THUMBBUTTON structs),
+# bugprone-unhandled-code-paths and -switch-missing-default-case (window-proc
+# switches on WM_* messages fall through to DefWindowProc on purpose),
+# bugprone-exception-escape (noexcept destructors/cleanup that swallow or accept
+# terminate), bugprone-std-namespace-modification (the WinRT coroutine shim must
+# specialise std::coroutine_traits) and cppcoreguidelines-virtual-class-destructor
+# (forward declarations of COM interfaces and ref-counted COM providers).
+# Move-semantics micro-optimisations are off (performance-use-std-move, -move-const-arg,
+# -no-automatic-move, cppcoreguidelines-rvalue-reference-param-not-moved,
+# -missing-std-forward): they are not correctness issues.
+# Remaining checks reviewed and off (false positives, deliberate patterns or
+# pure style): bugprone-unchecked-optional-access (guards go through helper
+# predicates such as has_selection()), clang-analyzer-deadcode.DeadStores
+# (layout cursors, `int next = cur`), clang-analyzer-optin.cplusplus.VirtualCall
+# and bugprone-parent-virtual-call (leaf classes calling their own stop()/cancel()
+# in destructors; test doubles calling ShellBase::x), clang-analyzer-cplusplus.Move
+# (QImageReader::read(&frame) refills a moved-from frame), bugprone-branch-clone,
+# bugprone-incorrect-roundings (non-negative layout values),
+# bugprone-throwing-static-initialization, bugprone-empty-catch (tolerant-parse
+# fallbacks, each commented), readability-suspicious-call-argument (deliberate
+# rollback), and API-shape or cosmetic suggestions (padding, string_view,
+# pass-by-value, nested namespaces, confusable names, function size, boolean
+# simplification, inc/dec in conditions, deleted copy in a protected section,
+# CRTP constructor access, string concatenation).
+#
+# clang-tidy configuration. Run via scripts/clang-tidy.py (see docs/BUILD.md,
+# "Static analysis"); it needs a non-unity, non-PCH compile database
+# (cmake --preset linux-tidy). Checks are tuned in Phase 1 of the tidy pass.
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  concurrency-*,
+  performance-*,
+  portability-*,
+  modernize-*,
+  readability-*,
+  misc-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-missing-std-forward,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  -modernize-use-trailing-return-type,
+  -modernize-use-designated-initializers,
+  -modernize-avoid-c-arrays,
+  -readability-identifier-length,
+  -readability-identifier-naming,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity,
+  -readability-implicit-bool-conversion,
+  -readability-uppercase-literal-suffix,
+  -readability-braces-around-statements,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
+  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-static-assert,
+  -readability-static-accessed-through-instance,
+  -bugprone-narrowing-conversions,
+  -clang-analyzer-cplusplus.NewDeleteLeaks,
+  -readability-redundant-nested-if,
+  -readability-redundant-access-specifiers,
+  -readability-inconsistent-declaration-parameter-name,
+  -readability-redundant-qualified-alias,
+  -readability-redundant-declaration,
+  -readability-use-anyofallof,
+  -bugprone-derived-method-shadowing-base-method,
+  -bugprone-return-const-ref-from-parameter,
+  -bugprone-reserved-identifier,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -bugprone-suspicious-stringview-data-usage,
+  -clang-analyzer-core.CallAndMessage,
+  -bugprone-unchecked-optional-access,
+  -clang-analyzer-deadcode.DeadStores,
+  -clang-analyzer-optin.cplusplus.VirtualCall,
+  -bugprone-parent-virtual-call,
+  -clang-analyzer-cplusplus.Move,
+  -bugprone-branch-clone,
+  -bugprone-incorrect-roundings,
+  -bugprone-throwing-static-initialization,
+  -bugprone-empty-catch,
+  -readability-suspicious-call-argument,
+  -clang-analyzer-optin.performance.Padding,
+  -modernize-use-string-view,
+  -modernize-pass-by-value,
+  -modernize-concat-nested-namespaces,
+  -misc-confusable-identifiers,
+  -readability-function-size,
+  -readability-simplify-boolean-expr,
+  -bugprone-inc-dec-in-conditions,
+  -modernize-use-equals-delete,
+  -bugprone-crtp-constructor-accessibility,
+  -performance-inefficient-string-concatenation,
+  -misc-misleading-bidirectional,
+  -bugprone-random-generator-seed,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-integer-division,
+  -performance-use-std-move,
+  -performance-move-const-arg,
+  -performance-no-automatic-move,
+  -cppcoreguidelines-rvalue-reference-param-not-moved,
+  -cppcoreguidelines-missing-std-forward,
+  -bugprone-unchecked-string-to-number-conversion,
+  -cppcoreguidelines-pro-type-member-init,
+  -misc-explicit-constructor,
+  -performance-unnecessary-value-param,
+  -performance-unnecessary-copy-initialization,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -modernize-use-using,
+  -modernize-use-auto,
+  -modernize-return-braced-init-list,
+  -modernize-raw-string-literal,
+  -modernize-loop-convert,
+  -readability-qualified-auto,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-prefer-member-initializer,
+  -cppcoreguidelines-special-member-functions,
+  -misc-const-correctness,
+  -misc-use-anonymous-namespace,
+  -misc-use-internal-linkage,
+  -misc-multiple-inheritance,
+  -misc-override-with-different-visibility,
+  -modernize-use-nodiscard,
+  -modernize-use-ranges,
+  -modernize-use-scoped-lock,
+  -portability-avoid-pragma-once,
+  -performance-enum-size,
+  -concurrency-mt-unsafe,
+  -readability-math-missing-parentheses,
+  -readability-named-parameter,
+  -readability-trailing-comma,
+  -readability-redundant-lambda-parameter-list,
+  -readability-isolate-declaration,
+  -readability-use-concise-preprocessor-directives,
+  -readability-avoid-nested-conditional-operator,
+  -readability-duplicate-include,
+  -performance-no-int-to-ptr,
+  -modernize-macro-to-enum,
+  -misc-misplaced-const,
+  -bugprone-invalid-enum-default-initialization,
+  -bugprone-unhandled-code-paths,
+  -bugprone-switch-missing-default-case,
+  -bugprone-exception-escape,
+  -bugprone-std-namespace-modification,
+  -cppcoreguidelines-virtual-class-destructor
+WarningsAsErrors: ''
+HeaderFilterRegex: '(client|ui|tests/cpp)/'
+ExcludeHeaderFilterRegex: '(third_party|nanosvg|xdg-activation-v1-protocol|/build/|cxxbridge)'
+FormatStyle: file

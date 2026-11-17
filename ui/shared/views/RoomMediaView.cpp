@@ -12,6 +12,7 @@
 #include <ctime>
 #include <cstdio>
 #include <unordered_set>
+#include <utility>
 
 namespace tesseract::views
 {
@@ -280,7 +281,7 @@ public:
         if (e.key == tk::Key::Enter || e.key == tk::Key::Space)
         {
             auto cells = cells_(selected_index());
-            if (cell_ >= 0 && cell_ < static_cast<int>(cells.size()) &&
+            if (cell_ >= 0 && std::cmp_less(cell_, cells.size()) &&
                 cells[static_cast<std::size_t>(cell_)].activate)
             {
                 cells[static_cast<std::size_t>(cell_)].activate();
@@ -300,7 +301,7 @@ public:
     void paint_own_focus_ring(tk::PaintCtx& ctx) override
     {
         auto cells = cells_(selected_index());
-        if (cell_ >= 0 && cell_ < static_cast<int>(cells.size()))
+        if (cell_ >= 0 && std::cmp_less(cell_, cells.size()))
         {
             tk::paint_focus_ring(ctx, cells[static_cast<std::size_t>(cell_)].rect, 6.0f);
         }
@@ -671,7 +672,7 @@ void RoomMediaView::handle_cell_pointer_up_(std::size_t row_idx, tk::Point world
     activate_item_(row.items[col]);
 }
 
-void RoomMediaView::activate_item_(const MessageRowData& item)
+void RoomMediaView::activate_item_(const MessageRowData& item) const
 {
     if (item.kind == MessageRowData::Kind::Video)
     {

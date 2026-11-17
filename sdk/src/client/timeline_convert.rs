@@ -184,6 +184,8 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         forwarded_room_id: String::new(),
         forwarded_event_id: String::new(),
         forwarded_origin_ts: 0,
+        bot_command: String::new(),
+        bot_command_arguments_json: String::new(),
         profile_id: String::new(),
         profile_name: String::new(),
         profile_avatar_set: false,
@@ -215,7 +217,7 @@ pub(crate) fn utd_message_for_cause(
         UtdCause::WithheldForUnverifiedOrInsecureDevice => "\u{1}utd_withheld_insecure",
         UtdCause::WithheldBySender => "\u{1}utd_withheld_sender",
         UtdCause::HistoricalMessageAndDeviceIsUnverified => "\u{1}utd_verify_device",
-        UtdCause::Unknown => "\u{1}utd_unknown",
+        UtdCause::Unknown | UtdCause::Malformed => "\u{1}utd_unknown",
     }
 }
 
@@ -616,6 +618,42 @@ pub(crate) fn poll_fields(
     }
 }
 
+/// Body of an `m.room.server_acl` row: one line per kind of change between the
+/// previous and the new ACL, with only counts so a huge list never crosses the
+/// FFI or fills the row: `deny+N` / `deny-N` / `allow+N` / `allow-N` (N entries
+/// added to / removed from the list) and `ip+` / `ip-` (IP-literal servers now
+/// allowed / denied). Empty when nothing changed (e.g. a state resend).
+pub(crate) fn server_acl_changes(
+    new_allow: &[String],
+    new_deny: &[String],
+    new_ip: bool,
+    old_allow: &[String],
+    old_deny: &[String],
+    old_ip: bool,
+) -> String {
+    use std::collections::HashSet;
+    let mut lines: Vec<String> = Vec::new();
+    for (tag, new, old) in [
+        ("deny", new_deny, old_deny),
+        ("allow", new_allow, old_allow),
+    ] {
+        let new_set: HashSet<&String> = new.iter().collect();
+        let old_set: HashSet<&String> = old.iter().collect();
+        let added = new_set.difference(&old_set).count();
+        let removed = old_set.difference(&new_set).count();
+        if added > 0 {
+            lines.push(format!("{tag}+{added}"));
+        }
+        if removed > 0 {
+            lines.push(format!("{tag}-{removed}"));
+        }
+    }
+    if new_ip != old_ip {
+        lines.push(if new_ip { "ip+" } else { "ip-" }.to_owned());
+    }
+    lines.join("\n")
+}
+
 /// Compute the human-readable action for a m.room.pinned_events state-event
 /// change. `new_pinned` and `old_pinned` are the new and previous event-ID
 /// lists respectively (as any `AsRef<str>` slice — `&[&str]` or
@@ -716,6 +754,42 @@ pub(crate) fn redacted_event_visible(msg_type: &str, show: bool) -> bool {
     show || msg_type != "m.redacted"
 }
 
+/// State event types Tesseract reads into room state. Their timeline rows are
+/// "state events": shown under "Show state events in the timeline" rather than
+/// the developer "unhandled" setting. Keep in step with the label table in
+/// `MessageListView.cpp` (`kKnownStateTypes`).
+pub(crate) const KNOWN_STATE_EVENT_TYPES: [&str; 5] = [
+    "m.bridge",
+    "uk.half-shot.bridge",
+    "io.element.functional_members",
+    "com.beeper.room_features",
+    "im.ponies.room_emotes",
+];
+
+/// Whether a row reaches the UI given the state-event and unhandled-event
+/// settings. Server-ACL rows and `dev.unhandled` rows of a known state type
+/// need `show_state`; any other `dev.unhandled` row needs `show_unhandled`.
+/// `body` is a dev row's "type" or "type [state_key]".
+pub(crate) fn state_event_visible(
+    msg_type: &str,
+    body: &str,
+    show_state: bool,
+    show_unhandled: bool,
+) -> bool {
+    match msg_type {
+        "m.room.server_acl" => show_state,
+        "dev.unhandled" => {
+            let event_type = body.split(" [").next().unwrap_or(body);
+            if KNOWN_STATE_EVENT_TYPES.contains(&event_type) {
+                show_state
+            } else {
+                show_unhandled
+            }
+        }
+        _ => true,
+    }
+}
+
 /// Per-call snapshot of the runtime-toggleable timeline row visibility
 /// settings. `Copy` so it is read once from [`VisibilityFlags`] and then
 /// passed by value to every filter in a pass.
@@ -727,6 +801,8 @@ pub(crate) struct RowVisibility {
     pub redacted: bool,
     /// Developer "Show unhandled events".
     pub unhandled: bool,
+    /// "Show state events in the timeline".
+    pub state_events: bool,
 }
 
 /// Shared handles to the live settings behind [`RowVisibility`]; built by
@@ -736,6 +812,7 @@ pub(crate) struct VisibilityFlags {
     pub membership: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub redacted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub unhandled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub state_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl VisibilityFlags {
@@ -745,6 +822,7 @@ impl VisibilityFlags {
             membership: self.membership.load(Relaxed),
             redacted: self.redacted.load(Relaxed),
             unhandled: self.unhandled.load(Relaxed),
+            state_events: self.state_events.load(Relaxed),
         }
     }
 }
@@ -1407,6 +1485,22 @@ fn original_forward(
     forward_view(&json["content"], event_type)
 }
 
+/// The MSC4391 invocation `(command, arguments JSON)` of a timeline item, from
+/// its original JSON (an edit's top-level content is only fallback). Parses
+/// the JSON only when it mentions a command key at all.
+#[cfg(not(test))]
+fn original_bot_command(
+    event_item: &matrix_sdk_ui::timeline::EventTimelineItem,
+) -> Option<(String, String)> {
+    let raw = event_item.original_json()?.json().get();
+    if !crate::bot_commands::might_be_invocation(raw) {
+        return None;
+    }
+    let json: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let (command, arguments) = crate::bot_commands::parse_invocation(&json["content"])?;
+    Some((command, arguments.to_string()))
+}
+
 /// The raw `content.info` object of a timeline item's original JSON.
 #[cfg(not(test))]
 fn original_content_info(
@@ -2009,6 +2103,52 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 });
             }
         }
+        if let AnyOtherStateEventContentChange::RoomServerAcl(full) = state.content() {
+            if let StateEventContentChange::Original {
+                content,
+                prev_content,
+            } = full
+            {
+                // A missing previous ACL means the spec defaults: no entries,
+                // IP literals allowed.
+                let (old_allow, old_deny, old_ip) = prev_content
+                    .as_ref()
+                    .map(|pc| (pc.allow.clone(), pc.deny.clone(), pc.allow_ip_literals))
+                    .unwrap_or((Vec::new(), Vec::new(), true));
+                let body = server_acl_changes(
+                    &content.allow,
+                    &content.deny,
+                    content.allow_ip_literals,
+                    &old_allow,
+                    &old_deny,
+                    old_ip,
+                );
+                let SenderProfileFfi {
+                    sender_name,
+                    sender_name_ambiguous,
+                    sender_avatar_url,
+                    sender_status_emoji,
+                    sender_status_text,
+                } = sender_profile_ffi(event_item.sender_profile());
+                return Some(TimelineEvent {
+                    room_id: room_id.to_owned(),
+                    msg_type: "m.room.server_acl".to_owned(),
+                    event_id: event_item
+                        .event_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    sender: event_item.sender().to_string(),
+                    sender_name,
+                    sender_name_ambiguous,
+                    sender_avatar_url,
+                    sender_status_emoji,
+                    sender_status_text,
+                    body,
+                    timestamp: event_item.timestamp().get().into(),
+                    ..ffi_event_defaults()
+                });
+            }
+        }
         if let AnyOtherStateEventContentChange::RoomTombstone(full) = state.content() {
             if let StateEventContentChange::Original { content, .. } = full {
                 let SenderProfileFfi {
@@ -2040,8 +2180,13 @@ pub(super) async fn timeline_item_to_ffi_opts(
         }
         // StateEventContentChange::Redacted: no content to diff. All other
         // state events (and redacted pins) stay filtered unless the developer
-        // "show unhandled events" setting is on.
-        return if show_unhandled {
+        // "show unhandled events" setting is on. State events Tesseract reads
+        // are emitted regardless and gated by `state_event_visible`.
+        let known = event_item
+            .content()
+            .event_type_str()
+            .is_some_and(|t| KNOWN_STATE_EVENT_TYPES.contains(&t.as_ref()));
+        return if show_unhandled || known {
             dev_unhandled_event(event_item, room_id)
         } else {
             None
@@ -2636,6 +2781,13 @@ pub(super) async fn timeline_item_to_ffi_opts(
         };
         apply_forward(&mut msg_fields, &view.forwarded, name, verified);
     }
+    // MSC4391: a forward shows another event's content, not an invocation.
+    if forward.is_none() {
+        if let Some((command, arguments_json)) = original_bot_command(event_item) {
+            msg_fields.bot_command = command;
+            msg_fields.bot_command_arguments_json = arguments_json;
+        }
+    }
     if let Some(view) = &profile {
         if strip_profile {
             strip_profile_fallback_body(&mut msg_fields, view);
@@ -2751,6 +2903,89 @@ mod dev_unhandled_tests {
         assert_eq!(
             dev_unhandled_body("m.space.child", Some("!abc:example.org")),
             "m.space.child [!abc:example.org]"
+        );
+    }
+}
+
+#[cfg(test)]
+mod state_event_visibility_tests {
+    use super::state_event_visible as vis;
+
+    #[test]
+    fn acl_and_known_state_rows_follow_the_state_flag() {
+        assert!(vis("m.room.server_acl", "", true, false));
+        assert!(!vis("m.room.server_acl", "", false, true));
+        assert!(vis("dev.unhandled", "m.bridge [a/b]", true, false));
+        assert!(!vis("dev.unhandled", "uk.half-shot.bridge", false, true));
+        assert!(vis(
+            "dev.unhandled",
+            "io.element.functional_members",
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn other_dev_rows_follow_the_unhandled_flag() {
+        assert!(vis("dev.unhandled", "com.example.ping", false, true));
+        assert!(!vis("dev.unhandled", "com.example.ping", true, false));
+    }
+
+    #[test]
+    fn ordinary_rows_are_always_visible() {
+        assert!(vis("m.text", "hi", false, false));
+    }
+}
+
+#[cfg(test)]
+mod server_acl_tests {
+    use super::server_acl_changes;
+
+    fn v(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn first_acl_counts_every_entry() {
+        assert_eq!(
+            server_acl_changes(
+                &v(&["*"]),
+                &v(&["evil.org", "bad.org"]),
+                true,
+                &[],
+                &[],
+                true
+            ),
+            "deny+2\nallow+1"
+        );
+    }
+
+    #[test]
+    fn reports_added_and_removed_counts() {
+        assert_eq!(
+            server_acl_changes(
+                &v(&["*"]),
+                &v(&["b.org", "c.org", "d.org"]),
+                true,
+                &v(&["*"]),
+                &v(&["a.org", "b.org"]),
+                true
+            ),
+            "deny+2\ndeny-1"
+        );
+    }
+
+    #[test]
+    fn reports_ip_literal_toggle() {
+        assert_eq!(server_acl_changes(&[], &[], false, &[], &[], true), "ip-");
+        assert_eq!(server_acl_changes(&[], &[], true, &[], &[], false), "ip+");
+    }
+
+    #[test]
+    fn unchanged_acl_is_empty() {
+        assert_eq!(
+            server_acl_changes(&v(&["*"]), &v(&["a"]), true, &v(&["*"]), &v(&["a"]), true),
+            ""
         );
     }
 }

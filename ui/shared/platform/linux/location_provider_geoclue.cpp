@@ -37,8 +37,8 @@ struct SignalWait
     std::string new_path;
 };
 
-static void on_location_updated(GDBusConnection*, const gchar*, const gchar*, const gchar*,
-                                const gchar*, GVariant* params, gpointer user_data)
+void on_location_updated(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*,
+                         GVariant* params, gpointer user_data)
 {
     auto* w = static_cast<SignalWait*>(user_data);
     const gchar* old_path = nullptr;

@@ -420,6 +420,12 @@ fn filter_visibility(
             vis.membership,
             me.map(|u| u.as_str()),
         ) && super::timeline_convert::redacted_event_visible(&e.msg_type, vis.redacted)
+            && super::timeline_convert::state_event_visible(
+                &e.msg_type,
+                &e.body,
+                vis.state_events,
+                vis.unhandled,
+            )
     })
 }
 

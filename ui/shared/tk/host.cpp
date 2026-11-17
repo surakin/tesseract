@@ -1,5 +1,7 @@
 #include "host.h"
 
+#include <memory>
+
 #include "access_tree.h" // find_topmost_modal (modal-scoped Tab traversal)
 #include "key_chord.h"
 #include "scrollable_base.h" // keyboard paging fallback (scroll_by_key)
@@ -89,7 +91,7 @@ void Host::dispatch_pointer_down(Point world)
         // query with the same traversal order as dispatch_pointer_down()'s
         // own hit-test, so it agrees on which widget would be pressed.
         Widget* trigger = popup_trigger_.lock().get();
-        if (!(trigger && trigger->enabled() && root->hit_test(world) == trigger))
+        if (!trigger || !trigger->enabled() || root->hit_test(world) != trigger)
         {
             // Dismiss it, then let the click through. Reset popup_ BEFORE
             // calling on_popup_dismiss() — the dismiss callback commonly
@@ -533,7 +535,8 @@ void Host::begin_drag(DragPayload payload, DragVisual visual, Point source_local
         Rect b = p->bounds();
         world = Point{b.x + source_local.x, b.y + source_local.y};
     }
-    active_drag_.reset(new ActiveDrag{std::move(payload), std::move(visual), world, {}});
+    active_drag_ =
+        std::make_unique<ActiveDrag>(ActiveDrag{std::move(payload), std::move(visual), world, {}});
     request_repaint();
 }
 
@@ -644,7 +647,7 @@ void Host::request_focus(Widget* w)
         // later. Without this, that second check would dismiss the popup
         // anyway right before the trigger's own on_click handler runs.
         Widget* trigger = popup_trigger_.lock().get();
-        if (!inside_popup && !(trigger && w == trigger))
+        if (!inside_popup && (!trigger || w != trigger))
         {
             // Reset before calling — the dismiss callback commonly
             // re-focuses some other widget (e.g. RoomView::hide_pickers_()

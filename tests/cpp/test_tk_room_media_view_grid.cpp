@@ -58,7 +58,7 @@ struct RmvStage : vt::Stage
     {
         mount(*view, {0, 0, 800, 600});
     }
-    std::vector<tk::AccessNode> cells()
+    std::vector<tk::AccessNode> cells() const
     {
         std::vector<tk::AccessNode> out;
         std::function<void(const tk::AccessNode&)> walk = [&](const tk::AccessNode& n)
@@ -134,6 +134,7 @@ TEST_CASE("RoomMediaView wraps cells into strips by available width", "[tk][view
     RmvStage s;
     s.view->open("!r:x", "Room");
     std::vector<MessageRowData> rows;
+    rows.reserve(20);
     for (int i = 0; i < 20; ++i)
     {
         rows.push_back(rmv_row("$m" + std::to_string(i), MessageRowData::Kind::Image, 3));

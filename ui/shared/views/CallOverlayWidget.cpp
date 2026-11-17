@@ -1,5 +1,6 @@
 #include "CallOverlayWidget.h"
 
+#include <algorithm>
 #include <unordered_map>
 
 #include "call_tile_layout.h"
@@ -402,14 +403,14 @@ void CallOverlayWidget::announce_participant_changes_(
         };
         for (const auto& [pid, uid] : now)
         {
-            if (!announced_participants_.count(pid))
+            if (!announced_participants_.contains(pid))
             {
                 host()->announce(tk::trf(tk::tr("{0} joined the call"), {name_of(uid)}));
             }
         }
         for (const auto& [pid, uid] : announced_participants_)
         {
-            if (!now.count(pid))
+            if (!now.contains(pid))
             {
                 host()->announce(tk::trf(tk::tr("{0} left the call"), {name_of(uid)}));
             }
@@ -541,19 +542,12 @@ void CallOverlayWidget::update_participants(const std::vector<tesseract::RtcPart
         s.is_self = (!local_user_id_.empty() && p.user_id == local_user_id_);
         s.pinned = (pinned_participant_ == tile_id);
         s.is_screen_share_tile = is_screen_tile;
+        // Same fields as `s`; copied before `s` is moved into the tile.
+        ParticipantTile::State shadow = s;
         tile->set_state(std::move(s));
 
         tiles_.push_back(tile);
         tile_ids_.push_back(tile_id);
-        ParticipantTile::State shadow;
-        shadow.participant_id = tile_id;
-        shadow.user_id = p.user_id;
-        shadow.display_name = dname;
-        shadow.audio_muted = audio_muted;
-        shadow.video_muted = video_muted;
-        shadow.is_self = s.is_self;
-        shadow.pinned = s.pinned;
-        shadow.is_screen_share_tile = is_screen_tile;
         tile_states_.push_back(std::move(shadow));
     };
 
@@ -731,7 +725,7 @@ void CallOverlayWidget::toggle_video()
     }
 }
 
-void CallOverlayWidget::hang_up()
+void CallOverlayWidget::hang_up() const
 {
     if (on_hang_up)
     {
@@ -776,10 +770,7 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     // Participant grid fills the remaining area between grid_top and duration.
     grid_rect_ = {bounds_.x, grid_top, bounds_.w, duration_rect_.y - grid_top};
-    if (grid_rect_.h < 0.0f)
-    {
-        grid_rect_.h = 0.0f;
-    }
+    grid_rect_.h = std::max(grid_rect_.h, 0.0f);
 
     // ── Tile layout ────────────────────────────────────────────────────────
     const int n = static_cast<int>(tiles_.size());

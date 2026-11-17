@@ -33,6 +33,7 @@
 
 #include <commdlg.h>
 #include <cmath>
+#include <numbers>
 #include <dwmapi.h>
 #include <shellscalingapi.h>
 #include <uxtheme.h>
@@ -70,7 +71,7 @@ std::wstring utf8_to_wstr(const std::string& s)
         return {};
     }
     std::wstring w(n - 1, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
     return w;
 }
 
@@ -86,7 +87,7 @@ std::string wstr_to_utf8(const wchar_t* w)
         return {};
     }
     std::string s(n - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w, -1, &s[0], n, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w, -1, s.data(), n, nullptr, nullptr);
     return s;
 }
 
@@ -474,10 +475,35 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
+        HDC win_dc = BeginPaint(hwnd, &ps);
         const auto& pal = theme::palette();
         RECT rc;
         GetClientRect(hwnd, &rc);
+
+        // Compose into an off-screen buffer and blit once, so the bar never
+        // shows a half-painted state (background without text/dot) on update.
+        HDC hdc = CreateCompatibleDC(win_dc);
+        HBITMAP buf_bmp = CreateCompatibleBitmap(win_dc, std::max<LONG>(rc.right, 1),
+                                                 std::max<LONG>(rc.bottom, 1));
+        HGDIOBJ buf_old = nullptr;
+        if (hdc && buf_bmp)
+        {
+            buf_old = SelectObject(hdc, buf_bmp);
+        }
+        else
+        {
+            // Allocation failed: fall back to drawing directly.
+            if (buf_bmp)
+            {
+                DeleteObject(buf_bmp);
+                buf_bmp = nullptr;
+            }
+            if (hdc)
+            {
+                DeleteDC(hdc);
+            }
+            hdc = win_dc;
+        }
 
         // Solid background + 1px top separator.
         HBRUSH bg = theme::brush(pal.chrome_bg);
@@ -507,7 +533,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                 GetObjectW(small_font, sizeof(lf), &lf);
                 lf.lfUnderline = TRUE;
                 HFONT link_font = CreateFontIndirectW(&lf);
-                HFONT old = (HFONT)SelectObject(hdc, small_font);
+                HFONT old = static_cast<HFONT>(SelectObject(hdc, small_font));
                 int x = text_rc.left;
                 for (std::size_t i = 0; i < st->segs.size() && x < text_rc.right; ++i)
                 {
@@ -549,7 +575,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             else
             {
                 SetTextColor(hdc, pal.text_secondary);
-                HFONT old = (HFONT)SelectObject(hdc, small_font);
+                HFONT old = static_cast<HFONT>(SelectObject(hdc, small_font));
                 DrawTextW(hdc, p->c_str(), -1, &text_rc,
                           DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
                 SelectObject(hdc, old);
@@ -578,7 +604,8 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
                 HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
                 for (int i = 0; i < kN; ++i)
                 {
-                    const float angle = (i / static_cast<float>(kN) + phase) * 2.0f * 3.14159265f;
+                    const float angle =
+                        (i / static_cast<float>(kN) + phase) * 2.0f * std::numbers::pi_v<float>;
                     const float dx = std::cos(angle) * orbit;
                     const float dy = std::sin(angle) * orbit;
                     const float t = static_cast<float>(i) / kN;
@@ -620,6 +647,13 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             RECT glyph_rc = {rc.right - MulDiv(38, sb_dpi, 96), cy - gpx / 2,
                              rc.right - MulDiv(38, sb_dpi, 96) + gpx, cy - gpx / 2 + gpx};
             draw_low_power_glyph(hdc, glyph_rc, pal.text_secondary);
+        }
+        if (buf_bmp)
+        {
+            BitBlt(win_dc, 0, 0, rc.right, rc.bottom, hdc, 0, 0, SRCCOPY);
+            SelectObject(hdc, buf_old);
+            DeleteObject(buf_bmp);
+            DeleteDC(hdc);
         }
         EndPaint(hwnd, &ps);
         return 0;
@@ -1100,14 +1134,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             self->on_size(LOWORD(lParam), HIWORD(lParam));
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
-            auto& g = tesseract::Settings::instance().main_window_geometry;
-            g.x = wrc.left;
-            g.y = wrc.top;
-            g.w = wrc.right - wrc.left;
-            g.h = wrc.bottom - wrc.top;
-            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
-            g.valid = true;
-            self->save_settings_debounced_();
+            self->save_window_geometry_(wrc.left, wrc.top, wrc.right - wrc.left,
+                                        wrc.bottom - wrc.top,
+                                        static_cast<int>(GetDpiForWindow(hwnd)));
             self->start_anim_tick_(); // restart after restore from minimized
         }
         self->update_video_playback_suspension_();
@@ -1127,14 +1156,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         {
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
-            auto& g = tesseract::Settings::instance().main_window_geometry;
-            g.x = wrc.left;
-            g.y = wrc.top;
-            g.w = wrc.right - wrc.left;
-            g.h = wrc.bottom - wrc.top;
-            g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
-            g.valid = true;
-            self->save_settings_debounced_();
+            self->save_window_geometry_(wrc.left, wrc.top, wrc.right - wrc.left,
+                                        wrc.bottom - wrc.top,
+                                        static_cast<int>(GetDpiForWindow(hwnd)));
         }
         return 0;
     }
@@ -1152,7 +1176,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // Registry shortcuts (see the accelerator table built in on_create):
         // forward the chord's KeyEvent; MainAppWidget decides what it does.
         if (const int idx = LOWORD(wParam) - IDC_SHORTCUT_BASE;
-            idx >= 0 && idx < static_cast<int>(self->accel_events_.size()))
+            idx >= 0 && std::cmp_less(idx, self->accel_events_.size()))
         {
             if (self->main_app_)
             {
@@ -1582,10 +1606,10 @@ bool MainWindow::create(int nCmdShow)
     {
         return false;
     }
-    // WM_CREATE fires synchronously inside CreateWindowExW, which calls
-    // on_create() → load_from_disk(), so saved geometry is available here.
+    // Settings were loaded once by prepare_launch(), so saved geometry is
+    // available here.
     {
-        auto g = tesseract::Settings::instance().main_window_geometry;
+        auto g = saved_window_geometry_();
         // If the save DPI is known, rescale w/h to the target monitor's DPI
         // before clamping so the window opens at the right logical size even
         // when moved to a different-DPI screen or a Remote Desktop session.
@@ -1594,9 +1618,9 @@ bool MainWindow::create(int nCmdShow)
             HMONITOR hm = MonitorFromPoint({g.x, g.y}, MONITOR_DEFAULTTONEAREST);
             UINT targetDpi = 96, dummy = 0;
             GetDpiForMonitor(hm, MDT_EFFECTIVE_DPI, &targetDpi, &dummy);
-            if (static_cast<int>(targetDpi) != g.dpi)
+            if (std::cmp_not_equal(targetDpi, g.dpi))
             {
-                const double s = double(targetDpi) / double(g.dpi);
+                const double s = static_cast<double>(targetDpi) / static_cast<double>(g.dpi);
                 g.w = static_cast<int>(std::lround(g.w * s));
                 g.h = static_cast<int>(std::lround(g.h * s));
             }
@@ -1683,8 +1707,6 @@ void MainWindow::on_create(HWND hwnd)
 
         // 30 s periodic tick — paired with WM_TIMER below.
         SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);
-
-        tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
         create_main_room_pane_();
 
@@ -3468,7 +3490,7 @@ void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::u
                                 {
                                     // MF may produce bottom-up (negative stride) RGB32;
                                     // flip rows to top-down before handing to WIC.
-                                    LONG stride_val = static_cast<LONG>(vw * 4);
+                                    LONG stride_val = static_cast<LONG>(vw) * 4;
                                     if (cur_type)
                                     {
                                         cur_type->GetUINT32(MF_MT_DEFAULT_STRIDE,
@@ -3883,8 +3905,7 @@ void MainWindow::start_platform_services_ui_()
             },
             [this]
             {
-                quitting_ = true;
-                DestroyWindow(hwnd_);
+                quit_app_();
             });
         if (tray_ && tray_->is_available())
         {
@@ -3921,8 +3942,7 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
         },
         [this]
         {
-            quitting_ = true;
-            DestroyWindow(hwnd_);
+            quit_app_();
         },
         verify_session_menu_callback_());
 
@@ -4216,7 +4236,7 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     std::wstring cmd = std::wstring(L"\"") + exe_path + L"\"";
     for (const auto& arg : args)
     {
-        cmd += L" ";
+        cmd += L' ';
         for (char c : arg)
         {
             cmd.push_back(static_cast<wchar_t>(c));
@@ -4238,8 +4258,11 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
 
 void MainWindow::quit_app_()
 {
-    // The "Quit" menu item only destroys its own window; the app exits when
-    // the last one goes (WM_DESTROY). Restarting must close them all.
+    // Windows destroyed from here on were not closed by the user: keep their
+    // saved-window entries for the next launch.
+    account_manager_.set_app_quitting();
+    // The app exits when the last window goes (WM_DESTROY), so quitting and
+    // restarting must close them all.
     // Close the others first, re-reading the registry each time (WM_DESTROY
     // unregisters a window, and closing one may tear down others), and this
     // window last, since nothing may touch `this` after it is destroyed.

@@ -28,7 +28,7 @@ public:
     {
         return successor_joined_;
     }
-    std::string label_text() const;
+    static std::string label_text();
     std::string action_text() const;
 
     std::function<void()> on_open; // follow the upgrade to the new room

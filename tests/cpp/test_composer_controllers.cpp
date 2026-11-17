@@ -145,7 +145,7 @@ struct MentionRig
         ctl = std::make_unique<MentionController>(area.get(), nullptr, &popup, std::move(h));
     }
 
-    bool type(const std::string& t)
+    bool type(const std::string& t) const
     {
         area->set_text(t);
         return ctl->on_text_changed(t, static_cast<int>(t.size()));
@@ -382,7 +382,7 @@ struct ShortcodeRig
         ctl = std::make_unique<ShortcodeController>(area.get(), &popup, std::move(h));
     }
 
-    bool type(const std::string& t)
+    bool type(const std::string& t) const
     {
         area->set_text(t);
         return ctl->on_text_changed(t, static_cast<int>(t.size()));
@@ -629,7 +629,7 @@ struct GifRig
 
     // Deliver `results` to whichever process-global request id the controller
     // just issued (the id counter is static and shared, so sweep for it).
-    bool deliver(std::vector<tesseract::GifResult> results)
+    bool deliver(std::vector<tesseract::GifResult> results) const
     {
         for (std::uint64_t id = 1; id < 20000; ++id)
         {

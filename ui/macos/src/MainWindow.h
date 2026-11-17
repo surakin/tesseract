@@ -330,6 +330,8 @@ protected:
         const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
     void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) override;
 
+    void set_window_geometry_(const tesseract::Settings::WindowGeometry& g) override;
+
     std::vector<tk::Rect> get_screen_work_areas_() const override
     {
         std::vector<tk::Rect> result;

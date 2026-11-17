@@ -5508,3 +5508,99 @@ msgstr "{0} videresendte:"
 #: ui/shared/views/MessageListView.cpp:1747
 msgid "{0} forwarded: {1}"
 msgstr "{0} videresendte: {1}"
+
+#: ui/shared/views/SlashCommands.cpp
+msgid "Search for a sticker to send"
+msgstr "Søk etter en klistremerke å sende"
+
+#: ui/shared/views/StickerController.cpp
+msgid "No stickers found"
+msgstr "Fant ingen klistremerker"
+
+msgid "Copy image"
+msgstr "Kopier bilde"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Bot command: {0}"
+msgstr "Bot-kommando: {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "bot command {0}"
+msgstr "bot-kommando {0}"
+
+#: ui/linux-qt/tk/host_qt.cpp ui/linux-gtk/tk/host_gtk.cpp
+msgid "Could not read the remote file (is kio-fuse installed?)"
+msgstr "Kunne ikke lese den eksterne filen (er kio-fuse installert?)"
+
+msgid "Bridge information"
+msgstr "Bro-informasjon"
+
+msgid "Service members"
+msgstr "Tjenestemedlemmer"
+
+msgid "Bridge room features"
+msgstr "Romfunksjoner for bro"
+
+msgid "Custom emoji pack"
+msgstr "Egendefinert emojipakke"
+
+#, c++-format
+msgid "Room state updated: {0}"
+msgstr "Romstatus oppdatert: {0}"
+
+#, c++-format
+msgid "{0} updated the room state: {1}"
+msgstr "{0} oppdaterte romstatusen: {1}"
+
+msgid "IP literals now allowed"
+msgstr "IP-litteraler tillates nå"
+
+msgid "IP literals no longer allowed"
+msgstr "IP-litteraler tillates ikke lenger"
+
+
+
+
+
+msgid "The server ACL was changed"
+msgstr "Server-ACL-en ble endret"
+
+#, c++-format
+msgid "{0} changed the server ACL"
+msgstr "{0} endret server-ACL-en"
+
+#, c++-format
+msgid "{0} server now denied"
+msgid_plural "{0} servers now denied"
+msgstr[0] "{0} server nektes nå"
+msgstr[1] "{0} servere nektes nå"
+
+#, c++-format
+msgid "{0} server no longer denied"
+msgid_plural "{0} servers no longer denied"
+msgstr[0] "{0} server nektes ikke lenger"
+msgstr[1] "{0} servere nektes ikke lenger"
+
+#, c++-format
+msgid "{0} server now allowed"
+msgid_plural "{0} servers now allowed"
+msgstr[0] "{0} server tillates nå"
+msgstr[1] "{0} servere tillates nå"
+
+#, c++-format
+msgid "{0} server no longer allowed"
+msgid_plural "{0} servers no longer allowed"
+msgstr[0] "{0} server tillates ikke lenger"
+msgstr[1] "{0} servere tillates ikke lenger"
+
+msgid "Show state events in the timeline"
+msgstr "Vis tilstandshendelser i tidslinjen"
+
+#, c++-format
+msgid "Service members ({0})"
+msgstr "Tjenestemedlemmer ({0})"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} › message"
+msgstr "{0} › melding"

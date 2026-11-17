@@ -160,3 +160,15 @@ TEST_CASE("update_message fires on_just_sent on Sending->None for own message, "
     // on_just_sent must NOT fire for the non-own row.
     CHECK(just_sent_count == 1);
 }
+
+TEST_CASE("make_row_data formats a received bot command", "[ui][bot_commands]")
+{
+    tesseract::TextEvent ev;
+    ev.event_id = "$c";
+    ev.sender = "@bob:x";
+    ev.body = "/ping";
+    CHECK(tesseract::views::make_row_data(ev, "@a:x").bot_command_display.empty());
+    ev.bot_command = "ping";
+    ev.bot_command_arguments_json = R"({"n":3})";
+    CHECK(tesseract::views::make_row_data(ev, "@a:x").bot_command_display == "/ping n: 3");
+}

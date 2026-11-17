@@ -520,7 +520,7 @@ public:
         else
         {
             static thread_local std::vector<unsigned char> buf;
-            buf.resize(static_cast<std::size_t>(stride * ih));
+            buf.resize(static_cast<std::size_t>(stride) * static_cast<std::size_t>(ih));
             for (int y = 0; y < ih; ++y)
             {
                 std::memcpy(buf.data() + y * stride, pixels + static_cast<std::size_t>(y) * iw * 4,
@@ -574,7 +574,7 @@ public:
         // Reuse a thread-local buffer to avoid per-frame heap allocation
         // (GTK4 drawing always runs on the main thread).
         static thread_local std::vector<unsigned char> buf;
-        buf.resize(static_cast<std::size_t>(stride * ih));
+        buf.resize(static_cast<std::size_t>(stride) * static_cast<std::size_t>(ih));
         // Video frames are always fully opaque (a=255). In that case
         // premultiplication is an identity (r*255/255 = r), so skip the
         // multiply/divide and just pack the channels directly. The resulting
@@ -1294,15 +1294,7 @@ public:
                     tk::PillSpec pspec;
                     pspec.text = sp.image_alt;
                     pspec.kind = sp.pill_kind;
-                    // A Room-kind pill with no url is the @room self-
-                    // mention (html_spans.cpp clears url for both its
-                    // plain-text and link spellings) and shows the current
-                    // room's own avatar, same slot-reservation treatment as
-                    // a User pill; a Room-kind pill WITH a url is a
-                    // permalink to some other room and has no avatar.
-                    pspec.reserve_leading_visual =
-                        (sp.pill_kind == PillKind::User) ||
-                        (sp.pill_kind == PillKind::Room && sp.url.empty());
+                    pspec.reserve_leading_visual = pill_reserves_leading_visual(sp.pill_kind);
                     pspec.text_role = s.role;
                     const tk::PillMetrics m =
                         tk::measure_pill(*this, pspec, role_ascent, role_descent);
@@ -1318,7 +1310,7 @@ public:
                 }
                 else
                 {
-                    image_ranges.push_back({start, end});
+                    image_ranges.emplace_back(start, end);
                 }
                 markup += pango_escape(sp.text);
                 byte_offset = end;

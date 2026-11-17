@@ -99,7 +99,6 @@ public:
 using lists_a11y_test::lists_a11y_room;
 using lists_a11y_test::ListsA11ySubtreeAdapter;
 using access_test::find_named;
-using access_test::find_prefix;
 
 TEST_CASE("subtree nodes get distinct, stable identities", "[tk][access_tree][accessibility]")
 {

@@ -227,6 +227,7 @@ struct HandlerShell : tesseract::test::TestShellBase
     using ShellBase::last_inflight_;
     using ShellBase::offline_;
     using ShellBase::room_list_running_accounts_;
+    using ShellBase::server_info_fetch_started_;
     using ShellBase::thread_search_pending_;
 };
 
@@ -362,6 +363,42 @@ TEST_CASE("RoomListState::Running while offline brings the shell back online",
     CHECK(f.shell.log == std::vector<std::string>{"online"});
     CHECK(f.shell.room_list_ui == 2);
     CHECK(f.shell.inflight_ui == 2);
+}
+
+TEST_CASE("reconnect after an outage re-arms the server info fetch for the active account",
+          "[event_handler_base]")
+{
+    EhbFx f;
+    f.shell.active_account_ = std::make_shared<tesseract::AccountSession>();
+    f.shell.active_account_->user_id = "@me:x";
+    f.shell.server_info_fetch_started_ = true;
+    f.h.on_sync_error("sync_offline", "net down", false);
+    CHECK(f.shell.server_info_fetch_started_); // not touched until it is back
+    f.h.on_room_list_state(tesseract::RoomListState::Running);
+    CHECK_FALSE(f.shell.server_info_fetch_started_); // client_ is null: no refetch starts
+}
+
+TEST_CASE("Running without a prior outage keeps the server info fetch guard",
+          "[event_handler_base]")
+{
+    EhbFx f;
+    f.shell.active_account_ = std::make_shared<tesseract::AccountSession>();
+    f.shell.active_account_->user_id = "@me:x";
+    f.shell.server_info_fetch_started_ = true;
+    f.h.on_room_list_state(tesseract::RoomListState::Running);
+    CHECK(f.shell.server_info_fetch_started_);
+}
+
+TEST_CASE("an outage on a background account leaves the server info fetch guard alone",
+          "[event_handler_base]")
+{
+    EhbFx f; // handler is for @me:x
+    f.shell.active_account_ = std::make_shared<tesseract::AccountSession>();
+    f.shell.active_account_->user_id = "@other:x";
+    f.shell.server_info_fetch_started_ = true;
+    f.h.on_sync_error("sync_offline", "net down", false);
+    f.h.on_room_list_state(tesseract::RoomListState::Running);
+    CHECK(f.shell.server_info_fetch_started_);
 }
 
 TEST_CASE("room list Running opens the warm-up gate for that account until Init",

@@ -1083,6 +1083,9 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
 
 void MainWindow::quit_app_()
 {
+    // Windows torn down from here on were not closed by the user: keep their
+    // saved-window entries for the next launch.
+    account_manager_.set_app_quitting();
     [NSApp terminate:nil];
 }
 
@@ -1950,16 +1953,14 @@ void MainWindow::initialize()
 {
     set_screen_lock_(std::make_unique<mac::MacScreenLock>());
     set_autostart_(std::make_unique<mac::MacAutostart>());
-    // Load saved settings before build_chrome_ wires the main app widget.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-
-    // After settings load, so a persisted "Low power mode: On" is honoured.
+    // Settings are loaded by prepare_launch(), so a persisted "Low power mode: On"
+    // is honoured.
     set_power_monitor_(std::make_unique<mac::MacPowerMonitor>());
 
     // Apply saved window geometry, or centre the default-sized window.
     NSWindow* window = ctrl_.window;
     {
-        const auto& saved = tesseract::Settings::instance().main_window_geometry;
+        const auto saved = saved_window_geometry_();
         if (saved.valid)
         {
             // Convert stored top-left coords to Cocoa bottom-left.
@@ -2350,13 +2351,22 @@ void MainWindow::save_window_geometry()
     }
     const CGFloat primaryTop =
         [[screens firstObject] frame].origin.y + [[screens firstObject] frame].size.height;
-    auto& g = tesseract::Settings::instance().main_window_geometry;
-    g.x = static_cast<int>(f.origin.x);
-    g.y = static_cast<int>(primaryTop - f.origin.y - f.size.height);
-    g.w = static_cast<int>(f.size.width);
-    g.h = static_cast<int>(f.size.height);
-    g.valid = (g.w > 0 && g.h > 0);
-    save_settings_debounced_();
+    save_window_geometry_(static_cast<int>(f.origin.x),
+                          static_cast<int>(primaryTop - f.origin.y - f.size.height),
+                          static_cast<int>(f.size.width), static_cast<int>(f.size.height));
+}
+
+void MainWindow::set_window_geometry_(const tesseract::Settings::WindowGeometry& g)
+{
+    NSArray<NSScreen*>* screens = [NSScreen screens];
+    if (!ctrl_ || !screens.count)
+    {
+        return;
+    }
+    // Stored top-left coords to Cocoa bottom-left.
+    const CGFloat primaryTop =
+        [[screens firstObject] frame].origin.y + [[screens firstObject] frame].size.height;
+    [ctrl_.window setFrame:NSMakeRect(g.x, primaryTop - g.y - g.h, g.w, g.h) display:NO];
 }
 
 void MainWindow::window_did_resize()

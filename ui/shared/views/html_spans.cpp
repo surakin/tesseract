@@ -223,7 +223,7 @@ struct Tag
 // Parse a horizontal alignment from a <td>/<th> `style="text-align:…"` value
 // (pulldown-cmark's form) or a legacy `align="…"` attribute. Case-insensitive;
 // anything other than left/center/right (e.g. `justify`) yields Default.
-static TableAlign parse_cell_align(std::string_view style, std::string_view align_attr)
+TableAlign parse_cell_align(std::string_view style, std::string_view align_attr)
 {
     auto classify = [](std::string_view v) -> TableAlign
     {
@@ -304,7 +304,7 @@ static TableAlign parse_cell_align(std::string_view style, std::string_view alig
 // "language-rust" or "lang-py hljs" → "rust"/"py". The class may carry several
 // space-separated tokens. The result is lower-cased and restricted to a safe
 // charset so it is never interpreted as markup downstream.
-static std::string lang_from_class(std::string_view cls)
+std::string lang_from_class(std::string_view cls)
 {
     std::size_t i = 0;
     while (i < cls.size())
@@ -320,11 +320,11 @@ static std::string lang_from_class(std::string_view cls)
         }
         std::string_view tok = cls.substr(i, j - i);
         std::string_view prefix;
-        if (tok.rfind("language-", 0) == 0)
+        if (tok.starts_with("language-"))
         {
             prefix = "language-";
         }
-        else if (tok.rfind("lang-", 0) == 0)
+        else if (tok.starts_with("lang-"))
         {
             prefix = "lang-";
         }
@@ -349,7 +349,7 @@ static std::string lang_from_class(std::string_view cls)
 // Scan [p, end) for the attribute named `target` (case-insensitive).
 // Returns the attribute value when found (empty string for boolean attributes
 // with no value), or std::nullopt when the attribute is absent entirely.
-static std::optional<std::string> extract_attr(const char* p, const char* end, const char* target)
+std::optional<std::string> extract_attr(const char* p, const char* end, const char* target)
 {
     const std::size_t tlen = std::strlen(target);
     while (p < end)
@@ -515,7 +515,7 @@ Tag parse_tag(const char*& p, const char* end)
     if (t.name == "a" && !t.closing)
     {
         auto href = extract_attr(attr_start, attr_end, "href");
-        if (href && (href->rfind("http://", 0) == 0 || href->rfind("https://", 0) == 0))
+        if (href && (href->starts_with("http://") || href->starts_with("https://")))
         {
             t.href = std::move(*href);
         }
@@ -637,7 +637,7 @@ struct FmtState
 // real navigation target, and it lets the Matrix-agnostic tk layer's
 // "pill_kind==Room && url.empty()" rule apply uniformly to both spellings
 // of a room self-mention — see MessageListView::paint_span_images).
-static bool is_room_mention_sentinel_href(const std::string& href)
+bool is_room_mention_sentinel_href(const std::string& href)
 {
     return href == "https://matrix.to/#/@room" || href == "http://matrix.to/#/@room";
 }
@@ -648,7 +648,7 @@ static bool is_room_mention_sentinel_href(const std::string& href)
 // same parser ShellBase::open_matrix_link() uses for click dispatch, so
 // "what renders as a pill" and "what's clickable as a Matrix link" never
 // drift apart.
-static tk::PillKind pill_kind_for_link(const std::string& url)
+tk::PillKind pill_kind_for_link(const std::string& url)
 {
     // parse_matrix_link() correctly rejects the @room sentinel as
     // Kind::Unknown (see is_room_mention_sentinel_href's comment); special-
@@ -681,7 +681,7 @@ static tk::PillKind pill_kind_for_link(const std::string& url)
 // untouched. Applied to the *displayed* label only — outgoing messages this
 // client sends still spell the conventional "@room" in the wire HTML
 // (client/src/mentions.cpp), so other clients see the usual text.
-static std::string strip_leading_at(std::string s)
+std::string strip_leading_at(std::string s)
 {
     if (!s.empty() && s.front() == '@')
     {
@@ -695,7 +695,40 @@ static std::string strip_leading_at(std::string s)
 // Bare http(s):// and matrix: URLs in HTML text nodes (senders such as Element
 // leave them unwrapped in formatted_body). Only plain text runs are split;
 // existing links, code, pills and images are left alone.
-static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spans)
+std::vector<tk::TextSpan> pillify_matrix_links(std::vector<tk::TextSpan> spans, bool dark)
+{
+    for (auto& sp : spans)
+    {
+        if (sp.url.empty() || sp.is_mention || sp.is_image || sp.code || sp.text.empty())
+        {
+            continue;
+        }
+        const tk::PillKind kind = pill_kind_for_link(sp.url);
+        if (kind == tk::PillKind::Generic)
+        {
+            continue;
+        }
+        // Same shape as an <a> mention: an is_image leaf whose label (the URL
+        // text; MessageListView relabels it with the real target's name).
+        sp.is_mention = true;
+        sp.pill_kind = kind;
+        sp.is_image = true;
+        sp.image_alt = strip_leading_at(sp.text);
+        sp.text.clear();
+        sp.has_color = true;
+        sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF} : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+        sp.has_background = true;
+        sp.background =
+            dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF} : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+        if (is_room_mention_sentinel_href(sp.url))
+        {
+            sp.url.clear();
+        }
+    }
+    return spans;
+}
+
+static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spans, bool dark)
 {
     std::vector<tk::TextSpan> out;
     out.reserve(spans.size());
@@ -734,7 +767,7 @@ static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spa
             piece(pos, sp.text.size(), {});
         }
     }
-    return out;
+    return pillify_matrix_links(std::move(out), dark);
 }
 
 // Split plain (non-link, non-code) spans on a word-bounded literal "@room"
@@ -771,8 +804,8 @@ std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans, b
                 break;
             }
             std::size_t after = pos + 5;
-            bool left_ok = (pos == 0) || !is_word((unsigned char)t[pos - 1]);
-            bool right_ok = (after >= t.size()) || !is_word((unsigned char)t[after]);
+            bool left_ok = (pos == 0) || !is_word(static_cast<unsigned char>(t[pos - 1]));
+            bool right_ok = (after >= t.size()) || !is_word(static_cast<unsigned char>(t[after]));
             if (left_ok && right_ok)
             {
                 if (pos > emitted)
@@ -1009,7 +1042,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             // no untrusted image source is ever rendered.
             if (!tag.closing && tag.name == "img")
             {
-                if (tag.is_mx_emoticon && tag.img_src.rfind("mxc://", 0) == 0)
+                if (tag.is_mx_emoticon && tag.img_src.starts_with("mxc://"))
                 {
                     flush();
                     tk::TextSpan sp;
@@ -1213,7 +1246,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         }
     }
 
-    return split_room_mentions(linkify_bare_urls(std::move(spans)), dark);
+    return split_room_mentions(linkify_bare_urls(std::move(spans), dark), dark);
 }
 
 // ── URL extraction helpers ────────────────────────────────────────────────
@@ -1222,7 +1255,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
 // are Matrix entity references, not web pages — skip them for URL preview.
 static bool is_matrix_to_url(const std::string& url)
 {
-    return url.rfind("https://matrix.to", 0) == 0 || url.rfind("http://matrix.to", 0) == 0;
+    return url.starts_with("https://matrix.to") || url.starts_with("http://matrix.to");
 }
 
 // Decode every HTML entity in `s` (attribute values reach us undecoded).
@@ -1259,7 +1292,7 @@ static std::string_view url_compare_form(std::string_view s)
     }
     for (std::string_view scheme : {"https://", "http://"})
     {
-        if (s.substr(0, scheme.size()) == scheme)
+        if (s.starts_with(scheme))
         {
             s.remove_prefix(scheme.size());
             break;
@@ -1596,7 +1629,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         trim_leading_blank_spans(cur.spans);
         if (!cur.spans.empty())
         {
-            cur.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
+            cur.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans), dark), dark);
             blocks.push_back(std::move(cur));
         }
         else if (keep_empty_item)
@@ -1632,7 +1665,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         TableCell cell;
         if (!cur.spans.empty())
         {
-            cell.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
+            cell.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans), dark), dark);
         }
         cur_row.push_back(std::move(cell));
         cur.spans.clear();
@@ -2194,7 +2227,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // before the opening/self-closing/closing dispatch below.
         if (!tag.closing && tag.name == "img")
         {
-            if (tag.is_mx_emoticon && tag.img_src.rfind("mxc://", 0) == 0)
+            if (tag.is_mx_emoticon && tag.img_src.starts_with("mxc://"))
             {
                 flush();
                 tk::TextSpan sp;

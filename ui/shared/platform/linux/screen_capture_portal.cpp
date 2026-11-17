@@ -38,9 +38,9 @@ namespace
 
 // ── token generator ──────────────────────────────────────────────────────────
 
-static std::atomic<int> s_token_seq{0};
+std::atomic<int> s_token_seq{0};
 
-static std::string next_token()
+std::string next_token()
 {
     char buf[32];
     g_snprintf(buf, sizeof(buf), "tess_sc_%d", s_token_seq.fetch_add(1));
@@ -76,8 +76,8 @@ struct PortalReply
     }
 };
 
-static void on_portal_response(GDBusConnection*, const gchar*, const gchar* object_path,
-                               const gchar*, const gchar*, GVariant* params, gpointer user_data)
+void on_portal_response(GDBusConnection*, const gchar*, const gchar* object_path, const gchar*,
+                        const gchar*, GVariant* params, gpointer user_data)
 {
     constexpr std::size_t kMaxKept = 64; // unrelated requests on the bus are dropped
     auto* r = static_cast<PortalReply*>(user_data);
@@ -97,9 +97,9 @@ static void on_portal_response(GDBusConnection*, const gchar*, const gchar* obje
 // a portal that can answer at once (a remembered grant) would otherwise emit
 // the Response before the subscription existed, and the wait would never end.
 // Returns the results GVariant (caller unrefs) or nullptr on failure/cancel.
-static GVariant* portal_request(GMainContext* ctx, GCancellable* cancel, GDBusProxy* proxy,
-                                GDBusConnection* conn, const char* method,
-                                GVariant* params) // consumed (floating ok)
+GVariant* portal_request(GMainContext* ctx, GCancellable* cancel, GDBusProxy* proxy,
+                         GDBusConnection* conn, const char* method,
+                         GVariant* params) // consumed (floating ok)
 {
     PortalReply reply;
     guint sub = g_dbus_connection_signal_subscribe(
@@ -892,7 +892,7 @@ private:
             }
             if (cb)
             {
-                Frame f;
+                Frame f{};
                 f.y = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0));
                 f.u = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 1));
                 f.v = static_cast<const std::uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 2));

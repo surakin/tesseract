@@ -418,15 +418,16 @@ void ShellBase::wire_view_callbacks_(views::MainAppWidget* app)
                 main_app_->host()->release_focus_to_canvas();
             }
         };
-        if (auto* ml = rv->message_list())
-        {
-            // The main window's RoomPane never runs finish_init(), which sets
-            // the same callback for pop-outs.
-            ml->on_tile_needed = [this](int z, int x, int y)
+        // The main window's RoomPane never runs finish_init(), which sets
+        // the same callback for pop-outs.
+        rv->add_message_list_setup(
+            [this](views::MessageListView& ml)
             {
-                ensure_tile_async(z, x, y);
-            };
-        }
+                ml.on_tile_needed = [this](int z, int x, int y)
+                {
+                    ensure_tile_async(z, x, y);
+                };
+            });
         if (auto* rsv = rv->room_settings_view())
         {
             rsv->on_image_pack_images_needed = [this](std::string pack_id)
@@ -791,6 +792,24 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 }
                 return out;
             });
+        qs->set_space_names_provider(
+            [this](const std::string& room_id) -> std::vector<std::string>
+            {
+                std::vector<std::string> names;
+                for (const auto& space_id : parent_spaces_for_room_(room_id))
+                {
+                    const auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                                                 [&](const tesseract::RoomInfo& r)
+                                                 {
+                                                     return r.id == space_id;
+                                                 });
+                    if (it != rooms_.end() && !it->name.empty())
+                    {
+                        names.push_back(it->name);
+                    }
+                }
+                return names;
+            });
         qs->on_room_avatar_needed = [this](const tesseract::RoomInfo& r)
         {
             ensure_room_avatar_(r);
@@ -1139,12 +1158,14 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         });
     // Stickers must always decode/cache at kStickerSize, never the generic
     // inline-image bound above — see make_sticker_image_provider_'s comment.
-    if (auto* ml = app->room_view()->message_list())
-    {
-        ml->set_sticker_image_provider(make_sticker_image_provider_());
-    }
     // MSC4278: gate inline media behind the media-preview config + reveal set.
-    wire_media_preview_gating_(app->room_view()->message_list());
+    // Both go through the RoomView so the thread panel's list gets them too.
+    app->room_view()->add_message_list_setup(
+        [this](views::MessageListView& ml)
+        {
+            ml.set_sticker_image_provider(make_sticker_image_provider_());
+            wire_media_preview_gating_(&ml);
+        });
     // Retry/abort a failed outgoing message's hover actions (and the
     // identity-change banner) are wired by main_room_pane_->attach()
     // (RoomPane::wire_room_view_), called before this function on every
@@ -1793,10 +1814,11 @@ void ShellBase::wire_room_view_services_()
 {
     auto* rv = main_app_->room_view();
     auto* host = main_host_();
-    if (auto player = host->make_audio_player())
-    {
-        rv->set_audio_player(std::move(player));
-    }
+    rv->set_audio_player_factory(
+        [host]
+        {
+            return host->make_audio_player();
+        });
     capture_ = host->make_audio_capture();
     wire_voice_capture_(
         rv,

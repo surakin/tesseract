@@ -40,6 +40,8 @@ if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI ST
         # Transport-independent half of the Qt6/GTK4 UnifiedPush connectors.
         linux/linux_up_connector_core.h
         linux/linux_up_connector_core.cpp
+        linux/kio_fuse.h
+        linux/kio_fuse.cpp
         linux/linux_autostart.h
         linux/linux_portal.h
         linux/linux_notification_reply.h
@@ -57,6 +59,8 @@ elseif(TESSERACT_UI STREQUAL "win32")
         win32/screen_capture_win32.cpp
         win32/location_provider_win32.cpp
         win32/video_decode_mf.cpp
+        win32/dropped_files_win32.cpp
+        win32/dropped_files_win32.h
         win32/winrt_coroutine_shim.h
     )
 endif()
@@ -125,7 +129,7 @@ if(TESSERACT_UI STREQUAL "win32")
         target_compile_options(tesseract_platform PRIVATE /utf-8)
     endif()
     target_link_libraries(tesseract_platform PUBLIC
-        mf mfplat mfreadwrite mfuuid shlwapi d3d11 dxgi windowsapp)
+        mf mfplat mfreadwrite mfuuid shlwapi ole32 shell32 d3d11 dxgi windowsapp)
 elseif(TESSERACT_UI STREQUAL "macos")
     # The shells compile with target-wide -fobjc-arc; do the same per file here.
     # The PCH is built without ARC and ObjC++ can't share a unity blob with the

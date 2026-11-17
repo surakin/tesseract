@@ -113,7 +113,7 @@ private:
     bool seekable_() const;
 
     bool is_loading_ = false;
-    std::chrono::steady_clock::time_point loading_start_{};
+    std::chrono::steady_clock::time_point loading_start_;
     std::string source_json_;
     std::string thumb_url_;
     std::string mime_type_;

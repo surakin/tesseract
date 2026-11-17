@@ -264,7 +264,7 @@ protected:
     // icon-draw treatment for extra glyphs (e.g. the video play icon).
     void draw_icon_(tk::PaintCtx& ctx, tk::Rect box, float logical_px,
                     std::unique_ptr<tk::Image>& cache, std::span<const std::uint8_t> svg,
-                    tk::Color tint);
+                    tk::Color tint) const;
 
     float icon_scale_ = 0.0f;
 
@@ -295,7 +295,7 @@ private:
 
     // Full-screen chrome auto-hide.
     bool chrome_visible_ = true;
-    std::chrono::steady_clock::time_point last_activity_{};
+    std::chrono::steady_clock::time_point last_activity_;
 
     bool press_outside_ = false;
 };

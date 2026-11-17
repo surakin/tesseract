@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <utility>
 
 using tesseract::MentionSeg;
 using tesseract::views::InviteDialog;
@@ -211,7 +212,7 @@ struct Fixture
         dlg->open("!room:example.org", "Room");
         REQUIRE(host.area != nullptr);
     }
-    PillStubArea& area()
+    PillStubArea& area() const
     {
         return *host.area;
     }
@@ -243,7 +244,7 @@ TEST_CASE("parse_invite_field: token under the caret is the query, others commit
     CHECK(p.committed[0].end == 8);
     CHECK(p.committed[1].text == "@b:y.org");
     CHECK(p.query.text == "@c:z");
-    CHECK(p.query.end == static_cast<int>(t.size()));
+    CHECK(std::cmp_equal(p.query.end, t.size()));
 }
 
 TEST_CASE("parse_invite_field: pills map to mention segments with byte offsets", "[invite_dialog]")
@@ -300,7 +301,7 @@ TEST_CASE("InviteDialog: pasting several mxids pills all but the one being typed
     CHECK(f.dlg->selected_user_ids() ==
           std::vector<std::string>{"@alice:example.org", "@bob:example.org", "@carol:example.org"});
     // Caret stays at the end, after the query.
-    CHECK(f.area().cursor == static_cast<int>(f.area().text().size()));
+    CHECK(std::cmp_equal(f.area().cursor, f.area().text().size()));
 }
 
 TEST_CASE("InviteDialog: unknown mxids are resolved, then pilled or flagged", "[invite_dialog]")

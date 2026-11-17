@@ -78,7 +78,7 @@ namespace
 struct UpgradeStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 300);
-    void run(tk::Widget& root, tk::Rect bounds)
+    void run(tk::Widget& root, tk::Rect bounds) const
     {
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         root.measure(lc, {bounds.w, bounds.h});
@@ -321,4 +321,21 @@ TEST_CASE("room_by_id_ falls back to a hidden upgraded room", "[shell][room_upgr
     REQUIRE(old != nullptr);
     CHECK(old->successor_room_id == "!new:x");
     CHECK(s.room_by_id_("!unknown:x") == nullptr);
+}
+
+TEST_CASE("make_event turns m.room.server_acl into RoomServerAclStateEvent", "[ffi][server_acl]")
+{
+    tesseract_ffi::TimelineEvent in{};
+    in.msg_type = "m.room.server_acl";
+    in.sender = "@alice:server";
+    in.sender_name = "Alice";
+    in.body = "deny+3\nip-";
+
+    auto ev = tesseract::make_event(in);
+    REQUIRE(ev);
+    CHECK(ev->type == tesseract::EventType::RoomServerAcl);
+    CHECK(static_cast<int>(tesseract::EventType::RoomServerAcl) ==
+          static_cast<int>(tesseract::EventType::DevUnhandled) + 1);
+    CHECK(ev->body == "deny+3\nip-");
+    CHECK(ev->sender_name == "Alice");
 }

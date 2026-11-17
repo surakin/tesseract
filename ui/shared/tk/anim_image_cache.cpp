@@ -225,7 +225,7 @@ void AnimImageCache::restart_loop_locked_(Entry& entry)
 bool AnimImageCache::has(const CacheKey& key) const
 {
     std::lock_guard<std::mutex> lock(mu_);
-    return entries_.count(key) > 0;
+    return entries_.contains(key);
 }
 
 const tk::Image* AnimImageCache::current_frame(const CacheKey& key) const
@@ -340,10 +340,7 @@ bool AnimImageCache::advance(std::int64_t now_ms)
             // it at one cycle per tick, but frames still flash past and
             // waste CPU.
             int delay = entry.delays_ms[entry.current];
-            if (delay < 1)
-            {
-                delay = 1;
-            }
+            delay = std::max(delay, 1);
             entry.next_advance_ms += delay;
             any = true;
             if (at_resident_end)

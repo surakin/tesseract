@@ -374,6 +374,10 @@ pub mod ffi {
         pub forwarded_room_id: String,
         pub forwarded_event_id: String,
         pub forwarded_origin_ts: i64,
+        /// MSC4391 invocation carried by the message (empty when none) and its
+        /// `arguments` object as JSON.
+        pub bot_command: String,
+        pub bot_command_arguments_json: String,
         pub profile_id: String,
         pub profile_name: String,
         pub profile_avatar_set: bool,

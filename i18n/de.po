@@ -7144,3 +7144,99 @@ msgstr "{0} hat weitergeleitet:"
 #: ui/shared/views/MessageListView.cpp:1747
 msgid "{0} forwarded: {1}"
 msgstr "{0} hat weitergeleitet: {1}"
+
+#: ui/shared/views/SlashCommands.cpp
+msgid "Search for a sticker to send"
+msgstr "Einen Sticker zum Senden suchen"
+
+#: ui/shared/views/StickerController.cpp
+msgid "No stickers found"
+msgstr "Keine Sticker gefunden"
+
+msgid "Copy image"
+msgstr "Bild kopieren"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Bot command: {0}"
+msgstr "Bot-Befehl: {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "bot command {0}"
+msgstr "Bot-Befehl {0}"
+
+#: ui/linux-qt/tk/host_qt.cpp ui/linux-gtk/tk/host_gtk.cpp
+msgid "Could not read the remote file (is kio-fuse installed?)"
+msgstr "Die entfernte Datei konnte nicht gelesen werden (ist kio-fuse installiert?)"
+
+msgid "Bridge information"
+msgstr "Brückeninformationen"
+
+msgid "Service members"
+msgstr "Dienstmitglieder"
+
+msgid "Bridge room features"
+msgstr "Brücken-Raumfunktionen"
+
+msgid "Custom emoji pack"
+msgstr "Eigenes Emoji-Paket"
+
+#, c++-format
+msgid "Room state updated: {0}"
+msgstr "Raumstatus aktualisiert: {0}"
+
+#, c++-format
+msgid "{0} updated the room state: {1}"
+msgstr "{0} hat den Raumstatus aktualisiert: {1}"
+
+msgid "IP literals now allowed"
+msgstr "IP-Literale jetzt erlaubt"
+
+msgid "IP literals no longer allowed"
+msgstr "IP-Literale nicht mehr erlaubt"
+
+
+
+
+
+msgid "The server ACL was changed"
+msgstr "Die Server-ACL wurde geändert"
+
+#, c++-format
+msgid "{0} changed the server ACL"
+msgstr "{0} hat die Server-ACL geändert"
+
+#, c++-format
+msgid "{0} server now denied"
+msgid_plural "{0} servers now denied"
+msgstr[0] "{0} Server jetzt gesperrt"
+msgstr[1] "{0} Server jetzt gesperrt"
+
+#, c++-format
+msgid "{0} server no longer denied"
+msgid_plural "{0} servers no longer denied"
+msgstr[0] "{0} Server nicht mehr gesperrt"
+msgstr[1] "{0} Server nicht mehr gesperrt"
+
+#, c++-format
+msgid "{0} server now allowed"
+msgid_plural "{0} servers now allowed"
+msgstr[0] "{0} Server jetzt erlaubt"
+msgstr[1] "{0} Server jetzt erlaubt"
+
+#, c++-format
+msgid "{0} server no longer allowed"
+msgid_plural "{0} servers no longer allowed"
+msgstr[0] "{0} Server nicht mehr erlaubt"
+msgstr[1] "{0} Server nicht mehr erlaubt"
+
+msgid "Show state events in the timeline"
+msgstr "Statusereignisse im Verlauf anzeigen"
+
+#, c++-format
+msgid "Service members ({0})"
+msgstr "Dienstmitglieder ({0})"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0} › message"
+msgstr "{0} › Nachricht"

@@ -20,15 +20,15 @@ namespace
 struct EncryptionSetupOverlayStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    LayoutCtx layout_ctx()
+    LayoutCtx layout_ctx() const
     {
         return {surface->factory(), Theme::light()};
     }
-    PaintCtx paint_ctx()
+    PaintCtx paint_ctx() const
     {
         return {surface->canvas(), surface->factory(), Theme::light()};
     }
-    void run(Widget& root, Rect bounds)
+    void run(Widget& root, Rect bounds) const
     {
         auto lc = layout_ctx();
         root.measure(lc, {bounds.w, bounds.h});
@@ -360,7 +360,7 @@ TEST_CASE("Fresh: Save to file is offered only when the shell wires it", "[encry
         {
             if (auto* b = dynamic_cast<tk::Button*>(ch.get()))
             {
-                if (b->label().rfind("Save to file", 0) == 0)
+                if (b->label().starts_with("Save to file"))
                 {
                     return b->visible();
                 }
