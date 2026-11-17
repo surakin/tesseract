@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+## v0.9.9 — 2026-11-17
+
+### Summary
+
 - feat(ui): extra account windows reopen on launch with the same accounts, sizes and positions. Linux release build, ctest 3954/3954
 - chore(sdk): update matrix-rust-sdk to the 2026-11-16 fork head, with SQLite and ruma updates. Linux release build, ctest 3950/3950, cargo 1731/1731
 - feat(ui): the quick switcher shows the spaces a room belongs to under its name. Linux release build, ctest 3950/3950, manual test

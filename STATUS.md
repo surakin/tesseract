@@ -1,6 +1,29 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-11-10**. 3913 C++ + 1703 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-11-17**. 3954 C++ + 1731 Rust tests.
+
+> **Window reopen, link pills and service members (2026-11-16, v0.9.9).**
+> Extra account windows reopen on launch with the same accounts, sizes and
+> positions. Room and event links render as pills with the room's name and
+> avatar (event pills read "room › message"), and the thread panel shares the
+> main timeline's pills, voice playback and hidden-media handling. The quick
+> switcher shows each room's spaces, and the room info panel lists service
+> members (bridge bots) under the regular members.
+
+> **State events in the timeline (2026-11-15, v0.9.9).**
+> An off-by-default Settings → Advanced option shows server ACL, bridge
+> information, service member and room feature changes as timeline rows.
+> Rooms that publish the stable `m.bridge` event are detected as bridged.
+
+> **Bot commands and stickers (2026-11-15, v0.9.9).**
+> Received MSC4391 bot commands show a "Bot command" line above the message;
+> arguments can be quoted, and autocomplete follows a bot's changed commands.
+> `/sticker <text>` lists matching stickers above the composer. "Copy image"
+> in the message menu keeps GIF animation where the target app supports it.
+
+> **Virtual-folder attachments (2026-11-15, v0.9.9).**
+> Files dragged or pasted from phones, archives and other virtual folders
+> attach on Windows, and from remote Dolphin locations (SFTP, SMB, MTP) on KDE.
 
 > **Centered system messages (2026-11-07, v0.9.8).**
 > A "Center system messages" checkbox under Settings → Appearance → Layout
