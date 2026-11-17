@@ -5507,7 +5507,11 @@ msgid "Open Activity Monitor"
 msgstr ""
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
+msgid "Messages appear in subtle rounded bubbles."
+msgstr ""
+
+#: ui/shared/views/settings/AppearanceSection.cpp:167
+msgid "Align my messages to the right"
 msgstr ""
 
 #: ui/shared/views/settings/AppearanceSection.cpp:38

@@ -5395,8 +5395,12 @@ msgid "Open Activity Monitor"
 msgstr "[Öpéñ Àçtïvïty Möñïtörxxxx]"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr "[Yöùr öwñ méssàgés àppéàr öñ thé rïght, ïñ à sùbtlé röùñdéd bùbblé.xxxxxxxxxxxxx]"
+msgid "Messages appear in subtle rounded bubbles."
+msgstr "[Méssàgés àppéàr ïñ sùbtlé röùñdéd bùbblés.xxxxxxxx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:167
+msgid "Align my messages to the right"
+msgstr "[Àlïgñ my méssàgés tö thé rïghtxxxxxx]"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:38
 msgid "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a colour per person."

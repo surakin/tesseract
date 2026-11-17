@@ -46,6 +46,7 @@ struct BubblesLayoutGuard
 {
     tesseract::Settings::MessageLayout prev = tesseract::Settings::instance().message_layout;
     bool prev_own_avatar = tesseract::Settings::instance().bubbles_show_own_avatar;
+    bool prev_align = tesseract::Settings::instance().bubbles_align_own_messages_right;
     BubblesLayoutGuard()
     {
         tesseract::Settings::instance().message_layout =
@@ -53,11 +54,13 @@ struct BubblesLayoutGuard
         // Defaults to on; with it on a right-aligned own row already has the
         // avatar header, so its height wouldn't differ from the left layout's.
         tesseract::Settings::instance().bubbles_show_own_avatar = false;
+        tesseract::Settings::instance().bubbles_align_own_messages_right = true;
     }
     ~BubblesLayoutGuard()
     {
         tesseract::Settings::instance().message_layout = prev;
         tesseract::Settings::instance().bubbles_show_own_avatar = prev_own_avatar;
+        tesseract::Settings::instance().bubbles_align_own_messages_right = prev_align;
     }
 };
 
@@ -124,7 +127,17 @@ TEST_CASE("Bubbles: own row lays out like other users' while a side panel is ope
     const float left_h = view.message_list()->row_world_rect(0).h;
     CHECK(left_h > right_h);
 
+    tesseract::Settings::instance().bubbles_align_own_messages_right = false;
+    view.message_list()->on_display_prefs_changed();
+    run_layout(*surface, view);
+    CHECK(view.message_list()->row_world_rect(0).h == left_h);
+
     view.set_thread_panel(RoomView::ThreadPanelState::Closed, "");
+    run_layout(*surface, view);
+    CHECK(view.message_list()->row_world_rect(0).h == left_h);
+
+    tesseract::Settings::instance().bubbles_align_own_messages_right = true;
+    view.message_list()->on_display_prefs_changed();
     run_layout(*surface, view);
     CHECK(view.message_list()->row_world_rect(0).h == right_h);
 }
