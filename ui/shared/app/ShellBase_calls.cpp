@@ -841,8 +841,13 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     // A failure to set it up arrives as a session-ended event.
     call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id, result.session_id);
     call_account_ = active_account_;
-    call_audio_session_id_.store(result.session_id);
-    call_audio_output_ = make_call_audio_output_();
+    {
+        // Frames may arrive as soon as the id is set; build the output first, then publish both.
+        auto output = make_call_audio_output_();
+        std::lock_guard<std::mutex> lock(call_audio_mutex_);
+        call_audio_output_ = std::move(output);
+        call_audio_session_id_.store(result.session_id);
+    }
     if (start_audio_muted)
     {
         call_session_->mute_audio(true);

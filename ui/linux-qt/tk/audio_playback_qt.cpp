@@ -1,9 +1,10 @@
 // Qt6 audio output backend for tk::AudioPlayback.
 // Uses QAudioSink (Qt Multimedia) to play 48kHz/16-bit/mono S16LE PCM received
-// from remote MatrixRTC participants.  Frames arrive on the UI thread at
+// from remote MatrixRTC participants.  Frames arrive on a worker thread at
 // ~100 Hz (10 ms / 480 samples at 48kHz).
 
 #include "audio_playback.h"
+#include "audio_sink_policy.h"
 
 #include <tesseract/settings.h>
 
@@ -13,6 +14,7 @@
 #include <QBuffer>
 #include <QIODevice>
 #include <QMediaDevices>
+#include <QPointer>
 
 #include <cstring>
 #include <memory>
@@ -49,61 +51,72 @@ public:
         fmt_.setSampleRate(48000);
         fmt_.setChannelCount(1);
         fmt_.setSampleFormat(QAudioFormat::Int16);
-
-        const QAudioDevice dev = preferred_audio_output();
-        if (!dev.isFormatSupported(fmt_))
-        {
-            return;
-        }
-
-        sink_ = std::make_unique<QAudioSink>(dev, fmt_);
-        // Generous buffer (200 ms) to absorb jitter without underruns.
-        sink_->setBufferSize(static_cast<qsizetype>(fmt_.sampleRate() * fmt_.channelCount() *
-                                                    sizeof(std::int16_t) / 5));
-
-        io_ = sink_->start();
+        build_sink_();
     }
 
     void push_frame(const std::int16_t* samples, std::size_t sample_count,
                     std::uint32_t sample_rate, std::uint32_t num_channels) override
     {
-        if (!io_ || !sink_)
-        {
-            return;
-        }
-
         // Re-open with new format if the stream parameters change mid-call.
         if (static_cast<int>(sample_rate) != fmt_.sampleRate() ||
             static_cast<int>(num_channels) != fmt_.channelCount())
         {
             fmt_.setSampleRate(static_cast<int>(sample_rate));
             fmt_.setChannelCount(static_cast<int>(num_channels));
-            sink_->stop();
-            const QAudioDevice dev = preferred_audio_output();
-            if (!dev.isFormatSupported(fmt_))
-            {
-                return;
-            }
-            sink_ = std::make_unique<QAudioSink>(dev, fmt_);
-            sink_->setBufferSize(static_cast<qsizetype>(fmt_.sampleRate() * fmt_.channelCount() *
-                                                        sizeof(std::int16_t) / 5));
-            io_ = sink_->start();
-            if (!io_)
-            {
-                return;
-            }
+            build_sink_();
+        }
+        else if (rebuild_.should_rebuild(healthy_(), tk::SinkRebuildPolicy::Clock::now()))
+        {
+            // The system dropped the stream (output device removed, audio server restarted):
+            // Qt deletes the sink's device without telling us.
+            build_sink_();
         }
 
+        // `io_` is a QPointer: a device Qt deleted reads as null here instead of dangling.
+        QIODevice* io = io_.data();
+        if (!io || !healthy_())
+        {
+            return;
+        }
         const auto* bytes = reinterpret_cast<const char*>(samples);
         const qsizetype len =
             static_cast<qsizetype>(sample_count) * static_cast<qsizetype>(sizeof(std::int16_t));
-        io_->write(bytes, len);
+        io->write(bytes, len);
     }
 
 private:
+    // A started sink is Active or Idle (nothing queued yet); Stopped or an error means it is gone.
+    bool healthy_() const
+    {
+        return sink_ && !io_.isNull() && sink_->state() != QAudio::StoppedState &&
+               sink_->error() == QAudio::NoError;
+    }
+
+    // (Re)creates the sink for fmt_ on the preferred device; leaves no device on failure.
+    void build_sink_()
+    {
+        io_.clear();
+        if (sink_)
+        {
+            sink_->stop();
+            sink_.reset();
+        }
+        const QAudioDevice dev = preferred_audio_output();
+        if (!dev.isFormatSupported(fmt_))
+        {
+            return;
+        }
+        sink_ = std::make_unique<QAudioSink>(dev, fmt_);
+        // Generous buffer (200 ms) to absorb jitter without underruns.
+        sink_->setBufferSize(static_cast<qsizetype>(fmt_.sampleRate() * fmt_.channelCount() *
+                                                    sizeof(std::int16_t) / 5));
+        io_ = sink_->start();
+    }
+
     QAudioFormat fmt_;
     std::unique_ptr<QAudioSink> sink_;
-    QIODevice* io_ = nullptr; // owned by sink_
+    QPointer<QIODevice> io_; // owned by sink_; Qt may delete it behind our back
+    tk::SinkRebuildPolicy rebuild_;
 };
 
 } // namespace

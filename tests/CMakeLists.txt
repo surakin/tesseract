@@ -272,6 +272,7 @@ add_executable(tesseract_tests
     cpp/test_tk_keyboard_shortcuts_overlay.cpp
     cpp/test_tk_key_chord.cpp
     cpp/test_shortcut_registry.cpp
+    cpp/test_audio_sink_policy.cpp
     cpp/test_tk_tooltip.cpp
     cpp/test_tk_combo_controls.cpp
     cpp/test_tk_radio.cpp
