@@ -16,7 +16,8 @@
 #                        Center
 #        - appstore:    uploads package.yml's Mac App Store .pkg to App Store
 #                       Connect
-#        - aur:         bumps and pushes the tesseract-matrix AUR package
+#        - aur:         bumps and pushes the tesseract-matrix and
+#                       tesseract-matrix-git AUR packages
 #        - winget:      opens the winget-pkgs update PR (disabled, see below)
 #
 # Everything published here is the exact build that was tested as the
@@ -94,7 +95,7 @@ on:
         type: boolean
         default: true
       aur:
-        description: 'Push the tesseract-matrix AUR package'
+        description: 'Push the tesseract-matrix and tesseract-matrix-git AUR packages'
         type: boolean
         default: true
       winget:
@@ -376,8 +377,8 @@ jobs:
   # AUR — bump tesseract-matrix to this tag. The action recomputes sha256sums
   # (updpkgsums), regenerates .SRCINFO and pushes to the AUR git repo. The
   # test build is off: the PKGBUILD rarely changes and a full Rust + Qt build
-  # in a container would add 20+ minutes. tesseract-matrix-git derives its
-  # version from git, so it needs nothing per release.
+  # in a container would add 20+ minutes. tesseract-matrix-git is pushed by
+  # the aur-git job below.
   # ---------------------------------------------------------------------------
   aur:
     name: AUR (tesseract-matrix)
@@ -405,6 +406,45 @@ jobs:
           pkgname: tesseract-matrix
           pkgbuild: packaging/arch/aur/tesseract-matrix/PKGBUILD
           updpkgsums: true
+          test: false
+          commit_username: Marco Alvarez
+          commit_email: surakus@pm.me
+          commit_message: Update to ${{ env.TAG }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+  # ---------------------------------------------------------------------------
+  # AUR — refresh tesseract-matrix-git's placeholder pkgver to this tag. Users'
+  # builds re-derive pkgver via pkgver(), so this only keeps the AUR page and
+  # .SRCINFO from showing a stale version. The value is computed with the same
+  # `git describe` transform as pkgver(), so it needs the full tag history.
+  # ---------------------------------------------------------------------------
+  aur-git:
+    name: AUR (tesseract-matrix-git)
+    if: github.event_name == 'release' || inputs.aur
+    runs-on: ubuntu-24.04
+    environment: aur
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Set pkgver and reset pkgrel
+        run: |
+          ver=$(git describe --long --tags | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g')
+          pkgbuild=packaging/arch/aur/tesseract-matrix-git/PKGBUILD
+          sed -i -E "s/^pkgver=.*/pkgver=${ver}/; s/^pkgrel=.*/pkgrel=1/" "$pkgbuild"
+          grep -E '^(pkgver|pkgrel)=' "$pkgbuild"
+
+      - name: Publish to the AUR
+        uses: KSXGitHub/github-actions-deploy-aur@2ac5a4c1d7035885d46b10e3193393be8460b6f1 # v4.1.1
+        with:
+          pkgname: tesseract-matrix-git
+          pkgbuild: packaging/arch/aur/tesseract-matrix-git/PKGBUILD
+          updpkgsums: false
           test: false
           commit_username: Marco Alvarez
           commit_email: surakus@pm.me

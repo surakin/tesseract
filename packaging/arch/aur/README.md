@@ -113,11 +113,13 @@ repeat steps 4–6.
 
 ## Publishing `tesseract-matrix-git`
 
-The `pkgver()` function tracks `main` automatically, so there's usually
-nothing to bump — AUR users' own `makepkg -su`/AUR helper re-derives
-`pkgver` from `git describe` against the latest commit at their own build
-time. You only need to touch this package when the *packaging* itself
-changes (e.g. a new runtime dependency):
+The `pkgver()` function tracks `main` automatically: AUR users' own
+`makepkg -su`/AUR helper re-derives `pkgver` from `git describe` against the
+latest commit at their own build time. The `aur-git` job in
+`publish-release.yml` also refreshes the placeholder `pkgver` and `.SRCINFO`
+on every release, so the AUR page never shows a stale version. You only need
+to push by hand when the *packaging* itself changes (e.g. a new runtime
+dependency):
 
 1. Copy the updated `tesseract-matrix-git/PKGBUILD` from this repo into your
    AUR clone, bump `pkgrel`.
