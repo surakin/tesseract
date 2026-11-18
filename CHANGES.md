@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- fix(timeline): call membership and slot state events no longer show as unhandled events. cargo 1733/1733
 
 - fix(calls): sticky call members are no longer ignored when the room's call slot was written before Tesseract started. Linux release build, manual test
 - feat(timeline): room topic changes now show in the timeline, like room name changes. Windows debug build, ctest 3926/3927

@@ -766,6 +766,24 @@ pub(crate) const KNOWN_STATE_EVENT_TYPES: [&str; 5] = [
     "im.ponies.room_emotes",
 ];
 
+/// State event types that never become timeline rows, not even under the
+/// developer "Show unhandled events" setting: call membership churns on every
+/// join, leave and refresh, and Tesseract reads membership and slots into call
+/// state instead.
+pub(crate) const HIDDEN_STATE_EVENT_TYPES: [&str; 6] = [
+    "org.matrix.msc3401.call.member",
+    "m.call.member",
+    "org.matrix.msc4143.rtc.member",
+    "m.rtc.member",
+    "org.matrix.msc4143.rtc.slot",
+    "m.rtc.slot",
+];
+
+/// Whether a state event of this type is kept out of the timeline entirely.
+pub(crate) fn state_event_hidden(event_type: &str) -> bool {
+    HIDDEN_STATE_EVENT_TYPES.contains(&event_type)
+}
+
 /// Whether a row reaches the UI given the state-event and unhandled-event
 /// settings. Server-ACL rows and `dev.unhandled` rows of a known state type
 /// need `show_state`; any other `dev.unhandled` row needs `show_unhandled`.
@@ -2211,9 +2229,15 @@ pub(super) async fn timeline_item_to_ffi_opts(
         // state events (and redacted pins) stay filtered unless the developer
         // "show unhandled events" setting is on. State events Tesseract reads
         // are emitted regardless and gated by `state_event_visible`.
-        let known = event_item
-            .content()
-            .event_type_str()
+        let event_type = event_item.content().event_type_str();
+        if event_type
+            .as_ref()
+            .is_some_and(|t| state_event_hidden(t.as_ref()))
+        {
+            return None;
+        }
+        let known = event_type
+            .as_ref()
             .is_some_and(|t| KNOWN_STATE_EVENT_TYPES.contains(&t.as_ref()));
         return if show_unhandled || known {
             dev_unhandled_event(event_item, room_id)
@@ -2938,7 +2962,23 @@ mod dev_unhandled_tests {
 
 #[cfg(test)]
 mod state_event_visibility_tests {
+    use super::state_event_hidden;
     use super::state_event_visible as vis;
+
+    #[test]
+    fn call_membership_state_never_reaches_the_timeline() {
+        for t in [
+            "org.matrix.msc3401.call.member",
+            "m.call.member",
+            "org.matrix.msc4143.rtc.member",
+            "m.rtc.member",
+            "org.matrix.msc4143.rtc.slot",
+            "m.rtc.slot",
+        ] {
+            assert!(state_event_hidden(t), "{t}");
+        }
+        assert!(!state_event_hidden("m.room.topic"));
+    }
 
     #[test]
     fn acl_and_known_state_rows_follow_the_state_flag() {
