@@ -1205,7 +1205,7 @@ class CGCanvas : public Canvas
 {
 public:
     explicit CGCanvas(CGContextRef ctx, float scale_override = 0.0f)
-        : ctx_(ctx), scale_override_(scale_override)
+        : scale_override_(scale_override), ctx_(ctx)
     {
         CGContextSetShouldAntialias(ctx_, true);
         CGContextSetAllowsAntialiasing(ctx_, true);

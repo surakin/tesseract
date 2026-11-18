@@ -27,7 +27,8 @@ SpacePickerEntry entry(const std::string& id, const std::string& name)
 
 struct PickerStage
 {
-    std::unique_ptr<TestSurface> surface = TestSurface::create(SpacePickerView::kWidth, 400);
+    std::unique_ptr<TestSurface> surface =
+        TestSurface::create(static_cast<int>(SpacePickerView::kWidth), 400);
 
     void layout(tk::Widget& w) const
     {
@@ -296,7 +297,7 @@ TEST_CASE("picker: an open tab menu registers as the host popup so it can be dis
 
 TEST_CASE("picker: wheel scrolls tall tab lists and clamps at both ends", "[spacepicker]")
 {
-    auto surface = TestSurface::create(SpacePickerView::kWidth, 200);
+    auto surface = TestSurface::create(static_cast<int>(SpacePickerView::kWidth), 200);
     auto owner = tk::create_root_widget<SpacePickerView>(nullptr);
     SpacePickerView& v = *owner;
     std::vector<SpacePickerEntry> es;
@@ -328,7 +329,7 @@ TEST_CASE("picker: wheel scrolls tall tab lists and clamps at both ends", "[spac
 
 TEST_CASE("picker: clicks hit the right tab after scrolling", "[spacepicker]")
 {
-    auto surface = TestSurface::create(SpacePickerView::kWidth, 200);
+    auto surface = TestSurface::create(static_cast<int>(SpacePickerView::kWidth), 200);
     auto owner = tk::create_root_widget<SpacePickerView>(nullptr);
     SpacePickerView& v = *owner;
     std::vector<SpacePickerEntry> es;

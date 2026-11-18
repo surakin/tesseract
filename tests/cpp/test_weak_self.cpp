@@ -22,7 +22,7 @@ struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
     void post(std::vector<std::function<void()>>* queue, int* touched)
     {
         queue->emplace_back(guarded(
-            [this, touched]
+            [touched]
             {
                 *touched += 1;
             }));

@@ -100,10 +100,6 @@ TEST_CASE("RoomMediaView filters non-media rows, de-duplicates and groups by "
     s.run();
 
     auto names = vt::all_names(*s.view);
-    auto has = [&](const std::string& n)
-    {
-        return std::find(names.begin(), names.end(), n) != names.end();
-    };
     // Two month headers (March, April) are exposed as static text rows.
     int headers = 0;
     for (const auto& n : names)

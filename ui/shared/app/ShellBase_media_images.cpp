@@ -1747,17 +1747,18 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
             if (audio_new || waveform_new)
             {
                 const std::string event_id = row.event_id;
-                const std::string room_id = current_room_id_;
+                const std::string wf_room_id = current_room_id_;
                 auto id = begin_media_req_(
                     /*group_id=*/0,
-                    [this, src, event_id, room_id, waveform_new](std::vector<std::uint8_t>&& bytes)
+                    [this, src, event_id, wf_room_id,
+                     waveform_new](std::vector<std::uint8_t>&& bytes)
                     {
                         if (!waveform_new || bytes.empty())
                         {
                             return;
                         }
                         run_async_(
-                            [this, src, event_id, room_id, bytes = std::move(bytes)]() mutable
+                            [this, src, event_id, wf_room_id, bytes = std::move(bytes)]() mutable
                             {
                                 auto waveform = tesseract::load_voice_waveform(src);
                                 if (waveform.empty())
@@ -1773,10 +1774,10 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_a
                                     return;
                                 }
                                 post_to_ui_alive_(
-                                    [this, room_id, event_id,
+                                    [this, wf_room_id, event_id,
                                      waveform = std::move(waveform)]() mutable
                                     {
-                                        handle_voice_waveform_ready_ui_(room_id, event_id,
+                                        handle_voice_waveform_ready_ui_(wf_room_id, event_id,
                                                                         std::move(waveform));
                                     });
                             });
@@ -2550,44 +2551,43 @@ const tk::Image* ShellBase::gif_strip_image_(const GifResult& result,
         gif_preview_inflight_.insert(result.preview_url).second)
     {
         const std::string url = result.preview_url;
-        fetch_gif_source_(
-            url,
-            [this, url, repaint, decode_w, decode_h](std::vector<std::uint8_t> bytes)
-            {
-                if (bytes.empty())
-                {
-                    // Dead URL or offline: remember it, or every repaint
-                    // would start the same failing fetch again.
-                    gif_preview_inflight_.erase(url);
-                    gif_preview_unavailable_.insert(url);
-                    return;
-                }
-                // The in-flight flag stays set until the decode lands, so a
-                // repaint in between does not start another fetch.
-                run_async_(
-                    [this, url, repaint, decode_w, decode_h, bytes = std::move(bytes)]() mutable
-                    {
-                        account_manager_.media_disk_cache().store(tk::CacheKey::gif_source(url),
-                                                                  bytes);
-                        auto d = std::make_shared<DecodedImage>(
-                            decode_image_(bytes, decode_w, decode_h));
-                        post_to_ui_alive_(
-                            [this, url, d, repaint]() mutable
-                            {
-                                gif_preview_inflight_.erase(url);
-                                if (d->still)
-                                {
-                                    gif_previews_[tk::CacheKey::gif_preview(url)] =
-                                        std::move(d->still);
-                                }
-                                else
-                                {
-                                    gif_preview_unavailable_.insert(url);
-                                }
-                                repaint();
-                            });
-                    });
-            });
+        fetch_gif_source_(url,
+                          [this, url, repaint](std::vector<std::uint8_t> bytes)
+                          {
+                              if (bytes.empty())
+                              {
+                                  // Dead URL or offline: remember it, or every repaint
+                                  // would start the same failing fetch again.
+                                  gif_preview_inflight_.erase(url);
+                                  gif_preview_unavailable_.insert(url);
+                                  return;
+                              }
+                              // The in-flight flag stays set until the decode lands, so a
+                              // repaint in between does not start another fetch.
+                              run_async_(
+                                  [this, url, repaint, bytes = std::move(bytes)]() mutable
+                                  {
+                                      account_manager_.media_disk_cache().store(
+                                          tk::CacheKey::gif_source(url), bytes);
+                                      auto d = std::make_shared<DecodedImage>(
+                                          decode_image_(bytes, decode_w, decode_h));
+                                      post_to_ui_alive_(
+                                          [this, url, d, repaint]() mutable
+                                          {
+                                              gif_preview_inflight_.erase(url);
+                                              if (d->still)
+                                              {
+                                                  gif_previews_[tk::CacheKey::gif_preview(url)] =
+                                                      std::move(d->still);
+                                              }
+                                              else
+                                              {
+                                                  gif_preview_unavailable_.insert(url);
+                                              }
+                                              repaint();
+                                          });
+                                  });
+                          });
     }
 
     // Stage 2: the animation (MP4 or an animated image) replaces the preview.
@@ -2617,7 +2617,7 @@ const tk::Image* ShellBase::gif_strip_image_(const GifResult& result,
         };
         fetch_gif_source_(
             anim_url,
-            [this, anim_url, anim_mime, preview_url, repaint, decode_w, decode_h,
+            [this, anim_url, anim_mime, preview_url, repaint,
              store_frames](std::vector<std::uint8_t> bytes) mutable
             {
                 if (bytes.empty())
@@ -2627,7 +2627,7 @@ const tk::Image* ShellBase::gif_strip_image_(const GifResult& result,
                     return;
                 }
                 run_async_(
-                    [this, anim_url, anim_mime, preview_url, decode_w, decode_h, store_frames,
+                    [this, anim_url, anim_mime, preview_url, store_frames,
                      bytes = std::move(bytes)]() mutable
                     {
                         account_manager_.media_disk_cache().store(

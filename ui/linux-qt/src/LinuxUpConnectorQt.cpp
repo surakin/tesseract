@@ -170,7 +170,7 @@ public:
                              distributor_register(dist, tok);
                          });
         watcher->setFuture(QtConcurrent::run(
-            [this]()
+            []()
             {
                 return find_distributor();
             }));

@@ -272,12 +272,10 @@ class QtTextLayout : public QtTextLayoutBase
 {
 public:
     QtTextLayout(QString text, QFont font, QTextOption option, QSizeF measured, int line_count,
-                 qreal max_width, qreal max_height, bool elide_single_line, qreal ascent,
-                 qreal explicit_max_height)
+                 qreal max_width, bool elide_single_line, qreal ascent, qreal explicit_max_height)
         : text_(std::move(text)), font_(std::move(font)), option_(option), measured_(measured),
-          line_count_(line_count), max_width_(max_width), max_height_(max_height),
-          elide_single_line_(elide_single_line), ascent_(ascent),
-          explicit_max_height_(explicit_max_height)
+          line_count_(line_count), max_width_(max_width), elide_single_line_(elide_single_line),
+          ascent_(ascent), explicit_max_height_(explicit_max_height)
     {
         // Pre-build QStaticText for single-line (non-wrap) layouts so draw()
         // submits pre-shaped glyph data instead of re-shaping on every frame.
@@ -498,7 +496,6 @@ private:
     QSizeF measured_;
     int line_count_ = 0;
     qreal max_width_ = -1;
-    qreal max_height_ = -1;
     bool elide_single_line_ = false;
     qreal ascent_ = 0;
     qreal explicit_max_height_ = -1;
@@ -1325,9 +1322,9 @@ public:
             measured = QSizeF(fm.horizontalAdvance(text), fm.height());
         }
 
-        return std::make_unique<QtTextLayout>(
-            std::move(text), std::move(f), opt, measured, /*line_count=*/1, max_w,
-            s.max_height > 0 ? s.max_height : 8192.0, elide_single_line, fm.ascent(), s.max_height);
+        return std::make_unique<QtTextLayout>(std::move(text), std::move(f), opt, measured,
+                                              /*line_count=*/1, max_w, elide_single_line,
+                                              fm.ascent(), s.max_height);
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,

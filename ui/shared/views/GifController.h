@@ -66,7 +66,7 @@ public:
         std::function<std::vector<std::uint8_t>(const std::string& url)> get_cached_gif_bytes;
     };
 
-    GifController(tk::TextArea* text_area, GifPopup* popup, Hooks hooks);
+    GifController(GifPopup* popup, Hooks hooks);
     ~GifController();
 
     // Returns true if the composer text is a `/gif <query>` command (a search
@@ -98,7 +98,6 @@ private:
     // search/send) so the strip never fails silently.
     void show_status(std::string message);
 
-    tk::TextArea* text_area_;
     GifPopup* popup_;
     Hooks hooks_;
     GifEngine engine_;

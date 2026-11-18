@@ -714,8 +714,7 @@ void RoomPane::wire_room_view_()
         }
         auto sess = session_();
         run_async_(
-            [this, rv, sess, room_id = std::move(room_id),
-             ui = ui_poster(shell_poster(shell_))]() mutable
+            [rv, sess, room_id = std::move(room_id), ui = ui_poster(shell_poster(shell_))]() mutable
             {
                 if (!ui.owner_alive()) // owner gone before the job started
                 {
@@ -881,7 +880,7 @@ void RoomPane::wire_room_view_()
         v->set_calls_supported(shell_->server_info_.supports_calls);
         auto sess = session_();
         run_async_(
-            [this, rv, sess, room_id, ui = ui_poster(shell_poster(shell_))]()
+            [rv, sess, room_id, ui = ui_poster(shell_poster(shell_))]()
             {
                 if (!ui.owner_alive()) // owner gone before the job started
                 {
@@ -1170,7 +1169,7 @@ void RoomPane::wire_room_view_()
         shell_->moderate_member_(ShellBase::ModerationAction::Unban, room_id, user_id, display_name,
                                  "",
                                  guarded(
-                                     [this, rv, room_id, user_id](bool ok)
+                                     [rv, room_id, user_id](bool ok)
                                      {
                                          auto* v = rv->room_settings_view();
                                          if (!v || !v->is_open() || v->room_id() != room_id)
@@ -4902,7 +4901,7 @@ void RoomPane::fetch_banned_members_(views::RoomView* rv, const std::string& roo
     }
     auto sess = session_();
     run_async_(
-        [this, rv, sess, room_id, ui = ui_poster(shell_poster(shell_))]()
+        [rv, sess, room_id, ui = ui_poster(shell_poster(shell_))]()
         {
             if (!ui.owner_alive()) // owner gone before the job started
             {
@@ -5512,7 +5511,7 @@ void RoomPane::open_media_externally_(const views::MediaViewerItem& item)
 
             // Writes the temp file under `name` and hands it to the OS.
             const std::function<void(std::string)> launch = guarded(
-                [this, bytes, toast](std::string name)
+                [bytes, toast](std::string name)
                 {
                     const auto path = tesseract::write_open_media_file(name, *bytes);
                     if (!path || !tesseract::open_local_file(*path))

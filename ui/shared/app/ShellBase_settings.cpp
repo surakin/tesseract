@@ -86,7 +86,7 @@ void ShellBase::handle_image_pack_pending_image_added_(std::uint64_t local_id,
                 preview = std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
             }
             post_to_ui_alive_(
-                [this, local_id, target, preview = std::move(preview)]() mutable
+                [local_id, target, preview = std::move(preview)]() mutable
                 {
                     if (target)
                     {
@@ -115,7 +115,7 @@ void ShellBase::handle_user_pack_pending_image_added_(std::uint64_t local_id,
                 preview = std::shared_ptr<tk::Image>(std::move(decoded.frames.front()));
             }
             post_to_ui_alive_(
-                [this, local_id, target, preview = std::move(preview)]() mutable
+                [local_id, target, preview = std::move(preview)]() mutable
                 {
                     if (target)
                     {

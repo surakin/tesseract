@@ -17,19 +17,17 @@
 #import <ImageIO/ImageIO.h>
 #import <CoreServices/CoreServices.h>
 #import <Carbon/Carbon.h> // TIS input sources: Latin letter for Cmd shortcuts
-#import <SystemConfiguration/SystemConfiguration.h>
+#import <Network/Network.h>
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <utility>
 #include <vector>
-
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 namespace tk::macos
 {
@@ -155,7 +153,7 @@ public:
     void invalidate_anim_damage();
     void post_to_ui(std::function<void()> task) override;
     void post_delayed(int ms, std::function<void()> fn) override;
-    // Defined out-of-line (uses SystemConfiguration, only imported at the
+    // Defined out-of-line (uses Network.framework, only imported at the
     // top of this file's implementation section).
     bool is_network_available() const override;
     std::unique_ptr<NativeTextField> make_text_field() override;
@@ -3188,27 +3186,37 @@ void Host::post_delayed(int ms, std::function<void()> fn)
 
 bool Host::is_network_available() const
 {
-    // The all-zeros address asks whether any default route exists, i.e. some
-    // network is up (Apple's documented "is there a network" check). A probe of
-    // one public hostname instead reports offline for a homeserver on a LAN or
-    // VPN that has no internet access.
-    struct sockaddr_in zero{};
-    zero.sin_len = sizeof(zero);
-    zero.sin_family = AF_INET;
-    SCNetworkReachabilityRef ref = SCNetworkReachabilityCreateWithAddress(
-        nullptr, reinterpret_cast<const struct sockaddr*>(&zero));
-    if (!ref)
-    {
-        return true;
-    }
-    SCNetworkReachabilityFlags flags = 0;
-    bool ok = SCNetworkReachabilityGetFlags(ref, &flags);
-    CFRelease(ref);
-    if (!ok)
-    {
-        return true;
-    }
-    return (flags & kSCNetworkReachabilityFlagsReachable) != 0;
+    // One process-wide nw_path_monitor, started on the first call and kept
+    // running so later calls read its latest path. Its handlers run on a
+    // private queue, so the UI thread can block (briefly) for the first path,
+    // which the cold-start pre-flight needs; on timeout we report available,
+    // matching the always-attempt default. The default path (no interface
+    // restriction) also covers a homeserver on a LAN or VPN without internet.
+    static std::atomic<bool> available{true};
+    static nw_path_monitor_t monitor = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        dispatch_semaphore_t first_path = dispatch_semaphore_create(0);
+        __block bool signalled = false;
+        dispatch_queue_t queue =
+            dispatch_queue_create("tesseract.network-path", DISPATCH_QUEUE_SERIAL);
+        monitor = nw_path_monitor_create();
+        nw_path_monitor_set_queue(monitor, queue);
+        nw_path_monitor_set_update_handler(monitor, ^(nw_path_t path) {
+            const nw_path_status_t status = nw_path_get_status(path);
+            available.store(status == nw_path_status_satisfied ||
+                                status == nw_path_status_satisfiable,
+                            std::memory_order_relaxed);
+            if (!signalled)
+            {
+                signalled = true;
+                dispatch_semaphore_signal(first_path);
+            }
+        });
+        nw_path_monitor_start(monitor);
+        dispatch_semaphore_wait(first_path, dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC));
+    });
+    return available.load(std::memory_order_relaxed);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

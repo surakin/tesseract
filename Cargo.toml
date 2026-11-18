@@ -2,6 +2,12 @@
 members  = ["sdk"]
 resolver = "2"
 
+# Warnings are errors for first-party crates in every configuration (plain
+# `cargo test` as well as the CMake/Corrosion build). Dependencies are capped
+# by cargo and unaffected.
+[workspace.lints.rust]
+warnings = "deny"
+
 # Third-party dependencies (matrix-sdk, tokio, rustls, webrtc-sys, ...) are a
 # huge, generic-heavy tree; full debug info (the profile.dev default) makes
 # their debug rlibs enormous. Trim deps to line-tables-only — still gives

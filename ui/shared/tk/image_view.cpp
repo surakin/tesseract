@@ -22,7 +22,7 @@ Rect fit_rect(Size container, Size content, ImageView::ContentMode mode, Point o
     float sx = container.w / content.w;
     float sy = container.h / content.h;
 
-    float w, h;
+    float w = 0, h = 0;
     switch (mode)
     {
     case Mode::Cover:

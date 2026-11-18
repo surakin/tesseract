@@ -1091,7 +1091,7 @@ void ShellBase::build_known_users_roster_()
     emit_user_results_();
 
     run_async_(
-        [this, sess, me, cap, cancel, room_ids = std::move(room_ids)]() mutable
+        [this, sess, me, cancel, room_ids = std::move(room_ids)]() mutable
         {
             // Per-batch accumulator handed to the UI thread; merged into
             // known_users_ there so partial results appear as the sweep runs.

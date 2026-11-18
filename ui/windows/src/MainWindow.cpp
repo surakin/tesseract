@@ -1227,7 +1227,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         // colours on the EDIT controls.
         const auto& pal = theme::palette();
         HDC dc = reinterpret_cast<HDC>(wParam);
-        HWND ctl = reinterpret_cast<HWND>(lParam);
         SetBkMode(dc, TRANSPARENT);
         // The compose bar is now a tk::win32::Surface — it paints its own
         // background; no WM_CTLCOLOR tinting needed.

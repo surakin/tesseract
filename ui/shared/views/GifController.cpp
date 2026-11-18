@@ -10,8 +10,7 @@
 namespace tesseract::views
 {
 
-GifController::GifController(tk::TextArea* text_area, GifPopup* popup, Hooks hooks)
-    : text_area_(text_area), popup_(popup), hooks_(std::move(hooks))
+GifController::GifController(GifPopup* popup, Hooks hooks) : popup_(popup), hooks_(std::move(hooks))
 {
     if (popup_)
     {

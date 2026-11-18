@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- chore(build): compiler warnings are now errors in every C++ and Rust build configuration. Linux debug and release builds, ctest 3961/3961, cargo 1733/1733
 - fix(calls): call audio no longer crashes when the system drops the audio output stream; the stream is rebuilt. Linux release build
 - fix(timeline): call membership and slot state events no longer show as unhandled events. cargo 1733/1733
 

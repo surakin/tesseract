@@ -4,10 +4,18 @@
 #include <cmath>
 #include <vector>
 
+// Vendored single-header library: not ours to edit, so silence MSVC /W4 around it.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4244 4456 4702 4701 4267 4127 4100)
+#endif
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvgrast.h"
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 namespace tk
 {

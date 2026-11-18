@@ -1950,13 +1950,14 @@ void EncryptionSetupOverlay::paint(tk::PaintCtx& ctx)
     }
     }
 
-    for (tk::Button* b : {skip_link_, passphrase_link_, back_link_, lost_link_, reject_link_,
-                          remove_key_link_, turn_off_link_, static_cast<tk::Button*>(device_card_),
-                          static_cast<tk::Button*>(key_card_)})
+    for (tk::Button* btn :
+         {skip_link_, passphrase_link_, back_link_, lost_link_, reject_link_, remove_key_link_,
+          turn_off_link_, static_cast<tk::Button*>(device_card_),
+          static_cast<tk::Button*>(key_card_)})
     {
-        if (b && std::find(placed.begin(), placed.end(), b) == placed.end())
+        if (btn && std::find(placed.begin(), placed.end(), btn) == placed.end())
         {
-            b->set_visible(false);
+            btn->set_visible(false);
         }
     }
 }

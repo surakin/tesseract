@@ -43,6 +43,8 @@
 
 namespace
 {
+// The SDK declares this as a negative enumerator; the reader APIs take a DWORD.
+constexpr DWORD kFirstVideoStream = static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
 
 // Converts NV12 (Y + interleaved UV) → I420 (Y + planar U + planar V).
 void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y, const std::uint8_t* src_uv,
@@ -158,8 +160,7 @@ public:
         {
             if (reader_ && running_.load())
             {
-                reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, nullptr,
-                                    nullptr, nullptr);
+                reader_->ReadSample(kFirstVideoStream, 0, nullptr, nullptr, nullptr, nullptr);
             }
             return S_OK;
         }
@@ -186,8 +187,7 @@ public:
 
         if (reader_ && running_.load())
         {
-            reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, nullptr, nullptr,
-                                nullptr);
+            reader_->ReadSample(kFirstVideoStream, 0, nullptr, nullptr, nullptr, nullptr);
         }
         return S_OK;
     }
@@ -306,7 +306,7 @@ public:
             // MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING (set on attrs)
             // inserts the Video Processor MFT which supports ARGB32 output.
             type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32);
-            reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
+            reader_->SetCurrentMediaType(kFirstVideoStream, nullptr, type);
         }
         else
         {
@@ -314,11 +314,10 @@ public:
             MFSetAttributeSize(type, MF_MT_FRAME_SIZE, 640, 480);
             MFSetAttributeRatio(type, MF_MT_FRAME_RATE, 30, 1);
             type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_I420);
-            if (FAILED(reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr,
-                                                    type)))
+            if (FAILED(reader_->SetCurrentMediaType(kFirstVideoStream, nullptr, type)))
             {
                 type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
-                reader_->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, type);
+                reader_->SetCurrentMediaType(kFirstVideoStream, nullptr, type);
                 use_nv12_ = true;
             }
         }
@@ -326,7 +325,7 @@ public:
 
         // Record actual frame geometry and negotiated subtype.
         IMFMediaType* actual = nullptr;
-        reader_->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, &actual);
+        reader_->GetCurrentMediaType(kFirstVideoStream, &actual);
         if (actual)
         {
             MFGetAttributeSize(actual, MF_MT_FRAME_SIZE, &frame_w_, &frame_h_);
@@ -338,8 +337,7 @@ public:
         }
 
         running_.store(true);
-        hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, nullptr, nullptr, nullptr,
-                                 nullptr);
+        hr = reader_->ReadSample(kFirstVideoStream, 0, nullptr, nullptr, nullptr, nullptr);
         if (FAILED(hr))
         {
             report_error_(classify_hr(hr));
@@ -366,7 +364,7 @@ public:
                 std::lock_guard<std::mutex> lk(mu_);
                 flush_done_ = false;
             }
-            reader_->Flush(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
+            reader_->Flush(kFirstVideoStream);
             {
                 std::unique_lock<std::mutex> lk(mu_);
                 flush_cv_.wait_for(lk, std::chrono::seconds(2),

@@ -348,6 +348,17 @@ the key only matches when all of these do, so update it together with any of
 `compile-check.yml`, `package.yml`, `build-platform.yml` and `test.yml`.
 `update-screenshots.yml` uses its own keys and is not primed.
 
+### Warnings are errors
+
+First-party C/C++/Objective-C++ targets (`client/`, `ui/`, `tests/`) build with
+`-Wall -Wextra -Werror` (`/W4 /WX` on MSVC and clang-cl), in every
+configuration; `cmake/Warnings.cmake` applies it and skips third-party code.
+`-Wmissing-field-initializers` and its designated-initializer variant are off.
+The Rust crate denies warnings through `[workspace.lints.rust]` in
+`Cargo.toml`. A newer compiler that adds warnings can be built with
+`-DTESSERACT_WARNINGS_AS_ERRORS=OFF`, which keeps the C++ warnings visible but
+not fatal (the Rust `deny` stays).
+
 ### Feature options
 
 `-DTESSERACT_ENABLE_SILENT_RECOVERY_SETUP=OFF` (default `ON`) brings back the

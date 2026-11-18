@@ -909,6 +909,11 @@ else()
     message(FATAL_ERROR "Unknown TESSERACT_UI value: ${TESSERACT_UI}")
 endif()
 
+# Warnings are errors for first-party targets (client/, ui/, tests/) in every
+# configuration. Must come after the last first-party add_subdirectory().
+include(${CMAKE_SOURCE_DIR}/cmake/Warnings.cmake)
+tesseract_enable_warnings_as_errors()
+
 # ---------------------------------------------------------------------------
 # Installer packaging (CPack). Windows → NSIS .exe, macOS → DragNDrop .dmg,
 # Linux → DEB + RPM (Qt6 backend only; GTK4 uses the same rules).

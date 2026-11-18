@@ -282,8 +282,7 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane
             refresh_(gif_popup_.get(), /*layout=*/false);
         };
         pane_->wire_gif_hooks_(gh);
-        gif_controller_ =
-            std::make_unique<views::GifController>(text_area_, gif_popup_widget_, std::move(gh));
+        gif_controller_ = std::make_unique<views::GifController>(gif_popup_widget_, std::move(gh));
     }
 
     // ── /sticker inline result strip ──────────────────────────────────────

@@ -94,7 +94,7 @@ TEST_CASE("cancel_media_group_ drops only the cancelled group's keys", "[shell][
     tesseract::Client client; // real, session-less — the FFI call is a no-op
     s.client_ = &client;
 
-    auto id1 = s.begin_media_req_(/*group_id=*/11, noop_bytes, {}, "mxc://k1");
+    [[maybe_unused]] auto id1 = s.begin_media_req_(/*group_id=*/11, noop_bytes, {}, "mxc://k1");
     auto id2 = s.begin_media_req_(/*group_id=*/22, noop_bytes, {}, "mxc://k2");
 
     s.cancel_media_group_(11);

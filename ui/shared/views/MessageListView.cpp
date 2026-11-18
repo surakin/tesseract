@@ -3250,7 +3250,7 @@ public:
                 if (rxc.key != r.key || std::cmp_not_equal(rxc.count, r.count))
                 {
                     rxc.key = r.key;
-                    rxc.count = r.count;
+                    rxc.count = static_cast<int>(r.count);
                     tk::TextStyle cst{};
                     cst.role = tk::FontRole::UiSemibold;
                     rxc.count_layout = ctx.factory.build_text(std::to_string(r.count), cst);
@@ -5741,8 +5741,8 @@ private:
             return {0.0f, 0.0f};
         }
         tk::Size lsz = lo->measure();
-        constexpr float kMsgListPadX = 12.0f, kMsgListPadY = 7.0f;
-        return {lsz.w + kMsgListPadX * 2.0f, lsz.h + kMsgListPadY * 2.0f};
+        constexpr float kPillPadX = 12.0f, kPillPadY = 7.0f;
+        return {lsz.w + kPillPadX * 2.0f, lsz.h + kPillPadY * 2.0f};
     }
 
     // Aspect-fitted on-screen size for a sticker, given the width cap `max_w`
@@ -6189,12 +6189,12 @@ private:
                 if (lo)
                 {
                     tk::Size lsz = lo->measure();
-                    constexpr float kBadgePadX = 6.0f, kBadgePadY = 3.0f;
-                    float bx = r.x + r.w - lsz.w - kBadgePadX * 2 - 4.0f;
-                    float by = r.y + r.h - lsz.h - kBadgePadY * 2 - 4.0f;
-                    tk::Rect badge{bx, by, lsz.w + kBadgePadX * 2, lsz.h + kBadgePadY * 2};
+                    constexpr float kBadgeLblPadX = 6.0f, kBadgeLblPadY = 3.0f;
+                    float bx = r.x + r.w - lsz.w - kBadgeLblPadX * 2 - 4.0f;
+                    float by = r.y + r.h - lsz.h - kBadgeLblPadY * 2 - 4.0f;
+                    tk::Rect badge{bx, by, lsz.w + kBadgeLblPadX * 2, lsz.h + kBadgeLblPadY * 2};
                     ctx.canvas.fill_rounded_rect(badge, 4.0f, tk::Color{0, 0, 0, 140});
-                    ctx.canvas.draw_text(*lo, {bx + kBadgePadX, by + kBadgePadY},
+                    ctx.canvas.draw_text(*lo, {bx + kBadgeLblPadX, by + kBadgeLblPadY},
                                          tk::Color{255, 255, 255, 230});
                 }
             }
@@ -7867,7 +7867,7 @@ private:
             {
                 for (const tk::Rect& r : cb.layout->selection_rects(sel_lo, sel_hi))
                 {
-                    tk::ClipScope clip(ctx.canvas, {r.x + cox, r.y + coy, r.w, r.h});
+                    tk::ClipScope rect_clip(ctx.canvas, {r.x + cox, r.y + coy, r.w, r.h});
                     ctx.canvas.draw_text(*cb.layout, {cox, coy}, pal.selection_text);
                 }
             }
@@ -8467,12 +8467,12 @@ private:
             if (lo)
             {
                 tk::Size lsz = lo->measure();
-                constexpr float kBadgePadX = 6.0f, kBadgePadY = 3.0f;
-                float bx = dst.x + dst.w - lsz.w - kBadgePadX * 2 - 4.0f;
-                float by = dst.y + dst.h - lsz.h - kBadgePadY * 2 - 4.0f;
-                tk::Rect badge{bx, by, lsz.w + kBadgePadX * 2, lsz.h + kBadgePadY * 2};
+                constexpr float kBadgeLblPadX = 6.0f, kBadgeLblPadY = 3.0f;
+                float bx = dst.x + dst.w - lsz.w - kBadgeLblPadX * 2 - 4.0f;
+                float by = dst.y + dst.h - lsz.h - kBadgeLblPadY * 2 - 4.0f;
+                tk::Rect badge{bx, by, lsz.w + kBadgeLblPadX * 2, lsz.h + kBadgeLblPadY * 2};
                 ctx.canvas.fill_rounded_rect(badge, 4.0f, tk::Color{0, 0, 0, 140});
-                ctx.canvas.draw_text(*lo, {bx + kBadgePadX, by + kBadgePadY},
+                ctx.canvas.draw_text(*lo, {bx + kBadgeLblPadX, by + kBadgeLblPadY},
                                      tk::Color{255, 255, 255, 230});
             }
         }
@@ -11247,10 +11247,10 @@ bool MessageListView::on_pointer_move(tk::Point local)
         if (new_link_url.empty())
         {
             bool over_text = press_sel_;
-            std::size_t hrow = hovered_row_geom_.row_index;
-            if (!over_text && !over_active_pill && hrow < messages_.size())
+            std::size_t hrow_idx = hovered_row_geom_.row_index;
+            if (!over_text && !over_active_pill && hrow_idx < messages_.size())
             {
-                const LinkLayout* le = link_cache_.peek(messages_[hrow].event_id);
+                const LinkLayout* le = link_cache_.peek(messages_[hrow_idx].event_id);
                 over_text = le && text_at_world(*le, world);
             }
             if (over_text)
@@ -11282,10 +11282,10 @@ bool MessageListView::on_pointer_move(tk::Point local)
         bool want_tooltip = false;
         tk::Rect anchor{};
         std::string desc;
-        int row = hovered_row_index();
-        if (row >= 0 && static_cast<std::size_t>(row) < messages_.size())
+        int hov_row = hovered_row_index();
+        if (hov_row >= 0 && static_cast<std::size_t>(hov_row) < messages_.size())
         {
-            const auto& m = messages_[static_cast<std::size_t>(row)];
+            const auto& m = messages_[static_cast<std::size_t>(hov_row)];
             if (m.kind == MessageRowData::Kind::Location && !m.location_description.empty())
             {
                 if (const tk::Rect* g = map_panner_.geom_at(m.event_id))
@@ -12959,14 +12959,14 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 std::size_t line_index = 0;
                 for (std::size_t r : adapter_->membership_avatar_rows(row))
                 {
-                    const auto& t = messages_[r];
-                    if (!t.membership_target_user_id.empty() &&
+                    const auto& member_row = messages_[r];
+                    if (!member_row.membership_target_user_id.empty() &&
                         adapter_->membership_avatar_hit_at(row, line_index, line, world))
                     {
                         press_sender_ = true;
-                        press_sender_user_id_ = t.membership_target_user_id;
-                        press_sender_display_name_ = t.membership_target_name;
-                        press_sender_avatar_url_ = t.membership_target_avatar_url;
+                        press_sender_user_id_ = member_row.membership_target_user_id;
+                        press_sender_display_name_ = member_row.membership_target_name;
+                        press_sender_avatar_url_ = member_row.membership_target_avatar_url;
                         return true;
                     }
                     line.y += kPinnedEventH;

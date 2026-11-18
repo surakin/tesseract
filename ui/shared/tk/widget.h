@@ -437,7 +437,7 @@ public:
     // rendered_image() capture happens outside the paint cycle (on
     // content/focus/selection/set_rect() signals) and so goes stale until
     // explicitly told otherwise. Default: no-op.
-    virtual void on_scale_changed(float scale_factor)
+    virtual void on_scale_changed(float /*scale_factor*/)
     {
     }
 

@@ -25,6 +25,12 @@ inline tk::Size fit_media(float natural_w, float natural_h, float max_w, float m
     return {natural_w * s, natural_h * s};
 }
 
+/// Convenience overload for integer pixel dimensions.
+inline tk::Size fit_media(int natural_w, int natural_h, float max_w, float max_h)
+{
+    return fit_media(static_cast<float>(natural_w), static_cast<float>(natural_h), max_w, max_h);
+}
+
 // Like fit_media, but allows upscaling — used when the real media's natural
 // size is unknown and we're sizing off a low-res placeholder (e.g. a cached
 // avatar thumbnail), so a tiny image still fills a reasonable portion of the

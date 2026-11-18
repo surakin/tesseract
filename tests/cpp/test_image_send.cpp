@@ -66,9 +66,9 @@ Bytes animated_gif()
     Bytes b{'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0, 0, 0};
     for (int i = 0; i < 2; ++i)
     {
-        for (std::uint8_t v : {0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 0x01, 0})
+        for (int v : {0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 0x01, 0})
         {
-            b.push_back(v);
+            b.push_back(static_cast<std::uint8_t>(v));
         }
     }
     b.push_back(0x3B);

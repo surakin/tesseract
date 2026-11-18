@@ -99,28 +99,6 @@ NSString* to_ns_subrole(tk::Role r)
     }
 }
 
-// Roles a screen reader would plausibly invoke a "press" action on. Ported
-// verbatim from qt_accessible.cpp's identical has_action_role predicate —
-// see its own comment for the rationale.
-bool has_action_role(tk::Role r)
-{
-    switch (r)
-    {
-    case tk::Role::Button:
-    case tk::Role::CheckBox:
-    case tk::Role::Switch:
-    case tk::Role::RadioButton:
-    case tk::Role::ComboBox:
-    case tk::Role::ListItem:
-    case tk::Role::GridCell:
-    case tk::Role::MenuItem:
-    case tk::Role::Tab:
-        return true;
-    default:
-        return false;
-    }
-}
-
 // Identifies one AccessNode stably across tree rebuilds — identical in
 // shape and rationale to qt_accessible.cpp's/win32_accessible.cpp's
 // AccessKey: the tk::Widget a node came from, plus a row/cell index for a

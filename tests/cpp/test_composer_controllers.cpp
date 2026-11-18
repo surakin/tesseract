@@ -617,7 +617,7 @@ struct GifRig
         {
             ++cleared;
         };
-        ctl = std::make_unique<GifController>(area.get(), &popup, std::move(h));
+        ctl = std::make_unique<GifController>(&popup, std::move(h));
     }
 
     void fire_last_delayed()

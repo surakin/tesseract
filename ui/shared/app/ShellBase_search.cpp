@@ -1059,9 +1059,9 @@ void ShellBase::try_scroll_to_room_event_(const std::string& event_id)
     {
         main_room_pane_->begin_focused_subscription_(rid, event_id);
     }
-    if (auto* ml = room_view_->message_list())
+    if (room_view_->message_list())
     {
-        ml->begin_nav_loading();
+        room_view_->message_list()->begin_nav_loading();
     }
     auto sess = active_account_;
     run_async_mut_(

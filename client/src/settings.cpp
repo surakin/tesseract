@@ -719,13 +719,13 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
     // Keep the previous version as a last-good copy before replacing it, so a
     // file that later turns out unreadable can be recovered (see load).
     {
-        std::error_code ec;
-        if (std::filesystem::exists(path, ec))
+        std::error_code save_ec;
+        if (std::filesystem::exists(path, save_ec))
         {
             auto last_good = path;
             last_good += ".last-good";
             std::filesystem::copy_file(path, last_good,
-                                       std::filesystem::copy_options::overwrite_existing, ec);
+                                       std::filesystem::copy_options::overwrite_existing, save_ec);
         }
     }
     // Tmp + fsync + rename: a crash can't leave a truncated settings file.

@@ -741,7 +741,6 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     // Display name (Title, ellipsis) with the trust shield on the same line,
     // centred in the left column.
     constexpr float kNameH = 20.0f;
-    constexpr float kUidH = 16.0f;
     const float left_x = card_rect_.x + kPadX;
     const float name_y = avatar_rect_.y + kAvatarD + kPadY;
     const bool shield = trust_icon_visible_();

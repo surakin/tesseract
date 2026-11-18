@@ -43,20 +43,6 @@ std::string close_action_description(CA action, bool tray_available)
                   "exit.");
 }
 
-const char* low_power_value(LP pref)
-{
-    switch (pref)
-    {
-    case LP::On:
-        return "on";
-    case LP::Off:
-        return "off";
-    case LP::Auto:
-        break;
-    }
-    return "auto";
-}
-
 LP low_power_from_value(const std::string& v)
 {
     if (v == "on")

@@ -3,6 +3,9 @@ name    = "tesseract-sdk-ffi"
 version = "0.9.10"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [lib]
 name      = "tesseract_sdk_ffi"
 crate-type = ["staticlib"]

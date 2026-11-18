@@ -1566,7 +1566,6 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     {
         constexpr float kAccentW = 3.0f;
         constexpr float kEditPadX = 8.0f;
-        constexpr float kEditPadY = 5.0f;
 
         ctx.canvas.fill_rounded_rect(edit_band_rect_, 6.0f, card_bg(ctx.theme));
         {

@@ -104,7 +104,7 @@ TEST_CASE("hiding an ancestor hides a nested TextArea's native control",
     auto box_owner = create_root_widget<VBox>(&host);
     VBox& box = *box_owner;
     host.set_root(&box);
-    auto* area = box.add_child(create_root_widget<TextArea>(&host, 40.0f));
+    box.add_child(create_root_widget<TextArea>(&host, 40.0f));
 
     Stage st;
     auto lc = st.lc();

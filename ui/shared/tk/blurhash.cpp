@@ -135,13 +135,15 @@ bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>
             float r = 0.0f, g = 0.0f, b = 0.0f;
             for (int j = 0; j < comp_y; ++j)
             {
-                float basis_y = std::cos((M_PI * static_cast<float>(j) * static_cast<float>(py)) /
-                                         static_cast<float>(h));
+                float basis_y = static_cast<float>(
+                    std::cos((M_PI * static_cast<float>(j) * static_cast<float>(py)) /
+                             static_cast<float>(h)));
                 for (int i = 0; i < comp_x; ++i)
                 {
                     float basis =
-                        basis_y * std::cos((M_PI * static_cast<float>(i) * static_cast<float>(px)) /
-                                           static_cast<float>(w));
+                        basis_y * static_cast<float>(std::cos(
+                                      (M_PI * static_cast<float>(i) * static_cast<float>(px)) /
+                                      static_cast<float>(w)));
                     const Color3& c = colors[static_cast<size_t>(j) * static_cast<size_t>(comp_x) +
                                              static_cast<size_t>(i)];
                     r += c.r * basis;
