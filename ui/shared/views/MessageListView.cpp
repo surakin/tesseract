@@ -1010,9 +1010,49 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
     return row;
 }
 
+namespace
+{
+bool is_membership_or_acl(const MessageRowData& m)
+{
+    return m.kind == MessageRowData::Kind::Membership ||
+           m.kind == MessageRowData::Kind::RoomServerAcl;
+}
+} // namespace
+
+bool is_membership_group_member(const std::vector<MessageRowData>& msgs, std::size_t index)
+{
+    if (msgs[index].kind == MessageRowData::Kind::Membership)
+    {
+        return true;
+    }
+    if (msgs[index].kind != MessageRowData::Kind::RoomServerAcl)
+    {
+        return false;
+    }
+    return (index > 0 && is_membership_or_acl(msgs[index - 1])) ||
+           (index + 1 < msgs.size() && is_membership_or_acl(msgs[index + 1]));
+}
+
+bool is_moderation_action(tesseract::MembershipAction a)
+{
+    using tesseract::MembershipAction;
+    switch (a)
+    {
+    case MembershipAction::Banned:
+    case MembershipAction::Unbanned:
+    case MembershipAction::Kicked:
+    case MembershipAction::KickedAndBanned:
+    case MembershipAction::InvitationRevoked:
+    case MembershipAction::KnockDenied:
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::size_t index)
 {
-    if (msgs[index].kind != MessageRowData::Kind::Membership)
+    if (!is_membership_group_member(msgs, index))
     {
         return false;
     }
@@ -1020,13 +1060,13 @@ bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::siz
     {
         return true;
     }
-    return msgs[index - 1].kind != MessageRowData::Kind::Membership;
+    return !is_membership_group_member(msgs, index - 1);
 }
 
 std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::size_t start)
 {
     std::size_t j = start + 1;
-    while (j < msgs.size() && msgs[j].kind == MessageRowData::Kind::Membership)
+    while (j < msgs.size() && is_membership_group_member(msgs, j))
     {
         ++j;
     }
@@ -1039,17 +1079,34 @@ std::vector<MembershipActionRun> membership_group_actions(const std::vector<Mess
     std::vector<MembershipActionRun> runs;
     for (std::size_t i = start; i < end; ++i)
     {
-        auto it = std::find_if(runs.begin(), runs.end(),
-                               [&](const auto& r)
-                               {
-                                   return r.action == msgs[i].membership_action;
-                               });
+        const bool acl = msgs[i].kind == MessageRowData::Kind::RoomServerAcl;
+        auto it =
+            std::find_if(runs.begin(), runs.end(),
+                         [&](const auto& r)
+                         {
+                             return acl ? r.server_acl
+                                        : (!r.server_acl && r.action == msgs[i].membership_action);
+                         });
         if (it == runs.end())
         {
-            runs.push_back({msgs[i].membership_action, {}});
+            MembershipActionRun run;
+            run.action = acl ? tesseract::MembershipAction{} : msgs[i].membership_action;
+            run.server_acl = acl;
+            runs.push_back(std::move(run));
             it = std::prev(runs.end());
         }
         it->rows.push_back(i);
+    }
+    // Expandable groups list moderation lines first, then presence lines
+    // (first-appearance order within each class). Otherwise each line is the
+    // only display of its event, so the rows keep their timeline order.
+    if (end - start > runs.size())
+    {
+        std::stable_partition(runs.begin(), runs.end(),
+                              [](const auto& r)
+                              {
+                                  return r.server_acl || is_moderation_action(r.action);
+                              });
     }
     return runs;
 }
@@ -1483,6 +1540,10 @@ std::string format_day_label(std::uint64_t timestamp_ms)
     return tk::format_date(sep_tm, tk::tr("%B %-d, %Y"));
 }
 
+std::string membership_expanded_phrase_base(const MessageRowData& m);
+std::string room_server_acl_phrase(const MessageRowData& m);
+} // namespace
+
 // Per-event expanded-line phrase for a single m.room.member row, e.g.
 // "Alice joined the room" or "Bob was removed by Alice". The "by {actor}"
 // clause is included only when the sender differs from the target (i.e.
@@ -1491,12 +1552,17 @@ std::string format_day_label(std::uint64_t timestamp_ms)
 // Rust never sends English prose here (see membership_action_str in
 // sdk/src/client/timeline_convert.rs) — this is the sole place that
 // composes the display string, entirely through tk::tr()/tk::trf().
-std::string membership_expanded_phrase_base(const MessageRowData& m);
-
 std::string membership_expanded_phrase(const MessageRowData& m)
 {
+    if (m.kind == MessageRowData::Kind::RoomServerAcl)
+    {
+        return room_server_acl_phrase(m);
+    }
     return with_membership_reason(membership_expanded_phrase_base(m), m);
 }
+
+namespace
+{
 
 std::string membership_expanded_phrase_base(const MessageRowData& m)
 {
@@ -1862,6 +1928,30 @@ bool membership_avatar_hit(tk::Rect row_rect, tk::Point world)
 std::string membership_run_phrase(const std::vector<MessageRowData>& msgs,
                                   const MembershipActionRun& run)
 {
+    if (run.server_acl)
+    {
+        const std::size_t n = run.rows.size();
+        if (n == 1)
+        {
+            return room_server_acl_phrase(msgs[run.rows.front()]);
+        }
+        const MessageRowData& first_acl = msgs[run.rows.front()];
+        const bool one_sender = std::all_of(run.rows.begin(), run.rows.end(),
+                                            [&](std::size_t i)
+                                            {
+                                                return msgs[i].sender == first_acl.sender;
+                                            });
+        const std::string count = std::to_string(n);
+        if (one_sender)
+        {
+            return tk::trf(tk::trn("{0} changed the server ACL {1} time",
+                                   "{0} changed the server ACL {1} times", static_cast<long>(n)),
+                           {first_acl.member_label(), count});
+        }
+        return tk::trf(tk::trn("The server ACL was changed {0} time",
+                               "The server ACL was changed {0} times", static_cast<long>(n)),
+                       {count});
+    }
     std::vector<std::string> names;
     std::vector<std::string> seen_ids;
     names.reserve(run.rows.size());
@@ -2271,6 +2361,32 @@ public:
     {
         return tesseract::views::membership_group_expandable(owner_.messages_, start);
     }
+    // Whether row `index` takes part in a membership group: any Membership
+    // row, and a RoomServerAcl row only next to another Membership/ACL row.
+    // An ungrouped ACL row keeps its standalone one-line path.
+    bool membership_row_grouped(std::size_t index) const
+    {
+        return tesseract::views::is_membership_group_member(owner_.messages_, index);
+    }
+    // Whether run `i` of `runs` occupies a slot in the avatar-hit lists
+    // (centered_avatar_offsets / membership_avatar_rows). A server_acl run has
+    // no avatar, but while a non-ACL line follows it the slot is kept as an
+    // inert placeholder so line indices still match the painted lines.
+    static bool run_has_avatar_slot(const std::vector<MembershipActionRun>& runs, std::size_t i)
+    {
+        if (!runs[i].server_acl)
+        {
+            return true;
+        }
+        for (std::size_t j = i + 1; j < runs.size(); ++j)
+        {
+            if (!runs[j].server_acl)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
     // A group start row shows its collapsed summary (one line per action)
     // when it can't be expanded or isn't expanded right now.
     bool membership_group_collapsed(std::size_t start) const
@@ -2302,6 +2418,13 @@ public:
         {
             return {};
         }
+        // An ACL row has no avatar of its own; only a collapsed group start
+        // (whose summary lines include the other runs) can yield rows.
+        if (owner_.messages_[index].kind == MessageRowData::Kind::RoomServerAcl &&
+            !(is_membership_group_start(index) && membership_group_collapsed(index)))
+        {
+            return {};
+        }
         if (!is_membership_group_start(index) || !membership_group_collapsed(index))
         {
             return {index};
@@ -2311,9 +2434,14 @@ public:
             return {};
         }
         std::vector<std::size_t> rows;
-        for (const auto& run : membership_group_actions(index, membership_group_end(index)))
+        const auto runs = membership_group_actions(index, membership_group_end(index));
+        for (std::size_t i = 0; i < runs.size(); ++i)
         {
-            rows.push_back(run.rows.front());
+            // An ACL line pushes its own (userless) row: no avatar to hit.
+            if (run_has_avatar_slot(runs, i))
+            {
+                rows.push_back(runs[i].rows.front());
+            }
         }
         return rows;
     }
@@ -2526,13 +2654,14 @@ public:
         {
             return 0.0f; // grouped into the previous bridge-information row
         }
+        const bool grouped_acl = m.kind == Kind::RoomServerAcl && membership_row_grouped(index);
         if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone ||
-            m.kind == Kind::DevUnhandled || m.kind == Kind::RoomServerAcl ||
+            m.kind == Kind::DevUnhandled || (m.kind == Kind::RoomServerAcl && !grouped_acl) ||
             m.kind == Kind::RoomTopic)
         {
             return kPinnedEventH;
         }
-        if (m.kind == Kind::Membership)
+        if (m.kind == Kind::Membership || grouped_acl)
         {
             auto& avatar_offsets = cache_for(index).centered_avatar_offsets;
             avatar_offsets.clear();
@@ -2541,16 +2670,20 @@ public:
                 const float column_w = owner_.column_for_(width).w;
                 if (is_membership_group_start(index) && membership_group_collapsed(index))
                 {
-                    for (const auto& run :
-                         membership_group_actions(index, membership_group_end(index)))
+                    const auto runs = membership_group_actions(index, membership_group_end(index));
+                    for (std::size_t i = 0; i < runs.size(); ++i)
                     {
+                        const auto& run = runs[i];
                         auto line = centered_system_message_layout_(
                             ctx.factory, column_w, membership_run_phrase(owner_.messages_, run),
-                            std::min<std::size_t>(run.rows.size(), 3), {});
-                        avatar_offsets.push_back(line.avatar_x);
+                            run.server_acl ? 0 : std::min<std::size_t>(run.rows.size(), 3), {});
+                        if (run_has_avatar_slot(runs, i))
+                        {
+                            avatar_offsets.push_back(line.avatar_x);
+                        }
                     }
                 }
-                else if (membership_row_painted(index))
+                else if (m.kind != Kind::RoomServerAcl && membership_row_painted(index))
                 {
                     auto line = centered_system_message_layout_(ctx.factory, column_w,
                                                                 membership_expanded_phrase(m), 1,
@@ -2726,13 +2859,26 @@ public:
             paint_room_name_change(m, ctx, bounds, dev_unhandled_phrase(m));
             return;
         }
-        if (m.kind == Kind::RoomServerAcl)
+        const bool grouped_acl = m.kind == Kind::RoomServerAcl && membership_row_grouped(index);
+        if (m.kind == Kind::RoomServerAcl && !grouped_acl)
         {
             paint_room_name_change(m, ctx, bounds, room_server_acl_phrase(m));
             return;
         }
-        if (m.kind == Kind::Membership)
+        if (m.kind == Kind::Membership || grouped_acl)
         {
+            // An expanded ACL row is a plain pinned-style line, no avatar.
+            auto paint_member_line = [&]
+            {
+                if (grouped_acl)
+                {
+                    paint_room_name_change(m, ctx, bounds, room_server_acl_phrase(m));
+                }
+                else
+                {
+                    paint_membership_line(index, m, ctx, bounds);
+                }
+            };
             if (is_membership_group_start(index))
             {
                 if (membership_group_collapsed(index))
@@ -2741,7 +2887,7 @@ public:
                 }
                 else
                 {
-                    paint_membership_line(index, m, ctx, bounds);
+                    paint_member_line();
                 }
             }
             else
@@ -2749,7 +2895,7 @@ public:
                 std::size_t start = membership_group_start_of(index);
                 if (owner_.membership_groups_.is_expanded(owner_.messages_[start].event_id))
                 {
-                    paint_membership_line(index, m, ctx, bounds);
+                    paint_member_line();
                 }
             }
             return;
@@ -4275,10 +4421,14 @@ public:
             return room_tombstone_phrase(m);
         case Kind::DevUnhandled:
             return dev_unhandled_phrase(m);
-        case Kind::RoomServerAcl:
-            return room_server_acl_phrase(m);
         case Kind::RoomTopic:
             return room_topic_change_phrase(m);
+        case Kind::RoomServerAcl:
+            if (!membership_row_grouped(index))
+            {
+                return room_server_acl_phrase(m);
+            }
+            [[fallthrough]];
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -4438,7 +4588,7 @@ public:
         }
 
         const MessageRowData& m = owner_.messages_[index];
-        if (m.kind == MessageRowData::Kind::Membership)
+        if (m.kind == MessageRowData::Kind::Membership || membership_row_grouped(index))
         {
             // Lines with a clickable target avatar; expandable summaries
             // expand instead.
@@ -5529,8 +5679,15 @@ private:
         for (const auto& run : membership_group_actions(start, end))
         {
             const auto& first = owner_.messages_[run.rows.front()];
+            if (run.server_acl)
+            {
+                paint_room_name_change(first, ctx, {bounds.x, y, bounds.w, kPinnedEventH},
+                                       membership_run_phrase(owner_.messages_, run));
+                y += kPinnedEventH;
+                continue;
+            }
             const bool uses_pronoun =
-                run.rows.size() == 1 &&
+                !run.server_acl && run.rows.size() == 1 &&
                 (run.action == tesseract::MembershipAction::InvitationRevoked ||
                  run.action == tesseract::MembershipAction::KnockRetracted);
             if (uses_pronoun && !first.pronoun_resolved &&
@@ -5539,8 +5696,9 @@ private:
                 owner_.on_member_pronoun_needed(first.membership_target_user_id);
             }
 
-            paint_centered_system_message_(run.rows, membership_run_phrase(owner_.messages_, run),
-                                           {}, ctx, {bounds.x, y, bounds.w, kPinnedEventH});
+            paint_centered_system_message_(run.server_acl ? std::vector<std::size_t>{} : run.rows,
+                                           membership_run_phrase(owner_.messages_, run), {}, ctx,
+                                           {bounds.x, y, bounds.w, kPinnedEventH});
             y += kPinnedEventH;
         }
     }
@@ -5635,11 +5793,19 @@ private:
                                         tk::Rect bounds) const
     {
         const auto& msgs = owner_.messages_;
+        if (run.server_acl)
+        {
+            // Same look as a lone state-event row (centered, with the rule).
+            paint_room_name_change(msgs[run.rows.front()], ctx, bounds,
+                                   membership_run_phrase(msgs, run));
+            return;
+        }
         constexpr float kAvatarD = kMembershipAvatarD;
         constexpr float kStride = 12.0f;
         constexpr std::size_t kCap = 3;
         const std::size_t total = run.rows.size();
-        const std::size_t visible = std::min(total, kCap);
+        // An ACL line names no target: no avatars, text at the left padding.
+        const std::size_t visible = run.server_acl ? 0 : std::min(total, kCap);
         const float cy = bounds.y + kPinnedEventH * 0.5f;
 
         float cx = bounds.x + kMsgListPadX + kAvatarD * 0.5f;
@@ -5657,9 +5823,11 @@ private:
             cx += kStride;
         }
 
-        const float text_x = bounds.x + kMsgListPadX + kAvatarD +
-                             (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) +
-                             6.0f;
+        const float text_x =
+            run.server_acl
+                ? bounds.x + kMsgListPadX
+                : bounds.x + kMsgListPadX + kAvatarD +
+                      (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) + 6.0f;
 
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
@@ -5674,7 +5842,8 @@ private:
         using A = tesseract::MembershipAction;
         const auto& first = msgs[run.rows.front()];
         const bool singleton_uses_pronoun =
-            total == 1 && (run.action == A::InvitationRevoked || run.action == A::KnockRetracted);
+            !run.server_acl && total == 1 &&
+            (run.action == A::InvitationRevoked || run.action == A::KnockRetracted);
         if (singleton_uses_pronoun && !first.pronoun_resolved &&
             !first.membership_target_user_id.empty() && owner_.on_member_pronoun_needed)
         {
@@ -8840,6 +9009,14 @@ public:
         float y = bounds.y;
         for (const auto& run : membership_group_actions(msgs, start, end))
         {
+            if (run.server_acl)
+            {
+                ad.paint_room_name_change(msgs[run.rows.front()], ctx,
+                                          {bounds.x, y, bounds.w, kPinnedEventH},
+                                          membership_run_phrase(msgs, run));
+                y += kPinnedEventH;
+                continue;
+            }
             ad.paint_irc_system_line_(
                 ctx, {bounds.x, y, bounds.w, kPinnedEventH}, kPinnedEventH,
                 msgirc::timestamp_part(format_hhmm(msgs[run.rows.front()].timestamp_ms)) + "* " +
@@ -12949,7 +13126,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
         if (row < messages_.size())
         {
             const auto& m = messages_[row];
-            if (m.kind == MessageRowData::Kind::Membership)
+            if (m.kind == MessageRowData::Kind::Membership || adapter_->membership_row_grouped(row))
             {
                 // A click on a line's target avatar opens that user's
                 // profile, same as a message sender's avatar.
@@ -14841,6 +15018,11 @@ bool MessageListView::kbd_open_more_()
     return open_actions_menu_(sel,
                               anchor_for_event_(messages_[static_cast<std::size_t>(sel)].event_id),
                               /*full=*/true, has_selection(), false);
+}
+
+std::vector<std::size_t> MessageListView::membership_avatar_rows_for_test(std::size_t index) const
+{
+    return adapter_->membership_avatar_rows(index);
 }
 
 void MessageListView::kbd_toggle_membership_group_(int idx)

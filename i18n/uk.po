@@ -7795,6 +7795,20 @@ msgid "{0} changed the server ACL"
 msgstr "{0} змінив(-ла) ACL серверів"
 
 #, c++-format
+msgid "{0} changed the server ACL {1} time"
+msgid_plural "{0} changed the server ACL {1} times"
+msgstr[0] "{0} змінив(-ла) ACL серверів {1} раз"
+msgstr[1] "{0} змінив(-ла) ACL серверів {1} рази"
+msgstr[2] "{0} змінив(-ла) ACL серверів {1} разів"
+
+#, c++-format
+msgid "The server ACL was changed {0} time"
+msgid_plural "The server ACL was changed {0} times"
+msgstr[0] "ACL серверів змінено {0} раз"
+msgstr[1] "ACL серверів змінено {0} рази"
+msgstr[2] "ACL серверів змінено {0} разів"
+
+#, c++-format
 msgid "{0} server now denied"
 msgid_plural "{0} servers now denied"
 msgstr[0] "{0} сервер тепер заборонено"

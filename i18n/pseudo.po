@@ -3439,6 +3439,18 @@ msgstr "[Thé sérvér ÀÇL wàs çhàñgédxxxxx]"
 msgid "{0} changed the server ACL"
 msgstr "[{0} çhàñgéd thé sérvér ÀÇLxxxxx]"
 
+#, c++-format
+msgid "{0} changed the server ACL {1} time"
+msgid_plural "{0} changed the server ACL {1} times"
+msgstr[0] "[{0} çhàñgéd thé šérvér ÀÇL {1} tïméxxxxx]"
+msgstr[1] "[{0} çhàñgéd thé šérvér ÀÇL {1} tïméšxxxxx]"
+
+#, c++-format
+msgid "The server ACL was changed {0} time"
+msgid_plural "The server ACL was changed {0} times"
+msgstr[0] "[Thé šérvér ÀÇL wàš çhàñgéd {0} tïméxxxxx]"
+msgstr[1] "[Thé šérvér ÀÇL wàš çhàñgéd {0} tïméšxxxxx]"
+
 #: ui/shared/views/MessageListView.cpp:1659
 #: ui/shared/views/MessageListView.cpp:1660
 msgid "Bridge information"

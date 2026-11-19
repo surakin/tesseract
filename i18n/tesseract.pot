@@ -3513,6 +3513,18 @@ msgstr ""
 msgid "{0} changed the server ACL"
 msgstr ""
 
+#, c++-format
+msgid "{0} changed the server ACL {1} time"
+msgid_plural "{0} changed the server ACL {1} times"
+msgstr[0] ""
+msgstr[1] ""
+
+#, c++-format
+msgid "The server ACL was changed {0} time"
+msgid_plural "The server ACL was changed {0} times"
+msgstr[0] ""
+msgstr[1] ""
+
 #: ui/shared/views/MessageListView.cpp:1659
 #: ui/shared/views/MessageListView.cpp:1660
 msgid "Bridge information"

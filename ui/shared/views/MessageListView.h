@@ -448,13 +448,19 @@ MapViewport next_map_viewport(const MessageRowData& old_row, const MessageRowDat
 // Membership-group boundary helpers, factored out as pure functions (over
 // `msgs`/an index) so they're unit-testable without a live MessageListView.
 // MessageListView::Adapter's row-height/paint/click logic delegates to
-// these. A "group" is a maximal run of consecutive Kind::Membership rows,
-// whatever their membership_action; any other kind (including a virtual
+// these. A "group" is a maximal run of consecutive Kind::Membership rows
+// (whatever their membership_action) merged with RoomServerAcl rows that sit
+// next to one; a lone ACL row is not a group member. Any other kind (including a virtual
 // day-separator row) starts a new group. No time-based splitting —
 // arbitrarily distant rows still group as long as nothing else is
 // interleaved. Collapsed, a group shows one summary line per distinct
 // action (see membership_group_actions).
 bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::size_t index);
+// True for Membership rows, and for RoomServerAcl rows adjacent to a Membership or
+// RoomServerAcl row.
+bool is_membership_group_member(const std::vector<MessageRowData>& msgs, std::size_t index);
+// Ban/kick-style actions, listed before presence actions in a group summary.
+bool is_moderation_action(tesseract::MembershipAction a);
 // Exclusive end index of the group starting at `start` (which must satisfy
 // is_membership_group_start(msgs, start)).
 std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::size_t start);
@@ -471,8 +477,10 @@ struct MembershipActionRun
 {
     tesseract::MembershipAction action{};
     std::vector<std::size_t> rows;
+    bool server_acl = false; // ACL line: `action` unused, `rows` are the ACL row indices
 };
-// The distinct actions of rows [start, end), in first-appearance order.
+// The distinct actions of rows [start, end) plus at most one server_acl run:
+// moderation runs first, then presence runs, first-appearance order within each.
 std::vector<MembershipActionRun> membership_group_actions(const std::vector<MessageRowData>& msgs,
                                                           std::size_t start, std::size_t end);
 // Whether the group starting at `start` can be expanded: only when some
@@ -487,6 +495,8 @@ std::string with_membership_reason(std::string phrase, const MessageRowData& m);
 // `row_rect` (a single line, or one line of a non-expandable group's summary;
 // for summary lines the first avatar sits at the same spot).
 bool membership_avatar_hit(tk::Rect row_rect, tk::Point world);
+// Per-event expanded line for a Membership or RoomServerAcl row.
+std::string membership_expanded_phrase(const MessageRowData& m);
 // The collapsed-summary line for `run` (people counted once, however many rows).
 std::string membership_run_phrase(const std::vector<MessageRowData>& msgs,
                                   const MembershipActionRun& run);
@@ -1413,6 +1423,15 @@ public:
     bool historical_mode_for_test() const
     {
         return historical_mode_;
+    }
+    // Test seam: rows whose avatars are clickable on painted row `index`
+    // (valid after the first measure).
+    std::vector<std::size_t> membership_avatar_rows_for_test(std::size_t index) const;
+    // Test seam: toggle the membership group starting at `event_id`.
+    void toggle_membership_group_for_test(const std::string& event_id)
+    {
+        membership_groups_.toggle(event_id);
+        invalidate_data();
     }
     // Test seam: the typing indicator text last set.
     const std::string& typing_text_for_test() const

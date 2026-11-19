@@ -5574,6 +5574,18 @@ msgid "{0} changed the server ACL"
 msgstr "{0} endret server-ACL-en"
 
 #, c++-format
+msgid "{0} changed the server ACL {1} time"
+msgid_plural "{0} changed the server ACL {1} times"
+msgstr[0] "{0} endret server-ACL-en {1} gang"
+msgstr[1] "{0} endret server-ACL-en {1} ganger"
+
+#, c++-format
+msgid "The server ACL was changed {0} time"
+msgid_plural "The server ACL was changed {0} times"
+msgstr[0] "Server-ACL-en ble endret {0} gang"
+msgstr[1] "Server-ACL-en ble endret {0} ganger"
+
+#, c++-format
 msgid "{0} server now denied"
 msgid_plural "{0} servers now denied"
 msgstr[0] "{0} server nektes nå"

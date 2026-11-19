@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tk/access_tree.h"
 #include "tk/canvas.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
@@ -10,12 +11,15 @@
 
 #include <tesseract/settings.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 
 using tesseract::MembershipAction;
 using tesseract::Settings;
+using tesseract::views::is_membership_group_member;
 using tesseract::views::is_membership_group_start;
+using tesseract::views::is_moderation_action;
 using tesseract::views::MembershipGroupExpander;
 using tesseract::views::membership_avatar_hit;
 using tesseract::views::membership_group_actions;
@@ -44,6 +48,15 @@ MessageRowData text_row(const std::string& event_id)
     MessageRowData r;
     r.kind = MessageRowData::Kind::Text;
     r.event_id = event_id;
+    return r;
+}
+
+MessageRowData acl_row(const std::string& event_id, const std::string& sender)
+{
+    MessageRowData r;
+    r.kind = MessageRowData::Kind::RoomServerAcl;
+    r.event_id = event_id;
+    r.sender = sender;
     return r;
 }
 
@@ -640,4 +653,402 @@ TEST_CASE("paired bridge-information rows are grouped into one", "[message_list]
     CHECK_FALSE(is_absorbed_bridge_info_row(rows, 2)); // different state key
     CHECK_FALSE(is_absorbed_bridge_info_row(rows, 3)); // different sender
     CHECK_FALSE(is_absorbed_bridge_info_row(rows, 4)); // not a bridge row
+}
+
+TEST_CASE("lone ACL row is not a group member", "[message_list][membership]")
+{
+    std::vector<MessageRowData> msgs = {text_row("$t1"), acl_row("$acl", "@a:x"), text_row("$t2")};
+    CHECK_FALSE(is_membership_group_member(msgs, 1));
+    CHECK_FALSE(is_membership_group_start(msgs, 1));
+}
+
+TEST_CASE("ACL rows and bans form one run", "[message_list][membership]")
+{
+    std::vector<MessageRowData> msgs = {
+        membership_row("$b1", MembershipAction::Banned), acl_row("$a1", "@a:x"),
+        membership_row("$b2", MembershipAction::Banned), acl_row("$a2", "@a:x")};
+    CHECK(is_membership_group_start(msgs, 0));
+    CHECK_FALSE(is_membership_group_start(msgs, 1));
+    CHECK_FALSE(is_membership_group_start(msgs, 2));
+    CHECK_FALSE(is_membership_group_start(msgs, 3));
+    CHECK(membership_group_end(msgs, 0) == 4);
+    CHECK(membership_group_start_of(msgs, 3) == 0);
+}
+
+TEST_CASE("ACL-only run of two is a group and expandable", "[message_list][membership]")
+{
+    std::vector<MessageRowData> msgs = {acl_row("$a1", "@a:x"), acl_row("$a2", "@a:x")};
+    CHECK(is_membership_group_start(msgs, 0));
+    CHECK(membership_group_end(msgs, 0) == 2);
+    CHECK(membership_group_expandable(msgs, 0));
+}
+
+TEST_CASE("ACL run ends at a non-groupable row", "[message_list][membership]")
+{
+    std::vector<MessageRowData> msgs = {membership_row("$b", MembershipAction::Banned),
+                                        acl_row("$a1", "@a:x"), text_row("$t"),
+                                        acl_row("$a2", "@a:x")};
+    CHECK(membership_group_end(msgs, 0) == 2);
+    CHECK_FALSE(is_membership_group_member(msgs, 3));
+}
+
+TEST_CASE("expandable summary runs list moderation before presence", "[message_list][membership]")
+{
+    std::vector<MessageRowData> msgs = {membership_row("$j", MembershipAction::Joined),
+                                        membership_row("$b", MembershipAction::Banned),
+                                        acl_row("$a", "@a:x"),
+                                        membership_row("$l", MembershipAction::Left),
+                                        membership_row("$b2", MembershipAction::Banned)};
+    REQUIRE(membership_group_expandable(msgs, 0));
+    const auto runs = membership_group_actions(msgs, 0, 5);
+    REQUIRE(runs.size() == 4);
+    CHECK(runs[0].action == MembershipAction::Banned);
+    CHECK_FALSE(runs[0].server_acl);
+    CHECK(runs[0].rows == std::vector<std::size_t>{1, 4});
+    CHECK(runs[1].server_acl);
+    CHECK(runs[1].rows == std::vector<std::size_t>{2});
+    CHECK(runs[2].action == MembershipAction::Joined);
+    CHECK(runs[3].action == MembershipAction::Left);
+}
+
+TEST_CASE("non-expandable summary runs keep timeline order", "[message_list][membership]")
+{
+    SECTION("join then ban")
+    {
+        std::vector<MessageRowData> msgs = {membership_row("$j", MembershipAction::Joined),
+                                            membership_row("$b", MembershipAction::Banned)};
+        REQUIRE_FALSE(membership_group_expandable(msgs, 0));
+        const auto runs = membership_group_actions(msgs, 0, 2);
+        REQUIRE(runs.size() == 2);
+        CHECK(runs[0].action == MembershipAction::Joined);
+        CHECK(runs[1].action == MembershipAction::Banned);
+    }
+    SECTION("ban, acl, join")
+    {
+        std::vector<MessageRowData> msgs = {membership_row("$b", MembershipAction::Banned),
+                                            acl_row("$a", "@a:x"),
+                                            membership_row("$j", MembershipAction::Joined)};
+        REQUIRE_FALSE(membership_group_expandable(msgs, 0));
+        const auto runs = membership_group_actions(msgs, 0, 3);
+        REQUIRE(runs.size() == 3);
+        CHECK(runs[0].action == MembershipAction::Banned);
+        CHECK(runs[1].server_acl);
+        CHECK(runs[2].action == MembershipAction::Joined);
+    }
+}
+
+TEST_CASE("borderline actions are moderation", "[message_list][membership]")
+{
+    CHECK(is_moderation_action(MembershipAction::InvitationRevoked));
+    CHECK(is_moderation_action(MembershipAction::KnockDenied));
+    CHECK_FALSE(is_moderation_action(MembershipAction::Joined));
+    CHECK_FALSE(is_moderation_action(MembershipAction::Invited));
+    CHECK_FALSE(is_moderation_action(MembershipAction::DisplayNameChanged));
+}
+
+TEST_CASE("mixed run with one row per summary line is not expandable", "[message_list][membership]")
+{
+    std::vector<MessageRowData> msgs = {membership_row("$b", MembershipAction::Banned),
+                                        acl_row("$a", "@a:x"),
+                                        membership_row("$j", MembershipAction::Joined)};
+    CHECK_FALSE(membership_group_expandable(msgs, 0));
+}
+
+TEST_CASE("ACL run phrase names a single sender", "[message_list][acl][moderation]")
+{
+    std::vector<MessageRowData> msgs = {acl_row("$a1", "@a:x"), acl_row("$a2", "@a:x"),
+                                        acl_row("$a3", "@a:x")};
+    for (auto& m : msgs)
+    {
+        m.sender_name = "Alice";
+    }
+    tesseract::views::MembershipActionRun run;
+    run.server_acl = true;
+    run.rows = {0, 1, 2};
+    const std::string p = tesseract::views::membership_run_phrase(msgs, run);
+    CHECK(p.find("3 times") != std::string::npos);
+    CHECK(p.find("Alice") != std::string::npos);
+}
+
+TEST_CASE("ACL run phrase with several senders omits names", "[message_list][acl][moderation]")
+{
+    std::vector<MessageRowData> msgs = {acl_row("$a1", "@a:x"), acl_row("$a2", "@b:x")};
+    msgs[0].sender_name = "Alice";
+    msgs[1].sender_name = "Bob";
+    tesseract::views::MembershipActionRun run;
+    run.server_acl = true;
+    run.rows = {0, 1};
+    const std::string p = tesseract::views::membership_run_phrase(msgs, run);
+    CHECK(p.find("2 times") != std::string::npos);
+    CHECK(p.find("Alice") == std::string::npos);
+    CHECK(p.find("Bob") == std::string::npos);
+}
+
+TEST_CASE("single ACL row in a run uses the per-event phrase", "[message_list][acl][moderation]")
+{
+    std::vector<MessageRowData> msgs = {acl_row("$a1", "@a:x")};
+    msgs[0].sender_name = "Alice";
+    msgs[0].body = "deny+3";
+    tesseract::views::MembershipActionRun run;
+    run.server_acl = true;
+    run.rows = {0};
+    CHECK(tesseract::views::membership_run_phrase(msgs, run) ==
+          tesseract::views::membership_expanded_phrase(msgs[0]));
+    CHECK(tesseract::views::membership_run_phrase(msgs, run).find("3 servers now denied") !=
+          std::string::npos);
+}
+
+TEST_CASE("expanded phrase of an ACL row is its ACL phrase", "[message_list][acl][moderation]")
+{
+    MessageRowData m = acl_row("$a1", "@a:x");
+    m.sender_name = "Alice";
+    m.body = "ip-";
+    const std::string p = tesseract::views::membership_expanded_phrase(m);
+    CHECK(p.find("IP literals no longer allowed") != std::string::npos);
+}
+
+namespace
+{
+// Content height of `rows` laid out in a Classic-layout list, minus the
+// height of an empty list (the always-present typing row).
+float rows_height(std::vector<MessageRowData> rows, const std::string& expand_group = {})
+{
+    Settings::instance().message_layout = Settings::MessageLayout::Classic;
+    auto surface = TestSurface::create(320, 400);
+    REQUIRE(surface);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    auto height_of = [&](std::vector<MessageRowData> r)
+    {
+        MessageListView view;
+        view.set_messages(std::move(r), true);
+        if (!expand_group.empty())
+        {
+            view.toggle_membership_group_for_test(expand_group);
+        }
+        view.measure(lc, {320.0f, 400.0f});
+        view.arrange(lc, {0.0f, 0.0f, 320.0f, 400.0f});
+        return view.content_height();
+    };
+    return height_of(std::move(rows)) - height_of({});
+}
+
+MessageRowData ban_row(const std::string& id)
+{
+    return membership_row(id, MembershipAction::Banned);
+}
+
+MessageRowData named_acl_row(const std::string& id)
+{
+    MessageRowData r = acl_row(id, "@a:x");
+    r.sender_name = "Alice";
+    r.body = "deny+3";
+    return r;
+}
+} // namespace
+
+TEST_CASE("a grouped ACL row measures as part of the run", "[message_list][acl][moderation]")
+{
+    constexpr float kLine = 24.0f; // kPinnedEventH
+    std::vector<MessageRowData> rows = {ban_row("$b1"), named_acl_row("$a1"), ban_row("$b2")};
+
+    // Collapsed: the ban line plus the ACL line; the later rows are absorbed.
+    CHECK(rows_height(rows) == 2 * kLine);
+    // Expanded: every row is one line.
+    CHECK(rows_height(rows, "$b1") == 3 * kLine);
+}
+
+TEST_CASE("a lone ACL row keeps its one-line height", "[message_list][acl][moderation]")
+{
+    std::vector<MessageRowData> rows = {text_row("$t1"), named_acl_row("$a1")};
+    std::vector<MessageRowData> texts = {text_row("$t1")};
+    CHECK(rows_height(rows) - rows_height(texts) == 24.0f);
+}
+
+namespace
+{
+// Accessibility names of every node in a collapsed MessageListView over `rows`.
+std::vector<std::string> a11y_names(std::vector<MessageRowData> rows)
+{
+    MessageListView v;
+    v.set_messages(std::move(rows), false);
+    auto surface = TestSurface::create(320, 400);
+    REQUIRE(surface);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    v.measure(lc, {320.0f, 400.0f});
+    v.arrange(lc, {0.0f, 0.0f, 320.0f, 400.0f});
+    tk::AccessNode tree = tk::build_access_tree(&v);
+    std::vector<std::string> names;
+    std::vector<const tk::AccessNode*> stack{&tree};
+    while (!stack.empty())
+    {
+        const tk::AccessNode* n = stack.back();
+        stack.pop_back();
+        names.push_back(n->name);
+        for (const auto& ch : n->children)
+        {
+            stack.push_back(&ch);
+        }
+    }
+    return names;
+}
+
+bool any_name_contains(const std::vector<std::string>& names, const std::string& needle)
+{
+    return std::any_of(names.begin(), names.end(),
+                       [&](const std::string& n)
+                       {
+                           return n.find(needle) != std::string::npos;
+                       });
+}
+} // namespace
+
+TEST_CASE("a collapsed run announces its ACL line", "[message_list][acl][moderation]")
+{
+    SECTION("ban, acl, ban reads as one combined sentence list")
+    {
+        std::vector<MessageRowData> rows = {ban_row("$b1"), named_acl_row("$a1"), ban_row("$b2")};
+        tesseract::views::MembershipActionRun bans;
+        bans.action = MembershipAction::Banned;
+        bans.rows = {0, 2};
+        tesseract::views::MembershipActionRun acl;
+        acl.server_acl = true;
+        acl.rows = {1};
+        const std::string expected = tesseract::views::membership_run_phrase(rows, bans) + "; " +
+                                     tesseract::views::membership_run_phrase(rows, acl);
+        CHECK(any_name_contains(a11y_names(std::move(rows)), expected));
+    }
+    SECTION("two ACL rows from one sender announce the count")
+    {
+        std::vector<MessageRowData> rows = {named_acl_row("$a1"), named_acl_row("$a2")};
+        const auto names = a11y_names(std::move(rows));
+        CHECK(any_name_contains(names, "2 times"));
+    }
+}
+
+namespace
+{
+std::vector<std::size_t> avatar_rows_of(std::vector<MessageRowData> rows, std::size_t index)
+{
+    Settings::instance().message_layout = Settings::MessageLayout::Classic;
+    auto surface = TestSurface::create(320, 400);
+    REQUIRE(surface);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    MessageListView v;
+    v.set_messages(std::move(rows), true);
+    v.measure(lc, {320.0f, 400.0f});
+    v.arrange(lc, {0.0f, 0.0f, 320.0f, 400.0f});
+    return v.membership_avatar_rows_for_test(index);
+}
+} // namespace
+
+TEST_CASE("non-expandable {ban, acl} offers only the ban avatar", "[message_list][acl][moderation]")
+{
+    const auto rows = avatar_rows_of({ban_row("$b1"), named_acl_row("$a1")}, 0);
+    REQUIRE(rows.size() == 1);
+    CHECK(rows[0] == 0);
+}
+
+TEST_CASE("non-expandable {acl, ban} keeps line alignment past the ACL start row",
+          "[message_list][acl][moderation]")
+{
+    const auto rows = avatar_rows_of({named_acl_row("$a1"), ban_row("$b1")}, 0);
+    // Line 0 is the ACL line (inert placeholder, userless row), line 1 the ban.
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0] == 0);
+    CHECK(rows[1] == 1);
+}
+
+TEST_CASE("an expanded ACL row offers no avatar", "[message_list][acl][moderation]")
+{
+    Settings::instance().message_layout = Settings::MessageLayout::Classic;
+    auto surface = TestSurface::create(320, 400);
+    REQUIRE(surface);
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    MessageListView v;
+    v.set_messages({ban_row("$b1"), named_acl_row("$a1"), ban_row("$b2")}, true);
+    v.toggle_membership_group_for_test("$b1");
+    v.measure(lc, {320.0f, 400.0f});
+    v.arrange(lc, {0.0f, 0.0f, 320.0f, 400.0f});
+    CHECK(v.membership_avatar_rows_for_test(1).empty());
+    CHECK(v.membership_avatar_rows_for_test(0) == std::vector<std::size_t>{0});
+}
+
+namespace
+{
+// Full 320x96 render of `rows`, row-major packed RGBA.
+std::vector<std::uint32_t> render_rows(Settings::MessageLayout layout,
+                                       std::vector<MessageRowData> rows)
+{
+    Settings::instance().message_layout = layout;
+    auto surface = TestSurface::create(320, 96);
+    REQUIRE(surface);
+    MessageListView view;
+    view.set_messages(std::move(rows), true);
+    surface->canvas().clear(tk::Color::rgb(0xffffff));
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    view.measure(lc, {320.0f, 96.0f});
+    view.arrange(lc, {0.0f, 0.0f, 320.0f, 96.0f});
+    tk::PaintCtx pc{surface->canvas(), surface->factory(), tk::Theme::light()};
+    view.paint(pc);
+    std::vector<std::uint32_t> px;
+    for (int y = 0; y < 96; ++y)
+    {
+        for (int x = 0; x < 320; ++x)
+        {
+            const tk::Color c = surface->read_pixel(x, y);
+            px.push_back((static_cast<std::uint32_t>(c.r) << 24) |
+                         (static_cast<std::uint32_t>(c.g) << 16) |
+                         (static_cast<std::uint32_t>(c.b) << 8) | c.a);
+        }
+    }
+    return px;
+}
+
+// Whether the 24px band of `img` starting at row y0 equals `band` and has content.
+bool band_matches(const std::vector<std::uint32_t>& img, const std::vector<std::uint32_t>& band,
+                  int y0)
+{
+    return std::equal(band.begin(), band.end(),
+                      img.begin() + static_cast<std::ptrdiff_t>(y0) * 320);
+}
+} // namespace
+
+TEST_CASE("the collapsed ACL run line looks like a lone ACL row", "[message_list][acl][moderation]")
+{
+    using ML = Settings::MessageLayout;
+    for (ML layout : {ML::Classic, ML::Irc})
+    {
+        const auto lone = render_rows(layout, {named_acl_row("$a1")});
+        const auto run =
+            render_rows(layout, {ban_row("$b1"), named_acl_row("$a1"), ban_row("$b2")});
+        // The lone ACL band: the latest 24px band holding all its non-background pixels
+        // (so it starts inside the row, never above it).
+        const std::uint32_t bg = lone[0];
+        int lone_y = -1;
+        std::size_t best = 0;
+        for (int y = 0; y + 24 <= 96; ++y)
+        {
+            std::size_t n = 0;
+            for (int i = 0; i < 24 * 320; ++i)
+            {
+                n += lone[static_cast<std::size_t>(y) * 320 + static_cast<std::size_t>(i)] != bg;
+            }
+            if (n >= best)
+            {
+                best = n;
+                lone_y = y;
+            }
+        }
+        REQUIRE(lone_y >= 0);
+        const std::vector<std::uint32_t> band(
+            lone.begin() + static_cast<std::ptrdiff_t>(lone_y) * 320,
+            lone.begin() + static_cast<std::ptrdiff_t>(lone_y + 24) * 320);
+        // The same band (rule + centered phrase) appears in the run render.
+        bool found = false;
+        for (int y = 0; y + 24 <= 96 && !found; ++y)
+        {
+            found = band_matches(run, band, y);
+        }
+        CHECK(found);
+    }
 }

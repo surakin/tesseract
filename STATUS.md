@@ -14,6 +14,8 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-11-17**
 > An off-by-default Settings → Advanced option shows server ACL, bridge
 > information, service member and room feature changes as timeline rows.
 > Rooms that publish the stable `m.bridge` event are detected as bridged.
+> Server ACL changes group with bans and other membership events into one
+> expandable row, so a moderation bot's burst takes a single line.
 
 > **Bot commands and stickers (2026-11-15, v0.9.9).**
 > Received MSC4391 bot commands show a "Bot command" line above the message;
