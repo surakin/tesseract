@@ -17,6 +17,8 @@ LanguageGroup::LanguageGroup(SettingBinder& binder) : SettingsGroup(tk::tr("Lang
         {tk::tr("German"), "de"},
         {tk::tr("Ukrainian"), "uk"},
         {tk::tr("Norwegian Bokmål"), "nb"},
+        {tk::tr("Portuguese"), "pt"},
+        {tk::tr("Portuguese (Brazil)"), "pt_BR"},
     });
     combo_ = add_widget(std::move(combo));
     binder.bind(combo_, &tesseract::Settings::language, SettingKey::Language);

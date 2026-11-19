@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- feat(i18n): European and Brazilian Portuguese translations. Linux Qt6 debug build, ctest
 - feat(timeline): server ACL changes now group with bans and other membership events into one expandable row. Linux Qt6 debug build, ctest 3980/3980, user-verified Qt6
 - chore(build): compiler warnings are now errors in every C++ and Rust build configuration. Linux debug and release builds, ctest 3961/3961, cargo 1733/1733
 - fix(calls): call audio no longer crashes when the system drops the audio output stream; the stream is rebuilt. Linux release build
