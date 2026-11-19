@@ -793,7 +793,7 @@ void MainWindow::setupActivationListener_()
 #endif
 }
 
-void MainWindow::activateWindowWithToken_(const QString& external_token)
+void MainWindow::activateWindowWithToken_([[maybe_unused]] const QString& external_token)
 {
     show();
     raise();

@@ -22,8 +22,7 @@ namespace qt6
 {
 
 RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
-    : QWidget(nullptr, Qt::Window), tesseract::RoomWindowBase(parent_shell, room_id),
-      parent_shell_(parent_shell)
+    : QWidget(nullptr, Qt::Window), tesseract::RoomWindowBase(parent_shell, room_id)
 {
     setAttribute(Qt::WA_DeleteOnClose,
                  false); // we manage lifetime via unique_ptr

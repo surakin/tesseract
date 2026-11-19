@@ -47,7 +47,6 @@ protected:
     void on_gif_search_failed(std::uint64_t request_id, const std::string& message) override;
 
 private:
-    MainWindow* parent_shell_;
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)
     bool rw_was_maximized_ = false;       // restore target when leaving viewer full-screen
     // Borrowed from room_view_->compose_bar()->text_area() — see
