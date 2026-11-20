@@ -167,6 +167,7 @@ jobs:
             ${{ runner.temp }}/smoke-run/**/app-*.log
             ${{ runner.temp }}/smoke-syn/synapse.log
             ${{ runner.temp }}/smoke-syn/synapse.stdout.log
+            ${{ runner.temp }}/smoke-syn/mock_oidc.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -269,6 +270,7 @@ jobs:
             ${{ runner.temp }}/smoke-run/**/app-*.log
             ${{ runner.temp }}/smoke-syn/synapse.log
             ${{ runner.temp }}/smoke-syn/synapse.stdout.log
+            ${{ runner.temp }}/smoke-syn/mock_oidc.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -379,18 +381,25 @@ jobs:
           if (-not $secret) { throw "Synapse never wrote its registration secret" }
           Set-Content -NoNewline -Path "$env:RUNNER_TEMP\smoke-secret" -Value $secret
           # The WSL network interface exists now: let its traffic through the
-          # firewall and forward 127.0.0.1:8448 to Synapse in the distro, so
+          # firewall and forward 127.0.0.1:8448 (Synapse) and 8449 (fake identity
+          # provider) to the distro, so
           # https://localhost:8448 stays valid for the certificate.
           Set-NetFirewallProfile -Profile Public,Private,Domain -DisabledInterfaceAliases "vEthernet (WSL)"
           $wslip = ((wsl -d Ubuntu-24.04 -- hostname -I) -split '\s+')[0]
           netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8448 connectaddress=$wslip connectport=8448
+          # Same for the fake identity provider the sso phase signs in against.
+          netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8449 connectaddress=$wslip connectport=8449
           # The secret is written before Synapse starts listening, so wait until
           # Windows can really reach it (reachability only; the smoke test
           # itself verifies the certificate); fail here, with the evidence, if not.
           $ready = $false
           for ($i = 0; $i -lt 60 -and -not $ready; $i++) {
             curl.exe -sS -f -k -m 5 https://localhost:8448/_matrix/client/versions *> $null
-            if ($LASTEXITCODE -eq 0) { $ready = $true } else { Start-Sleep -Seconds 2 }
+            if ($LASTEXITCODE -eq 0) {
+              curl.exe -sS -f -m 5 http://127.0.0.1:8449/health *> $null
+              if ($LASTEXITCODE -eq 0) { $ready = $true }
+            }
+            if (-not $ready) { Start-Sleep -Seconds 2 }
           }
           if (-not $ready) {
             wsl -l -v
@@ -400,9 +409,10 @@ jobs:
             curl.exe -sS -k -m 10 "https://${wslip}:8448/_matrix/client/versions"
             curl.exe -sS -v -k -m 10 https://localhost:8448/_matrix/client/versions
             curl.exe -sS -v -m 10 --cacert "$env:RUNNER_TEMP\smoke-ca\ca.crt" https://localhost:8448/_matrix/client/versions
+            curl.exe -sS -v -m 10 http://127.0.0.1:8449/health
             wsl -d Ubuntu-24.04 -- sh -c "curl -sS -k -m 10 https://127.0.0.1:8448/_matrix/client/versions; ps aux | grep -i [s]ynapse; tail -n 40 /tmp/smoke-syn/synapse.log"
             Get-Content "$env:RUNNER_TEMP\synapse-wsl.out.log", "$env:RUNNER_TEMP\synapse-wsl.err.log" -ErrorAction SilentlyContinue
-            throw "Synapse is not reachable from Windows on https://localhost:8448"
+            throw "Synapse (8448) or the fake identity provider (8449) is not reachable from Windows"
           }
 
           python scripts/ci/smoke/run.py --name win32 --isolate windows `
@@ -418,6 +428,7 @@ jobs:
           }
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\smoke-syn" | Out-Null
           wsl -d Ubuntu-24.04 -- cat /tmp/smoke-syn/synapse.log > "$env:RUNNER_TEMP\smoke-syn\synapse.log"
+          wsl -d Ubuntu-24.04 -- cat /tmp/smoke-syn/mock_oidc.log > "$env:RUNNER_TEMP\smoke-syn\mock_oidc.log"
           Stop-Process -Id $syn.Id -ErrorAction SilentlyContinue
           exit $code
 
@@ -430,6 +441,7 @@ jobs:
             ${{ runner.temp }}/smoke-run/**/result-*.json
             ${{ runner.temp }}/smoke-run/**/app-*.log
             ${{ runner.temp }}/smoke-syn/synapse.log
+            ${{ runner.temp }}/smoke-syn/mock_oidc.log
             ${{ runner.temp }}/synapse-wsl.out.log
             ${{ runner.temp }}/synapse-wsl.err.log
           if-no-files-found: ignore

@@ -1,1 +1,1 @@
-matrix-synapse==1.160.0
+matrix-synapse[oidc]==1.160.0

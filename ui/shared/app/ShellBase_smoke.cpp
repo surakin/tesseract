@@ -7,8 +7,11 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <utility>
 
 namespace tesseract
@@ -54,10 +57,11 @@ struct SmokeEnv
     std::string pong = smoke_env("TESSERACT_SMOKE_PONG");
     std::string e2ee_room_id = smoke_env("TESSERACT_SMOKE_E2EE_ROOM_ID");
     std::string e2ee_pong = smoke_env("TESSERACT_SMOKE_E2EE_PONG");
+    std::string sso_url_file = smoke_env("TESSERACT_SMOKE_SSO_URL_FILE");
 
     bool known_phase() const
     {
-        return phase == "fresh" || phase == "restore" || phase == "signed-out";
+        return phase == "fresh" || phase == "restore" || phase == "signed-out" || phase == "sso";
     }
 
     std::string missing() const
@@ -80,6 +84,11 @@ struct SmokeEnv
             check(homeserver, "TESSERACT_SMOKE_HOMESERVER");
             check(user, "TESSERACT_SMOKE_USER");
             check(password, "TESSERACT_SMOKE_PASSWORD");
+        }
+        if (phase == "sso")
+        {
+            check(homeserver, "TESSERACT_SMOKE_HOMESERVER");
+            check(sso_url_file, "TESSERACT_SMOKE_SSO_URL_FILE");
         }
         if (phase == "fresh" || phase == "restore")
         {
@@ -158,7 +167,7 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
     if (!env->known_phase())
     {
         fail_step("env", "unknown TESSERACT_SMOKE_PHASE '" + env->phase +
-                             "' (want fresh, restore or signed-out)");
+                             "' (want fresh, restore, signed-out or sso)");
     }
     else if (const auto missing = env->missing(); !missing.empty())
     {
@@ -294,57 +303,96 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
                  }});
         };
 
+        // Enter the homeserver and wait for discovery to resolve; `done` adds the
+        // phase-specific completion condition on top of Resolved.
+        auto make_discover_step = [login_view, env, flags](auto done)
+        {
+            return smoke::Step{"discover",
+                               [login_view, env, flags, done]
+                               {
+                                   auto* lv = login_view();
+                                   if (!lv)
+                                   {
+                                       return false;
+                                   }
+                                   // Enter the homeserver again on a rebuilt view, after a
+                                   // failed or never-started discovery (2 s), or when it is
+                                   // stuck in Discovering (10 s; hs_changed_ sets that state
+                                   // before bailing out without a client). Re-entering bumps
+                                   // the discovery generation, so the stale attempt is dropped.
+                                   using DS = views::LoginView::DiscoveryState;
+                                   const auto now = SmokeFlags::Clock::now();
+                                   const auto since = now - flags->entered_at;
+                                   const DS ds = lv->discovery_state();
+                                   const bool stalled =
+                                       ((ds == DS::Idle || ds == DS::Failed) &&
+                                        since >= std::chrono::seconds(2)) ||
+                                       (ds == DS::Discovering && since >= std::chrono::seconds(10));
+                                   if (flags->entered_on != lv || stalled)
+                                   {
+                                       flags->entered_on = lv;
+                                       flags->entered_at = now;
+                                       lv->smoke_enter_homeserver(env->homeserver);
+                                       return false;
+                                   }
+                                   return ds == DS::Resolved && done(lv);
+                               },
+                               30000,
+                               [login_view]
+                               {
+                                   auto* lv = login_view();
+                                   if (!lv)
+                                   {
+                                       return std::string("login view never appeared");
+                                   }
+                                   return "discovery state " +
+                                          std::to_string(static_cast<int>(lv->discovery_state())) +
+                                          ", submit action " +
+                                          std::to_string(
+                                              static_cast<int>(lv->homeserver_submit_action())) +
+                                          ", status '" + lv->smoke_status_text() + "'";
+                               }};
+        };
+
+        auto make_sign_out_step = [this, flags]
+        {
+            return smoke::Step{
+                "sign-out",
+                [this, flags]
+                {
+                    if (!flags->sign_out_started)
+                    {
+                        flags->sign_out_started = true;
+                        logout_active_account_ui_();
+                    }
+                    // An unsaved recovery key opens the save-key dialog instead;
+                    // take the path of a user choosing "sign out anyway".
+                    if (!flags->sign_out_confirmed && pending_sign_out_)
+                    {
+                        flags->sign_out_confirmed = true;
+                        proceed_sign_out_();
+                    }
+                    return my_user_id_.empty() && !active_account_ && login_view_ != nullptr;
+                },
+                30000,
+                [this]
+                {
+                    return "signed-in user '" + my_user_id_ + "', " +
+                           (login_view_ ? "login view is showing" : "no login view") +
+                           (pending_sign_out_ ? ", unsaved-key prompt still open" : "");
+                }};
+        };
+
         if (env->phase == "fresh")
         {
             smoke_needles_ = {env->ping, env->pong, env->e2ee_pong};
 
-            steps.push_back(
-                {"discover",
-                 [login_view, env, flags]
-                 {
-                     auto* lv = login_view();
-                     if (!lv)
-                     {
-                         return false;
-                     }
-                     // Enter the homeserver again on a rebuilt view, after a
-                     // failed or never-started discovery (2 s), or when it is
-                     // stuck in Discovering (10 s; hs_changed_ sets that state
-                     // before bailing out without a client). Re-entering bumps
-                     // the discovery generation, so the stale attempt is dropped.
-                     using DS = views::LoginView::DiscoveryState;
-                     const auto now = SmokeFlags::Clock::now();
-                     const auto since = now - flags->entered_at;
-                     const DS ds = lv->discovery_state();
-                     const bool stalled =
-                         ((ds == DS::Idle || ds == DS::Failed) &&
-                          since >= std::chrono::seconds(2)) ||
-                         (ds == DS::Discovering && since >= std::chrono::seconds(10));
-                     if (flags->entered_on != lv || stalled)
-                     {
-                         flags->entered_on = lv;
-                         flags->entered_at = now;
-                         lv->smoke_enter_homeserver(env->homeserver);
-                         return false;
-                     }
-                     return lv->discovery_state() == views::LoginView::DiscoveryState::Resolved &&
-                            lv->homeserver_submit_action() ==
-                                views::LoginView::SubmitAction::Password;
-                 },
-                 30000,
-                 [login_view]
-                 {
-                     auto* lv = login_view();
-                     if (!lv)
-                     {
-                         return std::string("login view never appeared");
-                     }
-                     return "discovery state " +
-                            std::to_string(static_cast<int>(lv->discovery_state())) +
-                            ", submit action " +
-                            std::to_string(static_cast<int>(lv->homeserver_submit_action())) +
-                            ", status '" + lv->smoke_status_text() + "'";
-                 }});
+            steps.push_back(make_discover_step(
+                [](views::LoginView* lv)
+                {
+                    return lv->homeserver_submit_action() ==
+                           views::LoginView::SubmitAction::Password;
+                }));
 
             steps.push_back({"login",
                              [this, login_view, env, flags]
@@ -413,31 +461,112 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
 
             add_room_steps("", env->room_id, env->ping, env->pong);
 
+            steps.push_back(make_sign_out_step());
+        }
+        else if (env->phase == "sso")
+        {
+            steps.push_back({"sso-start",
+                             [this]
+                             {
+                                 return login_view_ != nullptr && my_user_id_.empty();
+                             },
+                             30000,
+                             [this]
+                             {
+                                 return "signed-in user '" + my_user_id_ + "', " +
+                                        (login_view_ ? "login view is showing" : "no login view");
+                             }});
+
+            steps.push_back(make_discover_step(
+                [](views::LoginView* lv)
+                {
+                    return lv->sso_visible();
+                }));
+
+            auto sso_started_on = std::make_shared<const views::LoginView*>(nullptr);
+            auto url_error = std::make_shared<std::string>();
             steps.push_back(
-                {"sign-out",
-                 [this, flags]
+                {"sso-login",
+                 [this, login_view, env, sso_started_on, url_error]
                  {
-                     if (!flags->sign_out_started)
+                     if (!my_user_id_.empty())
                      {
-                         flags->sign_out_started = true;
-                         logout_active_account_ui_();
+                         return *sso_started_on != nullptr;
                      }
-                     // An unsaved recovery key opens the save-key dialog instead;
-                     // take the path of a user choosing "sign out anyway".
-                     if (!flags->sign_out_confirmed && pending_sign_out_)
+                     auto* lv = login_view();
+                     if (!lv || *sso_started_on == lv || !lv->sso_visible())
                      {
-                         flags->sign_out_confirmed = true;
-                         proceed_sign_out_();
+                         return false;
                      }
-                     return my_user_id_.empty() && !active_account_ && login_view_ != nullptr;
+                     *sso_started_on = lv;
+                     // Applied here, on the current instance, so a rebuild of the
+                     // view cannot undo the override.
+                     lv->smoke_sso_sign_in(
+                         0,
+                         [path = env->sso_url_file, url_error](const std::string& url)
+                         {
+                             const std::string tmp = path + ".tmp";
+                             bool ok = false;
+                             {
+                                 std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+                                 out << url << '\n';
+                                 out.close();
+                                 ok = !out.fail();
+                             }
+                             std::error_code ec;
+                             if (ok)
+                             {
+                                 std::filesystem::rename(tmp, path, ec);
+                                 if (ec)
+                                 {
+                                     *url_error = "rename to '" + path + "': " + ec.message();
+                                 }
+                             }
+                             else
+                             {
+                                 *url_error = "write to '" + tmp + "' failed";
+                             }
+                             if (!ok || ec)
+                             {
+                                 std::filesystem::remove(tmp, ec);
+                             }
+                         });
+                     return false;
                  },
-                 30000,
-                 [this]
+                 90000,
+                 [login_view, url_error]
                  {
-                     return "signed-in user '" + my_user_id_ + "', " +
-                            (login_view_ ? "login view is showing" : "no login view") +
-                            (pending_sign_out_ ? ", unsaved-key prompt still open" : "");
+                     auto* lv = login_view();
+                     if (!lv)
+                     {
+                         return std::string("login view gone, no session");
+                     }
+                     std::string out = "status '" + lv->smoke_status_text() + "', " +
+                                       std::to_string(lv->sso_button_labels().size()) +
+                                       " SSO buttons";
+                     if (!url_error->empty())
+                     {
+                         out += ", URL file error: " + *url_error;
+                     }
+                     return out;
                  }});
+
+            // First sync response processed for the active account.
+            steps.push_back({"sso-synced",
+                             [this, dismiss_encryption_dialog]
+                             {
+                                 dismiss_encryption_dialog();
+                                 return warmup_allowed_();
+                             },
+                             60000,
+                             [this]
+                             {
+                                 return "signed-in user '" + my_user_id_ + "', " +
+                                        (active_account_ ? "first sync not delivered"
+                                                         : "no active account");
+                             }});
+
+            steps.push_back(make_sign_out_step());
         }
         else
         {

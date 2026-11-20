@@ -6,8 +6,10 @@
 
 The homeserver is `localhost` on https://localhost:8448 (TLS from make_ca.py),
 SQLite, no federation, rate limits raised. The registration shared secret is
-written to DATA/registration_secret for seed.py. Needs matrix-synapse
-(requirements.txt) in the running interpreter.
+written to DATA/registration_secret for seed.py. A fake OIDC provider
+(mock_oidc.py, http://127.0.0.1:8449) is started first and registered as the
+"Smoke SSO" identity provider. Needs matrix-synapse[oidc] (requirements.txt)
+in the running interpreter.
 """
 
 import argparse
@@ -15,12 +17,15 @@ import os
 import secrets
 import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from smokelib import Server  # noqa: E402
 
 PORT = 8448
+OIDC_PORT = 8449
 
 LIMIT = "{ per_second: 1000, burst_count: 100000 }"
 
@@ -51,6 +56,8 @@ def write_config(data: Path, certs: Path, bind: str) -> Path:
     cfg = data / "homeserver.yaml"
     cfg.write_text(
         'server_name: "localhost"\n'
+        # SSO builds its callback and redirect URLs from this.
+        f'public_baseurl: "https://localhost:{PORT}/"\n'
         f"pid_file: '{(data / 'homeserver.pid').as_posix()}'\n"
         "listeners:\n"
         f"  - port: {PORT}\n"
@@ -83,8 +90,38 @@ def write_config(data: Path, certs: Path, bind: str) -> Path:
         f"  address: {LIMIT}\n"
         f"  account: {LIMIT}\n"
         f"  failed_attempts: {LIMIT}\n"
+        "oidc_providers:\n"
+        "  - idp_id: smoke\n"
+        '    idp_name: "Smoke SSO"\n'
+        "    discover: false\n"
+        "    issuer: 'http://127.0.0.1:%d'\n"
+        "    client_id: smoke\n"
+        "    client_secret: smoke-secret\n"
+        "    skip_verification: true\n"
+        "    scopes: ['profile']\n"
+        "    authorization_endpoint: 'http://127.0.0.1:%d/authorize'\n"
+        "    token_endpoint: 'http://127.0.0.1:%d/token'\n"
+        "    userinfo_endpoint: 'http://127.0.0.1:%d/userinfo'\n"
+        "    user_profile_method: userinfo_endpoint\n"
+        "    user_mapping_provider:\n"
+        "      config:\n"
+        '        localpart_template: "{{ user.preferred_username }}"\n'
+        '        display_name_template: "{{ user.name }}"\n'
+        "sso:\n"
+        '  client_whitelist: ["http://127.0.0.1:"]\n' % ((OIDC_PORT,) * 4)
     )
     return cfg
+
+
+def wait_oidc(port, timeout, log_path):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2).read()
+            return
+        except OSError:
+            time.sleep(0.5)
+    raise RuntimeError(f"mock_oidc not ready after {timeout}s (see {log_path})")
 
 
 def main():
@@ -104,15 +141,29 @@ def main():
     base = [sys.executable, "-m", "synapse.app.homeserver", "--config-path", str(cfg)]
     subprocess.run(base + ["--generate-keys"], check=True)
 
-    if args.foreground:
-        os.execv(base[0], base)
-
-    log = open(data / "synapse.stdout.log", "ab")
     kwargs = {}
     if os.name == "nt":
         kwargs["creationflags"] = 0x00000008 | 0x00000200  # DETACHED | NEW_GROUP
     else:
         kwargs["start_new_session"] = True
+
+    # The identity provider must be up before Synapse can complete an SSO login.
+    oidc_log = open(data / "mock_oidc.log", "ab")
+    oidc = [
+        sys.executable,
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "mock_oidc.py"),
+        "--port",
+        str(OIDC_PORT),
+        "--bind",
+        args.bind,
+    ]
+    subprocess.Popen(oidc, stdout=oidc_log, stderr=oidc_log, stdin=subprocess.DEVNULL, **kwargs)
+    wait_oidc(OIDC_PORT, 30, data / "mock_oidc.log")
+
+    if args.foreground:
+        os.execv(base[0], base)
+
+    log = open(data / "synapse.stdout.log", "ab")
     subprocess.Popen(base, stdout=log, stderr=log, stdin=subprocess.DEVNULL, **kwargs)
 
     Server(f"https://localhost:{PORT}", str(certs / "ca.crt")).wait_ready(120)

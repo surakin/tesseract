@@ -262,6 +262,18 @@ public:
         }
         submit_password_();
     }
+    /// Smoke run: start SSO with provider button `index` (0 = first), forcing the
+    /// loopback redirect and handing the auth URL to `open_url` instead of a browser.
+    void smoke_sso_sign_in(std::size_t index, std::function<void(const std::string&)> open_url)
+    {
+        if (index >= sso_buttons_.size())
+        {
+            return;
+        }
+        set_web_auth({}, {});
+        set_open_browser(std::move(open_url));
+        start_sso_(index);
+    }
 #endif
 
     // -----------------------------------------------------------------------

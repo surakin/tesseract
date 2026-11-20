@@ -4,7 +4,7 @@
   run.py --name qt6 --ca CA --secret-file F --workdir D [--isolate xdg] -- APP...
 
 Seeds a fresh user, a plain room and an encrypted room on the running Synapse,
-then launches the app (built with TESSERACT_ENABLE_SMOKE_MODE) three times on
+then launches the app (built with TESSERACT_ENABLE_SMOKE_MODE) four times on
 the same isolated profile, with the TESSERACT_SMOKE_* environment and
 `--smoke-test=<result-PHASE.json>` appended:
 
@@ -16,6 +16,12 @@ the same isolated profile, with the TESSERACT_SMOKE_* environment and
               app back signed in. Receives a new PING, sends a new PONG, then
               signs out; the server must have dropped the app's device.
   signed-out  relaunch again: the login view shows and no session comes back.
+
+  sso         relaunch with TESSERACT_SMOKE_PHASE=sso: the app writes its SSO
+              sign-in URL to a file, sso_browser.py walks the redirect chain
+              as `smoke-sso-NAME`, the app's loopback listener gets the login
+              token, syncs and signs out. The user must exist with no device
+              left, and no login token may appear in the app log.
 
 Stops at the first failing phase. Exits non-zero on failure.
 
@@ -33,13 +39,18 @@ import os
 import secrets
 import shutil
 import signal
+import re
 import subprocess
 import sys
+import threading
+import time
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from seed import seed  # noqa: E402
 from smokelib import Server  # noqa: E402
+from sso_browser import complete_sso  # noqa: E402
 from seed import post_ping  # noqa: E402
 from verify import app_devices, encrypted_pong_sent, pong_delivered  # noqa: E402
 
@@ -92,8 +103,12 @@ def plaintext_sessions(root: Path):
     return found, plain
 
 
-def run_app(args, cmd, root, phase, env):
-    """Launches the app once; returns (ok, reason, parsed result.json or None)."""
+def run_app(args, cmd, root, phase, env, during=None):
+    """Launches the app once; returns (ok, reason, parsed result.json or None).
+
+    `during(proc)` runs in a thread after launch; if it raises, the app is
+    killed and the phase fails with its message.
+    """
     result_path = root / f"result-{phase}.json"
     app_log = root / f"app-{phase}.log"
     result_path.unlink(missing_ok=True)
@@ -105,6 +120,19 @@ def run_app(args, cmd, root, phase, env):
     with open(app_log, "wb") as log:
         proc = subprocess.Popen(full, env=env, stdout=log, stderr=subprocess.STDOUT,
                                 **kwargs)
+        during_error = []
+
+        def run_during():
+            try:
+                during(proc)
+            except Exception as e:  # noqa: BLE001 - reported as the phase failure
+                during_error.append(str(e))
+                kill_tree(proc)
+
+        helper = None
+        if during:
+            helper = threading.Thread(target=run_during, daemon=True)
+            helper.start()
         try:
             rc = proc.wait(timeout=args.timeout)
         except subprocess.TimeoutExpired:
@@ -112,6 +140,10 @@ def run_app(args, cmd, root, phase, env):
             proc.wait()
             rc = None
             ok, reason = False, f"app still running after {args.timeout}s"
+        if helper:
+            helper.join(timeout=5)
+        if during_error:
+            ok, reason = False, during_error[0]
 
     result = None
     if result_path.exists():
@@ -176,10 +208,59 @@ def main():
 
 
 def run_phases(args, cmd, root, server, state, state_path, base_env, session_root):
-    """Runs the three launches; returns the process exit status."""
-    def launch(phase, extra):
+    """Runs the four launches; returns the process exit status."""
+    def launch(phase, extra, during=None):
         env = dict(base_env, TESSERACT_SMOKE_PHASE=phase, **extra)
-        return run_app(args, cmd, root, phase, env)
+        return run_app(args, cmd, root, phase, env, during)
+
+    sso_user = f"smoke-sso-{args.name}"
+    sso_url_file = root / "sso-url.txt"
+    sso_state = {}
+
+    def sso_env():
+        # An admin to inspect the SSO user's devices; the app user is not one.
+        secret = Path(args.secret_file).read_text().strip()
+        pw = secrets.token_urlsafe(16)
+        _, sso_state["admin_token"] = server.register(
+            secret, f"smoke-admin-{args.name}", pw, admin=True)
+        sso_url_file.unlink(missing_ok=True)
+        return dict(
+            TESSERACT_SMOKE_HOMESERVER=state["base"],
+            TESSERACT_SMOKE_SSO_URL_FILE=str(sso_url_file),
+        )
+
+    def sso_during(proc):
+        deadline = time.time() + 120
+        while not sso_url_file.exists():
+            if proc.poll() is not None:
+                return  # the app's own result says why it exited
+            if time.time() >= deadline:
+                raise RuntimeError("app never wrote the SSO sign-in URL (120s)")
+            time.sleep(0.5)
+        url = sso_url_file.read_text().strip()
+        final = complete_sso(url, args.ca, sso_user)
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(final).query)
+        sso_state["login_token"] = (q.get("loginToken") or [""])[0]
+
+    def sso_devices():
+        mxid = urllib.parse.quote(f"@{sso_user}:localhost", safe="@:")
+        res = server.request(
+            "GET", f"/_synapse/admin/v2/users/{mxid}/devices",
+            token=sso_state["admin_token"])
+        return res.get("devices", [])
+
+    def sso_checks():
+        try:
+            devices = sso_devices()
+        except RuntimeError as e:
+            return f"SSO user {sso_user} does not exist on the server: {e}"
+        if devices:
+            return f"sign-out left {len(devices)} SSO device(s) on the server"
+        log = (root / "app-sso.log").read_text(errors="replace")
+        tok = sso_state.get("login_token")
+        if (tok and tok in log) or "syl_" in log:
+            return "token leaked to log"
+        return ""
 
     def one_device(phase_label):
         extra = app_devices(server, state) - {state["app_reg_device"]}
@@ -233,9 +314,11 @@ def run_phases(args, cmd, root, server, state, state_path, base_env, session_roo
 
         yield "restore", restore_env, restore_checks
         yield "signed-out", dict, lambda: ""
+        yield "sso", sso_env, sso_checks
 
     for phase, make_env, checks in phases():
-        ok, reason, result = launch(phase, make_env())
+        ok, reason, result = launch(
+            phase, make_env(), sso_during if phase == "sso" else None)
         if ok:
             reason = checks()
             ok = not reason

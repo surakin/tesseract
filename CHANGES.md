@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- ci(smoke): the smoke test now also signs in through single sign-on, against a fake identity provider. local Synapse and fake provider check
 - feat(login): sign in to servers that use single sign-on, with a button for each identity provider. Linux Qt6 release build, ctest 4000/4000, cargo 1745/1745
 - feat(i18n): European and Brazilian Portuguese translations. Linux Qt6 debug build, ctest
 - feat(timeline): server ACL changes now group with bans and other membership events into one expandable row. Linux Qt6 debug build, ctest 3980/3980, user-verified Qt6
