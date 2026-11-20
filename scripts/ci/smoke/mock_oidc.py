@@ -17,6 +17,7 @@ Synapse is configured against it by synapse_up.py.
 import argparse
 import json
 import secrets
+import socketserver
 import sys
 import threading
 import urllib.error
@@ -96,8 +97,16 @@ class Handler(BaseHTTPRequestHandler):
             )
 
 
+class _Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # Skip socket.getfqdn(): the reverse-DNS lookup hangs ~30 s on macOS runners.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+
+
 def make_server(bind, port):
-    return ThreadingHTTPServer((bind, port), Handler)
+    return _Server((bind, port), Handler)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
