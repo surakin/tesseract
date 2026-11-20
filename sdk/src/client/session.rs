@@ -405,11 +405,37 @@ impl ClientFfi {
         user_id_hint: &str,
         external_redirect: bool,
     ) -> OAuthBegin {
+        let hs = homeserver.to_owned();
+        let hint = user_id_hint.to_owned();
+        self.begin_login_flow(move |path, key| async move {
+            oauth::begin(
+                &hs,
+                &path,
+                register_account,
+                &hint,
+                &key,
+                if external_redirect {
+                    oauth::RedirectMode::External
+                } else {
+                    oauth::RedirectMode::Loopback
+                },
+            )
+            .await
+        })
+    }
+
+    /// Shared start of every browser-redirect login (OAuth and legacy SSO):
+    /// cancels a previous flow, prepares the store directory and key, runs
+    /// `begin(data_dir, store_key)` and parks the resulting flow on `self`.
+    pub(super) fn begin_login_flow<F, Fut>(&mut self, begin: F) -> OAuthBegin
+    where
+        F: FnOnce(std::path::PathBuf, [u8; 32]) -> Fut,
+        Fut: std::future::Future<Output = anyhow::Result<oauth::BeginResult>>,
+    {
         if let Some(prev) = self.oauth_flow.take() {
             oauth::cancel(&prev);
         }
 
-        let hs = homeserver.to_owned();
         let path = self.data_dir.clone();
 
         // Only start from a clean store when there is no active session. If a
@@ -429,18 +455,7 @@ impl ClientFfi {
         // never retroactively given one.
         let key = *self.store_key.get_or_insert_with(oauth::generate_store_key);
 
-        match self.rt.block_on(oauth::begin(
-            &hs,
-            &path,
-            register_account,
-            user_id_hint,
-            &key,
-            if external_redirect {
-                oauth::RedirectMode::External
-            } else {
-                oauth::RedirectMode::Loopback
-            },
-        )) {
+        match self.rt.block_on(begin(path, key)) {
             Ok(begin) => {
                 let auth_url = begin.auth_url;
                 let redirect_uri = begin.redirect_uri;

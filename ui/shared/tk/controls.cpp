@@ -247,10 +247,10 @@ Size Button::measure(LayoutCtx& ctx, Size /*constraints*/)
     }
     float content_w = cached_size_.w;
     float content_h = cached_size_.h;
-    if (icon_leading_ && !icon_svg_.empty())
+    if (const float slot = leading_slot_px_(); slot > 0.0f)
     {
-        content_w += icon_logical_px_ + kBtnIconLabelGap;
-        content_h = std::max(content_h, icon_logical_px_);
+        content_w += slot + kBtnIconLabelGap;
+        content_h = std::max(content_h, slot);
     }
     float w = content_w + kBtnHPad * 2;
     float h = std::max(content_h + kBtnVPad * 2, kBtnMinHeight);
@@ -348,18 +348,32 @@ void Button::paint(PaintCtx& ctx)
     {
         text_color = pressed() ? ctx.theme.palette.accent_pressed : ctx.theme.palette.accent_hover;
     }
-    const bool leading_icon = icon_leading_ && !icon_svg_.empty();
+    const float slot = leading_slot_px_();
     // Centre the whole icon + gap + label group, so a leading-icon button
     // lines up with plain-label buttons of the same width.
-    const float icon_w = leading_icon ? icon_logical_px_ + kBtnIconLabelGap : 0.0f;
+    const float icon_w = slot > 0.0f ? slot + kBtnIconLabelGap : 0.0f;
     float tx = bounds_.x + (bounds_.w - cached_size_.w - icon_w) * 0.5f;
     float ty = bounds_.y + (bounds_.h - cached_size_.h) * 0.5f;
-    if (leading_icon)
+    if (leading_image_)
+    {
+        ctx.canvas.draw_image(*leading_image_,
+                              {tx, bounds_.y + (bounds_.h - slot) * 0.5f, slot, slot});
+        tx += icon_w;
+    }
+    else if (icon_leading_ && !icon_svg_.empty())
     {
         // Same tint as the label (see the icon-only branch above).
         Color tint = icon_color_override_.value_or(text_color);
         icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_,
                          {tx, bounds_.y, icon_logical_px_, bounds_.h}, icon_logical_px_, tint);
+        tx += icon_w;
+    }
+    else if (slot > 0.0f)
+    {
+        ctx.canvas.draw_initials_circle(
+            leading_monogram_, {tx + slot * 0.5f, bounds_.y + bounds_.h * 0.5f}, slot,
+            ctx.theme.palette.avatar_initials_bg, ctx.theme.palette.avatar_initials_text,
+            AvatarText::Literal);
         tx += icon_w;
     }
     ctx.canvas.draw_text(*cached_, {tx, ty}, text_color);

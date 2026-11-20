@@ -176,6 +176,17 @@ public:
         }
     };
 
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    /// One SSO identity provider advertised by the homeserver.
+    struct IdentityProvider
+    {
+        std::string id;
+        std::string name;
+        std::string icon_mxc; ///< mxc:// URI of the provider icon, or empty
+        std::string brand;    ///< MSC2858 brand hint (e.g. "github"), or empty
+    };
+#endif
+
     struct DiscoveryResult
     {
         bool ok = false;      ///< false when the server is unreachable
@@ -186,6 +197,10 @@ public:
         /// its login flows? Drives LoginView's auto-detect between OAuth and
         /// username/password fields.
         bool supports_password = false;
+        /// Does the homeserver advertise m.login.sso among its login flows?
+        bool supports_sso = false;
+        /// Identity providers from the m.login.sso flow, in server order.
+        std::vector<IdentityProvider> identity_providers;
 #endif
 
         explicit operator bool() const noexcept
@@ -228,6 +243,9 @@ public:
     /// Blocks the calling thread — invoke only from a worker thread.
     DiscoveryResult discover_homeserver(const std::string& server_name_or_mxid);
 
+    /// Parse the JSON produced by the FFI discovery call. Pure; no network.
+    static DiscoveryResult parse_discovery_json(const std::string& json);
+
     /// Begin OAuth login, or account registration when `register_account` is
     /// true (OIDC prompt=create). Returns the auth URL to open in a browser.
     /// A full Matrix ID in `user_id_hint` asks the server to prefill the
@@ -265,6 +283,20 @@ public:
     /// worker thread.
     Result login_password(const std::string& homeserver, const std::string& username,
                           const std::string& password);
+
+    /// Begin legacy SSO login through identity provider `idp_id` (empty for
+    /// the generic m.login.sso flow). Returns the URL to open in a browser.
+    /// Completion reuses the OAuth plumbing: call `await_oauth`,
+    /// `cancel_oauth` and (for External redirect) `deliver_oauth_callback`.
+    OAuthFlow begin_sso(const std::string& homeserver, const std::string& idp_id,
+                        OAuthRedirect redirect = OAuthRedirect::Loopback);
+
+    /// Download an identity provider icon (mxc URI) for the login screen.
+    /// Returns empty bytes on failure. Blocks (up to ~10 s) — invoke from a
+    /// worker thread. Static and lock-free: it never waits behind, or delays,
+    /// any other Client call.
+    static std::vector<std::uint8_t> fetch_login_icon(const std::string& homeserver,
+                                                      const std::string& mxc);
 #endif
 
     // ------------------------------------------------------------------

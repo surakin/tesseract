@@ -24,6 +24,11 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
+
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+#include <tesseract/client.h> // Client::IdentityProvider
+#endif
 
 namespace tesseract
 {
@@ -48,6 +53,9 @@ public:
         {
             shutdown();
         }
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+        clear_sso_buttons_(); // buttons borrow the decoded icons
+#endif
         invalidate_weak_self();
     }
 
@@ -148,9 +156,21 @@ public:
         Wait,
         OAuth,
         Password,
+        Sso,
         Nothing
     };
     SubmitAction homeserver_submit_action() const;
+
+    // The identity providers a discovery result carries. Without legacy login
+    // there is no provider type, so the list is a never-populated placeholder.
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    using IdentityProviders = std::vector<tesseract::Client::IdentityProvider>;
+#else
+    struct NoIdentityProvider
+    {
+    };
+    using IdentityProviders = std::vector<NoIdentityProvider>;
+#endif
     bool homeserver_submit_pending() const
     {
         return submit_pending_;
@@ -169,10 +189,49 @@ public:
     // Test helper: the homeserver lookup's answer (as hs_changed_'s worker
     // reports it).
     void simulate_discovery_result(bool ok, const std::string& base_url_or_error,
-                                   bool supports_password)
+                                   bool supports_password, bool supports_sso = false,
+                                   IdentityProviders idps = {})
     {
-        apply_discovery_result_(ok, base_url_or_error, supports_password);
+        apply_discovery_result_(ok, base_url_or_error, supports_password, supports_sso,
+                                std::move(idps));
     }
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    // SSO test helpers.
+    /// Labels of the visible SSO buttons, in order.
+    std::vector<std::string> sso_button_labels() const;
+    bool sso_visible() const
+    {
+        return sso_box_ && sso_box_->visible();
+    }
+    void simulate_sso_click(std::size_t index);
+    /// Called with the provider id (empty for the generic button) just before
+    /// a click begins the SSO flow.
+    void set_on_begin_sso_for_test(std::function<void(const std::string&)> fn)
+    {
+        on_begin_sso_for_test_ = std::move(fn);
+    }
+    /// A provider icon download finished (as the fetch worker reports it).
+    void simulate_login_icon_result(uint32_t gen, std::size_t index,
+                                    std::vector<std::uint8_t> bytes)
+    {
+        apply_login_icon_(gen, index, std::move(bytes));
+    }
+    /// Whether the provider icon fetch has been started for the current buttons.
+    bool sso_icons_requested() const
+    {
+        return sso_icons_requested_;
+    }
+    uint32_t sso_icon_gen() const
+    {
+        return sso_icon_gen_.load();
+    }
+    const tk::Button* sso_button(std::size_t index) const
+    {
+        return index < sso_buttons_.size() ? sso_buttons_[index] : nullptr;
+    }
+    /// Whether SSO button `index` currently shows a downloaded icon image.
+    bool sso_button_has_image(std::size_t index) const;
+#endif
 
 #if defined(TESSERACT_SMOKE_MODE_ENABLED) && defined(TESSERACT_LEGACY_LOGIN_ENABLED)
     // Smoke run (CI): fill the form the way a user would. Compiled only into
@@ -419,8 +478,19 @@ private:
     // The homeserver lookup finished: record what the server offers and run
     // a remembered Enter if nothing else is outstanding.
     void apply_discovery_result_(bool ok, const std::string& base_url_or_error,
-                                 bool supports_password);
+                                 bool supports_password, bool supports_sso = false,
+                                 IdentityProviders idps = {});
     void start_oauth_(bool register_account);
+    /// Shared start of every browser-based sign-in; only the begin call differs.
+    enum class BrowserFlow
+    {
+        OAuth,
+        OAuthRegister,
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+        Sso,
+#endif
+    };
+    void start_browser_flow_(BrowserFlow kind, std::string idp_id);
     // "Create an account": with an empty field (and no provisioned server)
     // there is no server to register on yet, so offer the browser instead.
     void on_register_clicked_();
@@ -455,6 +525,16 @@ private:
     void switch_to_password_form_();
     void switch_to_oauth_form_();
     void update_form_visibility_();
+    // Rebuilds sso_box_ for a new discovery result and fetches provider icons.
+    void rebuild_sso_buttons_(bool supports_sso, IdentityProviders idps);
+    void start_sso_(std::size_t index);
+    void maybe_fetch_sso_icons_();
+    void fetch_sso_icons_();
+    void apply_login_icon_(uint32_t gen, std::size_t index, std::vector<std::uint8_t> bytes);
+    // Decodes icon bytes that arrived since the last layout (needs a factory).
+    void decode_pending_sso_icons_(tk::CanvasFactory& factory);
+    // Drops every SSO button and icon (buttons first: they borrow the images).
+    void clear_sso_buttons_();
 #endif
 
     // Injected platform hooks
@@ -576,6 +656,20 @@ private:
     tk::Button* password_toggle_btn_ = nullptr;  // on the OAuthOnly form
     tk::Button* password_sign_in_btn_ = nullptr; // submit button on the Password form
     tk::Button* back_btn_ = nullptr;             // on the Password form
+
+    // SSO: one button per advertised identity provider (or a single generic
+    // one), shown when OAuth is unavailable.
+    bool sso_available_ = false;
+    IdentityProviders sso_idps_;
+    tk::VBox* sso_box_ = nullptr;
+    std::vector<tk::Button*> sso_buttons_;
+    // Parallel to sso_buttons_. Buttons borrow the images, so a button must be
+    // cleared (or destroyed) before its image goes.
+    std::vector<std::unique_ptr<tk::Image>> sso_icons_;
+    std::vector<std::vector<std::uint8_t>> sso_icon_bytes_; // not decoded yet
+    std::atomic<uint32_t> sso_icon_gen_{0};
+    bool sso_icons_requested_ = false; // icons fetched for the current buttons
+    std::function<void(const std::string&)> on_begin_sso_for_test_;
 #endif
 };
 

@@ -271,6 +271,30 @@ public:
         invalidate_cache();
         return *this;
     }
+    // Raster image drawn before the label, in the same slot (size and gap) as
+    // set_leading_icon(). Non-owning: the caller keeps `image` alive while it
+    // is set; nullptr clears. Takes precedence over a leading SVG icon and a
+    // monogram. Not meaningful for Variant::Icon.
+    Button& set_leading_image(const Image* image, float logical_px = 16.0f)
+    {
+        leading_image_ = image;
+        leading_image_px_ = logical_px;
+        invalidate_cache();
+        return *this;
+    }
+    // Filled circle (theme avatar colours) holding one letter, drawn in the
+    // leading slot; "" clears. Lowest precedence after image and SVG icon.
+    Button& set_leading_monogram(std::string letter, float logical_px = 16.0f)
+    {
+        leading_monogram_ = std::move(letter);
+        leading_monogram_px_ = logical_px;
+        invalidate_cache();
+        return *this;
+    }
+    const std::string& leading_monogram() const
+    {
+        return leading_monogram_;
+    }
     // Overrides the default theme/enabled-driven tint (text_primary /
     // text_muted). Unset (default) preserves the ordinary look.
     Button& set_icon_color_override(std::optional<Color> color)
@@ -356,6 +380,24 @@ private:
     bool icon_leading_ = false; // set_leading_icon(): icon + label, not icon-only
     std::optional<Color> icon_color_override_;
     IconCache icon_cache_;
+    const Image* leading_image_ = nullptr; // set_leading_image(): non-owning
+    float leading_image_px_ = 16.0f;
+    std::string leading_monogram_; // set_leading_monogram()
+    float leading_monogram_px_ = 16.0f;
+
+    // Side of the leading slot (0 = none), honouring image > SVG > monogram.
+    float leading_slot_px_() const
+    {
+        if (leading_image_)
+        {
+            return leading_image_px_;
+        }
+        if (icon_leading_ && !icon_svg_.empty())
+        {
+            return icon_logical_px_;
+        }
+        return leading_monogram_.empty() ? 0.0f : leading_monogram_px_;
+    }
 
     CachedTextLayout cached_;
     Size cached_size_{};

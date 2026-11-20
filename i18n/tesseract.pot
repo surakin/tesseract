@@ -7863,3 +7863,12 @@ msgstr ""
 #: client/src/emoji.cpp:187
 msgid "Flags"
 msgstr ""
+
+#: ui/shared/views/LoginView.cpp:1604
+msgid "Sign in with SSO"
+msgstr ""
+
+#: ui/shared/views/LoginView.cpp:1605
+#, c++-format
+msgid "Continue with {0}"
+msgstr ""

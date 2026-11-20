@@ -217,6 +217,7 @@ add_executable(tesseract_tests
     cpp/test_shell_helpers.cpp
     cpp/test_call_session.cpp
     cpp/test_client_sessionless.cpp
+    cpp/test_client_discovery.cpp
     cpp/test_shell_settings_handlers.cpp
     cpp/test_shell_calls.cpp
     cpp/test_shell_profile.cpp
@@ -263,6 +264,8 @@ add_executable(tesseract_tests
     cpp/test_shell_encryption_setup.cpp
     cpp/test_tk_host_pointer.cpp
     cpp/test_tk_button_hover.cpp
+    cpp/test_tk_button_leading_image.cpp
+    cpp/test_login_brand_icons.cpp
     cpp/test_tk_toggle_button.cpp
     cpp/test_tk_hoverable.cpp
     cpp/test_tk_host_file_drop.cpp

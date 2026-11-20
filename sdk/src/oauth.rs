@@ -302,6 +302,7 @@ const TIMED_OUT: &str = "the sign-in in the browser was not completed in time; s
 struct PendingFlowState {
     client: Client,
     source: RedirectSource,
+    kind: FlowKind,
 }
 
 /// State carried between `begin` and the end of the browser wait.
@@ -460,6 +461,67 @@ pub(crate) async fn build_configured_client(
     Ok(client)
 }
 
+/// Which login the redirect completes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FlowKind {
+    OAuth,
+    Sso,
+}
+
+/// A prepared redirect: the URL to hand the identity provider, the source
+/// that yields the browser's answer, and the handle that cancels the wait.
+pub(crate) struct RedirectSetup {
+    pub url: Url,
+    source: RedirectSource,
+    cancel: RedirectCancel,
+}
+
+/// Bind a loopback redirect server on a random port (we need the port before
+/// the redirect URI is built), or, in external mode, prepare the fixed
+/// private-use URI with nothing to bind.
+pub(crate) async fn setup_redirect(mode: RedirectMode) -> anyhow::Result<RedirectSetup> {
+    Ok(match mode {
+        RedirectMode::Loopback => {
+            let (base_url, redirect_handle) = LocalServerBuilder::new()
+                .ip_address(LocalServerIpAddress::Localhostv4)
+                .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
+                .spawn()
+                .await
+                .context("bind loopback redirect server")?;
+            let cancel = RedirectCancel::Loopback(redirect_handle.shutdown_handle());
+            let mut url = base_url;
+            url.set_path("callback");
+            RedirectSetup {
+                url,
+                source: RedirectSource::Loopback(redirect_handle),
+                cancel,
+            }
+        }
+        RedirectMode::External => {
+            let (source, cancel) = RedirectSource::external();
+            RedirectSetup {
+                url: Url::parse(EXTERNAL_REDIRECT_URI).context("external redirect uri")?,
+                source,
+                cancel,
+            }
+        }
+    })
+}
+
+/// Wrap a half-built `client` and its redirect into a [`PendingFlow`].
+pub(crate) fn pending_flow(client: Client, setup: RedirectSetup, kind: FlowKind) -> PendingFlow {
+    PendingFlow {
+        pending: std::sync::Mutex::new(Some(PendingFlowState {
+            client,
+            source: setup.source,
+            kind,
+        })),
+        waiter: std::sync::Mutex::new(None),
+        finished: std::sync::Mutex::new(None),
+        cancel: setup.cancel,
+    }
+}
+
 /// Phase 1 — set up the redirect (loopback socket or external URI), register
 /// the client, build the auth URL.
 pub async fn begin(
@@ -470,35 +532,12 @@ pub async fn begin(
     store_key: &[u8; 32],
     mode: RedirectMode,
 ) -> anyhow::Result<BeginResult> {
-    // 1. Loopback: bind a redirect server on a random port. We need the port
-    //    before asking the SDK to embed it in the redirect URI, so spawn the
-    //    server first. External: a fixed private-use URI, nothing to bind.
-    let (redirect_url, source, cancel) = match mode {
-        RedirectMode::Loopback => {
-            let (base_url, redirect_handle) = LocalServerBuilder::new()
-                .ip_address(LocalServerIpAddress::Localhostv4)
-                .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
-                .spawn()
-                .await
-                .context("bind loopback redirect server")?;
-            let cancel = RedirectCancel::Loopback(redirect_handle.shutdown_handle());
-            let mut redirect_url = base_url;
-            redirect_url.set_path("callback");
-            (
-                redirect_url,
-                RedirectSource::Loopback(redirect_handle),
-                cancel,
-            )
-        }
-        RedirectMode::External => {
-            let (source, cancel) = RedirectSource::external();
-            (
-                Url::parse(EXTERNAL_REDIRECT_URI).context("external redirect uri")?,
-                source,
-                cancel,
-            )
-        }
-    };
+    // 1. Set up the redirect (loopback socket or external URI).
+    let RedirectSetup {
+        url: redirect_url,
+        source,
+        cancel,
+    } = setup_redirect(mode).await?;
     let redirect_uri = redirect_url.to_string();
 
     // 2. Build the SDK client.
@@ -545,7 +584,7 @@ pub async fn begin(
     //    nonce are generated inside `OAuth::login()`; they're held in the
     //    `Client` until `finish_login` is called on the same instance.
     let mut login_builder = client.oauth().login(
-        redirect_url,
+        redirect_url.clone(),
         None, /* device_id */
         Some(registration_data),
         None, /* additional_scopes */
@@ -571,12 +610,15 @@ pub async fn begin(
     Ok(BeginResult {
         auth_url: auth_data.url.to_string(),
         redirect_uri,
-        flow: PendingFlow {
-            pending: std::sync::Mutex::new(Some(PendingFlowState { client, source })),
-            waiter: std::sync::Mutex::new(None),
-            finished: std::sync::Mutex::new(None),
-            cancel,
-        },
+        flow: pending_flow(
+            client,
+            RedirectSetup {
+                url: redirect_url,
+                source,
+                cancel,
+            },
+            FlowKind::OAuth,
+        ),
     })
 }
 
@@ -591,9 +633,27 @@ pub const OAUTH_WAIT_SLICE: std::time::Duration = std::time::Duration::from_mill
 /// finalise the login, and return the authenticated client. This is the
 /// background task that `await_slice` polls.
 async fn finish_redirect(state: PendingFlowState) -> anyhow::Result<Client> {
-    let PendingFlowState { client, source } = state;
+    let PendingFlowState {
+        client,
+        source,
+        kind,
+    } = state;
 
     let callback = await_redirect(source).await?;
+
+    if kind == FlowKind::Sso {
+        // The display name is set at login; no rename_device afterwards.
+        client
+            .matrix_auth()
+            .login_with_sso_callback(callback)
+            .context("sso callback")?
+            .initial_device_display_name(&build_device_display_name())
+            .request_refresh_token()
+            .send()
+            .await
+            .context("sso login")?;
+        return Ok(client);
+    }
 
     client
         .oauth()
@@ -784,6 +844,100 @@ mod tests {
     #[test]
     fn html_success_mentions_signed_in() {
         assert!(HTML_SUCCESS.contains("signed in"));
+    }
+}
+
+#[cfg(test)]
+mod sso_completion_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Stub homeserver routing by path: `/versions` and `/login`.
+    async fn stub() -> (Url, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut buf = Vec::new();
+                    let mut chunk = [0u8; 4096];
+                    // Read the headers, then the body so the close is clean.
+                    let head_end = loop {
+                        let n = sock.read(&mut chunk).await.unwrap_or(0);
+                        if n == 0 {
+                            return;
+                        }
+                        buf.extend_from_slice(&chunk[..n]);
+                        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            break i + 4;
+                        }
+                    };
+                    let head = String::from_utf8_lossy(&buf[..head_end]).to_lowercase();
+                    let len = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    while buf.len() < head_end + len {
+                        let n = sock.read(&mut chunk).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        buf.extend_from_slice(&chunk[..n]);
+                    }
+                    let first = head.lines().next().unwrap_or("").to_owned();
+                    let body = if first.contains("/login") {
+                        r#"{"user_id":"@alice:example.org","access_token":"tok","device_id":"DEV"}"#
+                    } else {
+                        r#"{"versions":["v1.11"]}"#
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        (url, handle)
+    }
+
+    async fn run_flow(callback: &str) -> anyhow::Result<Client> {
+        let (stub_url, handle) = stub().await;
+        let client = Client::builder()
+            .homeserver_url(stub_url.as_str())
+            .build()
+            .await
+            .unwrap();
+        let setup = setup_redirect(RedirectMode::External).await.unwrap();
+        let flow = pending_flow(client, setup, FlowKind::Sso);
+        deliver_callback(&flow, callback).unwrap();
+        let state = flow.pending.lock().unwrap().take().unwrap();
+        let out = finish_redirect(state).await;
+        handle.abort();
+        out
+    }
+
+    #[tokio::test]
+    async fn sso_callback_with_login_token_logs_in() {
+        let client = run_flow("io.github.surakin:/callback?loginToken=abc")
+            .await
+            .unwrap();
+        assert_eq!(client.user_id().unwrap().as_str(), "@alice:example.org");
+        assert!(client.matrix_auth().session().is_some());
+    }
+
+    #[tokio::test]
+    async fn sso_callback_without_login_token_errors() {
+        let err = run_flow("io.github.surakin:/callback?foo=bar")
+            .await
+            .err()
+            .expect("must fail without loginToken");
+        assert!(format!("{err:#}").contains("sso callback"), "{err:#}");
     }
 }
 
@@ -1007,6 +1161,7 @@ mod pending_flow_tests {
             pending: std::sync::Mutex::new(Some(PendingFlowState {
                 client,
                 source: RedirectSource::Loopback(redirect_handle),
+                kind: FlowKind::OAuth,
             })),
             waiter: std::sync::Mutex::new(None),
             finished: std::sync::Mutex::new(None),

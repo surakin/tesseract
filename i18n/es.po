@@ -7356,3 +7356,12 @@ msgstr "Miembros de servicio ({0})"
 #, c++-format
 msgid "{0} › message"
 msgstr "{0} › mensaje"
+
+#: ui/shared/views/LoginView.cpp:1604
+msgid "Sign in with SSO"
+msgstr "Iniciar sesión con SSO"
+
+#: ui/shared/views/LoginView.cpp:1605
+#, c++-format
+msgid "Continue with {0}"
+msgstr "Continuar con {0}"

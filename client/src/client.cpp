@@ -247,6 +247,28 @@ Result Client::login_password(const std::string& homeserver, const std::string& 
     MUT_FFI;
     return from_ffi(impl_->ffi->login_password(homeserver, username, password));
 }
+
+Client::OAuthFlow Client::begin_sso(const std::string& homeserver, const std::string& idp_id,
+                                    OAuthRedirect redirect)
+{
+    MUT_FFI;
+    auto r = impl_->ffi->sso_begin(homeserver, idp_id, redirect == OAuthRedirect::External);
+    return OAuthFlow{
+        .ok = r.ok,
+        .message = std::string(r.message),
+        .auth_url = std::string(r.auth_url),
+        .redirect_uri = std::string(r.redirect_uri),
+    };
+}
+
+std::vector<std::uint8_t> Client::fetch_login_icon(const std::string& homeserver,
+                                                   const std::string& mxc)
+{
+    // Free FFI function: touches no ClientFfi state, so no lock is taken and a
+    // slow icon never blocks a writer (set_data_dir on the UI thread).
+    auto v = tesseract_ffi::fetch_login_icon(homeserver, mxc);
+    return std::vector<std::uint8_t>(v.begin(), v.end());
+}
 #endif
 
 Client::QrGrantBitmap Client::begin_qr_grant()
@@ -2754,7 +2776,11 @@ void Client::resolve_user_profile_async(std::uint64_t request_id, const std::str
 Client::DiscoveryResult Client::discover_homeserver(const std::string& server_name_or_mxid)
 {
     SH_FFI;
-    std::string json = std::string(impl_->ffi->discover_homeserver(server_name_or_mxid));
+    return parse_discovery_json(std::string(impl_->ffi->discover_homeserver(server_name_or_mxid)));
+}
+
+Client::DiscoveryResult Client::parse_discovery_json(const std::string& json)
+{
     nlohmann::json j = parse_json_obj(json);
     std::string base_url = js_str(j, "base_url");
     std::string error = js_str(j, "error");
@@ -2764,6 +2790,23 @@ Client::DiscoveryResult Client::discover_homeserver(const std::string& server_na
     result.error = std::move(error);
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     result.supports_password = js_bool(j, "supports_password", false);
+    result.supports_sso = js_bool(j, "supports_sso", false);
+    if (j.contains("identity_providers") && j["identity_providers"].is_array())
+    {
+        for (const auto& p : j["identity_providers"])
+        {
+            if (!p.is_object())
+            {
+                continue;
+            }
+            result.identity_providers.push_back({
+                .id = js_str(p, "id"),
+                .name = js_str(p, "name"),
+                .icon_mxc = js_str(p, "icon"),
+                .brand = js_str(p, "brand"),
+            });
+        }
+    }
 #endif
     return result;
 }

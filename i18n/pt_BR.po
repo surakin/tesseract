@@ -7405,3 +7405,12 @@ msgstr "{0} removeu o tópico"
 #: ui/shared/views/MessageListView.cpp
 msgid "{0} changed the topic to {1}"
 msgstr "{0} alterou o tópico para {1}"
+
+#: ui/shared/views/LoginView.cpp:1604
+msgid "Sign in with SSO"
+msgstr "Entrar com SSO"
+
+#: ui/shared/views/LoginView.cpp:1605
+#, c++-format
+msgid "Continue with {0}"
+msgstr "Continuar com {0}"

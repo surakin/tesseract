@@ -7697,3 +7697,12 @@ msgstr "[Symbölsx]"
 #: client/src/emoji.cpp:187
 msgid "Flags"
 msgstr "[Flàgsx]"
+
+#: ui/shared/views/LoginView.cpp:1604
+msgid "Sign in with SSO"
+msgstr "[Sïgñ ïñ wïth SSÖxxx]"
+
+#: ui/shared/views/LoginView.cpp:1605
+#, c++-format
+msgid "Continue with {0}"
+msgstr "[Çöñtïñùé wïth {0}xxx]"

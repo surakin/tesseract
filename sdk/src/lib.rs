@@ -33,6 +33,8 @@ mod private_fs;
 mod recent_emoji;
 #[cfg(feature = "request_log")]
 mod request_log;
+#[cfg(feature = "legacy_login")]
+mod sso_login;
 // Without the feature the call sites stay, as no-ops.
 #[cfg(not(feature = "request_log"))]
 mod request_log {

@@ -154,6 +154,8 @@ set(_views_sources
     views/RoomSwitchGateKeeper.cpp
     views/PinnedBanner.h
     views/PinnedBanner.cpp
+    views/login_brand_icons.h
+    views/login_brand_icons.cpp
     views/html_spans.h
     views/html_spans.cpp
     views/sdk_text.h
@@ -563,6 +565,7 @@ endif()
 set(_lucide_dir "${CMAKE_SOURCE_DIR}/ui/icons/lucide")
 set(_icons_h   "${CMAKE_CURRENT_BINARY_DIR}/icons.h")
 set(_gen_script "${CMAKE_SOURCE_DIR}/cmake/generate_icons.cmake")
+set(_brands_dir "${CMAKE_SOURCE_DIR}/ui/icons/brands")
 
 set(_icon_svgs
     "${_lucide_dir}/lucide-laugh.svg"
@@ -628,12 +631,19 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-shield-check.svg"
     "${_lucide_dir}/lucide-shield-alert.svg"
     "${_lucide_dir}/lucide-terminal.svg"
+    "${_brands_dir}/apple.svg"
+    "${_brands_dir}/facebook.svg"
+    "${_brands_dir}/github.svg"
+    "${_brands_dir}/gitlab.svg"
+    "${_brands_dir}/google.svg"
+    "${_brands_dir}/x.svg"
 )
 
 add_custom_command(
     OUTPUT  "${_icons_h}"
     COMMAND "${CMAKE_COMMAND}"
             "-DLUCIDE_DIR=${_lucide_dir}"
+            "-DBRANDS_DIR=${_brands_dir}"
             "-DICONS_H_OUT=${_icons_h}"
             -P "${_gen_script}"
     DEPENDS ${_icon_svgs} "${_gen_script}"

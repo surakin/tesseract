@@ -1647,33 +1647,36 @@ impl ClientFfi {
         }
     }
 
-    // Best-effort check whether the homeserver advertises `m.login.password`
-    // among its login flows. Isolated from `homeserver_supports_registration`
+    // Best-effort probe of the homeserver's `GET /login` flows (password, SSO,
+    // identity providers). Isolated from `homeserver_supports_registration`
     // (oauth.rs) — a separate, additive probe with no shared code path, so it
     // carries no regression risk to the existing OIDC "Create an account" gate.
     #[cfg(not(test))]
     #[cfg(feature = "legacy_login")]
-    async fn probe_password_login_support(http: &reqwest::Client, base_url: &str) -> bool {
+    async fn probe_login_methods(http: &reqwest::Client, base_url: &str) -> LoginMethods {
         let url = format!("{base_url}/_matrix/client/v3/login");
         let Ok(resp) = http.get(&url).send().await else {
-            return false;
+            return LoginMethods::default();
         };
         let Ok(body) = resp.json::<serde_json::Value>().await else {
-            return false;
+            return LoginMethods::default();
         };
-        login_flows_support_password(&body)
+        parse_login_methods(&body)
     }
 
     /// Discover the homeserver base URL for a server name or Matrix ID.
-    /// Returns JSON: `{"base_url":"https://...","error":"","supports_password":bool}`
-    /// on success or `{"base_url":"","error":"...","supports_password":false}` on
-    /// failure. Uses raw HTTP — no SDK Client construction required.
+    /// Returns JSON: `{"base_url":"https://...","error":"","supports_password":bool,
+    /// "supports_sso":bool,"identity_providers":[{"id","name","icon","brand"}]}`
+    /// on success or the same shape with an empty `base_url`, an `error` and no
+    /// sign-in methods on failure. Uses raw HTTP — no SDK Client construction required.
     #[cfg_attr(test, allow(dead_code))]
-    fn discovery_json_str(base_url: &str, error: &str, supports_password: bool) -> String {
+    fn discovery_json_str(base_url: &str, error: &str, methods: &LoginMethods) -> String {
         serde_json::json!({
             "base_url": base_url,
             "error": error,
-            "supports_password": supports_password,
+            "supports_password": methods.password,
+            "supports_sso": methods.sso,
+            "identity_providers": methods.identity_providers,
         })
         .to_string()
     }
@@ -1690,7 +1693,7 @@ impl ClientFfi {
                     return Self::discovery_json_str(
                         "",
                         "Invalid Matrix ID — expected @user:server",
-                        false,
+                        &LoginMethods::default(),
                     );
                 }
             }
@@ -1699,7 +1702,7 @@ impl ClientFfi {
         };
 
         if server.is_empty() {
-            return Self::discovery_json_str("", "", false);
+            return Self::discovery_json_str("", "", &LoginMethods::default());
         }
 
         let server = server.to_owned();
@@ -1717,7 +1720,7 @@ impl ClientFfi {
                 .build()
             {
                 Ok(c) => c,
-                Err(e) => return Self::discovery_json_str("", &e.to_string(), false),
+                Err(e) => return Self::discovery_json_str("", &e.to_string(), &LoginMethods::default()),
             };
 
             // Plain http would send the password and tokens in cleartext, so only
@@ -1727,7 +1730,7 @@ impl ClientFfi {
                 return Self::discovery_json_str(
                     "",
                     "Use an https:// address; plain http is not accepted for a homeserver",
-                    false,
+                    &LoginMethods::default(),
                 );
             }
             let (candidate, outcome) = if server.starts_with("https://") {
@@ -1750,29 +1753,28 @@ impl ClientFfi {
             match outcome {
                 ValidateOutcome::Ok => {
                     #[cfg(feature = "legacy_login")]
-                    let supports_password =
-                        Self::probe_password_login_support(&http, &candidate).await;
+                    let methods = Self::probe_login_methods(&http, &candidate).await;
                     #[cfg(not(feature = "legacy_login"))]
-                    let supports_password = false;
+                    let methods = LoginMethods::default();
 
-                    Self::discovery_json_str(&candidate, "", supports_password)
+                    Self::discovery_json_str(&candidate, "", &methods)
                 }
                 ValidateOutcome::Timeout => Self::discovery_json_str(
                     "",
                     &format!("{server} took too long to respond"),
-                    false,
+                    &LoginMethods::default(),
                 ),
                 ValidateOutcome::ConnectionFailed => Self::discovery_json_str(
                     "",
                     &format!(
                         "Could not connect to {server} — check the address and your internet connection"
                     ),
-                    false,
+                    &LoginMethods::default(),
                 ),
                 ValidateOutcome::NotMatrix => Self::discovery_json_str(
                     "",
                     &format!("{server} doesn't appear to be a Matrix homeserver"),
-                    false,
+                    &LoginMethods::default(),
                 ),
             }
         })
@@ -1780,23 +1782,73 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn discover_homeserver(&self, _: &str) -> String {
-        r#"{"base_url":"","error":"","supports_password":false}"#.to_owned()
+        r#"{"base_url":"","error":"","supports_password":false,"supports_sso":false,"identity_providers":[]}"#.to_owned()
     }
 }
 
-/// Parse a `GET /_matrix/client/v3/login` response body and report whether
-/// the homeserver advertises `m.login.password` among its flows. Pure/sync
-/// so it's unit-testable without a network round trip.
+/// One identity provider advertised by an `m.login.sso` flow.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize)]
+pub(crate) struct IdentityProviderInfo {
+    pub id: String,
+    pub name: String,
+    /// `mxc://` icon URI, or empty.
+    pub icon: String,
+    /// Brand hint such as `github`, or empty.
+    pub brand: String,
+}
+
+/// Sign-in methods a homeserver advertises on `GET /login`.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct LoginMethods {
+    pub password: bool,
+    pub sso: bool,
+    pub identity_providers: Vec<IdentityProviderInfo>,
+}
+
+/// Parse a `GET /_matrix/client/v3/login` response body into sign-in methods.
+/// Works on raw JSON because the unstable MSC3824 compatibility key is not
+/// modelled by the SDK. Pure/sync so it's unit-testable without a network.
 #[cfg(feature = "legacy_login")]
-fn login_flows_support_password(body: &serde_json::Value) -> bool {
-    body["flows"]
-        .as_array()
-        .map(|flows| {
-            flows
-                .iter()
-                .any(|f| f["type"].as_str() == Some("m.login.password"))
-        })
-        .unwrap_or(false)
+fn parse_login_methods(body: &serde_json::Value) -> LoginMethods {
+    let mut methods = LoginMethods::default();
+    let Some(flows) = body["flows"].as_array() else {
+        return methods;
+    };
+    for flow in flows {
+        match flow["type"].as_str() {
+            Some("m.login.password") => methods.password = true,
+            Some("m.login.sso") => {
+                // A MAS-delegated homeserver lists SSO only for compatibility
+                // with legacy clients; it is really OIDC, handled elsewhere.
+                if flow["org.matrix.msc3824.delegated_oidc_compatibility"].as_bool() == Some(true) {
+                    continue;
+                }
+                methods.sso = true;
+                let Some(providers) = flow["identity_providers"].as_array() else {
+                    continue;
+                };
+                for idp in providers {
+                    let Some(id) = idp["id"].as_str().filter(|s| !s.is_empty()) else {
+                        continue;
+                    };
+                    let text = |k: &str| idp[k].as_str().unwrap_or("").to_owned();
+                    let name = idp["name"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(id)
+                        .to_owned();
+                    methods.identity_providers.push(IdentityProviderInfo {
+                        id: id.to_owned(),
+                        name,
+                        icon: text("icon"),
+                        brand: text("brand"),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    methods
 }
 
 #[cfg(test)]
@@ -1866,41 +1918,77 @@ mod account_dm_tests {
 }
 
 #[cfg(all(test, feature = "legacy_login"))]
-mod password_support_tests {
-    use super::login_flows_support_password;
+mod login_methods_tests {
+    use super::{parse_login_methods, LoginMethods};
+    use serde_json::json;
 
     #[test]
-    fn detects_password_flow_when_present() {
-        let body = serde_json::json!({
-            "flows": [
-                {"type": "m.login.sso"},
-                {"type": "m.login.password"},
+    fn password_only() {
+        let m = parse_login_methods(&json!({"flows":[{"type":"m.login.password"}]}));
+        assert!(m.password && !m.sso && m.identity_providers.is_empty());
+    }
+
+    #[test]
+    fn sso_without_providers() {
+        let m = parse_login_methods(&json!({"flows":[{"type":"m.login.sso"}]}));
+        assert!(m.sso && m.identity_providers.is_empty());
+    }
+
+    #[test]
+    fn sso_with_providers() {
+        let m = parse_login_methods(&json!({"flows":[{
+            "type":"m.login.sso",
+            "identity_providers":[
+                {"id":"oidc-github","name":"GitHub","brand":"github","icon":"mxc://x/y"},
+                {"id":"saml","name":"Corp"}
             ]
-        });
-        assert!(login_flows_support_password(&body));
+        }]}));
+        assert!(m.sso);
+        assert_eq!(m.identity_providers.len(), 2);
+        assert_eq!(m.identity_providers[0].id, "oidc-github");
+        assert_eq!(m.identity_providers[0].name, "GitHub");
+        assert_eq!(m.identity_providers[0].brand, "github");
+        assert_eq!(m.identity_providers[0].icon, "mxc://x/y");
+        assert_eq!(m.identity_providers[1].id, "saml");
+        assert_eq!(m.identity_providers[1].name, "Corp");
+        assert_eq!(m.identity_providers[1].icon, "");
+        assert_eq!(m.identity_providers[1].brand, "");
     }
 
     #[test]
-    fn absent_when_flows_list_lacks_password() {
-        let body = serde_json::json!({
-            "flows": [
-                {"type": "m.login.sso"},
-                {"type": "m.login.token"},
-            ]
-        });
-        assert!(!login_flows_support_password(&body));
+    fn provider_without_name_uses_id() {
+        let m = parse_login_methods(&json!({"flows":[{
+            "type":"m.login.sso","identity_providers":[{"id":"kc"},{"id":"e","name":""}]
+        }]}));
+        assert_eq!(m.identity_providers[0].name, "kc");
+        assert_eq!(m.identity_providers[1].name, "e");
     }
 
     #[test]
-    fn absent_when_flows_key_missing_entirely() {
-        let body = serde_json::json!({"not_flows": []});
-        assert!(!login_flows_support_password(&body));
+    fn provider_without_id_is_skipped() {
+        let m = parse_login_methods(&json!({"flows":[{
+            "type":"m.login.sso","identity_providers":[{"name":"X"},{"id":"","name":"Y"}]
+        }]}));
+        assert!(m.sso && m.identity_providers.is_empty());
     }
 
     #[test]
-    fn absent_when_body_is_not_an_object() {
-        let body = serde_json::Value::Null;
-        assert!(!login_flows_support_password(&body));
+    fn mas_compat_flag_disables_sso() {
+        let m = parse_login_methods(&json!({"flows":[{
+            "type":"m.login.sso",
+            "org.matrix.msc3824.delegated_oidc_compatibility":true,
+            "identity_providers":[{"id":"mas","name":"MAS"}]
+        }]}));
+        assert!(!m.sso && m.identity_providers.is_empty());
+    }
+
+    #[test]
+    fn garbage_body() {
+        assert_eq!(parse_login_methods(&json!({})), LoginMethods::default());
+        assert_eq!(
+            parse_login_methods(&json!({"flows":"x"})),
+            LoginMethods::default()
+        );
     }
 }
 
@@ -1925,18 +2013,36 @@ mod json_helper_tests {
         let v: serde_json::Value = serde_json::from_str(&ClientFfi::discovery_json_str(
             "https://hs.example.org",
             "",
-            true,
+            &LoginMethods {
+                password: true,
+                sso: true,
+                identity_providers: vec![IdentityProviderInfo {
+                    id: "gh".into(),
+                    name: "GitHub".into(),
+                    icon: "mxc://x/y".into(),
+                    brand: "github".into(),
+                }],
+            },
         ))
         .unwrap();
         assert_eq!(v["base_url"], "https://hs.example.org");
         assert_eq!(v["error"], "");
         assert_eq!(v["supports_password"], true);
+        assert_eq!(v["supports_sso"], true);
+        assert_eq!(v["identity_providers"][0]["id"], "gh");
+        assert_eq!(v["identity_providers"][0]["name"], "GitHub");
+        assert_eq!(v["identity_providers"][0]["icon"], "mxc://x/y");
+        assert_eq!(v["identity_providers"][0]["brand"], "github");
     }
 
     #[test]
     fn discovery_json_error_has_empty_base_url_shape() {
-        let v: serde_json::Value =
-            serde_json::from_str(&ClientFfi::discovery_json_str("", "nope", false)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&ClientFfi::discovery_json_str(
+            "",
+            "nope",
+            &LoginMethods::default(),
+        ))
+        .unwrap();
         assert_eq!(v["base_url"], "");
         assert_eq!(v["error"], "nope");
         assert_eq!(v["supports_password"], false);
@@ -1945,8 +2051,12 @@ mod json_helper_tests {
     #[test]
     fn discovery_json_escapes_quotes_and_newlines_in_errors() {
         let msg = "bad \"host\"\nline2 \\ end";
-        let v: serde_json::Value =
-            serde_json::from_str(&ClientFfi::discovery_json_str("", msg, false)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&ClientFfi::discovery_json_str(
+            "",
+            msg,
+            &LoginMethods::default(),
+        ))
+        .unwrap();
         assert_eq!(v["error"], msg);
     }
 

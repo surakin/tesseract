@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- feat(login): sign in to servers that use single sign-on, with a button for each identity provider. Linux Qt6 release build, ctest 4000/4000, cargo 1745/1745
 - feat(i18n): European and Brazilian Portuguese translations. Linux Qt6 debug build, ctest
 - feat(timeline): server ACL changes now group with bans and other membership events into one expandable row. Linux Qt6 debug build, ctest 3980/3980, user-verified Qt6
 - chore(build): compiler warnings are now errors in every C++ and Rust build configuration. Linux debug and release builds, ctest 3961/3961, cargo 1733/1733

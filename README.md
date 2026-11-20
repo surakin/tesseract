@@ -308,6 +308,7 @@ The screenshot fixture's user avatars are generated from [Lorelei](https://www.f
 | [jxl-oxide](https://crates.io/crates/jxl-oxide) (MIT OR Apache-2.0) | JPEG XL image and animation decode | Tirr |
 | [nanosvg](https://github.com/memononen/nanosvg) (vendored) | SVG icon rasterization | Mikko Mononen (incl. AntiGrain code by Maxim Shemanarev) |
 | [Lucide](https://lucide.dev/) (ISC) | UI icon set | The Lucide Contributors (community fork of Feather) |
+| [Simple Icons](https://simpleicons.org/) (CC0) | Bundled brand logos on the SSO login buttons | The Simple Icons Contributors |
 | [nlohmann/json](https://github.com/nlohmann/json) | C++ JSON parsing | Niels Lohmann |
 | [Catch2](https://github.com/catchorg/Catch2) | C++ unit test framework | Martin Hořeňovský et al. |
 | [Corrosion](https://github.com/corrosion-rs/corrosion) | CMake ↔ Cargo bridge | The Corrosion project |

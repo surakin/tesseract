@@ -2,10 +2,12 @@
 
 #include "AlertDialog.h"
 #include "icons.h"
+#include "login_brand_icons.h"
 #include "tk/cache_key.h"
 #include "tk/i18n.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <random>
 #include <thread>
@@ -162,6 +164,12 @@ void LoginView::rebuild_tree()
     sign_in_btn_ = card->add_child(std::move(sign_in));
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    // SSO buttons: rebuilt on every discovery result (see rebuild_sso_buttons_).
+    auto sso_box = tk::create_widget<tk::VBox>(this);
+    sso_box->set_spacing(8.0f).set_cross(tk::Cross::Stretch).set_main(tk::Main::Start);
+    sso_box->set_visible(false);
+    sso_box_ = card->add_child(std::move(sso_box));
+
     // Toggle button on the OAuthOnly form — only ever shown once discovery
     // positively confirms the server supports m.login.password.
     auto password_toggle =
@@ -755,6 +763,9 @@ void LoginView::shutdown()
     ++icon_gen_;
 #endif
     ++registration_gen_;
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    ++sso_icon_gen_;
+#endif
     end_web_auth_();
     cancelled_.store(true);
     if (client_)
@@ -811,10 +822,19 @@ void LoginView::reset()
 
 void LoginView::start_oauth_(bool register_account)
 {
+    start_browser_flow_(register_account ? BrowserFlow::OAuthRegister : BrowserFlow::OAuth, {});
+}
+
+void LoginView::start_browser_flow_(BrowserFlow kind, std::string idp_id)
+{
     if (!client_)
     {
         return;
     }
+    const bool register_account = kind == BrowserFlow::OAuthRegister;
+#ifndef TESSERACT_LEGACY_LOGIN_ENABLED
+    (void)idp_id;
+#endif
     std::string hs_raw = tesseract::text::trim(hs_field_->text());
     if (hs_raw.empty())
     {
@@ -824,7 +844,7 @@ void LoginView::start_oauth_(bool register_account)
     // OAuth login hint (prefills the username on the server): a Matrix ID typed
     // into the homeserver field wins over the provisioned one.
     std::string user_id_hint;
-    if (!register_account)
+    if (kind == BrowserFlow::OAuth)
     {
         if (hs_raw.size() > 1 && hs_raw.front() == '@' && hs_raw.find(':') != std::string::npos)
         {
@@ -868,11 +888,23 @@ void LoginView::start_oauth_(bool register_account)
     auto* c = client_; // snapshot: set_client() may race with this worker
     const bool external = web_auth_start_ && web_auth_available_ && web_auth_available_();
     worker_ = std::thread(
-        [this, hs, c, register_account, user_id_hint, external]
+        [this, hs, c, kind, register_account, user_id_hint, idp_id = std::move(idp_id), external]
         {
-            auto flow = c->begin_oauth(hs, register_account, user_id_hint,
-                                       external ? tesseract::Client::OAuthRedirect::External
-                                                : tesseract::Client::OAuthRedirect::Loopback);
+            const auto redirect = external ? tesseract::Client::OAuthRedirect::External
+                                           : tesseract::Client::OAuthRedirect::Loopback;
+            tesseract::Client::OAuthFlow flow;
+            switch (kind)
+            {
+            case BrowserFlow::OAuth:
+            case BrowserFlow::OAuthRegister:
+                flow = c->begin_oauth(hs, register_account, user_id_hint, redirect);
+                break;
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+            case BrowserFlow::Sso:
+                flow = c->begin_sso(hs, idp_id, redirect);
+                break;
+#endif
+            }
             if (cancelled_.load())
             {
                 return;
@@ -909,6 +941,10 @@ void LoginView::update_method_controls_enabled_()
     {
         password_toggle_btn_->set_enabled(ready);
     }
+    for (auto* b : sso_buttons_)
+    {
+        b->set_enabled(ready);
+    }
 #endif
 }
 
@@ -930,6 +966,11 @@ LoginView::SubmitAction LoginView::homeserver_submit_action() const
     if (password_available_)
     {
         return SubmitAction::Password;
+    }
+    // One SSO button: Enter signs in with it. Several: the user has to pick.
+    if (sso_available_ && sso_buttons_.size() == 1)
+    {
+        return SubmitAction::Sso;
     }
 #endif
     return SubmitAction::Nothing;
@@ -967,6 +1008,11 @@ void LoginView::submit_homeserver_()
         switch_to_password_form_();
 #endif
         break;
+    case SubmitAction::Sso:
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+        start_sso_(0);
+#endif
+        break;
     case SubmitAction::Nothing:
         break;
     }
@@ -981,7 +1027,8 @@ void LoginView::run_pending_submit_()
 }
 
 void LoginView::apply_discovery_result_(bool ok, const std::string& base_url_or_error,
-                                        bool supports_password)
+                                        bool supports_password, bool supports_sso,
+                                        IdentityProviders idps)
 {
     if (ok)
     {
@@ -996,8 +1043,11 @@ void LoginView::apply_discovery_result_(bool ok, const std::string& base_url_or_
     // confirms (Resolved) the server supports m.login.password. Any other
     // outcome keeps it hidden.
     update_password_availability_(ok && supports_password);
+    rebuild_sso_buttons_(ok && supports_sso, std::move(idps));
 #else
     (void)supports_password;
+    (void)supports_sso;
+    (void)idps;
 #endif
     discovery_settled_ = true;
     update_method_controls_enabled_();
@@ -1011,6 +1061,9 @@ void LoginView::oauth_probe_done_result_(bool supported)
 {
     oauth_probe_done_ = true;
     update_oauth_availability_(supported);
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    maybe_fetch_sso_icons_();
+#endif
     update_method_controls_enabled_();
     if (relayout_)
     {
@@ -1129,6 +1182,7 @@ void LoginView::hs_changed_(const std::string& text)
     update_oauth_availability_(true); // fresh cycle: reset to permissive default
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     update_password_availability_(false); // unknown while still probing — stay hidden
+    rebuild_sso_buttons_(false, {});
 #endif
     update_method_controls_enabled_();
     relayout_();
@@ -1166,9 +1220,15 @@ void LoginView::hs_changed_(const std::string& text)
                 {
                     return;
                 }
-                apply_discovery_result_(static_cast<bool>(result),
-                                        result ? result.base_url : result.error,
-                                        result && result.supports_password);
+                apply_discovery_result_(
+                    static_cast<bool>(result), result ? result.base_url : result.error,
+                    result && result.supports_password,
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+                    result && result.supports_sso, std::move(result.identity_providers)
+#else
+                    false, {}
+#endif
+                );
             });
     };
 
@@ -1434,6 +1494,10 @@ void LoginView::update_form_visibility_()
     {
         sign_in_btn_->set_visible(oauth_form_visible && oauth_available_);
     }
+    if (sso_box_)
+    {
+        sso_box_->set_visible(oauth_form_visible && sso_available_ && !oauth_available_);
+    }
     if (password_toggle_btn_)
     {
         password_toggle_btn_->set_visible(oauth_form_visible && password_available_);
@@ -1476,6 +1540,229 @@ void LoginView::update_form_visibility_()
     {
         cancel_btn_->set_visible((mode_ == Mode::AddAccount || state_ == State::Waiting) &&
                                  (state_ != State::Waiting || form_kind_ != FormKind::Password));
+    }
+}
+
+std::vector<std::string> LoginView::sso_button_labels() const
+{
+    std::vector<std::string> labels;
+    if (!sso_visible())
+    {
+        return labels;
+    }
+    for (const auto* b : sso_buttons_)
+    {
+        labels.push_back(b->label());
+    }
+    return labels;
+}
+
+bool LoginView::sso_button_has_image(std::size_t index) const
+{
+    return index < sso_icons_.size() && sso_icons_[index] != nullptr;
+}
+
+void LoginView::simulate_sso_click(std::size_t index)
+{
+    start_sso_(index);
+}
+
+void LoginView::start_sso_(std::size_t index)
+{
+    if (index >= sso_buttons_.size())
+    {
+        return;
+    }
+    const std::string idp_id = sso_idps_.empty() ? std::string{} : sso_idps_[index].id;
+    if (on_begin_sso_for_test_)
+    {
+        on_begin_sso_for_test_(idp_id);
+    }
+    start_browser_flow_(BrowserFlow::Sso, idp_id);
+}
+
+void LoginView::clear_sso_buttons_()
+{
+    // Buttons borrow the decoded images: let go of them before they are freed.
+    for (auto* b : sso_buttons_)
+    {
+        b->set_leading_image(nullptr);
+    }
+    sso_buttons_.clear();
+    if (sso_box_)
+    {
+        sso_box_->clear_children();
+    }
+    sso_icons_.clear();
+    sso_icon_bytes_.clear();
+}
+
+void LoginView::rebuild_sso_buttons_(bool supports_sso, IdentityProviders idps)
+{
+    ++sso_icon_gen_; // an icon still downloading for the old buttons is stale
+    clear_sso_buttons_();
+    sso_idps_.clear();
+    sso_available_ = supports_sso;
+    sso_icons_requested_ = false;
+    if (supports_sso)
+    {
+        sso_idps_ = std::move(idps);
+        const std::size_t count = sso_idps_.empty() ? 1 : sso_idps_.size();
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const bool generic = sso_idps_.empty();
+            auto btn = tk::create_widget<tk::Button>(
+                this,
+                generic ? tk::tr("Sign in with SSO")
+                        : tk::trf(tk::tr("Continue with {0}"), {sso_idps_[i].name}),
+                std::function<void()>{}, tk::Button::Variant::Subtle);
+            btn->set_min_size({0, kButtonHeight});
+            btn->set_on_click(
+                [this, i]
+                {
+                    start_sso_(i);
+                });
+            if (!generic)
+            {
+                const auto& idp = sso_idps_[i];
+                const auto svg = brand_icon_svg(idp.brand);
+                if (!svg.empty())
+                {
+                    btn->set_leading_icon(svg);
+                }
+                else
+                {
+                    // First grapheme only: initials_of gives one per word, so
+                    // ask it about one word at a time.
+                    std::string letter;
+                    for (std::size_t pos = 0; letter.empty() && pos < idp.name.size();)
+                    {
+                        const std::size_t end = idp.name.find_first_of(" \t\n", pos);
+                        const std::size_t stop = end == std::string::npos ? idp.name.size() : end;
+                        if (stop > pos)
+                        {
+                            std::string w =
+                                tk::initials_of(std::string_view(idp.name).substr(pos, stop - pos));
+                            if (w != "?")
+                            {
+                                letter = std::move(w);
+                            }
+                        }
+                        pos = stop + 1;
+                    }
+                    if (!letter.empty() && static_cast<unsigned char>(letter[0]) < 0x80)
+                    {
+                        letter[0] =
+                            static_cast<char>(std::toupper(static_cast<unsigned char>(letter[0])));
+                    }
+                    btn->set_leading_monogram(std::move(letter));
+                }
+            }
+            sso_buttons_.push_back(sso_box_->add_child(std::move(btn)));
+        }
+        sso_icons_.resize(count);
+        sso_icon_bytes_.resize(count);
+        update_method_controls_enabled_();
+    }
+    update_form_visibility_();
+    maybe_fetch_sso_icons_();
+}
+
+void LoginView::maybe_fetch_sso_icons_()
+{
+    // Only once the SSO box is actually shown: the OAuth probe has answered
+    // unavailable and the homeserver offers SSO.
+    if (sso_icons_requested_ || !sso_available_ || !oauth_probe_done_ || oauth_available_)
+    {
+        return;
+    }
+    sso_icons_requested_ = true;
+    fetch_sso_icons_();
+}
+
+void LoginView::fetch_sso_icons_()
+{
+    auto* snap = client_;
+    if (!snap || resolved_base_url_.empty())
+    {
+        return;
+    }
+    // Brand providers use a bundled logo; only the rest need their mxc icon.
+    std::vector<std::pair<std::size_t, std::string>> wanted;
+    for (std::size_t i = 0; i < sso_idps_.size(); ++i)
+    {
+        if (!sso_idps_[i].icon_mxc.empty() && brand_icon_svg(sso_idps_[i].brand).empty())
+        {
+            wanted.emplace_back(i, sso_idps_[i].icon_mxc);
+        }
+    }
+    if (wanted.empty())
+    {
+        return;
+    }
+    const uint32_t gen = sso_icon_gen_.load();
+    // One task fetches every icon in turn (the downloads take no FFI lock but
+    // can be slow); each result is posted as it arrives.
+    auto body = [this, gen, wanted = std::move(wanted), hs = resolved_base_url_]
+    {
+        for (const auto& [i, mxc] : wanted)
+        {
+            if (gen != sso_icon_gen_.load())
+            {
+                return;
+            }
+            auto bytes = Client::fetch_login_icon(hs, mxc);
+            if (bytes.empty() || gen != sso_icon_gen_.load())
+            {
+                continue;
+            }
+            post_to_ui_(
+                [this, gen, i = i, bytes = std::move(bytes)]() mutable
+                {
+                    apply_login_icon_(gen, i, std::move(bytes));
+                });
+        }
+    };
+    if (run_async_)
+    {
+        run_async_(std::move(body));
+    }
+    else
+    {
+        std::thread(std::move(body)).detach();
+    }
+}
+
+void LoginView::apply_login_icon_(uint32_t gen, std::size_t index, std::vector<std::uint8_t> bytes)
+{
+    if (gen != sso_icon_gen_.load() || index >= sso_icon_bytes_.size() || bytes.empty())
+    {
+        return;
+    }
+    // Decoding needs the canvas factory, which only layout has: park the bytes
+    // and let the relayout pick them up.
+    sso_icon_bytes_[index] = std::move(bytes);
+    if (relayout_)
+    {
+        relayout_();
+    }
+}
+
+void LoginView::decode_pending_sso_icons_(tk::CanvasFactory& factory)
+{
+    for (std::size_t i = 0; i < sso_icon_bytes_.size(); ++i)
+    {
+        if (sso_icon_bytes_[i].empty())
+        {
+            continue;
+        }
+        auto img = factory.decode_image(sso_icon_bytes_[i]);
+        sso_icon_bytes_[i].clear();
+        if (img)
+        {
+            sso_icons_[i] = std::move(img);
+            sso_buttons_[i]->set_leading_image(sso_icons_[i].get());
+        }
     }
 }
 
@@ -1614,6 +1901,10 @@ void LoginView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             brand_avatar_->set_image(brand_icon_.get());
         }
     }
+#endif
+
+#ifdef TESSERACT_LEGACY_LOGIN_ENABLED
+    decode_pending_sso_icons_(ctx.factory);
 #endif
 
     tk::Size card_size = card_->measure(ctx, {kLoginCardWidth, bounds.h});

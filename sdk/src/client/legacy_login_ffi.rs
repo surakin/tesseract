@@ -8,7 +8,7 @@
 #![allow(unused_imports, unused_variables)]
 
 use super::{err, ok, ClientFfi};
-use crate::ffi::OpResult;
+use crate::ffi::{OAuthBegin, OpResult};
 
 impl ClientFfi {
     /// Log in with a Matrix user ID (or localpart) and password, as a
@@ -55,5 +55,70 @@ impl ClientFfi {
                 Err(e) => err(format!("{e:#}")),
             }
         }
+    }
+
+    /// Begin the legacy SSO login. Returns the homeserver SSO URL to open in a
+    /// browser; the redirect is awaited with the shared `oauth_await_slice` /
+    /// `oauth_commit` / `oauth_cancel` calls. `idp_id` "" selects the generic
+    /// SSO redirect. Blocks the calling thread — worker thread only.
+    pub fn sso_begin(
+        &mut self,
+        homeserver: &str,
+        idp_id: &str,
+        external_redirect: bool,
+    ) -> OAuthBegin {
+        #[cfg(not(feature = "legacy_login"))]
+        return OAuthBegin {
+            ok: false,
+            message: "legacy login not built into this binary".into(),
+            auth_url: String::new(),
+            redirect_uri: String::new(),
+        };
+
+        #[cfg(feature = "legacy_login")]
+        {
+            let hs = homeserver.to_owned();
+            let idp = idp_id.to_owned();
+            let mode = if external_redirect {
+                crate::oauth::RedirectMode::External
+            } else {
+                crate::oauth::RedirectMode::Loopback
+            };
+            self.begin_login_flow(move |path, key| async move {
+                crate::sso_login::begin(&hs, &path, &idp, &key, mode).await
+            })
+        }
+    }
+}
+
+/// Fetch an IdP icon (`mxc://`) for the login screen. Empty on any error,
+/// timeout (~10 s) or an icon over 256 KiB. Blocks — worker thread. Takes no
+/// `ClientFfi`: it runs on its own throwaway runtime so a slow icon never
+/// holds the FFI lock.
+pub fn fetch_login_icon(homeserver: &str, mxc: &str) -> Vec<u8> {
+    #[cfg(not(feature = "legacy_login"))]
+    return Vec::new();
+
+    #[cfg(feature = "legacy_login")]
+    {
+        // catch_unwind keeps a panic from crossing the cxx boundary.
+        std::panic::catch_unwind(|| {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return Vec::new();
+            };
+            // Keep a tokio context in TLS so the throwaway Client drops with
+            // a runtime handle available (same hazard as supports_registration).
+            let _guard = rt.enter();
+            let fetch = crate::sso_login::fetch_icon(homeserver, mxc);
+            let timeout = std::time::Duration::from_secs(10);
+            match rt.block_on(tokio::time::timeout(timeout, fetch)) {
+                Ok(Ok(bytes)) if bytes.len() <= 256 * 1024 => bytes,
+                _ => Vec::new(),
+            }
+        })
+        .unwrap_or_default()
     }
 }

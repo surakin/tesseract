@@ -6,6 +6,13 @@ pub fn client_create(log_level: &str, filter_override: &str) -> Box<ClientFfi> {
     Box::new(ClientFfi::new(log_level, filter_override))
 }
 
+/// Download an SSO identity-provider icon (`mxc://`) on a private runtime.
+/// Empty on any error, timeout or oversized icon. Always declared; empty when
+/// the `legacy_login` Cargo feature isn't compiled in.
+pub fn fetch_login_icon(homeserver: &str, mxc: &str) -> Vec<u8> {
+    super::client::legacy_login_ffi::fetch_login_icon(homeserver, mxc)
+}
+
 /// Installs the Rust-side half of the optional local crash handler (see
 /// client/src/crash_handler.cpp for the native half): a panic hook that
 /// captures the panic message/location/backtrace and appends it to
@@ -2509,6 +2516,22 @@ pub mod ffi {
             username: &str,
             password: &str,
         ) -> OpResult;
+
+        /// Begin the legacy SSO login (`m.login.sso`); `idp_id` "" selects the
+        /// generic redirect. Returns the URL to open in a browser; wait with
+        /// `oauth_await_slice` / `oauth_commit` / `oauth_cancel`. Blocks —
+        /// worker thread. Always declared; fails when `legacy_login` is off.
+        fn sso_begin(
+            self: &mut ClientFfi,
+            homeserver: &str,
+            idp_id: &str,
+            external_redirect: bool,
+        ) -> OAuthBegin;
+
+        /// Download an SSO identity-provider icon (`mxc://`). Empty on any
+        /// error. Free function (touches no `ClientFfi` state, so the caller
+        /// holds no lock); blocks up to ~10 s — worker thread.
+        fn fetch_login_icon(homeserver: &str, mxc: &str) -> Vec<u8>;
 
         // ----- QR grant login (MSC4108) -----
 
