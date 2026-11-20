@@ -226,6 +226,19 @@ and in-progress work, as a single backlog ordered by priority/urgency.
     decode with no budget. A remote-SFU member who joins before its
     membership syncs appears only on the next reconcile pass.
 
+- **Encryption identity reset fails on servers without MAS.**
+  `crypto_reset.rs` handles only the OAuth approval; on
+  `CrossSigningResetAuthType::Uiaa` it errors out ("requires a password…").
+  Both password and SSO accounts are affected; only reset is, since Synapse
+  allows the first cross-signing upload without UIA. Plan: reuse the
+  device-removal pattern. Build the fallback URL for the requested stage
+  (`m.login.sso` / `m.login.password`, via `build_uia_fallback_url`), return
+  it as the existing approval URL so the "approve in your browser" screen
+  works unchanged, then complete with `handle.auth(FallbackAcknowledgement)`,
+  which polls until the server is satisfied. An inline password prompt can
+  come later. Testable on CI: add an identity-reset step for the SSO user
+  to the smoke `sso` phase, confirmed through `mock_oidc.py`.
+
 ## Tier 4 — Open questions, decide-don't-build-yet
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the
