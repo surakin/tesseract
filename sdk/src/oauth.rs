@@ -68,6 +68,29 @@ pub(crate) fn generate_store_key() -> [u8; 32] {
     key
 }
 
+/// Query parameter carrying the per-flow nonce on the SSO redirect URL.
+pub(crate) const SSO_NONCE_PARAM: &str = "tsr_nonce";
+
+/// A fresh random per-flow nonce for the SSO callback: 32 lowercase hex chars.
+pub(crate) fn generate_sso_nonce() -> String {
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Accept the SSO callback only if its query carries exactly one
+/// [`SSO_NONCE_PARAM`] equal to `expected`. Never echoes token or nonce values.
+fn check_sso_nonce(callback: &UrlOrQuery, expected: &str) -> anyhow::Result<()> {
+    let values: Vec<_> = url::form_urlencoded::parse(callback.query().unwrap_or("").as_bytes())
+        .filter(|(k, _)| k == SSO_NONCE_PARAM)
+        .map(|(_, v)| v)
+        .collect();
+    match values.as_slice() {
+        [only] if only == expected => Ok(()),
+        _ => anyhow::bail!("sso callback did not come from this sign-in"),
+    }
+}
+
 pub(crate) fn build_device_display_name() -> String {
     format!("Tesseract on {}", sanitize_ua_token(&describe_os()))
 }
@@ -462,10 +485,15 @@ pub(crate) async fn build_configured_client(
 }
 
 /// Which login the redirect completes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FlowKind {
     OAuth,
-    Sso,
+    /// Legacy SSO. `nonce` ties the callback to this sign-in attempt, so a
+    /// page or app that merely delivers a `loginToken` cannot log us in as
+    /// someone else (login CSRF).
+    Sso {
+        nonce: String,
+    },
 }
 
 /// A prepared redirect: the URL to hand the identity provider, the source
@@ -641,7 +669,8 @@ async fn finish_redirect(state: PendingFlowState) -> anyhow::Result<Client> {
 
     let callback = await_redirect(source).await?;
 
-    if kind == FlowKind::Sso {
+    if let FlowKind::Sso { nonce } = &kind {
+        check_sso_nonce(&callback, nonce)?;
         // The display name is set at login; no rename_device afterwards.
         client
             .matrix_auth()
@@ -853,7 +882,9 @@ mod sso_completion_tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     /// Stub homeserver routing by path: `/versions` and `/login`.
-    async fn stub() -> (Url, tokio::task::JoinHandle<()>) {
+    async fn stub(
+        logins: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> (Url, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
         let handle = tokio::spawn(async move {
@@ -861,6 +892,7 @@ mod sso_completion_tests {
                 let Ok((mut sock, _)) = listener.accept().await else {
                     return;
                 };
+                let logins = logins.clone();
                 tokio::spawn(async move {
                     let mut buf = Vec::new();
                     let mut chunk = [0u8; 4096];
@@ -890,6 +922,7 @@ mod sso_completion_tests {
                     }
                     let first = head.lines().next().unwrap_or("").to_owned();
                     let body = if first.contains("/login") {
+                        logins.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         r#"{"user_id":"@alice:example.org","access_token":"tok","device_id":"DEV"}"#
                     } else {
                         r#"{"versions":["v1.11"]}"#
@@ -906,25 +939,32 @@ mod sso_completion_tests {
         (url, handle)
     }
 
-    async fn run_flow(callback: &str) -> anyhow::Result<Client> {
-        let (stub_url, handle) = stub().await;
+    /// Runs an SSO flow whose nonce is `n1`; returns the outcome and how many
+    /// `/login` requests the homeserver stub received.
+    async fn run_flow_counted(callback: &str) -> (anyhow::Result<Client>, usize) {
+        let logins = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (stub_url, handle) = stub(logins.clone()).await;
         let client = Client::builder()
             .homeserver_url(stub_url.as_str())
             .build()
             .await
             .unwrap();
         let setup = setup_redirect(RedirectMode::External).await.unwrap();
-        let flow = pending_flow(client, setup, FlowKind::Sso);
+        let flow = pending_flow(client, setup, FlowKind::Sso { nonce: "n1".into() });
         deliver_callback(&flow, callback).unwrap();
         let state = flow.pending.lock().unwrap().take().unwrap();
         let out = finish_redirect(state).await;
         handle.abort();
-        out
+        (out, logins.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    async fn run_flow(callback: &str) -> anyhow::Result<Client> {
+        run_flow_counted(callback).await.0
     }
 
     #[tokio::test]
     async fn sso_callback_with_login_token_logs_in() {
-        let client = run_flow("io.github.surakin:/callback?loginToken=abc")
+        let client = run_flow("io.github.surakin:/callback?tsr_nonce=n1&loginToken=abc")
             .await
             .unwrap();
         assert_eq!(client.user_id().unwrap().as_str(), "@alice:example.org");
@@ -933,11 +973,63 @@ mod sso_completion_tests {
 
     #[tokio::test]
     async fn sso_callback_without_login_token_errors() {
-        let err = run_flow("io.github.surakin:/callback?foo=bar")
+        let err = run_flow("io.github.surakin:/callback?tsr_nonce=n1&foo=bar")
             .await
             .err()
             .expect("must fail without loginToken");
         assert!(format!("{err:#}").contains("sso callback"), "{err:#}");
+    }
+
+    async fn assert_rejected(callback: &str) {
+        let (out, logins) = run_flow_counted(callback).await;
+        let err = out.err().expect("must be rejected");
+        assert!(
+            format!("{err:#}").contains("did not come from this sign-in"),
+            "{err:#}"
+        );
+        assert_eq!(logins, 0, "no /login request may be sent");
+    }
+
+    #[tokio::test]
+    async fn sso_callback_with_wrong_nonce_is_rejected() {
+        assert_rejected("io.github.surakin:/callback?tsr_nonce=evil&loginToken=abc").await;
+    }
+
+    #[tokio::test]
+    async fn sso_callback_without_nonce_is_rejected() {
+        assert_rejected("io.github.surakin:/callback?loginToken=abc").await;
+    }
+
+    #[tokio::test]
+    async fn sso_callback_with_duplicated_nonce_is_rejected() {
+        assert_rejected("io.github.surakin:/callback?tsr_nonce=n1&tsr_nonce=n1&loginToken=abc")
+            .await;
+    }
+
+    #[test]
+    fn check_sso_nonce_variants() {
+        let q = |s: &str| UrlOrQuery::Query(s.to_owned());
+        let u = |s: &str| UrlOrQuery::Url(Url::parse(s).unwrap());
+        assert!(check_sso_nonce(&q("tsr_nonce=n1&loginToken=a"), "n1").is_ok());
+        assert!(check_sso_nonce(&q("loginToken=a&tsr_nonce=n1"), "n1").is_ok());
+        assert!(check_sso_nonce(&q("tsr_nonce=x"), "n1").is_err());
+        assert!(check_sso_nonce(&q("loginToken=a"), "n1").is_err());
+        assert!(check_sso_nonce(&q(""), "n1").is_err());
+        assert!(check_sso_nonce(&q("tsr_nonce=n1&tsr_nonce=n1"), "n1").is_err());
+        assert!(check_sso_nonce(&q("tsr_nonce=n1&tsr_nonce=x"), "n1").is_err());
+        assert!(check_sso_nonce(&u("io.github.surakin:/callback?tsr_nonce=n1&a=b"), "n1").is_ok());
+        assert!(check_sso_nonce(&u("io.github.surakin:/callback?tsr_nonce=x"), "n1").is_err());
+        assert!(check_sso_nonce(&u("io.github.surakin:/callback"), "n1").is_err());
+    }
+
+    #[test]
+    fn generate_sso_nonce_is_32_lowercase_hex_and_distinct() {
+        let a = generate_sso_nonce();
+        assert_eq!(a.len(), 32);
+        assert!(a
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+        assert_ne!(a, generate_sso_nonce());
     }
 }
 

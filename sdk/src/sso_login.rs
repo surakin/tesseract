@@ -24,12 +24,17 @@ pub async fn begin(
     let setup = oauth::setup_redirect(mode).await?;
     let client = oauth::build_configured_client(homeserver, sqlite_path, Some(store_key)).await?;
     oauth::probe_sss_support(&client).await?;
-    let auth_url = sso_url(&client, &setup.url, idp_id).await?;
+    let nonce = oauth::generate_sso_nonce();
+    let mut redirect = setup.url.clone();
+    redirect
+        .query_pairs_mut()
+        .append_pair(oauth::SSO_NONCE_PARAM, &nonce);
+    let auth_url = sso_url(&client, &redirect, idp_id).await?;
     let redirect_uri = setup.url.to_string();
     Ok(oauth::BeginResult {
         auth_url,
         redirect_uri,
-        flow: oauth::pending_flow(client, setup, FlowKind::Sso),
+        flow: oauth::pending_flow(client, setup, FlowKind::Sso { nonce }),
     })
 }
 
@@ -139,6 +144,22 @@ mod tests {
             out.contains("redirectUrl=http%3A%2F%2F127.0.0.1%3A1234%2Fcallback"),
             "{out}"
         );
+    }
+
+    #[tokio::test]
+    async fn sso_url_keeps_nonce_param_in_redirect() {
+        let mut redirect = Url::parse("http://127.0.0.1:1234/callback").unwrap();
+        redirect
+            .query_pairs_mut()
+            .append_pair(oauth::SSO_NONCE_PARAM, "abc123");
+        let (out, _) = url_for(redirect.as_str(), "").await;
+        let parsed = Url::parse(&out).unwrap();
+        let (_, v) = parsed
+            .query_pairs()
+            .find(|(k, _)| k == "redirectUrl")
+            .expect("redirectUrl");
+        assert!(v.contains("tsr_nonce=abc123"), "{v}");
+        assert!(out.contains("tsr_nonce%3Dabc123"), "{out}");
     }
 
     #[tokio::test]
