@@ -2846,21 +2846,14 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                     // the top-level body is a fallback that starts with "* " and must
                     // not be used as the room-list preview.
                     use matrix_sdk::ruma::events::room::message::Relation;
-                    if let Some(Relation::Replacement(repl)) = &orig.content.relates_to {
-                        return match &repl.new_content.msgtype {
-                            MessageType::Text(t) => {
-                                text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str()))
-                            }
-                            MessageType::Notice(n) => {
-                                text_kind(&n.body, n.formatted.as_ref().map(|f| f.body.as_str()))
-                            }
-                            MessageType::Emote(e) => {
-                                text_kind(&e.body, e.formatted.as_ref().map(|f| f.body.as_str()))
-                            }
-                            _ => LatestPreview::default(),
-                        };
-                    }
-                    match &orig.content.msgtype {
+                    let (msgtype, gif_flag_path) = match &orig.content.relates_to {
+                        Some(Relation::Replacement(repl)) => (
+                            &repl.new_content.msgtype,
+                            "/content/m.new_content/info/fi.mau.gif",
+                        ),
+                        _ => (&orig.content.msgtype, "/content/info/fi.mau.gif"),
+                    };
+                    match msgtype {
                         MessageType::Text(t) => {
                             text_kind(&t.body, t.formatted.as_ref().map(|f| f.body.as_str()))
                         }
@@ -2896,10 +2889,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                                 timeline_event.raw().json().get(),
                             )
                             .ok()
-                            .and_then(|v| {
-                                v.pointer("/content/info/fi.mau.gif")
-                                    .and_then(|v| v.as_bool())
-                            })
+                            .and_then(|v| v.pointer(gif_flag_path).and_then(|v| v.as_bool()))
                             .unwrap_or(false);
                             media_kind(if is_gif { "gif" } else { "video" })
                         }
@@ -6004,6 +5994,64 @@ mod tests_latest_event_body {
             }
         }));
         assert_eq!(latest_event_preview(&v), text("edited body"));
+    }
+
+    fn edit_of(new_content: serde_json::Value) -> LatestEventValue {
+        // A real edit repeats the message's fields at the top level as the
+        // fallback for clients that ignore edits, so the event parses as media.
+        let mut content = new_content.clone();
+        content["body"] = serde_json::json!("* edited");
+        content["m.new_content"] = new_content;
+        content["m.relates_to"] =
+            serde_json::json!({ "rel_type": "m.replace", "event_id": "$orig" });
+        remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 2,
+            "content": content
+        }))
+    }
+
+    #[test]
+    fn edited_image_keeps_its_preview() {
+        // A caption edit of a picture: the room-list preview used to go blank.
+        let v = edit_of(serde_json::json!({
+            "msgtype": "m.image", "body": "new caption", "url": "mxc://e.com/img"
+        }));
+        let p = latest_event_preview(&v);
+        assert_eq!(p.kind, "image");
+        assert_eq!(p.thumbnail_url, "mxc://e.com/img");
+    }
+
+    #[test]
+    fn edited_file_audio_video_keep_their_preview() {
+        for (msgtype, kind) in [
+            ("m.file", "file"),
+            ("m.audio", "audio"),
+            ("m.video", "video"),
+        ] {
+            let v = edit_of(serde_json::json!({
+                "msgtype": msgtype, "body": "caption", "url": "mxc://e.com/x"
+            }));
+            assert_eq!(latest_event_preview(&v), media(kind), "{msgtype}");
+        }
+    }
+
+    #[test]
+    fn edited_gif_reads_the_flag_from_new_content() {
+        // Only m.new_content marks the video as a GIF; the top-level fallback does not.
+        let v = remote(serde_json::json!({
+            "type": "m.room.message", "event_id": "$e", "room_id": "!r:e.com",
+            "sender": "@a:e.com", "origin_server_ts": 2,
+            "content": {
+                "msgtype": "m.video", "body": "* caption", "url": "mxc://e.com/x",
+                "m.new_content": {
+                    "msgtype": "m.video", "body": "caption", "url": "mxc://e.com/x",
+                    "info": { "fi.mau.gif": true }
+                },
+                "m.relates_to": { "rel_type": "m.replace", "event_id": "$orig" }
+            }
+        }));
+        assert_eq!(latest_event_preview(&v), media("gif"));
     }
 
     #[test]

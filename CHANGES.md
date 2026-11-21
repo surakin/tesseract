@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- fix(rooms): the room list keeps its last-message preview when the last message is an edited picture, video, file or audio. Linux release build, cargo test
 - fix(rooms): the room list shows each room's last message again without opening the room first. Linux release build, cargo test
 - fix(chat): /selfie, /poll, /leave and /dm now act in the pop-out window and account they were typed in. Linux release build, ctest 4006/4006
 - fix(chat): chat commands read the typed text with mentions as Matrix IDs, so /dm and /invite work with a picked mention. Linux release build, ctest 4006/4006
