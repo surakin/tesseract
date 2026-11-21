@@ -55,17 +55,9 @@ public:
         // Report an arg-less command whose server call failed (e.g. a
         // permission error), with the error message. No-op if unset.
         std::function<void(std::string error)> on_command_failed;
-        // Open the selfie camera overlay. Called instead of dispatch_compose_send
-        // when the user accepts /selfie. No-op if unset (e.g. popout windows).
-        std::function<void()> on_selfie;
-        // Fetch the device's current location and send it as an m.location
-        // event. Called instead of dispatch_compose_send when the user accepts
-        // /location. No-op if unset.
-        std::function<void()> on_location;
         // Send an arg-less command ("/poll", "/leave", "/shrug", ...) through the
         // shell's normal composer send path (ShellBase::dispatch_room_send_), so
-        // a command behaves identically with or without the popup open. Called
-        // instead of the direct dispatch_compose_send fallback when set.
+        // a command behaves identically with or without the popup open.
         std::function<tesseract::Result(const std::string& body)> send_command;
         // MSC4391 bot commands currently known for the active room (already
         // filtered to joined senders — see Client::list_room_bot_commands).

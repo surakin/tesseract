@@ -391,6 +391,7 @@ void ShellBase::init_pool_callbacks_()
 
 ShellBase::ShellBase(AccountManager& account_manager) : account_manager_(account_manager)
 {
+    register_slash_commands_();
     // A token refresh that could not be saved is lost for good (the server has
     // already retired the old one), so say so until something newer replaces it.
     tesseract::SessionStore::set_save_failure_handler(

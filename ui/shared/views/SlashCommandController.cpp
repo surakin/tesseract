@@ -229,60 +229,12 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
     hide();
     if (s.args_hint.empty())
     {
-        // /selfie — open camera overlay instead of sending a message.
-        if (s.name == "selfie")
-        {
-            text_area_->set_text("");
-            if (hooks_.clear_composer)
-            {
-                hooks_.clear_composer();
-            }
-            if (hooks_.on_selfie)
-            {
-                hooks_.on_selfie();
-            }
-            return;
-        }
-
-        // /location — fetch and send the device's current location instead of
-        // sending a message.
-        if (s.name == "location")
-        {
-            text_area_->set_text("");
-            if (hooks_.clear_composer)
-            {
-                hooks_.clear_composer();
-            }
-            if (hooks_.on_location)
-            {
-                hooks_.on_location();
-            }
-            return;
-        }
-
-        // No args — dispatch immediately, then clear the composer.
+        // No args: run it through the shell's normal send path, exactly like a
+        // typed-and-sent command (the registry decides what it does).
         const std::string body = "/" + s.name;
         if (hooks_.send_command)
         {
-            // Normal send path: intercepts /poll, /leave, ... exactly like a
-            // typed-and-sent command.
             const tesseract::Result r = hooks_.send_command(body);
-            if (!r && hooks_.on_command_failed)
-            {
-                hooks_.on_command_failed(r.message);
-            }
-        }
-        else
-        {
-            tesseract::Client* c = hooks_.client ? hooks_.client() : nullptr;
-            std::string rid = hooks_.room_id ? hooks_.room_id() : std::string{};
-            if (!c || rid.empty())
-            {
-                // Account torn down while the popup was open — nothing to send.
-                return;
-            }
-            const tesseract::Result r =
-                tesseract::dispatch_compose_send(*c, rid, body, std::string{});
             if (!r && hooks_.on_command_failed)
             {
                 hooks_.on_command_failed(r.message);

@@ -1857,7 +1857,7 @@ bool MainAppWidget::dismiss_top_transient_()
     // Match visual priority for transient overlays. Native text controls may
     // still handle Escape before this when they own focus; this path is for the
     // shared canvas/widget tree and lets shells stop duplicating canvas policy.
-    if (camera_widget_)
+    if (camera_overlay_ && camera_overlay_->is_open())
     {
         close_camera_overlay();
         return true;
@@ -2040,9 +2040,9 @@ tk::Widget* MainAppWidget::active_transient_overlay_() const
     {
         return screen_picker_;
     }
-    if (camera_widget_ && camera_widget_->visible())
+    if (camera_overlay_ && camera_overlay_->widget() && camera_overlay_->widget()->visible())
     {
-        return camera_widget_;
+        return camera_overlay_->widget();
     }
     return nullptr;
 }
@@ -2212,57 +2212,39 @@ void MainAppWidget::show_qr_grant(bool show)
 
 void MainAppWidget::open_camera_overlay()
 {
-    if (camera_widget_)
-    {
-        return; // already open
-    }
-    if (is_call_active && is_call_active())
-    {
-        return;
-    }
     if (!overlay_stack_)
     {
         return;
     }
-    // No device probe here: CameraWidget itself explains a missing, busy or
-    // blocked camera rather than the command silently doing nothing.
-
-    auto widget = std::make_unique<CameraWidget>();
-    camera_widget_ = widget.get();
-
-    camera_widget_->on_frame_captured =
-        [this](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
+    if (!camera_overlay_)
     {
-        if (on_selfie_captured)
+        camera_overlay_ = std::make_unique<CameraOverlayHost>(overlay_stack_,
+                                                              [this]
+                                                              {
+                                                                  notify_layout_changed_();
+                                                              });
+        camera_overlay_->is_call_active = [this]
         {
-            on_selfie_captured(std::move(bgra), w, h);
-        }
-    };
-
-    camera_widget_->on_dismissed = [this]
-    {
-        close_camera_overlay();
-    };
-
-    overlay_stack_->add_child(std::move(widget));
-    camera_widget_->open();
-    // Trigger arrange + repaint so the new child gets bounds and appears.
-    notify_layout_changed_();
+            return is_call_active && is_call_active();
+        };
+        camera_overlay_->on_captured =
+            [this](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
+        {
+            if (on_selfie_captured)
+            {
+                on_selfie_captured(std::move(bgra), w, h);
+            }
+        };
+    }
+    camera_overlay_->open();
 }
 
 void MainAppWidget::close_camera_overlay()
 {
-    if (!camera_widget_)
+    if (camera_overlay_)
     {
-        return;
+        camera_overlay_->close();
     }
-    CameraWidget* w = camera_widget_;
-    camera_widget_ = nullptr;
-    if (overlay_stack_)
-    {
-        overlay_stack_->remove_child(w);
-    }
-    notify_layout_changed_();
 }
 
 void MainAppWidget::mount_call_overlay(
@@ -2476,7 +2458,7 @@ bool MainAppWidget::any_modal_open_() const
                                  (forward_picker_ && forward_picker_->is_open()) ||
                                  (add_room_view_ && add_room_view_->is_open()) ||
                                  (export_history_dialog_ && export_history_dialog_->is_open()) ||
-                                 camera_widget_ || screen_picker_;
+                                 (camera_overlay_ && camera_overlay_->is_open()) || screen_picker_;
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
     // native overlays. Neither is Floating: FloatingCallLayerWidget keeps the
     // bubble off the compose bar instead. Only DockedExpanded (covers the

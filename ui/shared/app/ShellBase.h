@@ -29,6 +29,7 @@
 #include "app/ThreadPanelController.h"
 #include "app/UpdateChecker.h"
 #include "app/WorkerPool.h"
+#include "views/SlashCommands.h"
 #include "tk/anim_decode_session.h"
 #include "tk/audio_capture.h"
 #include "tk/audio_playback.h"
@@ -104,6 +105,7 @@ namespace tesseract
 namespace views
 {
 class ComposeBar;
+class CreatePollDialog;
 class InviteDialog;
 class MainAppWidget;
 class RoomHeader;
@@ -325,6 +327,28 @@ public:
     // `on_behalf_of` is the account the leave runs against (nullptr = active).
     void confirm_leave_room_(const std::string& room_id,
                              const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+
+    // Where a slash command was typed. `pane` is the composer's own pane (a
+    // pop-out's, or the main window's); window-scoped effects (dialogs, the
+    // camera overlay, DM navigation) land in it.
+    struct SlashCommandContext
+    {
+        std::string room_id;
+        std::shared_ptr<AccountSession> acting;
+        RoomPane* pane = nullptr; // never null once dispatched
+        const SlashCommandInvocation& inv;
+    };
+    // UI-thread handler for a built-in command that needs shell state. Returns
+    // false when it does not handle this invocation (the command then falls
+    // through to its registry `send` handler or a plain send).
+    using SlashUiHandler = std::function<bool(const SlashCommandContext&)>;
+    // Keyed by command name; entries are registered by register_slash_commands_()
+    // for the commands in tesseract::available_commands() that have no `send`.
+    std::unordered_map<std::string, SlashUiHandler> slash_ui_handlers_;
+    void register_slash_commands_();
+    // /leave from a pop-out: confirm in that pane's own window, then leave
+    // through the pane's own leave route (which also closes the pop-out).
+    void confirm_leave_in_pane_(RoomPane& pane, const std::string& room_id);
 
     // Close the tab for room_id. No-op if room_id isn't an open tab.
     // Closing the only open tab deselects to the "no active room" empty
@@ -3145,8 +3169,10 @@ protected:
     // Open the shared "Create poll" form for `room_id` (the /poll command).
     // The create callback is bound here, at open time, so every shell gets
     // the wiring from this one call site.
+    // `dialog` is the form to open (a pop-out's own); null = the main window's.
     void open_create_poll_dialog_(const std::string& room_id,
-                                  const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                                  const std::shared_ptr<AccountSession>& on_behalf_of = nullptr,
+                                  views::CreatePollDialog* dialog = nullptr);
 
     // Room Settings view support ------------------------------------------
 
@@ -3489,8 +3515,9 @@ protected:
     {
         return {};
     }
-    // Give the /selfie command its camera overlay and attach the result.
-    void wire_selfie_hook_(views::SlashCommandController::Hooks& hooks);
+    // The /selfie command: open the camera overlay over `pane`'s window and
+    // attach the captured JPEG to that pane's composer. `pane` null = main pane.
+    void open_selfie_camera_(RoomPane* pane);
     /// Wrap a decoded, pre-multiplied BGRA frame (stride w*4) in the backend's
     /// image type. Called on the UI thread; null if the backend cannot (the
     /// frame is skipped). Default: null.
@@ -5879,9 +5906,14 @@ protected:
     void report_unsent_message_(const std::string& user_id, const std::string& room_id,
                                 const std::string& body, const tesseract::Result& result);
     RoomSendOutcome
+    // `command_text` is the plain-text input chat commands parse (mentions as raw
+    // IDs); empty means `body`. Only the command ladder reads it: a normal send
+    // still uses `body` / `formatted_body`. `origin` is the pane the input came
+    // from (null = the main pane).
     dispatch_room_send_(const std::string& room_id, const std::string& body,
                         const std::string& formatted_body,
-                        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+                        const std::shared_ptr<AccountSession>& on_behalf_of = nullptr,
+                        const std::string& command_text = {}, RoomPane* origin = nullptr);
 
     // Recompute the aggregate from per_account_rooms_ and fire
     // on_tray_unread_changed_ / on_dock_badge_changed_ only when the values

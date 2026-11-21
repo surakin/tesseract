@@ -226,9 +226,9 @@ TEST_CASE("the poll command is a registered slash command", "[poll][slash]")
         }
     }
     CHECK(found);
-    CHECK(tesseract::is_slash_command_no_arg("/poll", "poll"));
-    CHECK(tesseract::is_slash_command_no_arg("/poll  ", "poll"));
-    CHECK_FALSE(tesseract::is_slash_command_no_arg("/pollx", "poll"));
+    CHECK(tesseract::parse_slash_command("/poll", "/poll", {}).has_value());
+    CHECK(tesseract::parse_slash_command("/poll  ", "/poll  ", {}).has_value());
+    CHECK_FALSE(tesseract::parse_slash_command("/pollx", "/pollx", {}).has_value());
 }
 
 TEST_CASE("CreatePollDialog gates Create on a valid draft", "[poll][dialog]")

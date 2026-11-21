@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,44 +13,53 @@ namespace tesseract
 
 class Client;
 
+// One parsed built-in command invocation. `args_text` / `args` come from the
+// composer's plain text (mentions as raw Matrix IDs); `body` / `formatted_body`
+// are the pill-aware message form, for commands that send text (/me, /shrug).
+struct SlashCommandInvocation
+{
+    std::string name;              // canonical name, e.g. "invite"
+    std::string args_text;         // plain text after "/name", trimmed
+    std::vector<std::string> args; // tokenize_args(args_text)
+    std::string body;
+    std::string formatted_body;
+};
+
 struct SlashCommandDescriptor
 {
     std::string name;        // canonical name without leading slash, e.g. "me"
     std::string args_hint;   // e.g. "<action>" or "" for argless commands
     std::string description; // one-line user-facing description
+    // Handler that runs on the send worker (keeps send order; a failure is
+    // reported through the normal unsent-message path). Null for commands the
+    // shell handles itself (ShellBase's slash UI handlers: /join, /poll, ...).
+    std::function<Result(Client&, const std::string& room_id, const SlashCommandInvocation&)> send;
+    // Optional one-line confirmation shown after `send` succeeded, for commands
+    // whose effect would otherwise be silent.
+    std::function<std::optional<std::string>(const SlashCommandInvocation&)> success_message;
 };
 
-// Returns the canonical command list. Stable order — the popup uses this
+// The one table of built-in slash commands. The popup lists it and dispatch
+// routes through it: add a command here. Stable order - the popup uses this
 // vector's order when nothing has been typed yet. Lifetime: static.
 const std::vector<SlashCommandDescriptor>& available_commands();
 
-// Returns true when `body` is the slash command `cmd` with no non-whitespace
-// argument: "/cmd", "/cmd ", and "/cmd  " all return true; "/cmdfoo" returns
-// false (different command). Shells use this to intercept commands that open a
-// native dialog before dispatching to dispatch_compose_send.
-bool is_slash_command_no_arg(const std::string& body, const char* cmd);
+// The registry entry named `name` (no slash), or nullptr.
+const SlashCommandDescriptor* find_command(std::string_view name);
+
+// Parses "/name[ args]" from the composer's plain text. nullopt when `plain`
+// is not a known built-in (an unknown "/foo" is sent as ordinary text). Names
+// are case-sensitive and end at whitespace, so "/menu" is not "/me".
+std::optional<SlashCommandInvocation> parse_slash_command(const std::string& plain,
+                                                          const std::string& body,
+                                                          const std::string& formatted_body);
 
 // True if `text` has the shape of a Matrix user ID ("@local:server", no whitespace).
 bool is_user_id(const std::string& text);
 
-// If `body` starts with "/<cmd> " and has at least one non-whitespace
-// character following, returns the trimmed argument string. Returns nullopt
-// when the command prefix doesn't match or the argument is blank.
-std::optional<std::string> parse_slash_arg(const std::string& body, const char* cmd);
-
-// If `body` starts with "/<cmd> ", tokenizes the remainder on runs of
-// whitespace and returns the tokens — an empty vector when only whitespace
-// follows the command. A `"..."` or `'...'`-quoted span is captured as a
-// single token with the quotes stripped (no escape-sequence support: a
-// quote character can't appear inside its own span). Returns nullopt when
-// the command prefix doesn't match, mirroring `parse_slash_arg`. Generic —
-// not specific to any one command — so multi-argument built-ins (e.g.
-// `/invite <user> [reason]`) don't need their own bespoke splitter.
-std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd);
-
 // Splits `text` on spaces/tabs, treating a `"..."` or `'...'` span as part of
 // one token (quotes stripped, no escapes). An unterminated quote runs to the
-// end of the text. `""` yields an empty token. Shared by parse_slash_args and
+// end of the text. `""` yields an empty token. Shared by parse_slash_command and
 // the bot-command argument path.
 std::vector<std::string> tokenize_args(std::string_view text);
 
@@ -77,35 +87,18 @@ std::string append_to_html(const std::string& html, const std::string& tail);
 // (clearing the composer) like an empty `/me `. Exposed for unit testing.
 std::optional<SpoilerMessage> build_spoiler_message(std::string_view args);
 
-// One-line confirmation to show after the slash command in `body` succeeded,
+// One-line confirmation to show after the slash command in `plain` succeeded,
 // for commands whose only visible effect would otherwise be silent
-// (`/myroomavatar <arg>` → "Room avatar updated", `/myroomavatar reset` →
-// "Room avatar reset"). nullopt for anything else (including plain messages).
-std::optional<std::string> slash_success_message(const std::string& body);
+// (`/myroomavatar <arg>`). nullopt for anything else (including plain messages).
+std::optional<std::string> slash_success_message(const std::string& plain);
 
-// Dispatch a composer send to the SDK. If `body` matches a recognized slash
-// command, routes to the corresponding `Client` method; otherwise it is sent
-// as a normal `m.text` message.
-//
-// Currently recognized:
-//   - `/me <action>` → `Client::send_emote`. The `/me ` prefix is stripped
-//     from both `body` and `formatted_body` (when the formatted body also
-//     starts with `/me `). An empty action after stripping returns a
-//     no-op `Result` (ok with no side effect).
-//   - `/shrug` (with optional trailing text) → `Client::send_message`
-//     with the text suffixed by `¯\_(ツ)_/¯`. With no trailing text it
-//     sends just the emoticon.
-//   - `/myroomnick <name>` → `Client::set_user_room_display_name`.
-//   - `/myroomavatar <mxc_uri|http(s) url>` → `Client::set_user_room_avatar`
-//     for an mxc:// URI, or `Client::set_user_room_avatar_from_url` (fetch,
-//     square-crop to ≤512x512, upload) for a web URL. The no-argument form `/myroomavatar` is
-//     NOT handled here — callers must intercept it before calling this function
-//     and open a platform file picker instead.
-//
-// Slash commands not recognized here (e.g. `/foo`) fall through to
-// `send_message` and are transmitted verbatim — the homeserver will display
-// them as literal text, matching what other Matrix clients do for unknown
-// slash commands.
+// Dispatch a composer send to the SDK. `plain_text` (the composer's plain text,
+// mentions as raw IDs; empty means `body`) is parsed with parse_slash_command;
+// when it names a built-in with a `send` handler that handler runs, otherwise
+// `body` / `formatted_body` are sent as a normal `m.text` message. Commands the
+// shell handles itself (/join, /poll, ...) and unknown "/foo" fall through to
+// the verbatim send: the homeserver shows them as literal text, like other
+// Matrix clients do.
 //
 // `url_previews_json` (MSC4095 bundled previews from
 // `Client::generate_url_previews`) is attached only to the final verbatim
@@ -115,7 +108,8 @@ std::optional<std::string> slash_success_message(const std::string& body);
 // can clear the composer on success.
 Result dispatch_compose_send(Client& client, const std::string& room_id, const std::string& body,
                              const std::string& formatted_body,
-                             const std::string& url_previews_json = "");
+                             const std::string& url_previews_json = "",
+                             const std::string& plain_text = "");
 
 // ---------------------------------------------------------------------------
 // MSC4391 in-room bot commands

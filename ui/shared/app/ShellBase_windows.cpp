@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "views/MainAppWidget.h"
+#include "views/PopoutRoomWidget.h"
 #include <algorithm>
 
 namespace tesseract
@@ -607,39 +608,43 @@ void ShellBase::create_compose_popups_(tk::Host& host)
     {
         handle_compose_text_changed_(text);
     };
-    options.extend_slash_hooks = [this](views::SlashCommandController::Hooks& hooks)
-    {
-        wire_selfie_hook_(hooks);
-    };
     options.shortcode_image_provider = make_static_image_provider_with_fetch_(28, 28);
     compose_popups_ = std::make_unique<ComposerPopups>(host, text_area, main_room_pane_.get(),
                                                        room_view_, std::move(options));
 }
 
-void ShellBase::wire_selfie_hook_(views::SlashCommandController::Hooks& hooks)
+void ShellBase::open_selfie_camera_(RoomPane* pane)
 {
-    hooks.on_selfie = [this]
+    pane = pane ? pane : main_room_pane_.get();
+    auto* rv = pane ? pane->room_view() : nullptr;
+    if (!rv)
     {
-        if (!main_app_)
-        {
-            return;
-        }
-        main_app_->is_call_active = [this]
-        {
-            return active_call() != nullptr;
-        };
-        main_app_->on_selfie_captured =
-            [this](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
-        {
-            auto jpeg = encode_selfie_jpeg_(bgra.data(), w, h);
-            if (!jpeg.empty() && main_app_ && main_app_->room_view()->compose_bar())
-            {
-                main_app_->room_view()->compose_bar()->add_pending_image(
-                    std::move(jpeg), "image/jpeg", "selfie.jpg");
-            }
-        };
-        main_app_->open_camera_overlay();
+        return;
+    }
+    auto is_call_active = [this]
+    {
+        return active_call() != nullptr;
     };
+    // The overlay is a child of the window that opened it, so `rv` outlives
+    // every capture it delivers.
+    auto on_captured = [this, rv](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
+    {
+        auto jpeg = encode_selfie_jpeg_(bgra.data(), w, h);
+        if (!jpeg.empty() && rv->compose_bar())
+        {
+            rv->compose_bar()->add_pending_image(std::move(jpeg), "image/jpeg", "selfie.jpg");
+        }
+    };
+    if (auto* popout = pane->popout_widget())
+    {
+        popout->open_camera_overlay(std::move(is_call_active), std::move(on_captured));
+    }
+    else if (main_app_)
+    {
+        main_app_->is_call_active = std::move(is_call_active);
+        main_app_->on_selfie_captured = std::move(on_captured);
+        main_app_->open_camera_overlay();
+    }
 }
 
 void ShellBase::handle_gif_results_ui_(std::uint64_t request_id, std::vector<GifResult> results)

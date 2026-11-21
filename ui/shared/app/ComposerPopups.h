@@ -56,8 +56,6 @@ public:
         // built-in typing notice (the main window tracks typing across room
         // switches itself).
         std::function<void(const std::string&)> on_text_changed;
-        // Add commands only the main window has (/selfie) to the slash hooks.
-        std::function<void(views::SlashCommandController::Hooks&)> extend_slash_hooks;
         // Image lookup for custom-emoticon thumbnails that also fetches on a
         // miss; the default only peeks the shell's cache.
         std::function<const tk::Image*(const std::string&)> shortcode_image_provider;

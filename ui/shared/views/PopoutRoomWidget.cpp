@@ -30,6 +30,53 @@ PopoutRoomWidget::PopoutRoomWidget()
             on_layout_changed();
         }
     };
+
+    create_poll_dialog_ = add_child(std::make_unique<CreatePollDialog>());
+    create_poll_dialog_->on_layout_changed = [this]
+    {
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
+    };
+}
+
+void PopoutRoomWidget::open_camera_overlay(std::function<bool()> is_call_active,
+                                           CameraOverlayHost::CapturedFn on_captured)
+{
+    if (!camera_overlay_)
+    {
+        camera_overlay_ = std::make_unique<CameraOverlayHost>(this,
+                                                              [this]
+                                                              {
+                                                                  if (on_layout_changed)
+                                                                  {
+                                                                      on_layout_changed();
+                                                                  }
+                                                              });
+    }
+    camera_overlay_->is_call_active = std::move(is_call_active);
+    camera_overlay_->on_captured = std::move(on_captured);
+    camera_overlay_->open();
+}
+
+bool PopoutRoomWidget::on_key_down(const tk::KeyEvent& event)
+{
+    if (event.key != tk::Key::Escape)
+    {
+        return false;
+    }
+    if (camera_overlay_ && camera_overlay_->is_open())
+    {
+        camera_overlay_->close();
+        return true;
+    }
+    if (create_poll_dialog_ && create_poll_dialog_->is_open())
+    {
+        create_poll_dialog_->close();
+        return true;
+    }
+    return false;
 }
 
 void PopoutRoomWidget::show_media_viewer(bool show)
@@ -45,7 +92,9 @@ bool PopoutRoomWidget::any_modal_open_() const
     return (room_view_ && room_view_->is_overlay_open()) ||
            (media_viewer_ && media_viewer_->is_open()) ||
            (forward_picker_ && forward_picker_->is_open()) ||
-           (confirm_dialog_ && confirm_dialog_->is_open());
+           (confirm_dialog_ && confirm_dialog_->is_open()) ||
+           (create_poll_dialog_ && create_poll_dialog_->is_open()) ||
+           (camera_overlay_ && camera_overlay_->is_open());
 }
 
 tk::Rect PopoutRoomWidget::compose_text_area_rect() const

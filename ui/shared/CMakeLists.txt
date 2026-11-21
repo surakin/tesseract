@@ -214,6 +214,8 @@ set(_views_sources
     views/MediaOverlayBase.cpp
     views/CameraWidget.h
     views/CameraWidget.cpp
+    views/CameraOverlayHost.h
+    views/CameraOverlayHost.cpp
     views/MediaViewerItem.h
     views/MediaViewerPage.h
     views/media_viewer_items.h

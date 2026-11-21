@@ -153,10 +153,6 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane
             refresh_(slash_popup_.get(), /*layout=*/false);
         };
         pane_->wire_slash_hooks_(sh);
-        if (options_.extend_slash_hooks)
-        {
-            options_.extend_slash_hooks(sh);
-        }
         slash_controller_ = std::make_unique<views::SlashCommandController>(
             text_area_, slash_popup_widget_, std::move(sh));
     }

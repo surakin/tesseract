@@ -13,9 +13,9 @@ namespace tesseract::views
 
 namespace
 {
-constexpr std::string_view kPrefix = "/sticker ";
+constexpr std::string_view kStickerPrefix = "/sticker ";
 
-bool is_space(char c)
+bool is_sticker_space(char c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
@@ -23,18 +23,18 @@ bool is_space(char c)
 
 std::optional<std::string> StickerEngine::match(std::string_view text)
 {
-    if (text.size() < kPrefix.size() || !text.starts_with(kPrefix))
+    if (text.size() < kStickerPrefix.size() || !text.starts_with(kStickerPrefix))
     {
         return std::nullopt;
     }
-    std::string_view rest = text.substr(kPrefix.size());
+    std::string_view rest = text.substr(kStickerPrefix.size());
     std::size_t b = 0;
     std::size_t e = rest.size();
-    while (b < e && is_space(rest[b]))
+    while (b < e && is_sticker_space(rest[b]))
     {
         ++b;
     }
-    while (e > b && is_space(rest[e - 1]))
+    while (e > b && is_sticker_space(rest[e - 1]))
     {
         --e;
     }

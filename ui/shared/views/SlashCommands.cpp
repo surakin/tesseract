@@ -16,22 +16,6 @@ namespace tesseract
 namespace
 {
 
-// `prefix` matched against `s` (case-sensitive). Returns the suffix on a
-// match, or `nullptr` if `s` does not start with `prefix`.
-const char* strip_prefix(const std::string& s, const char* prefix)
-{
-    const std::size_t n = std::char_traits<char>::length(prefix);
-    if (s.size() < n)
-    {
-        return nullptr;
-    }
-    if (s.compare(0, n, prefix) != 0)
-    {
-        return nullptr;
-    }
-    return s.c_str() + n;
-}
-
 // Escape a value for embedding inside a double-quoted HTML attribute.
 std::string attr_escape(std::string_view s)
 {
@@ -59,45 +43,6 @@ std::string attr_escape(std::string_view s)
 }
 
 } // namespace
-
-bool is_slash_command_no_arg(const std::string& body, const char* cmd)
-{
-    const std::size_t cmd_len = std::char_traits<char>::length(cmd);
-    const std::size_t prefix_len = cmd_len + 1; // +1 for '/'
-    if (body.size() < prefix_len || body[0] != '/')
-    {
-        return false;
-    }
-    if (body.compare(1, cmd_len, cmd) != 0)
-    {
-        return false;
-    }
-    // Everything after the command name must be absent or whitespace-only.
-    return body.size() == prefix_len ||
-           body.find_first_not_of(" \t", prefix_len) == std::string::npos;
-}
-
-std::optional<std::string> parse_slash_arg(const std::string& body, const char* cmd)
-{
-    // Build the required prefix: "/<cmd> "
-    std::string prefix = std::string("/") + cmd + " ";
-    if (body.size() <= prefix.size())
-    {
-        return std::nullopt;
-    }
-    if (!body.starts_with(prefix))
-    {
-        return std::nullopt;
-    }
-    std::string_view arg(body.c_str() + prefix.size(), body.size() - prefix.size());
-    const auto start = arg.find_first_not_of(" \t");
-    if (start == std::string_view::npos)
-    {
-        return std::nullopt;
-    }
-    const auto end = arg.find_last_not_of(" \t");
-    return std::string(arg.substr(start, end - start + 1));
-}
 
 std::vector<std::string> tokenize_args(std::string_view text)
 {
@@ -143,21 +88,6 @@ std::vector<std::string> tokenize_args(std::string_view text)
         args.push_back(std::move(cur));
     }
     return args;
-}
-
-std::optional<std::vector<std::string>> parse_slash_args(const std::string& body, const char* cmd)
-{
-    std::string prefix = std::string("/") + cmd + " ";
-    if (body.size() <= prefix.size())
-    {
-        return std::nullopt;
-    }
-    if (!body.starts_with(prefix))
-    {
-        return std::nullopt;
-    }
-    return tokenize_args(
-        std::string_view(body.c_str() + prefix.size(), body.size() - prefix.size()));
 }
 
 std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
@@ -231,45 +161,6 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
     return msg;
 }
 
-const std::vector<SlashCommandDescriptor>& available_commands()
-{
-    static const std::vector<SlashCommandDescriptor> kCommands = {
-        {"me", "<action>", tk::tr("Send an action message")},
-        {"shrug", "", tk::tr("Append \xC2\xAF\\_(ツ)_/\xC2\xAF")},
-        {"slap", "<target>", tk::tr("Slap someone with a large trout")},
-        {"spoiler", "[(reason)] <text>", tk::tr("Send a hidden spoiler message")},
-        {"myroomnick", "<name>", tk::tr("Set your display name in this room")},
-        {"myroomavatar", "[mxc_uri|url|reset]", tk::tr("Set or reset your avatar in this room")},
-        {"join", "<#room:server>", tk::tr("Join a room by alias or ID")},
-        {"leave", "", tk::tr("Leave the current room")},
-        {"invite", "<@user:server> [reason]", tk::tr("Invite a user to the current room")},
-        {"dm", "<@user:server>", tk::tr("Open a direct message with a user")},
-        {"gif", "<search>", tk::tr("Search for a GIF to send")},
-        {"sticker", "<search>", tk::tr("Search for a sticker to send")},
-        {"selfie", "", tk::tr("Take a selfie and attach it")},
-        {"location", "", tk::tr("Share your current location")},
-        {"poll", "", tk::tr("Create a poll")},
-    };
-    return kCommands;
-}
-
-std::optional<std::string> slash_success_message(const std::string& body)
-{
-    const auto arg = parse_slash_arg(body, "myroomavatar");
-    if (!arg)
-    {
-        return std::nullopt;
-    }
-    std::string lower = *arg;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c)
-                   {
-                       return static_cast<char>(std::tolower(c));
-                   });
-    return lower == "reset" ? tk::tr("Avatar reset for this room")
-                            : tk::tr("Avatar updated for this room");
-}
-
 std::string strip_command_from_html(const std::string& html, std::string_view command)
 {
     std::string_view h = html;
@@ -302,177 +193,251 @@ std::string append_to_html(const std::string& html, const std::string& tail)
     return html + tail;
 }
 
+namespace
+{
+
+// What follows "/<name>" in `body` and one separating space, or "" when `body`
+// doesn't start with the command. The pill-aware body keeps display names.
+std::string body_after_command(const std::string& body, std::string_view name)
+{
+    const std::string literal = "/" + std::string(name);
+    if (!body.starts_with(literal))
+    {
+        return {};
+    }
+    std::string_view rest = std::string_view(body).substr(literal.size());
+    if (!rest.empty() && rest.front() == ' ')
+    {
+        rest.remove_prefix(1);
+    }
+    return std::string(rest);
+}
+
+// `/shrug [text]`: the typed text (keeping formatting and pills) followed by the
+// shrug emoticon; with no text, just the emoticon.
+Result send_shrug(Client& client, const std::string& room_id, const SlashCommandInvocation& inv)
+{
+    const std::string suffix = body_after_command(inv.body, "shrug");
+    std::string text = "\xC2\xAF\\_(\xE3\x83\x84)_/\xC2\xAF";
+    if (!suffix.empty())
+    {
+        text = suffix + " " + text;
+    }
+    std::string html;
+    if (!suffix.empty() && !inv.formatted_body.empty())
+    {
+        const std::string typed = strip_command_from_html(inv.formatted_body, "shrug");
+        if (!typed.empty())
+        {
+            html = append_to_html(typed, " \xC2\xAF\\_(\xE3\x83\x84)_/\xC2\xAF");
+        }
+    }
+    return client.send_message(room_id, text, html);
+}
+
+// `/me <action>` -> m.emote. An empty action does nothing and reports success so
+// the composer still clears.
+Result send_me(Client& client, const std::string& room_id, const SlashCommandInvocation& inv)
+{
+    const std::string action = body_after_command(inv.body, "me");
+    if (action.empty())
+    {
+        return Result{true, ""};
+    }
+    // The composer wraps markdown output in <p>, which strip_command_from_html
+    // looks through, so "/me *waves*" keeps its emphasis. A formatted body that
+    // doesn't start with the command is dropped rather than sent mismatched.
+    std::string emote_formatted;
+    if (!inv.formatted_body.empty())
+    {
+        emote_formatted = strip_command_from_html(inv.formatted_body, "me");
+    }
+    return client.send_emote(room_id, action, emote_formatted);
+}
+
+// `/slap <target>` -> m.emote, the classic IRC trout slap.
+Result send_slap(Client& client, const std::string& room_id, const SlashCommandInvocation& inv)
+{
+    if (inv.args_text.empty())
+    {
+        return Result{true, ""};
+    }
+    return client.send_emote(
+        room_id, tk::trf(tk::tr("slaps {0} around a bit with a large trout"), {inv.args_text}), "");
+}
+
+// `/spoiler [(reason)] <text>` -> m.text with a `data-mx-spoiler` span (MSC2010).
+Result send_spoiler(Client& client, const std::string& room_id, const SlashCommandInvocation& inv)
+{
+    auto msg = build_spoiler_message(inv.args_text);
+    if (!msg)
+    {
+        return Result{true, ""}; // whitespace-only: no-op that still clears the composer
+    }
+    return client.send_message(room_id, msg->body, msg->formatted_body);
+}
+
+// `/myroomnick <name>`: a blank name must not reach the client (an empty display
+// name clears it).
+Result send_myroomnick(Client& client, const std::string& room_id,
+                       const SlashCommandInvocation& inv)
+{
+    if (inv.args_text.empty())
+    {
+        return Result{false, tk::tr("no display name given; use /myroomnick <name>")};
+    }
+    return client.set_user_room_display_name(room_id, inv.args_text);
+}
+
+bool starts_with_ci(const std::string& s, std::string_view prefix)
+{
+    return s.size() >= prefix.size() &&
+           std::equal(prefix.begin(), prefix.end(), s.begin(),
+                      [](char a, char b)
+                      {
+                          return std::tolower(static_cast<unsigned char>(a)) ==
+                                 std::tolower(static_cast<unsigned char>(b));
+                      });
+}
+
+// `/myroomavatar <mxc_uri | http(s) url | reset>`. The no-argument form opens a
+// file picker and is handled by the shell before this is reached; if it arrives
+// anyway, report an error rather than calling the client with an empty URI.
+Result send_myroomavatar(Client& client, const std::string& room_id,
+                         const SlashCommandInvocation& inv)
+{
+    const std::string& arg = inv.args_text;
+    if (arg.empty())
+    {
+        return Result{false, tk::tr("no image URL provided; use /myroomavatar "
+                                    "alone to open the image picker")};
+    }
+    if (arg.size() == 5 && starts_with_ci(arg, "reset"))
+    {
+        return client.reset_user_room_avatar(room_id);
+    }
+    if (starts_with_ci(arg, "mxc://"))
+    {
+        return client.set_user_room_avatar(room_id, arg);
+    }
+    if (starts_with_ci(arg, "http://") || starts_with_ci(arg, "https://"))
+    {
+        return client.set_user_room_avatar_from_url(room_id, arg);
+    }
+    return Result{false, tk::tr("expected an mxc:// or http(s) image URL, or \"reset\"")};
+}
+
+std::optional<std::string> myroomavatar_success(const SlashCommandInvocation& inv)
+{
+    if (inv.args_text.empty())
+    {
+        return std::nullopt;
+    }
+    std::string lower = inv.args_text;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c)
+                   {
+                       return static_cast<char>(std::tolower(c));
+                   });
+    return lower == "reset" ? tk::tr("Avatar reset for this room")
+                            : tk::tr("Avatar updated for this room");
+}
+
+} // namespace
+
+const std::vector<SlashCommandDescriptor>& available_commands()
+{
+    static const std::vector<SlashCommandDescriptor> kCommands = {
+        {"me", "<action>", tk::tr("Send an action message"), send_me, nullptr},
+        {"shrug", "", tk::tr("Append \xC2\xAF\\_(ツ)_/\xC2\xAF"), send_shrug, nullptr},
+        {"slap", "<target>", tk::tr("Slap someone with a large trout"), send_slap, nullptr},
+        {"spoiler", "[(reason)] <text>", tk::tr("Send a hidden spoiler message"), send_spoiler,
+         nullptr},
+        {"myroomnick", "<name>", tk::tr("Set your display name in this room"), send_myroomnick,
+         nullptr},
+        {"myroomavatar", "[mxc_uri|url|reset]", tk::tr("Set or reset your avatar in this room"),
+         send_myroomavatar, myroomavatar_success},
+        {"join", "<#room:server>", tk::tr("Join a room by alias or ID"), nullptr, nullptr},
+        {"leave", "", tk::tr("Leave the current room"), nullptr, nullptr},
+        {"invite", "<@user:server> [reason]", tk::tr("Invite a user to the current room"), nullptr,
+         nullptr},
+        {"dm", "<@user:server>", tk::tr("Open a direct message with a user"), nullptr, nullptr},
+        {"gif", "<search>", tk::tr("Search for a GIF to send"), nullptr, nullptr},
+        {"sticker", "<search>", tk::tr("Search for a sticker to send"), nullptr, nullptr},
+        {"selfie", "", tk::tr("Take a selfie and attach it"), nullptr, nullptr},
+        {"location", "", tk::tr("Share your current location"), nullptr, nullptr},
+        {"poll", "", tk::tr("Create a poll"), nullptr, nullptr},
+    };
+    return kCommands;
+}
+
+const SlashCommandDescriptor* find_command(std::string_view name)
+{
+    for (const auto& c : available_commands())
+    {
+        if (c.name == name)
+        {
+            return &c;
+        }
+    }
+    return nullptr;
+}
+
+std::optional<SlashCommandInvocation> parse_slash_command(const std::string& plain,
+                                                          const std::string& body,
+                                                          const std::string& formatted_body)
+{
+    if (plain.size() < 2 || plain.front() != '/')
+    {
+        return std::nullopt;
+    }
+    const auto name_end = plain.find_first_of(" \t", 1);
+    const std::string name =
+        plain.substr(1, name_end == std::string::npos ? name_end : name_end - 1);
+    if (!find_command(name))
+    {
+        return std::nullopt;
+    }
+    SlashCommandInvocation inv;
+    inv.name = name;
+    if (name_end != std::string::npos)
+    {
+        const auto first = plain.find_first_not_of(" \t", name_end);
+        if (first != std::string::npos)
+        {
+            const auto last = plain.find_last_not_of(" \t");
+            inv.args_text = plain.substr(first, last - first + 1);
+        }
+    }
+    inv.args = tokenize_args(inv.args_text);
+    inv.body = body;
+    inv.formatted_body = formatted_body;
+    return inv;
+}
+
+std::optional<std::string> slash_success_message(const std::string& plain)
+{
+    const auto inv = parse_slash_command(plain, plain, {});
+    if (!inv)
+    {
+        return std::nullopt;
+    }
+    const auto* desc = find_command(inv->name);
+    return desc && desc->success_message ? desc->success_message(*inv) : std::nullopt;
+}
+
 Result dispatch_compose_send(Client& client, const std::string& room_id, const std::string& body,
                              const std::string& formatted_body,
-                             const std::string& url_previews_json)
+                             const std::string& url_previews_json, const std::string& plain_text)
 {
-    // `/shrug` (no args) — append the shrug emoticon to whatever the user
-    // typed in front of the slash. With no leading text it sends just the
-    // emoticon. Sent as plain text via the normal send_message path so it
-    // threads / replies correctly.
+    if (const auto inv =
+            parse_slash_command(plain_text.empty() ? body : plain_text, body, formatted_body))
     {
-        const char* suffix = nullptr;
-        if (body == "/shrug")
+        if (const auto* desc = find_command(inv->name); desc && desc->send)
         {
-            suffix = "";
-        }
-        else if (const char* s = strip_prefix(body, "/shrug "))
-        {
-            suffix = s;
-        }
-        if (suffix)
-        {
-            std::string text = "\xC2\xAF\\_(\xE3\x83\x84)_/\xC2\xAF";
-            if (*suffix != '\0')
-            {
-                text = std::string(suffix) + " " + text;
-            }
-            // The typed text keeps its formatting and mention pills.
-            std::string html;
-            if (*suffix != '\0' && !formatted_body.empty())
-            {
-                const std::string typed = strip_command_from_html(formatted_body, "shrug");
-                if (!typed.empty())
-                {
-                    html = append_to_html(typed, " \xC2\xAF\\_(\xE3\x83\x84)_/\xC2\xAF");
-                }
-            }
-            return client.send_message(room_id, text, html);
+            return desc->send(client, room_id, *inv);
         }
     }
-
-    // `/me <action>` → m.emote. Match is case-sensitive and requires a space
-    // after `me` (matching Element / other clients); typing `/menu` is
-    // therefore sent as plain text.
-    if (const char* action = strip_prefix(body, "/me "))
-    {
-        std::string emote_body = action;
-        // Strip the same prefix from formatted_body when present. If the
-        // formatted body does NOT start with the literal `/me ` (e.g. because
-        // it begins with an HTML tag introduced by markdown) we drop it
-        // rather than emit a mismatched body / formatted_body pair.
-        // (The composer wraps markdown output in <p>, which strip_command_from_html
-        // looks through, so "/me *waves*" keeps its emphasis.)
-        std::string emote_formatted;
-        if (!formatted_body.empty())
-        {
-            emote_formatted = strip_command_from_html(formatted_body, "me");
-        }
-        if (emote_body.empty())
-        {
-            // An empty `/me ` does nothing; report success so the composer
-            // still clears (the user removed their action, that's intended).
-            return Result{true, ""};
-        }
-        return client.send_emote(room_id, emote_body, emote_formatted);
-    }
-
-    // `/slap <target>` → m.emote, the classic IRC trout slap. Match is
-    // case-sensitive and requires a space after `slap` (so `/slapfoo` is sent
-    // as plain text).
-    if (const char* target = strip_prefix(body, "/slap "))
-    {
-        std::string name = target;
-        const auto first = name.find_first_not_of(" \t");
-        if (first == std::string::npos)
-        {
-            // Whitespace-only target — no-op that still clears the composer,
-            // matching how an empty `/me ` behaves.
-            return Result{true, ""};
-        }
-        const auto last = name.find_last_not_of(" \t");
-        name = name.substr(first, last - first + 1);
-
-        std::string emote_body =
-            tk::trf(tk::tr("slaps {0} around a bit with a large trout"), {name});
-        return client.send_emote(room_id, emote_body, "");
-    }
-
-    // `/spoiler [(reason)] <text>` → m.text with a `data-mx-spoiler` span
-    // (MSC2010). Match is case-sensitive and requires a space after `spoiler`.
-    if (const char* args = strip_prefix(body, "/spoiler "))
-    {
-        auto msg = build_spoiler_message(args);
-        if (!msg)
-        {
-            // Whitespace-only content — no-op that still clears the composer,
-            // matching how an empty `/me ` behaves.
-            return Result{true, ""};
-        }
-        return client.send_message(room_id, msg->body, msg->formatted_body);
-    }
-
-    // `/myroomnick <name>` — set room-specific display name.
-    if (const char* name = strip_prefix(body, "/myroomnick "))
-    {
-        // A blank name must not reach the client: an empty display name clears it.
-        std::string nick = name;
-        while (!nick.empty() && (nick.front() == ' ' || nick.front() == '\t'))
-        {
-            nick.erase(nick.begin());
-        }
-        while (!nick.empty() && (nick.back() == ' ' || nick.back() == '\t'))
-        {
-            nick.pop_back();
-        }
-        if (nick.empty())
-        {
-            return Result{false, tk::tr("no display name given; use /myroomnick <name>")};
-        }
-        return client.set_user_room_display_name(room_id, nick);
-    }
-
-    // `/myroomavatar <mxc_uri | http(s) url>` — set the room-specific avatar
-    // from an mxc:// URI, or fetch + square + resize + upload a web image.
-    // The no-argument form is intercepted by callers before this function is
-    // reached; if it arrives here anyway (e.g. empty suffix from the popup),
-    // return an error rather than calling the client with an empty URI.
-    if (const char* sfx = strip_prefix(body, "/myroomavatar"))
-    {
-        // sfx must start with whitespace or be end-of-string so that
-        // "/myroomavatarabc" is not misidentified as this command.
-        if (*sfx == '\0' || *sfx == ' ' || *sfx == '\t')
-        {
-            while (*sfx == ' ' || *sfx == '\t')
-            {
-                ++sfx; // skip separator
-            }
-            std::string arg = sfx;
-            while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t'))
-            {
-                arg.pop_back();
-            }
-            if (arg.empty())
-            {
-                return Result{false, tk::tr("no image URL provided; use /myroomavatar "
-                                            "alone to open the image picker")};
-            }
-            auto starts_with_ci = [&](std::string_view prefix)
-            {
-                return arg.size() >= prefix.size() &&
-                       std::equal(prefix.begin(), prefix.end(), arg.begin(),
-                                  [](char a, char b)
-                                  {
-                                      return std::tolower(static_cast<unsigned char>(a)) ==
-                                             std::tolower(static_cast<unsigned char>(b));
-                                  });
-            };
-            if (arg.size() == 5 && starts_with_ci("reset"))
-            {
-                return client.reset_user_room_avatar(room_id);
-            }
-            if (starts_with_ci("mxc://"))
-            {
-                return client.set_user_room_avatar(room_id, arg);
-            }
-            if (starts_with_ci("http://") || starts_with_ci("https://"))
-            {
-                return client.set_user_room_avatar_from_url(room_id, arg);
-            }
-            return Result{false, tk::tr("expected an mxc:// or http(s) image URL, or \"reset\"")};
-        }
-    }
-
     return client.send_message(room_id, body, formatted_body, url_previews_json);
 }
 

@@ -88,45 +88,81 @@ TEST_CASE("build_spoiler_message no-ops on whitespace-only content", "[slash][sp
     REQUIRE(!tesseract::build_spoiler_message("").has_value());
 }
 
-TEST_CASE("parse_slash_args returns nullopt for a non-matching command", "[slash]")
+namespace
 {
-    REQUIRE(!tesseract::parse_slash_args("/join #room:server", "invite").has_value());
-    REQUIRE(!tesseract::parse_slash_args("/invite", "invite").has_value());
-    REQUIRE(!tesseract::parse_slash_args("/inviteextra @a:b", "invite").has_value());
+std::optional<tesseract::SlashCommandInvocation> parse(const std::string& text)
+{
+    return tesseract::parse_slash_command(text, text, {});
+}
+} // namespace
+
+TEST_CASE("parse_slash_command only matches whole built-in names", "[slash]")
+{
+    REQUIRE(!parse("/inviteextra @a:b").has_value());
+    REQUIRE(!parse("/menu").has_value());
+    REQUIRE(!parse("/nosuchcommand x").has_value());
+    REQUIRE(!parse("hello").has_value());
+    REQUIRE(!parse("/").has_value());
+    REQUIRE(parse("/invite").has_value());
+    REQUIRE(parse("/me waves").has_value());
 }
 
-TEST_CASE("parse_slash_args returns an empty vector for whitespace-only args", "[slash]")
+TEST_CASE("parse_slash_command gives empty args for whitespace-only args", "[slash]")
 {
-    auto args = tesseract::parse_slash_args("/invite    ", "invite");
-    REQUIRE(args.has_value());
-    REQUIRE(args->empty());
+    auto inv = parse("/invite    ");
+    REQUIRE(inv.has_value());
+    REQUIRE(inv->name == "invite");
+    REQUIRE(inv->args_text.empty());
+    REQUIRE(inv->args.empty());
 }
 
-TEST_CASE("parse_slash_args splits a single argument", "[slash]")
+TEST_CASE("parse_slash_command splits a single argument", "[slash]")
 {
-    auto args = tesseract::parse_slash_args("/invite @bob:example.org", "invite");
-    REQUIRE(args.has_value());
-    REQUIRE(*args == std::vector<std::string>{"@bob:example.org"});
+    auto inv = parse("/invite @bob:example.org");
+    REQUIRE(inv.has_value());
+    REQUIRE(inv->args == std::vector<std::string>{"@bob:example.org"});
 }
 
-TEST_CASE("parse_slash_args splits multiple whitespace-delimited arguments", "[slash]")
+TEST_CASE("parse_slash_command splits multiple whitespace-delimited arguments", "[slash]")
 {
-    auto args = tesseract::parse_slash_args("/invite @bob:example.org come chat", "invite");
-    REQUIRE(args.has_value());
-    REQUIRE(*args == std::vector<std::string>{"@bob:example.org", "come", "chat"});
+    auto inv = parse("/invite @bob:example.org come chat");
+    REQUIRE(inv.has_value());
+    REQUIRE(inv->args == std::vector<std::string>{"@bob:example.org", "come", "chat"});
+    REQUIRE(inv->args_text == "@bob:example.org come chat");
 }
 
-TEST_CASE("parse_slash_args keeps a quoted span as a single argument", "[slash]")
+TEST_CASE("parse_slash_command keeps a quoted span as a single argument", "[slash]")
 {
-    auto args =
-        tesseract::parse_slash_args("/invite @bob:example.org \"come chat with us\"", "invite");
-    REQUIRE(args.has_value());
-    REQUIRE(*args == std::vector<std::string>{"@bob:example.org", "come chat with us"});
+    auto inv = parse("/invite @bob:example.org \"come chat with us\"");
+    REQUIRE(inv.has_value());
+    REQUIRE(inv->args == std::vector<std::string>{"@bob:example.org", "come chat with us"});
 
-    auto args2 =
-        tesseract::parse_slash_args("/invite @bob:example.org 'come chat with us'", "invite");
-    REQUIRE(args2.has_value());
-    REQUIRE(*args2 == std::vector<std::string>{"@bob:example.org", "come chat with us"});
+    auto inv2 = parse("/invite @bob:example.org 'come chat with us'");
+    REQUIRE(inv2.has_value());
+    REQUIRE(inv2->args == std::vector<std::string>{"@bob:example.org", "come chat with us"});
+}
+
+TEST_CASE("parse_slash_command reads args from the plain text, not the body", "[slash]")
+{
+    // The body carries a mention pill's display name; the plain text its ID.
+    auto inv = tesseract::parse_slash_command("/dm @alice:example.org", "/dm Alice", "<p>x</p>");
+    REQUIRE(inv.has_value());
+    REQUIRE(inv->args == std::vector<std::string>{"@alice:example.org"});
+    REQUIRE(inv->body == "/dm Alice");
+    REQUIRE(inv->formatted_body == "<p>x</p>");
+}
+
+TEST_CASE("every built-in is either a send command or shell-handled", "[slash]")
+{
+    // Commands without a `send` handler are run by ShellBase's slash UI handlers
+    // (or are popup-only, like /gif and /sticker); find_command must see them all.
+    for (const auto& c : tesseract::available_commands())
+    {
+        const auto* found = tesseract::find_command(c.name);
+        REQUIRE(found != nullptr);
+        REQUIRE(found->name == c.name);
+    }
+    REQUIRE(tesseract::find_command("nosuch") == nullptr);
 }
 
 TEST_CASE("the myroomavatar command routes by argument scheme", "[slash][myroomavatar]")

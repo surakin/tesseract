@@ -42,4 +42,9 @@ struct MentionSeg
 /// anchors), even for messages that contain no markdown.
 MarkdownResult build_mention_message(const std::vector<MentionSeg>& segments);
 
+/// The composer content as plain text: typed text verbatim, each mention as its
+/// raw Matrix ID (`@room` for a room mention) and each emoticon as `:shortcode:`.
+/// Chat commands parse this, so a mention picked from the popup reads as the ID.
+std::string plain_composer_text(const std::vector<MentionSeg>& segments);
+
 } // namespace tesseract

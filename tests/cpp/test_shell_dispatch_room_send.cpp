@@ -63,6 +63,8 @@ struct SendShell : tesseract::test::TestShellBase
     using ShellBase::client_;
     using ShellBase::main_app_;
     using ShellBase::dispatch_room_send_;
+    using ShellBase::pending_invites_;
+    using ShellBase::slash_ui_handlers_;
     using ShellBase::report_unsent_message_;
     using ShellBase::pending_room_actions_;
     using ShellBase::RoomActionKind;
@@ -172,4 +174,46 @@ TEST_CASE("dispatch_room_send_ /poll without a main app is a safe no-op",
     auto out = s.dispatch_room_send_("!r:x", "/poll", "");
     CHECK(out.handled_as_command);
     CHECK(s.pending_room_actions_.empty());
+}
+
+TEST_CASE("dispatch_room_send_ parses chat commands from the plain command text",
+          "[shell][dispatch_room_send]")
+{
+    tesseract::Client client;
+    SendShell s;
+    s.client_ = &client;
+
+    // The flattened body carries a pill's display name; the command text has the ID.
+    auto out =
+        s.dispatch_room_send_("!r:x", "/invite Alice", "", nullptr, "/invite @alice:example.org");
+    CHECK(out.handled_as_command);
+    REQUIRE(s.pending_invites_.size() == 1);
+    CHECK(s.pending_invites_.begin()->second.user_id == "@alice:example.org");
+}
+
+TEST_CASE("every built-in without a send handler has a shell handler",
+          "[shell][dispatch_room_send]")
+{
+    SendShell s;
+    for (const auto& c : tesseract::available_commands())
+    {
+        if (c.send || c.name == "gif" || c.name == "sticker")
+        {
+            continue; // run on the send worker / popup-only
+        }
+        INFO(c.name);
+        CHECK(s.slash_ui_handlers_.contains(c.name));
+    }
+}
+
+TEST_CASE("a shell-handled command without its argument falls through to a plain send",
+          "[shell][dispatch_room_send]")
+{
+    tesseract::Client client;
+    SendShell s;
+    s.client_ = &client;
+
+    auto out = s.dispatch_room_send_("!r:x", "/invite", "");
+    CHECK_FALSE(out.handled_as_command);
+    CHECK(s.pending_invites_.empty());
 }

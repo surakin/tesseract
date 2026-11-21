@@ -5,6 +5,7 @@
 #include <vector>
 
 using tesseract::build_mention_message;
+using tesseract::plain_composer_text;
 using tesseract::MentionSeg;
 
 namespace
@@ -164,4 +165,11 @@ TEST_CASE("mentions: emoticon shortcode is HTML-escaped in both alt and "
     auto r = build_mention_message(segs);
     CHECK_FALSE(contains_mentions(r.formatted_body, "onerror=\"alert(1)\""));
     CHECK(contains_mentions(r.formatted_body, "&quot;"));
+}
+
+TEST_CASE("mentions: plain composer text spells mentions as raw IDs")
+{
+    std::vector<MentionSeg> segs = {text("/dm "), mention("@alice:example.org", "Alice"), text(" "),
+                                    emoticon("wave", "mxc://x/y")};
+    CHECK(plain_composer_text(segs) == "/dm @alice:example.org :wave:");
 }

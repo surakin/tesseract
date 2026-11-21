@@ -31,6 +31,7 @@
 namespace tesseract::views
 {
 class MediaViewerOverlay;
+class PopoutRoomWidget;
 struct MediaViewerItem;
 class ForwardRoomPicker;
 class RoomMediaView;
@@ -149,6 +150,15 @@ public:
         std::function<void()> focus_forward_picker_field = [] {};
         std::function<void()> hide_forward_picker_field = [] {};
     };
+
+    // The pop-out window root this pane lives in, or null for the main window's
+    // pane. Found from the room view's parent in attach(), so the shells need no
+    // extra wiring. Window-scoped slash commands (/poll, /selfie) use its
+    // dialogs and overlay.
+    views::PopoutRoomWidget* popout_widget() const
+    {
+        return popout_;
+    }
 
     RoomPane(Deps deps, std::string room_id);
     ~RoomPane();
@@ -495,7 +505,8 @@ public:
     const tesseract::RoomInfo* pane_room_by_id_(const std::string& room_id) const;
 
     void send_message_(const std::string& body);
-    void send_message_(const std::string& body, const std::string& formatted_body);
+    void send_message_(const std::string& body, const std::string& formatted_body,
+                       const std::string& command_text = {});
     void send_reply_(const std::string& reply_event_id, const std::string& body);
     void send_sticker_(const std::string& body, const std::string& image_url,
                        const std::string& info_json);
@@ -787,6 +798,7 @@ private:
 
     Deps deps_;
     Widgets widgets_;
+    views::PopoutRoomWidget* popout_ = nullptr; // see popout_widget()
     // Aliases cached from deps_/widgets_ once at construction/attach() time
     // (never reassigned outside those two points) purely to keep the ported
     // method bodies below textually identical to their RoomWindowBase

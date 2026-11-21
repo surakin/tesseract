@@ -5,6 +5,7 @@
 #include "views/SlashCommands.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/MediaViewerOverlay.h"
+#include "views/PopoutRoomWidget.h"
 #include "views/media_viewer_items.h"
 #include "views/RoomMediaView.h"
 #include "views/send_block.h"
@@ -90,6 +91,8 @@ void RoomPane::attach(Widgets w)
     widgets_ = std::move(w);
     room_view_ = widgets_.room_view;
     media_viewer_ = widgets_.media_viewer;
+    // A pop-out's RoomView is a child of its PopoutRoomWidget root.
+    popout_ = room_view_ ? dynamic_cast<views::PopoutRoomWidget*>(room_view_->parent()) : nullptr;
     wire_room_view_();
 }
 
@@ -1236,6 +1239,7 @@ void RoomPane::wire_room_view_()
         // back to the plain body otherwise.
         std::string out_body = body;
         std::string formatted;
+        std::string command_text;
         bool has_mention = false;
         if (auto* ta = compose_text_area_())
         {
@@ -1252,6 +1256,7 @@ void RoomPane::wire_room_view_()
                 auto msg = tesseract::build_mention_message(draft);
                 out_body = msg.body;
                 formatted = msg.formatted_body;
+                command_text = tesseract::plain_composer_text(draft);
             }
         }
         std::string trimmed = tesseract::text::trim(out_body);
@@ -1259,12 +1264,15 @@ void RoomPane::wire_room_view_()
         {
             return;
         }
-        send_message_(out_body, formatted);
+        // Clear before dispatching: a command like /dm switches rooms, and the
+        // switch would otherwise save the still-typed command as this room's
+        // draft. A send that fails puts its text back (report_unsent_message_).
         if (auto* ta = compose_text_area_())
         {
             ta->set_text("");
         }
         room_view_->set_current_text({});
+        send_message_(out_body, formatted, command_text);
     };
     rv->on_send_reply = [this](const std::string& reply_id, const std::string& body)
     {
@@ -2097,9 +2105,11 @@ void RoomPane::wire_room_view_()
         }
         // /poll has no thread form: open the create-poll dialog (the poll posts
         // to the room's main timeline) instead of sending the literal text.
-        if (tesseract::is_slash_command_no_arg(body, "poll"))
+        if (const auto cmd = tesseract::parse_slash_command(body, body, {});
+            cmd && cmd->name == "poll")
         {
-            shell_->open_create_poll_dialog_(room_id_, session_());
+            shell_->open_create_poll_dialog_(room_id_, session_(),
+                                             popout_ ? popout_->create_poll_dialog() : nullptr);
             if (auto* ta = compose_text_area_())
             {
                 ta->set_text("");
@@ -3388,11 +3398,12 @@ void RoomPane::send_message_(const std::string& body)
     send_message_(body, "");
 }
 
-void RoomPane::send_message_(const std::string& body, const std::string& formatted_body)
+void RoomPane::send_message_(const std::string& body, const std::string& formatted_body,
+                             const std::string& command_text)
 {
     // Slash-command ladder + normal send are centralized in ShellBase; the
     // on_send caller clears the compose bar after we return.
-    shell_->dispatch_room_send_(room_id_, body, formatted_body, session_());
+    shell_->dispatch_room_send_(room_id_, body, formatted_body, session_(), command_text, this);
 }
 
 void RoomPane::send_current_location_()
@@ -4842,15 +4853,9 @@ void RoomPane::wire_slash_hooks_(views::SlashCommandController::Hooks& hooks)
     // and sent command (interception ladder + send pipeline + error report).
     hooks.send_command = [this](const std::string& body) -> tesseract::Result
     {
-        const auto out = shell_->dispatch_room_send_(room_id_, body, std::string{}, session_());
+        const auto out =
+            shell_->dispatch_room_send_(room_id_, body, std::string{}, session_(), {}, this);
         return out.handled_as_command ? tesseract::Result{true, ""} : out.send_result;
-    };
-    // on_selfie is intentionally left unset here: it needs a main-window-only
-    // selfie-camera overlay this class has no knowledge of. on_location is
-    // shared, since send_current_location_ works identically for every pane.
-    hooks.on_location = [this]
-    {
-        send_current_location_();
     };
     hooks.bot_commands = [this]() -> std::vector<tesseract::CommandDescription>
     {

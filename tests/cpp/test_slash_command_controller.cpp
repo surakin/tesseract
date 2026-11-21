@@ -19,7 +19,7 @@ struct Rig
     SlashCommandPopup popup;
     std::vector<std::string> sent;
     std::vector<std::string> failures;
-    int selfie = 0, location = 0, cleared = 0;
+    int cleared = 0;
     tesseract::Result send_result{true, ""};
     std::unique_ptr<SlashCommandController> ctl;
 
@@ -36,14 +36,6 @@ struct Rig
         h.clear_composer = [this]
         {
             ++cleared;
-        };
-        h.on_selfie = [this]
-        {
-            ++selfie;
-        };
-        h.on_location = [this]
-        {
-            ++location;
         };
         h.on_command_failed = [this](std::string e)
         {
@@ -72,7 +64,7 @@ struct Rig
 TEST_CASE("SlashCommandController: no-arg builtins go through send_command",
           "[slash_command_controller]")
 {
-    for (const char* name : {"poll", "leave", "shrug"})
+    for (const char* name : {"poll", "leave", "shrug", "selfie", "location"})
     {
         Rig r;
         r.build(true);
@@ -82,18 +74,6 @@ TEST_CASE("SlashCommandController: no-arg builtins go through send_command",
         CHECK(r.area->text().empty());
         CHECK(r.cleared == 1);
     }
-}
-
-TEST_CASE("SlashCommandController: selfie and location keep their own hooks",
-          "[slash_command_controller]")
-{
-    Rig r;
-    r.build(true);
-    CHECK(r.type_and_submit("/selfie"));
-    CHECK(r.selfie == 1);
-    CHECK(r.type_and_submit("/location"));
-    CHECK(r.location == 1);
-    CHECK(r.sent.empty());
 }
 
 TEST_CASE("SlashCommandController: failed send_command reports the error",
@@ -107,8 +87,7 @@ TEST_CASE("SlashCommandController: failed send_command reports the error",
     CHECK(r.failures[0] == "nope");
 }
 
-TEST_CASE("SlashCommandController: without send_command the old path is a no-op "
-          "when no client is available",
+TEST_CASE("SlashCommandController: without send_command an arg-less accept sends nothing",
           "[slash_command_controller]")
 {
     Rig r;

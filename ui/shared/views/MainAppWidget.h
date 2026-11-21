@@ -31,7 +31,7 @@
 #include "KeyboardShortcutsOverlay.h"
 #include "CreatePollDialog.h"
 #include "ExportHistoryDialog.h"
-#include "CameraWidget.h"
+#include "CameraOverlayHost.h"
 #include "EncryptionSetupOverlay.h"
 #include "QRGrantView.h"
 #include "InviteCard.h"
@@ -492,8 +492,9 @@ private:
     // Full-surface lightbox overlays (painted last — highest z-order)
     OverlayStackWidget* overlay_stack_ = nullptr;
     MediaViewerOverlay* media_viewer_ = nullptr;
-    // Selfie overlay — lazily created by open_camera_overlay(), freed on dismiss.
-    CameraWidget* camera_widget_ = nullptr;
+    // Selfie overlay — created by the first open_camera_overlay(); the widget
+    // itself lives only while the overlay is open.
+    std::unique_ptr<CameraOverlayHost> camera_overlay_;
     EncryptionSetupOverlay* encryption_setup_ = nullptr;
     QRGrantView* qr_grant_view_ = nullptr;
 

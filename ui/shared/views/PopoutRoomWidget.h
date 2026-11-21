@@ -4,7 +4,9 @@
 // Stacks RoomView at full bounds with MediaViewerOverlay on top, mirroring MainAppWidget's overlay pattern
 // without the sidebar/room-list/login scaffolding.
 
+#include "CameraOverlayHost.h"
 #include "ConfirmDialog.h"
+#include "CreatePollDialog.h"
 #include "ForwardRoomPicker.h"
 #include "MediaViewerOverlay.h"
 #include "RoomMediaView.h"
@@ -47,6 +49,12 @@ public:
     {
         return confirm_dialog_;
     }
+    // The pop-out's own create-poll form (the /poll command opens it here, not
+    // in the main window).
+    CreatePollDialog* create_poll_dialog() const
+    {
+        return create_poll_dialog_;
+    }
     // RoomView-owned (not a PopoutRoomWidget-level overlay) — see
     // RoomView.h's own room_media_view_ doc comment / MainAppWidget's
     // identical delegating accessor. Every existing caller
@@ -56,11 +64,21 @@ public:
         return room_view_ ? room_view_->room_media_view() : nullptr;
     }
 
-    // Fires whenever the confirm dialog opens/closes, so the host relayouts;
+    // Fires whenever the confirm / poll dialog opens/closes, so the host relayouts;
     // arrange() then hides the compose text area while the dialog covers it.
     std::function<void()> on_layout_changed;
 
     void show_media_viewer(bool show);
+
+    // Opens the selfie camera overlay over this window (the /selfie command).
+    // `on_captured` receives the raw BGRA8888 frame after the countdown;
+    // `is_call_active` keeps the camera free while a call is using it. A no-op
+    // while one is already open.
+    void open_camera_overlay(std::function<bool()> is_call_active,
+                             CameraOverlayHost::CapturedFn on_captured);
+
+    // Escape closes the camera overlay or the poll form.
+    bool on_key_down(const tk::KeyEvent& event) override;
 
     // Mirrors MainAppWidget::compose_text_area_rect(): empty while
     // any_modal_open_() or room_view_ isn't visible_in_tree(), so arrange()
@@ -80,6 +98,8 @@ private:
     MediaViewerOverlay* media_viewer_ = nullptr;
     ForwardRoomPicker* forward_picker_ = nullptr;
     ConfirmDialog* confirm_dialog_ = nullptr;
+    CreatePollDialog* create_poll_dialog_ = nullptr;
+    std::unique_ptr<CameraOverlayHost> camera_overlay_;
 
     bool modal_was_open_ = false;
 };

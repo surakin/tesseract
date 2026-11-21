@@ -4,6 +4,7 @@
 #include "app/UploadDraft.h"
 #include "app/UnreadPrefetch.h"
 #include "views/MainAppWidget.h"
+#include "views/PopoutRoomWidget.h"
 #include "views/text_util.h"
 #include <tesseract/prefs.h>
 #include <algorithm>
@@ -854,9 +855,10 @@ void ShellBase::invite_users_(
 }
 
 void ShellBase::open_create_poll_dialog_(const std::string& room_id,
-                                         const std::shared_ptr<AccountSession>& on_behalf_of)
+                                         const std::shared_ptr<AccountSession>& on_behalf_of,
+                                         views::CreatePollDialog* dialog)
 {
-    auto* dlg = main_app_ ? main_app_->create_poll_dialog() : nullptr;
+    auto* dlg = dialog ? dialog : (main_app_ ? main_app_->create_poll_dialog() : nullptr);
     const auto acting = acting_session_(on_behalf_of);
     if (!dlg || !acting || !acting->client)
     {
@@ -897,14 +899,143 @@ void ShellBase::open_create_poll_dialog_(const std::string& room_id,
         std::move(room_name));
 }
 
+void ShellBase::register_slash_commands_()
+{
+    // Commands that need shell state. Everything that only needs a Client
+    // lives in tesseract::available_commands() as a `send` handler.
+    slash_ui_handlers_["myroomavatar"] = [this](const SlashCommandContext& c)
+    {
+        if (!c.inv.args_text.empty())
+        {
+            return false; // /myroomavatar <url>: the registry `send` handler
+        }
+        pick_and_set_room_avatar_(c.room_id, c.acting);
+        return true;
+    };
+    slash_ui_handlers_["poll"] = [this](const SlashCommandContext& c)
+    {
+        auto* popout = c.pane ? c.pane->popout_widget() : nullptr;
+        open_create_poll_dialog_(c.room_id, c.acting,
+                                 popout ? popout->create_poll_dialog() : nullptr);
+        return true;
+    };
+    slash_ui_handlers_["leave"] = [this](const SlashCommandContext& c)
+    {
+        // Leaving is one keystroke here, so ask first, as the room header's
+        // Leave does.
+        if (c.pane && c.pane != main_room_pane_.get())
+        {
+            confirm_leave_in_pane_(*c.pane, c.room_id);
+        }
+        else if (main_app_ && main_app_->confirm_dialog())
+        {
+            confirm_leave_room_(c.room_id, c.acting);
+        }
+        else
+        {
+            leave_room_command_(c.room_id, c.acting); // no dialog host: leave directly
+        }
+        return true;
+    };
+    slash_ui_handlers_["join"] = [this](const SlashCommandContext& c)
+    {
+        if (c.inv.args_text.empty())
+        {
+            return false;
+        }
+        join_room_command_(c.inv.args_text, {}, c.acting);
+        return true;
+    };
+    slash_ui_handlers_["invite"] = [this](const SlashCommandContext& c)
+    {
+        if (c.inv.args.empty())
+        {
+            return false;
+        }
+        std::string reason;
+        for (std::size_t i = 1; i < c.inv.args.size(); ++i)
+        {
+            if (i > 1)
+            {
+                reason += ' ';
+            }
+            reason += c.inv.args[i];
+        }
+        invite_user_command_(c.room_id, c.inv.args.front(), reason, c.acting);
+        return true;
+    };
+    slash_ui_handlers_["dm"] = [this](const SlashCommandContext& c)
+    {
+        const std::string user_id = c.inv.args.empty() ? std::string() : c.inv.args.front();
+        if (!tesseract::is_user_id(user_id))
+        {
+            show_status_message_(tk::tr("Usage: /dm @user:server"), 4000);
+            return true;
+        }
+        // The window's own open-DM route: the main window navigates to the DM,
+        // a pop-out opens it in a new window on that pop-out's account.
+        auto* rv = c.pane ? c.pane->room_view() : nullptr;
+        if (rv && rv->on_open_dm)
+        {
+            rv->on_open_dm(user_id);
+        }
+        else
+        {
+            handle_open_dm_(user_id);
+        }
+        return true;
+    };
+    slash_ui_handlers_["selfie"] = [this](const SlashCommandContext& c)
+    {
+        open_selfie_camera_(c.pane);
+        return true;
+    };
+    slash_ui_handlers_["location"] = [this](const SlashCommandContext& c)
+    {
+        send_current_location_(c.room_id, c.acting);
+        return true;
+    };
+}
+
+void ShellBase::confirm_leave_in_pane_(RoomPane& pane, const std::string& room_id)
+{
+    auto* rv = pane.room_view();
+    if (!rv)
+    {
+        return;
+    }
+    const RoomInfo* ri = room_by_id_(room_id);
+    const std::string display = (ri && !ri->name.empty()) ? ri->name : tk::tr("this room");
+    views::ConfirmDialog::Options opts;
+    opts.title = tk::trf(tk::tr("Leave {0}?"), {display});
+    opts.body = tk::tr("You will stop receiving messages and need "
+                       "to be re-invited to rejoin.");
+    opts.confirm_label = tk::tr("Leave");
+    opts.cancel_label = tk::tr("Cancel");
+    opts.destructive = true;
+    // The pane's own leave route (the room header's Leave) also closes a
+    // pop-out once the leave succeeded.
+    rv->request_confirm(std::move(opts),
+                        [rv, room_id]
+                        {
+                            if (rv->on_leave_room)
+                            {
+                                rv->on_leave_room(room_id);
+                            }
+                        });
+}
+
 ShellBase::RoomSendOutcome
 ShellBase::dispatch_room_send_(const std::string& room_id, const std::string& body,
                                const std::string& formatted_body,
-                               const std::shared_ptr<AccountSession>& on_behalf_of)
+                               const std::shared_ptr<AccountSession>& on_behalf_of,
+                               const std::string& command_text, RoomPane* origin)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
+    // Commands parse the plain text, not the pill-flattened body.
+    const std::string& cmd = command_text.empty() ? body : command_text;
     RoomSendOutcome out;
     if (room_id.empty() || !acting_client)
     {
@@ -913,70 +1044,20 @@ ShellBase::dispatch_room_send_(const std::string& room_id, const std::string& bo
         out.handled_as_command = true;
         return out;
     }
-    // Commands that open a native dialog or enqueue async room actions are
-    // intercepted here; everything else falls through to dispatch_compose_send.
-    if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
+    // A built-in command with a shell handler is consumed here. One without
+    // (or that declines) goes on to the normal send, where
+    // dispatch_compose_send runs the registry `send` handler.
+    if (const auto inv = tesseract::parse_slash_command(cmd, body, formatted_body))
     {
-        pick_and_set_room_avatar_(room_id, acting);
-        out.handled_as_command = true;
-        return out;
-    }
-    if (tesseract::is_slash_command_no_arg(body, "poll"))
-    {
-        open_create_poll_dialog_(room_id, acting);
-        out.handled_as_command = true;
-        return out;
-    }
-    if (tesseract::is_slash_command_no_arg(body, "leave"))
-    {
-        // Leaving is one keystroke here, so ask first, as the room header's
-        // Leave does. Without a dialog host the leave runs directly.
-        if (main_app_ && main_app_->confirm_dialog())
+        if (const auto it = slash_ui_handlers_.find(inv->name); it != slash_ui_handlers_.end())
         {
-            confirm_leave_room_(room_id, acting);
-        }
-        else
-        {
-            leave_room_command_(room_id, acting);
-        }
-        out.handled_as_command = true;
-        return out;
-    }
-    if (auto target = tesseract::parse_slash_arg(body, "join"))
-    {
-        join_room_command_(*target, {}, acting);
-        out.handled_as_command = true;
-        return out;
-    }
-    if (auto args = tesseract::parse_slash_args(body, "invite"))
-    {
-        const std::string user_id = args->empty() ? std::string() : args->front();
-        std::string reason;
-        for (std::size_t i = 1; i < args->size(); ++i)
-        {
-            if (i > 1)
+            RoomPane* const pane = origin ? origin : main_room_pane_.get();
+            if (it->second(SlashCommandContext{room_id, acting, pane, *inv}))
             {
-                reason += ' ';
+                out.handled_as_command = true;
+                return out;
             }
-            reason += (*args)[i];
         }
-        invite_user_command_(room_id, user_id, reason, acting);
-        out.handled_as_command = true;
-        return out;
-    }
-    if (auto args = tesseract::parse_slash_args(body, "dm"))
-    {
-        const std::string user_id = args->empty() ? std::string() : args->front();
-        if (!tesseract::is_user_id(user_id))
-        {
-            show_status_message_(tk::tr("Usage: /dm @user:server"), 4000);
-        }
-        else
-        {
-            handle_open_dm_(user_id);
-        }
-        out.handled_as_command = true;
-        return out;
     }
     out.handled_as_command = false;
 
@@ -1060,41 +1141,40 @@ ShellBase::dispatch_room_send_(const std::string& room_id, const std::string& bo
     auto rid = room_id;
     auto body_copy = body;
     auto fmt_copy = formatted_body;
-    submit_room_send_(sess, rid, body,
-                      [this, sess, rid, body_copy, fmt_copy](const std::string& previews) mutable
-                      {
-                          if (!sess || !sess->client)
-                          {
-                              return;
-                          }
-                          const auto result = tesseract::dispatch_compose_send(
-                              *sess->client, rid, body_copy, fmt_copy, previews);
-                          report_unsent_message_(sess->user_id, rid, body_copy, result);
-                          // Commands with no visible echo of their own confirm success here.
-                          if (result.ok)
-                          {
-                              if (auto msg = tesseract::slash_success_message(body_copy))
-                              {
-                                  post_to_ui_alive_(
-                                      [this, m = std::move(*msg)]
-                                      {
-                                          show_status_message_(m, 4000);
-                                      });
-                              }
-                          }
-                      });
+    auto plain_copy = cmd;
+    submit_room_send_(
+        sess, rid, body,
+        [this, sess, rid, body_copy, fmt_copy, plain_copy](const std::string& previews) mutable
+        {
+            if (!sess || !sess->client)
+            {
+                return;
+            }
+            const auto result = tesseract::dispatch_compose_send(*sess->client, rid, body_copy,
+                                                                 fmt_copy, previews, plain_copy);
+            report_unsent_message_(sess->user_id, rid, body_copy, result);
+            // Commands with no visible echo of their own confirm success here.
+            if (result.ok)
+            {
+                if (auto msg = tesseract::slash_success_message(plain_copy))
+                {
+                    post_to_ui_alive_(
+                        [this, m = std::move(*msg)]
+                        {
+                            show_status_message_(m, 4000);
+                        });
+                }
+            }
+        });
     out.send_result = tesseract::Result{true, ""};
     return out;
 }
 
-// Unified slash-command dispatch ladder shared by every composer send path
-// (the four shells' on_send handlers and RoomWindowBase::send_message_).
-// Recognizes the no-arg /myroomavatar (native file picker via
-// pick_and_set_room_avatar_), /leave, /join <room>, /invite <user>; any
-// other input falls through to dispatch_compose_send (which itself handles
-// /me, /shrug, /myroomnick, /myroomavatar <uri>, /spoiler and normal text).
-// Must be called on the UI thread; the command branches enqueue async work
-// via the existing ShellBase helpers.
+// dispatch_room_send_ is the one entry every composer send path shares (the four
+// shells' on_send handlers and RoomWindowBase::send_message_). A built-in with a
+// shell handler (register_slash_commands_) runs on the UI thread; every other
+// input goes to dispatch_compose_send, which runs the registry `send` handler or
+// sends normal text. Must be called on the UI thread.
 // Called from a send worker with the result of a send that was already
 // cleared from the composer. On a failure (other than cancellation) it
 // shows the error and puts `body` back into that room's composer, or

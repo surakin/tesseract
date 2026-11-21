@@ -215,18 +215,12 @@ TEST_CASE("destroying ComposerPopups unhooks the composer", "[composer_popups]")
 TEST_CASE("the text-change option replaces the built-in typing notice", "[composer_popups]")
 {
     std::vector<std::string> seen;
-    bool slash_extended = false;
     tesseract::ComposerPopups::Options o;
     o.on_text_changed = [&](const std::string& t)
     {
         seen.push_back(t);
     };
-    o.extend_slash_hooks = [&](tesseract::views::SlashCommandController::Hooks&)
-    {
-        slash_extended = true;
-    };
     PopupsRig r(std::move(o));
-    CHECK(slash_extended);
     r.type("hello");
     REQUIRE_FALSE(seen.empty());
     CHECK(seen.back() == "hello");

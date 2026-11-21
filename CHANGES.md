@@ -4,6 +4,9 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- fix(chat): /selfie, /poll, /leave and /dm now act in the pop-out window and account they were typed in. Linux release build, ctest 4006/4006
+- fix(chat): chat commands read the typed text with mentions as Matrix IDs, so /dm and /invite work with a picked mention. Linux release build, ctest 4006/4006
+- refactor(chat): slash commands are dispatched from one command table instead of several if-chains. Linux release build, ctest 4006/4006
 - feat(chat): a /dm @user:server command opens a direct message with that user. Linux build, ctest
 - fix(calls): a video call started with the camera off keeps its camera button, so the camera can be turned on later. Linux release build, ctest 4001/4001
 - fix(calls): avatars in the call lobby and on call tiles are no longer blurry. Linux release build, ctest 4001/4001

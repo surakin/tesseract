@@ -85,6 +85,27 @@ std::string img_for(const MentionSeg& m)
 
 } // namespace
 
+std::string plain_composer_text(const std::vector<MentionSeg>& segments)
+{
+    std::string out;
+    for (const auto& s : segments)
+    {
+        switch (s.kind)
+        {
+        case MentionSeg::Kind::Text:
+            out += s.text;
+            break;
+        case MentionSeg::Kind::Mention:
+            out += s.is_room ? "@room" : s.user_id;
+            break;
+        case MentionSeg::Kind::Emoticon:
+            out += ":" + s.shortcode + ":";
+            break;
+        }
+    }
+    return out;
+}
+
 MarkdownResult build_mention_message(const std::vector<MentionSeg>& segments)
 {
     bool has_sentinel_seg = false;
