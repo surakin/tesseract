@@ -54,6 +54,8 @@ Tagged releases summarize all changes since the previous tag.
 - fix(settings): a device sign-out error or re-authentication prompt could be lost when it was handed to more than one device row. Linux release build
 - feat(composer): files dragged or pasted from remote locations in Dolphin (SFTP, SMB, MTP) attach on KDE via kio-fuse. Linux build, ctest 3945/3946
 
+- fix(messages): side panels cover your bubbles without moving them to the left. Linux build, focused tests
+
 ## v0.9.8 — 2026-11-10
 
 ### Summary

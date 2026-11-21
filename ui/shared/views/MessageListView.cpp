@@ -4056,7 +4056,7 @@ public:
         const MessageRowData& m = mc.m;
         tk::LayoutCtx& ctx = mc.ctx;
         const bool cont = mc.cont;
-        const bool right = bubble_right_(m);
+        const bool right = m.is_own;
         const bool own_av = own_avatar_shown_(m);
         const float shp = msgbubble::shaping_width(mc.width, right,
                                                    receipt_reserve_width(m, ctx.factory), own_av);
@@ -4077,14 +4077,7 @@ public:
     // Bubbles layout: draw the local user's avatar in the right gutter.
     bool own_avatar_shown_(const MessageRowData& m) const
     {
-        return bubble_right_(m) && tesseract::Settings::instance().bubbles_show_own_avatar;
-    }
-
-    // Own rows are right-anchored, except while a side panel is open: the
-    // timeline is then narrow and own rows lay out on the left like others'.
-    bool bubble_right_(const MessageRowData& m) const
-    {
-        return m.is_own && !owner_.side_panel_open_;
+        return m.is_own && tesseract::Settings::instance().bubbles_show_own_avatar;
     }
 
     void render_bubble_row_(const RowPaintCtx& rp)
@@ -4097,7 +4090,7 @@ public:
         paint_row_tints_(rp);
         begin_row_hover_capture_(rp);
 
-        const bool right = bubble_right_(m);
+        const bool right = m.is_own;
         const bool own_av = own_avatar_shown_(m);
         const float shp = msgbubble::shaping_width(bounds.w, right,
                                                    receipt_reserve_width(m, ctx.factory), own_av);
@@ -10134,21 +10127,6 @@ void MessageListView::set_dimmed(bool dimmed)
     if (request_repaint_)
     {
         request_repaint_();
-    }
-}
-
-void MessageListView::set_side_panel_open(bool open)
-{
-    if (side_panel_open_ == open)
-    {
-        return;
-    }
-    side_panel_open_ = open;
-    // Only the Bubbles layout lays rows out differently while a panel is open.
-    if (tesseract::Settings::instance().message_layout ==
-        tesseract::Settings::MessageLayout::Bubbles)
-    {
-        on_display_prefs_changed();
     }
 }
 
