@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(rooms): the room-list preview shows the sender's display name instead of their user ID when the app has not loaded their profile. Linux release build, cargo test
 - ci(smoke): a new smoke phase checks how the app shows received events and the room list, and what it sends. Linux release build, ctest 4021/4021
 
 ## v0.9.10 — 2026-11-21

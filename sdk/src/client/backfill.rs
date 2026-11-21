@@ -1798,6 +1798,48 @@ pub(super) fn read_known_room_packs(conn: &rusqlite::Connection) -> Vec<(String,
 
 // ──────────────────────────────────────────────────────────────────────────
 
+/// A non-empty `displayname` from an `m.room.member` content object.
+fn member_displayname_from_content(json: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()?
+        .get("displayname")?
+        .as_str()
+        .filter(|n| !n.is_empty())
+        .map(str::to_owned)
+}
+
+/// The sender's room display name for a preview. Back-paginated events do not
+/// bring their senders' member events into the store (members are lazy-loaded),
+/// so when the store has no entry, ask the homeserver for that one member event
+/// rather than the whole member list. Falls back to the localpart.
+#[cfg(not(test))]
+async fn backfill_sender_name(
+    client: &Client,
+    room: &matrix_sdk::Room,
+    sender: &matrix_sdk::ruma::UserId,
+) -> String {
+    use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
+    use matrix_sdk::ruma::events::StateEventType;
+
+    if let Ok(Some(m)) = room.get_member_no_sync(sender).await {
+        return m
+            .display_name()
+            .map(str::to_owned)
+            .unwrap_or_else(|| sender.localpart().to_string());
+    }
+    let request = get_state_event_for_key::v3::Request::new(
+        room.room_id().to_owned(),
+        StateEventType::RoomMember,
+        sender.to_string(),
+    );
+    let fetched = tokio::time::timeout(std::time::Duration::from_secs(5), client.send(request))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .and_then(|r| member_displayname_from_content(r.event_or_content.get()));
+    fetched.unwrap_or_else(|| sender.localpart().to_string())
+}
+
 /// Warm the SDK's event-cache for one room without surfacing anything to
 /// the UI. Builds a temporary `Timeline` and paginates backwards in
 /// 50-event batches until either the room has at least `target_events`
@@ -1926,7 +1968,7 @@ pub(super) async fn backfill_room_silent(
         } else {
             match profile_name.filter(|n| !n.is_empty()) {
                 Some(n) => n,
-                None => super::member_display_name_local(&room, &sender_id).await,
+                None => backfill_sender_name(client, &room, &sender_id).await,
             }
         };
         (preview, name)
@@ -1947,7 +1989,10 @@ pub(super) async fn backfill_room_silent(
 
 #[cfg(test)]
 mod tests {
-    use super::{keep_known_timestamp, select_prefetch_rooms, visible_backfill_wanted};
+    use super::{
+        keep_known_timestamp, member_displayname_from_content, select_prefetch_rooms,
+        visible_backfill_wanted,
+    };
     use matrix_sdk::ruma::OwnedRoomId;
     use std::collections::HashSet;
 
@@ -1978,6 +2023,25 @@ mod tests {
         assert!(!visible_backfill_wanted(Some(("", 5)), true));
         // No events at all.
         assert!(!visible_backfill_wanted(Some(("", 0)), false));
+    }
+
+    #[test]
+    fn reads_the_displayname_from_member_content() {
+        let c = r#"{"membership":"join","displayname":"Ann"}"#;
+        assert_eq!(member_displayname_from_content(c).as_deref(), Some("Ann"));
+        assert_eq!(
+            member_displayname_from_content(r#"{"membership":"join"}"#),
+            None
+        );
+        assert_eq!(
+            member_displayname_from_content(r#"{"displayname":""}"#),
+            None
+        );
+        assert_eq!(
+            member_displayname_from_content(r#"{"displayname":null}"#),
+            None
+        );
+        assert_eq!(member_displayname_from_content("nope"), None);
     }
 
     #[test]
