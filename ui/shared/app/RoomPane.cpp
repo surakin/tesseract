@@ -1470,9 +1470,9 @@ void RoomPane::wire_room_view_()
     // identically for every pane; ShellBase resolves the lobby/banner/
     // dismiss target per-room via room_view_for_room_.
     rv->on_start_call =
-        [this](const std::string& room_id, const std::string& slot_id, bool audio_only)
+        [this](const std::string& room_id, const std::string& slot_id, views::CallType type)
     {
-        shell_->request_call_(room_id, slot_id, audio_only);
+        shell_->request_call_(room_id, slot_id, type);
     };
 
     // Forward picker: stable providers wired once so open() always has rooms.

@@ -393,7 +393,7 @@ RoomView::RoomView()
             {
                 if (on_start_call)
                 {
-                    on_start_call(rid, "call#default", true);
+                    on_start_call(rid, "call#default", CallType::Audio);
                 }
             };
             PopupMenu::Item video;
@@ -403,7 +403,7 @@ RoomView::RoomView()
             {
                 if (on_start_call)
                 {
-                    on_start_call(rid, "call#default", false);
+                    on_start_call(rid, "call#default", CallType::Video);
                 }
             };
             call_popup_->open({audio, video}, btn_rect);
@@ -2188,7 +2188,7 @@ void RoomView::set_call_banner(const std::string& room_id, const std::string& ca
         {
             if (on_start_call)
             {
-                on_start_call(room_id, "call#default", false);
+                on_start_call(room_id, "call#default", CallType::Video);
             }
         },
         join_enabled);

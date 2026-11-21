@@ -147,7 +147,7 @@ void shell_calls_install_session(CallShell& s, tesseract::Client& c, const std::
 TEST_CASE("start_call without a client does nothing", "[shell][calls]")
 {
     CallShell s;
-    s.start_call("!r:x", "slot", true);
+    s.start_call("!r:x", "slot", tesseract::views::CallType::Audio);
     CHECK(s.call_session_ == nullptr);
     CHECK(s.status.empty());
 }
@@ -157,7 +157,7 @@ TEST_CASE("start_call reports a failed join and leaves no session behind", "[she
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
     s.client_ = &c;
-    s.start_call("!r:x", "slot", true);
+    s.start_call("!r:x", "slot", tesseract::views::CallType::Audio);
     CHECK(s.call_session_ == nullptr);
     REQUIRE(s.status.size() == 1);
     CHECK(s.status[0].find("Call failed") != std::string::npos);
@@ -168,7 +168,7 @@ TEST_CASE("start_call is ignored while a call is already active", "[shell][calls
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
     shell_calls_install_session(s, c, "!active:x");
-    s.start_call("!other:x", "slot", false);
+    s.start_call("!other:x", "slot", tesseract::views::CallType::Video);
     CHECK(s.call_session_->room_id() == "!active:x");
     CHECK(s.status.empty());
 }

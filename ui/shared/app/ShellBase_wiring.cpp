@@ -1693,9 +1693,9 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         };
 
         rv->on_start_call =
-            [this](const std::string& room_id, const std::string& slot_id, bool audio_only)
+            [this](const std::string& room_id, const std::string& slot_id, views::CallType type)
         {
-            request_call_(room_id, slot_id, audio_only);
+            request_call_(room_id, slot_id, type);
         };
     }
 

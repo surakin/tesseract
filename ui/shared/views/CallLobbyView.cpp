@@ -90,10 +90,13 @@ CallLobbyView::CallLobbyView()
             stop_camera_();
             if (on_join)
             {
-                on_join(room_id_, slot_id_,
-                        /*audio_only=*/!cam_enabled_ && !cam_failed,
+                const CallType type = (call_type_ == CallType::Audio && !cam_enabled_)
+                                          ? CallType::Audio
+                                          : CallType::Video;
+                on_join(room_id_, slot_id_, type,
                         /*start_audio_muted=*/!mic_enabled_,
-                        /*start_video_muted=*/cam_failed);
+                        /*start_video_muted=*/type == CallType::Video &&
+                            (!cam_enabled_ || cam_failed));
             }
             close();
         });
@@ -117,12 +120,13 @@ CallLobbyView::~CallLobbyView()
     stop_camera_();
 }
 
-void CallLobbyView::open(std::string room_id, std::string slot_id, bool default_audio_only)
+void CallLobbyView::open(std::string room_id, std::string slot_id, CallType type)
 {
     room_id_ = std::move(room_id);
     slot_id_ = std::move(slot_id);
     mic_enabled_ = true;
-    cam_enabled_ = !default_audio_only;
+    call_type_ = type;
+    cam_enabled_ = type == CallType::Video;
     set_camera_error_(tk::VideoCapture::Error::None);
     open_ = true;
     set_visible(true);

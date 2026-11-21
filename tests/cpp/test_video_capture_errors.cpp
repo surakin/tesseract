@@ -11,6 +11,7 @@
 #include <vector>
 
 using tesseract::views::CallLobbyView;
+using tesseract::views::CallType;
 using tesseract::views::CameraWidget;
 using Error = tk::VideoCapture::Error;
 
@@ -110,6 +111,41 @@ struct Stage
     }
 };
 
+TEST_CASE("call lobby joins a video call with the camera switched off as video, muted",
+          "[call_lobby]")
+{
+    FakeFactory factory;
+    CallLobbyView lobby;
+    CallType type = CallType::Audio;
+    bool video_muted = false;
+    lobby.on_join = [&](const std::string&, const std::string&, CallType t, bool, bool vm)
+    {
+        type = t;
+        video_muted = vm;
+    };
+
+    lobby.open("!room:x", "call#default", CallType::Video);
+    REQUIRE(lobby.camera_enabled());
+
+    // Buttons in order: mic toggle, camera toggle, Join.
+    std::vector<tk::Button*> buttons;
+    for (const auto& ch : lobby.children())
+    {
+        if (auto* b = dynamic_cast<tk::Button*>(ch.get()))
+        {
+            buttons.push_back(b);
+        }
+    }
+    REQUIRE(buttons.size() >= 3);
+    buttons[1]->click();
+    REQUIRE_FALSE(lobby.camera_enabled());
+    buttons[2]->click();
+
+    // Still a video call, so the camera toggle stays in the call view.
+    REQUIRE(type == CallType::Video);
+    REQUIRE(video_muted);
+}
+
 } // namespace
 
 TEST_CASE("VideoCapture reports only the first error after start", "[video_capture]")
@@ -153,7 +189,7 @@ TEST_CASE("call lobby turns the camera off and explains a busy camera", "[call_l
     Stage stage;
     CallLobbyView lobby;
 
-    lobby.open("!room:x", "call#default", /*default_audio_only=*/false);
+    lobby.open("!room:x", "call#default", CallType::Video);
     REQUIRE(lobby.camera_enabled());
     REQUIRE(factory.created.size() == 1);
 
@@ -172,7 +208,7 @@ TEST_CASE("call lobby retries with a fresh capture when the camera is re-enabled
     Stage stage;
     CallLobbyView lobby;
 
-    lobby.open("!room:x", "call#default", false);
+    lobby.open("!room:x", "call#default", CallType::Video);
     // Synchronous start() failure is picked up without waiting for a paint.
     REQUIRE(lobby.camera_error() == Error::Busy);
     REQUIRE_FALSE(lobby.camera_enabled());
@@ -204,15 +240,15 @@ TEST_CASE("call lobby with a failed camera joins with video muted, not audio-onl
     FakeFactory factory;
     factory.no_device = true;
     CallLobbyView lobby;
-    bool audio_only = true;
+    CallType type = CallType::Audio;
     bool video_muted = false;
-    lobby.on_join = [&](const std::string&, const std::string&, bool ao, bool, bool vm)
+    lobby.on_join = [&](const std::string&, const std::string&, CallType t, bool, bool vm)
     {
-        audio_only = ao;
+        type = t;
         video_muted = vm;
     };
 
-    lobby.open("!room:x", "call#default", false);
+    lobby.open("!room:x", "call#default", CallType::Video);
     REQUIRE(lobby.camera_error() == Error::NoDevice);
     REQUIRE_FALSE(lobby.camera_enabled());
 
@@ -226,7 +262,7 @@ TEST_CASE("call lobby with a failed camera joins with video muted, not audio-onl
         }
     }
     // Video stays available so the user can retry once the camera is free.
-    REQUIRE_FALSE(audio_only);
+    REQUIRE(type == CallType::Video);
     REQUIRE(video_muted);
 }
 
@@ -238,7 +274,7 @@ TEST_CASE("call lobby releases the camera before the call starts", "[call_lobby]
     CallLobbyView lobby;
     bool camera_running_during_join = true;
     bool joined = false;
-    lobby.on_join = [&](const std::string&, const std::string&, bool, bool, bool)
+    lobby.on_join = [&](const std::string&, const std::string&, CallType, bool, bool)
     {
         joined = true;
         // The lobby has already destroyed its capture here, so ask the
@@ -246,7 +282,7 @@ TEST_CASE("call lobby releases the camera before the call starts", "[call_lobby]
         camera_running_during_join = factory.running != 0;
     };
 
-    lobby.open("!room:x", "call#default", false);
+    lobby.open("!room:x", "call#default", CallType::Video);
     REQUIRE(factory.created.size() == 1);
     REQUIRE(factory.created.front()->running);
 

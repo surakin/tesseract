@@ -19,6 +19,7 @@
 // switch the camera toggle off and show the reason under the preview;
 // turning the camera back on retries with a fresh capture.
 
+#include "CallType.h"
 #include "ParticipantTile.h"
 
 #include "tk/controls.h"
@@ -41,11 +42,10 @@ public:
     CallLobbyView();
     ~CallLobbyView() override;
 
-    // Opens the lobby for room_id/slot_id. default_audio_only seeds the
-    // camera toggle's initial state (off when true, on otherwise) — passed
-    // by the "Audio call" header menu item; every other entry point passes
-    // false so the camera starts on.
-    void open(std::string room_id, std::string slot_id, bool default_audio_only);
+    // Opens the lobby for room_id/slot_id. An Audio type starts with the
+    // camera toggle off (the "Audio call" header menu item); Video starts
+    // with it on. Turning the camera on in an audio lobby makes it a video call.
+    void open(std::string room_id, std::string slot_id, CallType type);
     // Stops capture and hides the view. Safe to call when already closed.
     void close();
     bool is_open() const
@@ -84,10 +84,10 @@ public:
         return join_blocked_;
     }
 
-    // room_id, slot_id, audio_only (camera was deliberately left off),
-    // start_audio_muted (mic was left off), start_video_muted (the camera
-    // failed — join as a video call with video off so it can be retried).
-    std::function<void(const std::string& room_id, const std::string& slot_id, bool audio_only,
+    // room_id, slot_id, type, start_audio_muted (mic was left off),
+    // start_video_muted (a video call whose camera is off or failed — video
+    // stays available so it can be turned on later).
+    std::function<void(const std::string& room_id, const std::string& slot_id, CallType type,
                        bool start_audio_muted, bool start_video_muted)>
         on_join;
     std::function<void()> on_cancel;
@@ -111,6 +111,7 @@ private:
 
     bool mic_enabled_ = true;
     bool cam_enabled_ = true;
+    CallType call_type_ = CallType::Video;
     tk::VideoCapture::Error cam_error_ = tk::VideoCapture::Error::None;
 
     std::unique_ptr<tk::VideoCapture> capture_;

@@ -822,9 +822,10 @@ views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_()
 // button still available) — used when the lobby's camera failed, so the
 // user can retry once the device is free instead of being stuck in an
 // audio-only call.
-void ShellBase::start_call(const std::string& room_id, const std::string& slot_id, bool audio_only,
-                           bool start_audio_muted, bool start_video_muted)
+void ShellBase::start_call(const std::string& room_id, const std::string& slot_id,
+                           views::CallType type, bool start_audio_muted, bool start_video_muted)
 {
+    const bool audio_only = type == views::CallType::Audio;
     if (call_session_ || !client_)
     {
         return;
@@ -942,7 +943,7 @@ CallRoomAction decide_call_room_action(bool has_active_call, bool active_call_ro
 // room_id isn't currently displayed in any window (defensive; shouldn't
 // happen since callers only ever target the room being viewed).
 void ShellBase::request_call_(const std::string& room_id, const std::string& slot_id,
-                              bool audio_only)
+                              views::CallType type)
 {
     views::RoomView* rv = room_view_for_room_(room_id);
     views::CallLobbyView* lobby = rv ? rv->call_lobby() : nullptr;
@@ -950,7 +951,7 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
     {
         // Defensive fallback — shouldn't happen since callers only ever
         // target the room currently being viewed.
-        start_call(room_id, slot_id, audio_only);
+        start_call(room_id, slot_id, type);
         return;
     }
 
@@ -994,8 +995,8 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
             return nullptr;
         });
 
-    lobby->on_join = [this](const std::string& rid, const std::string& sid, bool ao, bool muted,
-                            bool video_muted)
+    lobby->on_join = [this](const std::string& rid, const std::string& sid,
+                            views::CallType call_type, bool muted, bool video_muted)
     {
         // If a different room's call is still active (LeaveAndJoin), end it
         // before joining — start_call() no-ops while call_session_ is
@@ -1005,11 +1006,11 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
         {
             end_call();
         }
-        start_call(rid, sid, ao, muted, video_muted);
+        start_call(rid, sid, call_type, muted, video_muted);
     };
     lobby->on_cancel = [] {};
 
-    lobby->open(room_id, slot_id, audio_only);
+    lobby->open(room_id, slot_id, type);
     update_call_lobby_gate_(room_id);
 }
 

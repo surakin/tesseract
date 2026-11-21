@@ -293,25 +293,25 @@ TEST_CASE("request_call_ wires the lobby join to start_call", "[shell][call_over
 {
     CoFx f;
     f.s.call_session_.reset();
-    f.s.request_call_("!call:x", "slot", true);
+    f.s.request_call_("!call:x", "slot", tesseract::views::CallType::Audio);
     auto* lobby = f.app->room_view()->call_lobby();
     REQUIRE(lobby != nullptr);
     REQUIRE(lobby->on_join);
     // Joining offline fails: the shell reports it and holds no session.
-    lobby->on_join("!call:x", "slot", true, false, false);
+    lobby->on_join("!call:x", "slot", tesseract::views::CallType::Audio, false, false);
     CHECK(f.s.call_session_ == nullptr);
     REQUIRE_FALSE(f.s.statuses.empty());
     CHECK(f.s.statuses.back().rfind("Call failed", 0) == 0);
 
     // A different room's active call is ended before joining.
     f.s.call_session_ = std::make_unique<CallSession>(&f.client, "!old:x", "slot", 2);
-    lobby->on_join("!call:x", "slot", true, false, false);
+    lobby->on_join("!call:x", "slot", tesseract::views::CallType::Audio, false, false);
     CHECK(f.s.call_session_ == nullptr);
 
     // A room that no window shows falls back to joining directly.
     f.s.statuses.clear();
-    f.s.request_call_("!hidden:x", "slot", true);
-    f.s.request_call_("!hidden:x", "slot", true);
+    f.s.request_call_("!hidden:x", "slot", tesseract::views::CallType::Audio);
+    f.s.request_call_("!hidden:x", "slot", tesseract::views::CallType::Audio);
     SUCCEED();
 }
 

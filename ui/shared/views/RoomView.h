@@ -466,9 +466,8 @@ public:
         on_open_room_version;
 
     // Fired when the user answers (banner or header button). The shell calls
-    // ShellBase::start_call(room_id, slot_id, audio_only).
-    // audio_only=true skips video capture; audio_only=false starts with video.
-    std::function<void(const std::string& room_id, const std::string& slot_id, bool audio_only)>
+    // ShellBase::start_call(room_id, slot_id, type).
+    std::function<void(const std::string& room_id, const std::string& slot_id, CallType type)>
         on_start_call;
 
     // ── Docked call panel ────────────────────────────────────────────────

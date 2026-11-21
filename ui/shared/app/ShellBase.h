@@ -42,6 +42,7 @@
 #include "views/AccountPicker.h"
 #include "views/ActivityMonitorView.h"
 #include "views/CallOverlayWidget.h"
+#include "views/CallType.h"
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
 #include "tk/interval_timer.h"
@@ -279,7 +280,7 @@ public:
     // start_call creates a CallSession, wires audio (and video if a camera is
     // available) capture routing, and calls rtc_start_call on the client.
     void start_call(const std::string& room_id, const std::string& slot_id = "call#default",
-                    bool audio_only = false, bool start_audio_muted = false,
+                    views::CallType type = views::CallType::Video, bool start_audio_muted = false,
                     bool start_video_muted = false);
     // End the active call and tear down all call resources. No-op when idle.
     // The leave goes out in the background, so the UI thread is not held up by
@@ -3899,7 +3900,7 @@ protected:
     // "start a call" entry point (auto-join, the call banner, the header
     // call button, LeaveAndJoin) now goes through.
     void request_call_(const std::string& room_id, const std::string& slot_id = "call#default",
-                       bool audio_only = false);
+                       views::CallType type = views::CallType::Video);
 
     // Overlay configuration that must survive mode switches (docked ↔ floating ↔
     // popout). Initialised at call start; each remount reads from this struct
@@ -5283,7 +5284,6 @@ protected:
     // The profile panel's avatar (sized to UserProfilePanel::kAvatarDiameter).
     void ensure_profile_avatar_(const std::string& mxc);
     const tk::Image* profile_avatar_image_(const std::string& mxc);
-
     // Edge, in logical px, that the call lobby / call tile avatars are fetched at.
     static constexpr float kCallAvatarLogicalPx = 256.0f;
     // Sized avatar for a call tile: starts the fetch if needed and returns the
@@ -5293,6 +5293,7 @@ protected:
         ensure_sized_avatar_(mxc, kCallAvatarLogicalPx);
         return sized_avatar_image_(mxc, kCallAvatarLogicalPx);
     }
+
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
     // relayout the main surface and every pop-out.
