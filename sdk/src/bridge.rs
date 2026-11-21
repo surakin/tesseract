@@ -70,6 +70,19 @@ pub fn validate_proxy_url(url: &str) -> bool {
     super::net_proxy::validate_proxy_url(url)
 }
 
+/// Strict ruma parse of a Matrix identifier. `sigil` is `@` (user), `!` (room),
+/// `#` (room alias) or `$` (event); anything else is invalid.
+pub fn is_valid_matrix_id(sigil: u8, id: &str) -> bool {
+    use matrix_sdk::ruma::{EventId, RoomAliasId, RoomId, UserId};
+    match sigil {
+        b'@' => UserId::parse(id).is_ok(),
+        b'!' => RoomId::parse(id).is_ok(),
+        b'#' => RoomAliasId::parse(id).is_ok(),
+        b'$' => EventId::parse(id).is_ok(),
+        _ => false,
+    }
+}
+
 pub fn sanitize_filename_or_empty(raw: &str) -> String {
     super::media_type_check::sanitize_filename_or_empty(raw)
 }
@@ -2324,6 +2337,7 @@ pub mod ffi {
         /// it up.
         fn set_proxy_live(mode: u8, url: &str) -> bool;
         fn validate_proxy_url(url: &str) -> bool;
+        fn is_valid_matrix_id(sigil: u8, id: &str) -> bool;
 
         /// Compare a received file's name, declared mime and leading bytes
         /// (pass up to ~8 KiB) before handing it to an OS viewer.
@@ -5036,5 +5050,27 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
             sample_rate,
             num_channels,
         );
+    }
+}
+
+#[cfg(test)]
+mod matrix_id_tests {
+    use super::is_valid_matrix_id;
+
+    #[test]
+    fn accepts_well_formed_ids() {
+        assert!(is_valid_matrix_id(b'@', "@bob:example.org"));
+        assert!(is_valid_matrix_id(b'#', "#room:example.org"));
+        assert!(is_valid_matrix_id(b'!', "!abc:example.org"));
+        assert!(is_valid_matrix_id(b'$', "$eventid"));
+    }
+
+    #[test]
+    fn rejects_malformed_ids() {
+        assert!(!is_valid_matrix_id(b'@', "bob:example.org"));
+        assert!(!is_valid_matrix_id(b'@', "@bob"));
+        assert!(!is_valid_matrix_id(b'@', "@bob :example.org"));
+        assert!(!is_valid_matrix_id(b'#', "@bob:example.org"));
+        assert!(!is_valid_matrix_id(b'?', "?x:example.org"));
     }
 }

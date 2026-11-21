@@ -48,7 +48,7 @@ A **room** is a conversation, a **space** is a folder of rooms, and a **thread**
 | Send a voice message | Click the microphone button to start recording and click again to stop. The cancel button discards it |
 | Send a GIF | Type `/gif cats` |
 
-Other slash commands: `/me`, `/shrug`, `/spoiler`, `/join`, `/leave`, `/invite`, `/location`, `/poll`.
+Other slash commands: `/me`, `/shrug`, `/spoiler`, `/join`, `/leave`, `/invite`, `/dm @user:server` (open a direct message), `/location`, `/poll`.
 
 Photos lose their location and camera data (EXIF/GPS) before upload, so you don't leak where you took them.
 

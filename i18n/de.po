@@ -7265,3 +7265,15 @@ msgstr "Mit SSO anmelden"
 #, c++-format
 msgid "Continue with {0}"
 msgstr "Weiter mit {0}"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Open a direct message with a user"
+msgstr "Direktnachricht mit einer Person öffnen"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Usage: /dm @user:server"
+msgstr "Verwendung: /dm @nutzer:server"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't open a direct message"
+msgstr "Direktnachricht konnte nicht geöffnet werden"

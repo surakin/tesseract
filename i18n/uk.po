@@ -7856,3 +7856,15 @@ msgstr "Увійти через SSO"
 #, c++-format
 msgid "Continue with {0}"
 msgstr "Продовжити через {0}"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Open a direct message with a user"
+msgstr "Відкрити особисте повідомлення з користувачем"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Usage: /dm @user:server"
+msgstr "Використання: /dm @користувач:сервер"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't open a direct message"
+msgstr "Не вдалося відкрити особисте повідомлення"

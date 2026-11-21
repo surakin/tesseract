@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- feat(chat): a /dm @user:server command opens a direct message with that user. Linux build, ctest
 - fix(calls): a video call started with the camera off keeps its camera button, so the camera can be turned on later. Linux release build, ctest 4001/4001
 - fix(calls): avatars in the call lobby and on call tiles are no longer blurry. Linux release build, ctest 4001/4001
 - ci(smoke): the smoke test now also signs in through single sign-on, against a fake identity provider. local Synapse and fake provider check

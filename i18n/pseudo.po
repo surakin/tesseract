@@ -7706,3 +7706,15 @@ msgstr "[Sïgñ ïñ wïth SSÖxxx]"
 #, c++-format
 msgid "Continue with {0}"
 msgstr "[Çöñtïñùé wïth {0}xxx]"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Open a direct message with a user"
+msgstr "[Öpéñ à dïréçt méssàgé wïth à ùsérxxxxxx]"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Usage: /dm @user:server"
+msgstr "[Ùsàgé: /dm @ùsér:sérvérxxxx]"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't open a direct message"
+msgstr "[Çöùldñ't öpéñ à dïréçt méssàgéxxxxxx]"

@@ -964,6 +964,20 @@ ShellBase::dispatch_room_send_(const std::string& room_id, const std::string& bo
         out.handled_as_command = true;
         return out;
     }
+    if (auto args = tesseract::parse_slash_args(body, "dm"))
+    {
+        const std::string user_id = args->empty() ? std::string() : args->front();
+        if (!tesseract::is_user_id(user_id))
+        {
+            show_status_message_(tk::tr("Usage: /dm @user:server"), 4000);
+        }
+        else
+        {
+            handle_open_dm_(user_id);
+        }
+        out.handled_as_command = true;
+        return out;
+    }
     out.handled_as_command = false;
 
     // Maps-link-to-location: only when the ENTIRE trimmed body is a single

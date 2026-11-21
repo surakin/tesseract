@@ -401,6 +401,10 @@ public:
     /// True if `url` is an `http(s)://[user:pass@]host:port` proxy URL.
     static bool is_valid_proxy_url(const std::string& url);
 
+    /// Strict Matrix identifier check (ruma's parser). `sigil` is '@' (user),
+    /// '!' (room), '#' (room alias) or '$' (event); any other value is false.
+    static bool is_valid_matrix_id(char sigil, const std::string& id);
+
     /// Parsed representation of a `https://matrix.to/#/…` URL or a
     /// `matrix:` URI (MSC2312).  `kind == Unknown` for unrecognised input.
     struct MatrixLink

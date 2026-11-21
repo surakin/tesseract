@@ -243,6 +243,7 @@ const std::vector<SlashCommandDescriptor>& available_commands()
         {"join", "<#room:server>", tk::tr("Join a room by alias or ID")},
         {"leave", "", tk::tr("Leave the current room")},
         {"invite", "<@user:server> [reason]", tk::tr("Invite a user to the current room")},
+        {"dm", "<@user:server>", tk::tr("Open a direct message with a user")},
         {"gif", "<search>", tk::tr("Search for a GIF to send")},
         {"sticker", "<search>", tk::tr("Search for a sticker to send")},
         {"selfie", "", tk::tr("Take a selfie and attach it")},
@@ -548,39 +549,21 @@ bool parse_integer_token(const std::string& t, long long& out)
     return out >= -kMaxSafe && out <= kMaxSafe;
 }
 
-// `<sigil>localpart:server` with a non-empty localpart and server and no
-// whitespace or control characters: the shape a Matrix identifier can take.
-bool looks_like_sigil_id(const std::string& t, char sigil)
-{
-    if (t.size() < 4 || t.front() != sigil)
-    {
-        return false;
-    }
-    for (unsigned char c : t)
-    {
-        if (c <= ' ' || c == 0x7f)
-        {
-            return false;
-        }
-    }
-    const auto colon = t.find(':');
-    return colon != std::string::npos && colon > 1 && colon + 1 < t.size();
-}
 bool looks_like_user_id(const std::string& t)
 {
-    return looks_like_sigil_id(t, '@');
+    return Client::is_valid_matrix_id('@', t);
 }
 bool looks_like_room_id(const std::string& t)
 {
-    return looks_like_sigil_id(t, '!');
+    return Client::is_valid_matrix_id('!', t);
 }
 bool looks_like_room_alias(const std::string& t)
 {
-    return looks_like_sigil_id(t, '#');
+    return Client::is_valid_matrix_id('#', t);
 }
 bool looks_like_event_id(const std::string& t)
 {
-    return t.size() > 1 && t.front() == '$';
+    return Client::is_valid_matrix_id('$', t);
 }
 // Server names have no sigil — loosely accept anything with no whitespace
 // and at least one '.' or ':' (port), matching the shape of a DNS name or
@@ -977,6 +960,11 @@ std::string format_bot_command_display(const std::string& command,
         out += " " + name + ": " + display_argument_value(value);
     }
     return out;
+}
+
+bool is_user_id(const std::string& text)
+{
+    return looks_like_user_id(text);
 }
 
 } // namespace tesseract

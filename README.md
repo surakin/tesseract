@@ -149,7 +149,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Ctrl+Tab / Ctrl+Shift+Tab MRU room switcher (Alt-Tab-style: hold Ctrl, tap Tab to cycle recently-visited rooms, release to jump; Escape cancels); recent rooms are remembered per account across restarts
 - Full-text message search across all rooms, including encrypted rooms (Ctrl+Shift+F / ⌘⇧F) — opt-in local index
 - Room search (filter by name), and a room browser with a searchable, remembered server picker
-- Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /gif, /selfie, /location, /poll)
+- Slash commands (/me, /shrug, /slap, /spoiler, /myroomnick, /myroomavatar, /join, /leave, /invite, /dm, /gif, /selfie, /location, /poll)
 - Room tags (favorite, low priority)
 - Room creation (name, topic, alias, public/private)
 - Room knocking: request to join a knock-restricted room, with admin/moderator review (accept / deny / deny-and-ban)

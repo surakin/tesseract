@@ -373,6 +373,12 @@ bool Client::is_valid_proxy_url(const std::string& url)
     return tesseract_ffi::validate_proxy_url(rust::Str(url.data(), url.size()));
 }
 
+bool Client::is_valid_matrix_id(char sigil, const std::string& id)
+{
+    return tesseract_ffi::is_valid_matrix_id(static_cast<std::uint8_t>(sigil),
+                                             rust::Str(id.data(), id.size()));
+}
+
 bool Client::is_launchable_url(std::string_view url)
 {
     auto has_prefix_ci = [url](std::string_view prefix)

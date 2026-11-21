@@ -441,6 +441,7 @@ void ShellBase::handle_open_dm_(const std::string& user_id, const std::string& r
                     }
                     else
                     {
+                        show_status_message_(tk::tr("Couldn't open a direct message"), 5000);
                         // Reset so the user can retry.
                         if (room_view_)
                         {

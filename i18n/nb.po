@@ -5629,3 +5629,15 @@ msgstr "Logg inn med SSO"
 #, c++-format
 msgid "Continue with {0}"
 msgstr "Fortsett med {0}"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Open a direct message with a user"
+msgstr "Åpne en direktemelding med en bruker"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Usage: /dm @user:server"
+msgstr "Bruk: /dm @bruker:server"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't open a direct message"
+msgstr "Kunne ikke åpne direktemeldingen"
