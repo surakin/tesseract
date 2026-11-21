@@ -4,6 +4,11 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+
+## v0.9.10 — 2026-11-21
+
+### Summary
+
 - chore(sdk): update matrix-rust-sdk to the 2026-11-19 fork head, with a ruma update. Linux release build, ctest 4006/4006, cargo 1747/1747
 - fix(packaging): the Debian package now depends on libqt6concurrent6, so the app starts on systems without it. CMake configure
 - fix(rooms): the room list keeps its last-message preview when the last message is an edited picture, video, file or audio. Linux release build, cargo test
@@ -21,7 +26,6 @@ Tagged releases summarize all changes since the previous tag.
 - chore(build): compiler warnings are now errors in every C++ and Rust build configuration. Linux debug and release builds, ctest 3961/3961, cargo 1733/1733
 - fix(calls): call audio no longer crashes when the system drops the audio output stream; the stream is rebuilt. Linux release build
 - fix(timeline): call membership and slot state events no longer show as unhandled events. cargo 1733/1733
-
 - fix(calls): sticky call members are no longer ignored when the room's call slot was written before Tesseract started. Linux release build, manual test
 - feat(timeline): room topic changes now show in the timeline, like room name changes. Windows debug build, ctest 3926/3927
 - fix(windows): text drawn after an avatar no longer goes missing after a GPU reset. Windows debug build, ctest

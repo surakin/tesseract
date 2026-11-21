@@ -1,6 +1,22 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-11-20**. 4000 C++ + 1745 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-11-21**. 4006 C++ + 1747 Rust tests.
+
+> **Single sign-on, translations and chat commands (2026-11-21, v0.9.10).**
+> Servers that use single sign-on (`m.login.sso`) get a sign-in button per
+> identity provider, and a smoke test covers the flow. European and Brazilian
+> Portuguese translations are added. `/dm @user:server` opens a direct message,
+> and `/selfie`, `/poll`, `/leave` and `/dm` now act in the pop-out window they
+> were typed in. Server ACL changes group with other membership events into one
+> expandable row.
+
+> **Room list and calls (2026-11-21, v0.9.10).**
+> The room list shows each room's last message again without opening the room,
+> including when the last message is an edited picture, video, file or audio.
+> A video call started with the camera off keeps its camera button, call lobby
+> and tile avatars are sharp, and call audio recovers when the system drops the
+> output stream. Compiler warnings are errors in every build, and the Debian
+> package depends on `libqt6concurrent6`.
 
 > **Window reopen, link pills and service members (2026-11-16, v0.9.9).**
 > Extra account windows reopen on launch with the same accounts, sizes and
