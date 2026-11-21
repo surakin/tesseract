@@ -988,7 +988,7 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
             {
                 if (mem.user_id == user_id && !mem.avatar_url.empty())
                 {
-                    return avatar_image_(mem.avatar_url);
+                    return call_avatar_image_(mem.avatar_url);
                 }
             }
             return nullptr;
@@ -1389,7 +1389,7 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
             if (it != people.end() && !it->second.second.empty())
             {
                 const std::string mxc = it->second.second;
-                return avatar_image_(mxc);
+                return call_avatar_image_(mxc);
             }
         }
         return nullptr;

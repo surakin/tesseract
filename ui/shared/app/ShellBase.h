@@ -5270,18 +5270,29 @@ protected:
     // timeline's), so the picker never holds timeline-sized frames.
     void ensure_picker_sticker_(const std::string& url);
 
-    // Edge in device pixels of the user-profile panel's avatar (widget size ×
-    // display scale); its server thumbnail is requested and decoded at this
-    // size so the large avatar is not an upscaled list-size one.
-    int profile_avatar_px_() const;
-    tk::CacheKey profile_avatar_key_(const std::string& mxc) const;
-    // Fetch + decode the profile-panel avatar (animated when avatars animate).
-    // Idempotent; the panel falls back to the list-size avatar meanwhile.
+    // Large avatars (profile panel, call tiles) request and decode their
+    // server thumbnail at the widget's size (logical_px × display scale), so
+    // they are not an upscaled list-size avatar.
+    tk::CacheKey sized_avatar_key_(const std::string& mxc, float logical_px) const;
+    // Fetch + decode an avatar at logical_px (animated when avatars animate).
+    // Idempotent; callers fall back to the list-size avatar meanwhile.
+    void ensure_sized_avatar_(const std::string& mxc, float logical_px);
+    // Lookup: the sized image when cached (current frame when animated, frozen
+    // in low power), else avatar_image_(). Never fetches.
+    const tk::Image* sized_avatar_image_(const std::string& mxc, float logical_px);
+    // The profile panel's avatar (sized to UserProfilePanel::kAvatarDiameter).
     void ensure_profile_avatar_(const std::string& mxc);
-    // Panel avatar lookup: the profile-size image when cached (current frame
-    // when animated, frozen in low power), else avatar_image_(). Never fetches.
     const tk::Image* profile_avatar_image_(const std::string& mxc);
 
+    // Edge, in logical px, that the call lobby / call tile avatars are fetched at.
+    static constexpr float kCallAvatarLogicalPx = 256.0f;
+    // Sized avatar for a call tile: starts the fetch if needed and returns the
+    // best image available now.
+    const tk::Image* call_avatar_image_(const std::string& mxc)
+    {
+        ensure_sized_avatar_(mxc, kCallAvatarLogicalPx);
+        return sized_avatar_image_(mxc, kCallAvatarLogicalPx);
+    }
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
     // relayout the main surface and every pop-out.

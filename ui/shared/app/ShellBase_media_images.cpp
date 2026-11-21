@@ -458,26 +458,25 @@ void ShellBase::ensure_picker_sticker_(const std::string& url)
                           /*w=*/0, /*h=*/0, /*animated=*/false, MediaKind::Sticker, key);
 }
 
-int ShellBase::profile_avatar_px_() const
+tk::CacheKey ShellBase::sized_avatar_key_(const std::string& mxc, float logical_px) const
 {
-    return std::max(1, static_cast<int>(
-                           std::lround(views::UserProfilePanel::kAvatarDiameter * current_scale_)));
-}
-
-tk::CacheKey ShellBase::profile_avatar_key_(const std::string& mxc) const
-{
-    const int px = profile_avatar_px_();
+    const int px = std::max(1, static_cast<int>(std::lround(logical_px * current_scale_)));
     return tk::CacheKey::profile_avatar(mxc, px, px);
 }
 
 void ShellBase::ensure_profile_avatar_(const std::string& mxc)
+{
+    ensure_sized_avatar_(mxc, views::UserProfilePanel::kAvatarDiameter);
+}
+
+void ShellBase::ensure_sized_avatar_(const std::string& mxc, float logical_px)
 {
     // Only plain mxc:// avatars have a sized server thumbnail to ask for.
     if (!mxc.starts_with("mxc://") || media_decode_failed_.contains(mxc))
     {
         return;
     }
-    const tk::CacheKey key = profile_avatar_key_(mxc);
+    const tk::CacheKey key = sized_avatar_key_(mxc, logical_px);
     if (account_manager_.image_cache().contains(key) || account_manager_.anim_cache().has(key))
     {
         return;
@@ -500,7 +499,12 @@ void ShellBase::ensure_profile_avatar_(const std::string& mxc)
 
 const tk::Image* ShellBase::profile_avatar_image_(const std::string& mxc)
 {
-    const tk::CacheKey key = profile_avatar_key_(mxc);
+    return sized_avatar_image_(mxc, views::UserProfilePanel::kAvatarDiameter);
+}
+
+const tk::Image* ShellBase::sized_avatar_image_(const std::string& mxc, float logical_px)
+{
+    const tk::CacheKey key = sized_avatar_key_(mxc, logical_px);
     if (const auto* f = account_manager_.anim_cache().peek_frame(key, low_power_active()))
     {
         start_anim_tick_();
