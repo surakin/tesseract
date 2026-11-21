@@ -4,6 +4,7 @@
 #include "app/ShellBase.h"
 #include "app/SmokeFeatures.h"
 
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -62,11 +63,34 @@ void ShellBase::add_smoke_room_step_(std::vector<smoke::Step>& steps,
                          }});
         return;
     }
+    // A room with no known timestamp sorts last and only gets its preview
+    // backfilled once it scrolls into view, which a small CI window never
+    // shows. While the check is unmet, ask for that backfill the way a scroll
+    // would (idempotent: the SDK ignores the request while a pass is running).
+    auto last_kick = std::make_shared<std::chrono::steady_clock::time_point>();
     steps.push_back({"room:" + check.name,
-                     [this, room_id, expect]
+                     [this, room_id, expect, last_kick]
                      {
                          const auto* r = find_room(rooms_, room_id);
-                         return r && smoke::room_mismatch(*r, expect).empty();
+                         if (r && smoke::room_mismatch(*r, expect).empty())
+                         {
+                             return true;
+                         }
+                         const auto now = std::chrono::steady_clock::now();
+                         if (now - *last_kick >= std::chrono::seconds(3))
+                         {
+                             *last_kick = now;
+                             auto sess = active_account_;
+                             run_async_(
+                                 [sess, room_id]
+                                 {
+                                     if (sess && sess->client)
+                                     {
+                                         sess->client->start_background_backfill({room_id});
+                                     }
+                                 });
+                         }
+                         return false;
                      },
                      90000,
                      [this, room_id, expect]
