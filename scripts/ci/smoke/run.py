@@ -4,7 +4,7 @@
   run.py --name qt6 --ca CA --secret-file F --workdir D [--isolate xdg] -- APP...
 
 Seeds a fresh user, a plain room and an encrypted room on the running Synapse,
-then launches the app (built with TESSERACT_ENABLE_SMOKE_MODE) four times on
+then launches the app (built with TESSERACT_ENABLE_SMOKE_MODE) once per phase on
 the same isolated profile, with the TESSERACT_SMOKE_* environment and
 `--smoke-test=<result-PHASE.json>` appended:
 
@@ -12,6 +12,9 @@ the same isolated profile, with the TESSERACT_SMOKE_* environment and
               plain room, then send an E2EE PONG in the encrypted room. The
               server must have the PONG in plaintext, the E2EE one only as
               m.room.encrypted, and the user must have gained one device.
+  features    relaunch without credentials on the same profile: the app opens
+              the seeded features room and checks each event against the
+              manifest (features.py); it stays signed in.
   restore     relaunch without credentials: the stored session must bring the
               app back signed in. Receives a new PING, sends a new PONG, then
               signs out; the server must have dropped the app's device.
@@ -48,11 +51,12 @@ import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from features import seed_app_actions, seed_features, seed_room_list  # noqa: E402
 from seed import seed  # noqa: E402
 from smokelib import Server  # noqa: E402
 from sso_browser import complete_sso  # noqa: E402
 from seed import post_ping  # noqa: E402
-from verify import app_devices, encrypted_pong_sent, pong_delivered  # noqa: E402
+from verify import app_devices, encrypted_pong_sent, pong_delivered, verify_app_actions  # noqa: E402
 
 
 def isolated_env(mode, root: Path):
@@ -208,7 +212,7 @@ def main():
 
 
 def run_phases(args, cmd, root, server, state, state_path, base_env, session_root):
-    """Runs the four launches; returns the process exit status."""
+    """Runs the phase launches; returns the process exit status."""
     def launch(phase, extra, during=None):
         env = dict(base_env, TESSERACT_SMOKE_PHASE=phase, **extra)
         return run_app(args, cmd, root, phase, env, during)
@@ -299,8 +303,32 @@ def run_phases(args, cmd, root, server, state, state_path, base_env, session_roo
         TESSERACT_SMOKE_E2EE_PONG=state["e2ee_pong"],
     )
 
+    def features_env():
+        shared_secret = Path(args.secret_file).read_text().strip()
+        seeded = seed_features(server, state, shared_secret)
+        seeded["checks"] += seed_room_list(server, state)
+        seeded["checks"] += seed_app_actions(
+            seeded["features_room_id"],
+            secrets.token_hex(4),
+            work_dir=str(root),
+            bot_user=state["bot_user"],
+        )
+        state["features"] = seeded
+        state_path.write_text(json.dumps(state))
+        path = root / "features.json"
+        path.write_text(
+            json.dumps(
+                {"features_room_id": seeded["features_room_id"], "checks": seeded["checks"]}
+            )
+        )
+        return {"TESSERACT_SMOKE_FEATURES_FILE": str(path)}
+
+    def features_checks():
+        return verify_app_actions(server, state, state["features"])
+
     def phases():
         yield "fresh", lambda: fresh_env, fresh_checks
+        yield "features", features_env, features_checks
         # A new ping so the restore phase proves it receives live, not stale.
         def restore_env():
             ping, pong = post_ping(server, state["bot_token"], state["room_id"])
@@ -317,8 +345,15 @@ def run_phases(args, cmd, root, server, state, state_path, base_env, session_roo
         yield "sso", sso_env, sso_checks
 
     for phase, make_env, checks in phases():
+        try:
+            env = make_env()
+        except RuntimeError as e:
+            # Seeding talks to Synapse; a 4xx there is a failed phase, not a crash.
+            print(f"[{args.name}] {phase}: FAIL: seeding failed: {e}", file=sys.stderr)
+            summary(f"- **{args.name}** {phase}: FAIL, seeding failed: {e}")
+            return 1
         ok, reason, result = launch(
-            phase, make_env(), sso_during if phase == "sso" else None)
+            phase, env, sso_during if phase == "sso" else None)
         if ok:
             reason = checks()
             ok = not reason

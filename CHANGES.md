@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- ci(smoke): a new smoke phase checks how the app shows received events and the room list, and what it sends. Linux release build, ctest 4021/4021
+
 ## v0.9.10 — 2026-11-21
 
 ### Summary

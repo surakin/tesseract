@@ -14,6 +14,7 @@
 - [Building](BUILD.md): prerequisites, presets, build internals, tests.
 - [Developing](DEVELOPING.md): ground rules and recipes (string, setting, shortcut, FFI call, test).
 - [Code style](../STYLE.md).
+- [Smoke test coverage](SMOKE-COVERAGE.md): what the CI smoke test checks and what it could check next.
 
 ## How it works
 

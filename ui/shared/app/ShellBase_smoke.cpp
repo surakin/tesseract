@@ -3,12 +3,14 @@
 // TESSERACT_ENABLE_SMOKE_MODE.
 
 #include "app/ShellBase.h"
+#include "app/SmokeFeatures.h"
 #include "views/MainAppWidget.h"
 
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -40,6 +42,9 @@ std::string smoke_env(const char* name)
 
 struct SmokeEnv
 {
+    // "features": relaunch on the same profile (no credentials) and check the
+    // events the seeded features room delivers against
+    // TESSERACT_SMOKE_FEATURES_FILE; it does not sign out.
     // "fresh" (default): sign in with a password, then the plain and encrypted
     // room checks. "restore": relaunch on the same profile, expect to be
     // signed in without credentials, then sign out. "signed-out": relaunch
@@ -58,10 +63,12 @@ struct SmokeEnv
     std::string e2ee_room_id = smoke_env("TESSERACT_SMOKE_E2EE_ROOM_ID");
     std::string e2ee_pong = smoke_env("TESSERACT_SMOKE_E2EE_PONG");
     std::string sso_url_file = smoke_env("TESSERACT_SMOKE_SSO_URL_FILE");
+    std::string features_file = smoke_env("TESSERACT_SMOKE_FEATURES_FILE");
 
     bool known_phase() const
     {
-        return phase == "fresh" || phase == "restore" || phase == "signed-out" || phase == "sso";
+        return phase == "fresh" || phase == "features" || phase == "restore" ||
+               phase == "signed-out" || phase == "sso";
     }
 
     std::string missing() const
@@ -89,6 +96,10 @@ struct SmokeEnv
         {
             check(homeserver, "TESSERACT_SMOKE_HOMESERVER");
             check(sso_url_file, "TESSERACT_SMOKE_SSO_URL_FILE");
+        }
+        if (phase == "features")
+        {
+            check(features_file, "TESSERACT_SMOKE_FEATURES_FILE");
         }
         if (phase == "fresh" || phase == "restore")
         {
@@ -124,7 +135,15 @@ struct SmokeFlags
 
 void ShellBase::smoke_observe_(const std::string& room_id, const Event& ev)
 {
-    if (!smoke_director_ || ev.body.empty())
+    if (!smoke_director_)
+    {
+        return;
+    }
+    if (smoke_record_all_ && !ev.event_id.empty())
+    {
+        smoke_events_[ev.event_id] = ev;
+    }
+    if (ev.body.empty())
     {
         return;
     }
@@ -167,7 +186,7 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
     if (!env->known_phase())
     {
         fail_step("env", "unknown TESSERACT_SMOKE_PHASE '" + env->phase +
-                             "' (want fresh, restore, signed-out or sso)");
+                             "' (want fresh, features, restore, signed-out or sso)");
     }
     else if (const auto missing = env->missing(); !missing.empty())
     {
@@ -199,12 +218,11 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
             return nullptr;
         };
 
-        // room, open, [receive], send, echo for one room. `prefix` namespaces
-        // the step names; an empty `ping` skips the receive step (the bot
-        // cannot write into an encrypted room).
-        auto add_room_steps = [this, &steps, dismiss_encryption_dialog,
-                               find_seen](const std::string& prefix, const std::string& room_id,
-                                          const std::string& ping, const std::string& pong)
+        // Waits for the room to appear in the room list, then opens it.
+        // Subscribing before the SDK knows the room fails with no retry, so
+        // every phase that opens a room goes through these two steps.
+        auto add_room_open_steps = [this, &steps, dismiss_encryption_dialog](
+                                       const std::string& prefix, const std::string& room_id)
         {
             steps.push_back({prefix + "room",
                              [this, room_id, dismiss_encryption_dialog]
@@ -241,6 +259,16 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
                              {
                                  return "current room '" + current_room_id_ + "'";
                              }});
+        };
+
+        // room, open, [receive], send, echo for one room. `prefix` namespaces
+        // the step names; an empty `ping` skips the receive step (the bot
+        // cannot write into an encrypted room).
+        auto add_room_steps = [this, &steps, add_room_open_steps,
+                               find_seen](const std::string& prefix, const std::string& room_id,
+                                          const std::string& ping, const std::string& pong)
+        {
+            add_room_open_steps(prefix, room_id);
 
             if (!ping.empty())
             {
@@ -440,6 +468,63 @@ void ShellBase::start_smoke_director_(smoke::SmokeHost& host, std::string result
 
             add_room_steps("", env->room_id, env->ping, env->pong);
             add_room_steps("e2ee-", env->e2ee_room_id, {}, env->e2ee_pong);
+        }
+        else if (env->phase == "features")
+        {
+            smoke_record_all_ = true;
+
+            // No credentials in this phase: the stored session must be enough.
+            steps.push_back({"restored",
+                             [this]
+                             {
+                                 return !my_user_id_.empty();
+                             },
+                             60000,
+                             [login_view]
+                             {
+                                 return std::string(login_view() ? "login view is showing"
+                                                                 : "no login view") +
+                                        ", no signed-in user";
+                             }});
+
+            // Kick and ban rows are hidden unless membership events are on.
+            // Set the Rust-side flag directly (never through Settings, which
+            // would persist it) before the features room is first subscribed.
+            steps.push_back({"features-membership",
+                             [this]
+                             {
+                                 if (!client_)
+                                 {
+                                     return false;
+                                 }
+                                 client_->set_show_membership_events(true);
+                                 return true;
+                             },
+                             30000,
+                             []
+                             {
+                                 return std::string("no client to enable membership events on");
+                             }});
+
+            // The room is created after the `fresh` run, so the SDK may not
+            // know it yet; wait for it before the first subscribe.
+            std::string manifest_text;
+            {
+                std::ifstream in(env->features_file, std::ios::binary);
+                manifest_text.assign(std::istreambuf_iterator<char>(in),
+                                     std::istreambuf_iterator<char>());
+            }
+            const std::string features_room = smoke::manifest_features_room_id(manifest_text);
+            if (features_room.empty())
+            {
+                fail_step("features-manifest",
+                          "the manifest names no features_room_id in '" + env->features_file + "'");
+            }
+            else
+            {
+                add_room_open_steps("features-", features_room);
+                add_smoke_feature_steps_(steps, env->features_file);
+            }
         }
         else if (env->phase == "restore")
         {

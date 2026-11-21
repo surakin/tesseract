@@ -69,6 +69,10 @@
 #endif
 #ifdef TESSERACT_SMOKE_MODE_ENABLED
 #include "app/SmokeDirector.h"
+namespace tesseract::smoke
+{
+struct FeatureCheck;
+}
 #include "views/LoginView.h"
 #endif
 
@@ -4485,6 +4489,19 @@ private:
     };
     std::vector<SmokeSeen> smoke_seen_;
     std::vector<std::string> smoke_needles_; // bodies worth recording
+    /// `features` phase: every delivered event by id, latest state wins so an
+    /// edit or redaction replaces the stored copy.
+    bool smoke_record_all_ = false;
+    std::map<std::string, Event> smoke_events_;
+    /// Adds `event:`, `room:`, `order:` and `action:` steps for the manifest checks
+    /// at `manifest_path` (ShellBase_smoke_features.cpp).
+    void add_smoke_feature_steps_(std::vector<smoke::Step>& steps,
+                                  const std::string& manifest_path);
+    void add_smoke_room_step_(std::vector<smoke::Step>& steps, const smoke::FeatureCheck& check);
+    void add_smoke_order_step_(std::vector<smoke::Step>& steps, const smoke::FeatureCheck& check);
+    /// An `action:` step: the app sends, edits, deletes, reacts or replies as a
+    /// user would, then waits for the result to come back through the timeline.
+    void add_smoke_action_step_(std::vector<smoke::Step>& steps, const smoke::FeatureCheck& check);
     std::unique_ptr<smoke::SmokeDirector> smoke_director_;
 
 protected:

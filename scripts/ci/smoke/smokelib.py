@@ -10,6 +10,7 @@ import json
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -40,6 +41,30 @@ class Server:
                 if attempt == attempts - 1:
                     raise
                 time.sleep(2)
+
+    def upload(self, token, data, content_type, filename):
+        """Uploads raw bytes to the media repo; returns the mxc:// URI."""
+        path = "/_matrix/media/v3/upload?filename=" + urllib.parse.quote(filename)
+        req = urllib.request.Request(self.base + path, data=data, method="POST")
+        req.add_header("Content-Type", content_type)
+        req.add_header("Authorization", "Bearer " + token)
+        try:
+            with urllib.request.urlopen(req, context=self.ctx, timeout=30) as r:
+                return json.loads(r.read())["content_uri"]
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")
+            raise RuntimeError(f"POST {path} -> {e.code}: {detail}") from None
+
+    def download(self, token, path):
+        """GETs raw bytes (media); `path` includes the /_matrix prefix."""
+        req = urllib.request.Request(self.base + path, method="GET")
+        req.add_header("Authorization", "Bearer " + token)
+        try:
+            with urllib.request.urlopen(req, context=self.ctx, timeout=30) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")
+            raise RuntimeError(f"GET {path} -> {e.code}: {detail}") from None
 
     def wait_ready(self, timeout=90):
         deadline = time.time() + timeout

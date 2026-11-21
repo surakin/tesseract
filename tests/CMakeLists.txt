@@ -327,6 +327,7 @@ add_executable(tesseract_tests
     cpp/test_screenshot_fixture.cpp
     cpp/test_screenshot_view_hooks.cpp
     cpp/test_smoke_director.cpp
+    cpp/test_smoke_features.cpp
     cpp/test_tk_access_tree_extensions.cpp
     cpp/test_encryption_overlay_accessibility.cpp
     cpp/test_lists_accessibility.cpp
@@ -363,7 +364,8 @@ endif()
 # Smoke-mode sources are only in tesseract_app when the mode is ON.
 if(NOT TESSERACT_ENABLE_SMOKE_MODE)
     target_sources(tesseract_tests PRIVATE
-        ${CMAKE_SOURCE_DIR}/ui/shared/app/SmokeDirector.cpp)
+        ${CMAKE_SOURCE_DIR}/ui/shared/app/SmokeDirector.cpp
+        ${CMAKE_SOURCE_DIR}/ui/shared/app/SmokeFeatures.cpp)
 endif()
 
 # tk::clean_device_display_name() lives in platform/linux/gst_device_listing.cpp, which is
@@ -595,6 +597,11 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME layering_check
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_layering.py
                 ${CMAKE_SOURCE_DIR}/ui/shared)
+
+    # Offline unit tests of the CI smoke scripts (FakeServer only).
+    add_test(NAME smoke_scripts_unittest
+        COMMAND ${Python3_EXECUTABLE} -m unittest discover
+                -s ${CMAKE_SOURCE_DIR}/scripts/ci/smoke -p "test_*.py")
 
     # No CxxString / CxxVector across the Rust bridge (see the script).
     add_test(NAME bridge_no_cxx_strings

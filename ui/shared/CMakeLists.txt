@@ -504,7 +504,10 @@ if(TESSERACT_ENABLE_SMOKE_MODE)
     list(APPEND _app_sources
         app/SmokeDirector.h
         app/SmokeDirector.cpp
-        app/ShellBase_smoke.cpp)
+        app/SmokeFeatures.h
+        app/SmokeFeatures.cpp
+        app/ShellBase_smoke.cpp
+        app/ShellBase_smoke_features.cpp)
 endif()
 
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,
