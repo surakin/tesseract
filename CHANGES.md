@@ -4,6 +4,7 @@ Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
+- chore(sdk): update matrix-rust-sdk to the 2026-11-19 fork head, with a ruma update. Linux release build, ctest 4006/4006, cargo 1747/1747
 - fix(packaging): the Debian package now depends on libqt6concurrent6, so the app starts on systems without it. CMake configure
 - fix(rooms): the room list keeps its last-message preview when the last message is an edited picture, video, file or audio. Linux release build, cargo test
 - fix(rooms): the room list shows each room's last message again without opening the room first. Linux release build, cargo test

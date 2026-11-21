@@ -220,11 +220,9 @@ impl ClientFfi {
             client
                 .sliding_sync("encryption")?
                 .with_to_device_extension(
-                    assign!(http::request::ToDevice::default(), { enabled: Some(true) }),
+                    assign!(http::request::ToDevice::default(), { enabled: true }),
                 )
-                .with_e2ee_extension(
-                    assign!(http::request::E2EE::default(), { enabled: Some(true) }),
-                )
+                .with_e2ee_extension(assign!(http::request::E2EE::default(), { enabled: true }))
                 .build()
                 .await
         });

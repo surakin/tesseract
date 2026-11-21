@@ -759,10 +759,11 @@ pub fn take_finished(flow: &PendingFlow) -> Option<Client> {
 /// rather than surfacing a cryptic error later inside SyncService::start().
 pub(crate) async fn probe_sss_support(client: &Client) -> anyhow::Result<()> {
     let versions = client.available_sliding_sync_versions().await;
-    let has_native = versions
+    use matrix_sdk::sliding_sync::Version;
+    let has_sss = versions
         .iter()
-        .any(|v| matches!(v, matrix_sdk::sliding_sync::Version::Native));
-    if !has_native {
+        .any(|v| matches!(v, Version::Unstable | Version::Stable));
+    if !has_sss {
         anyhow::bail!(
             "This homeserver does not support Simplified Sliding Sync (SSS). \
              Tesseract requires SSS support (Synapse ≥ 1.110 or Conduit ≥ 0.7). \
