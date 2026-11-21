@@ -102,6 +102,30 @@ fn backfill_waiting_rooms(
         .collect()
 }
 
+/// Whether the visible-rooms backfill should fetch a room's preview.
+/// `cached` is the room's `backfill_previews` entry as `(kind, timestamp_ms)`.
+/// The all-rooms timestamp pass caches a room with a timestamp but no preview,
+/// and restored timestamps look the same; those still need a preview. A room
+/// that already has one, one already tried this session (`previewed`), or one
+/// with no events at all (zero timestamp) does not.
+fn visible_backfill_wanted(cached: Option<(&str, u64)>, previewed: bool) -> bool {
+    match cached {
+        None => true,
+        Some((kind, ts_ms)) => kind.is_empty() && ts_ms != 0 && !previewed,
+    }
+}
+
+/// The timestamp to cache for a room once the visible-rooms backfill has built
+/// its preview: the one an earlier pass already found (`known_ms`, zero when
+/// none), else the one this pass read from the timeline (`found_ms`).
+fn keep_known_timestamp(known_ms: u64, found_ms: u64) -> u64 {
+    if known_ms != 0 {
+        known_ms
+    } else {
+        found_ms
+    }
+}
+
 /// Whether a backfill progress update is due: `every` rooms have finished since
 /// the last one, and the minimum interval has passed since it went out
 /// (`since_last_emit` is `None` before the first).
@@ -140,6 +164,7 @@ impl ClientFfi {
         // bounded, not summed.
         let semaphore = Arc::clone(&self.warm_semaphore);
         let retry = Arc::clone(&self.backfill_retry);
+        let previewed = Arc::clone(&self.backfill_previewed);
 
         // Emit on_rooms_updated every UPDATE_EVERY completions so the
         // inactive-room count ticks up visibly during a long backfill run,
@@ -161,6 +186,7 @@ impl ClientFfi {
                     let sem = semaphore.clone();
                     let preview_cache = preview_cache.clone();
                     let retry = retry.clone();
+                    let previewed = Arc::clone(&previewed);
                     let db_conn = Arc::clone(&db_conn);
                     let in_flight = Arc::clone(&in_flight);
                     #[cfg(debug_assertions)]
@@ -188,11 +214,12 @@ impl ClientFfi {
                             return;
                         };
                         retry.lock().remove(rid.as_str());
+                        previewed.lock().insert(rid.to_string());
                         // A room that resolved to no timestamp is still cached, so it
                         // is not re-queued on every on_rooms_updated tick. The
                         // zero-timestamp sentinel is not written to backfill_ts SQLite
                         // (guarded by ts != 0 below).
-                        let bp_to_cache = preview.clone().unwrap_or(BackfillPreview {
+                        let mut bp_to_cache = preview.clone().unwrap_or(BackfillPreview {
                             room_id: rid.to_string(),
                             kind: String::new(),
                             text: String::new(),
@@ -201,24 +228,34 @@ impl ClientFfi {
                             sender_name: String::new(),
                             timestamp_ms: 0,
                         });
+                        // Keep a timestamp an earlier pass already found: it counts
+                        // message events only, while this one reads the newest
+                        // timeline item, which can be a membership or other state
+                        // event. Taking it would reorder the room list.
+                        let known_ts = preview_cache
+                            .lock()
+                            .get(rid.as_str())
+                            .map_or(0, |e| e.timestamp_ms);
+                        bp_to_cache.timestamp_ms =
+                            keep_known_timestamp(known_ts, bp_to_cache.timestamp_ms);
                         {
                             let mut cache = preview_cache.lock();
-                            cache.insert(bp_to_cache.room_id.clone(), bp_to_cache);
+                            cache.insert(bp_to_cache.room_id.clone(), bp_to_cache.clone());
                         }
-                        if let Some(ref bp) = preview {
-                            // Write the timestamp immediately so it survives
-                            // even if the task is aborted before the batch update.
-                            if bp.timestamp_ms != 0 {
-                                {
-                                    let db = db_conn.lock();
-                                    if let Some(ref conn) = *db {
-                                        let _ = conn.execute(
-                                            "INSERT OR REPLACE INTO backfill_ts \
-                                             (room_id, ts_ms) VALUES (?1, ?2)",
-                                            rusqlite::params![&bp.room_id, bp.timestamp_ms as i64],
-                                        );
-                                    }
-                                }
+                        // Persist only a timestamp this pass found itself; a known
+                        // one is already stored. Written immediately so it survives
+                        // the task being aborted before the batch update.
+                        if known_ts == 0 && bp_to_cache.timestamp_ms != 0 {
+                            let db = db_conn.lock();
+                            if let Some(ref conn) = *db {
+                                let _ = conn.execute(
+                                    "INSERT OR REPLACE INTO backfill_ts \
+                                     (room_id, ts_ms) VALUES (?1, ?2)",
+                                    rusqlite::params![
+                                        &bp_to_cache.room_id,
+                                        bp_to_cache.timestamp_ms as i64
+                                    ],
+                                );
                             }
                         }
                     });
@@ -285,10 +322,14 @@ impl ClientFfi {
         let skip: std::collections::HashSet<OwnedRoomId> =
             self.timelines.read().keys().cloned().collect();
 
-        let cached: std::collections::HashSet<String> = {
+        let cached: HashMap<String, (String, u64)> = {
             let guard = self.backfill_previews.lock();
-            guard.keys().cloned().collect()
+            guard
+                .iter()
+                .map(|(k, v)| (k.clone(), (v.kind.clone(), v.timestamp_ms)))
+                .collect()
         };
+        let previewed = self.backfill_previewed.lock().clone();
         let waiting = backfill_waiting_rooms(&self.backfill_retry);
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
@@ -299,7 +340,10 @@ impl ClientFfi {
             if skip.contains(&id) {
                 continue;
             }
-            if cached.contains(id.as_str()) || waiting.contains(id.as_str()) {
+            let entry = cached.get(id.as_str()).map(|(k, ts)| (k.as_str(), *ts));
+            if !visible_backfill_wanted(entry, previewed.contains(id.as_str()))
+                || waiting.contains(id.as_str())
+            {
                 continue;
             }
             if let Some(room) = client.get_room(&id) {
@@ -1903,12 +1947,44 @@ pub(super) async fn backfill_room_silent(
 
 #[cfg(test)]
 mod tests {
-    use super::select_prefetch_rooms;
+    use super::{keep_known_timestamp, select_prefetch_rooms, visible_backfill_wanted};
     use matrix_sdk::ruma::OwnedRoomId;
     use std::collections::HashSet;
 
     fn rid(s: &str) -> OwnedRoomId {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn visible_backfill_fetches_uncached_rooms() {
+        assert!(visible_backfill_wanted(None, false));
+    }
+
+    #[test]
+    fn visible_backfill_fetches_a_preview_for_timestamp_only_rooms() {
+        // The all-rooms timestamp pass (and a restart) leaves a timestamp and no
+        // preview; the room list would stay blank until the room is opened.
+        assert!(visible_backfill_wanted(
+            Some(("", 1_700_000_000_000)),
+            false
+        ));
+    }
+
+    #[test]
+    fn visible_backfill_skips_rooms_that_are_done() {
+        // Has a preview.
+        assert!(!visible_backfill_wanted(Some(("text", 5)), false));
+        // Already tried this session, nothing previewable.
+        assert!(!visible_backfill_wanted(Some(("", 5)), true));
+        // No events at all.
+        assert!(!visible_backfill_wanted(Some(("", 0)), false));
+    }
+
+    #[test]
+    fn keeps_the_timestamp_an_earlier_pass_found() {
+        assert_eq!(keep_known_timestamp(100, 900), 100);
+        assert_eq!(keep_known_timestamp(0, 900), 900);
+        assert_eq!(keep_known_timestamp(0, 0), 0);
     }
 
     #[test]

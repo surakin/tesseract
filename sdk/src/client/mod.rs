@@ -815,6 +815,11 @@ pub struct ClientFfi {
     /// so a failure is retried later rather than cached as "no timestamp".
     #[cfg(not(test))]
     backfill_retry: Arc<Mutex<HashMap<String, backfill::BackfillRetry>>>,
+    /// Rooms the visible-rooms backfill has already tried to build a preview
+    /// for this session, so a room whose newest events have no preview is not
+    /// fetched again on every scroll.
+    #[cfg(not(test))]
+    backfill_previewed: Arc<Mutex<std::collections::HashSet<String>>>,
     /// Per-account SQLite database for backfill state (`backfill_ts` table).
     /// Open for the lifetime of the sync session; `None` before first
     /// `start_sync` or after account switch.
@@ -1499,6 +1504,8 @@ impl ClientFfi {
             backfill_previews: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(not(test))]
             backfill_retry: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(not(test))]
+            backfill_previewed: Arc::new(Mutex::new(std::collections::HashSet::new())),
             #[cfg(not(test))]
             app_cache_db: Arc::new(Mutex::new(None)),
             #[cfg(not(test))]
