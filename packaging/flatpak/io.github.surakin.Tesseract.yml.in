@@ -92,6 +92,11 @@ modules:
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DTESSERACT_UI=qt6
+      # The Flatpak SDK already injects its own hardening flags, including
+      # -Wp,-D_FORTIFY_SOURCE=3. cmake/Hardening.cmake's -D_FORTIFY_SOURCE=2
+      # would clash with it (macro redefined, an error under -Werror), the same
+      # reason packaging/arch/PKGBUILD turns it off.
+      - -DTESSERACT_ENABLE_HARDENING=OFF
       # tests/ unconditionally FetchContents Catch2 from GitHub at configure
       # time and packaging never runs ctest anyway (see
       # packaging/arch/aur/README.md) — skip it entirely for this offline build.
