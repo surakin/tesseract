@@ -85,6 +85,7 @@ def write_config(data: Path, certs: Path, bind: str) -> Path:
         f"rc_message: {LIMIT}\n"
         f"rc_registration: {LIMIT}\n"
         f"rc_joins: {{ local: {LIMIT}, remote: {LIMIT} }}\n"
+        f"rc_room_creation: {LIMIT}\n"
         f"rc_invites: {{ per_room: {LIMIT}, per_user: {LIMIT}, per_issuer: {LIMIT} }}\n"
         "rc_login:\n"
         f"  address: {LIMIT}\n"
