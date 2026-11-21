@@ -400,6 +400,8 @@ def seed_room_list(server, state, sleep=time.sleep):
     first, so `rl_old` has the earliest activity and `rl_unread` is older than
     `rl_text`: only unread-first sorting can put it ahead. The app user marks
     every room read except `rl_unread`, so no other room is unread.
+    `rl_state_last` is created last: its preview needs a backfill, which only
+    runs for visible rows, so it must sort near the top on a small window.
     """
     nonce = secrets.token_hex(4)
     bot = Poster(server, state["bot_token"], sleep)
@@ -462,16 +464,6 @@ def seed_room_list(server, state, sleep=time.sleep):
     mark_read(edit_image, edit)
     checks.append(_room_check(edit_image, "rl_edit_image", last_message_kind="image"))
 
-    # A message, then a topic change: the preview stays the message.
-    state_last = _create_room(server, state, "rl_state_last", nonce)
-    state_body = f"smoke before topic {nonce}"
-    text(state_last, state_body)
-    topic = bot.state(state_last, "m.room.topic", {"topic": f"smoke room topic {nonce}"})
-    mark_read(state_last, topic)
-    checks.append(
-        _room_check(state_last, "rl_state_last", last_message_kind="text", last_message_body=state_body)
-    )
-
     # Invited only: the app never joins.
     invited = _create_room(server, state, "rl_invite", nonce, join=False)
     check = _room_check(invited, "rl_invite")
@@ -500,6 +492,18 @@ def seed_room_list(server, state, sleep=time.sleep):
     )
     mark_read(replaced, tomb)
     checks.append(_room_check(replaced, "rl_replaced", replaced=True))
+
+    # A message, then a topic change: the preview stays the message. Created
+    # last so it has the newest activity and sorts right after `rl_unread`:
+    # only visible rows get a backfilled preview, and this room needs one.
+    state_last = _create_room(server, state, "rl_state_last", nonce)
+    state_body = f"smoke before topic {nonce}"
+    text(state_last, state_body)
+    topic = bot.state(state_last, "m.room.topic", {"topic": f"smoke room topic {nonce}"})
+    mark_read(state_last, topic)
+    checks.append(
+        _room_check(state_last, "rl_state_last", last_message_kind="text", last_message_body=state_body)
+    )
 
     checks.append(
         {
