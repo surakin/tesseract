@@ -1068,6 +1068,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                 refresh_room_list_();
             });
     };
+    app->on_room_pane_hidden_changed = [this](bool hidden)
+    {
+        room_pane_hidden_ = hidden;
+        refresh_window_title_();
+    };
     app->on_sidebar_layout_changed = [this](float width, bool collapsed)
     {
         auto& s = tesseract::Settings::instance();

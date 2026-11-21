@@ -2519,6 +2519,20 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         notify_pins_shown_();
     }
 
+    if (root_layout_)
+    {
+        const bool hidden = root_layout_->is_narrow() &&
+                            root_layout_->active_pane() == RootLayoutWidget::Pane::List;
+        if (hidden != room_pane_hidden_)
+        {
+            room_pane_hidden_ = hidden;
+            if (on_room_pane_hidden_changed)
+            {
+                on_room_pane_hidden_changed(hidden);
+            }
+        }
+    }
+
     // The floating call layer was arranged above before the compose bar's
     // final bounds were known (and the narrow-mode re-arrange may have just
     // moved it) — re-arrange it now with the up-to-date exclusion rect.

@@ -789,6 +789,9 @@ protected:
     // main app surface. While set, compose_window_title_() stays plain
     // "Tesseract" instead of "Tesseract - <room>".
     bool app_settings_open_ = false;
+    // Narrow single-pane layout currently showing the room list: the title
+    // omits the room name (set from MainAppWidget::on_room_pane_hidden_changed).
+    bool room_pane_hidden_ = false;
     bool settings_opened_from_login_ = false;
     // Latched by take_settings_from_login_() so set_app_settings_open_(false),
     // which every shell calls right after it, knows settings closed to login.

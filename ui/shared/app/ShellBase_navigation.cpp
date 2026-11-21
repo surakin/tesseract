@@ -650,6 +650,10 @@ void ShellBase::after_active_room_changed_()
         }
     }
 
+    // current_room_id_ just changed (possibly to empty, e.g. a room popped
+    // out of its last tab): keep the window title in step on every path.
+    refresh_window_title_();
+
     // Keep the room-list highlight in sync for every navigation path, not
     // just row clicks (which the list already self-highlights immediately) —
     // covers invite-accept, permalink/matrix-link navigation, and the Add
@@ -1268,7 +1272,7 @@ void ShellBase::on_tab_state_changed_ui_()
 
 std::string ShellBase::compose_window_title_() const
 {
-    if (!app_settings_open_)
+    if (!app_settings_open_ && !room_pane_hidden_)
     {
         if (const RoomInfo* r = room_by_id_(current_room_id_); r && !r->name.empty())
         {

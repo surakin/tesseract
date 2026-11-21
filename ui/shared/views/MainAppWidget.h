@@ -411,6 +411,11 @@ public:
     };
     std::function<void(SidebarCursor)> on_sidebar_cursor;
 
+    // Fires when the room pane stops/starts being on screen because the
+    // window is narrow (single-pane) and the list pane is showing. The shell
+    // uses it to drop the room name from the window title.
+    std::function<void(bool hidden)> on_room_pane_hidden_changed;
+
     // ── tk::Widget overrides ──────────────────────────────────────────────
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -447,6 +452,7 @@ private:
     // callers (RoomHeader's back button, Escape) never switch panes behind
     // a modal's back.
     bool show_room_list_pane_narrow_();
+    bool room_pane_hidden_ = false;
 
     // The topmost currently-open MainAppWidget-level transient overlay, or
     // nullptr — priority mirrors dismiss_top_transient_()'s visual stacking
