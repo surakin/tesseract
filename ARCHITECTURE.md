@@ -141,7 +141,7 @@ the public C++ API.
 ```mermaid
 flowchart TB
     entry["ClientFfi + cxx bridge<br/>sdk/src/client/mod.rs · sdk/src/bridge.rs"]
-    authsvc["Authentication and account state<br/>oauth.rs / password_login.rs<br/>session.rs / account.rs / qr_grant.rs"]
+    authsvc["Authentication and account state<br/>oauth.rs / sso_login.rs / password_login.rs<br/>session.rs / account.rs / qr_grant.rs"]
     syncsvc["Sync and timelines<br/>sync.rs / room_list.rs<br/>timeline.rs / timeline_convert.rs / thread.rs"]
     messages["Messaging and room operations<br/>send.rs / pins.rs / tags.rs<br/>room_directory.rs / knock.rs / profile_fields.rs"]
     mediasvc["Media pipeline<br/>media.rs / media_queue.rs<br/>media_gate.rs / media_origin.rs<br/>room_media_store.rs / strip_meta.rs"]
@@ -339,7 +339,7 @@ is an in-process language boundary, not an IPC or network service.
 | Platform shells and backends | [Windows](../ui/windows/), [macOS](../ui/macos/), [Qt6](../ui/linux-qt/), [GTK4](../ui/linux-gtk/) |
 | C++ API and event bridge | [client.h](../client/include/tesseract/client.h), [event_handler_bridge.cpp](../client/src/event_handler_bridge.cpp) |
 | Rust FFI and orchestration | [bridge.rs](../sdk/src/bridge.rs), [client/mod.rs](../sdk/src/client/mod.rs) |
-| Authentication and persistence | [oauth.rs](../sdk/src/oauth.rs), [session.rs](../sdk/src/client/session.rs), [session_store.cpp](../client/src/session_store.cpp) |
+| Authentication and persistence | [oauth.rs](../sdk/src/oauth.rs), [sso_login.rs](../sdk/src/sso_login.rs), [session.rs](../sdk/src/client/session.rs), [session_store.cpp](../client/src/session_store.cpp) |
 | Native calls | [CallSession.cpp](../client/src/CallSession.cpp), [rtc](../sdk/src/client/rtc/) |
 
 Deep dives: [TOOLKIT.md](TOOLKIT.md) (widgets, canvas, host, views), [SHELLS.md](SHELLS.md) (`ShellBase`, threads, platform shells) and [BRIDGE.md](BRIDGE.md) (the Rust core and the FFI). For how to make changes, see [DEVELOPING.md](DEVELOPING.md); the full list of docs is in the [index](README.md).

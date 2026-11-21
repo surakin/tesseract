@@ -348,6 +348,17 @@ the key only matches when all of these do, so update it together with any of
 `compile-check.yml`, `package.yml`, `build-platform.yml` and `test.yml`.
 `update-screenshots.yml` uses its own keys and is not primed.
 
+### Warnings are errors
+
+First-party C/C++/Objective-C++ targets (`client/`, `ui/`, `tests/`) build with
+`-Wall -Wextra -Werror` (`/W4 /WX` on MSVC and clang-cl), in every
+configuration; `cmake/Warnings.cmake` applies it and skips third-party code.
+`-Wmissing-field-initializers` and its designated-initializer variant are off.
+The Rust crate denies warnings through `[workspace.lints.rust]` in
+`Cargo.toml`. A newer compiler that adds warnings can be built with
+`-DTESSERACT_WARNINGS_AS_ERRORS=OFF`, which keeps the C++ warnings visible but
+not fatal (the Rust `deny` stays).
+
 ### Feature options
 
 `-DTESSERACT_ENABLE_SILENT_RECOVERY_SETUP=OFF` (default `ON`) brings back the
@@ -403,14 +414,17 @@ See [CLAUDE.md](../CLAUDE.md) for the day-to-day configure/build/test command lo
 ### Smoke test
 
 `.github/workflows/smoke.yml` runs the real app against a throwaway Synapse:
-each shell is launched three times on one isolated profile. Phase `fresh`
+each shell is launched four times on one isolated profile. Phase `fresh`
 signs in with a password, syncs, shows a message another user sent, sends a
 reply in a plain room and another in an encrypted room; the server confirms the
 plain reply arrived, the encrypted one arrived only as `m.room.encrypted`, and
 the app registered one device. Phase `restore` starts without credentials and
 must come back signed in from the stored session, exchange a new ping and
 reply, then sign out; the server confirms the device is gone. Phase
-`signed-out` must show the login view and stay signed out. After `fresh`,
+`signed-out` must show the login view and stay signed out. Phase `sso` signs
+in through single sign-on: the app writes its sign-in URL to a file, `run.py`
+walks the redirect chain by hand (`sso_browser.py`), the app must sync, sign
+out, and leave no device and no login token in its log. After `fresh`,
 `run.py` also requires every `session.json` in the profile to hold only the
 `{"v":2}` marker, so a session that fell back to plaintext instead of the OS
 secret store fails the run. The Linux job turns the accessibility bridge on
@@ -421,15 +435,18 @@ certificate it signed.
 
 - App side: build with `-DTESSERACT_ENABLE_SMOKE_MODE=ON`;
   `ui/shared/app/SmokeDirector.h` runs the steps of the phase picked by
-  `TESSERACT_SMOKE_PHASE` (`fresh` by default, `restore`, `signed-out`) and
+  `TESSERACT_SMOKE_PHASE` (`fresh` by default, `restore`, `signed-out`, `sso`) and
   writes `{ok, failed_step, error, step_ms}` to the `--smoke-test=` file.
   Inputs come from `TESSERACT_SMOKE_HOMESERVER`, `_USER`, `_PASSWORD`
   (`fresh` only), `_ROOM_ID`, `_PING`, `_PONG` and, for `fresh`,
-  `_E2EE_ROOM_ID` and `_E2EE_PONG`.
+  `_E2EE_ROOM_ID` and `_E2EE_PONG`; `sso` takes `_HOMESERVER` and
+  `TESSERACT_SMOKE_SSO_URL_FILE` (where the app writes the sign-in URL).
 - Server side: `scripts/ci/smoke/` (Python standard library only, Synapse pinned
-  in `requirements.txt`): `synapse_up.py` starts Synapse, `run.py` seeds a user
-  and rooms, runs one shell through the three phases and checks the server
-  after each. `--isolate` keeps the app off a real profile: `xdg` / `windows`
+  in `requirements.txt`): `synapse_up.py` starts Synapse plus a
+  fake OpenID provider (`mock_oidc.py`, `http://127.0.0.1:8449`, registered as
+  the "Smoke SSO" identity provider; needs the `matrix-synapse[oidc]` extra,
+  already in `requirements.txt`), `run.py` seeds a user and rooms, runs one
+  shell through the four phases and checks the server after each. `--isolate` keeps the app off a real profile: `xdg` / `windows`
   point its config/data/cache variables into the work dir; `profile` (macOS)
   uses `--profile=` instead, since a relocated `HOME` leaves macOS without a
   login keychain and the first keychain write blocks on a dialog.
@@ -438,5 +455,5 @@ certificate it signed.
   `certutil -addstore Root`), start Synapse, then run `run.py ... -- <app>`.
   Linux and macOS run Synapse natively; Windows runs it inside WSL2, with WSL's
   firewall and localhost relay turned off and a `netsh` port proxy from
-  `127.0.0.1:8448` to the distro, and Synapse and the app in one step so the
+  `127.0.0.1:8448` (Synapse) and `8449` (fake provider) to the distro, and Synapse and the app in one step so the
   distro stays up.
