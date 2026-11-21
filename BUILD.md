@@ -414,11 +414,15 @@ See [CLAUDE.md](../CLAUDE.md) for the day-to-day configure/build/test command lo
 ### Smoke test
 
 `.github/workflows/smoke.yml` runs the real app against a throwaway Synapse:
-each shell is launched four times on one isolated profile. Phase `fresh`
+each shell is launched five times on one isolated profile. Phase `fresh`
 signs in with a password, syncs, shows a message another user sent, sends a
 reply in a plain room and another in an encrypted room; the server confirms the
 plain reply arrived, the encrypted one arrived only as `m.room.encrypted`, and
-the app registered one device. Phase `restore` starts without credentials and
+the app registered one device. Phase `features` relaunches on the stored
+session, opens the seeded room and checks the events the bot posted, the
+room-list previews and unread counts, and the edits, deletes, reactions, replies,
+pins, uploads, read receipt, new room and `/dm` the app sends; the server
+confirms each action, and the app stays signed in. Phase `restore` starts without credentials and
 must come back signed in from the stored session, exchange a new ping and
 reply, then sign out; the server confirms the device is gone. Phase
 `signed-out` must show the login view and stay signed out. Phase `sso` signs
@@ -435,18 +439,20 @@ certificate it signed.
 
 - App side: build with `-DTESSERACT_ENABLE_SMOKE_MODE=ON`;
   `ui/shared/app/SmokeDirector.h` runs the steps of the phase picked by
-  `TESSERACT_SMOKE_PHASE` (`fresh` by default, `restore`, `signed-out`, `sso`) and
+  `TESSERACT_SMOKE_PHASE` (`fresh` by default, `features`, `restore`, `signed-out`, `sso`) and
   writes `{ok, failed_step, error, step_ms}` to the `--smoke-test=` file.
   Inputs come from `TESSERACT_SMOKE_HOMESERVER`, `_USER`, `_PASSWORD`
   (`fresh` only), `_ROOM_ID`, `_PING`, `_PONG` and, for `fresh`,
-  `_E2EE_ROOM_ID` and `_E2EE_PONG`; `sso` takes `_HOMESERVER` and
+  `_E2EE_ROOM_ID` and `_E2EE_PONG`; `features` takes `TESSERACT_SMOKE_FEATURES_FILE`
+  (the manifest `run.py` writes to `<root>/features.json`); `sso` takes `_HOMESERVER` and
   `TESSERACT_SMOKE_SSO_URL_FILE` (where the app writes the sign-in URL).
 - Server side: `scripts/ci/smoke/` (Python standard library only, Synapse pinned
   in `requirements.txt`): `synapse_up.py` starts Synapse plus a
   fake OpenID provider (`mock_oidc.py`, `http://127.0.0.1:8449`, registered as
   the "Smoke SSO" identity provider; needs the `matrix-synapse[oidc]` extra,
   already in `requirements.txt`), `run.py` seeds a user and rooms, runs one
-  shell through the four phases and checks the server after each. `--isolate` keeps the app off a real profile: `xdg` / `windows`
+  shell through the five phases and checks the server after each.
+  `ctest -R smoke_scripts_unittest` runs the harness's offline Python tests. `--isolate` keeps the app off a real profile: `xdg` / `windows`
   point its config/data/cache variables into the work dir; `profile` (macOS)
   uses `--profile=` instead, since a relocated `HOME` leaves macOS without a
   login keychain and the first keychain write blocks on a dialog.

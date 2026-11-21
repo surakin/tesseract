@@ -29,7 +29,6 @@
     --text-muted: #A0A0A6;
     --text-on-accent: #FFFFFF;
     --accent: #0084FF;
-    --accent-rgb: 0, 132, 255;
     --accent-hover: #1A92FF;
     --accent-pressed: #006BD1;
     --destructive: #D93636;
@@ -70,7 +69,6 @@
     --text-muted: #808088;
     --text-on-accent: #FFFFFF;
     --accent: #4DA3FF;
-    --accent-rgb: 77, 163, 255;
     --accent-hover: #66B3FF;
     --accent-pressed: #3388E0;
     --destructive: #E45656;
@@ -93,6 +91,30 @@
     --page-muted: #9AA0AC;
   }
 
+  /* Use the visitor's system accent colour, derived the way the app's
+     "System" accent does it. Browsers without relative colour syntax or
+     AccentColor keep the blue above. */
+  @supports (color: oklch(from AccentColor l c h)) {
+    :root {
+      --accent: oklch(from AccentColor clamp(.42, l, .62) c h);
+      --accent-hover: oklch(from var(--accent) calc(l + .05) c h);
+      --accent-pressed: oklch(from var(--accent) calc(l - .06) c h);
+      --text-on-accent: oklch(from var(--accent) clamp(0, (.68 - l) * 1000, 1) 0 0);
+      --unread-bg: var(--accent);
+      --unread-text: var(--text-on-accent);
+      --chip-bg-me: oklch(from var(--accent) .92 calc(c * .4) h);
+      --chip-border-me: oklch(from var(--accent) .80 calc(c * .6) h);
+      --chip-text-me: oklch(from var(--accent) .38 c h);
+      --avatar-bg: var(--chip-bg-me);
+      --avatar-text: var(--chip-text-me);
+    }
+    html[data-theme="dark"] {
+      --accent: oklch(from AccentColor clamp(.68, l, .82) c h);
+      --chip-bg-me: oklch(from var(--accent) .32 calc(c * .6) h);
+      --chip-border-me: oklch(from var(--accent) .42 calc(c * .7) h);
+      --chip-text-me: oklch(from var(--accent) .88 calc(c * .5) h);
+    }
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; max-width: 100%; overflow-x: hidden; }
   body {
@@ -180,6 +202,34 @@
     background: var(--presence-online); margin-left: auto; flex: none;
   }
 
+  /* Space picker rail: pinned spaces, left of the room list. */
+  .space-rail {
+    width: 56px; flex: none; background: var(--chrome-bg);
+    border-right: 1px solid var(--separator);
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px; padding: 8px 0; overflow-y: auto; min-height: 0;
+  }
+  .space-tab {
+    width: 44px; height: 44px; flex: none; border-radius: 10px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-secondary);
+  }
+  .space-tab:hover { background: var(--sidebar-hover); }
+  .space-tab.active { background: var(--sidebar-selected); color: var(--text-primary); }
+  /* Accent pill on the rail's left edge, outside the tab fill. */
+  .space-tab.active::before {
+    content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px;
+    width: 3px; border-radius: 1.5px; background: var(--accent);
+  }
+  .space-tab .avatar { width: 32px; height: 32px; font-size: 14px; border-radius: 8px; }
+  .space-tab svg.home { width: 20px; height: 20px; }
+  .space-tab .unread-badge {
+    position: absolute; top: 0; right: 0; min-width: 16px; height: 16px;
+    padding: 0 4px; font-size: 10px; border: 2px solid var(--chrome-bg); box-sizing: content-box;
+  }
+  .space-tab:not(.unread) .unread-badge { display: none; }
+  .window.sidebar-mini .space-rail, .window.is-narrow .space-rail { display: none; }
+
   /* Sidebar */
   .sidebar {
     width: var(--sidebar-w, 260px); flex: none; background: var(--sidebar-bg);
@@ -256,7 +306,7 @@
   .room:hover { background: var(--sidebar-hover); }
   .room.active {
     background: var(--sidebar-selected);
-    background-image: linear-gradient(rgba(var(--accent-rgb), .16), rgba(var(--accent-rgb), .16));
+    background-image: linear-gradient(color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
     box-shadow: inset 3px 0 0 0 var(--accent);
   }
   .avatar {
@@ -404,10 +454,11 @@
   .compose-card .icon-btn { width: 32px; height: 32px; border-radius: 7px; }
   .compose-card .icon-btn svg { width: 18px; height: 18px; }
   .send-btn {
-    flex: none; width: 64px; height: 32px; border: none; border-radius: 7px;
-    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px;
-    cursor: pointer;
+    flex: none; width: 32px; height: 32px; border: none; border-radius: 7px; padding: 0;
+    background: var(--accent); color: var(--text-on-accent);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
   }
+  .send-btn svg { width: 18px; height: 18px; }
   .send-btn:hover { background: var(--accent-hover); }
   .send-btn:disabled { background: var(--border); color: var(--text-muted); cursor: default; }
 
@@ -744,6 +795,8 @@
       </div>
 
       <div class="body">
+        <!-- Space picker -->
+        <nav class="space-rail" id="spaceRail" aria-label="Spaces"></nav>
         <!-- Sidebar -->
         <aside class="sidebar">
           <div class="search">
@@ -751,6 +804,8 @@
             <span>Search rooms…</span>
           </div>
           <div class="roomscroll">
+            <div class="section-header" data-target="roomlist-fav"><span class="title">Favorites</span><span class="chev">&#9662;</span></div>
+            <div id="roomlist-fav"></div>
             <div class="section-header" data-target="roomlist-dm"><span class="title">Direct Messages</span><span class="chev">&#9662;</span></div>
             <div id="roomlist-dm"></div>
             <div class="section-header" data-target="roomlist-rooms"><span class="title">Rooms</span><span class="chev">&#9662;</span></div>
@@ -851,7 +906,7 @@
               <button class="icon-btn" type="button" title="Voice message" tabindex="-1">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></svg>
               </button>
-              <button class="send-btn" id="sendBtn" type="submit" disabled>Send</button>
+              <button class="send-btn" id="sendBtn" type="submit" aria-label="Send" title="Send" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg></button>
             </div>
           </form>
 
@@ -942,22 +997,26 @@
       Tesseract is a full-featured desktop Matrix client for Linux, Windows and macOS,
       built on the Matrix Rust SDK. The networking core is Rust; each platform gets a
       genuinely native UI — Win32 on Windows, AppKit on macOS, and Qt6 or GTK4 on Linux —
-      so it looks and feels right everywhere, no web view in sight.
+      so it looks and behaves like it belongs on your system.
     </p>
     <div class="req-banner">
       <span class="req-ico">⚠️</span>
-      <span>Tesseract requires a matrix server with <b>Sliding Sync</b>. The old /sync v2 is not supported. Login through <b>Matrix Authentication Service (MAS)</b> is preferred; homeservers without MAS can fall back to username/password login, (only for already existing accounts).</span>
+      <span>Tesseract requires a matrix server with <b>Sliding Sync</b>. The old /sync v2 is not supported. Login through <b>Matrix Authentication Service (MAS)</b> is preferred; homeservers without MAS can fall back to username/password or single sign-on login (only for already existing accounts).</span>
     </div>
 
     <div class="features">
-      <div class="feature"><div class="ico">🖥️</div><h3>Truly native, four platforms</h3><p>Win32, macOS AppKit, and Linux Qt6 &amp; GTK4 — one shared C++ toolkit, native everywhere.</p></div>
-      <div class="feature"><div class="ico">👥</div><h3>Multi-account</h3><p>Sign in to several Matrix accounts at once and switch between them seamlessly.</p></div>
-      <div class="feature"><div class="ico">🔒</div><h3>End-to-end encryption</h3><p>Full E2EE with device confirmation and cross-signing, powered by the Rust SDK.</p></div>
-      <div class="feature"><div class="ico">🧵</div><h3>Threads &amp; replies</h3><p>Follow conversations with a dedicated thread panel and inline quoted replies.</p></div>
-      <div class="feature"><div class="ico">😀</div><h3>Reactions &amp; stickers</h3><p>React with emoji, send stickers, and browse a built-in emoji &amp; sticker picker.</p></div>
-      <div class="feature"><div class="ico">✍️</div><h3>Markdown formatting</h3><p>Write in Markdown — bold, italics, lists, code blocks and inline <code>code</code>.</p></div>
-      <div class="feature"><div class="ico">🎙️</div><h3>Voice messages</h3><p>Record and send voice clips, with waveform playback right in the timeline.</p></div>
-      <div class="feature"><div class="ico">🌗</div><h3>Light &amp; dark themes</h3><p>System-matching light and dark modes plus native tray integration on each OS.</p></div>
+      <div class="feature"><div class="ico">🖥️</div><h3>Native on every platform</h3><p>Win32 on Windows, AppKit on macOS, Qt6 or GTK4 on Linux. There's no web view underneath.</p></div>
+      <div class="feature"><div class="ico">📞</div><h3>Calls</h3><p>Voice and video calls with screen sharing, compatible with Element Call and Element X. They're encrypted, and you can pop one out into its own window.</p></div>
+      <div class="feature"><div class="ico">🔒</div><h3>Encryption</h3><p>E2EE with cross-signing, key backup and recovery. Message search works in encrypted rooms too, because the index is built locally.</p></div>
+      <div class="feature"><div class="ico">🧵</div><h3>Threads</h3><p>A thread panel that shows which threads have unread messages. Replies, pins and forwarding work as you'd expect.</p></div>
+      <div class="feature"><div class="ico">🌐</div><h3>Spaces</h3><p>Nested spaces, and you can pin the ones you use most to a bar beside the room list. Ctrl+K jumps to any room.</p></div>
+      <div class="feature"><div class="ico">😀</div><h3>Emoji and stickers</h3><p>Custom emoji and sticker packs, GIF search, and skin tone support in the picker.</p></div>
+      <div class="feature"><div class="ico">✍️</div><h3>Composer</h3><p>Markdown, code blocks with syntax highlighting, @mentions, slash commands, polls, and per-room drafts.</p></div>
+      <div class="feature"><div class="ico">🎙️</div><h3>Media</h3><p>Voice messages with a waveform, a viewer and gallery for images and video, and link previews in the timeline.</p></div>
+      <div class="feature"><div class="ico">🎨</div><h3>Appearance</h3><p>Pick Classic, Bubbles or IRC-style messages. Light and dark themes, your own fonts, and a sidebar you can resize.</p></div>
+      <div class="feature"><div class="ico">👥</div><h3>Multiple accounts</h3><p>Stay signed in to several accounts at once. Use --profile to keep separate sets of accounts.</p></div>
+      <div class="feature"><div class="ico">🧩</div><h3>Desktop integration</h3><p>Tray icon with unread state, Jump Lists on Windows, Spotlight on macOS, and room search in GNOME Shell and KRunner.</p></div>
+      <div class="feature"><div class="ico">🌍</div><h3>Translations</h3><p>German, Spanish, French, Norwegian, Portuguese (Portugal and Brazil) and Ukrainian.</p></div>
     </div>
   </section>
 
@@ -1008,7 +1067,7 @@
   /* ---------- Data model ---------- */
   var rooms = [
     {
-      id: "tesseract", name: "Tesseract", initials: "T", icon: true, section: "rooms",
+      id: "tesseract", name: "Tesseract", initials: "T", icon: true, section: "rooms", favorite: true, space: "tess",
       topic: "Tesseract Matrix Client — https://github.com/surakin/tesseract",
       preview: "He is the one!", unread: 0, dm: false, encrypted: true,
       members: [
@@ -1044,7 +1103,7 @@
       ]
     },
     {
-      id: "rustsdk", name: "Matrix Rust SDK", initials: "R", section: "rooms",
+      id: "rustsdk", name: "Matrix Rust SDK", initials: "R", section: "rooms", space: "dev",
       topic: "Discussion about the matrix-rust-sdk",
       preview: "Shipped the new sliding sync API 🚀", unread: 0, encrypted: true,
       members: [
@@ -1059,8 +1118,51 @@
         { sender: "you", initials: "Y", time: "11:05", me: true,
           text: "Nice — Tesseract picks it up automatically through the FFI bridge." }
       ]
+    },
+    {
+      id: "tessdev", name: "Tesseract Development", initials: "D", section: "rooms", space: "tess",
+      topic: "Patches, builds and release planning",
+      preview: "Qt6 build is green again", unread: 3, encrypted: true,
+      members: [
+        { name: "Trinity", id: "@trinity:matrix.org", initials: "T2", online: true },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
+      messages: [
+        { sender: "Trinity", initials: "T2", time: "10:12", text: "Qt6 build is green again." },
+        { sender: "Trinity", initials: "T2", time: "10:13", cont: true, text: "I'll cut a release candidate this afternoon." }
+      ]
+    },
+    {
+      id: "synapse", name: "Synapse Admins", initials: "S", section: "rooms", space: "dev",
+      topic: "Running a homeserver",
+      preview: "Remember to back up the signing key", unread: 0, encrypted: true,
+      members: [
+        { name: "Morpheus", id: "@morpheus:matrix.org", initials: "M", online: true },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
+      messages: [
+        { sender: "Morpheus", initials: "M", time: "08:45", text: "Remember to back up the signing key." }
+      ]
+    },
+    {
+      id: "books", name: "Reading Room", initials: "B", section: "rooms", space: "books",
+      topic: "What are you reading?",
+      preview: "Finished it last night", unread: 1, encrypted: false,
+      members: [
+        { name: "Neo", id: "@neo:matrix.org", initials: "N", online: false },
+        { name: "Tesseractor", id: "@tessetest:matrix.org", initials: "T", online: true }
+      ],
+      messages: [
+        { sender: "Neo", initials: "N", time: "20:30", text: "Finished it last night. The ending is great." }
+      ]
     }
   ];
+  var spaces = [
+    { id: "tess", name: "Tesseract", initials: "T", icon: true },
+    { id: "dev", name: "Matrix Dev", initials: "M" },
+    { id: "books", name: "Book Club", initials: "B" }
+  ];
+  var activeSpace = null; // null = Home
   var activeId = rooms[0].id;
   var sim = document.getElementById("sim");
   var simRow = sim.closest(".sim-row");
@@ -1205,10 +1307,13 @@
 
   /* ---------- Render sidebar ---------- */
   function renderSidebar() {
+    var fav = document.getElementById("roomlist-fav");
     var dm = document.getElementById("roomlist-dm");
     var rm = document.getElementById("roomlist-rooms");
-    dm.innerHTML = ""; rm.innerHTML = "";
+    fav.innerHTML = ""; dm.innerHTML = ""; rm.innerHTML = "";
+    renderSpaceRail();
     rooms.forEach(function (r) {
+      if (activeSpace && r.space !== activeSpace) return;
       var el = document.createElement("div");
       el.className = "room" + (r.id === activeId ? " active" : "") + (r.unread > 0 ? " unread" : "");
       el.innerHTML =
@@ -1221,8 +1326,43 @@
         '</div>' +
         '<div class="unread-badge">' + r.unread + '</div>';
       el.addEventListener("click", function () { selectRoom(r.id); });
-      (r.section === "dm" ? dm : rm).appendChild(el);
+      (r.favorite ? fav : r.section === "dm" ? dm : rm).appendChild(el);
     });
+    // Hide a section header when nothing in it matches the selected space.
+    [fav, dm, rm].forEach(function (list) {
+      list.previousElementSibling.style.display = list.children.length ? "" : "none";
+    });
+  }
+
+  /* ---------- Space picker ---------- */
+  var HOME_ICON = '<svg class="home" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 9.5 10 3l7 6.5V17h-4.5v-5h-5v5H3z"/></svg>';
+  function renderSpaceRail() {
+    var rail = document.getElementById("spaceRail");
+    rail.innerHTML = "";
+    function tab(id, title, inner, unread) {
+      var el = document.createElement("div");
+      el.className = "space-tab" + (activeSpace === id ? " active" : "") + (unread > 0 ? " unread" : "");
+      el.title = title;
+      el.innerHTML = inner + '<div class="unread-badge">' + unread + '</div>';
+      el.addEventListener("click", function () { selectSpace(id); });
+      rail.appendChild(el);
+    }
+    tab(null, "Home", HOME_ICON, 0);
+    spaces.forEach(function (sp) {
+      var unread = rooms.reduce(function (n, r) { return n + (r.space === sp.id ? r.unread : 0); }, 0);
+      tab(sp.id, sp.name,
+        '<div class="avatar' + (sp.icon ? ' app' : '') + '">' + (sp.icon ? APP_ICON : esc(sp.initials)) + '</div>',
+        unread);
+    });
+  }
+  function selectSpace(id) {
+    activeSpace = id;
+    var cur = roomById(activeId);
+    if (id && cur.space !== id) {
+      var first = rooms.filter(function (r) { return r.space === id; })[0];
+      if (first) { selectRoom(first.id); return; }
+    }
+    renderSidebar();
   }
 
   /* ---------- Render timeline ---------- */
