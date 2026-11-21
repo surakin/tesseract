@@ -10,7 +10,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsvcAutoVcvars.cmake)
 # opt-outs). Must also run before project().
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/PreferClang.cmake)
 
-project(Tesseract VERSION 0.9.10 LANGUAGES CXX)
+project(Tesseract VERSION 0.9.11 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
