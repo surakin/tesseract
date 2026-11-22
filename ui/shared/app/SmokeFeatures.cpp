@@ -35,7 +35,7 @@ const std::map<std::string, EventType>& event_type_names()
         {"Poll", EventType::Poll},
         {"Gallery", EventType::Gallery},
         {"DevUnhandled", EventType::DevUnhandled},
-        {"RoomServerAcl", EventType::RoomServerAcl},
+        {"StateEvent", EventType::StateEvent},
         {"RoomTopic", EventType::RoomTopic},
     };
     return names;

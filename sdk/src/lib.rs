@@ -385,6 +385,10 @@ pub mod ffi {
         pub profile_avatar_set: bool,
         pub profile_avatar_url: String,
         pub profile_avatar_encrypted_json: String,
+        pub state_type: String,
+        pub state_key: String,
+        pub state_change: String,
+        pub state_params: Vec<String>,
     }
 
     #[derive(Debug, PartialEq, Default)]

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: tesseract\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-19 15:42+0100\n"
+"POT-Creation-Date: 2026-11-22 12:29+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -28,20 +28,20 @@ msgstr ""
 #: ui/linux-gtk/src/GtkSniTrayIcon.cpp:492
 #: ui/linux-qt/src/LinuxQtTrayIcon.cpp:34
 #: ui/linux-qt/src/LinuxQtTrayIcon.cpp:119 ui/macos/src/MacOSTrayIcon.mm:112
-#: ui/macos/src/MacOSTrayIcon.mm:249 ui/shared/app/ShellBase_profile.cpp:1645
+#: ui/macos/src/MacOSTrayIcon.mm:249 ui/shared/app/ShellBase_profile.cpp:1646
 #: ui/windows/src/Win32TrayIcon.cpp:452
 msgid "Quit"
 msgstr ""
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:218 ui/linux-qt/src/LinuxNotifier.cpp:194
 #: ui/macos/src/MainWindow.mm:2958 ui/shared/views/MessageActions.cpp:22
-#: ui/shared/views/MessageListView.cpp:11543
+#: ui/shared/views/MessageListView.cpp:11532
 #: ui/windows/src/Win32Notifier.cpp:282
 msgid "Reply"
 msgstr ""
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:263 ui/linux-qt/src/LinuxNotifier.cpp:248
-#: ui/shared/app/RoomPane.cpp:5559
+#: ui/shared/app/RoomPane.cpp:5564
 msgid "Open"
 msgstr ""
 
@@ -132,7 +132,7 @@ msgstr ""
 msgid "About Tesseract"
 msgstr ""
 
-#: ui/macos/src/AppDelegate.mm:282 ui/shared/app/ShellBase_profile.cpp:1624
+#: ui/macos/src/AppDelegate.mm:282 ui/shared/app/ShellBase_profile.cpp:1625
 msgid "Settings…"
 msgstr ""
 
@@ -147,8 +147,8 @@ msgstr ""
 
 #: ui/macos/src/AppDelegate.mm:296 ui/shared/views/ComposeBar.cpp:1026
 #: ui/shared/views/FileViewerPage.cpp:61
-#: ui/shared/views/MessageListView.cpp:2195
-#: ui/shared/views/MessageListView.cpp:8412
+#: ui/shared/views/MessageListView.cpp:2187
+#: ui/shared/views/MessageListView.cpp:8401
 msgid "File"
 msgstr ""
 
@@ -157,7 +157,7 @@ msgid "Add Room…"
 msgstr ""
 
 #: ui/macos/src/AppDelegate.mm:305 ui/shared/views/MessageActions.cpp:33
-#: ui/shared/views/MessageListView.cpp:11545
+#: ui/shared/views/MessageListView.cpp:11534
 msgid "Edit"
 msgstr ""
 
@@ -250,20 +250,20 @@ msgstr ""
 #: ui/macos/src/MainWindow.mm:1880
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1576
 #: ui/shared/views/IdentityChangeBanner.cpp:83
-#: ui/shared/views/LoginView.cpp:1810 ui/windows/src/MainWindow.cpp:196
+#: ui/shared/views/LoginView.cpp:2101 ui/windows/src/MainWindow.cpp:196
 msgid "OK"
 msgstr ""
 
-#: ui/macos/src/MainWindow.mm:1881 ui/shared/app/ShellBase_rooms.cpp:633
-#: ui/shared/views/CallLobbyView.cpp:101 ui/shared/views/ConfirmDialog.h:30
-#: ui/shared/views/CreatePollDialog.cpp:150
+#: ui/macos/src/MainWindow.mm:1881 ui/shared/app/ShellBase_rooms.cpp:634
+#: ui/shared/app/ShellBase_rooms.cpp:1014 ui/shared/views/CallLobbyView.cpp:104
+#: ui/shared/views/ConfirmDialog.h:30 ui/shared/views/CreatePollDialog.cpp:150
 #: ui/shared/views/CreateRoomView.cpp:184
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1417
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1946
 #: ui/shared/views/ExportHistoryDialog.cpp:102
 #: ui/shared/views/ForwardRoomPicker.cpp:199
 #: ui/shared/views/InviteDialog.cpp:321 ui/shared/views/JoinRoomView.cpp:139
-#: ui/shared/views/LoginView.cpp:104 ui/shared/views/QRGrantView.cpp:104
+#: ui/shared/views/LoginView.cpp:106 ui/shared/views/QRGrantView.cpp:104
 #: ui/shared/views/QRGrantView.cpp:192 ui/shared/views/QRGrantView.cpp:205
 #: ui/shared/views/QRGrantView.cpp:211
 #: ui/shared/views/RoomDirectoryView.cpp:351
@@ -294,25 +294,25 @@ msgid "Unable to decrypt this message"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:105
-#: ui/shared/views/MessageListView.cpp:2187
-#: ui/shared/views/MessageListView.cpp:6310
+#: ui/shared/views/MessageListView.cpp:2179
+#: ui/shared/views/MessageListView.cpp:6299
 msgid "Message deleted"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:106
-#: ui/shared/views/MessageListView.cpp:3950
-#: ui/shared/views/MessageListView.cpp:3977
-#: ui/shared/views/MessageListView.cpp:5978
-#: ui/shared/views/MessageListView.cpp:6028
-#: ui/shared/views/MessageListView.cpp:6057
-#: ui/shared/views/MessageListView.cpp:6085
-#: ui/shared/views/MessageListView.cpp:6105
-#: ui/shared/views/MessageListView.cpp:6217
-#: ui/shared/views/MessageListView.cpp:6243
-#: ui/shared/views/MessageListView.cpp:6292
-#: ui/shared/views/MessageListView.cpp:6395
-#: ui/shared/views/MessageListView.cpp:6468
-#: ui/shared/views/MessageListView.cpp:6538
+#: ui/shared/views/MessageListView.cpp:3942
+#: ui/shared/views/MessageListView.cpp:3969
+#: ui/shared/views/MessageListView.cpp:5967
+#: ui/shared/views/MessageListView.cpp:6017
+#: ui/shared/views/MessageListView.cpp:6046
+#: ui/shared/views/MessageListView.cpp:6074
+#: ui/shared/views/MessageListView.cpp:6094
+#: ui/shared/views/MessageListView.cpp:6206
+#: ui/shared/views/MessageListView.cpp:6232
+#: ui/shared/views/MessageListView.cpp:6281
+#: ui/shared/views/MessageListView.cpp:6384
+#: ui/shared/views/MessageListView.cpp:6457
+#: ui/shared/views/MessageListView.cpp:6527
 msgid "(edited)"
 msgstr ""
 
@@ -342,118 +342,118 @@ msgid "Reactions: {0}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:112
-#: ui/shared/views/MessageListView.cpp:1577
-#: ui/shared/views/MessageListView.cpp:1836
+#: ui/shared/views/MessageListView.cpp:1661
+#: ui/shared/views/MessageListView.cpp:1830
 #, c++-format
 msgid "{0} joined the room"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:113
-#: ui/shared/views/MessageListView.cpp:1579
-#: ui/shared/views/MessageListView.cpp:1838
+#: ui/shared/views/MessageListView.cpp:1663
+#: ui/shared/views/MessageListView.cpp:1832
 #, c++-format
 msgid "{0} left the room"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:114
-#: ui/shared/views/MessageListView.cpp:1581
+#: ui/shared/views/MessageListView.cpp:1665
 #, c++-format
 msgid "{0} was banned by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:115
-#: ui/shared/views/MessageListView.cpp:1582
+#: ui/shared/views/MessageListView.cpp:1666
 #, c++-format
 msgid "{0} was banned"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:116
-#: ui/shared/views/MessageListView.cpp:1584
+#: ui/shared/views/MessageListView.cpp:1668
 #, c++-format
 msgid "{0} was unbanned by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:117
-#: ui/shared/views/MessageListView.cpp:1585
+#: ui/shared/views/MessageListView.cpp:1669
 #, c++-format
 msgid "{0} is no longer banned"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:118
-#: ui/shared/views/MessageListView.cpp:1587
+#: ui/shared/views/MessageListView.cpp:1671
 #, c++-format
 msgid "{0} was removed by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:119
-#: ui/shared/views/MessageListView.cpp:1588
+#: ui/shared/views/MessageListView.cpp:1672
 #, c++-format
 msgid "{0} was removed"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:120
-#: ui/shared/views/MessageListView.cpp:1590
+#: ui/shared/views/MessageListView.cpp:1674
 #, c++-format
 msgid "{0} was invited by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:121
-#: ui/shared/views/MessageListView.cpp:1591
+#: ui/shared/views/MessageListView.cpp:1675
 #, c++-format
 msgid "{0} received an invitation"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:122
-#: ui/shared/views/MessageListView.cpp:1593
+#: ui/shared/views/MessageListView.cpp:1677
 #, c++-format
 msgid "{0} was removed and banned by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:123
-#: ui/shared/views/MessageListView.cpp:1594
+#: ui/shared/views/MessageListView.cpp:1678
 #, c++-format
 msgid "{0} was kicked and banned"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:124
-#: ui/shared/views/MessageListView.cpp:1596
+#: ui/shared/views/MessageListView.cpp:1680
 #, c++-format
 msgid "{0} has accepted the invitation"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:125
-#: ui/shared/views/MessageListView.cpp:1598
+#: ui/shared/views/MessageListView.cpp:1682
 #, c++-format
 msgid "{0} has rejected the invitation"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:126
-#: ui/shared/views/MessageListView.cpp:1600
+#: ui/shared/views/MessageListView.cpp:1684
 #, c++-format
 msgid "{0}'s invitation was revoked by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:127
-#: ui/shared/views/MessageListView.cpp:1601
+#: ui/shared/views/MessageListView.cpp:1685
 #, c++-format
 msgid "{0}'s invitation was revoked"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:128
-#: ui/shared/views/MessageListView.cpp:1603
-#: ui/shared/views/MessageListView.cpp:1863
+#: ui/shared/views/MessageListView.cpp:1687
+#: ui/shared/views/MessageListView.cpp:1857
 #, c++-format
 msgid "{0} requested to join"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:129
-#: ui/shared/views/MessageListView.cpp:1605
+#: ui/shared/views/MessageListView.cpp:1689
 #, c++-format
 msgid "{0}'s request to join was approved by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:130
-#: ui/shared/views/MessageListView.cpp:1606
+#: ui/shared/views/MessageListView.cpp:1690
 #, c++-format
 msgid "{0}'s join request was approved"
 msgstr ""
@@ -464,25 +464,25 @@ msgid "{0}'s request to join was withdrawn"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:132
-#: ui/shared/views/MessageListView.cpp:1610
+#: ui/shared/views/MessageListView.cpp:1694
 #, c++-format
 msgid "{0}'s request to join was denied by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:133
-#: ui/shared/views/MessageListView.cpp:1611
+#: ui/shared/views/MessageListView.cpp:1695
 #, c++-format
 msgid "{0}'s join request was denied"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:134
-#: ui/shared/views/MessageListView.cpp:14799
+#: ui/shared/views/MessageListView.cpp:14788
 #, c++-format
 msgid "{0}. Reason: {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:135
-#: ui/shared/views/MessageListView.cpp:2010
+#: ui/shared/views/MessageListView.cpp:2002
 #, c++-format
 msgid "{0} via {1}"
 msgstr ""
@@ -565,26 +565,26 @@ msgstr ""
 msgid "Options:"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:488
+#: ui/shared/app/RoomPane.cpp:491
 msgid "Switch to this account to open this room."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:518
+#: ui/shared/app/RoomPane.cpp:521
 msgid "Switch to this account to verify users."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:543 ui/shared/app/RoomPane.cpp:3851
-#: ui/shared/app/RoomPane.cpp:4001
+#: ui/shared/app/RoomPane.cpp:546 ui/shared/app/RoomPane.cpp:3862
+#: ui/shared/app/RoomPane.cpp:4012
 #, c++-format
 msgid "Couldn't update the digital identity: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:815
+#: ui/shared/app/RoomPane.cpp:818
 #, c++-format
 msgid "Failed to set topic: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:1209 ui/shared/app/ShellBase_settings.cpp:1760
+#: ui/shared/app/RoomPane.cpp:1212 ui/shared/app/ShellBase_settings.cpp:1760
 #: ui/shared/views/settings/SettingsController.cpp:114
 #: ui/shared/views/settings/SettingsController.cpp:244
 #: ui/shared/views/settings/SettingsController.cpp:662
@@ -597,11 +597,11 @@ msgstr ""
 msgid "not logged in"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:1668
+#: ui/shared/app/RoomPane.cpp:1676
 msgid "This image can't be sent because its metadata can't be removed."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:1862
+#: ui/shared/app/RoomPane.cpp:1870
 #, c++-format
 msgid ""
 "{0} image can't be sent because its metadata can't be removed. Remove it to "
@@ -612,50 +612,50 @@ msgid_plural ""
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/app/RoomPane.cpp:2183
+#: ui/shared/app/RoomPane.cpp:2193
 msgid "File exceeds the upload limit"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:2547
+#: ui/shared/app/RoomPane.cpp:2557
 #, c++-format
 msgid "Jump to date failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3438
+#: ui/shared/app/RoomPane.cpp:3449
 #, c++-format
 msgid "Send reply failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3532
+#: ui/shared/app/RoomPane.cpp:3543
 #, c++-format
 msgid "Edit failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3580
+#: ui/shared/app/RoomPane.cpp:3591
 msgid "Message reported"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3585
+#: ui/shared/app/RoomPane.cpp:3596
 #, c++-format
 msgid "Couldn't report message: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3611 ui/shared/app/RoomPane.cpp:5949
+#: ui/shared/app/RoomPane.cpp:3622 ui/shared/app/RoomPane.cpp:5954
 #: ui/shared/views/RoomSettingsView.cpp:230
 msgid "Copied to clipboard"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3755 ui/shared/app/RoomPane.cpp:3861
+#: ui/shared/app/RoomPane.cpp:3766 ui/shared/app/RoomPane.cpp:3872
 #, c++-format
 msgid "Failed to retry sending: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3793 ui/shared/app/ShellBase_calls.cpp:671
-#: ui/shared/views/MessageListView.cpp:9864
+#: ui/shared/app/RoomPane.cpp:3804 ui/shared/app/ShellBase_calls.cpp:671
+#: ui/shared/views/MessageListView.cpp:9853
 msgid "Message not sent"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3795
+#: ui/shared/app/RoomPane.cpp:3806
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1511
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1866
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1946
@@ -671,65 +671,65 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3798
+#: ui/shared/app/RoomPane.cpp:3809
 msgid ""
 "The check that blocked this message is turned off, but the change takes "
 "effect after you restart Tesseract."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3800 ui/shared/app/RoomPane.cpp:3885
-#: ui/shared/views/MessageListView.cpp:5009
+#: ui/shared/app/RoomPane.cpp:3811 ui/shared/app/RoomPane.cpp:3896
+#: ui/shared/views/MessageListView.cpp:5001
 msgid "Cancel sending"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3819
+#: ui/shared/app/RoomPane.cpp:3830
 msgid "Withdraw verification and send"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3821 ui/shared/app/RoomPane.cpp:3889
+#: ui/shared/app/RoomPane.cpp:3832 ui/shared/app/RoomPane.cpp:3900
 #: ui/shared/views/RoomInfoPanel.cpp:1773
 msgid "Show profile"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3905 ui/shared/views/LoginView.cpp:1752
-#: ui/shared/views/LoginView.cpp:1774 ui/shared/views/MessageListView.cpp:3807
+#: ui/shared/app/RoomPane.cpp:3916 ui/shared/views/LoginView.cpp:2043
+#: ui/shared/views/LoginView.cpp:2065 ui/shared/views/MessageListView.cpp:3799
 #: ui/shared/views/ServerBrowserOverlay.cpp:354
 msgid "Retry"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:4015
+#: ui/shared/app/RoomPane.cpp:4026
 #, c++-format
 msgid "Failed to cancel message: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:4838
+#: ui/shared/app/RoomPane.cpp:4849
 #, c++-format
 msgid "Command failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5426
+#: ui/shared/app/RoomPane.cpp:5431
 #, c++-format
 msgid "Saved to {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5430
+#: ui/shared/app/RoomPane.cpp:5435
 #: ui/shared/views/EncryptionSetupOverlay.cpp:344
 msgid "Couldn't save the file."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5500
+#: ui/shared/app/RoomPane.cpp:5505
 msgid "Couldn't download the file"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5519
+#: ui/shared/app/RoomPane.cpp:5524
 msgid "Couldn't open the file"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5552
+#: ui/shared/app/RoomPane.cpp:5557
 msgid "Open this file?"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5554
+#: ui/shared/app/RoomPane.cpp:5559
 #, c++-format
 msgid ""
 "“{0}” isn't an image, video, audio or text file ({1}). Files like this can "
@@ -737,75 +737,75 @@ msgid ""
 "trust the sender."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5557
+#: ui/shared/app/RoomPane.cpp:5562
 msgid "unknown type"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5570
+#: ui/shared/app/RoomPane.cpp:5575
 msgid "Can't open this file"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5571
+#: ui/shared/app/RoomPane.cpp:5576
 #, c++-format
 msgid ""
 "“{0}” can run programs on your computer, so Tesseract won't open it. You can "
 "save it instead."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5574
+#: ui/shared/app/RoomPane.cpp:5579
 msgid "Save as…"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5584
+#: ui/shared/app/RoomPane.cpp:5589
 msgid "File contents don't match"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5585
+#: ui/shared/app/RoomPane.cpp:5590
 msgid "File type doesn't match its name"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5588
+#: ui/shared/app/RoomPane.cpp:5593
 #, c++-format
 msgid "“{0}” doesn't look like what it claims to be."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5590
+#: ui/shared/app/RoomPane.cpp:5595
 #, c++-format
 msgid "“{0}” has a file extension that doesn't match its type."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5597
+#: ui/shared/app/RoomPane.cpp:5602
 #, c++-format
 msgid "Detected from its contents: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5599
+#: ui/shared/app/RoomPane.cpp:5604
 #, c++-format
 msgid "Declared by the sender: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5600
+#: ui/shared/app/RoomPane.cpp:5605
 msgid "unknown"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5602
+#: ui/shared/app/RoomPane.cpp:5607
 #, c++-format
 msgid "File name extension: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5603
+#: ui/shared/app/RoomPane.cpp:5608
 msgid "none"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5604
+#: ui/shared/app/RoomPane.cpp:5609
 msgid "Only open it if you trust the sender."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5606
+#: ui/shared/app/RoomPane.cpp:5611
 msgid "Open anyway"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:5611
+#: ui/shared/app/RoomPane.cpp:5616
 #, c++-format
 msgid "Rename to .{0} and open"
 msgstr ""
@@ -843,13 +843,13 @@ msgstr ""
 msgid "Connected"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:405
+#: ui/shared/app/ShellBase.cpp:406
 #, c++-format
 msgid ""
 "Couldn't save the sign-in for {0}. You may have to sign in again next time."
 msgstr ""
 
-#: ui/shared/app/ShellBase.h:4144
+#: ui/shared/app/ShellBase.h:4179
 msgid "New message"
 msgstr ""
 
@@ -885,9 +885,9 @@ msgstr ""
 msgid "Already signed in as {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_accounts.cpp:640 ui/shared/views/LoginView.cpp:1196
-#: ui/shared/views/LoginView.cpp:1275 ui/shared/views/LoginView.cpp:1312
-#: ui/shared/views/LoginView.cpp:1564
+#: ui/shared/app/ShellBase_accounts.cpp:640 ui/shared/views/LoginView.cpp:1256
+#: ui/shared/views/LoginView.cpp:1335 ui/shared/views/LoginView.cpp:1372
+#: ui/shared/views/LoginView.cpp:1851
 #, c++-format
 msgid "Sign-in failed: {0}"
 msgstr ""
@@ -989,28 +989,28 @@ msgstr ""
 msgid "Screen sharing stopped: the screen could not be captured."
 msgstr ""
 
-#: ui/shared/app/ShellBase_calls.cpp:836 ui/shared/app/ShellBase_calls.cpp:1212
+#: ui/shared/app/ShellBase_calls.cpp:837 ui/shared/app/ShellBase_calls.cpp:1213
 #, c++-format
 msgid "Call failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_calls.cpp:1217
+#: ui/shared/app/ShellBase_calls.cpp:1218
 msgid "Call disconnected due to a network error."
 msgstr ""
 
-#: ui/shared/app/ShellBase_calls.cpp:1221
+#: ui/shared/app/ShellBase_calls.cpp:1222
 msgid "Call ended due to a media error."
 msgstr ""
 
-#: ui/shared/app/ShellBase_calls.cpp:1225
+#: ui/shared/app/ShellBase_calls.cpp:1226
 msgid "This call is not supported on your device."
 msgstr ""
 
-#: ui/shared/app/ShellBase_calls.cpp:1229
+#: ui/shared/app/ShellBase_calls.cpp:1230
 msgid "Call ended due to an encryption error."
 msgstr ""
 
-#: ui/shared/app/ShellBase_calls.cpp:1233
+#: ui/shared/app/ShellBase_calls.cpp:1234
 msgid "The call ended unexpectedly."
 msgstr ""
 
@@ -1060,178 +1060,190 @@ msgstr ""
 msgid "A moderator needs to start the call."
 msgstr ""
 
-#: ui/shared/app/ShellBase_navigation.cpp:835
+#: ui/shared/app/ShellBase_navigation.cpp:839
 #, c++-format
 msgid "Subscribe failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:488
+#: ui/shared/app/ShellBase_profile.cpp:444
+msgid "Couldn't open a direct message"
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:489
 msgid "End your call before restarting."
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:494
+#: ui/shared/app/ShellBase_profile.cpp:495
 msgid "Couldn't restart Tesseract. Please restart it yourself."
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:1628
+#: ui/shared/app/ShellBase_profile.cpp:1629
 msgid "Keyboard Shortcuts…"
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:1635
+#: ui/shared/app/ShellBase_profile.cpp:1636
 msgid "Confirm this device…"
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:1637
+#: ui/shared/app/ShellBase_profile.cpp:1638
 msgid "Add Account…"
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:1640
+#: ui/shared/app/ShellBase_profile.cpp:1641
 msgid "Link a device…"
 msgstr ""
 
-#: ui/shared/app/ShellBase_profile.cpp:1643
+#: ui/shared/app/ShellBase_profile.cpp:1644
 #, c++-format
 msgid "Log Out {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:626 ui/shared/views/RoomView.cpp:1408
+#: ui/shared/app/ShellBase_rooms.cpp:627 ui/shared/app/ShellBase_rooms.cpp:1008
+#: ui/shared/views/RoomView.cpp:1408
 msgid "this room"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:629 ui/shared/views/RoomView.cpp:1409
+#: ui/shared/app/ShellBase_rooms.cpp:630 ui/shared/app/ShellBase_rooms.cpp:1010
+#: ui/shared/views/RoomView.cpp:1409
 #, c++-format
 msgid "Leave {0}?"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:630 ui/shared/views/RoomView.cpp:1410
+#: ui/shared/app/ShellBase_rooms.cpp:631 ui/shared/app/ShellBase_rooms.cpp:1011
+#: ui/shared/views/RoomView.cpp:1410
 msgid "You will stop receiving messages and need to be re-invited to rejoin."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:632 ui/shared/views/RoomView.cpp:1412
+#: ui/shared/app/ShellBase_rooms.cpp:633 ui/shared/app/ShellBase_rooms.cpp:1013
+#: ui/shared/views/RoomView.cpp:1412
 msgid "Leave"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:892
+#: ui/shared/app/ShellBase_rooms.cpp:894
 msgid "Couldn't send the poll"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1102
-#: ui/shared/views/MessageListView.cpp:9865
+#: ui/shared/app/ShellBase_rooms.cpp:972
+msgid "Usage: /dm @user:server"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1196
+#: ui/shared/views/MessageListView.cpp:9854
 #, c++-format
 msgid "Message not sent: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1303
+#: ui/shared/app/ShellBase_rooms.cpp:1397
 #, c++-format
 msgid "Couldn't invite {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1324
+#: ui/shared/app/ShellBase_rooms.cpp:1418
 #, c++-format
 msgid "Couldn't kick {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1327
+#: ui/shared/app/ShellBase_rooms.cpp:1421
 #, c++-format
 msgid "Couldn't ban {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1330
+#: ui/shared/app/ShellBase_rooms.cpp:1424
 #, c++-format
 msgid "Couldn't unban {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1364
+#: ui/shared/app/ShellBase_rooms.cpp:1458
 msgid "complete room action"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1368
+#: ui/shared/app/ShellBase_rooms.cpp:1462
 msgid "accept invite"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1371
+#: ui/shared/app/ShellBase_rooms.cpp:1465
 msgid "join room"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1374
+#: ui/shared/app/ShellBase_rooms.cpp:1468
 msgid "leave room"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1377
+#: ui/shared/app/ShellBase_rooms.cpp:1471
 msgid "leave space"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1380
+#: ui/shared/app/ShellBase_rooms.cpp:1474
 msgid "create room"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1383
+#: ui/shared/app/ShellBase_rooms.cpp:1477
 msgid "send join request"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1386
+#: ui/shared/app/ShellBase_rooms.cpp:1480
 msgid "accept join request"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1389
+#: ui/shared/app/ShellBase_rooms.cpp:1483
 msgid "add room to space"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1392
+#: ui/shared/app/ShellBase_rooms.cpp:1486
 msgid "remove room from space"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1395
+#: ui/shared/app/ShellBase_rooms.cpp:1489
 #, c++-format
 msgid "Couldn't {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1511
+#: ui/shared/app/ShellBase_rooms.cpp:1605
 msgid "Request sent"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1656
+#: ui/shared/app/ShellBase_rooms.cpp:1750
 msgid "Upload failed"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1657
+#: ui/shared/app/ShellBase_rooms.cpp:1751
 #, c++-format
 msgid "Upload failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1923
+#: ui/shared/app/ShellBase_rooms.cpp:2017
 msgid "Location services aren't available on this device."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1931
+#: ui/shared/app/ShellBase_rooms.cpp:2025
 msgid "Fetching your location…"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1943
+#: ui/shared/app/ShellBase_rooms.cpp:2037
 msgid "Location permission denied."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1946
+#: ui/shared/app/ShellBase_rooms.cpp:2040
 msgid "Location is currently unavailable."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1949
+#: ui/shared/app/ShellBase_rooms.cpp:2043
 msgid "Timed out waiting for your location."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1952
+#: ui/shared/app/ShellBase_rooms.cpp:2046
 msgid "Couldn't get your location."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:1966
+#: ui/shared/app/ShellBase_rooms.cpp:2060
 msgid "Location sent."
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:2075
+#: ui/shared/app/ShellBase_rooms.cpp:2169
 msgid "You're signed out of this account"
 msgstr ""
 
-#: ui/shared/app/ShellBase_rooms.cpp:2096
+#: ui/shared/app/ShellBase_rooms.cpp:2190
 msgid "Couldn't send your reply. Try again from the app."
 msgstr ""
 
@@ -1333,24 +1345,24 @@ msgid "Failed to set room avatar: {0}"
 msgstr ""
 
 #: ui/shared/app/ShellBase_settings.cpp:1584
-#: ui/shared/views/SlashCommands.cpp:269
+#: ui/shared/views/SlashCommands.cpp:343
 msgid "Avatar updated for this room"
 msgstr ""
 
-#: ui/shared/app/ShellBase_wiring.cpp:1208
-#: ui/shared/app/ShellBase_wiring.cpp:1214 ui/shared/views/ComposeBar.cpp:266
+#: ui/shared/app/ShellBase_wiring.cpp:1213
+#: ui/shared/app/ShellBase_wiring.cpp:1219 ui/shared/views/ComposeBar.cpp:266
 #: ui/shared/views/ComposeBar.cpp:668 ui/shared/views/ComposeBar.cpp:2076
-#: ui/shared/views/MessageListView.cpp:2199
+#: ui/shared/views/MessageListView.cpp:2191
 msgid "Voice message"
 msgstr ""
 
-#: ui/shared/app/ShellBase_wiring.cpp:1209
+#: ui/shared/app/ShellBase_wiring.cpp:1214
 #: ui/shared/views/AudioViewerPage.cpp:188 ui/shared/views/ComposeBar.cpp:1025
-#: ui/shared/views/MessageListView.cpp:8412
+#: ui/shared/views/MessageListView.cpp:8401
 msgid "Audio"
 msgstr ""
 
-#: ui/shared/app/ShellBase_wiring.cpp:1959
+#: ui/shared/app/ShellBase_wiring.cpp:1964
 msgid "This voice message is too long to upload."
 msgstr ""
 
@@ -1836,12 +1848,13 @@ msgstr ""
 
 #: ui/shared/views/CallBanner.cpp:227 ui/shared/views/ComposeBar.cpp:1904
 #: ui/shared/views/KnockStatusCard.cpp:38
-#: ui/shared/views/MessageListView.cpp:1684
-#: ui/shared/views/MessageListView.cpp:1742
-#: ui/shared/views/MessageListView.cpp:4474
+#: ui/shared/views/MessageListView.cpp:1768
+#: ui/shared/views/MessageListView.cpp:4466
 #: ui/shared/views/MessageSearchView.cpp:182
 #: ui/shared/views/MessageSearchView.cpp:211
-#: ui/shared/views/PinnedBanner.cpp:114 ui/shared/views/SlashCommands.cpp:842
+#: ui/shared/views/PinnedBanner.cpp:114 ui/shared/views/SlashCommands.cpp:790
+#: ui/shared/views/StateEventPhrases.cpp:267
+#: ui/shared/views/StateEventPhrases.cpp:324
 #, c++-format
 msgid "{0}: {1}"
 msgstr ""
@@ -1850,25 +1863,25 @@ msgstr ""
 msgid "Join call"
 msgstr ""
 
-#: ui/shared/views/CallLobbyView.cpp:415
+#: ui/shared/views/CallLobbyView.cpp:419
 #: ui/shared/views/CallOverlayWidget.cpp:972
 #: ui/windows/src/Win32Taskbar.cpp:421
 msgid "Mute microphone"
 msgstr ""
 
-#: ui/shared/views/CallLobbyView.cpp:416
+#: ui/shared/views/CallLobbyView.cpp:420
 #: ui/shared/views/CallOverlayWidget.cpp:971
 #: ui/windows/src/Win32Taskbar.cpp:421
 msgid "Unmute microphone"
 msgstr ""
 
-#: ui/shared/views/CallLobbyView.cpp:431
+#: ui/shared/views/CallLobbyView.cpp:435
 #: ui/shared/views/CallOverlayWidget.cpp:989
 #: ui/windows/src/Win32Taskbar.cpp:429
 msgid "Turn camera off"
 msgstr ""
 
-#: ui/shared/views/CallLobbyView.cpp:432
+#: ui/shared/views/CallLobbyView.cpp:436
 #: ui/shared/views/CallOverlayWidget.cpp:988
 #: ui/windows/src/Win32Taskbar.cpp:429
 msgid "Turn camera on"
@@ -2168,14 +2181,14 @@ msgstr ""
 #: ui/shared/views/DatePickerView.cpp:682
 #: ui/shared/views/DatePickerView.cpp:698
 #: ui/shared/views/DatePickerView.cpp:1200
-#: ui/shared/views/MessageListView.cpp:1521
+#: ui/shared/views/MessageListView.cpp:1596
 #: ui/shared/views/ThreadListView.cpp:76
 msgid "Today"
 msgstr ""
 
 #. TRANSLATORS: date separator pattern, see tk::format_date.
 #: ui/shared/views/DatePickerView.cpp:689
-#: ui/shared/views/MessageListView.cpp:1540
+#: ui/shared/views/MessageListView.cpp:1615
 msgid "%B %-d, %Y"
 msgstr ""
 
@@ -2238,7 +2251,7 @@ msgstr ""
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1643
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1664
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1831
-#: ui/shared/views/LoginView.cpp:208 ui/shared/views/MainAppWidget.cpp:49
+#: ui/shared/views/LoginView.cpp:216 ui/shared/views/MainAppWidget.cpp:49
 #: ui/shared/views/RoomHeader.cpp:154
 msgid "Back"
 msgstr ""
@@ -2879,7 +2892,7 @@ msgid "GIF search failed"
 msgstr ""
 
 #: ui/shared/views/IdentityChangeBanner.cpp:23
-#: ui/shared/views/InviteDialog.cpp:67 ui/shared/views/MessageListView.cpp:663
+#: ui/shared/views/InviteDialog.cpp:67 ui/shared/views/MessageListView.cpp:662
 #: ui/shared/views/QuickSwitcher.cpp:219
 #: ui/shared/views/settings/bcp47_languages.h:420
 #, c++-format
@@ -2908,7 +2921,7 @@ msgstr ""
 
 #: ui/shared/views/ImagePackEditorView.cpp:164
 #: ui/shared/views/ImagePackEditorView.cpp:561
-#: ui/shared/views/MessageListView.cpp:2193
+#: ui/shared/views/MessageListView.cpp:2185
 msgid "Sticker"
 msgstr ""
 
@@ -3114,8 +3127,8 @@ msgid "Join a Room"
 msgstr ""
 
 #: ui/shared/views/KeyboardShortcutsOverlay.cpp:98
-#: ui/shared/views/MessageListView.cpp:4552
-#: ui/shared/views/MessageListView.cpp:4873
+#: ui/shared/views/MessageListView.cpp:4544
+#: ui/shared/views/MessageListView.cpp:4865
 #: ui/shared/views/MessageSearchView.cpp:216
 #: ui/shared/views/RoomDirectoryView.cpp:78
 #: ui/shared/views/RoomMediaView.cpp:178
@@ -3165,115 +3178,124 @@ msgstr ""
 msgid "Map not loaded"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:65
+#: ui/shared/views/LoginView.cpp:67
 msgid "Sign in to Matrix"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:69
+#: ui/shared/views/LoginView.cpp:71
 msgid "Your account or server - e.g. @alice:matrix.org or matrix.org"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:87
+#: ui/shared/views/LoginView.cpp:89
 msgid "?"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:95 ui/shared/views/LoginView.cpp:198
+#: ui/shared/views/LoginView.cpp:97 ui/shared/views/LoginView.cpp:206
 msgid "Sign in"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:129
+#: ui/shared/views/LoginView.cpp:131
 msgid ""
 "Your homeserver is where your account lives — similar to choosing an email "
 "provider. Not sure? Use \"Find a server\" to browse some. Any server works "
 "with anyone on Matrix."
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:151
+#: ui/shared/views/LoginView.cpp:153
 #: ui/shared/views/ServerBrowserOverlay.cpp:220
 #: ui/shared/views/ServerBrowserOverlay.cpp:607
 msgid "Find a server"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:168
+#: ui/shared/views/LoginView.cpp:176
 msgid "Sign in with password"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:181
+#: ui/shared/views/LoginView.cpp:189
 msgid "Matrix ID"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:189
+#: ui/shared/views/LoginView.cpp:197
 #: ui/shared/views/settings/ServerInfoPanel.cpp:42
 msgid "Password"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:227
+#: ui/shared/views/LoginView.cpp:235
 msgid "New here? Create an account"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:246
+#: ui/shared/views/LoginView.cpp:254
 msgid "Settings"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:447
+#: ui/shared/views/LoginView.cpp:455
 msgid "Checking…"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:462
+#: ui/shared/views/LoginView.cpp:470
 msgid "Could not reach this server"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:476
+#: ui/shared/views/LoginView.cpp:484
 msgid "matrix.org"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:584
+#: ui/shared/views/LoginView.cpp:592
 msgid "Run by the Matrix.org Foundation. The largest public server."
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:698
+#: ui/shared/views/LoginView.cpp:706
 msgid "@user:example.org"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:956
+#: ui/shared/views/LoginView.cpp:997
 msgid "Checking how you can sign in to this server…"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1270 ui/shared/views/LoginView.cpp:1284
+#: ui/shared/views/LoginView.cpp:1330 ui/shared/views/LoginView.cpp:1344
 msgid "The sign-in window could not be opened."
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1338
+#: ui/shared/views/LoginView.cpp:1398
 msgid "Cancelling…"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1493
+#: ui/shared/views/LoginView.cpp:1616
+msgid "Sign in with SSO"
+msgstr ""
+
+#: ui/shared/views/LoginView.cpp:1617
+#, c++-format
+msgid "Continue with {0}"
+msgstr ""
+
+#: ui/shared/views/LoginView.cpp:1780
 msgid "Please enter your Matrix ID and password."
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1750
+#: ui/shared/views/LoginView.cpp:2041
 msgid "Connection Error"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1753 ui/shared/views/LoginView.cpp:1775
+#: ui/shared/views/LoginView.cpp:2044 ui/shared/views/LoginView.cpp:2066
 msgid "Sign In"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1771
+#: ui/shared/views/LoginView.cpp:2062
 msgid "No Internet Connection"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1772
+#: ui/shared/views/LoginView.cpp:2063
 msgid ""
 "Tesseract couldn't detect an internet connection. Check your Wi-Fi or "
 "network settings, then try again."
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1802
+#: ui/shared/views/LoginView.cpp:2093
 msgid "Sign In Again"
 msgstr ""
 
-#: ui/shared/views/LoginView.cpp:1804
+#: ui/shared/views/LoginView.cpp:2095
 #, c++-format
 msgid ""
 "The saved sign-in for {0} could not be found on this computer, so you need "
@@ -3326,12 +3348,12 @@ msgid "Seek"
 msgstr ""
 
 #: ui/shared/views/MediaTransportBar.cpp:168
-#: ui/shared/views/MessageListView.cpp:4830
+#: ui/shared/views/MessageListView.cpp:4822
 msgid "Pause"
 msgstr ""
 
 #: ui/shared/views/MediaTransportBar.cpp:168
-#: ui/shared/views/MessageListView.cpp:4830
+#: ui/shared/views/MessageListView.cpp:4822
 msgid "Play"
 msgstr ""
 
@@ -3362,12 +3384,12 @@ msgid "Copy event source"
 msgstr ""
 
 #: ui/shared/views/MessageActions.cpp:20
-#: ui/shared/views/MessageListView.cpp:11542
+#: ui/shared/views/MessageListView.cpp:11531
 msgid "Add reaction"
 msgstr ""
 
 #: ui/shared/views/MessageActions.cpp:28
-#: ui/shared/views/MessageListView.cpp:11544
+#: ui/shared/views/MessageListView.cpp:11533
 msgid "Reply in thread"
 msgstr ""
 
@@ -3395,574 +3417,500 @@ msgstr ""
 msgid "Add to Saved Stickers"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:548
+#: ui/shared/views/MessageListView.cpp:547
 #, c++-format
 msgid "{0} › message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:630
+#: ui/shared/views/MessageListView.cpp:629
 #, c++-format
 msgid "Live location · updated {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:633
+#: ui/shared/views/MessageListView.cpp:632
 msgid "Waiting for location…"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:635
+#: ui/shared/views/MessageListView.cpp:634
 msgid "Live location ended"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1533
+#: ui/shared/views/MessageListView.cpp:1608
 #: ui/shared/views/ThreadListView.cpp:89
 msgid "Yesterday"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1608
+#: ui/shared/views/MessageListView.cpp:1692
 #, c++-format
 msgid "{0} withdrew {1} request to join"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1613
+#: ui/shared/views/MessageListView.cpp:1697
 #, c++-format
 msgid "{0} changed their avatar"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1615
+#: ui/shared/views/MessageListView.cpp:1699
 #, c++-format
 msgid "{0} removed their avatar"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1618
+#: ui/shared/views/MessageListView.cpp:1702
 #, c++-format
 msgid "{0} changed their display name to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1621
+#: ui/shared/views/MessageListView.cpp:1705
 #, c++-format
 msgid "{0} removed their display name"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1623
+#: ui/shared/views/MessageListView.cpp:1707
 #, c++-format
 msgid "{0} changed their display name and avatar"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1637
+#: ui/shared/views/MessageListView.cpp:1721
 #, c++-format
 msgid "{0} removed the room name"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1641
+#: ui/shared/views/MessageListView.cpp:1725
 #, c++-format
 msgid "{0} set the room name to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1643
+#: ui/shared/views/MessageListView.cpp:1727
 #, c++-format
 msgid "{0} changed the room name to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1671
+#: ui/shared/views/MessageListView.cpp:1755
 #, c++-format
 msgid "{0} removed the topic"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1673
+#: ui/shared/views/MessageListView.cpp:1757
 #, c++-format
 msgid "{0} changed the topic to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1681
+#: ui/shared/views/MessageListView.cpp:1765
 #, c++-format
 msgid "{0} upgraded this room"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1710
-#, c++-format
-msgid "{0} server now denied"
-msgid_plural "{0} servers now denied"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp:1712
-#, c++-format
-msgid "{0} server no longer denied"
-msgid_plural "{0} servers no longer denied"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp:1719
-#, c++-format
-msgid "{0} server now allowed"
-msgid_plural "{0} servers now allowed"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp:1721
-#, c++-format
-msgid "{0} server no longer allowed"
-msgid_plural "{0} servers no longer allowed"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp:1727
-msgid "IP literals now allowed"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1728
-msgid "IP literals no longer allowed"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1733
-msgid "The server ACL was changed"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1734
-#, c++-format
-msgid "{0} changed the server ACL"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1758
-#: ui/shared/views/MessageListView.cpp:1759
-msgid "Bridge information"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1760
-msgid "Service members"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1761
-msgid "Bridge room features"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1762
-msgid "Custom emoji pack"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp:1788
+#: ui/shared/views/MessageListView.cpp:1782
 #, c++-format
 msgid "Room state updated: {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1790
+#: ui/shared/views/MessageListView.cpp:1784
+#: ui/shared/views/StateEventPhrases.cpp:350
+#: ui/shared/views/StateEventPhrases.cpp:529
 #, c++-format
 msgid "{0} updated the room state: {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1794
+#: ui/shared/views/MessageListView.cpp:1788
 #, c++-format
 msgid "Unhandled event: {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1796
+#: ui/shared/views/MessageListView.cpp:1790
 #, c++-format
 msgid "{0} sent an unhandled event: {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1813 ui/shared/views/send_block.cpp:37
+#: ui/shared/views/MessageListView.cpp:1807 ui/shared/views/send_block.cpp:37
 #, c++-format
 msgid "{0} and {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1816 ui/shared/views/send_block.cpp:40
+#: ui/shared/views/MessageListView.cpp:1810 ui/shared/views/send_block.cpp:40
 #, c++-format
 msgid "{0}, {1} and {2} other"
 msgid_plural "{0}, {1} and {2} others"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1840
+#: ui/shared/views/MessageListView.cpp:1834
 #, c++-format
 msgid "{0} was banned from the room"
 msgid_plural "{0} were banned from the room"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1843
+#: ui/shared/views/MessageListView.cpp:1837
 #, c++-format
 msgid "{0} was unbanned"
 msgid_plural "{0} were unbanned"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1846
+#: ui/shared/views/MessageListView.cpp:1840
 #, c++-format
 msgid "{0} was removed from the room"
 msgid_plural "{0} were removed from the room"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1848
+#: ui/shared/views/MessageListView.cpp:1842
 #, c++-format
 msgid "{0} was invited"
 msgid_plural "{0} were invited"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1850
+#: ui/shared/views/MessageListView.cpp:1844
 #, c++-format
 msgid "{0} was removed and banned"
 msgid_plural "{0} were removed and banned"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1853
+#: ui/shared/views/MessageListView.cpp:1847
 #, c++-format
 msgid "{0} accepted the invitation"
 msgid_plural "{0} accepted their invitations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1856
+#: ui/shared/views/MessageListView.cpp:1850
 #, c++-format
 msgid "{0} rejected the invitation"
 msgid_plural "{0} rejected their invitations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1860
+#: ui/shared/views/MessageListView.cpp:1854
 #, c++-format
 msgid "{0} had {1} invitation revoked"
 msgid_plural "{0} had {1} invitations revoked"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1865
+#: ui/shared/views/MessageListView.cpp:1859
 #, c++-format
 msgid "{0}'s request to join was approved"
 msgid_plural "{0}'s requests to join were approved"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1870
+#: ui/shared/views/MessageListView.cpp:1864
 #, c++-format
 msgid "{0} cancelled {1} request to join"
 msgid_plural "{0} cancelled {1} requests to join"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1874
+#: ui/shared/views/MessageListView.cpp:1868
 #, c++-format
 msgid "{0}'s request to join was denied"
 msgid_plural "{0}'s requests to join were denied"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1877
+#: ui/shared/views/MessageListView.cpp:1871
 #, c++-format
 msgid "{0} updated their avatar"
 msgid_plural "{0} updated their avatars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1880
+#: ui/shared/views/MessageListView.cpp:1874
 #, c++-format
 msgid "{0} cleared their avatar"
 msgid_plural "{0} cleared their avatars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1884
+#: ui/shared/views/MessageListView.cpp:1878
 #, c++-format
 msgid "{0} updated their display name"
 msgid_plural "{0} updated their display names"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1888
+#: ui/shared/views/MessageListView.cpp:1882
 #, c++-format
 msgid "{0} cleared their display name"
 msgid_plural "{0} cleared their display names"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1891
+#: ui/shared/views/MessageListView.cpp:1885
 #, c++-format
 msgid "{0} updated their display name and avatar"
 msgid_plural "{0} updated their display names and avatars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1947
-#, c++-format
-msgid "{0} changed the server ACL {1} time"
-msgid_plural "{0} changed the server ACL {1} times"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp:1951
-#, c++-format
-msgid "The server ACL was changed {0} time"
-msgid_plural "The server ACL was changed {0} times"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp:2035
+#: ui/shared/views/MessageListView.cpp:2027
 msgid "Sender"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2047
+#: ui/shared/views/MessageListView.cpp:2039
 #, c++-format
 msgid "{0} forwarded:"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2048
+#: ui/shared/views/MessageListView.cpp:2040
 #, c++-format
 msgid "{0} forwarded: {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2189
+#: ui/shared/views/MessageListView.cpp:2181
 msgid "Unable to decrypt message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2191
+#: ui/shared/views/MessageListView.cpp:2183
 msgid "Image"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2197
+#: ui/shared/views/MessageListView.cpp:2189
 msgid "Audio message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2201
+#: ui/shared/views/MessageListView.cpp:2193
 msgid "Video"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2211
+#: ui/shared/views/MessageListView.cpp:2203
 msgid "Location"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2213
-#: ui/shared/views/MessageListView.cpp:4899
+#: ui/shared/views/MessageListView.cpp:2205
+#: ui/shared/views/MessageListView.cpp:4891
 #: ui/shared/views/PollCardDisplay.cpp:58
 msgid "Poll"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2263
+#: ui/shared/views/MessageListView.cpp:2255
 msgid ", "
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2265
+#: ui/shared/views/MessageListView.cpp:2257
 msgid "; "
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:2267
+#: ui/shared/views/MessageListView.cpp:2259
 #, c++-format
 msgid "Table, {0} rows, {1} columns: {2}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3115
+#: ui/shared/views/MessageListView.cpp:3107
 #: ui/shared/views/SlashCommandPopup.cpp:115
 #: ui/shared/views/SlashCommandPopup.h:129
 #, c++-format
 msgid "via {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4399
-#: ui/shared/views/MessageListView.cpp:5343
-#: ui/shared/views/MessageListView.cpp:8988
+#: ui/shared/views/MessageListView.cpp:4391
+#: ui/shared/views/MessageListView.cpp:5335
+#: ui/shared/views/MessageListView.cpp:8977
 msgid "New messages"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4403
-#: ui/shared/views/MessageListView.cpp:5374
+#: ui/shared/views/MessageListView.cpp:4395
+#: ui/shared/views/MessageListView.cpp:5366
 msgid "This room continues an older conversation."
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4404
-#: ui/shared/views/MessageListView.cpp:5375
+#: ui/shared/views/MessageListView.cpp:4396
+#: ui/shared/views/MessageListView.cpp:5367
 #: ui/shared/views/RoomSearchBar.cpp:260
 msgid "Start of conversation"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4407
-#: ui/shared/views/MessageListView.cpp:4416
-#: ui/shared/views/MessageListView.cpp:4487
+#: ui/shared/views/MessageListView.cpp:4399
+#: ui/shared/views/MessageListView.cpp:4408
+#: ui/shared/views/MessageListView.cpp:4479
 #, c++-format
 msgid "{0} {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4412
-#: ui/shared/views/MessageListView.cpp:5479
+#: ui/shared/views/MessageListView.cpp:4404
+#: ui/shared/views/MessageListView.cpp:5471
 msgid "started a video call"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4413
-#: ui/shared/views/MessageListView.cpp:5480
+#: ui/shared/views/MessageListView.cpp:4405
+#: ui/shared/views/MessageListView.cpp:5472
 msgid "started a voice call"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4414
-#: ui/shared/views/MessageListView.cpp:5480
+#: ui/shared/views/MessageListView.cpp:4406
+#: ui/shared/views/MessageListView.cpp:5472
 msgid "started a call"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4446
+#: ui/shared/views/MessageListView.cpp:4438
 #, c++-format
 msgid "{0}; {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4488
+#: ui/shared/views/MessageListView.cpp:4480
 #, c++-format
 msgid "{0} ({1}): {2}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4497
+#: ui/shared/views/MessageListView.cpp:4489
 #, c++-format
 msgid "{0} ({1} from you): {2}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4503
+#: ui/shared/views/MessageListView.cpp:4495
 msgid "not sent"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4507
+#: ui/shared/views/MessageListView.cpp:4499
 msgid "sending"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4512
+#: ui/shared/views/MessageListView.cpp:4504
 msgid "in reply"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4513
+#: ui/shared/views/MessageListView.cpp:4505
 #, c++-format
 msgid "replying to {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4518
+#: ui/shared/views/MessageListView.cpp:4510
 msgid "forwarded message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4519
+#: ui/shared/views/MessageListView.cpp:4511
 #, c++-format
 msgid "forwarded from {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4523
+#: ui/shared/views/MessageListView.cpp:4515
 #, c++-format
 msgid "bot command {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4527
+#: ui/shared/views/MessageListView.cpp:4519
 msgid "edited"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4535
+#: ui/shared/views/MessageListView.cpp:4527
 #, c++-format
 msgid "{0} reply in thread"
 msgid_plural "{0} replies in thread"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:4547
+#: ui/shared/views/MessageListView.cpp:4539
 #, c++-format
 msgid "{0} reaction"
 msgid_plural "{0} reactions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:4604
-#: ui/shared/views/MessageListView.cpp:4631
+#: ui/shared/views/MessageListView.cpp:4596
+#: ui/shared/views/MessageListView.cpp:4623
 #, c++-format
 msgid "View profile of {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4648
+#: ui/shared/views/MessageListView.cpp:4640
 msgid "Reveal spoiler"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4662
+#: ui/shared/views/MessageListView.cpp:4654
 msgid "Expand code block"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4663
+#: ui/shared/views/MessageListView.cpp:4655
 msgid "Collapse code block"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4675
+#: ui/shared/views/MessageListView.cpp:4667
 msgid "Jump to replied message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4683
+#: ui/shared/views/MessageListView.cpp:4675
 msgid "View original message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4728
-#: ui/shared/views/MessageListView.cpp:4729
+#: ui/shared/views/MessageListView.cpp:4720
+#: ui/shared/views/MessageListView.cpp:4721
 #, c++-format
 msgid "Link preview: {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4746
+#: ui/shared/views/MessageListView.cpp:4738
 #, c++-format
 msgid "Open thread, {0} reply"
 msgid_plural "Open thread, {0} replies"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:4766
+#: ui/shared/views/MessageListView.cpp:4758
 msgid "Show hidden media"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4779
+#: ui/shared/views/MessageListView.cpp:4771
 msgid "Open image"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4793
+#: ui/shared/views/MessageListView.cpp:4785
 msgid "Open gallery"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4801
+#: ui/shared/views/MessageListView.cpp:4793
 msgid "Play video"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4815
+#: ui/shared/views/MessageListView.cpp:4807
 msgid "Open file"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4860
+#: ui/shared/views/MessageListView.cpp:4852
 msgid "Reactions"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4869
+#: ui/shared/views/MessageListView.cpp:4861
 #, c++-format
 msgid "{0}, {1} reaction"
 msgid_plural "{0}, {1} reactions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:4873
+#: ui/shared/views/MessageListView.cpp:4865
 msgid "reacted by you"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4921
+#: ui/shared/views/MessageListView.cpp:4913
 #, c++-format
 msgid "{0}, {1}%"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4943
+#: ui/shared/views/MessageListView.cpp:4935
 #: ui/shared/views/PollCardDisplay.cpp:129 ui/shared/views/RoomView.cpp:659
 msgid "End poll"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4962
+#: ui/shared/views/MessageListView.cpp:4954
 msgid "Message actions"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4983 ui/shared/views/RoomHeader.cpp:274
+#: ui/shared/views/MessageListView.cpp:4975 ui/shared/views/RoomHeader.cpp:274
 msgid "More options"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4998
+#: ui/shared/views/MessageListView.cpp:4990
 msgid "Retry sending"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5040
+#: ui/shared/views/MessageListView.cpp:5032
 #, c++-format
 msgid "Read by {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5086
+#: ui/shared/views/MessageListView.cpp:5078
 #: ui/shared/views/ThreadListView.cpp:513
 #: ui/shared/views/ThreadListView.cpp:620
 #, c++-format
@@ -3971,99 +3919,99 @@ msgid_plural "{0} replies"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:5886
+#: ui/shared/views/MessageListView.cpp:5875
 msgid "Load video"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5890
+#: ui/shared/views/MessageListView.cpp:5879
 msgid "Load sticker"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5894
+#: ui/shared/views/MessageListView.cpp:5883
 msgid "Load gallery"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5896
+#: ui/shared/views/MessageListView.cpp:5885
 msgid "Load image"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5989
-#: ui/shared/views/MessageListView.cpp:7237
-#: ui/shared/views/MessageListView.cpp:7520
-#: ui/shared/views/MessageListView.cpp:7590
+#: ui/shared/views/MessageListView.cpp:5978
+#: ui/shared/views/MessageListView.cpp:7226
+#: ui/shared/views/MessageListView.cpp:7509
+#: ui/shared/views/MessageListView.cpp:7579
 msgid "(empty message)"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:6665
+#: ui/shared/views/MessageListView.cpp:6654
 msgid "Forwarded message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:6666
+#: ui/shared/views/MessageListView.cpp:6655
 #, c++-format
 msgid "Forwarded from {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:6765
+#: ui/shared/views/MessageListView.cpp:6754
 #, c++-format
 msgid "Bot command: {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:6916
-#: ui/shared/views/MessageListView.cpp:7011
+#: ui/shared/views/MessageListView.cpp:6905
+#: ui/shared/views/MessageListView.cpp:7000
 msgid "Original message unavailable"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:7095
-#: ui/shared/views/MessageListView.cpp:7167
+#: ui/shared/views/MessageListView.cpp:7084
+#: ui/shared/views/MessageListView.cpp:7156
 msgid "[Spoiler]"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:7096
-#: ui/shared/views/MessageListView.cpp:7168
+#: ui/shared/views/MessageListView.cpp:7085
+#: ui/shared/views/MessageListView.cpp:7157
 #, c++-format
 msgid "[Spoiler: {0}]"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:7434
-#: ui/shared/views/MessageListView.cpp:8192
+#: ui/shared/views/MessageListView.cpp:7423
+#: ui/shared/views/MessageListView.cpp:8181
 msgid "Expand"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:7434
-#: ui/shared/views/MessageListView.cpp:8192
+#: ui/shared/views/MessageListView.cpp:7423
+#: ui/shared/views/MessageListView.cpp:8181
 msgid "Collapse"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:8431
+#: ui/shared/views/MessageListView.cpp:8420
 #, c++-format
 msgid "+{0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:9324
+#: ui/shared/views/MessageListView.cpp:9313
 msgid "Jump to first unread"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:9493
+#: ui/shared/views/MessageListView.cpp:9482
 msgid "View older messages"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:11546
+#: ui/shared/views/MessageListView.cpp:11535
 msgid "More"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:14697
+#: ui/shared/views/MessageListView.cpp:14686
 msgid "Reacted with :"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:14706
+#: ui/shared/views/MessageListView.cpp:14695
 msgid "Reacted by:"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:14710
+#: ui/shared/views/MessageListView.cpp:14699
 msgid "Reacted with "
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:15141
+#: ui/shared/views/MessageListView.cpp:15130
 #, c++-format
 msgid "{0} ({1} of {2})"
 msgstr ""
@@ -4936,149 +4884,153 @@ msgstr ""
 msgid "Skin tone"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:222
+#: ui/shared/views/SlashCommands.cpp:152
 #, c++-format
 msgid "(Spoiler: {0})"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:228
+#: ui/shared/views/SlashCommands.cpp:158
 msgid "(Spoiler)"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:237
-msgid "Send an action message"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:238
-msgid "Append ¯\\_(ツ)_/¯"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:239
-msgid "Slap someone with a large trout"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:240
-msgid "Send a hidden spoiler message"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:241
-msgid "Set your display name in this room"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:242
-msgid "Set or reset your avatar in this room"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:243
-msgid "Join a room by alias or ID"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:244
-msgid "Leave the current room"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:245
-msgid "Invite a user to the current room"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:246
-msgid "Search for a GIF to send"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:247
-msgid "Search for a sticker to send"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:248
-msgid "Take a selfie and attach it"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:249
-msgid "Share your current location"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:250
-msgid "Create a poll"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:268
-msgid "Avatar reset for this room"
-msgstr ""
-
-#: ui/shared/views/SlashCommands.cpp:386
+#: ui/shared/views/SlashCommands.cpp:266
 #, c++-format
 msgid "slaps {0} around a bit with a large trout"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:419
+#: ui/shared/views/SlashCommands.cpp:287
 msgid "no display name given; use /myroomnick <name>"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:446
+#: ui/shared/views/SlashCommands.cpp:312
 msgid "no image URL provided; use /myroomavatar alone to open the image picker"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:471
+#: ui/shared/views/SlashCommands.cpp:327
 msgid "expected an mxc:// or http(s) image URL, or \"reset\""
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:794 ui/shared/views/SlashCommands.cpp:809
-#: ui/shared/views/SlashCommands.cpp:825 ui/shared/views/SlashCommands.cpp:828
-#: ui/shared/views/SlashCommands.cpp:830 ui/shared/views/SlashCommands.cpp:832
+#: ui/shared/views/SlashCommands.cpp:342
+msgid "Avatar reset for this room"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:351
+msgid "Send an action message"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:352
+msgid "Append ¯\\_(ツ)_/¯"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:353
+msgid "Slap someone with a large trout"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:354
+msgid "Send a hidden spoiler message"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:356
+msgid "Set your display name in this room"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:358
+msgid "Set or reset your avatar in this room"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:360
+msgid "Join a room by alias or ID"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:361
+msgid "Leave the current room"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:362
+msgid "Invite a user to the current room"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:364
+msgid "Open a direct message with a user"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:365
+msgid "Search for a GIF to send"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:366
+msgid "Search for a sticker to send"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:367
+msgid "Take a selfie and attach it"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:368
+msgid "Share your current location"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:369
+msgid "Create a poll"
+msgstr ""
+
+#: ui/shared/views/SlashCommands.cpp:742 ui/shared/views/SlashCommands.cpp:757
+#: ui/shared/views/SlashCommands.cpp:773 ui/shared/views/SlashCommands.cpp:776
+#: ui/shared/views/SlashCommands.cpp:778 ui/shared/views/SlashCommands.cpp:780
 msgid "text"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:796
+#: ui/shared/views/SlashCommands.cpp:744
 msgid "number"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:798
+#: ui/shared/views/SlashCommands.cpp:746
 msgid "yes/no"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:800
+#: ui/shared/views/SlashCommands.cpp:748
 msgid "user"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:802
+#: ui/shared/views/SlashCommands.cpp:750
 msgid "server"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:805
+#: ui/shared/views/SlashCommands.cpp:753
 msgid "room"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:807
+#: ui/shared/views/SlashCommands.cpp:755
 msgid "event"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:811
+#: ui/shared/views/SlashCommands.cpp:759
 #, c++-format
 msgid "{0} (comma-separated)"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:813
+#: ui/shared/views/SlashCommands.cpp:761
 msgid "list"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:839
+#: ui/shared/views/SlashCommands.cpp:787
 msgid "Press Enter to send"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:845
+#: ui/shared/views/SlashCommands.cpp:793
 msgid "optional"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:882
+#: ui/shared/views/SlashCommands.cpp:830
 #, c++-format
 msgid "Missing required argument: {0}"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:884
+#: ui/shared/views/SlashCommands.cpp:832
 msgid "Too many arguments"
 msgstr ""
 
-#: ui/shared/views/SlashCommands.cpp:898
+#: ui/shared/views/SlashCommands.cpp:846
 #, c++-format
 msgid "{0} must be a valid {1}"
 msgstr ""
@@ -5147,6 +5099,460 @@ msgid ""
 "Drag rooms between the two lists to add or remove them, or select one and "
 "press Enter to add / Delete to remove."
 msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:24
+#: ui/shared/views/StateEventPhrases.cpp:449
+msgid "Someone"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:50
+#, c++-format
+msgid "{0} made the room public"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:51
+#, c++-format
+msgid "{0} made the room invite-only"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:52
+#, c++-format
+msgid "{0} made the room ask-to-join"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:53
+#, c++-format
+msgid "{0} allowed members of certain spaces to join the room"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:55
+#, c++-format
+msgid ""
+"{0} allowed members of certain spaces to join the room, and others to ask to "
+"join"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:56
+#, c++-format
+msgid "{0} made the room private"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:60
+#, c++-format
+msgid "{0} made the room history visible to anyone"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:61
+#, c++-format
+msgid "{0} made the room history visible to all room members"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:63
+#, c++-format
+msgid ""
+"{0} made the room history visible to members from the point they were invited"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:64
+#, c++-format
+msgid "{0} made the room history visible to members from the point they joined"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:68
+#, c++-format
+msgid "{0} allowed guests to join the room"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:69
+#, c++-format
+msgid "{0} stopped guests from joining the room"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:81
+#, c++-format
+msgid "{0} changed the default power level from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:82
+#, c++-format
+msgid "{0} set the default power level to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:84
+#, c++-format
+msgid "{0} changed the power level needed to send messages from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:85
+#, c++-format
+msgid "{0} set the power level needed to send messages to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:87
+#, c++-format
+msgid ""
+"{0} changed the power level needed to change room settings from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:88
+#, c++-format
+msgid "{0} set the power level needed to change room settings to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:89
+#, c++-format
+msgid "{0} changed the power level needed to ban from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:90
+#, c++-format
+msgid "{0} set the power level needed to ban to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:91
+#, c++-format
+msgid "{0} changed the power level needed to remove members from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:92
+#, c++-format
+msgid "{0} set the power level needed to remove members to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:93
+#, c++-format
+msgid "{0} changed the power level needed to remove messages from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:94
+#, c++-format
+msgid "{0} set the power level needed to remove messages to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:95
+#, c++-format
+msgid "{0} changed the power level needed to invite from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:96
+#, c++-format
+msgid "{0} set the power level needed to invite to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:159
+#, c++-format
+msgid "{0} set the power level of {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:160
+#, c++-format
+msgid "{0} changed the power level of {1} from {2} to {3}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:166
+#, c++-format
+msgid "{0} set the power level needed for {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:168
+#, c++-format
+msgid "{0} changed the power level needed for {1} from {2} to {3}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:179
+#: ui/shared/views/StateEventPhrases.cpp:516
+#, c++-format
+msgid "{0} changed permissions"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:181
+#, c++-format
+msgid "{0} changed {1} permission"
+msgid_plural "{0} changed {1} permissions"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:192
+#, c++-format
+msgid "{0} removed the room's main address"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:196
+#: ui/shared/views/StateEventPhrases.cpp:508
+#, c++-format
+msgid "{0} changed the room's main address"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:200
+#, c++-format
+msgid "{0} changed the room's main address from {1} to {2}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:203
+#, c++-format
+msgid "{0} set the room's main address to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:213
+#, c++-format
+msgid "{0} created the room as an upgrade of {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:217
+#, c++-format
+msgid "{0} created the room (room version {1})"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:219
+#: ui/shared/views/StateEventPhrases.cpp:512
+#, c++-format
+msgid "{0} created the room"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:231
+#, c++-format
+msgid "{0} removed a room from the space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:232
+#, c++-format
+msgid "{0} added a room to the space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:234
+#, c++-format
+msgid "{0} removed a parent space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:235
+#, c++-format
+msgid "{0} added a parent space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:239
+#, c++-format
+msgid "{0} removed {1} from the space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:240
+#, c++-format
+msgid "{0} added {1} to the space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:242
+#, c++-format
+msgid "{0} removed {1} as a parent space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:243
+#, c++-format
+msgid "{0} added {1} as a parent space"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:255
+#, c++-format
+msgid "{0} removed a moderation policy rule"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:256
+#, c++-format
+msgid "{0} added a moderation policy rule"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:262
+#, c++-format
+msgid "{0} removed the moderation policy rule for {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:263
+#, c++-format
+msgid "{0} added a moderation policy rule for {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:292
+#, c++-format
+msgid "{0} server now denied"
+msgid_plural "{0} servers now denied"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:294
+#, c++-format
+msgid "{0} server no longer denied"
+msgid_plural "{0} servers no longer denied"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:301
+#, c++-format
+msgid "{0} server now allowed"
+msgid_plural "{0} servers now allowed"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:303
+#, c++-format
+msgid "{0} server no longer allowed"
+msgid_plural "{0} servers no longer allowed"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:309
+msgid "IP literals now allowed"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:310
+msgid "IP literals no longer allowed"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:315
+msgid "The server ACL was changed"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:316
+#, c++-format
+msgid "{0} changed the server ACL"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:340
+#: ui/shared/views/StateEventPhrases.cpp:341
+msgid "Bridge information"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:342
+msgid "Service members"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:343
+msgid "Bridge room features"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:344
+msgid "Custom emoji pack"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:375
+#: ui/shared/views/StateEventPhrases.cpp:488
+#, c++-format
+msgid "{0} changed the join rules"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:379
+#: ui/shared/views/StateEventPhrases.cpp:492
+#, c++-format
+msgid "{0} changed the history visibility"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:383
+#: ui/shared/views/StateEventPhrases.cpp:496
+#, c++-format
+msgid "{0} changed guest access"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:387
+#: ui/shared/views/StateEventPhrases.cpp:500
+#, c++-format
+msgid "{0} turned on end-to-end encryption"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:393
+#, c++-format
+msgid "{0} removed the room avatar"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:395
+#, c++-format
+msgid "{0} set the room avatar"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:396
+#: ui/shared/views/StateEventPhrases.cpp:504
+#, c++-format
+msgid "{0} changed the room avatar"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:412
+#, c++-format
+msgid "{0} sent a third-party invite"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:413
+#, c++-format
+msgid "{0} sent a third-party invite to {1}"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:436
+#, c++-format
+msgid "The room settings were updated ({0} change)"
+msgid_plural "The room settings were updated ({0} changes)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:440
+#, c++-format
+msgid "{0} updated the room settings ({1} change)"
+msgid_plural "{0} updated the room settings ({1} changes)"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:457
+#, c++-format
+msgid "The server ACL was changed {0} time"
+msgid_plural "The server ACL was changed {0} times"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:461
+#, c++-format
+msgid "{0} changed the server ACL {1} time"
+msgid_plural "{0} changed the server ACL {1} times"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:468
+#, c++-format
+msgid "{0} removed {1} room from the space"
+msgid_plural "{0} removed {1} rooms from the space"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:471
+#, c++-format
+msgid "{0} added {1} room to the space"
+msgid_plural "{0} added {1} rooms to the space"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:477
+#, c++-format
+msgid "{0} removed {1} parent space"
+msgid_plural "{0} removed {1} parent spaces"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:480
+#, c++-format
+msgid "{0} added {1} parent space"
+msgid_plural "{0} added {1} parent spaces"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/StateEventPhrases.cpp:520
+#, c++-format
+msgid "{0} sent third-party invites"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:524
+#, c++-format
+msgid "{0} updated moderation policy rules"
+msgstr ""
+
+#: ui/shared/views/StateEventPhrases.cpp:535
+#, c++-format
+msgid "{0} ({1} time)"
+msgid_plural "{0} ({1} times)"
+msgstr[0] ""
+msgstr[1] ""
 
 #: ui/shared/views/StickerController.cpp:55
 msgid "No stickers found"
@@ -7862,13 +8268,4 @@ msgstr ""
 
 #: client/src/emoji.cpp:187
 msgid "Flags"
-msgstr ""
-
-#: ui/shared/views/LoginView.cpp:1604
-msgid "Sign in with SSO"
-msgstr ""
-
-#: ui/shared/views/LoginView.cpp:1605
-#, c++-format
-msgid "Continue with {0}"
 msgstr ""

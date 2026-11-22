@@ -323,21 +323,29 @@ TEST_CASE("room_by_id_ falls back to a hidden upgraded room", "[shell][room_upgr
     CHECK(s.room_by_id_("!unknown:x") == nullptr);
 }
 
-TEST_CASE("make_event turns m.room.server_acl into RoomServerAclStateEvent", "[ffi][server_acl]")
+TEST_CASE("make_event turns m.state into StateEvent", "[ffi][state_event]")
 {
     tesseract_ffi::TimelineEvent in{};
-    in.msg_type = "m.room.server_acl";
+    in.msg_type = "m.state";
     in.sender = "@alice:server";
     in.sender_name = "Alice";
-    in.body = "deny+3\nip-";
+    in.state_type = "m.room.join_rules";
+    in.state_key = "";
+    in.state_change = "changed";
+    in.state_params.push_back("invite");
+    in.state_params.push_back("public");
 
     auto ev = tesseract::make_event(in);
     REQUIRE(ev);
-    CHECK(ev->type == tesseract::EventType::RoomServerAcl);
-    CHECK(static_cast<int>(tesseract::EventType::RoomServerAcl) ==
-          static_cast<int>(tesseract::EventType::DevUnhandled) + 1);
-    CHECK(ev->body == "deny+3\nip-");
+    CHECK(ev->type == tesseract::EventType::StateEvent);
     CHECK(ev->sender_name == "Alice");
+    const auto& st = static_cast<const tesseract::StateEvent&>(*ev);
+    CHECK(st.state_type == "m.room.join_rules");
+    CHECK(st.state_key.empty());
+    CHECK(st.change == "changed");
+    REQUIRE(st.params.size() == 2);
+    CHECK(st.params[0] == "invite");
+    CHECK(st.params[1] == "public");
 }
 
 TEST_CASE("make_event turns m.room.topic into RoomTopicStateEvent", "[ffi][topic]")
@@ -351,8 +359,8 @@ TEST_CASE("make_event turns m.room.topic into RoomTopicStateEvent", "[ffi][topic
     auto ev = tesseract::make_event(in);
     REQUIRE(ev);
     CHECK(ev->type == tesseract::EventType::RoomTopic);
-    CHECK(static_cast<int>(tesseract::EventType::RoomTopic) ==
-          static_cast<int>(tesseract::EventType::RoomServerAcl) + 1);
+    CHECK(static_cast<int>(tesseract::EventType::StateEvent) ==
+          static_cast<int>(tesseract::EventType::RoomTopic) + 1);
     CHECK(ev->body == "Welcome!\nBe nice.");
     CHECK(ev->sender_name == "Alice");
 }

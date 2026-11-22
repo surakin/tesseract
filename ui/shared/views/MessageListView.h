@@ -112,7 +112,7 @@ struct MessageRowData
         Poll,          // m.poll.start (MSC3381)
         Gallery,       // m.gallery, MSC4274 inline media gallery
         DevUnhandled,  // developer "show unhandled events" row; `body` is the event type
-        RoomServerAcl, // m.room.server_acl state-event row; `body` lists the changes
+        StateEvent,    // generic state-event row; see state_type/state_change/state_params
         RoomTopic,     // m.room.topic state-event row; `body` is the new topic
     };
 
@@ -280,6 +280,7 @@ struct MessageRowData
     }
     // member_name(), plus " (@mxid)" when another room member shares the name.
     std::string member_label() const;
+
     // Raw name to draw: the profile name when it has one, else the member's.
     // Avatar initials use this; header text uses display_label().
     const std::string& display_name() const
@@ -376,6 +377,12 @@ struct MessageRowData
     std::string membership_target_avatar_url; // mxc
     std::string membership_reason;            // free-text kick/ban/… reason; may be empty
 
+    // Kind::StateEvent payload (see StateEventPhrases.h for the wording).
+    std::string state_type;
+    std::string state_key;
+    std::string state_change; // "set" | "changed" | "removed" | "added"
+    std::vector<std::string> state_params;
+
     // Room upgrade (Kind::RoomTombstone only): `body` carries the optional
     // reason; this is the replacement room's id.
     std::string replacement_room_id;
@@ -449,15 +456,14 @@ MapViewport next_map_viewport(const MessageRowData& old_row, const MessageRowDat
 // `msgs`/an index) so they're unit-testable without a live MessageListView.
 // MessageListView::Adapter's row-height/paint/click logic delegates to
 // these. A "group" is a maximal run of consecutive Kind::Membership rows
-// (whatever their membership_action) merged with RoomServerAcl rows that sit
-// next to one; a lone ACL row is not a group member. Any other kind (including a virtual
+// (whatever their membership_action) merged with state rows that sit
+// next to one; a lone state row is not a group member. Any other kind (including a virtual
 // day-separator row) starts a new group. No time-based splitting —
 // arbitrarily distant rows still group as long as nothing else is
 // interleaved. Collapsed, a group shows one summary line per distinct
 // action (see membership_group_actions).
 bool is_membership_group_start(const std::vector<MessageRowData>& msgs, std::size_t index);
-// True for Membership rows, and for RoomServerAcl rows adjacent to a Membership or
-// RoomServerAcl row.
+// True for Membership rows, and for state rows adjacent to a Membership or state row.
 bool is_membership_group_member(const std::vector<MessageRowData>& msgs, std::size_t index);
 // Ban/kick-style actions, listed before presence actions in a group summary.
 bool is_moderation_action(tesseract::MembershipAction a);
@@ -477,9 +483,15 @@ struct MembershipActionRun
 {
     tesseract::MembershipAction action{};
     std::vector<std::size_t> rows;
-    bool server_acl = false; // ACL line: `action` unused, `rows` are the ACL row indices
+    // Non-empty for a state line (`action` unused, `rows` are the state rows of that type).
+    std::string state_type;
+    // For space-link state lines (child/parent) only: the change ("added" / "removed") the run is keyed by.
+    std::string state_change;
+    // True for the one summary line of a group whose state rows span 2+ distinct state types
+    // (`rows` are all its state rows; `state_type` is the first row's, only to mark a state run).
+    bool state_summary = false;
 };
-// The distinct actions of rows [start, end) plus at most one server_acl run:
+// The distinct actions of rows [start, end) plus one run per state type:
 // moderation runs first, then presence runs, first-appearance order within each.
 std::vector<MembershipActionRun> membership_group_actions(const std::vector<MessageRowData>& msgs,
                                                           std::size_t start, std::size_t end);
@@ -495,7 +507,7 @@ std::string with_membership_reason(std::string phrase, const MessageRowData& m);
 // `row_rect` (a single line, or one line of a non-expandable group's summary;
 // for summary lines the first avatar sits at the same spot).
 bool membership_avatar_hit(tk::Rect row_rect, tk::Point world);
-// Per-event expanded line for a Membership or RoomServerAcl row.
+// Per-event expanded line for a Membership or state row.
 std::string membership_expanded_phrase(const MessageRowData& m);
 // The collapsed-summary line for `run` (people counted once, however many rows).
 std::string membership_run_phrase(const std::vector<MessageRowData>& msgs,

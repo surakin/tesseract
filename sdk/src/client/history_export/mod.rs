@@ -614,6 +614,29 @@ fn apply_stop_at_ts_ms(events: &mut Vec<crate::ffi::TimelineEvent>, stop_at_ts_m
     crossed
 }
 
+/// Rows the export leaves out: modelled state events (`m.state`) carry no
+/// body, and their export wording is a separate feature.
+fn skip_in_export(ev: &crate::ffi::TimelineEvent) -> bool {
+    ev.msg_type == "m.state"
+}
+
+#[cfg(test)]
+mod skip_in_export_tests {
+    use super::skip_in_export;
+    use crate::ffi::TimelineEvent;
+
+    #[test]
+    fn state_rows_are_skipped_and_others_kept() {
+        let row = |t: &str| TimelineEvent {
+            msg_type: t.to_owned(),
+            ..Default::default()
+        };
+        assert!(skip_in_export(&row("m.state")));
+        assert!(!skip_in_export(&row("m.text")));
+        assert!(!skip_in_export(&row("m.room.member")));
+    }
+}
+
 #[cfg(test)]
 mod apply_stop_at_ts_ms_tests {
     use super::apply_stop_at_ts_ms;
@@ -848,6 +871,9 @@ async fn run_window(
         else {
             continue;
         };
+        if skip_in_export(&ev) {
+            continue;
+        }
         if let Some(id) = real_id {
             seen.insert(id);
         }

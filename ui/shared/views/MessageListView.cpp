@@ -4,6 +4,7 @@
 #include "views/sdk_text.h"
 #include "views/send_block.h"
 #include "SlashCommands.h"
+#include "StateEventPhrases.h"
 #include "format.h"
 #include "html_spans.h"
 #include "IrcFormat.h"
@@ -22,8 +23,6 @@
 #include "tk/siphash.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
-#include <cstdlib>
-#include <sstream>
 #include <tesseract/client.h>
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
@@ -935,9 +934,16 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
         row.membership_reason = mem.reason;
         break;
     }
-    case tesseract::EventType::RoomServerAcl:
-        row.kind = Kind::RoomServerAcl; // `body` lists the ACL changes
+    case tesseract::EventType::StateEvent:
+    {
+        const auto& st = static_cast<const tesseract::StateEvent&>(ev);
+        row.kind = Kind::StateEvent;
+        row.state_type = st.state_type;
+        row.state_key = st.state_key;
+        row.state_change = st.change;
+        row.state_params = st.params;
         break;
+    }
     case tesseract::EventType::RoomTopic:
         row.kind = Kind::RoomTopic; // `body` is the new topic
         break;
@@ -1012,10 +1018,31 @@ MessageRowData make_row_data(const tesseract::Event& ev, const std::string& my_u
 
 namespace
 {
-bool is_membership_or_acl(const MessageRowData& m)
+// Any state row (generic state event, room name, topic) can join a membership group
+// (when it sits next to another group member).
+bool is_state_row(const MessageRowData& m)
 {
-    return m.kind == MessageRowData::Kind::Membership ||
-           m.kind == MessageRowData::Kind::RoomServerAcl;
+    using Kind = MessageRowData::Kind;
+    return m.kind == Kind::StateEvent || m.kind == Kind::RoomName || m.kind == Kind::RoomTopic;
+}
+
+// The state type a state row counts as when a group decides whether it spans several types.
+std::string state_row_type(const MessageRowData& m)
+{
+    switch (m.kind)
+    {
+    case MessageRowData::Kind::RoomName:
+        return "m.room.name";
+    case MessageRowData::Kind::RoomTopic:
+        return "m.room.topic";
+    default:
+        return m.state_type;
+    }
+}
+
+bool is_membership_or_state(const MessageRowData& m)
+{
+    return m.kind == MessageRowData::Kind::Membership || is_state_row(m);
 }
 } // namespace
 
@@ -1025,12 +1052,12 @@ bool is_membership_group_member(const std::vector<MessageRowData>& msgs, std::si
     {
         return true;
     }
-    if (msgs[index].kind != MessageRowData::Kind::RoomServerAcl)
+    if (!is_state_row(msgs[index]))
     {
         return false;
     }
-    return (index > 0 && is_membership_or_acl(msgs[index - 1])) ||
-           (index + 1 < msgs.size() && is_membership_or_acl(msgs[index + 1]));
+    return (index > 0 && is_membership_or_state(msgs[index - 1])) ||
+           (index + 1 < msgs.size() && is_membership_or_state(msgs[index + 1]));
 }
 
 bool is_moderation_action(tesseract::MembershipAction a)
@@ -1073,29 +1100,80 @@ std::size_t membership_group_end(const std::vector<MessageRowData>& msgs, std::s
     return j;
 }
 
+namespace
+{
+// Space links read differently when added and removed, so those runs are also keyed by change.
+bool is_space_link(const MessageRowData& m)
+{
+    return m.state_type == "m.space.child" || m.state_type == "m.space.parent";
+}
+} // namespace
+
 std::vector<MembershipActionRun> membership_group_actions(const std::vector<MessageRowData>& msgs,
                                                           std::size_t start, std::size_t end)
 {
     std::vector<MembershipActionRun> runs;
+    std::vector<std::string> state_types;
     for (std::size_t i = start; i < end; ++i)
     {
-        const bool acl = msgs[i].kind == MessageRowData::Kind::RoomServerAcl;
-        auto it =
-            std::find_if(runs.begin(), runs.end(),
-                         [&](const auto& r)
-                         {
-                             return acl ? r.server_acl
-                                        : (!r.server_acl && r.action == msgs[i].membership_action);
-                         });
+        const bool state = is_state_row(msgs[i]);
+        const std::string type = state ? state_row_type(msgs[i]) : std::string();
+        if (state && std::find(state_types.begin(), state_types.end(), type) == state_types.end())
+        {
+            state_types.push_back(type);
+        }
+        auto it = std::find_if(
+            runs.begin(), runs.end(),
+            [&](const auto& r)
+            {
+                return state ? (r.state_type == type &&
+                                (!is_space_link(msgs[i]) || r.state_change == msgs[i].state_change))
+                             : (r.state_type.empty() && r.action == msgs[i].membership_action);
+            });
         if (it == runs.end())
         {
             MembershipActionRun run;
-            run.action = acl ? tesseract::MembershipAction{} : msgs[i].membership_action;
-            run.server_acl = acl;
+            run.action = state ? tesseract::MembershipAction{} : msgs[i].membership_action;
+            run.state_type = type;
+            run.state_change =
+                state && is_space_link(msgs[i]) ? msgs[i].state_change : std::string();
             runs.push_back(std::move(run));
             it = std::prev(runs.end());
         }
         it->rows.push_back(i);
+    }
+    if (state_types.size() >= 2)
+    {
+        // Two or more state types: every state row reads as one summary line.
+        MembershipActionRun summary;
+        summary.state_summary = true;
+        summary.state_type = state_types.front();
+        std::vector<MembershipActionRun> kept;
+        for (auto& r : runs)
+        {
+            if (r.state_type.empty())
+            {
+                kept.push_back(std::move(r));
+            }
+            else
+            {
+                summary.rows.insert(summary.rows.end(), r.rows.begin(), r.rows.end());
+            }
+        }
+        std::sort(summary.rows.begin(), summary.rows.end());
+        // The summary takes the place of the first state run (timeline order when not expandable).
+        auto first_state = std::find_if(runs.begin(), runs.end(),
+                                        [](const auto& r)
+                                        {
+                                            return !r.state_type.empty();
+                                        });
+        std::size_t pos = 0;
+        for (auto it = runs.begin(); it != first_state; ++it)
+        {
+            ++pos;
+        }
+        kept.insert(kept.begin() + static_cast<std::ptrdiff_t>(pos), std::move(summary));
+        runs = std::move(kept);
     }
     // Expandable groups list moderation lines first, then presence lines
     // (first-appearance order within each class). Otherwise each line is the
@@ -1105,7 +1183,7 @@ std::vector<MembershipActionRun> membership_group_actions(const std::vector<Mess
         std::stable_partition(runs.begin(), runs.end(),
                               [](const auto& r)
                               {
-                                  return r.server_acl || is_moderation_action(r.action);
+                                  return !r.state_type.empty() || is_moderation_action(r.action);
                               });
     }
     return runs;
@@ -1541,7 +1619,8 @@ std::string format_day_label(std::uint64_t timestamp_ms)
 }
 
 std::string membership_expanded_phrase_base(const MessageRowData& m);
-std::string room_server_acl_phrase(const MessageRowData& m);
+std::string room_name_change_phrase(const MessageRowData& m);
+std::string room_topic_change_phrase(const MessageRowData& m);
 } // namespace
 
 // Per-event expanded-line phrase for a single m.room.member row, e.g.
@@ -1554,9 +1633,17 @@ std::string room_server_acl_phrase(const MessageRowData& m);
 // composes the display string, entirely through tk::tr()/tk::trf().
 std::string membership_expanded_phrase(const MessageRowData& m)
 {
-    if (m.kind == MessageRowData::Kind::RoomServerAcl)
+    if (m.kind == MessageRowData::Kind::StateEvent)
     {
-        return room_server_acl_phrase(m);
+        return state_event_phrase(m);
+    }
+    if (m.kind == MessageRowData::Kind::RoomName)
+    {
+        return room_name_change_phrase(m);
+    }
+    if (m.kind == MessageRowData::Kind::RoomTopic)
+    {
+        return room_topic_change_phrase(m);
     }
     return with_membership_reason(membership_expanded_phrase_base(m), m);
 }
@@ -1684,96 +1771,6 @@ std::string room_tombstone_phrase(const MessageRowData& m)
         line = tk::trf(tk::tr("{0}: {1}"), {line, m.body});
     }
     return line;
-}
-
-// Phrase for an m.room.server_acl row, e.g. "Alice changed the server ACL: 3 servers now denied;
-// IP literals no longer allowed". `body` holds one count per line (see RoomServerAclStateEvent);
-// the ACL itself can be huge, so the row never lists hostnames.
-std::string room_server_acl_phrase(const MessageRowData& m)
-{
-    std::vector<std::string> parts;
-    std::istringstream lines(m.body);
-    for (std::string line; std::getline(lines, line);)
-    {
-        const auto cut = line.find_first_of("+-");
-        if (cut == std::string::npos)
-        {
-            continue;
-        }
-        const std::string tag = line.substr(0, cut);
-        const bool added = line[cut] == '+';
-        const std::string count_text = line.substr(cut + 1);
-        const long n = count_text.empty() ? 0 : std::strtol(count_text.c_str(), nullptr, 10);
-        if (tag == "deny")
-        {
-            parts.push_back(
-                added ? tk::trf(tk::trn("{0} server now denied", "{0} servers now denied", n),
-                                {count_text})
-                      : tk::trf(tk::trn("{0} server no longer denied",
-                                        "{0} servers no longer denied", n),
-                                {count_text}));
-        }
-        else if (tag == "allow")
-        {
-            parts.push_back(
-                added ? tk::trf(tk::trn("{0} server now allowed", "{0} servers now allowed", n),
-                                {count_text})
-                      : tk::trf(tk::trn("{0} server no longer allowed",
-                                        "{0} servers no longer allowed", n),
-                                {count_text}));
-        }
-        else if (tag == "ip")
-        {
-            parts.push_back(added ? tk::tr("IP literals now allowed")
-                                  : tk::tr("IP literals no longer allowed"));
-        }
-    }
-
-    const std::string s = m.member_label();
-    std::string line = s.empty() ? tk::tr("The server ACL was changed")
-                                 : tk::trf(tk::tr("{0} changed the server ACL"), {s});
-    if (!parts.empty())
-    {
-        std::string detail;
-        for (const auto& p : parts)
-        {
-            detail += detail.empty() ? p : "; " + p;
-        }
-        line = tk::trf(tk::tr("{0}: {1}"), {line, detail});
-    }
-    return line;
-}
-
-// State event types Tesseract reads into room state rather than rendering as timeline rows,
-// with the label a developer row shows for them. Only these are reported as "handled": the
-// row exists solely under the "Show unhandled events" setting. Keep in step with the Rust
-// readers (bridge info, service members, room features, emote packs).
-struct KnownStateType
-{
-    const char* type;
-    const char* label; // marked for extraction, translated where shown
-};
-
-constexpr KnownStateType kKnownStateTypes[] = {
-    {"m.bridge", tk::N_("Bridge information")},
-    {"uk.half-shot.bridge", tk::N_("Bridge information")},
-    {"io.element.functional_members", tk::N_("Service members")},
-    {"com.beeper.room_features", tk::N_("Bridge room features")},
-    {"im.ponies.room_emotes", tk::N_("Custom emoji pack")},
-};
-
-// Label for a known state event type (`body` is "type" or "type [state_key]"), or empty.
-std::string known_state_label(const std::string& body)
-{
-    const std::string type = body.substr(0, body.find(" ["));
-    for (const auto& k : kKnownStateTypes)
-    {
-        if (type == k.type)
-        {
-            return tk::tr(k.label);
-        }
-    }
-    return {};
 }
 
 // Phrase for a developer row; `body` is the event type. Event types Tesseract understands read
@@ -1928,29 +1925,27 @@ bool membership_avatar_hit(tk::Rect row_rect, tk::Point world)
 std::string membership_run_phrase(const std::vector<MessageRowData>& msgs,
                                   const MembershipActionRun& run)
 {
-    if (run.server_acl)
+    if (!run.state_type.empty())
     {
         const std::size_t n = run.rows.size();
-        if (n == 1)
-        {
-            return room_server_acl_phrase(msgs[run.rows.front()]);
-        }
-        const MessageRowData& first_acl = msgs[run.rows.front()];
+        const MessageRowData& first_state = msgs[run.rows.front()];
         const bool one_sender = std::all_of(run.rows.begin(), run.rows.end(),
                                             [&](std::size_t i)
                                             {
-                                                return msgs[i].sender == first_acl.sender;
+                                                return msgs[i].sender == first_state.sender;
                                             });
-        const std::string count = std::to_string(n);
-        if (one_sender)
+        if (run.state_summary)
         {
-            return tk::trf(tk::trn("{0} changed the server ACL {1} time",
-                                   "{0} changed the server ACL {1} times", static_cast<long>(n)),
-                           {first_acl.member_label(), count});
+            return state_summary_run_phrase(one_sender ? first_state.member_label() : std::string(),
+                                            n);
         }
-        return tk::trf(tk::trn("The server ACL was changed {0} time",
-                               "The server ACL was changed {0} times", static_cast<long>(n)),
-                       {count});
+        if (n == 1 || first_state.kind != MessageRowData::Kind::StateEvent)
+        {
+            // A repeated name/topic reads as its newest event.
+            return membership_expanded_phrase(msgs[run.rows.back()]);
+        }
+        return state_event_run_phrase(one_sender ? first_state.member_label() : std::string(),
+                                      first_state.state_type, n, msgs[run.rows.back()]);
     }
     std::vector<std::string> names;
     std::vector<std::string> seen_ids;
@@ -1986,7 +1981,7 @@ static bool is_virtual_event(MessageRowData::Kind k)
     return k == Kind::DaySeparator || k == Kind::ReadMarker || k == Kind::TimelineStart ||
            k == Kind::PinnedEvent || k == Kind::CallNotification || k == Kind::Membership ||
            k == Kind::RoomName || k == Kind::RoomTombstone || k == Kind::DevUnhandled ||
-           k == Kind::RoomServerAcl || k == Kind::RoomTopic;
+           k == Kind::StateEvent || k == Kind::RoomTopic;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -2362,25 +2357,25 @@ public:
         return tesseract::views::membership_group_expandable(owner_.messages_, start);
     }
     // Whether row `index` takes part in a membership group: any Membership
-    // row, and a RoomServerAcl row only next to another Membership/ACL row.
-    // An ungrouped ACL row keeps its standalone one-line path.
+    // row, and a state row only next to another Membership/state row.
+    // An ungrouped state row keeps its standalone one-line path.
     bool membership_row_grouped(std::size_t index) const
     {
         return tesseract::views::is_membership_group_member(owner_.messages_, index);
     }
     // Whether run `i` of `runs` occupies a slot in the avatar-hit lists
-    // (centered_avatar_offsets / membership_avatar_rows). A server_acl run has
-    // no avatar, but while a non-ACL line follows it the slot is kept as an
+    // (centered_avatar_offsets / membership_avatar_rows). A state run has
+    // no avatar, but while a non-state line follows it the slot is kept as an
     // inert placeholder so line indices still match the painted lines.
     static bool run_has_avatar_slot(const std::vector<MembershipActionRun>& runs, std::size_t i)
     {
-        if (!runs[i].server_acl)
+        if (runs[i].state_type.empty())
         {
             return true;
         }
         for (std::size_t j = i + 1; j < runs.size(); ++j)
         {
-            if (!runs[j].server_acl)
+            if (runs[j].state_type.empty())
             {
                 return true;
             }
@@ -2418,9 +2413,9 @@ public:
         {
             return {};
         }
-        // An ACL row has no avatar of its own; only a collapsed group start
+        // A state row has no avatar of its own; only a collapsed group start
         // (whose summary lines include the other runs) can yield rows.
-        if (owner_.messages_[index].kind == MessageRowData::Kind::RoomServerAcl &&
+        if (is_state_row(owner_.messages_[index]) &&
             !(is_membership_group_start(index) && membership_group_collapsed(index)))
         {
             return {};
@@ -2437,7 +2432,7 @@ public:
         const auto runs = membership_group_actions(index, membership_group_end(index));
         for (std::size_t i = 0; i < runs.size(); ++i)
         {
-            // An ACL line pushes its own (userless) row: no avatar to hit.
+            // A state line pushes its own (userless) row: no avatar to hit.
             if (run_has_avatar_slot(runs, i))
             {
                 rows.push_back(runs[i].rows.front());
@@ -2654,10 +2649,9 @@ public:
         {
             return 0.0f; // grouped into the previous bridge-information row
         }
-        const bool grouped_acl = m.kind == Kind::RoomServerAcl && membership_row_grouped(index);
-        if (m.kind == Kind::RoomName || m.kind == Kind::RoomTombstone ||
-            m.kind == Kind::DevUnhandled || (m.kind == Kind::RoomServerAcl && !grouped_acl) ||
-            m.kind == Kind::RoomTopic)
+        const bool grouped_acl = is_state_row(m) && membership_row_grouped(index);
+        if (m.kind == Kind::RoomTombstone || m.kind == Kind::DevUnhandled ||
+            (is_state_row(m) && !grouped_acl))
         {
             return kPinnedEventH;
         }
@@ -2676,14 +2670,15 @@ public:
                         const auto& run = runs[i];
                         auto line = centered_system_message_layout_(
                             ctx.factory, column_w, membership_run_phrase(owner_.messages_, run),
-                            run.server_acl ? 0 : std::min<std::size_t>(run.rows.size(), 3), {});
+                            !run.state_type.empty() ? 0 : std::min<std::size_t>(run.rows.size(), 3),
+                            {});
                         if (run_has_avatar_slot(runs, i))
                         {
                             avatar_offsets.push_back(line.avatar_x);
                         }
                     }
                 }
-                else if (m.kind != Kind::RoomServerAcl && membership_row_painted(index))
+                else if (!is_state_row(m) && membership_row_painted(index))
                 {
                     auto line = centered_system_message_layout_(ctx.factory, column_w,
                                                                 membership_expanded_phrase(m), 1,
@@ -2835,7 +2830,8 @@ public:
             paint_call_notification(m, ctx, bounds);
             return;
         }
-        if (m.kind == Kind::RoomName)
+        const bool grouped_acl = is_state_row(m) && membership_row_grouped(index);
+        if (m.kind == Kind::RoomName && !grouped_acl)
         {
             paint_room_name_change(m, ctx, bounds);
             return;
@@ -2845,7 +2841,7 @@ public:
             paint_room_name_change(m, ctx, bounds, room_tombstone_phrase(m));
             return;
         }
-        if (m.kind == Kind::RoomTopic)
+        if (m.kind == Kind::RoomTopic && !grouped_acl)
         {
             paint_room_name_change(m, ctx, bounds, room_topic_change_phrase(m));
             return;
@@ -2859,20 +2855,19 @@ public:
             paint_room_name_change(m, ctx, bounds, dev_unhandled_phrase(m));
             return;
         }
-        const bool grouped_acl = m.kind == Kind::RoomServerAcl && membership_row_grouped(index);
-        if (m.kind == Kind::RoomServerAcl && !grouped_acl)
+        if (m.kind == Kind::StateEvent && !grouped_acl)
         {
-            paint_room_name_change(m, ctx, bounds, room_server_acl_phrase(m));
+            paint_room_name_change(m, ctx, bounds, state_event_phrase(m));
             return;
         }
         if (m.kind == Kind::Membership || grouped_acl)
         {
-            // An expanded ACL row is a plain pinned-style line, no avatar.
+            // An expanded state row is a plain pinned-style line, no avatar.
             auto paint_member_line = [&]
             {
                 if (grouped_acl)
                 {
-                    paint_room_name_change(m, ctx, bounds, room_server_acl_phrase(m));
+                    paint_room_name_change(m, ctx, bounds, membership_expanded_phrase(m));
                 }
                 else
                 {
@@ -4415,18 +4410,18 @@ public:
             return m.sender_name.empty() ? intent
                                          : tk::trf(tk::tr("{0} {1}"), {m.member_label(), intent});
         }
-        case Kind::RoomName:
-            return room_name_change_phrase(m);
         case Kind::RoomTombstone:
             return room_tombstone_phrase(m);
         case Kind::DevUnhandled:
             return dev_unhandled_phrase(m);
+        case Kind::RoomName:
         case Kind::RoomTopic:
-            return room_topic_change_phrase(m);
-        case Kind::RoomServerAcl:
+        case Kind::StateEvent:
             if (!membership_row_grouped(index))
             {
-                return room_server_acl_phrase(m);
+                return m.kind == Kind::RoomName    ? room_name_change_phrase(m)
+                       : m.kind == Kind::RoomTopic ? room_topic_change_phrase(m)
+                                                   : state_event_phrase(m);
             }
             [[fallthrough]];
         case Kind::Membership:
@@ -5244,7 +5239,7 @@ private:
         case Kind::RoomName:
         case Kind::RoomTombstone:
         case Kind::DevUnhandled:
-        case Kind::RoomServerAcl:
+        case Kind::StateEvent:
         case Kind::RoomTopic:
             return tk::Role::StaticText;
         default:
@@ -5679,7 +5674,7 @@ private:
         for (const auto& run : membership_group_actions(start, end))
         {
             const auto& first = owner_.messages_[run.rows.front()];
-            if (run.server_acl)
+            if (!run.state_type.empty())
             {
                 paint_room_name_change(first, ctx, {bounds.x, y, bounds.w, kPinnedEventH},
                                        membership_run_phrase(owner_.messages_, run));
@@ -5687,7 +5682,7 @@ private:
                 continue;
             }
             const bool uses_pronoun =
-                !run.server_acl && run.rows.size() == 1 &&
+                run.state_type.empty() && run.rows.size() == 1 &&
                 (run.action == tesseract::MembershipAction::InvitationRevoked ||
                  run.action == tesseract::MembershipAction::KnockRetracted);
             if (uses_pronoun && !first.pronoun_resolved &&
@@ -5696,7 +5691,8 @@ private:
                 owner_.on_member_pronoun_needed(first.membership_target_user_id);
             }
 
-            paint_centered_system_message_(run.server_acl ? std::vector<std::size_t>{} : run.rows,
+            paint_centered_system_message_(!run.state_type.empty() ? std::vector<std::size_t>{}
+                                                                   : run.rows,
                                            membership_run_phrase(owner_.messages_, run), {}, ctx,
                                            {bounds.x, y, bounds.w, kPinnedEventH});
             y += kPinnedEventH;
@@ -5793,7 +5789,7 @@ private:
                                         tk::Rect bounds) const
     {
         const auto& msgs = owner_.messages_;
-        if (run.server_acl)
+        if (!run.state_type.empty())
         {
             // Same look as a lone state-event row (centered, with the rule).
             paint_room_name_change(msgs[run.rows.front()], ctx, bounds,
@@ -5804,8 +5800,7 @@ private:
         constexpr float kStride = 12.0f;
         constexpr std::size_t kCap = 3;
         const std::size_t total = run.rows.size();
-        // An ACL line names no target: no avatars, text at the left padding.
-        const std::size_t visible = run.server_acl ? 0 : std::min(total, kCap);
+        const std::size_t visible = std::min(total, kCap);
         const float cy = bounds.y + kPinnedEventH * 0.5f;
 
         float cx = bounds.x + kMsgListPadX + kAvatarD * 0.5f;
@@ -5823,11 +5818,9 @@ private:
             cx += kStride;
         }
 
-        const float text_x =
-            run.server_acl
-                ? bounds.x + kMsgListPadX
-                : bounds.x + kMsgListPadX + kAvatarD +
-                      (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) + 6.0f;
+        const float text_x = bounds.x + kMsgListPadX + kAvatarD +
+                             (visible > 1 ? static_cast<float>(visible - 1) * kStride : 0.0f) +
+                             6.0f;
 
         tk::TextStyle st{};
         st.role = tk::FontRole::Small;
@@ -5842,8 +5835,7 @@ private:
         using A = tesseract::MembershipAction;
         const auto& first = msgs[run.rows.front()];
         const bool singleton_uses_pronoun =
-            !run.server_acl && total == 1 &&
-            (run.action == A::InvitationRevoked || run.action == A::KnockRetracted);
+            total == 1 && (run.action == A::InvitationRevoked || run.action == A::KnockRetracted);
         if (singleton_uses_pronoun && !first.pronoun_resolved &&
             !first.membership_target_user_id.empty() && owner_.on_member_pronoun_needed)
         {
@@ -6178,7 +6170,7 @@ private:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
-        case MessageRowData::Kind::RoomServerAcl:
+        case MessageRowData::Kind::StateEvent:
         case MessageRowData::Kind::RoomTopic:
             return 0.0f;
         }
@@ -6648,7 +6640,7 @@ private:
         case MessageRowData::Kind::RoomName:
         case MessageRowData::Kind::RoomTombstone:
         case MessageRowData::Kind::DevUnhandled:
-        case MessageRowData::Kind::RoomServerAcl:
+        case MessageRowData::Kind::StateEvent:
         case MessageRowData::Kind::RoomTopic:
             break;
         }
@@ -9009,7 +9001,7 @@ public:
         float y = bounds.y;
         for (const auto& run : membership_group_actions(msgs, start, end))
         {
-            if (run.server_acl)
+            if (!run.state_type.empty())
             {
                 ad.paint_room_name_change(msgs[run.rows.front()], ctx,
                                           {bounds.x, y, bounds.w, kPinnedEventH},

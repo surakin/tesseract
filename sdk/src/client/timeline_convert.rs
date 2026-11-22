@@ -37,17 +37,17 @@ use std::sync::Arc;
 /// Sender display name, avatar and MSC4426 status flattened for the FFI.
 /// All empty while the profile is still pending.
 #[cfg(not(test))]
-struct SenderProfileFfi {
-    sender_name: String,
+pub(super) struct SenderProfileFfi {
+    pub(super) sender_name: String,
     /// Another room member shares `sender_name`.
-    sender_name_ambiguous: bool,
-    sender_avatar_url: String,
-    sender_status_emoji: String,
-    sender_status_text: String,
+    pub(super) sender_name_ambiguous: bool,
+    pub(super) sender_avatar_url: String,
+    pub(super) sender_status_emoji: String,
+    pub(super) sender_status_text: String,
 }
 
 #[cfg(not(test))]
-fn sender_profile_ffi(
+pub(super) fn sender_profile_ffi(
     details: &TimelineDetails<matrix_sdk_ui::timeline::Profile>,
 ) -> SenderProfileFfi {
     let TimelineDetails::Ready(p) = details else {
@@ -191,6 +191,10 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         profile_avatar_set: false,
         profile_avatar_url: String::new(),
         profile_avatar_encrypted_json: String::new(),
+        state_type: String::new(),
+        state_key: String::new(),
+        state_change: String::new(),
+        state_params: Vec::new(),
     }
 }
 
@@ -754,59 +758,7 @@ pub(crate) fn redacted_event_visible(msg_type: &str, show: bool) -> bool {
     show || msg_type != "m.redacted"
 }
 
-/// State event types Tesseract reads into room state. Their timeline rows are
-/// "state events": shown under "Show state events in the timeline" rather than
-/// the developer "unhandled" setting. Keep in step with the label table in
-/// `MessageListView.cpp` (`kKnownStateTypes`).
-pub(crate) const KNOWN_STATE_EVENT_TYPES: [&str; 5] = [
-    "m.bridge",
-    "uk.half-shot.bridge",
-    "io.element.functional_members",
-    "com.beeper.room_features",
-    "im.ponies.room_emotes",
-];
-
-/// State event types that never become timeline rows, not even under the
-/// developer "Show unhandled events" setting: call membership churns on every
-/// join, leave and refresh, and Tesseract reads membership and slots into call
-/// state instead.
-pub(crate) const HIDDEN_STATE_EVENT_TYPES: [&str; 6] = [
-    "org.matrix.msc3401.call.member",
-    "m.call.member",
-    "org.matrix.msc4143.rtc.member",
-    "m.rtc.member",
-    "org.matrix.msc4143.rtc.slot",
-    "m.rtc.slot",
-];
-
-/// Whether a state event of this type is kept out of the timeline entirely.
-pub(crate) fn state_event_hidden(event_type: &str) -> bool {
-    HIDDEN_STATE_EVENT_TYPES.contains(&event_type)
-}
-
-/// Whether a row reaches the UI given the state-event and unhandled-event
-/// settings. Server-ACL rows and `dev.unhandled` rows of a known state type
-/// need `show_state`; any other `dev.unhandled` row needs `show_unhandled`.
-/// `body` is a dev row's "type" or "type [state_key]".
-pub(crate) fn state_event_visible(
-    msg_type: &str,
-    body: &str,
-    show_state: bool,
-    show_unhandled: bool,
-) -> bool {
-    match msg_type {
-        "m.room.server_acl" => show_state,
-        "dev.unhandled" => {
-            let event_type = body.split(" [").next().unwrap_or(body);
-            if KNOWN_STATE_EVENT_TYPES.contains(&event_type) {
-                show_state
-            } else {
-                show_unhandled
-            }
-        }
-        _ => true,
-    }
-}
+pub(crate) use super::state_events::state_event_hidden;
 
 /// Per-call snapshot of the runtime-toggleable timeline row visibility
 /// settings. `Copy` so it is read once from [`VisibilityFlags`] and then
@@ -2150,52 +2102,6 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 });
             }
         }
-        if let AnyOtherStateEventContentChange::RoomServerAcl(full) = state.content() {
-            if let StateEventContentChange::Original {
-                content,
-                prev_content,
-            } = full
-            {
-                // A missing previous ACL means the spec defaults: no entries,
-                // IP literals allowed.
-                let (old_allow, old_deny, old_ip) = prev_content
-                    .as_ref()
-                    .map(|pc| (pc.allow.clone(), pc.deny.clone(), pc.allow_ip_literals))
-                    .unwrap_or((Vec::new(), Vec::new(), true));
-                let body = server_acl_changes(
-                    &content.allow,
-                    &content.deny,
-                    content.allow_ip_literals,
-                    &old_allow,
-                    &old_deny,
-                    old_ip,
-                );
-                let SenderProfileFfi {
-                    sender_name,
-                    sender_name_ambiguous,
-                    sender_avatar_url,
-                    sender_status_emoji,
-                    sender_status_text,
-                } = sender_profile_ffi(event_item.sender_profile());
-                return Some(TimelineEvent {
-                    room_id: room_id.to_owned(),
-                    msg_type: "m.room.server_acl".to_owned(),
-                    event_id: event_item
-                        .event_id()
-                        .map(|id| id.to_string())
-                        .unwrap_or_default(),
-                    sender: event_item.sender().to_string(),
-                    sender_name,
-                    sender_name_ambiguous,
-                    sender_avatar_url,
-                    sender_status_emoji,
-                    sender_status_text,
-                    body,
-                    timestamp: event_item.timestamp().get().into(),
-                    ..ffi_event_defaults()
-                });
-            }
-        }
         if let AnyOtherStateEventContentChange::RoomTombstone(full) = state.content() {
             if let StateEventContentChange::Original { content, .. } = full {
                 let SenderProfileFfi {
@@ -2225,10 +2131,15 @@ pub(super) async fn timeline_item_to_ffi_opts(
                 });
             }
         }
+        // State events with their own `m.state` row (join rules, power levels,
+        // ...); gated by `state_event_visible`.
+        if let Some(row) = super::state_events::state_event_row(event_item, room_id) {
+            return Some(row);
+        }
         // StateEventContentChange::Redacted: no content to diff. All other
         // state events (and redacted pins) stay filtered unless the developer
-        // "show unhandled events" setting is on. State events Tesseract reads
-        // are emitted regardless and gated by `state_event_visible`.
+        // "show unhandled events" setting is on. The bridge/emote/room-feature
+        // types stay raw `dev.unhandled` rows, gated by `state_event_visible`.
         let event_type = event_item.content().event_type_str();
         if event_type
             .as_ref()
@@ -2238,12 +2149,18 @@ pub(super) async fn timeline_item_to_ffi_opts(
         }
         let known = event_type
             .as_ref()
-            .is_some_and(|t| KNOWN_STATE_EVENT_TYPES.contains(&t.as_ref()));
+            .is_some_and(|t| super::state_events::dev_unhandled_passthrough(t.as_ref()));
         return if show_unhandled || known {
             dev_unhandled_event(event_item, room_id)
         } else {
             None
         };
+    }
+
+    // A `{}`-content removal of a space link or policy rule fails to parse;
+    // show it as a "removed" `m.state` row.
+    if let Some(row) = super::state_events::failed_state_row(event_item, room_id) {
+        return Some(row);
     }
 
     // m.room.member state events representing an actual membership
@@ -2957,52 +2874,6 @@ mod dev_unhandled_tests {
             dev_unhandled_body("m.space.child", Some("!abc:example.org")),
             "m.space.child [!abc:example.org]"
         );
-    }
-}
-
-#[cfg(test)]
-mod state_event_visibility_tests {
-    use super::state_event_hidden;
-    use super::state_event_visible as vis;
-
-    #[test]
-    fn call_membership_state_never_reaches_the_timeline() {
-        for t in [
-            "org.matrix.msc3401.call.member",
-            "m.call.member",
-            "org.matrix.msc4143.rtc.member",
-            "m.rtc.member",
-            "org.matrix.msc4143.rtc.slot",
-            "m.rtc.slot",
-        ] {
-            assert!(state_event_hidden(t), "{t}");
-        }
-        assert!(!state_event_hidden("m.room.topic"));
-    }
-
-    #[test]
-    fn acl_and_known_state_rows_follow_the_state_flag() {
-        assert!(vis("m.room.server_acl", "", true, false));
-        assert!(!vis("m.room.server_acl", "", false, true));
-        assert!(vis("dev.unhandled", "m.bridge [a/b]", true, false));
-        assert!(!vis("dev.unhandled", "uk.half-shot.bridge", false, true));
-        assert!(vis(
-            "dev.unhandled",
-            "io.element.functional_members",
-            true,
-            false
-        ));
-    }
-
-    #[test]
-    fn other_dev_rows_follow_the_unhandled_flag() {
-        assert!(vis("dev.unhandled", "com.example.ping", false, true));
-        assert!(!vis("dev.unhandled", "com.example.ping", true, false));
-    }
-
-    #[test]
-    fn ordinary_rows_are_always_visible() {
-        assert!(vis("m.text", "hi", false, false));
     }
 }
 

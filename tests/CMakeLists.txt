@@ -193,6 +193,7 @@ add_executable(tesseract_tests
     cpp/test_message_list_code_collapse.cpp
     cpp/test_message_list_date_badge.cpp
     cpp/test_room_upgrade.cpp
+    cpp/test_state_event_phrases.cpp
     cpp/test_message_list_gallery.cpp
     cpp/test_message_list_gallery_click.cpp
     cpp/test_tk_message_list_search_highlight.cpp
@@ -597,6 +598,12 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME layering_check
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_layering.py
                 ${CMAKE_SOURCE_DIR}/ui/shared)
+
+    # Every shown state event type has a phrase (see the script).
+    add_test(NAME state_event_phrases_check
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_state_event_phrases.py
+                ${CMAKE_SOURCE_DIR}/sdk/src/client/state_events.rs
+                ${CMAKE_SOURCE_DIR}/ui/shared/views/StateEventPhrases.cpp)
 
     # Offline unit tests of the CI smoke scripts (FakeServer only).
     add_test(NAME smoke_scripts_unittest

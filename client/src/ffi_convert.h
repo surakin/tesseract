@@ -1052,10 +1052,18 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
-    if (msg_type == "m.room.server_acl")
+    if (msg_type == "m.state")
     {
-        auto ev = std::make_unique<RoomServerAclStateEvent>();
+        auto ev = std::make_unique<StateEvent>();
         assign_base(*ev, e);
+        ev->state_type = std::string(e.state_type);
+        ev->state_key = std::string(e.state_key);
+        ev->change = std::string(e.state_change);
+        ev->params.reserve(e.state_params.size());
+        for (const auto& p : e.state_params)
+        {
+            ev->params.emplace_back(std::string(p));
+        }
         return ev;
     }
 

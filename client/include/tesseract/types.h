@@ -36,8 +36,8 @@ enum class EventType
     Poll,             // MSC3381 poll start (appended: enum ints are pinned by tests)
     Gallery,          // m.gallery, MSC4274 inline media gallery
     DevUnhandled,     // developer "show unhandled events" row; `body` is the event type
-    RoomServerAcl,    // m.room.server_acl: server ACL changed; `body` lists the changes
     RoomTopic,        // m.room.topic state-event row; `body` is the new topic
+    StateEvent,       // generic "m.state" row: see `StateEvent` (appended: enum ints are pinned)
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -600,19 +600,6 @@ struct RoomTombstoneStateEvent : public Event
     std::string replacement_room_id;
 };
 
-/// m.room.server_acl state event surfaced as a timeline row. `sender`/`sender_name`
-/// identify who changed the ACL; `body` holds one change count per line: `deny+N`,
-/// `deny-N`, `allow+N`, `allow-N` (N entries added/removed) and `ip+`/`ip-`
-/// (IP-literal servers now allowed/denied). Never the host lists themselves: an
-/// ACL can have thousands of entries. Empty when nothing changed.
-struct RoomServerAclStateEvent : public Event
-{
-    RoomServerAclStateEvent()
-    {
-        type = EventType::RoomServerAcl;
-    }
-};
-
 /// m.room.topic state event surfaced as a timeline row. `sender`/`sender_name`
 /// identify who changed the topic; `body` is the new plain-text topic, empty
 /// when it was removed.
@@ -622,6 +609,44 @@ struct RoomTopicStateEvent : public Event
     {
         type = EventType::RoomTopic;
     }
+};
+
+/// Generic state-event row (wire msg_type "m.state"), built by the Rust side from a
+/// registry of state types. `sender`/`sender_name` identify who made the change. No
+/// English prose crosses the FFI: the UI derives the wording from these fields.
+///   `state_type`  the Matrix event type, e.g. "m.room.join_rules"
+///   `state_key`   the event's state key (the other room id for m.space.child/parent)
+///   `change`      "set" (no previous content), "changed", "removed" or "added"
+///   `params`      per-type values, "new" first and "old" second where noted:
+///     m.room.join_rules          [new, old] public|invite|knock|restricted|knock_restricted|private
+///     m.room.history_visibility  [new, old] world_readable|shared|invited|joined
+///     m.room.guest_access        [new, old] can_join|forbidden
+///     m.room.encryption          [algorithm]
+///     m.room.avatar              []
+///     m.room.canonical_alias     [alias, old_alias]
+///     m.room.create              [room_version, predecessor_room_id]
+///     m.room.power_levels        one "scope|key|old|new" per difference; scope is `user`
+///                                (key = user id), `event` (key = event type) or `field`
+///                                (users_default, events_default, state_default, ban, kick,
+///                                redact, invite); capped at 50, then a final
+///                                "more|||N" entry
+///     m.room.third_party_invite  [display_name]
+///     m.space.child / m.space.parent  [] (added/removed; removed when `via` is empty)
+///     m.policy.rule.room/server/user  [entity, recommendation, reason]
+///     m.room.server_acl          one change count per entry: deny+N, deny-N, allow+N,
+///                                allow-N (N hosts added/removed), ip+/ip- (IP literals now
+///                                allowed/denied); never the host lists themselves
+/// Absent values are empty strings.
+struct StateEvent : public Event
+{
+    StateEvent()
+    {
+        type = EventType::StateEvent;
+    }
+    std::string state_type;
+    std::string state_key;
+    std::string change;
+    std::vector<std::string> params;
 };
 
 /// org.matrix.msc4075.rtc.notification — MatrixRTC call ring/notification event.

@@ -869,6 +869,16 @@ pub mod ffi {
         /// MediaSource JSON of an encrypted profile avatar; empty for a plain
         /// one.
         profile_avatar_encrypted_json: String,
+        // ----- structured state-event rows (msg_type "m.state") -----
+        /// Event type of the state change (e.g. `m.room.join_rules`); empty
+        /// for other rows.
+        state_type: String,
+        /// The state event's `state_key`.
+        state_key: String,
+        /// `set`, `changed`, `removed` or `added`; empty for other rows.
+        state_change: String,
+        /// Per-type parameters (new value first, old second where noted).
+        state_params: Vec<String>,
     }
 
     /// Outcome of an asynchronous SDK operation.

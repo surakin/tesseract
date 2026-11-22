@@ -41,6 +41,7 @@ pub(crate) mod rtc_ffi;
 pub(crate) mod search;
 mod send;
 mod session;
+pub(crate) mod state_events;
 mod strip_av;
 mod strip_meta;
 

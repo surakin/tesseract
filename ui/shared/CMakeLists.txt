@@ -135,6 +135,7 @@ set(_views_sources
     views/MessageActions.cpp
     views/MessageListView.h
     views/MessageListView.cpp
+    views/StateEventPhrases.cpp
     views/MessageRowGeometry.h
     views/TimelineMediaController.h
     views/TimelineMediaController.cpp

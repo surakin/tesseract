@@ -5641,3 +5641,377 @@ msgstr "Bruk: /dm @bruker:server"
 #: ui/shared/app/ShellBase_rooms.cpp
 msgid "Couldn't open a direct message"
 msgstr "Kunne ikke åpne direktemeldingen"
+
+#: ui/shared/views/StateEventPhrases.cpp:24
+#: ui/shared/views/StateEventPhrases.cpp:430
+msgid "Someone"
+msgstr "Noen"
+
+#: ui/shared/views/StateEventPhrases.cpp:50
+#, c++-format
+msgid "{0} made the room public"
+msgstr "{0} gjorde rommet offentlig"
+
+#: ui/shared/views/StateEventPhrases.cpp:51
+#, c++-format
+msgid "{0} made the room invite-only"
+msgstr "{0} gjorde rommet kun for inviterte"
+
+#: ui/shared/views/StateEventPhrases.cpp:52
+#, c++-format
+msgid "{0} made the room ask-to-join"
+msgstr "{0} gjorde rommet til «be om å bli med»"
+
+#: ui/shared/views/StateEventPhrases.cpp:53
+#, c++-format
+msgid "{0} allowed members of certain spaces to join the room"
+msgstr "{0} lot medlemmer av bestemte områder bli med i rommet"
+
+#: ui/shared/views/StateEventPhrases.cpp:55
+#, c++-format
+msgid "{0} allowed members of certain spaces to join the room, and others to ask to join"
+msgstr "{0} lot medlemmer av bestemte områder bli med i rommet, og andre be om å bli med"
+
+#: ui/shared/views/StateEventPhrases.cpp:56
+#, c++-format
+msgid "{0} made the room private"
+msgstr "{0} gjorde rommet privat"
+
+#: ui/shared/views/StateEventPhrases.cpp:60
+#, c++-format
+msgid "{0} made the room history visible to anyone"
+msgstr "{0} gjorde romhistorikken synlig for alle"
+
+#: ui/shared/views/StateEventPhrases.cpp:61
+#, c++-format
+msgid "{0} made the room history visible to all room members"
+msgstr "{0} gjorde romhistorikken synlig for alle rommets medlemmer"
+
+#: ui/shared/views/StateEventPhrases.cpp:63
+#, c++-format
+msgid "{0} made the room history visible to members from the point they were invited"
+msgstr "{0} gjorde romhistorikken synlig for medlemmer fra de ble invitert"
+
+#: ui/shared/views/StateEventPhrases.cpp:64
+#, c++-format
+msgid "{0} made the room history visible to members from the point they joined"
+msgstr "{0} gjorde romhistorikken synlig for medlemmer fra de ble med"
+
+#: ui/shared/views/StateEventPhrases.cpp:68
+#, c++-format
+msgid "{0} allowed guests to join the room"
+msgstr "{0} tillot gjester å bli med i rommet"
+
+#: ui/shared/views/StateEventPhrases.cpp:69
+#, c++-format
+msgid "{0} stopped guests from joining the room"
+msgstr "{0} stoppet gjester fra å bli med i rommet"
+
+#: ui/shared/views/StateEventPhrases.cpp:81
+#, c++-format
+msgid "{0} changed the default power level from {1} to {2}"
+msgstr "{0} endret standard maktnivå fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:82
+#, c++-format
+msgid "{0} set the default power level to {1}"
+msgstr "{0} satte standard maktnivå til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:84
+#, c++-format
+msgid "{0} changed the power level needed to send messages from {1} to {2}"
+msgstr "{0} endret maktnivået som kreves for å sende meldinger fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:85
+#, c++-format
+msgid "{0} set the power level needed to send messages to {1}"
+msgstr "{0} satte maktnivået som kreves for å sende meldinger til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:87
+#, c++-format
+msgid "{0} changed the power level needed to change room settings from {1} to {2}"
+msgstr "{0} endret maktnivået som kreves for å endre rominnstillinger fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:88
+#, c++-format
+msgid "{0} set the power level needed to change room settings to {1}"
+msgstr "{0} satte maktnivået som kreves for å endre rominnstillinger til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:89
+#, c++-format
+msgid "{0} changed the power level needed to ban from {1} to {2}"
+msgstr "{0} endret maktnivået som kreves for å utestenge fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:90
+#, c++-format
+msgid "{0} set the power level needed to ban to {1}"
+msgstr "{0} satte maktnivået som kreves for å utestenge til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:91
+#, c++-format
+msgid "{0} changed the power level needed to remove members from {1} to {2}"
+msgstr "{0} endret maktnivået som kreves for å fjerne medlemmer fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:92
+#, c++-format
+msgid "{0} set the power level needed to remove members to {1}"
+msgstr "{0} satte maktnivået som kreves for å fjerne medlemmer til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:93
+#, c++-format
+msgid "{0} changed the power level needed to remove messages from {1} to {2}"
+msgstr "{0} endret maktnivået som kreves for å fjerne meldinger fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:94
+#, c++-format
+msgid "{0} set the power level needed to remove messages to {1}"
+msgstr "{0} satte maktnivået som kreves for å fjerne meldinger til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:95
+#, c++-format
+msgid "{0} changed the power level needed to invite from {1} to {2}"
+msgstr "{0} endret maktnivået som kreves for å invitere fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:96
+#, c++-format
+msgid "{0} set the power level needed to invite to {1}"
+msgstr "{0} satte maktnivået som kreves for å invitere til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:155
+#, c++-format
+msgid "{0} set the power level of {1} to {2}"
+msgstr "{0} satte maktnivået til {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:156
+#, c++-format
+msgid "{0} changed the power level of {1} from {2} to {3}"
+msgstr "{0} endret maktnivået til {1} fra {2} til {3}"
+
+#: ui/shared/views/StateEventPhrases.cpp:162
+#, c++-format
+msgid "{0} set the power level needed for {1} to {2}"
+msgstr "{0} satte maktnivået som kreves for {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:164
+#, c++-format
+msgid "{0} changed the power level needed for {1} from {2} to {3}"
+msgstr "{0} endret maktnivået som kreves for {1} fra {2} til {3}"
+
+#: ui/shared/views/StateEventPhrases.cpp:175
+#: ui/shared/views/StateEventPhrases.cpp:497
+#, c++-format
+msgid "{0} changed permissions"
+msgstr "{0} endret tillatelser"
+
+#: ui/shared/views/StateEventPhrases.cpp:177
+#, c++-format
+msgid "{0} changed {1} permission"
+msgid_plural "{0} changed {1} permissions"
+msgstr[0] "{0} endret {1} tillatelse"
+msgstr[1] "{0} endret {1} tillatelser"
+
+#: ui/shared/views/StateEventPhrases.cpp:188
+#, c++-format
+msgid "{0} removed the room's main address"
+msgstr "{0} fjernet rommets hovedadresse"
+
+#: ui/shared/views/StateEventPhrases.cpp:192
+#: ui/shared/views/StateEventPhrases.cpp:489
+#, c++-format
+msgid "{0} changed the room's main address"
+msgstr "{0} endret rommets hovedadresse"
+
+#: ui/shared/views/StateEventPhrases.cpp:196
+#, c++-format
+msgid "{0} changed the room's main address from {1} to {2}"
+msgstr "{0} endret rommets hovedadresse fra {1} til {2}"
+
+#: ui/shared/views/StateEventPhrases.cpp:199
+#, c++-format
+msgid "{0} set the room's main address to {1}"
+msgstr "{0} satte rommets hovedadresse til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:209
+#, c++-format
+msgid "{0} created the room as an upgrade of {1}"
+msgstr "{0} opprettet rommet som en oppgradering av {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:213
+#, c++-format
+msgid "{0} created the room (room version {1})"
+msgstr "{0} opprettet rommet (romversjon {1})"
+
+#: ui/shared/views/StateEventPhrases.cpp:215
+#: ui/shared/views/StateEventPhrases.cpp:493
+#, c++-format
+msgid "{0} created the room"
+msgstr "{0} opprettet rommet"
+
+#: ui/shared/views/StateEventPhrases.cpp:227
+#, c++-format
+msgid "{0} removed a room from the space"
+msgstr "{0} fjernet et rom fra området"
+
+#: ui/shared/views/StateEventPhrases.cpp:228
+#, c++-format
+msgid "{0} added a room to the space"
+msgstr "{0} la et rom til i området"
+
+#: ui/shared/views/StateEventPhrases.cpp:230
+#, c++-format
+msgid "{0} removed a parent space"
+msgstr "{0} fjernet et overordnet område"
+
+#: ui/shared/views/StateEventPhrases.cpp:231
+#, c++-format
+msgid "{0} added a parent space"
+msgstr "{0} la til et overordnet område"
+
+#: ui/shared/views/StateEventPhrases.cpp:235
+#, c++-format
+msgid "{0} removed {1} from the space"
+msgstr "{0} fjernet {1} fra området"
+
+#: ui/shared/views/StateEventPhrases.cpp:236
+#, c++-format
+msgid "{0} added {1} to the space"
+msgstr "{0} la til {1} i området"
+
+#: ui/shared/views/StateEventPhrases.cpp:238
+#, c++-format
+msgid "{0} removed {1} as a parent space"
+msgstr "{0} fjernet {1} som overordnet område"
+
+#: ui/shared/views/StateEventPhrases.cpp:239
+#, c++-format
+msgid "{0} added {1} as a parent space"
+msgstr "{0} la til {1} som overordnet område"
+
+#: ui/shared/views/StateEventPhrases.cpp:251
+#, c++-format
+msgid "{0} removed a moderation policy rule"
+msgstr "{0} fjernet en moderasjonsregel"
+
+#: ui/shared/views/StateEventPhrases.cpp:252
+#, c++-format
+msgid "{0} added a moderation policy rule"
+msgstr "{0} la til en moderasjonsregel"
+
+#: ui/shared/views/StateEventPhrases.cpp:258
+#, c++-format
+msgid "{0} removed the moderation policy rule for {1}"
+msgstr "{0} fjernet moderasjonsregelen for {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:259
+#, c++-format
+msgid "{0} added a moderation policy rule for {1}"
+msgstr "{0} la til en moderasjonsregel for {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:371
+#: ui/shared/views/StateEventPhrases.cpp:469
+#, c++-format
+msgid "{0} changed the join rules"
+msgstr "{0} endret regler for å bli med"
+
+#: ui/shared/views/StateEventPhrases.cpp:375
+#: ui/shared/views/StateEventPhrases.cpp:473
+#, c++-format
+msgid "{0} changed the history visibility"
+msgstr "{0} endret synligheten til historikken"
+
+#: ui/shared/views/StateEventPhrases.cpp:379
+#: ui/shared/views/StateEventPhrases.cpp:477
+#, c++-format
+msgid "{0} changed guest access"
+msgstr "{0} endret gjestetilgang"
+
+#: ui/shared/views/StateEventPhrases.cpp:383
+#: ui/shared/views/StateEventPhrases.cpp:481
+#, c++-format
+msgid "{0} turned on end-to-end encryption"
+msgstr "{0} slo på ende-til-ende-kryptering"
+
+#: ui/shared/views/StateEventPhrases.cpp:389
+#, c++-format
+msgid "{0} removed the room avatar"
+msgstr "{0} fjernet rommets avatar"
+
+#: ui/shared/views/StateEventPhrases.cpp:391
+#, c++-format
+msgid "{0} set the room avatar"
+msgstr "{0} satte rommets avatar"
+
+#: ui/shared/views/StateEventPhrases.cpp:392
+#: ui/shared/views/StateEventPhrases.cpp:485
+#, c++-format
+msgid "{0} changed the room avatar"
+msgstr "{0} endret rommets avatar"
+
+#: ui/shared/views/StateEventPhrases.cpp:408
+#, c++-format
+msgid "{0} sent a third-party invite"
+msgstr "{0} sendte en tredjepartsinvitasjon"
+
+#: ui/shared/views/StateEventPhrases.cpp:409
+#, c++-format
+msgid "{0} sent a third-party invite to {1}"
+msgstr "{0} sendte en tredjepartsinvitasjon til {1}"
+
+#: ui/shared/views/StateEventPhrases.cpp:449
+#, c++-format
+msgid "{0} removed {1} room from the space"
+msgid_plural "{0} removed {1} rooms from the space"
+msgstr[0] "{0} fjernet {1} rom fra området"
+msgstr[1] "{0} fjernet {1} rom fra området"
+
+#: ui/shared/views/StateEventPhrases.cpp:452
+#, c++-format
+msgid "{0} added {1} room to the space"
+msgid_plural "{0} added {1} rooms to the space"
+msgstr[0] "{0} la til {1} rom i området"
+msgstr[1] "{0} la til {1} rom i området"
+
+#: ui/shared/views/StateEventPhrases.cpp:458
+#, c++-format
+msgid "{0} removed {1} parent space"
+msgid_plural "{0} removed {1} parent spaces"
+msgstr[0] "{0} fjernet {1} overordnet område"
+msgstr[1] "{0} fjernet {1} overordnede områder"
+
+#: ui/shared/views/StateEventPhrases.cpp:461
+#, c++-format
+msgid "{0} added {1} parent space"
+msgid_plural "{0} added {1} parent spaces"
+msgstr[0] "{0} la til {1} overordnet område"
+msgstr[1] "{0} la til {1} overordnede områder"
+
+#: ui/shared/views/StateEventPhrases.cpp:501
+#, c++-format
+msgid "{0} sent third-party invites"
+msgstr "{0} sendte tredjepartsinvitasjoner"
+
+#: ui/shared/views/StateEventPhrases.cpp:505
+#, c++-format
+msgid "{0} updated moderation policy rules"
+msgstr "{0} oppdaterte moderasjonsregler"
+
+#: ui/shared/views/StateEventPhrases.cpp:516
+#, c++-format
+msgid "{0} ({1} time)"
+msgid_plural "{0} ({1} times)"
+msgstr[0] "{0} ({1} gang)"
+msgstr[1] "{0} ({1} ganger)"
+
+#: ui/shared/views/StateEventPhrases.cpp:436
+#, c++-format
+msgid "The room settings were updated ({0} change)"
+msgid_plural "The room settings were updated ({0} changes)"
+msgstr[0] "Rominnstillingene ble oppdatert ({0} endring)"
+msgstr[1] "Rominnstillingene ble oppdatert ({0} endringer)"
+
+#: ui/shared/views/StateEventPhrases.cpp:436
+#, c++-format
+msgid "{0} updated the room settings ({1} change)"
+msgid_plural "{0} updated the room settings ({1} changes)"
+msgstr[0] "{0} oppdaterte rominnstillingene ({1} endring)"
+msgstr[1] "{0} oppdaterte rominnstillingene ({1} endringer)"

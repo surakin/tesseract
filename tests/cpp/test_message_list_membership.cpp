@@ -7,6 +7,7 @@
 #include "tk_test_surface.h"
 #include "views/MessageListView.h"
 #include "views/MembershipGroupExpander.h"
+#include "views/StateEventPhrases.h"
 #include "tesseract/types.h"
 
 #include <tesseract/settings.h>
@@ -54,9 +55,40 @@ MessageRowData text_row(const std::string& event_id)
 MessageRowData acl_row(const std::string& event_id, const std::string& sender)
 {
     MessageRowData r;
-    r.kind = MessageRowData::Kind::RoomServerAcl;
+    r.kind = MessageRowData::Kind::StateEvent;
+    r.state_type = "m.room.server_acl";
     r.event_id = event_id;
     r.sender = sender;
+    return r;
+}
+
+MessageRowData state_type_row(const std::string& event_id, const std::string& state_type)
+{
+    MessageRowData r;
+    r.kind = MessageRowData::Kind::StateEvent;
+    r.state_type = state_type;
+    r.event_id = event_id;
+    r.sender = "@a:x";
+    return r;
+}
+
+MessageRowData name_row(const std::string& event_id)
+{
+    MessageRowData r;
+    r.kind = MessageRowData::Kind::RoomName;
+    r.event_id = event_id;
+    r.sender = "@a:x";
+    r.room_name_new = "Lounge";
+    return r;
+}
+
+MessageRowData topic_row(const std::string& event_id)
+{
+    MessageRowData r;
+    r.kind = MessageRowData::Kind::RoomTopic;
+    r.event_id = event_id;
+    r.sender = "@a:x";
+    r.body = "Welcome";
     return r;
 }
 
@@ -703,9 +735,9 @@ TEST_CASE("expandable summary runs list moderation before presence", "[message_l
     const auto runs = membership_group_actions(msgs, 0, 5);
     REQUIRE(runs.size() == 4);
     CHECK(runs[0].action == MembershipAction::Banned);
-    CHECK_FALSE(runs[0].server_acl);
+    CHECK(runs[0].state_type.empty());
     CHECK(runs[0].rows == std::vector<std::size_t>{1, 4});
-    CHECK(runs[1].server_acl);
+    CHECK(runs[1].state_type == "m.room.server_acl");
     CHECK(runs[1].rows == std::vector<std::size_t>{2});
     CHECK(runs[2].action == MembershipAction::Joined);
     CHECK(runs[3].action == MembershipAction::Left);
@@ -732,7 +764,7 @@ TEST_CASE("non-expandable summary runs keep timeline order", "[message_list][mem
         const auto runs = membership_group_actions(msgs, 0, 3);
         REQUIRE(runs.size() == 3);
         CHECK(runs[0].action == MembershipAction::Banned);
-        CHECK(runs[1].server_acl);
+        CHECK(runs[1].state_type == "m.room.server_acl");
         CHECK(runs[2].action == MembershipAction::Joined);
     }
 }
@@ -763,7 +795,7 @@ TEST_CASE("ACL run phrase names a single sender", "[message_list][acl][moderatio
         m.sender_name = "Alice";
     }
     tesseract::views::MembershipActionRun run;
-    run.server_acl = true;
+    run.state_type = "m.room.server_acl";
     run.rows = {0, 1, 2};
     const std::string p = tesseract::views::membership_run_phrase(msgs, run);
     CHECK(p.find("3 times") != std::string::npos);
@@ -776,7 +808,7 @@ TEST_CASE("ACL run phrase with several senders omits names", "[message_list][acl
     msgs[0].sender_name = "Alice";
     msgs[1].sender_name = "Bob";
     tesseract::views::MembershipActionRun run;
-    run.server_acl = true;
+    run.state_type = "m.room.server_acl";
     run.rows = {0, 1};
     const std::string p = tesseract::views::membership_run_phrase(msgs, run);
     CHECK(p.find("2 times") != std::string::npos);
@@ -788,9 +820,9 @@ TEST_CASE("single ACL row in a run uses the per-event phrase", "[message_list][a
 {
     std::vector<MessageRowData> msgs = {acl_row("$a1", "@a:x")};
     msgs[0].sender_name = "Alice";
-    msgs[0].body = "deny+3";
+    msgs[0].state_params = {"deny+3"};
     tesseract::views::MembershipActionRun run;
-    run.server_acl = true;
+    run.state_type = "m.room.server_acl";
     run.rows = {0};
     CHECK(tesseract::views::membership_run_phrase(msgs, run) ==
           tesseract::views::membership_expanded_phrase(msgs[0]));
@@ -802,7 +834,7 @@ TEST_CASE("expanded phrase of an ACL row is its ACL phrase", "[message_list][acl
 {
     MessageRowData m = acl_row("$a1", "@a:x");
     m.sender_name = "Alice";
-    m.body = "ip-";
+    m.state_params = {"ip-"};
     const std::string p = tesseract::views::membership_expanded_phrase(m);
     CHECK(p.find("IP literals no longer allowed") != std::string::npos);
 }
@@ -841,7 +873,7 @@ MessageRowData named_acl_row(const std::string& id)
 {
     MessageRowData r = acl_row(id, "@a:x");
     r.sender_name = "Alice";
-    r.body = "deny+3";
+    r.state_params = {"deny+3"};
     return r;
 }
 } // namespace
@@ -911,7 +943,7 @@ TEST_CASE("a collapsed run announces its ACL line", "[message_list][acl][moderat
         bans.action = MembershipAction::Banned;
         bans.rows = {0, 2};
         tesseract::views::MembershipActionRun acl;
-        acl.server_acl = true;
+        acl.state_type = "m.room.server_acl";
         acl.rows = {1};
         const std::string expected = tesseract::views::membership_run_phrase(rows, bans) + "; " +
                                      tesseract::views::membership_run_phrase(rows, acl);
@@ -1051,4 +1083,230 @@ TEST_CASE("the collapsed ACL run line looks like a lone ACL row", "[message_list
         }
         CHECK(found);
     }
+}
+
+TEST_CASE("membership and several state types form one group",
+          "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {membership_row("$j", MembershipAction::Joined),
+                                        state_type_row("$p", "m.room.power_levels"),
+                                        state_type_row("$r", "m.room.join_rules"),
+                                        state_type_row("$h", "m.room.history_visibility"),
+                                        state_type_row("$g", "m.room.guest_access"),
+                                        name_row("$n")};
+    CHECK(is_membership_group_start(msgs, 0));
+    for (std::size_t i = 1; i < msgs.size(); ++i)
+    {
+        CHECK(is_membership_group_member(msgs, i));
+        CHECK_FALSE(is_membership_group_start(msgs, i));
+    }
+    CHECK(membership_group_end(msgs, 0) == 6);
+    const auto runs = membership_group_actions(msgs, 0, 6);
+    REQUIRE(runs.size() == 2);
+    // The state summary sorts with the moderation/state block, before presence.
+    CHECK(runs[0].state_summary);
+    CHECK_FALSE(runs[0].state_type.empty());
+    CHECK(runs[0].rows == std::vector<std::size_t>{1, 2, 3, 4, 5});
+    CHECK_FALSE(runs[1].state_summary);
+    CHECK(runs[1].state_type.empty());
+    CHECK(runs[1].action == MembershipAction::Joined);
+    CHECK(membership_group_expandable(msgs, 0));
+}
+
+TEST_CASE("two state types in one group collapse into one summary run",
+          "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {
+        state_type_row("$p1", "m.room.power_levels"), state_type_row("$p2", "m.room.power_levels"),
+        state_type_row("$r1", "m.room.join_rules"), state_type_row("$r2", "m.room.join_rules")};
+    const auto runs = membership_group_actions(msgs, 0, 4);
+    REQUIRE(runs.size() == 1);
+    CHECK(runs[0].state_summary);
+    CHECK(runs[0].rows.size() == 4);
+    CHECK(membership_group_expandable(msgs, 0));
+}
+
+TEST_CASE("one state type keeps its per-type run", "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {state_type_row("$r1", "m.room.join_rules"),
+                                        state_type_row("$r2", "m.room.join_rules"),
+                                        state_type_row("$r3", "m.room.join_rules")};
+    const auto runs = membership_group_actions(msgs, 0, 3);
+    REQUIRE(runs.size() == 1);
+    CHECK_FALSE(runs[0].state_summary);
+    CHECK(runs[0].state_type == "m.room.join_rules");
+    CHECK(runs[0].rows.size() == 3);
+}
+
+TEST_CASE("room name and topic rows join a group and summarise", "[message_list][state_event]")
+{
+    std::vector<MessageRowData> msgs = {name_row("$n"), topic_row("$t")};
+    CHECK(is_membership_group_start(msgs, 0));
+    CHECK(is_membership_group_member(msgs, 1));
+    CHECK(membership_group_end(msgs, 0) == 2);
+    const auto runs = membership_group_actions(msgs, 0, 2);
+    REQUIRE(runs.size() == 1);
+    CHECK(runs[0].state_summary);
+    CHECK(runs[0].rows.size() == 2);
+}
+
+TEST_CASE("a lone room name row is not a group member but joins a membership row",
+          "[message_list][state_event]")
+{
+    std::vector<MessageRowData> lone = {text_row("$a"), name_row("$n"), text_row("$b")};
+    CHECK_FALSE(is_membership_group_member(lone, 1));
+
+    std::vector<MessageRowData> joined = {membership_row("$j", MembershipAction::Joined),
+                                          name_row("$n")};
+    CHECK(is_membership_group_member(joined, 1));
+    const auto runs = membership_group_actions(joined, 0, 2);
+    REQUIRE(runs.size() == 2);
+    CHECK_FALSE(runs[0].state_summary);
+    CHECK_FALSE(runs[1].state_summary);
+    CHECK(runs[1].state_type == "m.room.name");
+}
+
+TEST_CASE("a day separator splits groups with state summaries", "[message_list][state_event]")
+{
+    std::vector<MessageRowData> msgs = {state_type_row("$p", "m.room.power_levels"), name_row("$n"),
+                                        day_separator_row(),
+                                        state_type_row("$r", "m.room.join_rules"), topic_row("$t")};
+    CHECK(membership_group_end(msgs, 0) == 2);
+    CHECK(is_membership_group_start(msgs, 3));
+    CHECK(membership_group_end(msgs, 3) == 5);
+}
+
+TEST_CASE("state summary phrase names one sender or none and counts changes",
+          "[message_list][state_event]")
+{
+    auto one = state_type_row("$a", "m.room.join_rules");
+    one.sender = "@a:x";
+    one.sender_name = "Alice";
+    auto two = state_type_row("$b", "m.room.power_levels");
+    two.sender = "@a:x";
+    two.sender_name = "Alice";
+    auto other = two;
+    other.sender = "@b:x";
+    other.sender_name = "Bob";
+
+    std::vector<MessageRowData> same = {one, two};
+    std::vector<MessageRowData> mixed = {one, other};
+    const auto same_phrase = tesseract::views::state_summary_run_phrase("Alice", 2);
+    const auto five_phrase = tesseract::views::state_summary_run_phrase("Alice", 5);
+    const auto many_phrase = tesseract::views::state_summary_run_phrase("", 2);
+    CHECK(same_phrase.find("Alice") != std::string::npos);
+    CHECK(same_phrase.find("2") != std::string::npos);
+    CHECK(five_phrase.find("5") != std::string::npos);
+    CHECK(same_phrase != five_phrase);
+    CHECK(many_phrase.find("Alice") == std::string::npos);
+    CHECK(many_phrase.find("2") != std::string::npos);
+    CHECK(many_phrase != same_phrase);
+
+    // membership_run_phrase picks the sender form from the rows.
+    const auto run_same = membership_group_actions(same, 0, 2).front();
+    const auto run_mixed = membership_group_actions(mixed, 0, 2).front();
+    REQUIRE(run_same.state_summary);
+    CHECK(tesseract::views::membership_run_phrase(same, run_same) == same_phrase);
+    CHECK(tesseract::views::membership_run_phrase(mixed, run_mixed) == many_phrase);
+}
+
+TEST_CASE("an expandable group lists moderation and state runs before presence runs",
+          "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {membership_row("$j1", MembershipAction::Joined),
+                                        state_type_row("$r", "m.room.join_rules"),
+                                        membership_row("$b", MembershipAction::Banned),
+                                        state_type_row("$h", "m.room.history_visibility"),
+                                        membership_row("$j2", MembershipAction::Joined)};
+    const auto runs = membership_group_actions(msgs, 0, 5);
+    REQUIRE(runs.size() == 3);
+    // The state summary and moderation runs first, in first-appearance order.
+    CHECK(runs[0].state_summary);
+    CHECK(runs[0].rows == std::vector<std::size_t>{1, 3});
+    CHECK(runs[1].state_type.empty());
+    CHECK(runs[1].action == MembershipAction::Banned);
+    CHECK(runs[2].state_type.empty());
+    CHECK(runs[2].action == MembershipAction::Joined);
+    CHECK(runs[2].rows == std::vector<std::size_t>{0, 4});
+}
+
+TEST_CASE("state rows of two types collapse into one summary run",
+          "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {state_type_row("$r1", "m.room.join_rules"),
+                                        state_type_row("$h", "m.room.history_visibility"),
+                                        state_type_row("$r2", "m.room.join_rules")};
+    CHECK(is_membership_group_start(msgs, 0));
+    CHECK(membership_group_end(msgs, 0) == 3);
+    const auto runs = membership_group_actions(msgs, 0, 3);
+    REQUIRE(runs.size() == 1);
+    CHECK(runs[0].state_summary);
+    CHECK(runs[0].rows == std::vector<std::size_t>{0, 1, 2});
+    CHECK(membership_group_expandable(msgs, 0));
+}
+
+TEST_CASE("a day separator splits two state rows into lone rows",
+          "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {state_type_row("$r", "m.room.join_rules"),
+                                        day_separator_row(),
+                                        state_type_row("$h", "m.room.history_visibility")};
+    CHECK_FALSE(is_membership_group_member(msgs, 0));
+    CHECK_FALSE(is_membership_group_member(msgs, 2));
+}
+
+TEST_CASE("a lone state row is not a group member", "[message_list][membership][state_event]")
+{
+    std::vector<MessageRowData> msgs = {text_row("$t1"), state_type_row("$r", "m.room.join_rules"),
+                                        text_row("$t2")};
+    CHECK_FALSE(is_membership_group_member(msgs, 1));
+}
+
+namespace
+{
+MessageRowData space_row(const std::string& event_id, const std::string& type,
+                         const std::string& change)
+{
+    MessageRowData r = state_type_row(event_id, type);
+    r.state_change = change;
+    r.sender_name = "Alice";
+    return r;
+}
+} // namespace
+
+TEST_CASE("space child adds and a removal form separate runs", "[message_list][state_event]")
+{
+    std::vector<MessageRowData> msgs;
+    for (int i = 0; i < 4; ++i)
+    {
+        msgs.push_back(space_row("$a" + std::to_string(i), "m.space.child", "added"));
+    }
+    msgs.push_back(space_row("$r", "m.space.child", "removed"));
+    const auto runs = membership_group_actions(msgs, 0, msgs.size());
+    REQUIRE(runs.size() == 2);
+    CHECK(runs[0].rows.size() == 4);
+    CHECK(runs[0].state_change == "added");
+    CHECK(runs[1].rows.size() == 1);
+    CHECK(runs[1].state_change == "removed");
+}
+
+TEST_CASE("many space child adds collapse to one run reading added N rooms",
+          "[message_list][state_event]")
+{
+    std::vector<MessageRowData> msgs;
+    for (int i = 0; i < 5; ++i)
+    {
+        msgs.push_back(space_row("$a" + std::to_string(i), "m.space.child", "added"));
+    }
+    const auto runs = membership_group_actions(msgs, 0, msgs.size());
+    REQUIRE(runs.size() == 1);
+    const std::string p = tesseract::views::membership_run_phrase(msgs, runs[0]);
+    CHECK(p.find("added 5 rooms") != std::string::npos);
+}
+
+TEST_CASE("other state types stay keyed by type alone", "[message_list][state_event]")
+{
+    std::vector<MessageRowData> msgs = {space_row("$a", "m.room.join_rules", "set"),
+                                        space_row("$b", "m.room.join_rules", "changed")};
+    CHECK(membership_group_actions(msgs, 0, 2).size() == 1);
 }
