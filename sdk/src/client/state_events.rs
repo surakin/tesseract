@@ -245,7 +245,7 @@ pub(crate) fn failed_state_removal(
     let (state_type, _) = STATE_EVENT_KINDS.iter().find(|(t, _)| *t == event_type)?;
     Some(FailedStateRemoval {
         state_type,
-        state_key: state_key.to_owned(),
+        state_key: strip_bidi_overrides(state_key),
         change: "removed",
         params: Vec::new(),
     })
@@ -297,6 +297,7 @@ pub(crate) fn power_levels_params(
     let default = PowerLevelsSnapshot::spec_default();
     let old = old.unwrap_or(&default);
     let mut out: Vec<String> = Vec::new();
+    let mut unencodable = 0usize;
     for (n, o) in new.fields.iter().zip(old.fields.iter()) {
         if n.1 != o.1 {
             out.push(format!("field|{}|{}|{}", n.0, o.1, n.1));
@@ -308,7 +309,10 @@ pub(crate) fn power_levels_params(
         let n = new.users.get(k).copied().unwrap_or(users_default(new));
         let o = old.users.get(k).copied().unwrap_or(users_default(old));
         if n != o {
-            out.push(format!("user|{k}|{o}|{n}"));
+            match param_key(k) {
+                Some(k) => out.push(format!("user|{k}|{o}|{n}")),
+                None => unencodable += 1,
+            }
         }
     }
     let keys: BTreeSet<&String> = new.events.keys().chain(old.events.keys()).collect();
@@ -317,15 +321,35 @@ pub(crate) fn power_levels_params(
         let o = old.events.get(k).copied();
         if n != o {
             let show = |v: Option<i64>| v.map(|v| v.to_string()).unwrap_or_default();
-            out.push(format!("event|{k}|{}|{}", show(o), show(n)));
+            match param_key(k) {
+                Some(k) => out.push(format!("event|{k}|{}|{}", show(o), show(n))),
+                None => unencodable += 1,
+            }
         }
     }
-    if out.len() > POWER_LEVEL_PARAM_CAP {
-        let more = out.len() - POWER_LEVEL_PARAM_CAP;
-        out.truncate(POWER_LEVEL_PARAM_CAP);
-        out.push(format!("more|||{more}"));
+    let overflow = out.len().saturating_sub(POWER_LEVEL_PARAM_CAP) + unencodable;
+    out.truncate(POWER_LEVEL_PARAM_CAP);
+    if overflow > 0 {
+        out.push(format!("more|||{overflow}"));
     }
     out
+}
+
+/// A power-level user or event-type key made safe for a `"scope|key|old|new"`
+/// param: bidi overrides removed, and `None` when it still contains the `|`
+/// field separator (such a key cannot be encoded; the caller counts it).
+fn param_key(key: &str) -> Option<String> {
+    let key = strip_bidi_overrides(key);
+    (!key.contains('|')).then_some(key)
+}
+
+/// `[room_version, predecessor_room_id]` for an `m.room.create` row; both are
+/// sender-controlled text, so bidi overrides are removed.
+fn create_params(room_version: &str, predecessor: Option<&str>) -> Vec<String> {
+    vec![
+        strip_bidi_overrides(room_version),
+        strip_bidi_overrides(predecessor.unwrap_or_default()),
+    ]
 }
 
 /// Flatten any power-levels content (original or possibly redacted: same
@@ -435,14 +459,10 @@ pub(crate) fn state_event_row(item: &EventTimelineItem, room_id: &str) -> Option
             "m.room.create",
             (
                 "set",
-                vec![
-                    content.room_version.to_string(),
-                    content
-                        .predecessor
-                        .as_ref()
-                        .map(|p| p.room_id.to_string())
-                        .unwrap_or_default(),
-                ],
+                create_params(
+                    &content.room_version.to_string(),
+                    content.predecessor.as_ref().map(|p| p.room_id.as_str()),
+                ),
             ),
         ),
         A::RoomPowerLevels(Original {
@@ -520,7 +540,7 @@ pub(crate) fn state_event_row(item: &EventTimelineItem, room_id: &str) -> Option
     Some(TimelineEvent {
         msg_type: "m.state".to_owned(),
         state_type: state_type.to_owned(),
-        state_key: state.state_key().to_owned(),
+        state_key: strip_bidi_overrides(state.state_key()),
         state_change: change.to_owned(),
         state_params: params,
         ..base_row(item, room_id)
@@ -870,6 +890,41 @@ mod tests {
         assert_eq!(p[0], "@bad:s");
         let (_, p) = canonical_alias_params(Some("#a\u{202E}b:s"), None);
         assert_eq!(p[0], "#ab:s");
+    }
+
+    #[test]
+    fn power_level_keys_lose_bidi_and_pipe_keys_are_dropped() {
+        let out = power_levels_params(&pl(50, &[("@a\u{202E}b:s", 100)]), Some(&pl(50, &[])));
+        assert_eq!(out, v(&["user|@ab:s|0|100"]));
+
+        // A key containing the field separator cannot be encoded: it is
+        // dropped from the entries and counted in the trailing `more` entry.
+        let out = power_levels_params(
+            &pl(50, &[("@a:s", 100), ("x|y", 100), ("z|w", 100)]),
+            Some(&pl(50, &[])),
+        );
+        assert_eq!(out, v(&["user|@a:s|0|100", "more|||2"]));
+    }
+
+    #[test]
+    fn dropped_pipe_keys_add_to_the_cap_overflow() {
+        let names: Vec<String> = (0..60).map(|i| format!("@u{i:02}:s")).collect();
+        let mut users: Vec<(&str, i64)> = names.iter().map(|n| (n.as_str(), 50)).collect();
+        users.push(("bad|key", 50));
+        let out = power_levels_params(&pl(50, &users), Some(&pl(50, &[])));
+        assert_eq!(out.len(), 51);
+        assert_eq!(out[50], "more|||11");
+    }
+
+    #[test]
+    fn create_params_and_state_keys_lose_bidi() {
+        assert_eq!(
+            create_params("1\u{202E}2", Some("!old\u{2067}:s")),
+            v(&["12", "!old:s"])
+        );
+        assert_eq!(create_params("11", None), v(&["11", ""]));
+        let r = failed_state_removal("m.space.child", "!a\u{202E}b:s").unwrap();
+        assert_eq!(r.state_key, "!ab:s");
     }
 
     #[test]
