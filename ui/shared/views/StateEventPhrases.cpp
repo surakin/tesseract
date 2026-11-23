@@ -160,6 +160,12 @@ std::string power_levels_phrase(const MessageRowData& m)
                     : tk::trf(tk::tr("{0} changed the power level of {1} from {2} to {3}"),
                               {who, key, old_v, new_v});
         }
+        else if (scope == "event" && new_v.empty() && !old_v.empty())
+        {
+            // The override was removed, so the type falls back to the room default.
+            single =
+                tk::trf(tk::tr("{0} removed the custom power level needed for {1}"), {who, key});
+        }
         else if (scope == "event")
         {
             single = (first || old_v.empty())

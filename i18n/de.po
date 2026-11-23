@@ -7433,6 +7433,11 @@ msgstr "{0} hat die für „{1}“ nötige Berechtigungsstufe auf {2} gesetzt"
 msgid "{0} changed the power level needed for {1} from {2} to {3}"
 msgstr "{0} hat die für „{1}“ nötige Berechtigungsstufe von {2} auf {3} geändert"
 
+#: ui/shared/views/StateEventPhrases.cpp:171
+#, c++-format
+msgid "{0} removed the custom power level needed for {1}"
+msgstr "{0} hat die benutzerdefinierte Berechtigungsstufe für „{1}“ entfernt"
+
 #: ui/shared/views/StateEventPhrases.cpp:175
 #: ui/shared/views/StateEventPhrases.cpp:497
 #, c++-format

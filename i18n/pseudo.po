@@ -5148,6 +5148,11 @@ msgstr "[{0} sét thé pöwér lévél ñéédéd för {1} tö {2}xxxxxxxxx]"
 msgid "{0} changed the power level needed for {1} from {2} to {3}"
 msgstr "[{0} çhàñgéd thé pöwér lévél ñéédéd för {1} fröm {2} tö {3}xxxxxxxxxxx]"
 
+#: ui/shared/views/StateEventPhrases.cpp:171
+#, c++-format
+msgid "{0} removed the custom power level needed for {1}"
+msgstr "[{0} rémövéd thé çüstöm pöwér lévél ñéédéd för {1}xxxxxxxxxxxxx]"
+
 #: ui/shared/views/StateEventPhrases.cpp:179
 #: ui/shared/views/StateEventPhrases.cpp:516
 #, c++-format

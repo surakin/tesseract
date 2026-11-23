@@ -117,6 +117,14 @@ TEST_CASE("power_levels user and event scopes name their key", "[state_event]")
     CHECK(contains(e, "100"));
 }
 
+TEST_CASE("power_levels removed event override has no dangling value", "[state_event]")
+{
+    const auto p =
+        state_event_phrase(state_row("m.room.power_levels", "changed", {"event|m.room.topic|50|"}));
+    CHECK(contains(p, "removed the custom power level needed for m.room.topic"));
+    CHECK_FALSE(contains(p, "from 50"));
+}
+
 TEST_CASE("space child and parent name the other room", "[state_event]")
 {
     auto child = state_row("m.space.child", "added", {});

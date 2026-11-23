@@ -7435,6 +7435,11 @@ msgstr "{0} a défini le niveau de pouvoir requis pour {1} à {2}"
 msgid "{0} changed the power level needed for {1} from {2} to {3}"
 msgstr "{0} a changé le niveau de pouvoir requis pour {1} de {2} à {3}"
 
+#: ui/shared/views/StateEventPhrases.cpp:171
+#, c++-format
+msgid "{0} removed the custom power level needed for {1}"
+msgstr "{0} a supprimé le niveau de pouvoir personnalisé requis pour {1}"
+
 #: ui/shared/views/StateEventPhrases.cpp:175
 #: ui/shared/views/StateEventPhrases.cpp:497
 #, c++-format

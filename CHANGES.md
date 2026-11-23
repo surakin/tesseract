@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): removing a power-level override no longer leaves a blank in the room history. Linux Qt6 build, ctest 4054/4054
 - build(sdk): unused Rust code and imports now fail every build, including test builds, and the dead rtc code is removed. cargo test
 - fix(ui): the "Applying encryption settings" dialog now grows to show its full text instead of cutting it off. Linux release build
 - fix(spaces): rooms with newer-style IDs can be added to a space and stay there after a restart. cargo test

@@ -8024,6 +8024,11 @@ msgstr "{0} встановив(-ла) рівень повноважень, по�
 msgid "{0} changed the power level needed for {1} from {2} to {3}"
 msgstr "{0} змінив(-ла) рівень повноважень, потрібний для {1}, з {2} на {3}"
 
+#: ui/shared/views/StateEventPhrases.cpp:171
+#, c++-format
+msgid "{0} removed the custom power level needed for {1}"
+msgstr "{0} скасував(-ла) власний рівень повноважень, потрібний для {1}"
+
 #: ui/shared/views/StateEventPhrases.cpp:175
 #: ui/shared/views/StateEventPhrases.cpp:497
 #, c++-format
