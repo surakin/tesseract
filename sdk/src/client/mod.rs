@@ -9,6 +9,24 @@ use tokio::sync::watch;
 use crate::ffi::{BackupProgress, OAuthBegin, OpResult};
 use crate::oauth;
 
+/// Whether a member state counts as a live DM counterpart for `m.direct`
+/// selection: only Join/Invite qualify (a left/banned ghost left behind by a
+/// bridge does not), and never us or a functional (bridge-bot) member. Pure so
+/// it is unit-testable; `dm_other_user` needs a live `Room`.
+pub(super) fn accept_direct_target(
+    membership: Option<&matrix_sdk::ruma::events::room::member::MembershipState>,
+    is_me: bool,
+    is_functional: bool,
+) -> bool {
+    use matrix_sdk::ruma::events::room::member::MembershipState;
+    !is_me
+        && !is_functional
+        && matches!(
+            membership,
+            Some(MembershipState::Join | MembershipState::Invite)
+        )
+}
+
 mod account;
 pub(crate) mod activity;
 mod backfill;
@@ -3127,11 +3145,10 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
         let Some(uid) = target.as_user_id() else {
             continue; // 3PID / email / phone target — skip.
         };
-        if uid == me || functional.contains(uid) {
-            continue;
-        }
         if let Ok(Some(m)) = room.get_member_no_sync(uid).await {
-            return Some(to_bridge(&m));
+            if accept_direct_target(Some(m.membership()), uid == me, functional.contains(uid)) {
+                return Some(to_bridge(&m));
+            }
         }
     }
 
@@ -4271,6 +4288,19 @@ pub(super) async fn build_knocked_room_infos(client: &Client) -> Vec<crate::ffi:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accept_direct_target_requires_join_or_invite() {
+        use matrix_sdk::ruma::events::room::member::MembershipState as M;
+        assert!(accept_direct_target(Some(&M::Join), false, false));
+        assert!(accept_direct_target(Some(&M::Invite), false, false));
+        assert!(!accept_direct_target(Some(&M::Leave), false, false));
+        assert!(!accept_direct_target(Some(&M::Ban), false, false));
+        assert!(!accept_direct_target(Some(&M::Knock), false, false));
+        assert!(!accept_direct_target(None, false, false));
+        assert!(!accept_direct_target(Some(&M::Join), true, false));
+        assert!(!accept_direct_target(Some(&M::Join), false, true));
+    }
 
     #[test]
     fn prefs_save_order_skips_saves_that_have_been_superseded() {
