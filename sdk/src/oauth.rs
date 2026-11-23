@@ -69,9 +69,11 @@ pub(crate) fn generate_store_key() -> [u8; 32] {
 }
 
 /// Query parameter carrying the per-flow nonce on the SSO redirect URL.
+#[cfg(feature = "legacy_login")]
 pub(crate) const SSO_NONCE_PARAM: &str = "tsr_nonce";
 
 /// A fresh random per-flow nonce for the SSO callback: 32 lowercase hex chars.
+#[cfg(feature = "legacy_login")]
 pub(crate) fn generate_sso_nonce() -> String {
     let mut bytes = [0u8; 16];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -80,6 +82,7 @@ pub(crate) fn generate_sso_nonce() -> String {
 
 /// Accept the SSO callback only if its query carries exactly one
 /// [`SSO_NONCE_PARAM`] equal to `expected`. Never echoes token or nonce values.
+#[cfg(feature = "legacy_login")]
 fn check_sso_nonce(callback: &UrlOrQuery, expected: &str) -> anyhow::Result<()> {
     let values: Vec<_> = url::form_urlencoded::parse(callback.query().unwrap_or("").as_bytes())
         .filter(|(k, _)| k == SSO_NONCE_PARAM)
@@ -491,6 +494,7 @@ pub(crate) enum FlowKind {
     /// Legacy SSO. `nonce` ties the callback to this sign-in attempt, so a
     /// page or app that merely delivers a `loginToken` cannot log us in as
     /// someone else (login CSRF).
+    #[cfg(feature = "legacy_login")]
     Sso {
         nonce: String,
     },
@@ -667,8 +671,10 @@ async fn finish_redirect(state: PendingFlowState) -> anyhow::Result<Client> {
         kind,
     } = state;
 
+    tracing::debug!(?kind, "waiting for the login redirect");
     let callback = await_redirect(source).await?;
 
+    #[cfg(feature = "legacy_login")]
     if let FlowKind::Sso { nonce } = &kind {
         check_sso_nonce(&callback, nonce)?;
         // The display name is set at login; no rename_device afterwards.
@@ -877,7 +883,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy_login"))]
 mod sso_completion_tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

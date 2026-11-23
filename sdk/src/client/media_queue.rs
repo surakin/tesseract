@@ -59,7 +59,6 @@ impl<T> MediaQueue<T> {
         self.order.is_empty()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn len(&self) -> usize {
         self.order.len()
     }

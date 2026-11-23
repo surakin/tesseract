@@ -65,7 +65,6 @@ pub(crate) fn remote_ws_url_to_check(raw: &str) -> Option<reqwest::Url> {
 /// What is needed to obtain a token and connect to another SFU.
 pub struct SfuContext {
     pub client: matrix_sdk::Client,
-    pub http: reqwest::Client,
     pub room_id: String,
     pub slot_id: String,
     pub member_id: String,

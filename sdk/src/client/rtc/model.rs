@@ -14,8 +14,6 @@ pub const MEMBER_TYPE: &str = "org.matrix.msc4143.rtc.member";
 /// Unstable name of `m.rtc.invite` (an earlier iteration used this first).
 pub const INVITE_TYPE: &str = "org.matrix.msc4075.rtc.notification";
 pub const DECLINE_TYPE: &str = "org.matrix.msc4310.rtc.decline";
-/// Unstable name of the `m.rtc.encryption_key` to-device event.
-pub const KEY_TYPE: &str = "io.element.call.encryption_keys";
 pub const CALL_SLOT_ID: &str = "m.call#room";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +63,7 @@ fn default_join() -> Membership {
     Membership::Join
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallIntent {
     Audio,
@@ -100,16 +99,6 @@ pub struct CallApplication {
     pub m_call_intent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Vec<String>>,
-}
-
-impl CallApplication {
-    pub fn intent(&self) -> Option<CallIntent> {
-        match self.intent.as_deref().or(self.m_call_intent.as_deref())? {
-            "m.audio" | "audio" => Some(CallIntent::Audio),
-            "m.video" | "video" => Some(CallIntent::Video),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -166,10 +155,22 @@ impl MemberContent {
         self.member.membership == Membership::Join
     }
 
+    #[cfg(test)]
     pub fn sticky_key(&self) -> Option<&str> {
         self.sticky_key
             .as_deref()
             .or(self.msc4354_sticky_key.as_deref())
+    }
+}
+
+#[cfg(test)]
+impl CallApplication {
+    pub fn intent(&self) -> Option<CallIntent> {
+        match self.intent.as_deref().or(self.m_call_intent.as_deref())? {
+            "m.audio" | "audio" => Some(CallIntent::Audio),
+            "m.video" | "video" => Some(CallIntent::Video),
+            _ => None,
+        }
     }
 }
 

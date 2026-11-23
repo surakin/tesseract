@@ -1,5 +1,5 @@
 #![recursion_limit = "256"]
-#![cfg_attr(test, allow(dead_code, unused_imports, unused_variables))]
+#![cfg_attr(test, allow(dead_code))] // production-only code is cfg(not(test)); the non-test build checks dead code
 
 // Route every allocation (Rust and, via unprefixed interposition, the C++
 // side) through jemalloc on Linux. Gated on TESSERACT_ENABLE_JEMALLOC in the

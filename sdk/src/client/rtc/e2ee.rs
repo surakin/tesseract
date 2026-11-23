@@ -1,7 +1,5 @@
 use base64ct::{Base64, Base64Unpadded, Base64Url, Base64UrlUnpadded, Encoding};
-use hkdf::Hkdf;
 use rand::RngCore;
-use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Secret bytes or text (a frame key in any encoding): wiped when dropped, and
@@ -29,6 +27,7 @@ impl<T: Zeroize> Secret<T> {
 impl<const N: usize> Secret<[u8; N]> {
     /// Move a key out of `src`, leaving zeros there: `Secret::new(*src)` would
     /// leave a second copy of the key behind.
+    #[cfg(test)]
     pub fn take(src: &mut [u8; N]) -> Self {
         let secret = Self::new(*src);
         src.zeroize();
@@ -112,6 +111,7 @@ pub fn decode_frame_key(key_b64: &str) -> Result<SecretBytes, String> {
 pub type KeyMaterial = [u8; 32];
 
 /// 16-byte AES-128-GCM frame key derived via HKDF.
+#[cfg(test)]
 pub type FrameKey = [u8; 16];
 
 /// E2EE key state for one active call session.
@@ -120,8 +120,8 @@ pub struct E2eeManager {
     own_index: u8,
 }
 
-// The stored key is wiped when the manager goes away. Copies handed out by
-// `own_raw_key` is borrowed, and `own_key_b64` hands out a wiped-on-drop copy.
+// The stored key is wiped when the manager goes away; `own_key_b64` and
+// `own_secret_key` hand out wiped-on-drop copies.
 impl Drop for E2eeManager {
     fn drop(&mut self) {
         self.own_key.zeroize();
@@ -152,6 +152,7 @@ impl E2eeManager {
         Secret::new(Base64::encode_string(&self.own_key))
     }
 
+    #[cfg(test)]
     pub fn own_raw_key(&self) -> &KeyMaterial {
         &self.own_key
     }
@@ -162,6 +163,7 @@ impl E2eeManager {
     }
 
     /// Derive the 16-byte frame key for our own outgoing track.
+    #[cfg(test)]
     pub fn own_frame_key(&self, member_id: &str) -> FrameKey {
         Self::derive_frame_key(&self.own_key, member_id, self.own_index)
     }
@@ -178,8 +180,9 @@ impl E2eeManager {
     }
 
     /// HKDF-SHA256: ikm=key_material, salt=b"livekit_frame", info=member_id||[index].
+    #[cfg(test)]
     fn derive_frame_key(material: &KeyMaterial, member_id: &str, index: u8) -> FrameKey {
-        let hk = Hkdf::<Sha256>::new(Some(b"livekit_frame"), material);
+        let hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(b"livekit_frame"), material);
         let mut info = member_id.as_bytes().to_vec();
         info.push(index);
         let mut okm = [0u8; 16];
@@ -836,6 +839,7 @@ impl PendingDeliveries {
             .all(|(to, i)| *i != index || self.unreachable.contains(to))
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.owed.is_empty()
     }
@@ -1064,6 +1068,8 @@ async fn delivery_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hkdf::Hkdf;
+    use sha2::Sha256;
 
     fn sk(s: &str) -> SecretString {
         Secret::new(s.to_owned())

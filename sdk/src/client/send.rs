@@ -347,7 +347,6 @@ pub(crate) fn gallery_fallback_body(caption: &str, item_count: usize) -> String 
 /// - `thread_root` non-empty → always attach a reply:
 ///   `event_id = reply_event_id` (when non-empty) or `thread_root`,
 ///   `enforce_thread = EnforceThread::Threaded(ReplyWithinThread::Yes/No)`.
-#[cfg_attr(test, allow(dead_code))]
 pub(super) fn build_media_reply(
     reply_event_id: &str,
     thread_root: &str,
@@ -3543,8 +3542,6 @@ impl ClientFfi {
     ) -> OpResult {
         err("not logged in")
     }
-
-    #[cfg_attr(test, allow(dead_code))]
     fn parse_image_info(info_json: &str) -> matrix_sdk::ruma::events::room::ImageInfo {
         use matrix_sdk::ruma::events::room::ImageInfo;
         if info_json.is_empty() || info_json == "{}" {

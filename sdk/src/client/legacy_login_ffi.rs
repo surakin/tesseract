@@ -5,9 +5,10 @@
 // `#[cfg(feature = "legacy_login")]` to either call the real implementation
 // or return an error, mirroring rtc_ffi.rs's convention for the `calls`
 // feature.
-#![allow(unused_imports, unused_variables)]
 
-use super::{err, ok, ClientFfi};
+#[cfg(feature = "legacy_login")]
+use super::ok;
+use super::{err, ClientFfi};
 use crate::ffi::{OAuthBegin, OpResult};
 
 impl ClientFfi {
@@ -16,7 +17,10 @@ impl ClientFfi {
     /// call only from a worker thread.
     pub fn login_password(&mut self, homeserver: &str, username: &str, password: &str) -> OpResult {
         #[cfg(not(feature = "legacy_login"))]
-        return err("legacy login not built into this binary");
+        {
+            let _ = (homeserver, username, password);
+            return err("legacy login not built into this binary");
+        }
 
         #[cfg(feature = "legacy_login")]
         {
@@ -68,12 +72,15 @@ impl ClientFfi {
         external_redirect: bool,
     ) -> OAuthBegin {
         #[cfg(not(feature = "legacy_login"))]
-        return OAuthBegin {
-            ok: false,
-            message: "legacy login not built into this binary".into(),
-            auth_url: String::new(),
-            redirect_uri: String::new(),
-        };
+        {
+            let _ = (homeserver, idp_id, external_redirect);
+            return OAuthBegin {
+                ok: false,
+                message: "legacy login not built into this binary".into(),
+                auth_url: String::new(),
+                redirect_uri: String::new(),
+            };
+        }
 
         #[cfg(feature = "legacy_login")]
         {
@@ -97,7 +104,10 @@ impl ClientFfi {
 /// holds the FFI lock.
 pub fn fetch_login_icon(homeserver: &str, mxc: &str) -> Vec<u8> {
     #[cfg(not(feature = "legacy_login"))]
-    return Vec::new();
+    {
+        let _ = (homeserver, mxc);
+        return Vec::new();
+    }
 
     #[cfg(feature = "legacy_login")]
     {

@@ -14,58 +14,6 @@ pub struct RtcParticipantInfo {
     pub is_screen_sharing: bool,
 }
 
-/// Application type for an RTC slot (MSC4196 "m.call").
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RtcApplication {
-    #[serde(rename = "type")]
-    pub kind: String,
-    /// Element Call compat: empty string for room-scope calls.
-    #[serde(default)]
-    pub call_id: String,
-    /// MSC4196 §application: the `m.call.intent` field (note the dotted name)
-    /// lives inside the application object.  matrix-js-sdk validates
-    /// `application["m.call.intent"]` and Element Android rejects memberships
-    /// where it is absent or invalid, causing our tracks to be ignored.
-    /// Valid values: "voice", "video".
-    #[serde(
-        rename = "m.call.intent",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub call_intent: String,
-    /// "m.room" for room-level calls.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub scope: String,
-}
-
-impl RtcApplication {
-    pub fn call(call_intent: &str) -> Self {
-        Self {
-            kind: "m.call".to_owned(),
-            call_id: String::new(),
-            call_intent: call_intent.to_owned(),
-            scope: "m.room".to_owned(),
-        }
-    }
-}
-
-/// LiveKit focus descriptor, used in `focus_active` / `foci_preferred`.
-///
-/// Two shapes appear in the wild and all fields are optional so neither fails:
-/// - `foci_preferred` entry: `{ type, livekit_service_url, livekit_alias }`
-/// - `focus_active` (MSC3401): `{ type, focus_selection: "oldest_membership" }`
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RtcFocus {
-    #[serde(rename = "type", default)]
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub livekit_service_url: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub livekit_alias: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub focus_selection: String,
-}
-
 // ---------------------------------------------------------------------------
 // MSC3401 types (used by Element Web / matrix-js-sdk)
 // ---------------------------------------------------------------------------
@@ -718,74 +666,6 @@ mod tests {
     fn state_key_rejects_invalid_user_id() {
         assert!(msc3401_state_key("not a user id", "x").is_err());
         assert!(msc3401_state_key("", "x").is_err());
-    }
-
-    #[test]
-    fn rtc_application_call_serializes_all_fields() {
-        let v = serde_json::to_value(RtcApplication::call("video")).unwrap();
-        assert_eq!(
-            v,
-            json!({"type": "m.call", "call_id": "", "m.call.intent": "video", "scope": "m.room"})
-        );
-    }
-
-    #[test]
-    fn rtc_application_omits_empty_intent_and_scope() {
-        let app = RtcApplication {
-            kind: "m.call".into(),
-            ..Default::default()
-        };
-        assert_eq!(
-            serde_json::to_value(&app).unwrap(),
-            json!({"type": "m.call", "call_id": ""})
-        );
-    }
-
-    #[test]
-    fn rtc_application_deserializes_with_missing_optionals() {
-        let app: RtcApplication = serde_json::from_value(json!({"type": "m.call"})).unwrap();
-        assert_eq!(app.kind, "m.call");
-        assert!(app.call_id.is_empty() && app.call_intent.is_empty() && app.scope.is_empty());
-        let app: RtcApplication =
-            serde_json::from_value(json!({"type": "m.call", "m.call.intent": "voice"})).unwrap();
-        assert_eq!(app.call_intent, "voice");
-    }
-
-    #[test]
-    fn rtc_focus_serializes_only_populated_fields() {
-        let f = RtcFocus {
-            kind: "livekit".into(),
-            livekit_service_url: "https://lk".into(),
-            ..Default::default()
-        };
-        assert_eq!(
-            serde_json::to_value(&f).unwrap(),
-            json!({"type": "livekit", "livekit_service_url": "https://lk"})
-        );
-    }
-
-    #[test]
-    fn rtc_focus_parses_both_wild_shapes() {
-        let active: RtcFocus = serde_json::from_value(
-            json!({"type": "livekit", "focus_selection": "oldest_membership"}),
-        )
-        .unwrap();
-        assert_eq!(active.focus_selection, "oldest_membership");
-        assert!(active.livekit_service_url.is_empty());
-        let preferred: RtcFocus = serde_json::from_value(
-            json!({"type": "livekit", "livekit_service_url": "u", "livekit_alias": "a", "extra": 1}),
-        )
-        .unwrap();
-        assert_eq!(
-            (
-                preferred.livekit_service_url.as_str(),
-                preferred.livekit_alias.as_str()
-            ),
-            ("u", "a")
-        );
-        // Entirely empty object is tolerated.
-        let empty: RtcFocus = serde_json::from_value(json!({})).unwrap();
-        assert!(empty.kind.is_empty());
     }
 
     #[test]

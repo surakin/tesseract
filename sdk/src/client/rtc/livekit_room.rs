@@ -94,13 +94,14 @@ impl PendingKeys {
         d.last_live_at = now;
     }
 
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.devices.len()
+    }
+
     /// `((user, device), index -> key)` for every device held.
     pub fn iter(&self) -> impl Iterator<Item = (&(String, String), &HashMap<i32, SecretBytes>)> {
         self.devices.iter().map(|(k, d)| (k, &d.by_index))
-    }
-
-    pub fn len(&self) -> usize {
-        self.devices.len()
     }
 
     /// Note the devices that are live members (`is_live(user, device)`) and
@@ -120,10 +121,6 @@ impl PendingKeys {
 }
 
 impl SharedKeys {
-    pub fn new() -> Self {
-        Self::with_identities(IdentityMap::default())
-    }
-
     pub fn with_identities(identities: IdentityMap) -> Self {
         // Match Element Call's key provider: HKDF, ratchet window 10, keyring
         // 256 (MSC4195 / Element's MatrixKeyProvider). PBKDF2 would derive a
@@ -546,9 +543,6 @@ pub struct LiveKitRoom {
     /// A mutex rather than an atomic so a concurrent mute can't be undone by
     /// a frame thread that already decided to unmute.
     video_unmute_pending: StdMutex<bool>,
-    /// Drop-if-busy flag: prevents queuing more than one pending video frame
-    /// callback at a time (avoids flooding the UI thread at 30fps Ã— N callers).
-    video_frame_in_flight: Arc<AtomicBool>,
     /// Separate gate for the local self-view loopback.
     local_video_in_flight: Arc<AtomicBool>,
     /// Screen share source and publication; None until start_screen_share().
@@ -710,7 +704,7 @@ impl LiveKitRoom {
             Arc::clone(&room),
             events,
             session_id,
-            Arc::clone(&video_frame_in_flight),
+            video_frame_in_flight,
             Arc::clone(&screen_frame_in_flight),
             FilteredSink::wrap(
                 sink.clone(),
@@ -732,7 +726,6 @@ impl LiveKitRoom {
             audio_publication,
             video_publication,
             video_unmute_pending: StdMutex::new(false),
-            video_frame_in_flight,
             local_video_in_flight,
             screen_source: StdMutex::new(None),
             screen_publication: StdMutex::new(None),
@@ -1546,6 +1539,7 @@ fn parse_lk_identity(identity: &str) -> Option<(&str, Option<&str>)> {
 /// LiveKit identities have the form `@localpart:server_name:device_id`.
 /// Returns `Some("@localpart:server_name")` on success, `None` if the format
 /// is unexpected (not a Matrix user ID, or no device part).
+#[cfg(test)]
 fn matrix_user_id_from_lk_identity(identity: &str) -> Option<&str> {
     match parse_lk_identity(identity)? {
         (user, Some(_)) => Some(user),
@@ -1711,7 +1705,7 @@ mod participant_filter_tests {
 
     #[test]
     fn keys_reach_a_hashed_participant() {
-        let shared = SharedKeys::new();
+        let shared = SharedKeys::with_identities(IdentityMap::default());
         shared.identities().replace(HashMap::from([(
             "hashedid".to_owned(),
             ("@b:x".to_owned(), "PHONE".to_owned()),
@@ -2024,7 +2018,7 @@ mod helper_tests {
 
     #[test]
     fn shared_keys_store_keeps_one_entry_per_device_and_index() {
-        let keys = SharedKeys::new();
+        let keys = SharedKeys::with_identities(IdentityMap::default());
         keys.store("@a:x", "PHONE", 0, key(1));
         keys.store("@a:x", "PHONE", 1, key(2));
         keys.store("@a:x", "LAPTOP", 0, key(3));
@@ -2090,7 +2084,7 @@ mod helper_tests {
 
     #[test]
     fn retain_members_treats_a_deviceless_key_as_every_device_of_the_user() {
-        let keys = SharedKeys::new();
+        let keys = SharedKeys::with_identities(IdentityMap::default());
         keys.store("@c:x", "", 0, key(3));
         keys.pending
             .lock()

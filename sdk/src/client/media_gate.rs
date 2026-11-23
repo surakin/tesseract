@@ -301,7 +301,7 @@ impl PriorityGate {
     }
 
     /// Current adaptive concurrency limit (test/diagnostics).
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(super) fn dynamic_limit(&self) -> usize {
         self.inner.lock().dynamic_limit
     }

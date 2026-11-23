@@ -5,7 +5,9 @@
 #[cfg(not(test))]
 use std::sync::Arc;
 
-use super::{err, ok, ClientFfi};
+#[cfg(not(test))]
+use super::ok;
+use super::{err, ClientFfi};
 
 #[cfg(test)]
 use super::backup_progress_default;

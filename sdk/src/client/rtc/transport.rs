@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 /// Resolved LiveKit connection details for one call session.
 #[derive(Clone, Debug)]
 pub struct LiveKitTransport {
-    /// Base URL of the LiveKit JWT authorization service (used for sticky refresh).
-    pub service_url: String,
     /// WebSocket URL of the LiveKit SFU returned by the auth service.
     pub server_url: String,
     /// Short-lived JWT for connecting to the SFU.
@@ -238,7 +236,6 @@ pub async fn fetch_livekit_jwt(
         }
         let tok: GetTokenResponse = sfu_resp.json().await.context("parse sfu/get response")?;
         return Ok(LiveKitTransport {
-            service_url: service_url.to_owned(),
             server_url: tok.url,
             jwt: tok.jwt,
         });
@@ -270,7 +267,6 @@ pub async fn fetch_livekit_jwt(
 
     let tok: GetTokenResponse = resp.json().await.context("parse livekit jwt response")?;
     Ok(LiveKitTransport {
-        service_url: service_url.to_owned(),
         server_url: tok.url,
         jwt: tok.jwt,
     })
@@ -547,7 +543,6 @@ mod tests {
         let t = call_jwt(&format!("{base}/")).await.unwrap();
         assert_eq!(t.jwt, "J");
         assert_eq!(t.server_url, "wss://sfu.example.org");
-        assert_eq!(t.service_url, format!("{base}/"));
         let seen = seen.await.unwrap();
         assert_eq!(seen.len(), 1);
         assert!(seen[0].starts_with("POST /sfu/get "), "{}", seen[0]);

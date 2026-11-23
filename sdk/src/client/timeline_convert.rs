@@ -758,6 +758,7 @@ pub(crate) fn redacted_event_visible(msg_type: &str, show: bool) -> bool {
     show || msg_type != "m.redacted"
 }
 
+#[cfg(not(test))]
 pub(crate) use super::state_events::state_event_hidden;
 
 /// Per-call snapshot of the runtime-toggleable timeline row visibility

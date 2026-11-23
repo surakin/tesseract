@@ -4,7 +4,9 @@
 //!
 //! Split out of `client.rs` in the modularization refactor; behavior unchanged.
 
-use super::{err, ok, ClientFfi};
+#[cfg(not(test))]
+use super::ok;
+use super::{err, ClientFfi};
 
 use crate::ffi::{OpResult, VerificationEmoji, VerificationSas};
 
@@ -553,13 +555,10 @@ pub(super) enum FlowRefusal {
 /// the flow is being watched, and removes it when dropped: when the flow ends
 /// (done, cancelled, or the stream closes) or its watcher is aborted at
 /// sign-out. Handed on to the SAS watcher when the request becomes a SAS flow.
-#[cfg_attr(test, allow(dead_code))]
 pub(super) struct FlowEntry {
     users: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>,
     flow_id: String,
 }
-
-#[cfg_attr(test, allow(dead_code))]
 impl FlowEntry {
     pub(super) fn new(
         users: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<String, String>>>,
@@ -579,7 +578,6 @@ impl Drop for FlowEntry {
 /// id is already taken or a limit is reached. Flows are removed when they end;
 /// the per-sender limit keeps a peer from filling the table (and the banners)
 /// without locking others out, the overall one is generous.
-#[cfg_attr(test, allow(dead_code))]
 pub(super) fn register_incoming_flow(
     users: &mut std::collections::HashMap<String, String>,
     flow_id: &str,

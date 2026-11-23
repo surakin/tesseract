@@ -64,7 +64,6 @@ pub(super) fn write_zip(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read as _;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn unique_test_dir(name: &str) -> PathBuf {

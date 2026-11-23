@@ -624,7 +624,6 @@ mod tests {
             event_id: id.into(),
             sender: sender.into(),
             event_type: INVITE_TYPE.into(),
-            sticky_key: "m.call#room".into(),
             start_ms: start,
             duration_ms: 90_000,
             was_encrypted: true,
@@ -643,7 +642,6 @@ mod tests {
             event_id: format!("$m-{user}-{start}"),
             sender: user.into(),
             event_type: MEMBER_TYPE.into(),
-            sticky_key: "mid".into(),
             start_ms: start,
             duration_ms: 3_600_000,
             was_encrypted: true,
@@ -659,7 +657,6 @@ mod tests {
             event_id: "$d".into(),
             sender: user.into(),
             event_type: DECLINE_TYPE.into(),
-            sticky_key: invite_id.into(),
             start_ms: NOW - 1000,
             duration_ms: 90_000,
             was_encrypted: true,
@@ -803,7 +800,6 @@ mod tests {
         // The same caller under two spellings of the slot id: the newer wins.
         let mut upper = invite("$a2", "@a:x", good_content(NOW - 500), NOW - 500);
         upper.content["slot_id"] = json!("m.call#ROOM");
-        upper.sticky_key = "m.call#ROOM".into();
         let got = active(&[a, upper, b], &ctx());
         assert_eq!(
             got.iter().map(|i| i.event_id.as_str()).collect::<Vec<_>>(),
@@ -1078,14 +1074,13 @@ mod tests {
 
     #[test]
     fn legacy_shaped_notifications_are_not_invites() {
-        let mut legacy = invite(
+        let legacy = invite(
             "$l",
             "@a:x",
             json!({"notification_type": "ring", "sender_ts": NOW - 1000,
             "lifetime": 30_000, "m.mentions": {"room": true}}),
             NOW - 1000,
         );
-        legacy.sticky_key = "x".into();
         assert!(active(&[legacy], &ctx()).is_empty());
     }
 

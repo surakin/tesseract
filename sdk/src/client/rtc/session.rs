@@ -29,16 +29,12 @@ use super::{
         MrtcMembership, SlotPlan, SlotWatch,
     },
     sfu_set::{SfuContext, SfuSet},
-    signaling::{
-        self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
-        DelayedRestart,
-    },
+    signaling::{self, send_msc3401_member_join, send_msc3401_member_leave, DelayedRestart},
     slots::{
-        hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot,
-        read_slot_state, read_slot_state_keyed, stale_own_members,
+        hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot_state,
+        read_slot_state_keyed, stale_own_members,
     },
     transport::{fetch_livekit_jwt, fetch_livekit_service_url, livekit_room_alias},
-    RtcParticipantInfo,
 };
 
 static SESSION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -68,16 +64,11 @@ pub(crate) fn next_session_id() -> u64 {
 /// An active MatrixRTC call session. Drop ends the session (aborts background
 /// tasks). For a graceful leave, call `end_call()` before dropping.
 pub struct RtcSession {
-    pub id: u64,
     pub room_id: String,
-    pub slot_id: String,
-    pub member_id: String,
-    pub device_id: String,
     client: matrix_sdk::Client,
     /// Our publishing connection plus the subscribe-only connections to the
     /// SFUs other members publish on.
     sfus: Arc<SfuSet>,
-    e2ee: Arc<PLMutex<KeyRotator>>,
     /// The memberships and ring this call announced, the background tasks that
     /// keep them alive, and the one way to take them back.
     announced: Arc<Announced>,
@@ -576,9 +567,7 @@ pub async fn start_call(
     cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> anyhow::Result<RtcSession> {
     use matrix_sdk::ruma::{
-        events::{
-            call::member::CallMemberEventContent, room::member::SyncRoomMemberEvent, SyncStateEvent,
-        },
+        events::{room::member::SyncRoomMemberEvent, SyncStateEvent},
         MilliSecondsSinceUnixEpoch,
     };
 
@@ -1003,7 +992,6 @@ pub async fn start_call(
     let sfus = Arc::new(SfuSet::new(
         SfuContext {
             client: client.clone(),
-            http: http.clone(),
             room_id: room_id.to_owned(),
             slot_id: slot_id.to_owned(),
             member_id: member_id.clone(),
@@ -1141,14 +1129,9 @@ pub async fn start_call(
     );
     guard.defuse();
     Ok(RtcSession {
-        id: session_id,
         room_id: room_id.to_owned(),
-        slot_id: slot_id.to_owned(),
-        member_id: lk_identity,
-        device_id,
         client: client.clone(),
         sfus,
-        e2ee,
         announced,
         runtime: tokio::runtime::Handle::current(),
         _enc_key_guards: enc_key_guards,

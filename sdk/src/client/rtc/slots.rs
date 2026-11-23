@@ -5,10 +5,7 @@
 use std::collections::HashSet;
 
 use matrix_sdk::{
-    ruma::{
-        events::room::member::MembershipState, events::StateEventType, DeviceId,
-        MilliSecondsSinceUnixEpoch, UInt, UserId,
-    },
+    ruma::{events::StateEventType, DeviceId, MilliSecondsSinceUnixEpoch, UInt, UserId},
     Room,
 };
 
@@ -562,10 +559,12 @@ impl JoinTimes {
         self.rooms.remove(&(account.to_owned(), room_id.to_owned()));
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.rooms.len()
     }
 
+    #[cfg(test)]
     pub fn holds(&self, account: &str, room_id: &str) -> bool {
         self.rooms
             .contains_key(&(account.to_owned(), room_id.to_owned()))
@@ -653,7 +652,6 @@ mod tests {
             event_id: "$e".into(),
             sender: user.into(),
             event_type: crate::client::rtc::model::MEMBER_TYPE.into(),
-            sticky_key: "mid1".into(),
             start_ms: start,
             duration_ms: dur,
             was_encrypted: encrypted,

@@ -1,7 +1,6 @@
 //! MatrixRTC calls: signaling, transport, session lifecycle, and LiveKit media.
 // Layer 1 types and methods will be wired up in Layer 3 (media capture) and
 // Layer 4 (C++ client).  Suppress dead-code warnings until then.
-#![allow(dead_code, unused_imports)]
 
 pub mod audio_mix;
 pub mod e2ee;
@@ -19,7 +18,7 @@ pub mod slots;
 pub mod sticky;
 pub mod transport;
 
-pub use session::{start_call, RtcSession};
+pub use session::RtcSession;
 pub use signaling::RtcParticipantInfo;
 
 use std::sync::{Arc, OnceLock};

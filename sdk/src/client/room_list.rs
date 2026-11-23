@@ -3,7 +3,10 @@
 //!
 //! Split out of `client.rs` in the modularization refactor; behavior unchanged.
 
-use super::{err, ok, ClientFfi};
+#[cfg(not(test))]
+use super::ok;
+use super::{err, ClientFfi};
+#[cfg(not(test))]
 use std::future::IntoFuture;
 
 use crate::ffi::OpResult;

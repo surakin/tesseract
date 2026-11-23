@@ -18,6 +18,7 @@ fn derive(a: &str, b: &str) -> String {
 
 /// The LiveKit room name for a Matrix room and slot: `[room_id, slot_id]`.
 /// Servers derive it for tokens; we only use it to check what a token names.
+#[cfg(test)]
 pub fn livekit_room_name(room_id: &str, slot_id: &str) -> String {
     derive(room_id, slot_id)
 }

@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use super::e2ee::{E2eeManager, Secret, SecretKey, SecretString};
+use super::e2ee::{E2eeManager, SecretKey, SecretString};
 
 /// A new key is sent first and only used for encryption after this delay, so
 /// receivers have it by the time frames carry its index (MSC4143: 5 s).
@@ -271,6 +271,7 @@ impl KeyRotator {
 
 #[cfg(test)]
 mod tests {
+    use super::super::e2ee::Secret;
     use super::*;
     use std::time::{Duration, Instant};
 

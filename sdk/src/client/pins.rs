@@ -3,7 +3,9 @@
 //! current user can't pin. Mirrors the set_room_topic pattern in
 //! room_list.rs (read-modify-write of a state event).
 
-use super::{err, ok, ClientFfi};
+#[cfg(not(test))]
+use super::ok;
+use super::{err, ClientFfi};
 use crate::ffi::OpResult;
 
 #[cfg(not(test))]

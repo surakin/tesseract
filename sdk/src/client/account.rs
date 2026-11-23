@@ -236,7 +236,6 @@ pub(super) async fn read_media_preview_config_json(client: &Client) -> String {
 
 /// The FFI-visible shape for "no per-room override" — room not found, not
 /// logged in, or no override event present.
-#[cfg_attr(test, allow(dead_code))]
 fn none_room_override_json() -> String {
     r#"{"has_media_previews":false,"media_previews":2,"join_rule":""}"#.to_owned()
 }
@@ -1669,7 +1668,6 @@ impl ClientFfi {
     /// "supports_sso":bool,"identity_providers":[{"id","name","icon","brand"}]}`
     /// on success or the same shape with an empty `base_url`, an `error` and no
     /// sign-in methods on failure. Uses raw HTTP — no SDK Client construction required.
-    #[cfg_attr(test, allow(dead_code))]
     fn discovery_json_str(base_url: &str, error: &str, methods: &LoginMethods) -> String {
         serde_json::json!({
             "base_url": base_url,

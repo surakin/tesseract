@@ -97,10 +97,13 @@ pub fn build_member_join(p: &JoinParams) -> Value {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LeaveCode {
     Leave,
+    #[cfg(test)]
     DelayedLeave,
     SlotClosed,
     TransportError,
+    #[cfg(test)]
     MediaError,
+    #[cfg(test)]
     CodecMismatch,
 }
 
@@ -108,10 +111,13 @@ impl LeaveCode {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Leave => "leave",
+            #[cfg(test)]
             Self::DelayedLeave => "delayed_leave",
             Self::SlotClosed => "slot_closed",
             Self::TransportError => "transport_error",
+            #[cfg(test)]
             Self::MediaError => "media_error",
+            #[cfg(test)]
             Self::CodecMismatch => "codec_mismatch",
         }
     }

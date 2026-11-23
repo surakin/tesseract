@@ -40,7 +40,6 @@ pub struct StickyEntry {
     pub event_id: String,
     pub sender: String,
     pub event_type: String,
-    pub sticky_key: String,
     /// The event's `origin_server_ts`, in ms since the epoch.
     pub start_ms: u64,
     pub duration_ms: u64,
@@ -80,7 +79,7 @@ pub fn entry_from_parts(
         return None;
     }
     let content = ev.get("content")?;
-    let sticky_key = sticky_key_of(content)?;
+    sticky_key_of(content)?;
     let origin_ts = ev.get("origin_server_ts")?.as_u64()?;
     // The entry lasts until `expires_ms`, whatever the event claimed.
     let start_ms = origin_ts.min(expires_ms);
@@ -88,7 +87,6 @@ pub fn entry_from_parts(
         event_id: ev.get("event_id")?.as_str()?.to_owned(),
         sender: ev.get("sender")?.as_str()?.to_owned(),
         event_type: event_type.to_owned(),
-        sticky_key,
         start_ms,
         duration_ms: expires_ms - start_ms,
         was_encrypted,
@@ -342,7 +340,6 @@ pub async fn watch_invites(client: Client) {
         }
         let mut ignores = client.subscribe_to_ignore_user_list_changes();
         tasks.spawn(async move {
-            use futures_util::StreamExt;
             let mut rx = room.sticky_events().subscribe();
             let mut gate = PassGate::new(INVITE_PASS_INTERVAL);
             gate.ran(Instant::now());
@@ -417,7 +414,7 @@ mod tests {
         );
         assert!(e.was_encrypted);
         assert_eq!(e.sender_device.as_deref(), Some("DEV"));
-        assert_eq!((e.sender.as_str(), e.sticky_key.as_str()), ("@a:x", "mid"));
+        assert_eq!(e.sender, "@a:x");
     }
 
     #[test]
@@ -459,7 +456,6 @@ mod tests {
             event_id: id.into(),
             sender: "@a:x".into(),
             event_type: MEMBER_TYPE.into(),
-            sticky_key: "k".into(),
             start_ms: 0,
             duration_ms: 1000,
             was_encrypted: false,
@@ -574,7 +570,6 @@ mod tests {
             event_id: "$a".into(),
             sender: "@a:x".into(),
             event_type: MEMBER_TYPE.into(),
-            sticky_key: "k".into(),
             start_ms: 0,
             duration_ms: 10 * MAX_STICKY_MS,
             was_encrypted: false,

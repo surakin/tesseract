@@ -7,7 +7,9 @@
 //! warning about a changed identity is useful in either mode, and in strict
 //! mode a verified user's identity change blocks sending until it is resolved.
 
-use super::{err, ok, ClientFfi};
+#[cfg(not(test))]
+use super::ok;
+use super::{err, ClientFfi};
 use crate::ffi::OpResult;
 
 use matrix_sdk_base::crypto::{CollectStrategy, DecryptionSettings, TrustRequirement};

@@ -15,10 +15,14 @@
 
 use std::collections::HashSet;
 use std::path::Path;
+#[cfg(not(test))]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(test))]
 use std::sync::Arc;
 
+#[cfg(not(test))]
 use futures_util::{stream, StreamExt};
+#[cfg(not(test))]
 use matrix_sdk::Client;
 
 /// One image event's download descriptor, collected while converting a
