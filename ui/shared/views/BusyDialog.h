@@ -76,6 +76,10 @@ private:
     tk::Rect backdrop_rect_{};
     tk::Rect card_rect_{};
 
+    float layout_w_ = -1.0f;
+    float title_h_ = 0.0f;
+    float body_h_ = 0.0f;
+
     tk::CachedTextLayout title_layout_;
     tk::CachedTextLayout body_layout_;
 
@@ -83,7 +87,6 @@ private:
     static constexpr float kCardPad = 20.0f;
     static constexpr float kTitleH = 22.0f;
     static constexpr float kTitleGap = 12.0f;
-    static constexpr float kBodyH = 40.0f;
     static constexpr float kBarGap = 16.0f;
     static constexpr float kBarH = 6.0f;
 };

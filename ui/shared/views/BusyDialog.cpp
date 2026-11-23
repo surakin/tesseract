@@ -55,9 +55,39 @@ void BusyDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     backdrop_rect_ = bounds;
 
-    const float card_h =
-        kCardPad * 2 + kTitleH + (body_.empty() ? 0.0f : (kTitleGap + kBodyH)) + kBarGap + kBarH;
     const float card_w = std::min(kCardW, bounds.w);
+    const float text_w = card_w - kCardPad * 2.0f;
+
+    // Build the text here so the card can grow to hold however many lines the
+    // (translated) body wraps to.
+    if (text_w != layout_w_)
+    {
+        title_layout_.reset();
+        body_layout_.reset();
+        layout_w_ = text_w;
+    }
+    if (!title_layout_)
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Title;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = text_w;
+        title_layout_ = lc.factory.build_text(title_, st);
+    }
+    if (!body_.empty() && !body_layout_)
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Body;
+        st.wrap = true;
+        st.max_width = text_w;
+        body_layout_ = lc.factory.build_text(body_, st);
+    }
+
+    title_h_ = std::max(title_layout_ ? title_layout_->measure().h : 0.0f, kTitleH);
+    body_h_ = body_layout_ ? body_layout_->measure().h : 0.0f;
+
+    const float card_h =
+        kCardPad * 2 + title_h_ + (body_.empty() ? 0.0f : (kTitleGap + body_h_)) + kBarGap + kBarH;
     const float clamped_h = std::min(card_h, bounds.h);
     card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f, bounds.y + (bounds.h - clamped_h) * 0.5f,
                   card_w, clamped_h};
@@ -85,39 +115,18 @@ void BusyDialog::paint_before_children(tk::PaintCtx& ctx)
     cv.stroke_rounded_rect(card_rect_, 8.0f, pal.border, 1.0f);
 
     const float text_x = card_rect_.x + kCardPad;
-    const float text_w = card_rect_.w - kCardPad * 2.0f;
     float y = card_rect_.y + kCardPad;
 
-    if (!title_layout_)
-    {
-        tk::TextStyle st{};
-        st.role = tk::FontRole::Title;
-        st.trim = tk::TextTrim::Ellipsis;
-        st.max_width = text_w;
-        title_layout_ = ctx.factory.build_text(title_, st);
-    }
     if (title_layout_)
     {
         cv.draw_text(*title_layout_, {text_x, y}, pal.text_primary);
-        y += std::max(title_layout_->measure().h, kTitleH);
     }
+    y += title_h_;
 
-    if (!body_.empty())
+    if (!body_.empty() && body_layout_)
     {
         y += kTitleGap;
-        if (!body_layout_)
-        {
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Body;
-            st.wrap = true;
-            st.max_width = text_w;
-            st.max_height = kBodyH;
-            body_layout_ = ctx.factory.build_text(body_, st);
-        }
-        if (body_layout_)
-        {
-            cv.draw_text(*body_layout_, {text_x, y}, pal.text_secondary);
-        }
+        cv.draw_text(*body_layout_, {text_x, y}, pal.text_secondary);
     }
 }
 
