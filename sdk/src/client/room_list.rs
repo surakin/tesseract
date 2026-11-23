@@ -187,7 +187,20 @@ pub(super) async fn resolve_route_via(
         }
     }
 
-    via
+    // Room v12 IDs (`!hash`) carry no server part, so nothing above may have
+    // produced a route. Fall back to our own homeserver, which can reach any
+    // room we are joined to.
+    let own = client.user_id().map(|u| u.server_name().to_owned());
+    with_fallback_via(via, own)
+}
+
+/// `via` unchanged when it already routes somewhere, otherwise just `fallback`.
+fn with_fallback_via<T>(via: Vec<T>, fallback: Option<T>) -> Vec<T> {
+    if via.is_empty() {
+        fallback.into_iter().collect()
+    } else {
+        via
+    }
 }
 
 /// Which moderation call `moderate_user_async` makes.
@@ -1671,6 +1684,15 @@ impl ClientFfi {
             // space doing the adding).
             let target: &RoomOrAliasId = (&*child_room_id).into();
             let resolved_via = resolve_route_via(&client, target, seed).await;
+            // An m.space.child with an empty `via` is a removal; never send one
+            // as an "add" (the server accepts it silently).
+            if resolved_via.is_empty() {
+                deliver(
+                    false,
+                    "couldn't determine a server to route this room through",
+                );
+                return;
+            }
             let content = SpaceChildEventContent::new(resolved_via);
 
             match space_room
@@ -3505,6 +3527,34 @@ fn call_permission_levels(
 // Tests (content-shape only — state-event sends require a live homeserver).
 // Mirrors the style of pins.rs's `mod tests`.
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod fallback_via_tests {
+    use super::with_fallback_via;
+
+    #[test]
+    fn empty_via_falls_back_to_own_server() {
+        let v: Vec<String> = Vec::new();
+        assert_eq!(
+            with_fallback_via(v, Some("home.example".to_owned())),
+            vec!["home.example".to_owned()]
+        );
+    }
+
+    #[test]
+    fn existing_via_is_kept() {
+        let v = vec!["a.example".to_owned()];
+        assert_eq!(
+            with_fallback_via(v.clone(), Some("home.example".to_owned())),
+            v
+        );
+    }
+
+    #[test]
+    fn empty_stays_empty_without_fallback() {
+        assert!(with_fallback_via(Vec::<String>::new(), None).is_empty());
+    }
+}
 
 #[cfg(test)]
 mod create_room_tests {

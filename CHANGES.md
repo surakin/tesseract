@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(spaces): rooms with newer-style IDs can be added to a space and stay there after a restart. cargo test
 - feat(ui): with Show state events on, room history shows join rules, history visibility, power level and other state changes, grouped by type. Linux Qt6 build
 - fix(rooms): the room-list preview shows the sender's display name instead of their user ID when the app has not loaded their profile. Linux release build, cargo test
 - fix(ui): the window title no longer shows a room after going back to the room list in a narrow window or popping the room out. Linux release build, ctest 4021/4021
