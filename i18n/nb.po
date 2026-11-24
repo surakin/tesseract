@@ -3043,8 +3043,15 @@ msgstr "Lagre en lokal krasjrapport hvis appen krasjer"
 msgid "When enabled, a plain-text stack trace is written to a file on this device if the app crashes. Nothing is sent anywhere automatically — you can find and share the file yourself if you want to report a bug."
 msgstr "Når dette er på, skrives en stakksporing som ren tekst til en fil på denne enheten hvis appen krasjer. Ingenting sendes automatisk – du kan finne filen og dele den selv hvis du vil rapportere en feil."
 
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr "Dine egne meldinger vises til høyre, i en diskret avrundet boble."
+msgid "Messages appear in subtle rounded bubbles."
+msgstr "Meldinger vises i diskrete avrundede bobler."
+
+#: ui/shared/views/settings/AppearanceSection.cpp:167
+msgid "Align my messages to the right"
+msgstr "Juster meldingene mine til høyre"
+
+msgid "Show side panels beside the timeline"
+msgstr "Vis sidepaneler ved siden av tidslinjen"
 
 msgid "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a colour per person."
 msgstr "En tidslinje med fast bredde i mIRC-stil: hver linje er \"[tid] <kallenavn>\", med en egen farge per person."

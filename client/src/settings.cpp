@@ -420,6 +420,8 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
                              : (layout == "irc")   ? MessageLayout::Irc
                                                    : MessageLayout::Classic;
             bubbles_show_own_avatar = j.value("bubbles_show_own_avatar", true);
+            bubbles_align_own_messages_right = j.value("bubbles_align_own_messages_right", true);
+            bubbles_dock_side_panels = j.value("bubbles_dock_side_panels", false);
             const auto alignment = j.find("system_message_timeline_alignment");
             system_message_timeline_alignment =
                 alignment != j.end() && alignment->is_string() && *alignment == "center"
@@ -601,6 +603,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
                           : message_layout == MessageLayout::Irc   ? "irc"
                                                                    : "classic";
     j["bubbles_show_own_avatar"] = bubbles_show_own_avatar;
+    j["bubbles_align_own_messages_right"] = bubbles_align_own_messages_right;
+    j["bubbles_dock_side_panels"] = bubbles_dock_side_panels;
     j["system_message_timeline_alignment"] =
         system_message_timeline_alignment == SystemMessageTimelineAlignment::Center ? "center"
                                                                                     : "left";

@@ -1540,15 +1540,6 @@ public:
         return dimmed_;
     }
 
-    // True while a side panel (thread list/view, room info) is open next to
-    // the timeline. Layout-neutral view state; only the Bubbles renderer
-    // reacts to it (own rows stop right-aligning).
-    void set_side_panel_open(bool open);
-    bool side_panel_open() const
-    {
-        return side_panel_open_;
-    }
-
     void set_thread_button_visible(bool v)
     {
         thread_button_visible_ = v;
@@ -1720,7 +1711,6 @@ private:
 
     // Thread overlay state (see set_dimmed / set_highlighted_event).
     bool dimmed_ = false;
-    bool side_panel_open_ = false;
     std::string highlighted_event_id_;
 
     // Jump-highlight flash: a brief accent tint on the row that

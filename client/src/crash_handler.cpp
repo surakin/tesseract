@@ -137,8 +137,7 @@ void prune_old_crash_files()
 
 #if defined(__APPLE__)
 // The shipped executable is stripped, so frames resolve only offline:
-//   atos -o Tesseract.app.dSYM/Contents/Resources/DWARF/Tesseract \
-//        -arch <arch> -l <load address> <frame addresses>
+//   atos -o Tesseract.app.dSYM/Contents/Resources/DWARF/Tesseract -arch <arch> -l <load address> <frame addresses>
 // The dSYM is matched by UUID. Computed once at install time, never from the
 // signal handler.
 std::string main_image_description()

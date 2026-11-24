@@ -781,10 +781,6 @@ public:
     // Open the room-info side panel for the current room (what the header's
     // info button does). Also used by screenshot mode's room-info scene.
     void show_room_info();
-    // Tells the main message list whether a side panel (thread list/view or
-    // room info) is open. Idempotent; call after any of them opens/closes.
-    void sync_side_panel_state_();
-
     // Fired when the compose bar or typing indicator changes the internal
     // layout. Shell should call roomSurface_->relayout() in response.
     std::function<void()> on_layout_changed;

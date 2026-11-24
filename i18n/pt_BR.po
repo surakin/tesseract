@@ -5133,8 +5133,14 @@ msgid "Open Activity Monitor"
 msgstr "Abrir o Monitor de atividade"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr "Suas próprias mensagens aparecem à direita, em um balão arredondado discreto."
+msgid "Messages appear in subtle rounded bubbles."
+msgstr "As mensagens aparecem em balões arredondados discretos."
+
+msgid "Align my messages to the right"
+msgstr "Alinhar minhas mensagens à direita"
+
+msgid "Show side panels beside the timeline"
+msgstr "Mostrar painéis laterais ao lado da linha do tempo"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:38
 msgid "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a colour per person."

@@ -128,6 +128,30 @@ TEST_CASE("AppearanceSection: the center-system-messages checkbox writes Setting
     }
 }
 
+TEST_CASE("AppearanceSection: bubble side panel setting binds and follows layout",
+          "[tk][view][appearance][bubbles]")
+{
+    AsStage s;
+    auto& st = Settings::instance();
+    st.message_layout = Settings::MessageLayout::Bubbles;
+    st.bubbles_dock_side_panels = false;
+    s.binder.reload();
+    auto* cb = s.check("Show side panels beside the timeline");
+    REQUIRE(cb);
+    CHECK(cb->parent()->visible());
+    CHECK_FALSE(cb->checked());
+    cb->on_change(true);
+    CHECK(st.bubbles_dock_side_panels);
+    CHECK(s.keys == std::vector<SettingKey>{SettingKey::BubblesDockSidePanels});
+    for (auto layout : {Settings::MessageLayout::Classic, Settings::MessageLayout::Irc})
+    {
+        st.message_layout = layout;
+        s.binder.reload();
+        CHECK_FALSE(cb->parent()->visible());
+        CHECK(st.bubbles_dock_side_panels);
+    }
+}
+
 TEST_CASE("AppearanceSection combos map to settings enums", "[tk][view][appearance]")
 {
     AsStage s;

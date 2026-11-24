@@ -75,9 +75,8 @@ public:
     // ── Message layout ──────────────────────────────────────────────
     // How the timeline arranges message rows. Live-applied.
     //   Classic → avatar in the left gutter, one left-aligned column (default).
-    //   Bubbles → own messages align right in a subtle rounded bubble (avatar
-    //             dropped); other messages keep the left avatar column with a
-    //             faint bubble behind the body.
+    //   Bubbles → messages appear in subtle rounded bubbles; own messages
+    //             align right by default.
     //   Irc     → mIRC look-alike: one flat monospaced left-aligned column,
     //             every line prefixed "[HH:MM] <nick>", per-nick colours, no
     //             avatars or bubbles.
@@ -90,8 +89,14 @@ public:
     MessageLayout message_layout = MessageLayout::Classic;
 
     // Bubbles layout only: draw the local user's avatar and name on their own
-    // bubbles (right gutter, first row of a run). Default on.
+    // right-aligned bubbles (first row of a run). Default on.
     bool bubbles_show_own_avatar = true;
+
+    // Bubbles layout only: align own messages right.
+    bool bubbles_align_own_messages_right = true;
+
+    // Bubbles layout only: reserve timeline width for open side panels.
+    bool bubbles_dock_side_panels = false;
 
     // Bubbles layout only: alignment of system messages. Live-applied.
     enum class SystemMessageTimelineAlignment

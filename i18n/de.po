@@ -1474,8 +1474,15 @@ msgid "IRC"
 msgstr "IRC"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
-msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr "Deine eigenen Nachrichten erscheinen rechts in einer dezenten, abgerundeten Blase."
+msgid "Messages appear in subtle rounded bubbles."
+msgstr "Nachrichten erscheinen in dezenten, abgerundeten Blasen."
+
+#: ui/shared/views/settings/AppearanceSection.cpp:167
+msgid "Align my messages to the right"
+msgstr "Meine Nachrichten rechts ausrichten"
+
+msgid "Show side panels beside the timeline"
+msgstr "Seitenleisten neben dem Nachrichtenverlauf anzeigen"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:43
 msgid "Every message is flush left, with the sender's avatar in the gutter."

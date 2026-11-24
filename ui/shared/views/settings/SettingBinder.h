@@ -49,6 +49,8 @@ enum class SettingKey
     AnimateAvatars,
     MessageLayout,
     BubblesOwnAvatar,
+    BubblesAlignOwnMessagesRight,
+    BubblesDockSidePanels,
     SystemMessageTimelineAlignment,
     TimelineColumnWidth,
     TimelineColumnAnchor,
