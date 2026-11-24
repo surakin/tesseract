@@ -2093,6 +2093,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview) : superview_(superv
     // Apply FontRole::Body so both view_ and placeholder_ get the correct size
     // in one call (set_font_role sets both). placeholder_ must exist first.
     set_font_role(FontRole::Body);
+    view_.textColor = NSColor.textColor;
     placeholder_.textColor = NSColor.placeholderTextColor;
     placeholder_.hidden = YES;
     [superview_ addSubview:placeholder_];
@@ -2172,6 +2173,24 @@ void NSTextViewNative::set_rect(Rect r)
     refresh_image();
 }
 
+// Attributes for text the composer inserts programmatically: the view's
+// font plus an explicit dynamic text colour. Without a foreground-colour key
+// AppKit draws the run black, and typing next to such a run inherits it
+// (typingAttributes comes from the preceding character). An emptied text
+// storage also resets typingAttributes to a colourless default, so a restored
+// draft copied from it would render black until the next keystroke.
+static NSDictionary* composer_text_attributes(NSTextView* view)
+{
+    NSMutableDictionary* attrs =
+        [view.typingAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
+    if (view.font)
+    {
+        attrs[NSFontAttributeName] = view.font;
+    }
+    attrs[NSForegroundColorAttributeName] = NSColor.textColor;
+    return attrs;
+}
+
 void NSTextViewNative::set_text(std::string t)
 {
     NSString* s = [NSString stringWithUTF8String:t.c_str()] ?: @"";
@@ -2182,8 +2201,8 @@ void NSTextViewNative::set_text(std::string t)
     // font instead of the control's own — visibly different weight/size from
     // freshly typed text on the same line. Mirrors what -insertText: applies
     // on a real keystroke.
-    NSAttributedString* as = [[NSAttributedString alloc] initWithString:s
-                                                             attributes:view_.typingAttributes];
+    NSAttributedString* as =
+        [[NSAttributedString alloc] initWithString:s attributes:composer_text_attributes(view_)];
     [view_.textStorage setAttributedString:as];
     // Re-run emoji sizing the same way a user edit does (textDidChange:),
     // so restored drafts match typed text for emoji too.
@@ -2493,7 +2512,13 @@ void NSTextViewNative::insert_at_cursor(std::string text)
     NSRange sel = view_.selectedRange;
     if ([view_ shouldChangeTextInRange:sel replacementString:s])
     {
-        [view_.textStorage replaceCharactersInRange:sel withString:s];
+        // Attributed, not a bare string: into an emptied storage (draft replay
+        // after a room switch) a bare string has no neighbour to inherit
+        // font/colour from and draws black.
+        NSAttributedString* as =
+            [[NSAttributedString alloc] initWithString:s
+                                            attributes:composer_text_attributes(view_)];
+        [view_.textStorage replaceCharactersInRange:sel withAttributedString:as];
         [view_ didChangeText];
         NSRange after = NSMakeRange(sel.location + s.length, 0);
         [view_ setSelectedRange:after];
@@ -2684,9 +2709,9 @@ void NSTextViewNative::insert_mention(int start, int end, const std::string& use
     NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
         initWithAttributedString:[NSAttributedString attributedStringWithAttachment:att]];
     // Trailing space (with the view's font) so typing continues normally.
-    NSDictionary* fontAttrs = view_.font ? @{NSFontAttributeName : view_.font} : @{};
-    [a appendAttributedString:[[NSAttributedString alloc] initWithString:@" "
-                                                              attributes:fontAttrs]];
+    [a appendAttributedString:[[NSAttributedString alloc]
+                                  initWithString:@" "
+                                      attributes:composer_text_attributes(view_)]];
 
     if ([view_ shouldChangeTextInRange:range replacementString:a.string])
     {
@@ -2734,9 +2759,9 @@ void NSTextViewNative::insert_emoticon(int start, int end, const std::string& sh
     NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
         initWithAttributedString:[NSAttributedString attributedStringWithAttachment:att]];
     // Trailing space (with the view's font) so typing continues normally.
-    NSDictionary* fontAttrs = view_.font ? @{NSFontAttributeName : view_.font} : @{};
-    [a appendAttributedString:[[NSAttributedString alloc] initWithString:@" "
-                                                              attributes:fontAttrs]];
+    [a appendAttributedString:[[NSAttributedString alloc]
+                                  initWithString:@" "
+                                      attributes:composer_text_attributes(view_)]];
 
     if ([view_ shouldChangeTextInRange:range replacementString:a.string])
     {

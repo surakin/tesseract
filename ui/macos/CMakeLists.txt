@@ -172,6 +172,16 @@ set_target_properties(tesseract_macos PROPERTIES
     INSTALL_RPATH            "@executable_path/../Frameworks"
 )
 
+# Empty <lang>.lproj directories: together with CFBundleLocalizations they make
+# AppKit load its own strings (text-field context menu, standard menus) in the
+# system language. Declared before the strip/codesign steps below.
+set(_mac_lprojs en de es fr nb pt pt-BR uk)
+foreach(_lang IN LISTS _mac_lprojs)
+    add_custom_command(TARGET tesseract_macos POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_CONTENT_DIR:tesseract_macos>/Resources/${_lang}.lproj")
+endforeach()
+
 # Release builds compile with -gline-tables-only (root CMakeLists.txt, C++ and
 # Rust). On macOS that DWARF stays in the object files and archives; the linked
 # binary only carries a debug map. So after linking, dsymutil gathers it into
