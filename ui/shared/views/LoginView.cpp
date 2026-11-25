@@ -668,11 +668,11 @@ void LoginView::request_server_icons_()
                     continue;
                 }
                 post_to_ui_(
-                    [this, gen, domain = domain, bytes = std::move(bytes)]() mutable
+                    [this, gen, icon_domain = domain, bytes = std::move(bytes)]() mutable
                     {
                         if (gen == icon_gen_.load() && server_browser_)
                         {
-                            server_browser_->set_icon(domain, std::move(bytes));
+                            server_browser_->set_icon(icon_domain, std::move(bytes));
                         }
                     });
             }
@@ -1717,9 +1717,9 @@ void LoginView::fetch_sso_icons_()
                 continue;
             }
             post_to_ui_(
-                [this, gen, i = i, bytes = std::move(bytes)]() mutable
+                [this, gen, icon_index = i, bytes = std::move(bytes)]() mutable
                 {
-                    apply_login_icon_(gen, i, std::move(bytes));
+                    apply_login_icon_(gen, icon_index, std::move(bytes));
                 });
         }
     };

@@ -96,7 +96,8 @@ std::string library_stamp(const std::string& library_path)
     {
         return "unknown";
     }
-    return std::to_string(size) + "-" + std::to_string(mtime.time_since_epoch().count());
+    return std::to_string(size) + "-" +
+           std::to_string(static_cast<long long>(mtime.time_since_epoch().count()));
 }
 
 WorldAssetLoader::WorldAssetLoader(const engine_api* api, const engine_host::Engine& engine,
