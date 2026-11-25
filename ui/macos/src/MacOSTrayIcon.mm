@@ -237,9 +237,9 @@ void MacOSTrayIcon::rebuild_menu(
                                     keyEquivalent:@""];
         item.target = bridge_;
         item.tag = i;
-        [cbs addObject:[cb = std::move(cb)]
+        [cbs addObject:[callback = std::move(cb)]
              {
-                 cb();
+                 callback();
              }];
     }
     bridge_.windowCallbacks = cbs;

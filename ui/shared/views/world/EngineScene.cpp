@@ -232,7 +232,7 @@ struct ValuePool
             engine_value out{};
             switch (v->kind)
             {
-            case EventValue::Kind::Nil:
+            case EventValue::Kind::Empty:
                 out.tag = ENGINE_VALUE_NIL;
                 break;
             case EventValue::Kind::Number:

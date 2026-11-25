@@ -466,8 +466,8 @@ void WorldView::draw_capture_hint_(tk::PaintCtx& ctx)
     tk::TextStyle style{};
     style.wrap = true;
     style.halign = tk::TextHAlign::Center;
-    constexpr float kPad = 8.0f;
-    style.max_width = std::max(1.0f, bounds_.w - 4 * kPad);
+    constexpr float kHintPad = 8.0f;
+    style.max_width = std::max(1.0f, bounds_.w - 4 * kHintPad);
     auto layout = ctx.factory.build_text(
         tk::tr("Click to look around and walk. Esc or Left Ctrl gives the mouse back."), style);
     if (!layout)
@@ -475,10 +475,12 @@ void WorldView::draw_capture_hint_(tk::PaintCtx& ctx)
         return;
     }
     const tk::Size sz = layout->measure();
-    const tk::Rect pill{bounds_.x + (bounds_.w - sz.w) * 0.5f - kPad,
-                        bounds_.y + bounds_.h - sz.h - 3 * kPad, sz.w + 2 * kPad, sz.h + 2 * kPad};
-    ctx.canvas.fill_rounded_rect(pill, kPad, tk::Color{0, 0, 0, 150});
-    ctx.canvas.draw_text(*layout, {pill.x + kPad, pill.y + kPad}, tk::Color{255, 255, 255, 255});
+    const tk::Rect pill{bounds_.x + (bounds_.w - sz.w) * 0.5f - kHintPad,
+                        bounds_.y + bounds_.h - sz.h - 3 * kHintPad, sz.w + 2 * kHintPad,
+                        sz.h + 2 * kHintPad};
+    ctx.canvas.fill_rounded_rect(pill, kHintPad, tk::Color{0, 0, 0, 150});
+    ctx.canvas.draw_text(*layout, {pill.x + kHintPad, pill.y + kHintPad},
+                         tk::Color{255, 255, 255, 255});
 }
 
 void WorldView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)

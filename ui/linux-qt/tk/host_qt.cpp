@@ -86,6 +86,15 @@
 namespace tk::qt6
 {
 
+void WaylandLockDeleter::operator()(tesseract::platform::WaylandPointerLock* lock) const
+{
+#ifdef TESSERACT_QT_WAYLAND_LOCK
+    delete lock;
+#else
+    (void)lock; // never set without the Wayland protocol
+#endif
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  QtNativeTextField — QLineEdit-backed NativeTextField
 // ─────────────────────────────────────────────────────────────────────────
@@ -3685,7 +3694,7 @@ bool Surface::set_pointer_locked(bool locked)
             {
                 return false;
             }
-            wayland_lock_ = std::move(lock);
+            wayland_lock_.reset(lock.release());
             pointer_locked_ = true;
             setCursor(Qt::BlankCursor);
             return true;

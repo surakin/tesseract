@@ -33,13 +33,13 @@ struct EventValue
 {
     enum class Kind
     {
-        Nil,
+        Empty,
         Number,
         String,
         Bytes,
         Array
     };
-    Kind kind = Kind::Nil;
+    Kind kind = Kind::Empty;
     double number = 0;
     std::string text;              // String and Bytes
     std::vector<EventValue> items; // Array

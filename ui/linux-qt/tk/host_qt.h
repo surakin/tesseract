@@ -33,6 +33,13 @@ class WaylandPointerLock;
 namespace tk::qt6
 {
 
+// Deletes the Wayland pointer lock. Defined in host_qt.cpp, where the lock's type is complete when
+// the build has it, so this header (and every file that includes it) needs no complete type.
+struct WaylandLockDeleter
+{
+    void operator()(tesseract::platform::WaylandPointerLock* lock) const;
+};
+
 class Host;
 
 // Stylesheet for a plain native QMenu (right-click context menus that are
@@ -144,7 +151,7 @@ private:
     bool takes_focus_on_click_ = true;
     bool pointer_locked_ = false;
     QPoint lock_center_; // widget coordinates, the recentring spot
-    std::unique_ptr<tesseract::platform::WaylandPointerLock>
+    std::unique_ptr<tesseract::platform::WaylandPointerLock, WaylandLockDeleter>
         wayland_lock_; // set when the Wayland protocol holds the lock
     std::function<void(float)> on_scale_changed_;
 };
