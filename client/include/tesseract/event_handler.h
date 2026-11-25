@@ -230,6 +230,14 @@ public:
     {
     }
 
+    /// Fired when sync delivers a changed `dev.tesseract.world` state event for
+    /// `room_id` (the room's world was set, replaced or removed), and after this
+    /// client changes it. A re-query ping: call `Client::room_world`. Default
+    /// no-op.
+    virtual void on_room_world_changed(const std::string& /*room_id*/)
+    {
+    }
+
     /// Fired when an async media download started via `Client::fetch_media_async`
     /// completes (or fails / times out / is cancelled — `bytes` is empty then).
     /// `request_id` is the correlation token passed to `fetch_media_async`. The
@@ -650,6 +658,13 @@ public:
                                      const std::string& /*participant_id*/, std::uint32_t /*width*/,
                                      std::uint32_t /*height*/, const std::uint8_t* /*rgba*/,
                                      std::size_t /*rgba_size*/)
+    {
+    }
+    /// Fired per accepted 3D call world pose frame. Called on a background thread;
+    /// copy the bytes if they must outlive the call. Never coalesced.
+    virtual void on_call_world_frame(std::uint64_t /*session_id*/,
+                                     const std::string& /*participant_id*/,
+                                     const std::uint8_t* /*payload*/, std::size_t /*size*/)
     {
     }
     /// Fired per decoded RGBA screen share frame from a remote participant (~15fps).

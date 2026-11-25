@@ -616,6 +616,19 @@ pub fn transport_map(
         .collect()
 }
 
+/// The `(user_id, device_id)` of every member advertising the 3D call world.
+pub fn world_capable_set(members: &[CallMember]) -> HashSet<(String, String)> {
+    members
+        .iter()
+        .filter(|m| {
+            m.capabilities
+                .as_ref()
+                .is_some_and(|c| c.iter().any(|x| x == super::WORLD_CAPABILITY))
+        })
+        .map(CallMember::key)
+        .collect()
+}
+
 /// Members whose user is not in `ignored`: an ignored user's call does not
 /// show up in the "call in progress" banner. This is display only: an ignored
 /// user who is a joined member of a call we are in still receives our media
@@ -1263,6 +1276,20 @@ mod tests {
             vec!["@b:x"]
         );
         assert_eq!(without_ignored(vec![a, b], &HashSet::new()).len(), 2);
+    }
+
+    #[test]
+    fn world_capable_set_lists_members_advertising_the_capability() {
+        let mut a = rtc_member("@a:x", "A", Vec::new());
+        a.capabilities = Some(vec![crate::client::rtc::WORLD_CAPABILITY.to_owned()]);
+        let mut b = rtc_member("@b:x", "B", Vec::new());
+        b.capabilities = Some(vec!["m.render_audio".to_owned()]);
+        let c = rtc_member("@c:x", "C", Vec::new());
+        let set = world_capable_set(&[a, b, c]);
+        assert_eq!(
+            set,
+            std::collections::HashSet::from([("@a:x".to_owned(), "A".to_owned())])
+        );
     }
 
     #[test]

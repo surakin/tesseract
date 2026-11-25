@@ -206,6 +206,25 @@ enum class Key
     Character
 };
 
+// Layout-independent identity of a key, from the hardware scancode. Lets a
+// widget (e.g. WASD walking) bind to key positions on any keyboard layout.
+enum class PhysicalKey
+{
+    Unknown,
+    W,
+    A,
+    S,
+    D,
+    Up,
+    Down,
+    Left,
+    Right,
+    ShiftLeft,
+    ShiftRight,
+    ControlLeft,
+    Space,
+};
+
 struct KeyEvent
 {
     Key key = Key::Unknown;
@@ -217,6 +236,8 @@ struct KeyEvent
     bool alt = false;
     bool meta = false;
     bool repeat = false;
+    // Appended last so aggregate initialisation of older fields still works.
+    PhysicalKey physical = PhysicalKey::Unknown;
 };
 
 // Payload for a dropped file, threaded through on_file_drop/dispatch_file_drop.
@@ -671,7 +692,29 @@ public:
     // doesn't consume a key) — without the gate any other unfocused clickable
     // widget in the tree would silently "click" on a stray Enter/Space.
     virtual bool on_key_down(const KeyEvent&);
+    // Relative pointer motion in logical pixels, only while this widget holds
+    // the pointer lock (see lock_pointer). Default: ignored.
+    virtual void on_pointer_motion(float /*dx*/, float /*dy*/)
+    {
+    }
+    // The platform ended the pointer lock by itself (the window lost focus).
+    virtual void on_pointer_lock_lost()
+    {
+    }
+    // Asks the host to capture the mouse and keyboard for this widget; see
+    // Host::lock_pointer. False when the platform cannot or no host is set.
+    bool lock_pointer();
+    void unlock_pointer();
     virtual bool dispatch_key_down(const KeyEvent&);
+
+    // Key release, same child-first-refusal walk as dispatch_key_down.
+    // Auto-repeat releases are filtered by the backends.
+    virtual bool on_key_up(const KeyEvent&);
+    virtual bool dispatch_key_up(const KeyEvent&);
+
+    // The window lost the keyboard (focus out, deactivation): forget any
+    // held keys, since their releases will never arrive.
+    virtual void on_keys_released();
 
     // Focus hooks for keyboard-capable widgets. Surface-level focus ownership
     // will call these as platform key routing is migrated into tk.

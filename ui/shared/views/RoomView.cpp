@@ -2339,7 +2339,7 @@ RoomView::mount_call_panel(views::CallOverlayWidget::Mode initial_mode, PostDela
     {
         unmount_call_panel();
     }
-    auto w = std::make_unique<views::CallOverlayWidget>();
+    auto w = tk::create_widget<views::CallOverlayWidget>(this);
     w->set_post_delayed(std::move(post_delayed));
     w->set_repaint_requester(std::move(repaint_requester));
     w->set_avatar_provider(std::move(avatar_provider));

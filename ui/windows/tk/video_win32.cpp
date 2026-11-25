@@ -20,7 +20,8 @@
 #define _WIN32_WINNT 0x0A00
 #endif
 
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <objbase.h>
 #include <shlwapi.h>
 #include <mfapi.h>
@@ -29,6 +30,7 @@
 #include <mfreadwrite.h>
 #include <mferror.h>
 #include <wrl/client.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include "video.h"
 #include "canvas_d2d.h"

@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <list>
 #include <string>
 #include <string_view>
@@ -1076,6 +1077,24 @@ public:
     {
         painter_.end();
         return std::make_unique<QtImage>(std::move(image_));
+    }
+
+    bool finish_bgra(std::vector<std::uint8_t>& out, std::uint32_t& w, std::uint32_t& h) override
+    {
+        painter_.end();
+        // Format_ARGB32_Premultiplied is B, G, R, A in memory on a little-endian host.
+        const int iw = image_.width();
+        const int ih = image_.height();
+        const std::size_t row = static_cast<std::size_t>(iw) * 4;
+        out.resize(row * static_cast<std::size_t>(ih));
+        for (int y = 0; y < ih; ++y)
+        {
+            std::memcpy(out.data() + static_cast<std::size_t>(y) * row, image_.constScanLine(y),
+                        row);
+        }
+        w = static_cast<std::uint32_t>(iw);
+        h = static_cast<std::uint32_t>(ih);
+        return true;
     }
 
 private:

@@ -184,6 +184,12 @@ libqt6concurrent6 (>= 6.2), \
 qt6-image-formats-plugins, libopus0 (>= 1.1), fonts-noto-color-emoji")
         set(_cpack_rpm_deps  "qt6-qtbase >= 6.2, qt6-qtmultimedia >= 6.2, qt6-qtimageformats, opus >= 1.1, google-noto-color-emoji-fonts")
     endif()
+    if(TESSERACT_WITH_ENGINE)
+        # The 3D engine library (cmake/Engine.cmake) links the window-system libraries and loads
+        # the Vulkan loader at run time.
+        string(APPEND _cpack_deb_deps ", libvulkan1, libwayland-client0, libxkbcommon0, libx11-6, libxcursor1, libxi6, libxfixes3")
+        string(APPEND _cpack_rpm_deps ", vulkan-loader, libwayland-client, libxkbcommon, libX11, libXcursor, libXi, libXfixes")
+    endif()
     set(_cpack_description
 "Tesseract is a cross-platform Matrix chat client with end-to-end encryption, \
 voice messages (MSC3245), image packs (MSC2545), replies, message editing, \

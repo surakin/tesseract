@@ -217,10 +217,37 @@ public:
     void on_pointer_down(NSPoint p);
     void on_pointer_up(NSPoint p);
     void on_pointer_move(NSPoint p);
+    // Relative motion in points (NSEvent deltaX/deltaY) while the pointer is locked.
+    void on_pointer_motion(CGFloat dx, CGFloat dy)
+    {
+        dispatch_pointer_motion(static_cast<float>(dx), static_cast<float>(dy));
+    }
+    // Mouse capture: the cursor stops following the mouse and is hidden; the motion arrives as
+    // event deltas. Restored by unlocking, which the window losing the key does too.
+    bool apply_pointer_lock_(bool locked) override
+    {
+        if (locked == lock_active_)
+        {
+            return lock_active_;
+        }
+        lock_active_ = locked;
+        CGAssociateMouseAndMouseCursorPosition(locked ? false : true);
+        if (locked)
+        {
+            [NSCursor hide];
+        }
+        else
+        {
+            [NSCursor unhide];
+        }
+        return lock_active_;
+    }
     void on_pointer_leave();
     void on_wheel(NSPoint p, CGFloat dx, CGFloat dy, bool is_touchpad = false);
     void on_right_click(NSPoint p);
     bool on_key_down(const KeyEvent& event);
+    bool on_key_up(const KeyEvent& event);
+    void on_keys_released();
 
     // Drag-and-drop. `pasteboard_has_dropable` is consulted from
     // -draggingEntered: to gate the cursor; `ingest_native_file_drop` runs
@@ -293,6 +320,7 @@ protected:
 private:
     TKSurfaceView* view_;
     bool cursor_pushed_ = false;
+    bool lock_active_ = false; // see apply_pointer_lock_
     const Theme* theme_;
     std::unique_ptr<CanvasFactory> factory_;
     bool transparent_ = false;
@@ -429,6 +457,40 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     out.alt = event.modifierFlags & NSEventModifierFlagOption;
     out.meta = event.modifierFlags & NSEventModifierFlagCommand;
     out.repeat = event.isARepeat;
+    // Hardware key codes (kVK_*): layout-independent key positions. Shift
+    // arrives via flagsChanged:, so it stays Unknown here.
+    switch (event.keyCode)
+    {
+    case 13:
+        out.physical = tk::PhysicalKey::W;
+        break;
+    case 49:
+        out.physical = tk::PhysicalKey::Space;
+        break;
+    case 0:
+        out.physical = tk::PhysicalKey::A;
+        break;
+    case 1:
+        out.physical = tk::PhysicalKey::S;
+        break;
+    case 2:
+        out.physical = tk::PhysicalKey::D;
+        break;
+    case 126:
+        out.physical = tk::PhysicalKey::Up;
+        break;
+    case 125:
+        out.physical = tk::PhysicalKey::Down;
+        break;
+    case 123:
+        out.physical = tk::PhysicalKey::Left;
+        break;
+    case 124:
+        out.physical = tk::PhysicalKey::Right;
+        break;
+    default:
+        break;
+    }
     if (out.key == tk::Key::Unknown)
     {
         out.text = character_text_from_macos(event);
@@ -653,7 +715,11 @@ tk::KeyEvent translate_key_event(NSEvent* event)
 
 - (void)mouseMoved:(NSEvent*)e
 {
-    if (self.hostPtr)
+    if (self.hostPtr && self.hostPtr->pointer_locked())
+    {
+        self.hostPtr->on_pointer_motion(e.deltaX, e.deltaY);
+    }
+    else if (self.hostPtr)
     {
         self.hostPtr->on_pointer_move([self tkLocationFromEvent:e]);
     }
@@ -661,7 +727,11 @@ tk::KeyEvent translate_key_event(NSEvent* event)
 
 - (void)mouseDragged:(NSEvent*)e
 {
-    if (self.hostPtr)
+    if (self.hostPtr && self.hostPtr->pointer_locked())
+    {
+        self.hostPtr->on_pointer_motion(e.deltaX, e.deltaY);
+    }
+    else if (self.hostPtr)
     {
         self.hostPtr->on_pointer_move([self tkLocationFromEvent:e]);
     }
@@ -717,12 +787,81 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     if (self.hostPtr)
     {
         tk::KeyEvent event = translate_key_event(e);
-        if (event.key != tk::Key::Unknown && self.hostPtr->on_key_down(event))
+        // A modifier has a physical key but no logical one; the pointer-lock owner needs it.
+        const bool physicalOnly =
+            event.physical != tk::PhysicalKey::Unknown && self.hostPtr->pointer_locked();
+        if ((event.key != tk::Key::Unknown || physicalOnly) && self.hostPtr->on_key_down(event))
         {
             return;
         }
     }
     [super keyDown:e];
+}
+
+- (void)keyUp:(NSEvent*)e
+{
+    if (self.hostPtr && !e.isARepeat)
+    {
+        tk::KeyEvent event = translate_key_event(e);
+        if ((event.key != tk::Key::Unknown || event.physical != tk::PhysicalKey::Unknown) &&
+            self.hostPtr->on_key_up(event))
+        {
+            return;
+        }
+    }
+    [super keyUp:e];
+}
+
+- (BOOL)resignFirstResponder
+{
+    BOOL ok = [super resignFirstResponder];
+    if (ok && self.hostPtr)
+    {
+        self.hostPtr->on_keys_released();
+    }
+    return ok;
+}
+
+// The left Ctrl key is a modifier: it never reaches keyDown:, only this. Passed on as a key
+// press and release of the physical left Ctrl (the 3D view gives the mouse back on it).
+- (void)flagsChanged:(NSEvent*)e
+{
+    if (self.hostPtr && e.keyCode == 59) // kVK_Control
+    {
+        tk::KeyEvent event{};
+        event.ctrl = e.modifierFlags & NSEventModifierFlagControl;
+        event.physical = tk::PhysicalKey::ControlLeft;
+        const bool down = event.ctrl;
+        if (down ? self.hostPtr->on_key_down(event) : self.hostPtr->on_key_up(event))
+        {
+            return;
+        }
+    }
+    [super flagsChanged:e];
+}
+
+// A window that stops being key (Cmd+Tab, another window) must not keep the mouse captured.
+- (void)viewDidMoveToWindow
+{
+    [super viewDidMoveToWindow];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:NSWindowDidResignKeyNotification
+                                                  object:nil];
+    if (self.window)
+    {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(tkWindowResignedKey:)
+                                                     name:NSWindowDidResignKeyNotification
+                                                   object:self.window];
+    }
+}
+
+- (void)tkWindowResignedKey:(NSNotification*)n
+{
+    if (self.hostPtr)
+    {
+        self.hostPtr->on_keys_released();
+    }
 }
 
 // ── Drag-and-drop destination ───────────────────────────────────────────
@@ -3972,6 +4111,16 @@ void Host::on_right_click(NSPoint p)
 bool Host::on_key_down(const KeyEvent& event)
 {
     return dispatch_key_down(event);
+}
+
+bool Host::on_key_up(const KeyEvent& event)
+{
+    return dispatch_key_up(event);
+}
+
+void Host::on_keys_released()
+{
+    dispatch_keys_released();
 }
 
 // ─────────────────────────────────────────────────────────────────────────

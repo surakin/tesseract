@@ -530,14 +530,41 @@ list(APPEND _views_sources
     views/CallLobbyView.cpp
     views/ScreenPickerWidget.h
     views/ScreenPickerWidget.cpp
+    views/world/AssetCacheStore.h
+    views/world/AssetCacheStore.cpp
 )
 list(APPEND _app_sources
     app/CallWindowBase.h
     app/CallWindowBase.cpp
 )
+if(TESSERACT_WITH_ENGINE)
+    # The 3D engine on its own thread (docs/3D-CALL-ROOMS.md); temporary experiment.
+    list(APPEND _views_sources
+        views/world/EngineScene.h
+        views/world/EngineScene.cpp
+        views/world/world_room.h
+        views/world/world_room.cpp
+        views/world/WorldAssetLoader.h
+        views/world/WorldAssetLoader.cpp
+        views/world/WorldView.h
+        views/world/WorldView.cpp
+        views/world/WorldLoader.h
+        views/world/WorldLoader.cpp
+        views/world/world_transfer.h
+        views/world/world_transfer.cpp
+        views/world/WorldButtonBar.h
+        views/world/WorldButtonBar.cpp
+        views/WorldConsentDialog.h
+        views/WorldConsentDialog.cpp
+    )
+endif()
 add_library(tesseract_tk    STATIC ${_tk_sources})
 add_subdirectory(platform)
 add_library(tesseract_views STATIC ${_views_sources})
+if(TESSERACT_WITH_ENGINE)
+    target_link_libraries(tesseract_views PUBLIC tesseract_engine)
+    target_compile_definitions(tesseract_views PUBLIC TESSERACT_WITH_ENGINE=1)
+endif()
 add_library(tesseract_app   STATIC ${_app_sources})
 
 # svg.cpp is a single-header-library implementation TU (NANOSVG_IMPLEMENTATION /
@@ -610,6 +637,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-minimize.svg"
     "${_lucide_dir}/lucide-pip.svg"
     "${_lucide_dir}/lucide-monitor.svg"
+    "${_lucide_dir}/lucide-box.svg"
     "${_lucide_dir}/lucide-wrench.svg"
     "${_lucide_dir}/lucide-plus.svg"
     "${_lucide_dir}/lucide-external-link.svg"

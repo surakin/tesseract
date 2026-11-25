@@ -62,6 +62,12 @@ inline bool rect_contains(const tk::Rect& r, tk::Point p)
 // (lazy-fetch on miss, MSC4278 invite-avatar gating, presence lookups, the
 // name source picked for the initials fallback). This helper centralises only
 // the invariant image-or-initials draw that was copy-pasted across ~10 views.
+// How a call participant's avatar looks where there is no video (a call tile, a 3D robot's
+// screen): the disc's share of the media's short side and the initials colours.
+inline constexpr float kCallAvatarFrac = 0.55f;
+inline constexpr tk::Color kCallAvatarBg{60, 60, 60, 255};
+inline constexpr tk::Color kCallAvatarFg{200, 200, 200, 255};
+
 inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img, tk::Point centre, float diameter,
                         std::string_view initials_name, tk::Color initials_bg,
                         tk::Color initials_fg, tk::AvatarText text = tk::AvatarText::Initials)

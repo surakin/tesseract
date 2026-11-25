@@ -17,9 +17,11 @@
 #include <string>
 #include <vector>
 
-#include <windows.h>
+#include "tesseract/win32.h"
 
+#include "tesseract/win32/windows_enable.h"
 #include <objidl.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace tesseract::win32_drop
 {

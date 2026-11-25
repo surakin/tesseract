@@ -95,6 +95,7 @@ public:
                                      EventList events) override;
     void on_threads_updated(const std::string& room_id) override;
     void on_knock_requests_updated(const std::string& room_id) override;
+    void on_room_world_changed(const std::string& room_id) override;
     void on_media_ready(std::uint64_t request_id, const std::vector<std::uint8_t>& bytes) override;
     void on_media_chunk(std::uint64_t request_id, const std::vector<std::uint8_t>& chunk,
                         std::uint8_t status, std::uint64_t total_size) override;
@@ -200,6 +201,8 @@ public:
     void on_call_video_frame(std::uint64_t session_id, const std::string& participant_id,
                              std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba,
                              std::size_t rgba_size) override;
+    void on_call_world_frame(std::uint64_t session_id, const std::string& participant_id,
+                             const std::uint8_t* payload, std::size_t size) override;
     void on_call_screen_frame(std::uint64_t session_id, const std::string& participant_id,
                               std::uint32_t width, std::uint32_t height, const std::uint8_t* rgba,
                               std::size_t rgba_size) override;

@@ -8,9 +8,11 @@
 
 #include <tesseract/settings.h>
 
+#include "tesseract/win32/windows_enable.h"
 #include <audioclient.h>
 #include <mmdeviceapi.h>
-#include <windows.h>
+#include "tesseract/win32/windows_disable.h"
+#include "tesseract/win32.h"
 
 #include <algorithm>
 #include <atomic>

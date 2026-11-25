@@ -1,3 +1,4 @@
+pub use super::client::hash::sha256;
 pub use super::client::{image_metadata_strippable, ClientFfi};
 pub use super::jxl::{jxl_decoder_new, jxl_is_animated, jxl_is_data, JxlDecoder};
 pub use super::webp_anim::{webp_anim_decoder_new, webp_is_data, WebpAnimDecoder};
@@ -110,6 +111,55 @@ pub fn check_media_file(
         renamed_filename: r.renamed_filename,
         effective_mime: r.effective_mime,
     }
+}
+
+/// Zips a world directory deterministically (see `world_bundle`).
+pub fn world_bundle_pack(dir: &str) -> ffi::WorldBundlePackResult {
+    match super::world_bundle::pack_dir(std::path::Path::new(dir)) {
+        Ok(bytes) => ffi::WorldBundlePackResult {
+            ok: true,
+            error: String::new(),
+            bytes,
+        },
+        Err(error) => ffi::WorldBundlePackResult {
+            ok: false,
+            error,
+            bytes: Vec::new(),
+        },
+    }
+}
+
+/// Validates a world bundle and extracts it to `dest` (created only on success).
+pub fn world_bundle_extract(bytes: &[u8], dest: &str) -> ffi::WorldBundleExtractResult {
+    let r = super::world_bundle::extract(
+        bytes,
+        std::path::Path::new(dest),
+        &super::world_bundle::Limits::default(),
+    )
+    .and_then(|m| serde_json::to_string(&m).map_err(|e| e.to_string()));
+    match r {
+        Ok(manifest_json) => ffi::WorldBundleExtractResult {
+            ok: true,
+            error: String::new(),
+            manifest_json,
+        },
+        Err(error) => ffi::WorldBundleExtractResult {
+            ok: false,
+            error,
+            manifest_json: String::new(),
+        },
+    }
+}
+
+/// Parses a `dev.tesseract.world` event's content; `sender` is the event's
+/// envelope sender, never read from the content. `present == false` if unusable.
+pub fn world_event_parse(content_json: &str, sender: &str) -> ffi::RoomWorldFfi {
+    super::client::world_event::parse_event_ffi(content_json, sender)
+}
+
+/// Lowercase hex SHA-256 of a world bundle.
+pub fn world_bundle_hash(bytes: &[u8]) -> String {
+    super::world_bundle::sha256_hex(bytes)
 }
 
 pub fn compute_waveform_from_ogg(bytes: &[u8]) -> Vec<u16> {
@@ -881,6 +931,41 @@ pub mod ffi {
         state_params: Vec<String>,
     }
 
+    /// Result of `world_bundle_pack`.
+    struct WorldBundlePackResult {
+        ok: bool,
+        error: String,
+        bytes: Vec<u8>,
+    }
+
+    /// A room's `dev.tesseract.world`: `sender` is the event envelope's sender.
+    /// `present == false` with an empty `error` means the room has no world; with an `error` the
+    /// event is unusable (`format` is what its content said, 0 if unreadable).
+    struct RoomWorldFfi {
+        present: bool,
+        error: String,
+        name: String,
+        hash: String,
+        url: String,
+        sender: String,
+        size: u64,
+        format: u32,
+    }
+
+    /// Result of `download_world_bundle`; `bytes` are verified when `ok`.
+    struct WorldBundleDownloadFfi {
+        ok: bool,
+        error: String,
+        bytes: Vec<u8>,
+    }
+
+    /// Result of `world_bundle_extract`; `manifest_json` is the validated manifest.
+    struct WorldBundleExtractResult {
+        ok: bool,
+        error: String,
+        manifest_json: String,
+    }
+
     /// Outcome of an asynchronous SDK operation.
     struct OpResult {
         ok: bool,
@@ -907,6 +992,10 @@ pub mod ffi {
         is_audio_muted: bool,
         is_video_muted: bool,
         is_screen_sharing: bool,
+        /// The member advertises the 3D call world capability.
+        world_capable: bool,
+        /// This is our own participant.
+        is_local: bool,
     }
 
     /// Result of a GitHub release update check.
@@ -2005,6 +2094,11 @@ pub mod ffi {
         /// refreshes any open slash-command popup for that room.
         fn on_bot_commands_updated(self: &EventHandlerBridge, room_id: &str);
 
+        /// Fired when sync delivers a `dev.tesseract.world` state event for
+        /// `room_id` (the room's world was set, replaced or removed), and after
+        /// this client changes it. A re-query ping: call `room_world`.
+        fn on_room_world_changed(self: &EventHandlerBridge, room_id: &str);
+
         /// Fired when an async media download started via `fetch_media_async`
         /// completes (or fails / times out / is cancelled — `bytes` is empty in
         /// those cases). `request_id` is the opaque correlation token the caller
@@ -2305,6 +2399,14 @@ pub mod ffi {
             rgba: &[u8],
         );
 
+        /// Fired per accepted 3D call world pose frame (never coalesced).
+        fn on_rtc_world_frame(
+            self: &EventHandlerBridge,
+            session_id: u64,
+            participant_id: &str,
+            payload: &[u8],
+        );
+
         /// Fired per decoded RGBA screen share frame from a remote participant (~15fps).
         /// `rgba` is `width * height * 4` bytes, row-major.
         fn on_rtc_screen_frame(
@@ -2378,6 +2480,21 @@ pub mod ffi {
         /// most 120 bytes); empty when nothing usable remains.
         fn sanitize_filename_or_empty(raw: &str) -> String;
 
+        // ----- 3D world bundles -----
+
+        /// Packs the directory `dir` into a deterministic world bundle zip.
+        fn world_bundle_pack(dir: &str) -> WorldBundlePackResult;
+
+        /// Validates `bytes` as a world bundle and extracts it into the new
+        /// directory `dest`; nothing is left behind on failure.
+        fn world_bundle_extract(bytes: &[u8], dest: &str) -> WorldBundleExtractResult;
+
+        /// Lowercase hex SHA-256 of the bundle bytes.
+        fn world_bundle_hash(bytes: &[u8]) -> String;
+
+        /// Parses a `dev.tesseract.world` event's content with its envelope sender.
+        fn world_event_parse(content_json: &str, sender: &str) -> RoomWorldFfi;
+
         // ----- Local waveform generation -----
 
         /// Decode an Ogg/Opus buffer and compute MSC1767 waveform samples
@@ -2434,6 +2551,9 @@ pub mod ffi {
         fn classify_maps_link(text: &str) -> MapsLinkResult;
 
         // ----- Animated WebP decode (macOS canvas) -----
+
+        /// SHA-256 of `bytes` (32 bytes).
+        fn sha256(bytes: &[u8]) -> Vec<u8>;
 
         type WebpAnimDecoder;
         fn webp_is_data(bytes: &[u8]) -> bool;
@@ -4313,6 +4433,28 @@ pub mod ffi {
         /// power levels, no network round-trip).
         fn can_set_room_image_packs(self: &ClientFfi, room_id: &str) -> bool;
 
+        /// True iff the current user's power level allows sending the room's
+        /// `dev.tesseract.world` state event. Cached, no network; false on any
+        /// uncertainty. Blocks: worker thread.
+        fn can_set_room_world(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// Publishes `bundle` (a world zip) as the room's world: hashes it,
+        /// reuses an earlier upload of the same bytes if the server still has it,
+        /// else uploads, then sends the state event. Blocks: worker thread.
+        fn set_room_world(self: &ClientFfi, room_id: &str, name: &str, bundle: &[u8]) -> OpResult;
+
+        /// The room's world with its envelope sender, or `present == false`.
+        /// Reads the cached full room state. Blocks: worker thread.
+        fn room_world(self: &ClientFfi, room_id: &str) -> RoomWorldFfi;
+
+        /// Downloads `world`'s bundle and verifies its size and SHA-256.
+        /// Blocks: worker thread.
+        fn download_world_bundle(self: &ClientFfi, world: &RoomWorldFfi) -> WorldBundleDownloadFfi;
+
+        /// Empties the room's world event (it reads as none afterwards).
+        /// Blocks: worker thread.
+        fn remove_room_world(self: &ClientFfi, room_id: &str) -> OpResult;
+
         /// Read the room's current power levels, narrowed to the fields the
         /// Permissions tab edits. Synchronous — Room::power_levels() is a
         /// cached local read with no network round-trip, unlike the fields
@@ -4879,8 +5021,17 @@ pub mod ffi {
         /// delivers silence when muted. No-op when no call is active.
         fn rtc_set_audio_muted(self: &ClientFfi, muted: bool);
 
+        /// Whether this process can render the 3D call world. When true, new
+        /// call memberships advertise the `dev.tesseract.world.v1` capability.
+        /// Process-wide; call it before joining a call.
+        fn rtc_set_world_available(self: &ClientFfi, available: bool);
+
         /// Mute or unmute the local video track. No-op when no call is active.
         fn rtc_set_video_muted(self: &ClientFfi, muted: bool);
+
+        /// Offer a 3D call world pose frame to the live call. No-op when no call
+        /// is active.
+        fn rtc_send_world_frame(self: &ClientFfi, payload: &[u8]);
 
         /// Inject a raw I420 video frame into the live session. No-op when no
         /// call is active.
@@ -5028,6 +5179,8 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
                 is_audio_muted: info.is_audio_muted,
                 is_video_muted: info.is_video_muted,
                 is_screen_sharing: info.is_screen_sharing,
+                world_capable: info.world_capable,
+                is_local: info.is_local,
             },
         );
     }
@@ -5052,6 +5205,8 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
                 is_audio_muted: info.is_audio_muted,
                 is_video_muted: info.is_video_muted,
                 is_screen_sharing: info.is_screen_sharing,
+                world_capable: info.world_capable,
+                is_local: info.is_local,
             },
         );
     }
@@ -5071,6 +5226,11 @@ impl super::client::rtc::RtcEventSink for RtcCxxBridgeSink {
     ) {
         let g = self.handler.lock();
         g.on_rtc_video_frame(session_id, participant_id, width, height, &rgba);
+    }
+
+    fn on_world_frame(&self, session_id: u64, participant_id: &str, payload: &[u8]) {
+        let g = self.handler.lock();
+        g.on_rtc_world_frame(session_id, participant_id, payload);
     }
 
     fn on_screen_frame(

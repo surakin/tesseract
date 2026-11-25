@@ -140,6 +140,7 @@ public:
     void on_threads_updated(rust::Str room_id) const;
     void on_knock_requests_updated(rust::Str room_id) const;
     void on_bot_commands_updated(rust::Str room_id) const;
+    void on_room_world_changed(rust::Str room_id) const;
     void on_media_ready(std::uint64_t request_id, rust::Slice<const uint8_t> bytes) const;
     void on_media_chunk(std::uint64_t request_id, rust::Slice<const uint8_t> chunk,
                         std::uint8_t status, std::uint64_t total_size) const;
@@ -231,6 +232,8 @@ public:
     void on_rtc_session_ended(std::uint64_t session_id, rust::Str reason) const;
     void on_rtc_video_frame(std::uint64_t session_id, rust::Str participant_id, std::uint32_t width,
                             std::uint32_t height, rust::Slice<const uint8_t> rgba) const;
+    void on_rtc_world_frame(std::uint64_t session_id, rust::Str participant_id,
+                            rust::Slice<const uint8_t> payload) const;
     void on_rtc_screen_frame(std::uint64_t session_id, rust::Str participant_id,
                              std::uint32_t width, std::uint32_t height,
                              rust::Slice<const uint8_t> rgba) const;

@@ -152,6 +152,8 @@ TEST_CASE("shortcuts overlay lists every registry entry", "[shortcuts][overlay]"
             std::string(def.description) + ", " + tesseract::views::shortcut_label(def.id);
         CHECK(std::find(texts.begin(), texts.end(), want) != texts.end());
     }
+    // The 3D call world's group has its own heading.
+    CHECK(std::find(texts.begin(), texts.end(), "World") != texts.end());
     REQUIRE(access_test::find_named(tree, "Close") != nullptr);
 }
 

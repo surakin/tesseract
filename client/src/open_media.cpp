@@ -15,8 +15,10 @@
 #include <system_error>
 
 #if defined(_WIN32)
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <shellapi.h>
+#include "tesseract/win32/windows_disable.h"
 #else
 #include <fcntl.h>
 #include <sys/stat.h>

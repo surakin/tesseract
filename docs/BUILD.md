@@ -392,6 +392,13 @@ field then goes straight to the default homeserver (matrix.org).
 launch option used by the smoke workflow, see [Smoke test](#smoke-test). Keep
 it off for release builds.
 
+`-DTESSERACT_WITH_ENGINE=OFF` (default `ON` on the `3d` branch; temporary, for the 3D call room
+experiment in [3D-CALL-ROOMS.md](3D-CALL-ROOMS.md)) clones the 3D engine from
+`TESSERACT_ENGINE_GIT_REPOSITORY` at `TESSERACT_ENGINE_GIT_TAG` (default
+`main`, fetched on every build), builds it as a shared library in
+`<build>/engine/` and installs its SDK to `<build>/engine-sdk/`
+(`cmake/Engine.cmake`). The `engine_load` ctest loads it and checks its ABI.
+
 ### Unity builds and precompiled headers
 
 `-DTESSERACT_UNITY_BUILD=OFF` (default `ON`) disables CMake's unity build

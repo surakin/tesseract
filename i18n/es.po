@@ -7806,3 +7806,234 @@ msgstr "Ausente, visto por última vez {0}"
 
 msgid "Owner"
 msgstr "Propietario"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D engine could not be loaded."
+msgstr "No se pudo cargar el motor 3D."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "This 3D engine cannot draw off-screen."
+msgstr "Este motor 3D no puede dibujar fuera de pantalla."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "No graphics device is available for the 3D view."
+msgstr "No hay ningún dispositivo gráfico disponible para la vista 3D."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D world could not be loaded."
+msgstr "No se pudo cargar el mundo 3D."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D scene could not be built."
+msgstr "No se pudo crear la escena 3D."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Starting the 3D view…"
+msgstr "Iniciando la vista 3D…"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "World"
+msgstr "Mundo"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk forward"
+msgstr "Caminar hacia delante"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk back"
+msgstr "Caminar hacia atrás"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn left"
+msgstr "Girar a la izquierda"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn right"
+msgstr "Girar a la derecha"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe left"
+msgstr "Desplazarse a la izquierda"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe right"
+msgstr "Desplazarse a la derecha"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Look around"
+msgstr "Mirar alrededor"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Drag"
+msgstr "Arrastrar"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the 3D world"
+msgstr "Mostrar el mundo 3D"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the call grid"
+msgstr "Mostrar la cuadrícula de la llamada"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Click to look around and walk. Esc or Left Ctrl gives the mouse back."
+msgstr "Haz clic para mirar alrededor y caminar. Esc o Ctrl izquierdo devuelve el ratón."
+
+msgid "\"{0}\" already exists in that folder. Choose another folder or rename it."
+msgstr "«{0}» ya existe en esa carpeta. Elige otra carpeta o cámbiale el nombre."
+
+msgid "A shortcut or symbolic link cannot be imported; choose the folder or zip itself."
+msgstr "No se puede importar un acceso directo ni un enlace simbólico; elige la propia carpeta o el zip."
+
+msgid "Always run this world"
+msgstr "Ejecutar siempre este mundo"
+
+msgid "An unexpected error occurred."
+msgstr "Se ha producido un error inesperado."
+
+msgid "Choose a world folder"
+msgstr "Elige una carpeta de mundo"
+
+msgid "Choose a world folder or a .zip file."
+msgstr "Elige una carpeta de mundo o un archivo .zip."
+
+msgid "Choose a world zip"
+msgstr "Elige un zip de mundo"
+
+msgid "Choose where to save the world"
+msgstr "Elige dónde guardar el mundo"
+
+msgid "Could not download the world: {0}"
+msgstr "No se pudo descargar el mundo: {0}"
+
+msgid "Could not publish the world: {0}"
+msgstr "No se pudo publicar el mundo: {0}"
+
+msgid "Could not read the room's world: {0}"
+msgstr "No se pudo leer el mundo de la sala: {0}"
+
+msgid "Don't run"
+msgstr "No ejecutar"
+
+msgid "Exporting the world…"
+msgstr "Exportando el mundo…"
+
+msgid "Hide world actions"
+msgstr "Ocultar las acciones del mundo"
+
+msgid "Import folder"
+msgstr "Importar carpeta"
+
+msgid "Import zip"
+msgstr "Importar zip"
+
+msgid "Importing the world…"
+msgstr "Importando el mundo…"
+
+msgid "Loading the world…"
+msgstr "Cargando el mundo…"
+
+msgid "Reload"
+msgstr "Recargar"
+
+msgid "Run once"
+msgstr "Ejecutar una vez"
+
+msgid "Run this room's world?"
+msgstr "¿Ejecutar el mundo de esta sala?"
+
+msgid "Show or hide the world's buttons"
+msgstr "Mostrar u ocultar los botones del mundo"
+
+msgid "Show world actions"
+msgstr "Mostrar las acciones del mundo"
+
+msgid "That folder or file cannot be read."
+msgstr "No se puede leer esa carpeta o archivo."
+
+msgid "The built-in world could not be found."
+msgstr "No se encontró el mundo integrado."
+
+msgid "The built-in world is missing {0}."
+msgstr "Al mundo integrado le falta {0}."
+
+msgid "The built-in world is not valid."
+msgstr "El mundo integrado no es válido."
+
+msgid "The call has ended."
+msgstr "La llamada ha terminado."
+
+msgid "The chosen folder cannot be written to."
+msgstr "No se puede escribir en la carpeta elegida."
+
+msgid "The name of that folder cannot be used."
+msgstr "No se puede usar el nombre de esa carpeta."
+
+msgid "The name of that folder or file cannot be used."
+msgstr "No se puede usar el nombre de esa carpeta o archivo."
+
+msgid "The room's world is not valid."
+msgstr "El mundo de la sala no es válido."
+
+msgid "The world changed."
+msgstr "El mundo ha cambiado."
+
+msgid "The world changed. Reload"
+msgstr "El mundo ha cambiado. Recargar"
+
+msgid "The world changed: \"{0}\" by {1}."
+msgstr "El mundo ha cambiado: «{0}» de {1}."
+
+msgid "The world could not be exported: {0}"
+msgstr "No se pudo exportar el mundo: {0}"
+
+msgid "The world could not be imported: {0}"
+msgstr "No se pudo importar el mundo: {0}"
+
+msgid "The world could not be transferred"
+msgstr "No se pudo transferir el mundo"
+
+msgid "The world is not valid: {0}"
+msgstr "El mundo no es válido: {0}"
+
+msgid "The world was not run."
+msgstr "El mundo no se ejecutó."
+
+msgid "The world was published to this room."
+msgstr "El mundo se publicó en esta sala."
+
+msgid "The world was saved to {0}."
+msgstr "El mundo se guardó en {0}."
+
+msgid "There is no temporary folder to check the world in."
+msgstr "No hay una carpeta temporal donde comprobar el mundo."
+
+msgid "This folder is not a valid world: {0}"
+msgstr "Esta carpeta no es un mundo válido: {0}"
+
+msgid "This is not a valid world: {0}"
+msgstr "Esto no es un mundo válido: {0}"
+
+msgid "This world is too large."
+msgstr "Este mundo es demasiado grande."
+
+msgid "This world needs a newer Tesseract."
+msgstr "Este mundo necesita una versión más reciente de Tesseract."
+
+msgid "Waiting for your answer in the main window"
+msgstr "Esperando tu respuesta en la ventana principal"
+
+msgid "World actions"
+msgstr "Acciones del mundo"
+
+msgid "World exported"
+msgstr "Mundo exportado"
+
+msgid "World imported"
+msgstr "Mundo importado"
+
+msgid "{0} published the world \"{1}\" (id {2}) for this room. It contains scripts that will run on your computer. Run it only if you trust {0}."
+msgstr "{0} ha publicado el mundo «{1}» (id {2}) para esta sala. Contiene scripts que se ejecutarán en tu ordenador. Ejecútalo solo si confías en {0}."
+
+msgid "…"
+msgstr "…"

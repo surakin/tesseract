@@ -4,7 +4,10 @@
 #include "app/jxl_decode.h"
 #include "tk/image_sniff.h"
 
-#include <BetterText/BetterText.h>
+#include "tesseract/win32/windows_enable.h"
+#include <BetterText/BetterText.h> // includes <windows.h> itself
+#include "tesseract/win32/windows_disable.h"
+#include "tesseract/win32/windows_enable.h"
 #include <d2d1_1.h>
 #include <d2d1_1helper.h>
 #include <d2d1_3.h>
@@ -16,6 +19,7 @@
 #include <dwrite_3.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#include "tesseract/win32/windows_disable.h"
 
 // Matches IDR_EMOJI_FONT in ui/windows/src/resource.h
 static constexpr int kEmojiFontResourceId = 201;
@@ -2459,6 +2463,42 @@ public:
         }
         return std::make_unique<D2DImage>(std::move(bmp_), static_cast<int>(pw_),
                                           static_cast<int>(ph_));
+    }
+
+    bool finish_bgra(std::vector<std::uint8_t>& out, std::uint32_t& w, std::uint32_t& h) override
+    {
+        if (FAILED(rt_->EndDraw()))
+        {
+            return false;
+        }
+        // The bitmap is GUID_WICPixelFormat32bppPBGRA: premultiplied B, G, R, A.
+        const WICRect all{0, 0, static_cast<INT>(pw_), static_cast<INT>(ph_)};
+        ComPtr<IWICBitmapLock> lock;
+        if (FAILED(bmp_->Lock(&all, WICBitmapLockRead, lock.GetAddressOf())))
+        {
+            return false;
+        }
+        UINT stride = 0;
+        UINT size = 0;
+        BYTE* data = nullptr;
+        if (FAILED(lock->GetStride(&stride)) || FAILED(lock->GetDataPointer(&size, &data)) || !data)
+        {
+            return false;
+        }
+        const std::size_t row = static_cast<std::size_t>(pw_) * 4;
+        if (stride < row || static_cast<std::size_t>(size) < stride * (ph_ - 1) + row)
+        {
+            return false;
+        }
+        out.resize(row * ph_);
+        for (UINT y = 0; y < ph_; ++y)
+        {
+            std::memcpy(out.data() + static_cast<std::size_t>(y) * row,
+                        data + static_cast<std::size_t>(y) * stride, row);
+        }
+        w = pw_;
+        h = ph_;
+        return true;
     }
 
 private:

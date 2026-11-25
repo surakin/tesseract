@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "views/MainAppWidget.h"
+#include "views/world/AssetCacheStore.h"
 #include "tk/image_sniff.h"
 #include <tesseract/session_store.h>
 #include <algorithm>
@@ -1120,6 +1121,8 @@ void ShellBase::clear_all_caches_(
             // Waveform SQLite — best-effort (locked on Windows if WAL is open).
             std::error_code ec;
             std::filesystem::remove(tesseract::cache_dir() / "waveforms.db", ec);
+            // Minted 3D world assets; rebuilt from the model files on next use.
+            std::filesystem::remove_all(views::world::default_asset_cache_dir(), ec);
 
             // The MediaDiskCache is owned by the shared AccountManager and is
             // touched (load/store/prune/evict) from every window's worker pool.

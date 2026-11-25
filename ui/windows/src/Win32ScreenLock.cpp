@@ -1,6 +1,8 @@
 #include "Win32ScreenLock.h"
 
+#include "tesseract/win32/windows_enable.h"
 #include <wtsapi32.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace win32
 {

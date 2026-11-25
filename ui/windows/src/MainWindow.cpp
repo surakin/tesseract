@@ -1,5 +1,7 @@
 #include "MainWindow.h"
+#include "tesseract/win32/windows_enable.h"
 #include <shlobj.h> // SHBrowseForFolderW — native folder picker for history export
+#include "tesseract/win32/windows_disable.h"
 #include "RoomWindow.h"
 #include "AuxWindow.h"
 #include "CallWindow.h"
@@ -31,9 +33,12 @@
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
+#include "tesseract/win32/windows_enable.h"
 #include <commdlg.h>
+#include "tesseract/win32/windows_disable.h"
 #include <cmath>
 #include <numbers>
+#include "tesseract/win32/windows_enable.h"
 #include <dwmapi.h>
 #include <shellscalingapi.h>
 #include <uxtheme.h>
@@ -45,6 +50,7 @@
 #include <mfreadwrite.h>
 #include <mfobjects.h>
 #include <propvarutil.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <algorithm>
 #include <cstdlib>

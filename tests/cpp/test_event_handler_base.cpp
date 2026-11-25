@@ -196,6 +196,13 @@ struct HandlerShell : tesseract::test::TestShellBase
             std::to_string(h));
         frames.push_back(*bgra);
     }
+    void handle_rtc_world_frame_ui_(std::uint64_t s, const std::string& p,
+                                    std::vector<std::uint8_t> payload) override
+    {
+        rec("wf:" + std::to_string(s) + ":" + p);
+        world_payloads.push_back(std::move(payload));
+    }
+    std::vector<std::vector<std::uint8_t>> world_payloads;
     void handle_rtc_screen_frame_ui_(std::uint64_t s, const std::string& p, std::uint32_t w,
                                      std::uint32_t h,
                                      std::shared_ptr<std::vector<std::uint8_t>> bgra) override
@@ -474,6 +481,20 @@ TEST_CASE("opaque RGBA video frames become BGRA with channels swapped", "[event_
     CHECK(f.shell.frames[0] == want);
     CHECK(f.shell.frames[1] == want);
     CHECK(f.shell.log == std::vector<std::string>{"vf:1:p:2x1", "sf:1:p:2x1"});
+}
+
+TEST_CASE("world frames reach the shell with identical bytes, none coalesced",
+          "[event_handler_base]")
+{
+    EhbFx f;
+    const std::uint8_t a[4] = {1, 2, 3, 4};
+    const std::uint8_t b[2] = {9, 8};
+    f.h.on_call_world_frame(3, "@u:x:D", a, 4);
+    f.h.on_call_world_frame(3, "@u:x:D", b, 2);
+    REQUIRE(f.shell.world_payloads.size() == 2);
+    CHECK(f.shell.world_payloads[0] == std::vector<std::uint8_t>{1, 2, 3, 4});
+    CHECK(f.shell.world_payloads[1] == std::vector<std::uint8_t>{9, 8});
+    CHECK(f.shell.log == std::vector<std::string>{"wf:3:@u:x:D", "wf:3:@u:x:D"});
 }
 
 TEST_CASE("translucent RGBA frames are premultiplied", "[event_handler_base]")

@@ -6070,3 +6070,234 @@ msgstr "Borte, sist sett {0}"
 
 msgid "Owner"
 msgstr "Eier"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D engine could not be loaded."
+msgstr "3D-motoren kunne ikke lastes."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "This 3D engine cannot draw off-screen."
+msgstr "Denne 3D-motoren kan ikke tegne utenfor skjermen."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "No graphics device is available for the 3D view."
+msgstr "Ingen grafikkenhet er tilgjengelig for 3D-visningen."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D world could not be loaded."
+msgstr "3D-verdenen kunne ikke lastes."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D scene could not be built."
+msgstr "3D-scenen kunne ikke bygges."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Starting the 3D view…"
+msgstr "Starter 3D-visningen …"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "World"
+msgstr "Verden"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk forward"
+msgstr "Gå fremover"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk back"
+msgstr "Gå bakover"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn left"
+msgstr "Snu til venstre"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn right"
+msgstr "Snu til høyre"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe left"
+msgstr "Gå sidelengs til venstre"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe right"
+msgstr "Gå sidelengs til høyre"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Look around"
+msgstr "Se deg rundt"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Drag"
+msgstr "Dra"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the 3D world"
+msgstr "Vis 3D-verdenen"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the call grid"
+msgstr "Vis anropsrutenettet"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Click to look around and walk. Esc or Left Ctrl gives the mouse back."
+msgstr "Klikk for å se deg rundt og gå. Esc eller venstre Ctrl gir musen tilbake."
+
+msgid "\"{0}\" already exists in that folder. Choose another folder or rename it."
+msgstr "«{0}» finnes allerede i den mappen. Velg en annen mappe eller gi den nytt navn."
+
+msgid "A shortcut or symbolic link cannot be imported; choose the folder or zip itself."
+msgstr "En snarvei eller symbolsk lenke kan ikke importeres; velg selve mappen eller zip-filen."
+
+msgid "Always run this world"
+msgstr "Kjør alltid denne verdenen"
+
+msgid "An unexpected error occurred."
+msgstr "Det oppstod en uventet feil."
+
+msgid "Choose a world folder"
+msgstr "Velg en verdensmappe"
+
+msgid "Choose a world folder or a .zip file."
+msgstr "Velg en verdensmappe eller en .zip-fil."
+
+msgid "Choose a world zip"
+msgstr "Velg en verdens-zip"
+
+msgid "Choose where to save the world"
+msgstr "Velg hvor verdenen skal lagres"
+
+msgid "Could not download the world: {0}"
+msgstr "Kunne ikke laste ned verdenen: {0}"
+
+msgid "Could not publish the world: {0}"
+msgstr "Kunne ikke publisere verdenen: {0}"
+
+msgid "Could not read the room's world: {0}"
+msgstr "Kunne ikke lese rommets verden: {0}"
+
+msgid "Don't run"
+msgstr "Ikke kjør"
+
+msgid "Exporting the world…"
+msgstr "Eksporterer verdenen…"
+
+msgid "Hide world actions"
+msgstr "Skjul verdenshandlinger"
+
+msgid "Import folder"
+msgstr "Importer mappe"
+
+msgid "Import zip"
+msgstr "Importer zip"
+
+msgid "Importing the world…"
+msgstr "Importerer verdenen…"
+
+msgid "Loading the world…"
+msgstr "Laster verdenen…"
+
+msgid "Reload"
+msgstr "Last inn på nytt"
+
+msgid "Run once"
+msgstr "Kjør én gang"
+
+msgid "Run this room's world?"
+msgstr "Kjøre dette rommets verden?"
+
+msgid "Show or hide the world's buttons"
+msgstr "Vis eller skjul verdenens knapper"
+
+msgid "Show world actions"
+msgstr "Vis verdenshandlinger"
+
+msgid "That folder or file cannot be read."
+msgstr "Den mappen eller filen kan ikke leses."
+
+msgid "The built-in world could not be found."
+msgstr "Fant ikke den innebygde verdenen."
+
+msgid "The built-in world is missing {0}."
+msgstr "Den innebygde verdenen mangler {0}."
+
+msgid "The built-in world is not valid."
+msgstr "Den innebygde verdenen er ugyldig."
+
+msgid "The call has ended."
+msgstr "Samtalen er avsluttet."
+
+msgid "The chosen folder cannot be written to."
+msgstr "Det går ikke an å skrive til den valgte mappen."
+
+msgid "The name of that folder cannot be used."
+msgstr "Navnet på den mappen kan ikke brukes."
+
+msgid "The name of that folder or file cannot be used."
+msgstr "Navnet på den mappen eller filen kan ikke brukes."
+
+msgid "The room's world is not valid."
+msgstr "Rommets verden er ugyldig."
+
+msgid "The world changed."
+msgstr "Verdenen er endret."
+
+msgid "The world changed. Reload"
+msgstr "Verdenen er endret. Last inn på nytt"
+
+msgid "The world changed: \"{0}\" by {1}."
+msgstr "Verdenen er endret: «{0}» av {1}."
+
+msgid "The world could not be exported: {0}"
+msgstr "Kunne ikke eksportere verdenen: {0}"
+
+msgid "The world could not be imported: {0}"
+msgstr "Kunne ikke importere verdenen: {0}"
+
+msgid "The world could not be transferred"
+msgstr "Kunne ikke overføre verdenen"
+
+msgid "The world is not valid: {0}"
+msgstr "Verdenen er ugyldig: {0}"
+
+msgid "The world was not run."
+msgstr "Verdenen ble ikke kjørt."
+
+msgid "The world was published to this room."
+msgstr "Verdenen ble publisert i dette rommet."
+
+msgid "The world was saved to {0}."
+msgstr "Verdenen ble lagret i {0}."
+
+msgid "There is no temporary folder to check the world in."
+msgstr "Det finnes ingen midlertidig mappe å kontrollere verdenen i."
+
+msgid "This folder is not a valid world: {0}"
+msgstr "Denne mappen er ikke en gyldig verden: {0}"
+
+msgid "This is not a valid world: {0}"
+msgstr "Dette er ikke en gyldig verden: {0}"
+
+msgid "This world is too large."
+msgstr "Denne verdenen er for stor."
+
+msgid "This world needs a newer Tesseract."
+msgstr "Denne verdenen krever en nyere versjon av Tesseract."
+
+msgid "Waiting for your answer in the main window"
+msgstr "Venter på svaret ditt i hovedvinduet"
+
+msgid "World actions"
+msgstr "Verdenshandlinger"
+
+msgid "World exported"
+msgstr "Verdenen er eksportert"
+
+msgid "World imported"
+msgstr "Verdenen er importert"
+
+msgid "{0} published the world \"{1}\" (id {2}) for this room. It contains scripts that will run on your computer. Run it only if you trust {0}."
+msgstr "{0} har publisert verdenen «{1}» (id {2}) for dette rommet. Den inneholder skript som kjøres på datamaskinen din. Kjør den bare hvis du stoler på {0}."
+
+msgid "…"
+msgstr "…"

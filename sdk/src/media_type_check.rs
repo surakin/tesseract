@@ -381,11 +381,27 @@ fn equivalent(a: &str, b: &str) -> bool {
 
 /// Characters that make a name display differently from what it is
 /// (right-to-left overrides turn `gpj.exe` into `exe.jpg` on screen).
-fn is_bidi_control(c: char) -> bool {
+pub(crate) fn is_bidi_control(c: char) -> bool {
     matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' | '\u{061C}')
 }
 
 const MAX_NAME_BYTES: usize = 120;
+
+/// Whether `name` is a Windows reserved device name (CON, PRN, AUX, NUL, COM1-9,
+/// LPT1-9) in any case, with or without an extension.
+pub(crate) fn is_reserved_device_name(name: &str) -> bool {
+    let stem_upper = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    matches!(stem_upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem_upper.len() == 4
+            && (stem_upper.starts_with("COM") || stem_upper.starts_with("LPT"))
+            && stem_upper.as_bytes()[3].is_ascii_digit()
+            && stem_upper.as_bytes()[3] != b'0')
+}
 
 /// Reduces a sender-supplied name to something safe to create on disk: no
 /// directories, no control/bidi characters, no characters invalid on Windows,
@@ -418,18 +434,7 @@ pub fn sanitize_filename_or_empty(raw: &str) -> String {
         .trim_matches(|c: char| c == '.' || c.is_whitespace())
         .to_owned();
 
-    // Windows reserved device names are reserved with any extension.
-    let stem_upper = s
-        .split('.')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_ascii_uppercase();
-    let reserved = matches!(stem_upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem_upper.len() == 4
-            && (stem_upper.starts_with("COM") || stem_upper.starts_with("LPT"))
-            && stem_upper.as_bytes()[3].is_ascii_digit()
-            && stem_upper.as_bytes()[3] != b'0');
+    let reserved = is_reserved_device_name(&s);
     if reserved {
         s.insert(0, '_');
     }
@@ -729,6 +734,15 @@ fn is_safe_media(mime: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_filename_keeps_joiners_that_real_names_use() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}.png";
+        assert_eq!(sanitize_filename(family), family);
+        let persian = "\u{0646}\u{0627}\u{0645}\u{0647}\u{200C}\u{0647}\u{0627}.pdf";
+        assert_eq!(sanitize_filename(persian), persian);
+        assert_eq!(sanitize_filename("a\u{202E}b.png"), "ab.png");
+    }
 
     const PNG: &[u8] =
         b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89";

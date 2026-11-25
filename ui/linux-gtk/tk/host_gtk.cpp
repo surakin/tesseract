@@ -14,6 +14,11 @@
 
 #include <gio/gio.h>
 #include <gtk/gtk.h>
+#if defined(TESSERACT_WAYLAND_POINTER_LOCK) && defined(GDK_WINDOWING_WAYLAND)
+#define TESSERACT_GTK_WAYLAND_LOCK 1
+#include <gdk/wayland/gdkwayland.h>
+#include "platform/linux/wayland_pointer_lock.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -2849,6 +2854,55 @@ public:
         gtk_widget_set_cursor_from_name(overlay_, name);
     }
 
+    // Mouse capture: only through Wayland's pointer-constraints protocol (GTK offers no pointer
+    // lock of its own); on X11 this refuses and the view keeps its drag-to-look controls.
+    bool apply_pointer_lock_(bool locked) override
+    {
+#ifdef TESSERACT_GTK_WAYLAND_LOCK
+        if (!locked)
+        {
+            const bool was = wayland_lock_ != nullptr;
+            wayland_lock_.reset();
+            if (was && overlay_)
+            {
+                gtk_widget_set_cursor_from_name(overlay_, "default");
+            }
+            return false;
+        }
+        GtkNative* native = drawing_area_ ? gtk_widget_get_native(drawing_area_) : nullptr;
+        GdkSurface* surface = native ? gtk_native_get_surface(native) : nullptr;
+        if (!surface || !GDK_IS_WAYLAND_SURFACE(surface))
+        {
+            return false;
+        }
+        GdkDisplay* display = gdk_surface_get_display(surface);
+        GdkDevice* pointer = gdk_seat_get_pointer(gdk_display_get_default_seat(display));
+        auto lock = std::make_unique<tesseract::platform::WaylandPointerLock>();
+        if (!pointer || !lock->lock(
+                            gdk_wayland_display_get_wl_display(display),
+                            gdk_wayland_surface_get_wl_surface(surface),
+                            gdk_wayland_device_get_wl_pointer(pointer),
+                            [this](float dx, float dy)
+                            {
+                                dispatch_pointer_motion(dx, dy);
+                            },
+                            [this]()
+                            {
+                                // The compositor ended it (focus moved); this runs inside the lock's callback.
+                                defer_pointer_lock_lost();
+                            }))
+        {
+            return false;
+        }
+        wayland_lock_ = std::move(lock);
+        gtk_widget_set_cursor_from_name(overlay_, "none");
+        return true;
+#else
+        (void)locked;
+        return false;
+#endif
+    }
+
     void request_repaint() override
     {
         if (drawing_area_)
@@ -3596,6 +3650,16 @@ public:
         return dispatch_key_down(event);
     }
 
+    bool on_key_up(const KeyEvent& event)
+    {
+        return dispatch_key_up(event);
+    }
+
+    void on_keys_released()
+    {
+        dispatch_keys_released();
+    }
+
     void cache_pointer_pos(double x, double y)
     {
         last_pointer_x_ = x;
@@ -3725,6 +3789,10 @@ private:
     }
 
     GtkWidget* overlay_;
+#ifdef TESSERACT_GTK_WAYLAND_LOCK
+    std::unique_ptr<tesseract::platform::WaylandPointerLock>
+        wayland_lock_; // see apply_pointer_lock_
+#endif
     // Expires with the Host; lets worker-thread results (remote file drops)
     // notice the Host is gone before touching it.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
@@ -4051,6 +4119,40 @@ std::string character_text_from_gdk(guint keyval)
     return len > 0 ? std::string(buf, static_cast<std::size_t>(len)) : std::string{};
 }
 
+// XKB hardware keycodes: layout-independent key positions.
+PhysicalKey physical_key_from_keycode(guint keycode)
+{
+    switch (keycode)
+    {
+    case 25:
+        return PhysicalKey::W;
+    case 65:
+        return PhysicalKey::Space;
+    case 38:
+        return PhysicalKey::A;
+    case 39:
+        return PhysicalKey::S;
+    case 40:
+        return PhysicalKey::D;
+    case 50:
+        return PhysicalKey::ShiftLeft;
+    case 62:
+        return PhysicalKey::ShiftRight;
+    case 37:
+        return PhysicalKey::ControlLeft;
+    case 111:
+        return PhysicalKey::Up;
+    case 116:
+        return PhysicalKey::Down;
+    case 113:
+        return PhysicalKey::Left;
+    case 114:
+        return PhysicalKey::Right;
+    default:
+        return PhysicalKey::Unknown;
+    }
+}
+
 KeyEvent translate_key_event(guint keyval, GdkModifierType state)
 {
     KeyEvent out{};
@@ -4120,11 +4222,43 @@ gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint keycode, Gdk
         keyval = latin_shortcut_keyval(keyval, keycode);
     }
     KeyEvent event = translate_key_event(keyval, state);
-    if (event.key == Key::Unknown)
+    event.physical = physical_key_from_keycode(keycode);
+    // A modifier has a physical key but no logical one; the pointer-lock owner needs it.
+    if (event.key == Key::Unknown &&
+        !(event.physical != PhysicalKey::Unknown && host->pointer_locked()))
     {
         return FALSE;
     }
     return host->on_key_down(event) ? TRUE : FALSE;
+}
+
+gboolean key_released_cb(GtkEventControllerKey*, guint keyval, guint keycode, GdkModifierType state,
+                         gpointer p)
+{
+    Host* host = static_cast<Host*>(p);
+    if (!host)
+    {
+        return FALSE;
+    }
+    if (state & (GDK_CONTROL_MASK | GDK_META_MASK))
+    {
+        keyval = latin_shortcut_keyval(keyval, keycode);
+    }
+    KeyEvent event = translate_key_event(keyval, state);
+    event.physical = physical_key_from_keycode(keycode);
+    if (event.key == Key::Unknown && event.physical == PhysicalKey::Unknown)
+    {
+        return FALSE;
+    }
+    return host->on_key_up(event) ? TRUE : FALSE;
+}
+
+void focus_leave_cb(GtkEventControllerFocus*, gpointer p)
+{
+    if (Host* host = static_cast<Host*>(p))
+    {
+        host->on_keys_released();
+    }
 }
 
 // GtkDropTarget "drop" signal. Receives a GValue holding either a
@@ -4303,7 +4437,12 @@ Surface::Surface(const Theme& theme, bool transparent)
     GtkEventController* key = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(key, GTK_PHASE_BUBBLE);
     g_signal_connect(key, "key-pressed", G_CALLBACK(&key_pressed_cb), host_.get());
+    g_signal_connect(key, "key-released", G_CALLBACK(&key_released_cb), host_.get());
     gtk_widget_add_controller(drawing_area, key);
+
+    GtkEventController* surface_focus = gtk_event_controller_focus_new();
+    g_signal_connect(surface_focus, "leave", G_CALLBACK(&focus_leave_cb), host_.get());
+    gtk_widget_add_controller(drawing_area, surface_focus);
 
     // Drop target — accepts both single-file (Firefox URI) and
     // multi-file (Nautilus) drags, routed automatically through the widget

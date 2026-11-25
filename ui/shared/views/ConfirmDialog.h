@@ -41,6 +41,9 @@ public:
         // `on_secondary`. The card widens to fit three buttons.
         std::string secondary_label;
         std::function<void()> on_secondary;
+        // Fires when the dialog goes away without Confirm or the secondary button (Cancel, a
+        // backdrop click, Escape, close(), or an open() that replaces it).
+        std::function<void()> on_dismiss;
     };
 
     ConfirmDialog();

@@ -133,3 +133,47 @@ TEST_CASE("shortcut registry: matches() follows the chords", "[shortcuts]")
     pgup.shift = true;
     CHECK(matches(ShortcutId::DatePrevYear, pgup));
 }
+
+TEST_CASE("shortcut registry: the World group lists the walking keys", "[shortcuts]")
+{
+    for (ShortcutId id :
+         {ShortcutId::WorldForward, ShortcutId::WorldBack, ShortcutId::WorldStrafeLeft,
+          ShortcutId::WorldStrafeRight, ShortcutId::WorldTurnLeft, ShortcutId::WorldTurnRight,
+          ShortcutId::WorldLook, ShortcutId::WorldBar})
+    {
+        const ShortcutDef& def = shortcut(id);
+        CHECK(def.group == ShortcutGroup::World);
+        CHECK(def.scope == ShortcutScope::Contextual);
+    }
+    CHECK(shortcut_label(ShortcutId::WorldForward, Platform::Linux) == "W / \xe2\x86\x91");
+    CHECK(shortcut_label(ShortcutId::WorldBack, Platform::Linux) == "S / \xe2\x86\x93");
+    CHECK(shortcut_label(ShortcutId::WorldStrafeLeft, Platform::Linux) == "A");
+    CHECK(shortcut_label(ShortcutId::WorldStrafeRight, Platform::Linux) == "D");
+    CHECK(shortcut_label(ShortcutId::WorldTurnLeft, Platform::Linux) == "\xe2\x86\x90");
+    CHECK(shortcut_label(ShortcutId::WorldTurnRight, Platform::Linux) == "\xe2\x86\x92");
+    CHECK(shortcut_label(ShortcutId::WorldLook, Platform::Linux) == "Drag");
+    CHECK(shortcut_label(ShortcutId::WorldBar, Platform::Linux) == "B");
+    CHECK_FALSE(group_title(ShortcutGroup::World).empty());
+}
+
+TEST_CASE("shortcut registry: overlay-only entries match no key press", "[shortcuts]")
+{
+    std::vector<tk::KeyEvent> events;
+    tk::KeyEvent plain;
+    plain.key = tk::Key::Character;
+    plain.text = "x";
+    events.push_back(plain);
+    tk::KeyEvent lone_shift; // a modifier press with no key of its own
+    lone_shift.shift = true;
+    events.push_back(lone_shift);
+    events.push_back(tk::KeyEvent{}); // an unnamed key, no modifiers
+    tk::KeyEvent arrow;
+    arrow.key = tk::Key::Left;
+    events.push_back(arrow);
+    for (const tk::KeyEvent& e : events)
+    {
+        CHECK_FALSE(matches(ShortcutId::WorldLook, e));
+    }
+    tk::KeyChord unknown;
+    CHECK_FALSE(tk::chord_matches(unknown, tk::KeyEvent{}));
+}

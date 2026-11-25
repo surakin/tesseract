@@ -501,6 +501,15 @@ void EventHandlerBridge::on_bot_commands_updated(rust::Str room_id) const
                  });
 }
 
+void EventHandlerBridge::on_room_world_changed(rust::Str room_id) const
+{
+    with_handler("on_room_world_changed", slot_,
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_world_changed(std::string(room_id));
+                 });
+}
+
 void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
                                         rust::Slice<const uint8_t> bytes) const
 {
@@ -1136,6 +1145,17 @@ void EventHandlerBridge::on_rtc_video_frame(std::uint64_t session_id, rust::Str 
                  {
                      handler_->on_call_video_frame(session_id, std::string(participant_id), width,
                                                    height, rgba.data(), rgba.size());
+                 });
+}
+
+void EventHandlerBridge::on_rtc_world_frame(std::uint64_t session_id, rust::Str participant_id,
+                                            rust::Slice<const uint8_t> payload) const
+{
+    with_handler("on_rtc_world_frame", slot_,
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_world_frame(session_id, std::string(participant_id),
+                                                   payload.data(), payload.size());
                  });
 }
 

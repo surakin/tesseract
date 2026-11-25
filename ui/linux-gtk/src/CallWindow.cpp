@@ -27,7 +27,7 @@ CallWindow::CallWindow(MainWindow* parent_shell) : tesseract::CallWindowBase(par
     surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     gtk_window_set_child(window_, surface_->widget());
 
-    auto overlay = std::make_unique<tesseract::views::CallOverlayWidget>();
+    auto overlay = tk::create_root_widget<tesseract::views::CallOverlayWidget>(&surface_->host());
     call_overlay_widget_ = overlay.get();
     surface_->set_root(std::move(overlay));
 

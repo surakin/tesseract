@@ -24,13 +24,15 @@
 #define _WIN32_WINNT 0x0A00
 #endif
 
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <objbase.h>
 #include <shlwapi.h> // SHCreateMemStream
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfmediaengine.h>
 #include <wrl/client.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include "audio.h"
 

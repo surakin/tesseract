@@ -18,6 +18,7 @@
 #include <tesseract/client.h>
 #include <tesseract/settings.h>
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -82,6 +83,8 @@ struct CallShell : tesseract::test::TestShellBase
     using ShellBase::handle_rtc_participant_updated_ui_;
     using ShellBase::handle_rtc_session_ended_ui_;
     using ShellBase::handle_rtc_video_frame_ui_;
+    using ShellBase::handle_rtc_world_frame_ui_;
+    using ShellBase::world_local_id_;
     using ShellBase::main_app_;
     using ShellBase::mark_room_index_dirty_;
     using ShellBase::my_user_id_;
@@ -336,6 +339,49 @@ TEST_CASE("a session end with no session is a no-op", "[shell][calls]")
     CHECK_NOTHROW(s.handle_rtc_session_ended_ui_(1, "hangup"));
     CHECK_NOTHROW(
         s.handle_rtc_video_frame_ui_(1, "p", 1, 1, std::make_shared<std::vector<std::uint8_t>>(4)));
+}
+
+TEST_CASE("the world follows the call's participant events", "[shell][calls]")
+{
+    tesseract::Client c;
+    CallShell s;
+    shell_calls_install_session(s, c, "!r:x", 7);
+    const std::vector<std::uint8_t> payload(32, 0);
+
+    // A remote join does not start the world.
+    s.handle_rtc_participant_joined_ui_(7, shell_calls_participant("remote"));
+    CHECK(s.world_local_id_.empty());
+
+    // The local join (hashed-looking id, no usable user/device) does.
+    auto local = shell_calls_participant("hashedXYZ");
+    local.user_id = "hashedXYZ";
+    local.is_local = true;
+    s.handle_rtc_participant_joined_ui_(7, local);
+    CHECK(s.world_local_id_ == "hashedXYZ");
+
+    // Frames of another session, and our own echo, are dropped; the others go to the world (which has
+    // no overlay to receive them here).
+    CHECK_NOTHROW(s.handle_rtc_world_frame_ui_(8, "remote", payload));
+    CHECK_NOTHROW(s.handle_rtc_world_frame_ui_(7, "hashedXYZ", payload));
+    CHECK_NOTHROW(s.handle_rtc_world_frame_ui_(7, "remote", payload));
+    s.handle_rtc_participant_left_ui_(7, "remote");
+
+    // Ending the call forgets the world.
+    s.handle_rtc_session_ended_ui_(7, "hangup");
+    CHECK(s.world_local_id_.empty());
+}
+
+TEST_CASE("the local participant arriving as an update starts the world once", "[shell][calls]")
+{
+    tesseract::Client c;
+    CallShell s;
+    shell_calls_install_session(s, c, "!r:x", 7);
+    auto local = shell_calls_participant("me");
+    local.is_local = true;
+    s.handle_rtc_participant_updated_ui_(7, local);
+    CHECK(s.world_local_id_ == "me");
+    s.handle_rtc_participant_updated_ui_(7, shell_calls_participant("other"));
+    CHECK(s.world_local_id_ == "me");
 }
 
 TEST_CASE("only the current call's audio is played", "[shell][calls]")

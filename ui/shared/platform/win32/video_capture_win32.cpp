@@ -22,11 +22,13 @@
 
 #include <tesseract/settings.h>
 
+#include "tesseract/win32/windows_enable.h"
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
-#include <windows.h>
+#include "tesseract/win32/windows_disable.h"
+#include "tesseract/win32.h"
 
 #include <atomic>
 #include <chrono>

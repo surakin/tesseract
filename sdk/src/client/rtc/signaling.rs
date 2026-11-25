@@ -12,6 +12,10 @@ pub struct RtcParticipantInfo {
     pub is_audio_muted: bool,
     pub is_video_muted: bool,
     pub is_screen_sharing: bool,
+    /// The member advertises the 3D call world capability.
+    pub world_capable: bool,
+    /// This is our own participant (its id is our LiveKit identity).
+    pub is_local: bool,
 }
 
 // ---------------------------------------------------------------------------

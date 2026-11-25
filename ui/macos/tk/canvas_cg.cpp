@@ -1563,6 +1563,28 @@ public:
         return img ? std::make_unique<CGImageWrapper>(img) : nullptr;
     }
 
+    bool finish_bgra(std::vector<std::uint8_t>& out, std::uint32_t& w, std::uint32_t& h) override
+    {
+        // kCGBitmapByteOrder32Host | kCGImageAlphaPremultipliedFirst is premultiplied B, G, R, A
+        // in memory on the little-endian Macs we run on; the first row is the top of the picture.
+        const auto* data = static_cast<const std::uint8_t*>(CGBitmapContextGetData(ctx_));
+        const std::size_t iw = CGBitmapContextGetWidth(ctx_);
+        const std::size_t ih = CGBitmapContextGetHeight(ctx_);
+        const std::size_t stride = CGBitmapContextGetBytesPerRow(ctx_);
+        if (!data || iw == 0 || ih == 0 || stride < iw * 4)
+        {
+            return false;
+        }
+        out.resize(iw * 4 * ih);
+        for (std::size_t y = 0; y < ih; ++y)
+        {
+            std::memcpy(out.data() + y * iw * 4, data + y * stride, iw * 4);
+        }
+        w = static_cast<std::uint32_t>(iw);
+        h = static_cast<std::uint32_t>(ih);
+        return true;
+    }
+
 private:
     CGContextRef ctx_;
     std::unique_ptr<Canvas> canvas_;

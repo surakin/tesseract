@@ -293,6 +293,40 @@ std::vector<ShortcutDef> build(tk::Platform platform)
          S::Contextual,
          tk::N_("Next item in a gallery"),
          {key(Key::PageDown, tk::ModNone, Sh), key(Key::Right)}},
+
+        // ── 3D call world ───────────────────────────────────────────────
+        // The world view matches these by physical key position (any layout); the chords
+        // here are what the overlay shows.
+        {ShortcutId::WorldForward,
+         G::World,
+         S::Contextual,
+         tk::N_("Walk forward"),
+         {chr("w"), key(Key::Up)}},
+        {ShortcutId::WorldBack,
+         G::World,
+         S::Contextual,
+         tk::N_("Walk back"),
+         {chr("s"), key(Key::Down)}},
+        {ShortcutId::WorldStrafeLeft, G::World, S::Contextual, tk::N_("Strafe left"), {chr("a")}},
+        {ShortcutId::WorldStrafeRight, G::World, S::Contextual, tk::N_("Strafe right"), {chr("d")}},
+        {ShortcutId::WorldTurnLeft, G::World, S::Contextual, tk::N_("Turn left"), {key(Key::Left)}},
+        {ShortcutId::WorldTurnRight,
+         G::World,
+         S::Contextual,
+         tk::N_("Turn right"),
+         {key(Key::Right)}},
+        // Overlay-only entry: the label stands in for the chord, which never matches.
+        {ShortcutId::WorldLook,
+         G::World,
+         S::Contextual,
+         tk::N_("Look around"),
+         {{Key::Unknown, {}, tk::ModNone, tk::ModNone}},
+         tk::N_("Drag")},
+        {ShortcutId::WorldBar,
+         G::World,
+         S::Contextual,
+         tk::N_("Show or hide the world's buttons"),
+         {chr("b")}},
     };
     return v;
 }
@@ -376,20 +410,37 @@ std::string group_title(ShortcutGroup group)
         return tk::tr("Date picker");
     case G::MediaViewers:
         return tk::tr("Media viewer");
+    case G::World:
+        return tk::tr("World");
     }
     return {};
+}
+
+std::vector<std::string> shortcut_key_labels(const ShortcutDef& def, tk::Platform platform)
+{
+    if (def.label != nullptr)
+    {
+        return {tk::tr(def.label)};
+    }
+    std::vector<std::string> out;
+    out.reserve(def.chords.size());
+    for (const auto& chord : def.chords)
+    {
+        out.push_back(tk::chord_label(chord, platform));
+    }
+    return out;
 }
 
 std::string shortcut_label(ShortcutId id, tk::Platform platform)
 {
     std::string out;
-    for (const auto& chord : shortcut(id, platform).chords)
+    for (const std::string& label : shortcut_key_labels(shortcut(id, platform), platform))
     {
         if (!out.empty())
         {
             out += " / ";
         }
-        out += tk::chord_label(chord, platform);
+        out += label;
     }
     return out;
 }

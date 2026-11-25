@@ -17,7 +17,7 @@ foreach(_entry
         "phone|kPhoneSvg" "phone-off|kPhoneOffSvg" "mic-off|kMicOffSvg"
         "video|kVideoSvg" "video-off|kVideoOffSvg"
         "expand|kExpandSvg" "minimize|kMinimizeSvg" "pip|kPipSvg"
-        "monitor|kMonitorSvg" "wrench|kWrenchSvg" "plus|kPlusSvg"
+        "monitor|kMonitorSvg" "box|kCubeSvg" "wrench|kWrenchSvg" "plus|kPlusSvg"
         "external-link|kOpenInTabSvg" "app-window|kOpenInWindowSvg"
         "log-out|kLeaveRoomSvg" "battery-low|kBatteryLowSvg"
         "list-checks|kListChecksSvg" "check-check|kMarkReadSvg" "check|kCheckSvg"

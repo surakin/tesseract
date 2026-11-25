@@ -25,6 +25,11 @@ namespace tk
 class AnimImageCache;
 }
 
+namespace tesseract::platform
+{
+class WaylandPointerLock;
+}
+
 namespace tk::qt6
 {
 
@@ -42,6 +47,11 @@ public:
     explicit Surface(const Theme& theme = Theme::light(), QWidget* parent = nullptr,
                      bool transparent = false);
     ~Surface() override;
+
+    // Hides the cursor and keeps it here, then reports relative motion to the host (see
+    // tk::Host::lock_pointer). On Wayland through the pointer-constraints protocol; elsewhere by
+    // recentring the cursor after each move. False when neither works.
+    bool set_pointer_locked(bool locked);
 
     tk::Host& host() override;
     CanvasFactory& factory() override;
@@ -118,6 +128,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent*) override;
     void mouseMoveEvent(QMouseEvent*) override;
     void keyPressEvent(QKeyEvent*) override;
+    void keyReleaseEvent(QKeyEvent*) override;
+    void focusOutEvent(QFocusEvent*) override;
     void wheelEvent(QWheelEvent*) override;
     void leaveEvent(QEvent*) override;
     void dragEnterEvent(QDragEnterEvent*) override;
@@ -130,6 +142,10 @@ private:
     FileDropErrorHandler on_file_drop_error_;
     bool screen_changed_connected_ = false;
     bool takes_focus_on_click_ = true;
+    bool pointer_locked_ = false;
+    QPoint lock_center_; // widget coordinates, the recentring spot
+    std::unique_ptr<tesseract::platform::WaylandPointerLock>
+        wayland_lock_; // set when the Wayland protocol holds the lock
     std::function<void(float)> on_scale_changed_;
 };
 

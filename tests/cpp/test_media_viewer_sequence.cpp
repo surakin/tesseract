@@ -266,8 +266,7 @@ TEST_CASE("shortcut registry binds the gallery navigation keys",
     CHECK(matches(ShortcutId::MediaPrev, seq_key(Key::PageUp)));
     CHECK(matches(ShortcutId::MediaPrev, seq_key(Key::Left)));
     CHECK_FALSE(matches(ShortcutId::MediaNext, seq_key(Key::PageUp)));
-    CHECK(static_cast<std::size_t>(ShortcutId::MediaNext) + 1 ==
-          tesseract::views::kShortcutIdCount);
+    CHECK(static_cast<std::size_t>(ShortcutId::WorldBar) + 1 == tesseract::views::kShortcutIdCount);
 }
 
 // ── item switching ────────────────────────────────────────────────────────

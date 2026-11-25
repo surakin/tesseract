@@ -100,6 +100,10 @@ std::string key_name(const KeyChord& chord, Platform platform)
 
 bool chord_matches(const KeyChord& chord, const KeyEvent& event)
 {
+    if (chord.key == Key::Unknown)
+    {
+        return false; // a placeholder for a non-key entry (see ShortcutDef::label)
+    }
     bool shift = event.shift;
     if (chord.key == Key::Tab && event.key == Key::Backtab)
     {

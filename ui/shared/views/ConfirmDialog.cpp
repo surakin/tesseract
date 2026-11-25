@@ -27,6 +27,7 @@ ConfirmDialog::ConfirmDialog()
         [this]()
         {
             auto cb = std::move(opts_.on_secondary);
+            opts_.on_dismiss = nullptr;
             close();
             if (cb)
             {
@@ -40,6 +41,7 @@ ConfirmDialog::ConfirmDialog()
             // Capture the callbacks locally before close() so re-entrant open()
             // calls inside on_confirm_ see the new state, not the previous one.
             auto cb = std::move(on_confirm_);
+            opts_.on_dismiss = nullptr;
             auto reason_cb = opts_.reason_field ? std::move(opts_.on_reason)
                                                 : std::function<void(std::string)>{};
             std::string reason = reason_field_ ? text::trim(reason_field_->text()) : std::string();
@@ -90,6 +92,14 @@ ConfirmDialog::ConfirmDialog()
 void ConfirmDialog::open(Options opts, std::function<void()> on_confirm)
 {
     const bool was_open = open_;
+
+    // Replacing a dialog that is up dismisses it.
+    auto replaced = std::move(opts_.on_dismiss);
+    opts_.on_dismiss = nullptr;
+    if (was_open && replaced)
+    {
+        replaced();
+    }
 
     opts_ = std::move(opts);
     on_confirm_ = std::move(on_confirm);
@@ -146,6 +156,8 @@ void ConfirmDialog::close()
     on_confirm_ = nullptr;
     opts_.on_reason = nullptr;
     opts_.on_secondary = nullptr;
+    auto dismissed = std::move(opts_.on_dismiss);
+    opts_.on_dismiss = nullptr;
     press_backdrop_ = false;
     if (reason_field_)
     {
@@ -155,6 +167,10 @@ void ConfirmDialog::close()
     if (was_open && on_layout_changed)
     {
         on_layout_changed();
+    }
+    if (was_open && dismissed)
+    {
+        dismissed();
     }
 }
 

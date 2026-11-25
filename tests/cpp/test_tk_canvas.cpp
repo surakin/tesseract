@@ -493,3 +493,45 @@ TEST_CASE("Canvas::draw_image keeps working on successive surfaces", "[tk][canva
         CHECK(nearly_red(s->read_pixel(20, 20)));
     }
 }
+
+TEST_CASE("OffscreenSurface::finish_bgra returns the drawn pixels as premultiplied BGRA",
+          "[tk][canvas][offscreen]")
+{
+    auto s = TestSurface::create(8, 8);
+    auto off = s->factory().create_offscreen({8.0f, 4.0f}, 1.0f);
+    if (!off)
+    {
+        SUCCEED("this backend has no offscreen surface");
+        return;
+    }
+    // Left half red, right half blue: a wrong channel order or row layout shows up at once.
+    off->canvas().fill_rect({0, 0, 4, 4}, Color{255, 0, 0, 255});
+    off->canvas().fill_rect({4, 0, 4, 4}, Color{0, 0, 255, 255});
+    std::vector<std::uint8_t> px;
+    std::uint32_t w = 0, h = 0;
+    if (!off->finish_bgra(px, w, h))
+    {
+        SUCCEED("this backend cannot read an offscreen surface back");
+        return;
+    }
+    REQUIRE(w == 8);
+    REQUIRE(h == 4);
+    REQUIRE(px.size() == std::size_t{8} * 4 * 4);
+    auto at = [&](std::size_t x, std::size_t y)
+    {
+        return &px[(y * 8 + x) * 4];
+    };
+    for (std::size_t y : {0u, 3u})
+    {
+        const std::uint8_t* red = at(1, y); // B, G, R, A
+        CHECK(red[0] < 40);
+        CHECK(red[1] < 40);
+        CHECK(red[2] > 220);
+        CHECK(red[3] == 255);
+        const std::uint8_t* blue = at(6, y);
+        CHECK(blue[0] > 220);
+        CHECK(blue[1] < 40);
+        CHECK(blue[2] < 40);
+        CHECK(blue[3] == 255);
+    }
+}

@@ -61,6 +61,7 @@ pub(crate) const STATE_EVENT_KINDS: &[(&str, StateTier)] = &[
     ("m.rtc.member", StateTier::Hidden),
     ("org.matrix.msc4143.rtc.slot", StateTier::Hidden),
     ("m.rtc.slot", StateTier::Hidden),
+    ("dev.tesseract.world", StateTier::Hidden),
 ];
 
 /// Tier of a state event type; `None` for a type the registry does not know.
@@ -607,6 +608,7 @@ mod tests {
         );
         assert_eq!(state_tier("m.room.topic"), Some(StateTier::Always));
         assert_eq!(state_tier("m.call.member"), Some(StateTier::Hidden));
+        assert_eq!(state_tier("dev.tesseract.world"), Some(StateTier::Hidden));
         assert_eq!(state_tier("x.unknown"), None);
     }
 

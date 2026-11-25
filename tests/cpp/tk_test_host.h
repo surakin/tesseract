@@ -142,10 +142,14 @@ public:
     using tk::Host::dispatch_native_drag_leave;
     using tk::Host::dispatch_file_drop;
     using tk::Host::dispatch_key_down;
+    using tk::Host::dispatch_key_up;
+    using tk::Host::dispatch_keys_released;
     using tk::Host::dispatch_pointer_down;
     using tk::Host::dispatch_pointer_leave;
     using tk::Host::dispatch_pointer_move;
     using tk::Host::dispatch_pointer_up;
+    using tk::Host::dispatch_pointer_motion;
+    using tk::Host::dispatch_pointer_lock_lost;
     using tk::Host::native_drag_hovered_widget_;
     using tk::Host::hovered_widget_;
     using tk::Host::hover_feedback_;
@@ -186,6 +190,10 @@ public:
         root_ = root;
     }
 
+    // The platform pointer lock: off by default (as on a backend without one).
+    bool lock_supported = false;
+    std::vector<bool> lock_log; // every apply_pointer_lock_ request, in order
+
     int repaint_count = 0;
     int relayout_count = 0;
 
@@ -198,6 +206,12 @@ public:
     std::vector<std::function<void()>> pending_ui_tasks_;
 
 protected:
+    bool apply_pointer_lock_(bool locked) override
+    {
+        lock_log.push_back(locked);
+        return locked && lock_supported;
+    }
+
     tk::Widget* input_root_() const override
     {
         return root_;

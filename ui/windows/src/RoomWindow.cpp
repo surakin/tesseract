@@ -14,8 +14,10 @@
 #include <tesseract/image_pack.h>
 #include <tesseract/settings.h>
 
+#include "tesseract/win32/windows_enable.h"
 #include <commctrl.h>
 #include <shellscalingapi.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <algorithm>
 #include <cmath>

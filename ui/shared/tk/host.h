@@ -1312,6 +1312,25 @@ public:
         return advance_focus_(forward);
     }
 
+    // ── Pointer lock: capturing the mouse and keyboard ────────────────────────
+    // For a widget that wants the whole mouse and keyboard, like a 3D view that
+    // looks around with the mouse. While `owner` holds the lock the platform
+    // hides the cursor and keeps it from leaving the window, the owner receives
+    // relative motion through Widget::on_pointer_motion(), and every key goes
+    // to the owner alone (Widget::on_key_down/on_key_up, popups, accelerators
+    // and Tab traversal are bypassed); the owner decides when to let go.
+    // lock_pointer() returns false when the platform cannot lock (the owner
+    // then keeps working the ordinary way) or another widget holds the lock.
+    // unlock_pointer() does nothing unless `owner` holds it. The platform may
+    // end the lock on its own (the window loses focus): the owner is told with
+    // Widget::on_pointer_lock_lost().
+    bool lock_pointer(Widget& owner);
+    void unlock_pointer(Widget& owner);
+    bool pointer_locked() const
+    {
+        return pointer_lock_active_;
+    }
+
     // Offers `event` to `filter` before anything else in dispatch_key_down; a
     // true return consumes the key. The shell uses it to steer keys into a
     // popup that never takes native keyboard focus. Pass an empty function to
@@ -1431,6 +1450,34 @@ protected:
     // since it sits near the root and is reached last either way). Returns
     // true if the event was consumed.
     bool dispatch_key_down(const KeyEvent& event);
+
+    // Relative pointer motion in logical pixels while the pointer is locked
+    // (see lock_pointer). Backends call this instead of dispatch_pointer_move.
+    void dispatch_pointer_motion(float dx, float dy);
+
+    // The platform ended the lock by itself: tells the owner. Idempotent.
+    void dispatch_pointer_lock_lost();
+
+    // dispatch_pointer_lock_lost() on the next turn of the UI loop: for a backend whose "lost"
+    // notification arrives inside the callback of the very lock object it would then destroy.
+    void defer_pointer_lock_lost();
+
+    // Backend hook: start (true) or stop (false) the platform lock: hide the
+    // cursor and keep it in the window, then deliver relative motion through
+    // dispatch_pointer_motion() and stop dispatching absolute moves. Returns
+    // whether the lock is on. Default: unsupported.
+    virtual bool apply_pointer_lock_(bool /*locked*/)
+    {
+        return false;
+    }
+
+    // Key release: the focused widget's subtree first, then its parents'
+    // on_key_up. No popup, Tab, prefilter or root-broadcast handling.
+    bool dispatch_key_up(const KeyEvent& event);
+
+    // The window lost the keyboard: tells the focused widget and its
+    // ancestors to forget held keys.
+    void dispatch_keys_released();
 
     // Dropped-file input, mirroring dispatch_pointer_down. `world` is in
     // root-surface coordinates. Walks the tree via
@@ -1613,7 +1660,11 @@ protected:
     CursorShape applied_cursor_ = CursorShape::Default; // last cursor handed to apply_cursor_()
     std::weak_ptr<Widget> hovered_widget_;              // widget currently under the pointer
     std::weak_ptr<Widget> native_drag_hovered_widget_;  // widget currently claiming drag-hover
-    std::weak_ptr<Widget> focused_widget_; // canvas widget holding tk-level keyboard focus
+    std::weak_ptr<Widget> focused_widget_;     // canvas widget holding tk-level keyboard focus
+    std::weak_ptr<Widget> pointer_lock_owner_; // see lock_pointer()
+    bool pointer_lock_active_ = false;         // the platform lock is on
+    // The lock's owner, or null; an owner destroyed while locked releases the platform lock.
+    std::shared_ptr<Widget> pointer_lock_owner_alive_();
 
     // State for an in-app drag started by begin_drag() (see drag_drop.h).
     // Unrelated to native_drag_hovered_widget_ above (OS file-drop hover).

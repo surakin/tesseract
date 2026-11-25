@@ -3,15 +3,23 @@
 #include "Win32Taskbar.h"
 #include "app/AccountManager.h"
 #include "resource.h"
+#include "tesseract/win32/windows_enable.h"
 #include <ole2.h>
+#include "tesseract/win32/windows_disable.h"
 // <shobjidl.h> declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
+#include "tesseract/win32/windows_enable.h"
 #include <shobjidl.h>
+#include "tesseract/win32/windows_disable.h"
 #include "platform/win32/winrt_coroutine_shim.h" // must precede any <winrt/...> include
+#include "tesseract/win32/windows_enable.h"
 #include <winrt/base.h>
+#include "tesseract/win32/windows_disable.h"
 #include <filesystem>
 #include <fstream>
+#include "tesseract/win32/windows_enable.h"
 #include <mfapi.h>
 #include <shellapi.h>
+#include "tesseract/win32/windows_disable.h"
 #include <stdexcept>
 #include <string>
 #include <vector>

@@ -11,6 +11,8 @@ Tagged releases summarize all changes since the previous tag.
 - build(macos): publishing a release now updates the Homebrew cask automatically. Workflow unrun
 - docs(site): the README and website now show how to install on macOS with Homebrew. Website not viewed in a browser
 - build(macos): local builds compile libopus for the deployment target themselves, so Homebrew's opus is no longer needed. macOS arm64 release build, ctest 4049/4051
+- feat(3d): a room's 3D world can be imported from a folder or zip and exported to edit, with a prompt before its scripts run. Linux release build, ctest 4240/4241 (cxx_format_check fails only on the old Win32Notifier.cpp), cargo test world
+- refactor(3d): robot behaviour and the room's rules and wire format now run as scripts; a client in the grid view no longer sends pose frames. Linux release build, ctest 4145/4146 (the failing one predates this change)
 - fix(macos): a restored draft, and text typed after a mention or emoticon, no longer turns black in the composer.
 - fix(macos): the text-field context menu and other system menus follow the system language instead of always showing English.
 - fix(ui): removing a power-level override no longer leaves a blank in the room history. Linux Qt6 build, ctest 4054/4054
@@ -22,6 +24,22 @@ Tagged releases summarize all changes since the previous tag.
 - fix(dm): direct chats restored from a previous session show the other person's presence again. Linux Qt6 build, ctest 4062/4062, cargo 1786/1786
 - feat(ui): direct messages show the other person's presence under the room name, refreshed every minute and when the DM is opened. Linux Qt6 build, ctest 4074/4074, cargo 1761/1761
 - feat(ui): with Show state events on, room history shows join rules, history visibility, power level and other state changes, grouped by type. Linux Qt6 build
+- feat(3d): a robot's head looks up and down with its player's camera. Linux release build, ctest 4171/4172 (the failing one predates this change)
+- feat(3d): robots are solid: players stop at each other, and players that overlap push each other apart. Linux release build, ctest 4167/4168 (the failing one predates this change)
+- feat(3d): a robot whose camera is off or missing shows its user's avatar on its screen. Linux release build, ctest 4157/4158 (the failing one predates this change)
+- feat(3d): the meadow has rolling terrain with gentle slopes, and the player starts on the ground wherever it is. Linux release build, ctest 4154/4155 (the failing one predates this change)
+- build(3d): installed Linux and Windows builds now carry the 3D engine library and world files, and find them next to the executable. Linux release build, install tree checked
+- feat(3d): robots' screens glow in the dark and mirror the sky like glass. Linux release build, ctest 4153/4154 (the failing one predates this change)
+- feat(3d): the meadow has a day and night cycle with a sun and a moon, 24 minutes per UTC day. Linux release build, ctest 4153/4154 (the failing one predates this change)
+- feat(3d): other participants now see you jump in the 3D world. Linux release build, ctest 4097/4098 (the failing one predates this change)
+- feat(3d): the player walks twice as fast in the 3D world. Linux release build
+- feat(3d): the meadow's ground and tree trunks are solid. Linux release build
+- feat(3d): Space jumps in the 3D world, and the player stands on the meadow's ground instead of floating. Linux release build, ctest 4075/4076 (the failing one predates this change)
+- feat(3d): clicking the 3D view captures the mouse and keyboard; Esc or Left Ctrl releases them. Linux release build, ctest 4073/4074 (the failing one predates this change)
+- refactor(3d): walking and camera control now run as a script bundled with the world assets. Linux release build, ctest 4064/4065 (the failing one predates this change)
+- feat(3d): A and D strafe in the 3D world; the arrow keys turn. Linux release build
+- feat(3d): participant video on a robot screen keeps its aspect ratio, with black bars. Linux release build
+- feat(3d): the 3D world loads from a disk cache that is rebuilt when the model files change. Linux release build, ctest 4042/4043
 - fix(rooms): the room-list preview shows the sender's display name instead of their user ID when the app has not loaded their profile. Linux release build, cargo test
 - fix(ui): the window title no longer shows a room after going back to the room list in a narrow window or popping the room out. Linux release build, ctest 4021/4021
 - ci(smoke): a new smoke phase checks how the app shows received events and the room list, and what it sends. Linux release build, ctest 4021/4021

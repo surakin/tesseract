@@ -5,16 +5,20 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <commctrl.h>
 #include <ole2.h>
+#include "tesseract/win32/windows_disable.h"
 // GdiplusTypes.h calls unqualified min()/max(); with NOMINMAX the Win32
 // macros are gone, so std::min/std::max must be brought into scope (a bare
 // <algorithm> is not enough — the names there are std-qualified) before it.
 #include <algorithm>
 using std::max;
 using std::min;
+#include "tesseract/win32/windows_enable.h"
 #include <gdiplus.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>

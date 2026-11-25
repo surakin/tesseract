@@ -2,8 +2,10 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <wincred.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace
 {

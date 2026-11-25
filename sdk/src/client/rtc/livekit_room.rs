@@ -16,12 +16,16 @@ use futures_util::StreamExt as _;
 use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
-use super::RtcParticipantInfo;
+use super::{
+    world_stream::{self, WorldSender, WorldTransport, MAX_WORLD_PAYLOAD},
+    RtcParticipantInfo, WORLD_CAPABILITY,
+};
 use crate::client::rtc::{
     audio_mix::RemoteAudioMixer, e2ee::SecretBytes, identity::IdentityMap, RtcEventSink,
 };
 
 use livekit::{
+    data_track::{DataTrackSid, RemoteDataTrack},
     e2ee::{
         key_provider::{KeyDerivationAlgorithm, KeyProvider, KeyProviderOptions},
         E2eeOptions, EncryptionType,
@@ -290,6 +294,9 @@ pub struct MemberTransports(
     Arc<parking_lot::Mutex<HashMap<(String, String), String>>>,
     IdentityMap,
     Arc<AtomicBool>,
+    Arc<parking_lot::Mutex<HashSet<(String, String)>>>,
+    /// This call's snapshot of whether we advertise the world capability.
+    Arc<AtomicBool>,
 );
 
 impl MemberTransports {
@@ -305,6 +312,42 @@ impl MemberTransports {
 
     pub fn replace(&self, map: HashMap<(String, String), String>) {
         *self.0.lock() = map;
+    }
+
+    /// Whether this call offers the 3D call world (a per-call snapshot).
+    pub fn set_local_world(&self, world: bool) {
+        self.4.store(world, Ordering::SeqCst);
+    }
+
+    pub fn local_world(&self) -> bool {
+        self.4.load(Ordering::SeqCst)
+    }
+
+    /// The `(user, device)`s that advertise the 3D call world capability.
+    /// Returns whether the set changed.
+    pub fn replace_world(&self, world: HashSet<(String, String)>) -> bool {
+        let mut g = self.3.lock();
+        let changed = *g != world;
+        *g = world;
+        changed
+    }
+
+    fn key_of(&self, identity: &str) -> (String, String) {
+        self.1
+            .resolve(identity)
+            .unwrap_or_else(|| split_identity(identity))
+    }
+
+    /// Whether the participant `identity` (raw or hashed) advertises the 3D
+    /// call world capability.
+    pub fn world_capable(&self, identity: &str) -> bool {
+        self.3.lock().contains(&self.key_of(identity))
+    }
+
+    /// Whether any member other than `local_identity` advertises it.
+    pub fn any_other_world_capable(&self, local_identity: &str) -> bool {
+        let me = self.key_of(local_identity);
+        self.3.lock().iter().any(|k| *k != me)
     }
 
     /// The hashed-identity table shared with the call's [`SharedKeys`].
@@ -403,6 +446,23 @@ impl FilteredSink {
         } else if !allowed && is_shown {
             shown.remove(participant_id);
             self.inner.on_participant_left(session_id, participant_id);
+        }
+    }
+
+    /// Re-emit one shown participant as updated, so the UI sees a changed
+    /// capability. Participants not shown are left alone.
+    fn refresh(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        info: impl FnOnce() -> RtcParticipantInfo,
+    ) {
+        if self.members.is_ended() {
+            return;
+        }
+        let shown = self.shown.lock();
+        if shown.contains(participant_id) {
+            self.inner.on_participant_updated(session_id, info());
         }
     }
 
@@ -527,6 +587,12 @@ impl RtcEventSink for FilteredSink {
     fn accepts_participant(&self, participant_id: &str) -> bool {
         self.ok(participant_id)
     }
+    fn on_world_frame(&self, session_id: u64, participant_id: &str, payload: &[u8]) {
+        if self.ok(participant_id) {
+            self.inner
+                .on_world_frame(session_id, participant_id, payload);
+        }
+    }
 }
 
 pub struct LiveKitRoom {
@@ -556,6 +622,14 @@ pub struct LiveKitRoom {
     sink: Option<Arc<dyn RtcEventSink>>,
     session_id: u64,
     event_task: AbortHandle,
+    /// The filter the event task forwards through; kept to re-emit
+    /// participants whose capabilities changed.
+    filter: Option<Arc<FilteredSink>>,
+    members: MemberTransports,
+    /// Sends our world poses; the latest unsent one wins.
+    world_sender: WorldSender,
+    /// Data track or data packets, whichever the SFU allows.
+    world_transport: Arc<WorldTransport>,
     shared: SharedKeys,
     /// Monotonic start time used to generate RTP timestamps for video frames.
     call_start: std::time::Instant,
@@ -691,7 +765,7 @@ impl LiveKitRoom {
         if let Some(ref s) = sink {
             s.on_participant_joined(
                 session_id,
-                local_participant_info(&room.local_participant()),
+                local_participant_info(&room.local_participant(), &members),
             );
         }
 
@@ -700,23 +774,38 @@ impl LiveKitRoom {
         let local_video_in_flight = Arc::new(AtomicBool::new(false));
         let screen_frame_in_flight = Arc::new(AtomicBool::new(false));
         let local_screen_in_flight = Arc::new(AtomicBool::new(false));
+        let filter = FilteredSink::wrap(
+            sink.clone(),
+            sfu_url,
+            &members,
+            SfuRole::Primary,
+            Some(local_identity.clone()),
+        );
+        let world_transport = WorldTransport::new(Arc::clone(&room));
         let event_task = spawn_event_task(
             Arc::clone(&room),
             events,
             session_id,
             video_frame_in_flight,
             Arc::clone(&screen_frame_in_flight),
-            FilteredSink::wrap(
-                sink.clone(),
-                sfu_url,
-                &members,
-                SfuRole::Primary,
-                Some(local_identity.clone()),
-            )
-            .map(|f| f as Arc<dyn RtcEventSink>),
+            filter.clone().map(|f| f as Arc<dyn RtcEventSink>),
             shared.clone(),
+            members.clone(),
+            use_e2ee,
             Some(on_ended),
+            Some(Arc::clone(&world_transport)),
         );
+        let world_sender = {
+            let transport = Arc::clone(&world_transport);
+            WorldSender::spawn(Box::new(move |payload| {
+                let transport = Arc::clone(&transport);
+                Box::pin(async move { transport.send(payload).await })
+            }))
+        };
+        // Only a call that advertises the world capability publishes a data track.
+        if members.local_world() {
+            world_transport.start();
+        }
 
         info!("rtc: livekit connected (session {session_id}), local identity={local_identity}");
         Ok(Self {
@@ -735,6 +824,10 @@ impl LiveKitRoom {
             sink,
             session_id,
             event_task,
+            filter,
+            members,
+            world_sender,
+            world_transport,
             shared,
             call_start: std::time::Instant::now(),
         })
@@ -852,7 +945,7 @@ impl LiveKitRoom {
         if let Some(ref s) = self.sink {
             s.on_participant_updated(
                 self.session_id,
-                local_participant_info(&self.room.local_participant()),
+                local_participant_info(&self.room.local_participant(), &self.members),
             );
         }
         Ok(())
@@ -873,7 +966,7 @@ impl LiveKitRoom {
         if let Some(ref s) = self.sink {
             s.on_participant_updated(
                 self.session_id,
-                local_participant_info(&self.room.local_participant()),
+                local_participant_info(&self.room.local_participant(), &self.members),
             );
         }
     }
@@ -964,6 +1057,17 @@ impl LiveKitRoom {
         }
     }
 
+    /// Offer our world pose to the other participants. Refused when too large or
+    /// when nobody else advertises the capability.
+    pub fn send_world_frame(&self, payload: &[u8]) {
+        if payload.len() > MAX_WORLD_PAYLOAD
+            || !self.members.any_other_world_capable(&self.local_identity)
+        {
+            return;
+        }
+        self.world_sender.offer(payload.to_vec());
+    }
+
     /// The LiveKit participant identity assigned by the JWT service.
     /// Must be used as `member_id` in m.rtc.member and m.rtc.encryption_key
     /// events so other clients can correlate our key with our tracks.
@@ -1001,9 +1105,22 @@ impl LiveKitRoom {
         self.shared.apply_all_to(&self.room);
     }
 
+    /// Re-emit the shown remote participants with their current capabilities.
+    pub fn refresh_participants(&self) {
+        if let Some(ref f) = self.filter {
+            for (identity, rp) in self.room.remote_participants() {
+                f.refresh(self.session_id, identity.as_str(), || {
+                    participant_info(&rp, &f.members)
+                });
+            }
+        }
+    }
+
     pub async fn disconnect(&self) {
         let _ = self.room.close().await;
         self.event_task.abort();
+        self.world_sender.stop();
+        self.world_transport.stop();
     }
 }
 
@@ -1048,6 +1165,9 @@ impl RemoteSfuRoom {
             Arc::new(AtomicBool::new(false)),
             filter.clone().map(|f| f as Arc<dyn RtcEventSink>),
             shared.clone(),
+            members.clone(),
+            use_e2ee,
+            None,
             None,
         );
         info!("rtc: connected to remote SFU {server_url} (session {session_id})");
@@ -1075,6 +1195,17 @@ impl RemoteSfuRoom {
         self.shared.apply_all_to(&self.room);
     }
 
+    /// Re-emit the shown remote participants with their current capabilities.
+    pub fn refresh_participants(&self) {
+        if let Some(ref f) = self.filter {
+            for (identity, rp) in self.room.remote_participants() {
+                f.refresh(self.session_id, identity.as_str(), || {
+                    participant_info(&rp, &f.members)
+                });
+            }
+        }
+    }
+
     /// Re-judge this SFU's participants against the current member map: show
     /// ones whose membership has synced since they joined, and retract ones
     /// that are no longer members publishing here.
@@ -1082,7 +1213,7 @@ impl RemoteSfuRoom {
         if let Some(ref f) = self.filter {
             for (identity, rp) in self.room.remote_participants() {
                 f.recheck(self.session_id, identity.as_str(), || {
-                    participant_info(&rp, &self.shared.identities)
+                    participant_info(&rp, &f.members)
                 });
             }
         }
@@ -1196,9 +1327,15 @@ fn spawn_event_task(
     screen_in_flight: Arc<AtomicBool>,
     sink: Option<Arc<dyn RtcEventSink>>,
     shared: SharedKeys,
+    members: MemberTransports,
+    use_e2ee: bool,
     on_primary_ended: Option<PrimaryEnded>,
+    world_transport: Option<Arc<WorldTransport>>,
 ) -> AbortHandle {
     tokio::spawn(async move {
+        // World data tracks we read; dropping this (the loop ends or the task is aborted)
+        // stops every reader.
+        let mut world_readers = WorldReaders::default();
         // Created on the first remote audio track; stops with this task.
         let mut audio_mixer: Option<RemoteAudioMixer> = None;
         while let Some(event) = events.recv().await {
@@ -1213,7 +1350,7 @@ fn spawn_event_task(
                         if let Some(ref s) = sink {
                             s.on_participant_joined(
                                 session_id,
-                                participant_info(participant, &shared.identities),
+                                participant_info(participant, &members),
                             );
                         }
                         // Apply any stored E2EE keys for this participant.
@@ -1247,10 +1384,7 @@ fn spawn_event_task(
                 RoomEvent::ParticipantConnected(p) => {
                     info!("rtc: participant connected: {}", p.identity());
                     if let Some(ref s) = sink {
-                        s.on_participant_joined(
-                            session_id,
-                            participant_info(&p, &shared.identities),
-                        );
+                        s.on_participant_joined(session_id, participant_info(&p, &members));
                     }
                     apply_pending_for(
                         &shared.key_provider,
@@ -1264,6 +1398,7 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         s.on_participant_left(session_id, p.identity().as_str());
                     }
+                    world_readers.remove_participant(p.identity().as_str());
                 }
                 RoomEvent::TrackSubscribed {
                     track, participant, ..
@@ -1280,7 +1415,7 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         s.on_participant_updated(
                             session_id,
-                            participant_info(&participant, &shared.identities),
+                            participant_info(&participant, &members),
                         );
                     }
                     let pid = participant.identity().as_str().to_owned();
@@ -1373,16 +1508,13 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(
-                                session_id,
-                                participant_info(&rp, &shared.identities),
-                            );
+                            s.on_participant_updated(session_id, participant_info(&rp, &members));
                         } else if on_primary_ended.is_some()
                             && identity == room.local_participant().identity()
                         {
                             s.on_participant_updated(
                                 session_id,
-                                local_participant_info(&room.local_participant()),
+                                local_participant_info(&room.local_participant(), &members),
                             );
                         }
                     }
@@ -1391,16 +1523,13 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(
-                                session_id,
-                                participant_info(&rp, &shared.identities),
-                            );
+                            s.on_participant_updated(session_id, participant_info(&rp, &members));
                         } else if on_primary_ended.is_some()
                             && identity == room.local_participant().identity()
                         {
                             s.on_participant_updated(
                                 session_id,
-                                local_participant_info(&room.local_participant()),
+                                local_participant_info(&room.local_participant(), &members),
                             );
                         }
                     }
@@ -1413,7 +1542,7 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         s.on_participant_updated(
                             session_id,
-                            participant_info(&participant, &shared.identities),
+                            participant_info(&participant, &members),
                         );
                     }
                 }
@@ -1422,6 +1551,9 @@ fn spawn_event_task(
                 }
                 RoomEvent::Reconnected => {
                     info!("rtc: livekit reconnected");
+                    if let (Some(t), true) = (&world_transport, members.local_world()) {
+                        t.on_reconnected();
+                    }
                 }
                 RoomEvent::Disconnected { reason } => {
                     info!("rtc: room disconnected: {reason:?}");
@@ -1436,6 +1568,64 @@ fn spawn_event_task(
                     }
                     break;
                 }
+                RoomEvent::DataReceived {
+                    payload,
+                    topic,
+                    participant: Some(p),
+                    ..
+                } => {
+                    let identity = p.identity();
+                    let capable = members.world_capable(identity.as_str());
+                    if world_stream::accept_packet(
+                        topic.as_deref(),
+                        payload.len(),
+                        use_e2ee,
+                        p.is_encrypted(),
+                        capable,
+                    ) {
+                        if let Some(ref s) = sink {
+                            s.on_world_frame(session_id, identity.as_str(), &payload);
+                        }
+                    } else if use_e2ee
+                        && capable
+                        && !p.is_encrypted()
+                        && topic.as_deref() == Some(WORLD_CAPABILITY)
+                        && world_readers.warn_once(identity.as_str(), "plaintext packets")
+                    {
+                        warn!(
+                            "rtc: dropping unencrypted world packets from {identity} in an encrypted call"
+                        );
+                    }
+                }
+                RoomEvent::DataTrackPublished(track) => {
+                    let publisher = track.publisher_identity().to_owned();
+                    let info = track.info();
+                    if info.name() != WORLD_CAPABILITY {
+                        continue;
+                    }
+                    // Membership may not have synced yet, so capability and the
+                    // participant filter are judged per frame in the reader.
+                    if !world_stream::accept_track(info.name(), info.uses_e2ee(), use_e2ee) {
+                        if world_readers.warn_once(&publisher, "unencrypted track") {
+                            warn!(
+                                "rtc: refusing unencrypted world data track from {publisher} in an encrypted call"
+                            );
+                        }
+                        continue;
+                    }
+                    let sid = info.sid();
+                    let reader = spawn_world_reader(
+                        track,
+                        publisher.clone(),
+                        session_id,
+                        sink.clone(),
+                        members.clone(),
+                    );
+                    world_readers.insert(sid, publisher, reader);
+                }
+                RoomEvent::DataTrackUnpublished(sid) => {
+                    world_readers.remove_track(&sid);
+                }
                 other => {
                     tracing::debug!("rtc: unhandled event: {other:?}");
                 }
@@ -1445,7 +1635,81 @@ fn spawn_event_task(
     .abort_handle()
 }
 
-fn participant_info(p: &RemoteParticipant, identities: &IdentityMap) -> RtcParticipantInfo {
+/// The world data tracks one connection reads, and the once-per-participant warnings.
+#[derive(Default)]
+struct WorldReaders {
+    readers: HashMap<DataTrackSid, (String, AbortHandle)>,
+    warned: HashSet<(String, &'static str)>,
+}
+
+impl WorldReaders {
+    fn insert(&mut self, sid: DataTrackSid, publisher: String, reader: AbortHandle) {
+        if let Some((_, old)) = self.readers.insert(sid, (publisher, reader)) {
+            old.abort();
+        }
+    }
+
+    fn remove_track(&mut self, sid: &DataTrackSid) {
+        if let Some((_, reader)) = self.readers.remove(sid) {
+            reader.abort();
+        }
+    }
+
+    fn remove_participant(&mut self, identity: &str) {
+        self.readers.retain(|_, (publisher, reader)| {
+            let keep = publisher != identity;
+            if !keep {
+                reader.abort();
+            }
+            keep
+        });
+    }
+
+    /// True the first time `kind` is reported for `identity` on this connection.
+    fn warn_once(&mut self, identity: &str, kind: &'static str) -> bool {
+        self.warned.insert((identity.to_owned(), kind))
+    }
+}
+
+impl Drop for WorldReaders {
+    fn drop(&mut self) {
+        for (_, reader) in self.readers.values() {
+            reader.abort();
+        }
+    }
+}
+
+/// Subscribes to a remote world data track and forwards each frame to the sink.
+fn spawn_world_reader(
+    track: RemoteDataTrack,
+    identity: String,
+    session_id: u64,
+    sink: Option<Arc<dyn RtcEventSink>>,
+    members: MemberTransports,
+) -> AbortHandle {
+    tokio::spawn(async move {
+        let mut stream = match track.subscribe().await {
+            Ok(stream) => stream,
+            Err(e) => {
+                tracing::debug!("rtc: world track subscribe from {identity} failed: {e}");
+                return;
+            }
+        };
+        while let Some(frame) = stream.next().await {
+            let payload = frame.payload();
+            // The sink applies the participant filter itself.
+            if world_stream::accept_track_frame(payload.len(), members.world_capable(&identity)) {
+                if let Some(ref s) = sink {
+                    s.on_world_frame(session_id, &identity, &payload);
+                }
+            }
+        }
+    })
+    .abort_handle()
+}
+
+fn participant_info(p: &RemoteParticipant, members: &MemberTransports) -> RtcParticipantInfo {
+    let identities = &members.1;
     let pubs = p.track_publications();
     let is_audio_muted = !pubs
         .values()
@@ -1464,6 +1728,7 @@ fn participant_info(p: &RemoteParticipant, identities: &IdentityMap) -> RtcParti
     let (user_id, device_id) = identities
         .resolve(&identity)
         .unwrap_or_else(|| split_identity(&identity));
+    let identity_for_caps = identity.clone();
     RtcParticipantInfo {
         participant_id: identity,
         user_id,
@@ -1471,10 +1736,12 @@ fn participant_info(p: &RemoteParticipant, identities: &IdentityMap) -> RtcParti
         is_audio_muted,
         is_video_muted,
         is_screen_sharing,
+        world_capable: members.world_capable(&identity_for_caps),
+        is_local: false,
     }
 }
 
-fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
+fn local_participant_info(p: &LocalParticipant, members: &MemberTransports) -> RtcParticipantInfo {
     let pubs = p.track_publications();
     let is_audio_muted = !pubs
         .values()
@@ -1494,6 +1761,8 @@ fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
         is_audio_muted,
         is_video_muted,
         is_screen_sharing,
+        world_capable: members.local_world(),
+        is_local: true,
     }
 }
 
@@ -1661,6 +1930,54 @@ mod participant_filter_tests {
                 .collect(),
         );
         m
+    }
+
+    fn world_members(entries: &[(&str, &str, bool)]) -> MemberTransports {
+        let m = members(
+            &entries
+                .iter()
+                .map(|(u, d, _)| (*u, *d, "https://sfu.a"))
+                .collect::<Vec<_>>(),
+        );
+        m.replace_world(
+            entries
+                .iter()
+                .filter(|(_, _, w)| *w)
+                .map(|(u, d, _)| (u.to_string(), d.to_string()))
+                .collect(),
+        );
+        m
+    }
+
+    #[test]
+    fn world_capable_is_per_device_raw_and_hashed() {
+        let m = world_members(&[("@a:x", "A", true), ("@b:x", "B", false)]);
+        assert!(m.world_capable("@a:x:A"));
+        assert!(!m.world_capable("@b:x:B"));
+        assert!(!m.world_capable("@c:x:C"));
+        let id = crate::client::rtc::identity::livekit_participant_identity("@a:x", "mid1");
+        m.identities().replace(HashMap::from([(
+            id.clone(),
+            ("@a:x".to_owned(), "A".to_owned()),
+        )]));
+        assert!(m.world_capable(&id));
+    }
+
+    #[test]
+    fn another_device_of_the_same_user_counts() {
+        let m = world_members(&[("@a:x", "A", true), ("@a:x", "B", true)]);
+        assert!(m.any_other_world_capable("@a:x:A"));
+        let alone = world_members(&[("@a:x", "A", true), ("@a:x", "B", false)]);
+        assert!(!alone.any_other_world_capable("@a:x:A"));
+    }
+
+    #[test]
+    fn any_other_world_capable_ignores_the_local_device() {
+        let only_me = world_members(&[("@a:x", "A", true), ("@b:x", "B", false)]);
+        assert!(!only_me.any_other_world_capable("@a:x:A"));
+        let two = world_members(&[("@a:x", "A", true), ("@b:x", "B", true)]);
+        assert!(two.any_other_world_capable("@a:x:A"));
+        assert!(!world_members(&[]).any_other_world_capable("@a:x:A"));
     }
 
     #[test]

@@ -69,6 +69,7 @@ struct KeyChord
     unsigned optional = ModNone;
 };
 
+// Never true for a chord whose key is Unknown.
 // True when `event` is `chord`: same key, every required modifier held and
 // no modifier held that is neither required nor optional.
 bool chord_matches(const KeyChord& chord, const KeyEvent& event);

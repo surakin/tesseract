@@ -7,7 +7,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
+#include "tesseract/win32.h"
 #include <functional>
 #include <string>
 #include <vector>

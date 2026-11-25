@@ -8,6 +8,7 @@ add_library(tesseract_client STATIC
     src/media_source.cpp
     src/markdown.cpp
     src/webp_anim.cpp
+    src/hash.cpp
     src/jxl.cpp
     src/image_meta.cpp
     src/mentions.cpp
@@ -16,6 +17,7 @@ add_library(tesseract_client STATIC
     src/session_store.cpp
     src/session_persist_queue.cpp
     src/paths.cpp
+    src/world_trust.cpp
     src/open_media.cpp
     src/detached_launch.cpp
     src/emoji.cpp

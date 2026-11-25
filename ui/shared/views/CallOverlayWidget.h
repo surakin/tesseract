@@ -24,6 +24,10 @@
 #include "tk/keyboard_target.h"
 #include "tk/widget.h"
 
+#if TESSERACT_WITH_ENGINE
+#include "views/world/WorldView.h"
+#endif
+
 #include <tesseract/types.h>
 
 #include <chrono>
@@ -64,6 +68,7 @@ public:
         bool video_muted = false;
         bool screen_sharing = false;
         std::string local_user_id;
+        bool world_shown = false; // the user chose World (shown while the mode is large)
     };
 
     OverlayState snapshot() const;
@@ -105,6 +110,63 @@ public:
     // (appended by ShellBase::handle_rtc_screen_frame_ui_ before calling here).
     void on_screen_frame(const std::string& tile_id, std::uint32_t w, std::uint32_t h,
                          std::shared_ptr<std::vector<std::uint8_t>> bgra);
+
+    // The Grid/World toggle. Offered only when `available` (the engine works here), the build has
+    // the engine, and the mode is DockedExpanded or Popout. The choice is kept across smaller
+    // modes: the scene runs only while the toggle is on AND the mode is large.
+    void set_world_available(bool available);
+    bool world_shown() const
+    {
+        return world_shown_;
+    }
+    // Bytes that arrived from `sender` over the call's data stream, for the world's scripts. Dropped
+    // while the world is not up (nothing runs then).
+    void on_world_frame(const std::string& sender, const std::vector<std::uint8_t>& bytes);
+    // The frames the world's scripts want sent to everyone since the last call.
+    std::vector<std::vector<std::uint8_t>> take_world_frames();
+    // The room's world, once the loader has decided: starts it in the world view (replacing the
+    // running one). Until then the view shows a waiting text, if on_world_wanted is set.
+#if TESSERACT_WITH_ENGINE
+    void set_world_options(world::EngineScene::Options options);
+    // The world view's button bar (Import, Export, ...): `on_activate` hears the id pressed.
+    void set_world_actions(std::vector<world::WorldButtonBar::Entry> entries,
+                           std::function<void(const std::string& id)> on_activate);
+    void set_world_action_enabled(const std::string& id, bool enabled);
+    // The bar of the world view, null before set_world_actions.
+    world::WorldButtonBar* world_button_bar() const
+    {
+        return world_view_ ? world_view_->button_bar() : nullptr;
+    }
+#endif
+    // Fires each time the world goes on screen (Grid -> World, or a bigger mode): load it. Unset in
+    // tests and when nothing loads worlds: the view then runs the meadow.
+    std::function<void()> on_world_wanted;
+    // The consent question is open in the main window: the world area says so (pop-out windows
+    // may be on top of it).
+    void set_world_question_pending(bool on);
+    // What the world area says while it waits for the loader; empty when it does not wait.
+    std::string world_waiting_text_for_test() const;
+    // The banner's Reload.
+    std::function<void()> on_world_reload;
+    // "The world changed" strip with a Reload button over the world view; `text` is shown as is.
+    void show_world_banner(std::string text);
+    void hide_world_banner();
+    bool world_banner_visible() const
+    {
+        return world_banner_btn_ && world_banner_btn_->own_visible();
+    }
+    void click_world_banner_for_test()
+    {
+        if (world_banner_btn_)
+        {
+            world_banner_btn_->click();
+        }
+    }
+    // The world cannot run (declined, broken, too new): back to the grid.
+    void fall_back_to_grid();
+    // Stops the engine now and for good, keeping the choice (the overlay is about to be replaced:
+    // a later sync can never restart it, one engine per process).
+    void deactivate_world();
 
     // Reflect local screen-sharing state on the share button icon.
     void set_screen_sharing(bool sharing);
@@ -151,6 +213,15 @@ public:
     // and visibility without needing real pointer-event dispatch.
     bool expand_button_visible_for_test() const;
     void click_pip_button_for_test();
+    bool world_button_visible_for_test() const;
+    void click_world_button_for_test();
+    bool world_view_active_for_test() const;
+    bool world_view_focused_for_test() const;
+    int world_frames_for_test() const // frames forwarded to the world view
+    {
+        return world_frames_;
+    }
+    tk::Rect self_tile_bounds_for_test() const; // empty unless the world is up
 
     // Floating mode position (top-left corner, parent-local coordinates).
     void set_float_position(float x, float y);
@@ -177,6 +248,15 @@ public:
 
 private:
     void schedule_tick_();
+
+    // Whether the toggle is offered / the world is on screen, for the mode now.
+    bool world_toggle_offered_() const;
+    bool world_on_screen_() const;
+    // Brings the world view, the tiles and the toggle in line with the above.
+    void sync_world_();
+    // Gives the world view tk focus while World is on screen (engine builds only).
+    void focus_world_();
+    bool is_self_camera_tile_(std::size_t i) const;
 
     // ── Providers ─────────────────────────────────────────────────────────────
     PostDelayedFn post_delayed_;
@@ -235,6 +315,22 @@ private:
     tk::Button* hangup_btn_ = nullptr;
     tk::Button* expand_btn_ = nullptr; // Docked ↔ DockedExpanded toggle
     tk::Button* pip_btn_ = nullptr;    // Popout (picture-in-picture) window
+    tk::Button* world_btn_ = nullptr;  // Grid <-> World toggle
+
+    // ── The 3D world (see set_world_available) ────────────────────────────────
+    bool world_available_ = false;
+    bool world_shown_ = false;
+    bool world_focus_pending_ = false; // restore() wants the world view focused once it can be
+    bool world_wanted_sent_ = false;   // on_world_wanted fired for the current time on screen
+    std::string world_banner_text_;
+    tk::Button* world_banner_btn_ = nullptr;
+    tk::Rect world_banner_rect_{};
+    bool world_parked_ = false; // deactivate_world(): this overlay never runs the engine again
+    std::string local_participant_id_; // the is_local participant's id; empty until known
+    int world_frames_ = 0;
+#if TESSERACT_WITH_ENGINE
+    world::WorldView* world_view_ = nullptr; // a child, under the tiles
+#endif
 
     // ── Duration label cache ──────────────────────────────────────────────────
     std::string cached_duration_str_;

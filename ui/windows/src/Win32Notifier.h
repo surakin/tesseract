@@ -1,6 +1,6 @@
 #pragma once
 #include <tesseract/notifier.h>
-#include <windows.h>
+#include "tesseract/win32.h"
 #include <atomic>
 #include <memory>
 #include <string>

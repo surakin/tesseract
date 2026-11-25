@@ -56,6 +56,9 @@ pub struct JoinParams {
     /// The lk-jwt-service base URL (older clients use this one).
     pub service_url: String,
     pub audio_only: bool,
+    /// Advertise the 3D call world capability: snapshotted once when the call
+    /// starts, so a refresh never changes what the call advertised.
+    pub world: bool,
 }
 
 /// The `m.rtc.member` join content. Carries the fields matrix-js-sdk insists
@@ -67,6 +70,10 @@ pub fn build_member_join(p: &JoinParams) -> Value {
     } else {
         ("m.video", "video")
     };
+    let mut capabilities = vec!["m.render_audio", "m.render_video"];
+    if p.world {
+        capabilities.push(super::WORLD_CAPABILITY);
+    }
     json!({
         "slot_id": CALL_SLOT_ID,
         "member": {
@@ -79,7 +86,7 @@ pub fn build_member_join(p: &JoinParams) -> Value {
             "type": "m.call",
             "intent": intent,
             "m.call.intent": legacy_intent,
-            "capabilities": ["m.render_audio", "m.render_video"],
+            "capabilities": capabilities,
         },
         "transports": {
             "published": [{
@@ -166,6 +173,24 @@ pub fn should_write_member_events(
     can_send_member: bool,
 ) -> bool {
     sticky_supported && slot_open && can_send_member
+}
+
+/// Why `should_write_member_events` said no (the 3D world capability rides only on the
+/// sticky `m.rtc.member`, so a call without one cannot advertise it). `None` when it writes.
+pub fn member_events_skip_reason(
+    sticky_supported: bool,
+    slot_open: bool,
+    can_send_member: bool,
+) -> Option<&'static str> {
+    if !sticky_supported {
+        Some("the homeserver does not support sticky events")
+    } else if !slot_open {
+        Some("this call is legacy-only (the room's slot is left alone)")
+    } else if !can_send_member {
+        Some("our power level does not allow sending the member event")
+    } else {
+        None
+    }
 }
 
 /// The invite that rings a DM (`@room` mention; group rooms are not rung).
@@ -646,6 +671,7 @@ mod tests {
             sfu_url: "wss://sfu.x.org".into(),
             service_url: "https://jwt.x.org".into(),
             audio_only: true,
+            world: false,
         });
         assert!(v["slot_id"].as_str().unwrap().starts_with("m.call#"));
         assert_eq!(v["member"]["id"], "mid1");
@@ -675,6 +701,7 @@ mod tests {
                 sfu_url: "wss://s".into(),
                 service_url: "https://j".into(),
                 audio_only,
+                world: false,
             })
         };
         assert_eq!(mk(true)["application"]["intent"], "m.audio");
@@ -685,6 +712,20 @@ mod tests {
         assert_eq!(
             caps,
             serde_json::json!(["m.render_audio", "m.render_video"])
+        );
+        let on = build_member_join(&JoinParams {
+            member_id: "m".into(),
+            user_id: "@a:x".into(),
+            device_id: "D".into(),
+            sfu_url: "wss://s".into(),
+            service_url: "https://j".into(),
+            audio_only: false,
+            world: true,
+        })["application"]["capabilities"]
+            .clone();
+        assert_eq!(
+            on,
+            serde_json::json!(["m.render_audio", "m.render_video", "dev.tesseract.world.v1"])
         );
     }
 
@@ -697,6 +738,7 @@ mod tests {
             sfu_url: "wss://s".into(),
             service_url: "https://j".into(),
             audio_only: false,
+            world: false,
         });
         let c: crate::client::rtc::model::MemberContent = serde_json::from_value(v).unwrap();
         assert!(c.is_join());
@@ -1018,6 +1060,7 @@ mod tests {
                 sfu_url: "wss://s".into(),
                 service_url: "https://j".into(),
                 audio_only: false,
+                world: false,
             },
             true,
         )
@@ -1154,6 +1197,7 @@ mod tests {
                 sfu_url: "wss://s".into(),
                 service_url: "https://j".into(),
                 audio_only: false,
+                world: false,
             },
             true,
         )
@@ -1295,6 +1339,7 @@ mod tests {
                 sfu_url: "wss://s".into(),
                 service_url: "https://j".into(),
                 audio_only: false,
+                world: false,
             },
             true,
         ));
@@ -1385,6 +1430,29 @@ mod tests {
             !should_write_member_events(true, true, false),
             "may not send the event"
         );
+    }
+
+    #[test]
+    fn the_skip_reason_agrees_with_should_write_member_events() {
+        for sticky in [false, true] {
+            for slot in [false, true] {
+                for can in [false, true] {
+                    assert_eq!(
+                        member_events_skip_reason(sticky, slot, can).is_none(),
+                        should_write_member_events(sticky, slot, can)
+                    );
+                }
+            }
+        }
+        assert!(member_events_skip_reason(false, true, true)
+            .unwrap()
+            .contains("sticky"));
+        assert!(member_events_skip_reason(true, false, true)
+            .unwrap()
+            .contains("legacy-only"));
+        assert!(member_events_skip_reason(true, true, false)
+            .unwrap()
+            .contains("power level"));
     }
 
     #[test]

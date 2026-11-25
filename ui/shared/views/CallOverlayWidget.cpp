@@ -40,6 +40,11 @@ constexpr float kPinnedFrac = 0.70f; // long-axis fraction for the pinned tile
 
 CallOverlayWidget::CallOverlayWidget()
 {
+#if TESSERACT_WITH_ENGINE
+    // Added first so every tile and button draws and hit-tests above it.
+    world_view_ = add_child(tk::create_widget<world::WorldView>(this));
+    world_view_->set_visible(false);
+#endif
     move_target_ = add_child(tk::create_widget<tk::KeyboardTarget>(this));
     move_target_->set_accessible_name(tk::tr("Move call window"));
     move_target_->set_accessible_description(tk::tr("Use the arrow keys to move it"));
@@ -119,6 +124,43 @@ CallOverlayWidget::CallOverlayWidget()
             if (repaint_requester_)
             {
                 repaint_requester_();
+            }
+        });
+
+    auto world =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
+    world_btn_ = add_child(std::move(world));
+    world_btn_->set_visible(false);
+    world_btn_->set_on_click(
+        [this]
+        {
+            if (!world_toggle_offered_())
+            {
+                return;
+            }
+            world_shown_ = !world_shown_;
+            sync_world_();
+            focus_world_();
+            if (relayout_requester_)
+            {
+                relayout_requester_();
+            }
+            else if (repaint_requester_)
+            {
+                repaint_requester_();
+            }
+        });
+
+    world_banner_btn_ = add_child(tk::create_widget<tk::Button>(
+        this, tk::tr("Reload"), std::function<void()>{}, tk::Button::Variant::Primary));
+    world_banner_btn_->set_accessible_name(tk::tr("The world changed. Reload"));
+    world_banner_btn_->set_visible(false);
+    world_banner_btn_->set_on_click(
+        [this]
+        {
+            if (on_world_reload)
+            {
+                on_world_reload();
             }
         });
 
@@ -216,11 +258,23 @@ void CallOverlayWidget::set_avatar_provider(std::function<const tk::Image*(const
     {
         tile->set_avatar_provider(avatar_provider_);
     }
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->set_avatar_provider(avatar_provider_);
+    }
+#endif
 }
 
 void CallOverlayWidget::set_display_name_provider(std::function<std::string(const std::string&)> fn)
 {
     display_name_provider_ = std::move(fn);
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->set_display_name_provider(display_name_provider_);
+    }
+#endif
 }
 
 // ── Timer ──────────────────────────────────────────────────────────────────
@@ -238,8 +292,8 @@ double CallOverlayWidget::elapsed_seconds() const
 
 CallOverlayWidget::OverlayState CallOverlayWidget::snapshot() const
 {
-    return {elapsed_seconds(), show_video_btn_, audio_muted_,
-            video_muted_,      screen_sharing_, local_user_id_};
+    return {elapsed_seconds(), show_video_btn_, audio_muted_, video_muted_,
+            screen_sharing_,   local_user_id_,  world_shown_};
 }
 
 void CallOverlayWidget::restore(const OverlayState& s)
@@ -249,6 +303,12 @@ void CallOverlayWidget::restore(const OverlayState& s)
     set_audio_muted(s.audio_muted);
     set_video_muted(s.video_muted);
     set_screen_sharing(s.screen_sharing);
+    world_shown_ = s.world_shown;
+    sync_world_();
+    // A restored World takes the keys, so WASD works without a click; the overlay may not be
+    // laid out yet, so the focus is retried until it lands.
+    world_focus_pending_ = world_shown_;
+    focus_world_();
     start_timer(s.elapsed_seconds);
 }
 
@@ -330,6 +390,280 @@ void CallOverlayWidget::set_mode(Mode m)
     {
         pip_btn_->set_visible(true);
     }
+    sync_world_();
+}
+
+// ── The 3D world ──────────────────────────────────────────────────────────
+
+bool CallOverlayWidget::world_toggle_offered_() const
+{
+#if TESSERACT_WITH_ENGINE
+    return world_available_ && (mode_ == Mode::DockedExpanded || mode_ == Mode::Popout);
+#else
+    return false;
+#endif
+}
+
+bool CallOverlayWidget::world_on_screen_() const
+{
+    return world_toggle_offered_() && world_shown_;
+}
+
+bool CallOverlayWidget::is_self_camera_tile_(std::size_t i) const
+{
+    // By participant, not user: another device of the same account is a robot, not the camera.
+    return !local_participant_id_.empty() && tile_ids_[i] == local_participant_id_;
+}
+
+void CallOverlayWidget::sync_world_()
+{
+    const bool on = world_on_screen_();
+    if (world_btn_)
+    {
+        world_btn_->set_visible(world_toggle_offered_());
+    }
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->set_visible(on);
+        world_view_->set_active(on && !world_parked_);
+        if (!on)
+        {
+            world_wanted_sent_ = false;
+        }
+        else if (!world_parked_ && !world_wanted_sent_ && on_world_wanted)
+        {
+            world_wanted_sent_ = true;
+            world_view_->set_awaiting_options(true);
+            on_world_wanted();
+        }
+    }
+    if (world_banner_btn_)
+    {
+        world_banner_btn_->set_visible(on && !world_banner_text_.empty());
+    }
+    if (!on)
+    {
+        world_focus_pending_ = false;
+    }
+    else if (world_focus_pending_)
+    {
+        focus_world_();
+    }
+#endif
+    for (std::size_t i = 0; i < tiles_.size(); ++i)
+    {
+        tiles_[i]->set_visible(!on || is_self_camera_tile_(i));
+    }
+}
+
+void CallOverlayWidget::focus_world_()
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_shown_ && world_view_)
+    {
+        if (auto* h = host())
+        {
+            h->request_focus(world_view_);
+            if (h->focused_widget() == world_view_)
+            {
+                world_focus_pending_ = false;
+            }
+        }
+    }
+#endif
+}
+
+void CallOverlayWidget::set_world_available(bool available)
+{
+    world_available_ = available;
+    sync_world_();
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+
+#if TESSERACT_WITH_ENGINE
+void CallOverlayWidget::set_world_options(world::EngineScene::Options options)
+{
+    if (world_view_)
+    {
+        world_view_->set_world_options(std::move(options));
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+
+void CallOverlayWidget::set_world_actions(std::vector<world::WorldButtonBar::Entry> entries,
+                                          std::function<void(const std::string& id)> on_activate)
+{
+    if (world_view_)
+    {
+        world_view_->set_actions(std::move(entries), std::move(on_activate));
+    }
+    if (relayout_requester_)
+    {
+        relayout_requester_();
+    }
+}
+
+void CallOverlayWidget::set_world_action_enabled(const std::string& id, bool enabled)
+{
+    if (auto* bar = world_button_bar())
+    {
+        bar->set_entry_enabled(id, enabled);
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+#endif
+
+void CallOverlayWidget::set_world_question_pending(bool on)
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->set_question_pending(on);
+    }
+#else
+    (void)on;
+#endif
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+
+std::string CallOverlayWidget::world_waiting_text_for_test() const
+{
+#if TESSERACT_WITH_ENGINE
+    return world_view_ ? world_view_->waiting_text() : std::string();
+#else
+    return {};
+#endif
+}
+
+void CallOverlayWidget::show_world_banner(std::string text)
+{
+    world_banner_text_ = std::move(text);
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->set_bar_hidden(!world_banner_text_.empty()); // the banner takes the corner
+    }
+#endif
+    sync_world_();
+    if (relayout_requester_)
+    {
+        relayout_requester_();
+    }
+    else if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+
+void CallOverlayWidget::hide_world_banner()
+{
+    show_world_banner({});
+}
+
+void CallOverlayWidget::fall_back_to_grid()
+{
+    world_shown_ = false;
+    sync_world_();
+    if (relayout_requester_)
+    {
+        relayout_requester_();
+    }
+    else if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
+}
+
+void CallOverlayWidget::on_world_frame(const std::string& sender,
+                                       const std::vector<std::uint8_t>& bytes)
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_view_ && world_view_->active())
+    {
+        world_view_->on_world_frame(sender, bytes);
+    }
+#else
+    (void)sender;
+    (void)bytes;
+#endif
+}
+
+std::vector<std::vector<std::uint8_t>> CallOverlayWidget::take_world_frames()
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_view_ && world_view_->active())
+    {
+        return world_view_->take_outgoing_frames();
+    }
+#endif
+    return {};
+}
+
+void CallOverlayWidget::deactivate_world()
+{
+    world_parked_ = true;
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->set_active(false);
+    }
+#endif
+}
+
+bool CallOverlayWidget::world_button_visible_for_test() const
+{
+    return world_btn_ && world_btn_->visible();
+}
+
+void CallOverlayWidget::click_world_button_for_test()
+{
+    if (world_btn_)
+    {
+        world_btn_->click();
+    }
+}
+
+bool CallOverlayWidget::world_view_focused_for_test() const
+{
+#if TESSERACT_WITH_ENGINE
+    return world_view_ && host() && host()->focused_widget() == world_view_;
+#else
+    return false;
+#endif
+}
+
+bool CallOverlayWidget::world_view_active_for_test() const
+{
+#if TESSERACT_WITH_ENGINE
+    return world_view_ && world_view_->active();
+#else
+    return false;
+#endif
+}
+
+tk::Rect CallOverlayWidget::self_tile_bounds_for_test() const
+{
+    for (std::size_t i = 0; i < tiles_.size(); ++i)
+    {
+        if (is_self_camera_tile_(i))
+        {
+            return tiles_[i]->bounds();
+        }
+    }
+    return {};
 }
 
 bool CallOverlayWidget::expand_button_visible_for_test() const
@@ -610,6 +944,26 @@ void CallOverlayWidget::update_participants(const std::vector<tesseract::RtcPart
         }
     }
 
+    // The 3D world lists everyone, the local participant (its eyes) included; new tiles hide
+    // themselves while the world is up.
+    {
+        local_participant_id_.clear(); // no local participant in the list: nobody is "self"
+        for (const auto& p : ps)
+        {
+            if (p.is_local)
+            {
+                local_participant_id_ = p.participant_id;
+            }
+        }
+#if TESSERACT_WITH_ENGINE
+        if (world_view_)
+        {
+            world_view_->set_participants(ps, local_participant_id_);
+        }
+#endif
+        sync_world_();
+    }
+
     // A relayout is required — new tiles have bounds_ = {0,0,0,0} until
     // arrange() runs. push_video_frame() uses repaint_requester_ (no layout).
     if (relayout_requester_)
@@ -626,6 +980,15 @@ void CallOverlayWidget::on_video_frame(const std::string& participant_id, std::u
                                        std::uint32_t h,
                                        std::shared_ptr<std::vector<std::uint8_t>> bgra)
 {
+#if TESSERACT_WITH_ENGINE
+    if (world_view_ && world_view_->active())
+    {
+        // The robots' screens. The tiles keep their pictures too: the self tile stays up, and
+        // the others are fresh when the grid comes back.
+        ++world_frames_;
+        world_view_->on_video_frame(participant_id, w, h, bgra);
+    }
+#endif
     const auto it = std::find(tile_ids_.begin(), tile_ids_.end(), participant_id);
     if (it == tile_ids_.end())
     {
@@ -774,7 +1137,42 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     // ── Tile layout ────────────────────────────────────────────────────────
     const int n = static_cast<int>(tiles_.size());
-    if (n > 0)
+    sync_world_(); // tiles added since the last pass take the right visibility
+#if TESSERACT_WITH_ENGINE
+    if (world_view_)
+    {
+        world_view_->arrange(ctx, world_on_screen_() ? grid_rect_ : tk::Rect{});
+    }
+#endif
+    {
+        constexpr float kBannerH = 40.0f, kBannerBtnW = 96.0f, kBannerBtnH = 28.0f, kPad = 8.0f;
+        const bool banner = world_on_screen_() && !world_banner_text_.empty();
+        world_banner_rect_ =
+            banner ? tk::Rect{grid_rect_.x, grid_rect_.y, grid_rect_.w, kBannerH} : tk::Rect{};
+        if (world_banner_btn_)
+        {
+            world_banner_btn_->arrange(
+                ctx, banner ? tk::Rect{grid_rect_.x + grid_rect_.w - kBannerBtnW - kPad,
+                                       grid_rect_.y + (kBannerH - kBannerBtnH) * 0.5f, kBannerBtnW,
+                                       kBannerBtnH}
+                            : tk::Rect{});
+        }
+    }
+    if (world_on_screen_())
+    {
+        // The picture fills the grid; the self tile stays small in its top-right corner, below
+        // the expand and pop-out buttons.
+        constexpr float kSelfW = 160.0f, kSelfH = 90.0f, kSelfMargin = 8.0f;
+        const float top = grid_rect_.y + kExpandSz + 2.0f * kExpandMargin;
+        for (std::size_t i = 0; i < tiles_.size(); ++i)
+        {
+            tiles_[i]->arrange(ctx, is_self_camera_tile_(i) ? tk::Rect{grid_rect_.x + grid_rect_.w -
+                                                                           kSelfW - kSelfMargin,
+                                                                       top, kSelfW, kSelfH}
+                                                            : tk::Rect{});
+        }
+    }
+    else if (n > 0)
     {
         const bool has_pin = !pinned_participant_.empty();
         const int pin_idx = has_pin ? static_cast<int>(std::find(tile_ids_.begin(), tile_ids_.end(),
@@ -835,6 +1233,11 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         ++btn_count; // video
     }
     ++btn_count; // screen-share always shown
+    const bool show_world_btn = world_btn_ && world_toggle_offered_();
+    if (show_world_btn)
+    {
+        ++btn_count;
+    }
     const float total_w = btn_count * kBtnSz + (btn_count - 1) * kCallOverlayBtnGap;
     const float start_x = controls_rect_.x + (controls_rect_.w - total_w) * 0.5f;
     const float btn_y = controls_rect_.y + (kControlsH - kBtnSz) * 0.5f;
@@ -853,6 +1256,11 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (screen_btn_)
     {
         screen_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
+        bx += kBtnSz + kCallOverlayBtnGap;
+    }
+    if (show_world_btn)
+    {
+        world_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
         bx += kBtnSz + kCallOverlayBtnGap;
     }
     if (hangup_btn_)
@@ -904,6 +1312,32 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
     if (mode_ == Mode::Floating && drag_header_rect_.h > 0.0f)
     {
         ctx.canvas.fill_rect(drag_header_rect_, ctx.theme.palette.chrome_bg);
+    }
+
+#if TESSERACT_WITH_ENGINE
+    if (world_view_ && world_view_->visible())
+    {
+        world_view_->paint(ctx);
+    }
+#endif
+    if (world_banner_rect_.h > 0.0f && !world_banner_text_.empty())
+    {
+        ctx.canvas.fill_rect(world_banner_rect_, ctx.theme.palette.chrome_bg);
+        tk::TextStyle ts{};
+        ts.role = tk::FontRole::Body;
+        ts.max_width = std::max(1.0f, world_banner_rect_.w - 96.0f - 32.0f);
+        if (auto layout = ctx.factory.build_text(world_banner_text_, ts))
+        {
+            const tk::Size sz = layout->measure();
+            ctx.canvas.draw_text(*layout,
+                                 {world_banner_rect_.x + 12.0f,
+                                  world_banner_rect_.y + (world_banner_rect_.h - sz.h) * 0.5f},
+                                 ctx.theme.palette.text_primary);
+        }
+        if (world_banner_btn_ && world_banner_btn_->visible())
+        {
+            world_banner_btn_->paint(ctx);
+        }
     }
 
     // ── Participant tiles ──────────────────────────────────────────────────
@@ -998,6 +1432,16 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         screen_btn_->set_accessible_name(screen_sharing_ ? tk::tr("Stop sharing screen")
                                                          : tk::tr("Share screen"));
         screen_btn_->paint(ctx);
+    }
+
+    if (world_btn_ && world_btn_->visible())
+    {
+        world_btn_->set_icon(kCubeSvg, kCallOverlayBtnIconPx);
+        world_btn_->set_icon_color_override(world_shown_ ? ctx.theme.palette.accent
+                                                         : std::optional<tk::Color>{});
+        world_btn_->set_accessible_name(world_shown_ ? tk::tr("Show the call grid")
+                                                     : tk::tr("Show the 3D world"));
+        world_btn_->paint(ctx);
     }
 
     if (hangup_btn_)

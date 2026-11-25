@@ -3,10 +3,12 @@
 #include "access_tree.h"
 #include "list_view.h"
 
+#include "tesseract/win32/windows_enable.h"
 #include <wrl/client.h>
 #include <uiautomation.h>
 #include <oleauto.h>
 #include <commctrl.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <algorithm>
 #include <atomic>

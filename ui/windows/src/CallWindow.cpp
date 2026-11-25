@@ -60,7 +60,7 @@ CallWindow::CallWindow(MainWindow* parent_shell)
 
     surface_ = std::make_unique<tk::win32::Surface>(hInst, hwnd_, tk::Theme::light());
 
-    auto overlay = std::make_unique<tesseract::views::CallOverlayWidget>();
+    auto overlay = tk::create_root_widget<tesseract::views::CallOverlayWidget>(&surface_->host());
     call_overlay_widget_ = overlay.get();
     surface_->set_root(std::move(overlay));
 

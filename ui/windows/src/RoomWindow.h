@@ -5,7 +5,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
+#include "tesseract/win32.h"
 
 #include "app/ComposerPopups.h"
 #include "app/RoomWindowBase.h"

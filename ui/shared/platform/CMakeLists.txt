@@ -109,6 +109,25 @@ if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI ST
         <gst/gst.h>
         <glib.h>
     )
+
+    # Pointer lock on Wayland (mouse capture in the 3D view), shared by the Qt6 and GTK4 shells.
+    # The protocol glue in linux/wayland/ was generated once with wayland-scanner 1.26 from
+    # wayland-protocols' pointer-constraints and relative-pointer unstable v1 XML and checked in.
+    find_library(PLATFORM_WAYLAND_CLIENT wayland-client)
+    if(PLATFORM_WAYLAND_CLIENT)
+        enable_language(C)
+        add_library(tesseract_wayland_pointer_protocol STATIC
+            linux/wayland/pointer-constraints-unstable-v1-protocol.c
+            linux/wayland/relative-pointer-unstable-v1-protocol.c)
+        set_target_properties(tesseract_wayland_pointer_protocol PROPERTIES
+            AUTOMOC OFF AUTOUIC OFF AUTORCC OFF POSITION_INDEPENDENT_CODE ON)
+        target_sources(tesseract_platform PRIVATE linux/wayland_pointer_lock.cpp)
+        set_source_files_properties(linux/wayland_pointer_lock.cpp PROPERTIES
+            SKIP_UNITY_BUILD_INCLUSION ON)
+        target_compile_definitions(tesseract_platform PUBLIC TESSERACT_WAYLAND_POINTER_LOCK)
+        target_link_libraries(tesseract_platform PUBLIC
+            tesseract_wayland_pointer_protocol "${PLATFORM_WAYLAND_CLIENT}")
+    endif()
 endif()
 
 if(TESSERACT_UI STREQUAL "win32")

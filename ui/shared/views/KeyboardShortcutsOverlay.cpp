@@ -250,14 +250,8 @@ void KeyboardShortcutsOverlay::build_rows_()
                                                         tk::FontRole::SenderName);
             column->add_child(std::move(heading));
         }
-        std::vector<std::string> keys;
-        keys.reserve(def.chords.size());
-        for (const auto& chord : def.chords)
-        {
-            keys.push_back(tk::chord_label(chord));
-        }
-        column->add_child(
-            tk::create_widget<ShortcutRow>(column.get(), tk::tr(def.description), std::move(keys)));
+        column->add_child(tk::create_widget<ShortcutRow>(column.get(), tk::tr(def.description),
+                                                         shortcut_key_labels(def)));
     }
     scroll_->set_child(std::move(column));
 }

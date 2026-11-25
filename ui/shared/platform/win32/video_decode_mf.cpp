@@ -18,12 +18,14 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <shlwapi.h>
 #include <wrl/client.h>
+#include "tesseract/win32/windows_disable.h"
 #include <stdint.h>
 #include <algorithm>
 #include <cstring>

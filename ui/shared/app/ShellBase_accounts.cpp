@@ -496,6 +496,7 @@ void ShellBase::switch_active_account_(const std::string& user_id)
 
 void ShellBase::finish_login_ui_(const std::string& uid)
 {
+    start_world_probe_(); // once per process; a no-op without the engine
     close_settings_if_open_();
     if (!switch_and_show_main_(uid))
     {

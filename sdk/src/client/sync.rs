@@ -1003,6 +1003,28 @@ impl ClientFfi {
             ));
         }
 
+        // A room's world (`dev.tesseract.world`) changed: drop the cached room
+        // state so the re-query reads it fresh, then ping the UI.
+        {
+            use matrix_sdk::ruma::events::SyncStateEvent;
+            let h = Arc::clone(&handler);
+            let cache = Arc::clone(&self.room_state_cache);
+            self.event_handler_handles.push(client.add_event_handler(
+                move |ev: SyncStateEvent<super::world_event::WorldRawEventContent>, room: Room| {
+                    let h = Arc::clone(&h);
+                    let cache = Arc::clone(&cache);
+                    async move {
+                        super::invalidate_room_state_cache(&cache, &room.room_id().to_owned());
+                        super::world_event::on_world_state_event(
+                            ev.state_key(),
+                            room.room_id().as_str(),
+                            &mut |rid| h.lock().on_room_world_changed(rid),
+                        );
+                    }
+                },
+            ));
+        }
+
         // Live refresh of MSC4391 bot command descriptions. Sliding sync never
         // delivers custom state, so `set_active_room`'s fetch is the source of
         // truth; these handlers catch description events and bot membership

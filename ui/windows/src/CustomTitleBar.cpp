@@ -4,9 +4,13 @@
 #include "svg.h"
 #include "tk/host_win32.h"
 
-#include <BetterText/BetterText.h>
+#include "tesseract/win32/windows_enable.h"
+#include <BetterText/BetterText.h> // includes <windows.h> itself
+#include "tesseract/win32/windows_disable.h"
+#include "tesseract/win32/windows_enable.h"
 #include <dwmapi.h>
 #include <windowsx.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <algorithm>
 #include <array>

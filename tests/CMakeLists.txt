@@ -22,6 +22,7 @@ add_executable(tesseract_tests
     cpp/test_session_store.cpp
     cpp/test_types.cpp
     cpp/test_paths.cpp
+    cpp/test_hash.cpp
     cpp/test_provisioning.cpp
     cpp/test_emoji.cpp
     cpp/test_client_recent.cpp
@@ -245,6 +246,8 @@ add_executable(tesseract_tests
     cpp/test_shell_thread_timeline.cpp
     cpp/test_shell_export_avatar.cpp
     cpp/test_client_sessionless_more.cpp
+    cpp/test_client_world_event.cpp
+    cpp/test_world_trust.cpp
     cpp/test_tk_room_header.cpp
     cpp/test_tk_room_search_bar.cpp
     cpp/test_code_highlight.cpp
@@ -266,6 +269,7 @@ add_executable(tesseract_tests
     cpp/test_encryption_setup_overlay.cpp
     cpp/test_shell_encryption_setup.cpp
     cpp/test_tk_host_pointer.cpp
+    cpp/test_tk_pointer_lock.cpp
     cpp/test_tk_button_hover.cpp
     cpp/test_tk_button_leading_image.cpp
     cpp/test_login_brand_icons.cpp
@@ -277,8 +281,10 @@ add_executable(tesseract_tests
     cpp/test_tk_keyboard_nav.cpp
     cpp/test_tk_keyboard_shortcuts_overlay.cpp
     cpp/test_tk_key_chord.cpp
+    cpp/test_tk_key_release.cpp
     cpp/test_shortcut_registry.cpp
     cpp/test_audio_sink_policy.cpp
+    cpp/test_world_asset_cache_store.cpp
     cpp/test_tk_tooltip.cpp
     cpp/test_tk_combo_controls.cpp
     cpp/test_tk_radio.cpp
@@ -584,6 +590,17 @@ catch_discover_tests(tesseract_tests
 catch_discover_tests(tesseract_tests
     TEST_SPEC "~[keychain]"
 )
+
+# The 3D engine built by cmake/Engine.cmake loads and serves its ABI.
+if(TESSERACT_WITH_ENGINE)
+    target_sources(tesseract_tests PRIVATE cpp/test_world_engine_scene.cpp cpp/test_world_view.cpp
+        cpp/test_world_asset_loader.cpp cpp/test_world_room.cpp cpp/test_world_loader.cpp
+        cpp/test_world_consent_dialog.cpp cpp/test_world_button_bar.cpp
+        cpp/test_world_transfer.cpp)
+    add_executable(engine_load_test engine/engine_load_test.cpp)
+    target_link_libraries(engine_load_test PRIVATE tesseract_engine)
+    add_test(NAME engine_load COMMAND engine_load_test)
+endif()
 
 # Every translatable UI string has an entry in every i18n/*.po, and the native
 # shells only translate through tk::tr (see i18n/check_i18n.py).

@@ -10,20 +10,28 @@
 
 #include <algorithm>
 #include <array>
+#include "tesseract/win32/windows_enable.h"
 #include <commctrl.h>
+#include "tesseract/win32/windows_disable.h"
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include "tesseract/win32/windows_enable.h"
 #include <propkey.h>
 #include <propvarutil.h>
 #include <shobjidl.h>
+#include "tesseract/win32/windows_disable.h"
 #include <unordered_set>
+#include "tesseract/win32/windows_enable.h"
 #include <wrl/client.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include "platform/win32/winrt_coroutine_shim.h"
+#include "tesseract/win32/windows_enable.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.StartScreen.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace win32
 {

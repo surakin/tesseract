@@ -572,6 +572,12 @@ impl ClientFfi {
         self.rtc_call.lock().set_audio_muted(muted);
     }
 
+    /// Set whether the 3D call world is available (see
+    /// `rtc::WORLD_CAPABILITY`); read when a call membership is built.
+    pub fn rtc_set_world_available(&self, available: bool) {
+        crate::client::rtc::set_world_available(available);
+    }
+
     /// Mute or unmute the local video track.
     pub fn rtc_set_video_muted(&self, muted: bool) {
         let _guard = self.rt.enter();
@@ -597,6 +603,14 @@ impl ClientFfi {
         let _guard = self.rt.enter();
         if let Some(session) = self.rtc_call.lock().session() {
             session.push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
+        }
+    }
+
+    /// Offer a 3D call world pose frame to the live session; a no-op without one.
+    pub fn rtc_send_world_frame(&self, payload: &[u8]) {
+        let _guard = self.rt.enter();
+        if let Some(session) = self.rtc_call.lock().session() {
+            session.send_world_frame(payload);
         }
     }
 

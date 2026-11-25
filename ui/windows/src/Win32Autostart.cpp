@@ -6,8 +6,10 @@
 #include <string>
 
 #include "platform/win32/winrt_coroutine_shim.h"
+#include "tesseract/win32/windows_enable.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.ApplicationModel.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace win32
 {

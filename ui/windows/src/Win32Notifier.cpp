@@ -3,9 +3,11 @@
 
 #include "platform/win32/winrt_coroutine_shim.h" // must precede any <winrt/...> include
 
+#include "tesseract/win32/windows_enable.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Notifications.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include "tk/i18n.h"
 
@@ -318,9 +320,9 @@ void Win32Notifier::notify(const tesseract::Notification& n)
                 HWND hwnd = hwnd_box->load();
                 if (hwnd && IsWindow(hwnd))
                 {
-                    PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
-                                reinterpret_cast<LPARAM>(new NotifyClickPayload{
-                                    room_id, user_id, event_id, reply_text}));
+                    PostMessageW(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
+                                 reinterpret_cast<LPARAM>(new NotifyClickPayload{
+                                     room_id, user_id, event_id, reply_text}));
                 }
             }});
 

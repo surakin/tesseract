@@ -24,8 +24,10 @@
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <shellapi.h>
+#include "tesseract/win32/windows_disable.h"
 #elif defined(__APPLE__)
 #include <unistd.h>
 #include <sys/types.h>
@@ -2622,6 +2624,122 @@ bool Client::can_set_room_image_packs(const std::string& room_id)
     return impl_->ffi->can_set_room_image_packs(room_id);
 }
 
+bool Client::can_set_room_world(const std::string& room_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_set_room_world(room_id);
+}
+
+namespace
+{
+std::optional<RoomWorld> room_world_from_ffi(const tesseract_ffi::RoomWorldFfi& w)
+{
+    if (!w.present)
+    {
+        return std::nullopt;
+    }
+    return RoomWorld{std::string(w.name),
+                     std::string(w.hash),
+                     std::string(w.url),
+                     std::string(w.sender),
+                     w.size,
+                     w.format};
+}
+} // namespace
+
+namespace
+{
+RoomWorldRead read_from_ffi(const tesseract_ffi::RoomWorldFfi& w)
+{
+    RoomWorldRead r;
+    if (w.present)
+    {
+        r.kind = RoomWorldRead::Kind::World;
+        r.world = *room_world_from_ffi(w);
+    }
+    else if (!w.error.empty())
+    {
+        r.kind = RoomWorldRead::Kind::Error;
+        r.error = std::string(w.error);
+        r.format = w.format;
+    }
+    return r;
+}
+} // namespace
+
+RoomWorldRead parse_room_world_read(const std::string& content_json, const std::string& sender)
+{
+    return read_from_ffi(tesseract_ffi::world_event_parse(content_json, sender));
+}
+
+WorldBundleExtract extract_world_bundle(const std::vector<std::uint8_t>& bytes,
+                                        const std::string& dest)
+{
+    rust::Slice<const uint8_t> slice(bytes.data(), bytes.size());
+    auto r = tesseract_ffi::world_bundle_extract(slice, dest);
+    return WorldBundleExtract{r.ok, std::string(r.error), std::string(r.manifest_json)};
+}
+
+WorldBundlePack pack_world_bundle(const std::string& dir)
+{
+    auto r = tesseract_ffi::world_bundle_pack(dir);
+    WorldBundlePack out;
+    out.ok = r.ok;
+    out.error = std::string(r.error);
+    if (r.ok)
+    {
+        out.bytes.assign(r.bytes.begin(), r.bytes.end());
+    }
+    return out;
+}
+
+std::string world_bundle_hash(const std::vector<std::uint8_t>& bytes)
+{
+    rust::Slice<const uint8_t> slice(bytes.data(), bytes.size());
+    return std::string(tesseract_ffi::world_bundle_hash(slice));
+}
+
+Result Client::set_room_world(const std::string& room_id, const std::string& name,
+                              const std::vector<std::uint8_t>& bundle_bytes)
+{
+    SH_FFI;
+    rust::Slice<const uint8_t> slice(bundle_bytes.data(), bundle_bytes.size());
+    return from_ffi(impl_->ffi->set_room_world(room_id, name, slice));
+}
+
+RoomWorldRead Client::room_world(const std::string& room_id)
+{
+    SH_FFI;
+    return read_from_ffi(impl_->ffi->room_world(room_id));
+}
+
+Result Client::download_world_bundle(const RoomWorld& world, std::vector<std::uint8_t>& out)
+{
+    SH_FFI;
+    out.clear();
+    tesseract_ffi::RoomWorldFfi w{true,
+                                  rust::String(),
+                                  rust::String(world.name),
+                                  rust::String(world.hash),
+                                  rust::String(world.url),
+                                  rust::String(world.sender),
+                                  world.size,
+                                  world.format};
+    auto r = impl_->ffi->download_world_bundle(w);
+    if (!r.ok)
+    {
+        return Result{false, std::string(r.error)};
+    }
+    out.assign(r.bytes.begin(), r.bytes.end());
+    return Result{true, {}};
+}
+
+Result Client::remove_room_world(const std::string& room_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->remove_room_world(room_id));
+}
+
 RoomPermissions Client::room_power_levels(const std::string& room_id)
 {
     SH_FFI;
@@ -3535,6 +3653,18 @@ void Client::rtc_set_audio_muted(bool muted)
 {
     SH_FFI;
     impl_->ffi->rtc_set_audio_muted(muted);
+}
+
+void Client::rtc_set_world_available(bool available)
+{
+    SH_FFI;
+    impl_->ffi->rtc_set_world_available(available);
+}
+
+void Client::rtc_send_world_frame(const std::uint8_t* payload, std::size_t size)
+{
+    SH_FFI;
+    impl_->ffi->rtc_send_world_frame(rust::Slice<const std::uint8_t>{payload, size});
 }
 
 void Client::rtc_set_video_muted(bool muted)

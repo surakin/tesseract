@@ -170,6 +170,16 @@ if(TESSERACT_MAC_APP_STORE)
     add_compile_definitions(TESSERACT_MAC_APP_STORE_ENABLED)
 endif()
 
+# Temporary (3D call room experiment): build the 3D engine from its own
+# repository and expose its C API (cmake/Engine.cmake). On by default on the
+# 3d branch, which exists for this experiment.
+option(TESSERACT_WITH_ENGINE
+    "Build the 3D engine from its repository (experimental, cmake/Engine.cmake)"
+    ON)
+if(TESSERACT_WITH_ENGINE)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Engine.cmake)
+endif()
+
 # Route the process allocator through jemalloc. Linux-only (see the usage site
 # below); ignored on macOS/Windows. On by default because stock glibc malloc
 # retains freed memory aggressively under this app's thread count, inflating

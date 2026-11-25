@@ -10,11 +10,14 @@
 #include "tk_test_surface.h"
 #include "views/MainAppWidget.h"
 #include "views/RoomView.h"
+#include "views/world/AssetCacheStore.h"
 
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -315,6 +318,11 @@ TEST_CASE("clear_all_caches_ wipes the local image caches", "[shell][cache][clea
     s.media_fetch_failed_["mxc://hs/x"] = {};
     s.url_previews_["https://x"] = {};
     s.voice_bytes_cache_["t"] = {1};
+    const auto world_dir = tesseract::views::world::default_asset_cache_dir();
+    std::filesystem::create_directories(world_dir);
+    {
+        std::ofstream(world_dir / "robot-k.twa") << "x";
+    }
 
     s.clear_all_caches_({});
     s.pump();
@@ -323,6 +331,7 @@ TEST_CASE("clear_all_caches_ wipes the local image caches", "[shell][cache][clea
     CHECK(s.media_fetch_failed_.empty());
     CHECK(s.url_previews_.empty());
     CHECK(s.voice_bytes_cache_.empty());
+    CHECK_FALSE(std::filesystem::exists(world_dir));
     // The SDK wipe follows; with no stored session it reports why it stopped.
     REQUIRE_FALSE(s.statuses.empty());
     CHECK(s.statuses.back().find("session is missing") != std::string::npos);

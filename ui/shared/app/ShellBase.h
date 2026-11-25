@@ -106,6 +106,8 @@ class NativeTextField;
 namespace tesseract
 {
 
+class WorldTrustStore;
+
 namespace views
 {
 class ComposeBar;
@@ -119,6 +121,10 @@ class RoomView;
 class SettingsView;
 class UserPackEditor;
 class UserProfilePanel;
+namespace world
+{
+class WorldLoader;
+}
 } // namespace views
 
 struct UploadDraft;
@@ -3452,6 +3458,11 @@ protected:
     // KnockRequestsPanel if it is currently showing that room; ignored
     // otherwise (a stale poke from a room whose panel was just closed).
     virtual void handle_knock_requests_updated_ui_(std::string room_id);
+    // The room's world (`dev.tesseract.world`) changed; re-query via
+    // Client::room_world.
+    // With the engine: raises the call overlay's "The world changed" banner when it is the call's
+    // room and the world differs from the loaded one (ShellBase_calls.cpp).
+    virtual void handle_room_world_changed_ui_(std::string room_id);
     // Completion for an async fetch_media_async download. Looks up the pending
     // request by id (ignoring late callbacks for cancelled/superseded requests)
     // and runs its registered bytes-completion. Concrete shared logic.
@@ -3858,6 +3869,26 @@ protected:
                                             std::uint32_t height,
                                             std::shared_ptr<std::vector<std::uint8_t>> bgra);
 
+    void note_local_participant_(const RtcParticipantInfo& info);
+    void clear_world_();
+    // The SDK call start; a seam so tests can drive start_call without a homeserver.
+    virtual RtcStartResult rtc_start_call_(const std::string& room_id, const std::string& slot_id,
+                                           bool audio_only);
+    // The send tick: while a call is up and the world is available, every 50 ms offers
+    // the world scripts' frames to the call. Idempotent; stopped by end/session end.
+    void start_world_send_tick_();
+    void stop_world_send_tick_();
+    void world_send_tick_(std::uint64_t gen);
+    // Once per process, after the first sign-in/restore: asks the engine whether it can draw
+    // here (off the UI thread) and advertises the capability accordingly.
+    void start_world_probe_();
+    // Stops the engine of the current call overlay (the choice of World stays).
+    void deactivate_world_();
+    // A 3D call world frame, already accepted by the SDK. Handed to the world's scripts.
+    virtual void handle_rtc_world_frame_ui_(std::uint64_t session_id,
+                                            const std::string& participant_id,
+                                            std::vector<std::uint8_t> payload);
+
     // Screen share frame from a remote participant. Routed to the call overlay
     // using participant_id + ":screen" as the tile key.
     virtual void handle_rtc_screen_frame_ui_(std::uint64_t session_id,
@@ -3959,6 +3990,56 @@ protected:
 
 protected:
     std::unique_ptr<CallSession> call_session_;
+    // The local participant's id in this call; empty until its info arrives.
+    std::string world_local_id_;
+    // The engine works on this machine (set by the startup probe; never true without the engine).
+    bool world_available_ = false;
+    // Whether THIS call advertised the world (world_available_ when it started). A probe that
+    // finishes mid-call changes the next call, not this one: no toggle, no send tick.
+    bool call_world_offered_ = false;
+    bool world_probe_started_ = false;
+    bool world_tick_running_ = false;
+    std::uint64_t world_tick_gen_ = 0;
+    // The room's world: loads it when the call overlay puts the world on screen (engine builds
+    // only; created on first use, then lives as long as the shell).
+    void world_wanted_();
+    void ensure_world_loader_();
+    // The world view's button bar (Import, Export): installed on the call overlay when it is
+    // mounted; Import is enabled while the user may set the call room's world.
+    void install_world_actions_();
+    void refresh_world_actions_();
+    void world_import_(bool zip);
+    void world_export_();
+    // Runs `work` (the blocking pack/upload/download/extract) off the UI thread behind the busy
+    // dialog, then shows its result: `work` returns whether it worked and puts the text to show
+    // (the failure reason, or what was done) in its argument.
+    void run_world_transfer_(std::string busy_title, std::function<bool(std::string&)> work,
+                             std::string success_title);
+    std::shared_ptr<views::world::WorldLoader> world_loader_;
+    std::shared_ptr<WorldTrustStore> world_trust_;
+    // The question of world_loader_ the consent dialog shows now (0: none). A token, not a flag:
+    // opening a question dismisses the previous one, and that dismissal must not clear this one.
+    std::uint64_t world_consent_token_ = 0;
+    std::uint64_t world_consent_seq_ = 0;
+    // Test seams: what the loader's blocking services, extraction and worker are (unset in
+    // production).
+    struct WorldLoadSeams
+    {
+        std::function<RoomWorldRead(const std::string&)> room_world;
+        std::function<Result(const RoomWorld&, std::vector<std::uint8_t>&)> download;
+        std::function<bool(const std::string&)> sender_verified;
+        // Whether the user may set the call room's world (the Import entries of the bar).
+        std::function<bool(const std::string&)> can_set_room_world;
+        std::function<WorldBundleExtract(const std::vector<std::uint8_t>&, const std::string&)>
+            extract;
+        std::function<void(std::function<void()>, std::function<void()>)> run_async;
+    };
+    std::optional<WorldLoadSeams> world_seams_for_test_;
+    // The call is over: pending loads and an open consent question are void.
+    void cancel_world_load_();
+    // Test seam: runs in on_call_overlay_mode_requested_ after the old overlay's world view is
+    // stopped and before it is torn down.
+    std::function<void(views::CallOverlayWidget&)> call_overlay_teardown_hook_;
     // The account the live call runs on. Capture threads push frames through
     // this, not through client_, which the UI thread re-points on switch and
     // clears on sign-out. It expires with the account, so frames stop then.

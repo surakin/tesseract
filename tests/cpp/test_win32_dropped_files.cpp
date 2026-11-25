@@ -5,8 +5,10 @@
 
 #include <vector>
 
+#include "tesseract/win32/windows_enable.h"
 #include <shlobj.h>
 #include <shlwapi.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace wd = tesseract::win32_drop;
 

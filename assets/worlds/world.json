@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "name": "Meadow",
+  "field_asset": "green_field.glb",
+  "user_asset": "robot.glb",
+  "scripts": [
+    { "file": "player.lua", "attach": "local_player", "on_camera": true },
+    { "file": "daylight.lua", "attach": "daylight", "params": { "clock": -1 } },
+    { "file": "world.lua", "attach": "world" }
+  ],
+  "user_script": { "file": "robot.lua", "attach": "robot" },
+  "events_out": ["pose", "send"]
+}

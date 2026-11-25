@@ -35,6 +35,67 @@ struct Result
     }
 };
 
+/// A room's 3D world (`dev.tesseract.world`). `sender` is the user who sent the
+/// state event, taken from the event envelope, never from its content.
+struct RoomWorld
+{
+    std::string name;
+    std::string hash; // lowercase hex SHA-256 of the bundle zip
+    std::string url;  // mxc:// of the bundle zip
+    std::string sender;
+    std::uint64_t size = 0;
+    std::uint32_t format = 0;
+};
+
+/// What reading a room's world event gave: no world (absent or emptied), a world, or an event
+/// that could not be used (no client, bad room, failed state fetch, malformed content).
+struct RoomWorldRead
+{
+    enum class Kind
+    {
+        NoWorld,
+        World,
+        Error
+    };
+    Kind kind = Kind::NoWorld;
+    RoomWorld world;          // Kind::World
+    std::string error;        // Kind::Error
+    std::uint32_t format = 0; // Kind::Error: the `format` the content named, 0 if unreadable
+};
+
+/// Classifies a `dev.tesseract.world` event's content JSON with its envelope sender. Pure.
+RoomWorldRead parse_room_world_read(const std::string& content_json, const std::string& sender);
+
+/// Outcome of `extract_world_bundle`.
+struct WorldBundleExtract
+{
+    bool ok = false;
+    std::string error;
+    std::string manifest_json; // the validated manifest, when ok
+};
+
+/// Validates a world bundle zip and extracts it into the new directory `dest`
+/// (nothing is left behind on failure). Reads hostile bytes in Rust with limits;
+/// nothing is executed. Blocks: worker thread.
+WorldBundleExtract extract_world_bundle(const std::vector<std::uint8_t>& bytes,
+                                        const std::string& dest);
+
+/// Outcome of `pack_world_bundle`.
+struct WorldBundlePack
+{
+    bool ok = false;
+    std::string error;
+    std::vector<std::uint8_t> bytes; // the zip, when ok
+};
+
+/// Zips the world directory `dir` deterministically (sorted entries, fixed timestamps; dot
+/// entries are skipped) and checks the result the way an import would. Reads local files in
+/// Rust with the bundle limits. Blocks: worker thread.
+WorldBundlePack pack_world_bundle(const std::string& dir);
+
+/// Lowercase hex SHA-256 of a world bundle (what `RoomWorld::hash` holds).
+std::string world_bundle_hash(const std::vector<std::uint8_t>& bytes);
+
 /// Prefix of the `on_rtc_session_ended` reason of a call that could not be set
 /// up after `Client::rtc_start_call` accepted it; the rest is the message.
 inline constexpr char kRtcStartFailedReason[] = "start_failed:";
@@ -1896,6 +1957,32 @@ public:
     /// read — no network. Returns false on any uncertainty.
     bool can_set_room_image_packs(const std::string& room_id);
 
+    /// True iff the current user's PL allows sending the room's
+    /// `dev.tesseract.world` state event. Cached read, no network; false on
+    /// any uncertainty (and without a client).
+    bool can_set_room_world(const std::string& room_id);
+
+    /// Publishes `bundle_bytes` (a world zip) as the room's world: hashes it,
+    /// reuses an earlier upload of the same bytes if the server still has the
+    /// media (account data `dev.tesseract.world_uploads`), else uploads, then
+    /// sends the state event. Blocks: worker thread.
+    Result set_room_world(const std::string& room_id, const std::string& name,
+                          const std::vector<std::uint8_t>& bundle_bytes);
+
+    /// The room's world, with its envelope sender: NoWorld when there is none (or it was
+    /// removed), Error when the event could not be read or is malformed (never "none").
+    /// Reads the cached room state. Blocks: worker thread.
+    RoomWorldRead room_world(const std::string& room_id);
+
+    /// Downloads the bundle `world` names into `out` and verifies its size and
+    /// SHA-256; on failure `Result::message` says which check failed and `out`
+    /// is left empty. Blocks: worker thread.
+    Result download_world_bundle(const RoomWorld& world, std::vector<std::uint8_t>& out);
+
+    /// Empties the room's world event (`room_world` reads as none after).
+    /// Blocks: worker thread.
+    Result remove_room_world(const std::string& room_id);
+
     /// Read the room's current power levels, narrowed to the fields the
     /// Permissions tab edits. Synchronous — cached local read, no network
     /// round-trip (unlike RoomSecurityState, which needs an async GET
@@ -2482,6 +2569,14 @@ public:
 
     /// Mute or unmute the local audio track. No-op when no call is active.
     void rtc_set_audio_muted(bool muted);
+
+    /// Whether this process can render the 3D call world. When true, call
+    /// memberships joined afterwards advertise it. Process-wide.
+    void rtc_set_world_available(bool available);
+
+    /// Offer a 3D call world pose frame to the active call (latest wins; dropped
+    /// when nobody else can show it). No-op when no call is active.
+    void rtc_send_world_frame(const std::uint8_t* payload, std::size_t size);
 
     /// Mute or unmute the local video track. No-op when no call is active.
     void rtc_set_video_muted(bool muted);

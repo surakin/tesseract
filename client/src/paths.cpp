@@ -5,8 +5,10 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>
+#include "tesseract/win32.h"
+#include "tesseract/win32/windows_enable.h"
 #include <shlobj.h>
+#include "tesseract/win32/windows_disable.h"
 #endif
 
 namespace tesseract

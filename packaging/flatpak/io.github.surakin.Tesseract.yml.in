@@ -97,6 +97,10 @@ modules:
       # would clash with it (macro redefined, an error under -Werror), the same
       # reason packaging/arch/PKGBUILD turns it off.
       - -DTESSERACT_ENABLE_HARDENING=OFF
+      # The 3D world view's engine is fetched from its own repository at build time
+      # (cmake/Engine.cmake), which this offline build cannot do: leave it out until the
+      # engine is staged here as a pinned source.
+      - -DTESSERACT_WITH_ENGINE=OFF
       # tests/ unconditionally FetchContents Catch2 from GitHub at configure
       # time and packaging never runs ctest anyway (see
       # packaging/arch/aur/README.md) — skip it entirely for this offline build.

@@ -173,6 +173,14 @@ impl SfuSet {
         }
     }
 
+    /// Re-emit every shown participant so the UI sees changed capabilities.
+    pub fn refresh_participants(&self) {
+        self.primary.refresh_participants();
+        for remote in self.remotes.lock().values() {
+            remote.room.refresh_participants();
+        }
+    }
+
     /// Connect to newly needed SFUs and drop the ones nobody publishes on.
     pub async fn reconcile(&self, desired: &BTreeSet<String>) {
         let (to_connect, to_drop) = {

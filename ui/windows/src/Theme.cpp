@@ -3,9 +3,11 @@
 #include "tk/canvas_d2d.h"
 #include "tk/canvas.h"
 
+#include "tesseract/win32/windows_enable.h"
 #include <commctrl.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <algorithm>
 #include <string_view>

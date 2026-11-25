@@ -151,6 +151,8 @@ if(WAYLAND_CLIENT_LIB AND Qt6GuiPrivate_FOUND)
     set_target_properties(tesseract_xdg_protocol PROPERTIES
         AUTOMOC OFF AUTOUIC OFF AUTORCC OFF)
     target_compile_definitions(tesseract_qt PRIVATE HAVE_XDG_ACTIVATION)
+    # Mouse capture in the 3D view also needs the shared Wayland pointer lock (tesseract_platform).
+    target_compile_definitions(tesseract_qt PRIVATE HAVE_POINTER_LOCK)
     target_link_libraries(tesseract_qt PRIVATE
         tesseract_xdg_protocol "${WAYLAND_CLIENT_LIB}"
         Qt6::GuiPrivate)

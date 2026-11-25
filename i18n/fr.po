@@ -7708,3 +7708,234 @@ msgstr "Absent(e), vu(e) {0}"
 
 msgid "Owner"
 msgstr "Propriétaire"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D engine could not be loaded."
+msgstr "Le moteur 3D n’a pas pu être chargé."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "This 3D engine cannot draw off-screen."
+msgstr "Ce moteur 3D ne peut pas dessiner hors écran."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "No graphics device is available for the 3D view."
+msgstr "Aucun périphérique graphique n’est disponible pour la vue 3D."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D world could not be loaded."
+msgstr "Le monde 3D n’a pas pu être chargé."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D scene could not be built."
+msgstr "La scène 3D n’a pas pu être construite."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Starting the 3D view…"
+msgstr "Démarrage de la vue 3D…"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "World"
+msgstr "Monde"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk forward"
+msgstr "Avancer"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk back"
+msgstr "Reculer"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn left"
+msgstr "Tourner à gauche"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn right"
+msgstr "Tourner à droite"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe left"
+msgstr "Se déplacer latéralement à gauche"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe right"
+msgstr "Se déplacer latéralement à droite"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Look around"
+msgstr "Regarder autour de soi"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Drag"
+msgstr "Glisser"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the 3D world"
+msgstr "Afficher le monde 3D"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the call grid"
+msgstr "Afficher la grille de l'appel"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Click to look around and walk. Esc or Left Ctrl gives the mouse back."
+msgstr "Cliquez pour regarder autour de vous et marcher. Échap ou Ctrl gauche rend la souris."
+
+msgid "\"{0}\" already exists in that folder. Choose another folder or rename it."
+msgstr "« {0} » existe déjà dans ce dossier. Choisissez un autre dossier ou renommez-le."
+
+msgid "A shortcut or symbolic link cannot be imported; choose the folder or zip itself."
+msgstr "Un raccourci ou un lien symbolique ne peut pas être importé ; choisissez le dossier ou le zip lui-même."
+
+msgid "Always run this world"
+msgstr "Toujours exécuter ce monde"
+
+msgid "An unexpected error occurred."
+msgstr "Une erreur inattendue s’est produite."
+
+msgid "Choose a world folder"
+msgstr "Choisissez un dossier de monde"
+
+msgid "Choose a world folder or a .zip file."
+msgstr "Choisissez un dossier de monde ou un fichier .zip."
+
+msgid "Choose a world zip"
+msgstr "Choisissez un zip de monde"
+
+msgid "Choose where to save the world"
+msgstr "Choisissez où enregistrer le monde"
+
+msgid "Could not download the world: {0}"
+msgstr "Impossible de télécharger le monde : {0}"
+
+msgid "Could not publish the world: {0}"
+msgstr "Impossible de publier le monde : {0}"
+
+msgid "Could not read the room's world: {0}"
+msgstr "Impossible de lire le monde du salon : {0}"
+
+msgid "Don't run"
+msgstr "Ne pas exécuter"
+
+msgid "Exporting the world…"
+msgstr "Exportation du monde…"
+
+msgid "Hide world actions"
+msgstr "Masquer les actions du monde"
+
+msgid "Import folder"
+msgstr "Importer un dossier"
+
+msgid "Import zip"
+msgstr "Importer un zip"
+
+msgid "Importing the world…"
+msgstr "Importation du monde…"
+
+msgid "Loading the world…"
+msgstr "Chargement du monde…"
+
+msgid "Reload"
+msgstr "Recharger"
+
+msgid "Run once"
+msgstr "Exécuter une fois"
+
+msgid "Run this room's world?"
+msgstr "Exécuter le monde de ce salon ?"
+
+msgid "Show or hide the world's buttons"
+msgstr "Afficher ou masquer les boutons du monde"
+
+msgid "Show world actions"
+msgstr "Afficher les actions du monde"
+
+msgid "That folder or file cannot be read."
+msgstr "Ce dossier ou ce fichier ne peut pas être lu."
+
+msgid "The built-in world could not be found."
+msgstr "Le monde intégré est introuvable."
+
+msgid "The built-in world is missing {0}."
+msgstr "Le monde intégré ne contient pas {0}."
+
+msgid "The built-in world is not valid."
+msgstr "Le monde intégré n’est pas valide."
+
+msgid "The call has ended."
+msgstr "L’appel est terminé."
+
+msgid "The chosen folder cannot be written to."
+msgstr "Impossible d’écrire dans le dossier choisi."
+
+msgid "The name of that folder cannot be used."
+msgstr "Le nom de ce dossier ne peut pas être utilisé."
+
+msgid "The name of that folder or file cannot be used."
+msgstr "Le nom de ce dossier ou de ce fichier ne peut pas être utilisé."
+
+msgid "The room's world is not valid."
+msgstr "Le monde du salon n’est pas valide."
+
+msgid "The world changed."
+msgstr "Le monde a changé."
+
+msgid "The world changed. Reload"
+msgstr "Le monde a changé. Recharger"
+
+msgid "The world changed: \"{0}\" by {1}."
+msgstr "Le monde a changé : « {0} » par {1}."
+
+msgid "The world could not be exported: {0}"
+msgstr "Impossible d’exporter le monde : {0}"
+
+msgid "The world could not be imported: {0}"
+msgstr "Impossible d’importer le monde : {0}"
+
+msgid "The world could not be transferred"
+msgstr "Impossible de transférer le monde"
+
+msgid "The world is not valid: {0}"
+msgstr "Le monde n’est pas valide : {0}"
+
+msgid "The world was not run."
+msgstr "Le monde n’a pas été exécuté."
+
+msgid "The world was published to this room."
+msgstr "Le monde a été publié dans ce salon."
+
+msgid "The world was saved to {0}."
+msgstr "Le monde a été enregistré dans {0}."
+
+msgid "There is no temporary folder to check the world in."
+msgstr "Il n’y a pas de dossier temporaire pour vérifier le monde."
+
+msgid "This folder is not a valid world: {0}"
+msgstr "Ce dossier n’est pas un monde valide : {0}"
+
+msgid "This is not a valid world: {0}"
+msgstr "Ceci n’est pas un monde valide : {0}"
+
+msgid "This world is too large."
+msgstr "Ce monde est trop volumineux."
+
+msgid "This world needs a newer Tesseract."
+msgstr "Ce monde nécessite une version plus récente de Tesseract."
+
+msgid "Waiting for your answer in the main window"
+msgstr "En attente de votre réponse dans la fenêtre principale"
+
+msgid "World actions"
+msgstr "Actions du monde"
+
+msgid "World exported"
+msgstr "Monde exporté"
+
+msgid "World imported"
+msgstr "Monde importé"
+
+msgid "{0} published the world \"{1}\" (id {2}) for this room. It contains scripts that will run on your computer. Run it only if you trust {0}."
+msgstr "{0} a publié le monde « {1} » (id {2}) pour ce salon. Il contient des scripts qui s’exécuteront sur votre ordinateur. Ne l’exécutez que si vous faites confiance à {0}."
+
+msgid "…"
+msgstr "…"

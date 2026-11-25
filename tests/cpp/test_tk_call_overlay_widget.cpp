@@ -16,9 +16,11 @@ namespace
 {
 
 tesseract::RtcParticipantInfo cow_part(const std::string& pid, const std::string& uid,
-                                       bool amute = false, bool vmute = false, bool screen = false)
+                                       bool amute = false, bool vmute = false, bool screen = false,
+                                       bool local = false)
 {
     tesseract::RtcParticipantInfo p;
+    p.is_local = local;
     p.participant_id = pid;
     p.user_id = uid;
     p.is_audio_muted = amute;
@@ -310,3 +312,195 @@ TEST_CASE("CallOverlayWidget announces joins/leaves only after the roster "
     s.ov->set_mode(CallOverlayWidget::Mode::Docked);
     CHECK(s.ov->expand_button_visible_for_test());
 }
+
+// ── The Grid / World toggle (needs the engine build) ────────────────────────
+
+#if TESSERACT_WITH_ENGINE
+namespace
+{
+using Mode = CallOverlayWidget::Mode;
+
+int shown_tiles(CowStage& s)
+{
+    int n = 0;
+    for (auto* t : vt::find_all<tesseract::views::ParticipantTile>(*s.ov))
+    {
+        n += t->visible() ? 1 : 0;
+    }
+    return n;
+}
+} // namespace
+
+TEST_CASE("CallOverlayWidget world toggle shows only when available and in a large mode",
+          "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->update_participants({cow_part("p1", "@me:x")});
+    for (Mode m : {Mode::Docked, Mode::DockedExpanded, Mode::Floating, Mode::Popout})
+    {
+        s.ov->set_mode(m);
+        s.run();
+        CHECK_FALSE(s.ov->world_button_visible_for_test()); // not available
+    }
+
+    s.ov->set_world_available(true);
+    for (Mode m : {Mode::Docked, Mode::Floating})
+    {
+        s.ov->set_mode(m);
+        s.run();
+        CHECK_FALSE(s.ov->world_button_visible_for_test());
+    }
+    for (Mode m : {Mode::DockedExpanded, Mode::Popout})
+    {
+        s.ov->set_mode(m);
+        s.run();
+        CHECK(s.ov->world_button_visible_for_test());
+    }
+}
+
+TEST_CASE("CallOverlayWidget world toggle swaps the grid for the world and keeps the self tile",
+          "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->update_participants({cow_part("p1", "@me:x", false, false, false, true),
+                               cow_part("p2", "@bob:x"), cow_part("p3", "@eve:x")});
+    s.ov->set_world_available(true);
+    s.ov->set_mode(Mode::DockedExpanded);
+    s.run();
+    CHECK_FALSE(s.ov->world_shown());
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+    CHECK(shown_tiles(s) == 3);
+
+    s.ov->click_world_button_for_test();
+    s.run();
+    CHECK(s.ov->world_shown());
+    CHECK(s.ov->world_view_active_for_test());
+    CHECK(shown_tiles(s) == 1); // only the self tile
+    const auto self = s.ov->self_tile_bounds_for_test();
+    CHECK(self.w > 0);
+    CHECK(self.x + self.w <= 640.0f); // inside the view, in the top-right corner
+    CHECK(self.x > 320.0f);
+
+    // Collapsing to a small mode stops the world and brings the grid back; the choice is kept.
+    s.ov->set_mode(Mode::Docked);
+    s.run();
+    CHECK(s.ov->world_shown());
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+    CHECK(shown_tiles(s) == 3);
+    s.ov->set_mode(Mode::Popout);
+    s.run();
+    CHECK(s.ov->world_view_active_for_test());
+
+    s.ov->click_world_button_for_test(); // back to the grid
+    s.run();
+    CHECK_FALSE(s.ov->world_shown());
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+    CHECK(shown_tiles(s) == 3);
+}
+
+TEST_CASE("CallOverlayWidget world choice survives snapshot and restore",
+          "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->set_world_available(true);
+    s.ov->set_mode(Mode::Popout);
+    s.ov->click_world_button_for_test();
+    const auto state = s.ov->snapshot();
+    CHECK(state.world_shown);
+
+    CowStage t;
+    t.ov->set_world_available(true);
+    t.ov->set_mode(Mode::Popout);
+    t.ov->restore(state);
+    CHECK(t.ov->world_shown());
+    CHECK(t.ov->world_view_active_for_test());
+    CHECK_FALSE(CallOverlayWidget::OverlayState{}.world_shown);
+}
+
+TEST_CASE("CallOverlayWidget restore focuses the world view so WASD works without a click",
+          "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->set_world_available(true);
+    s.ov->set_mode(Mode::Popout);
+    s.ov->click_world_button_for_test();
+    const auto state = s.ov->snapshot();
+
+    CowStage t;
+    t.ov->set_world_available(true);
+    t.ov->set_mode(Mode::Popout);
+    t.ov->restore(state);
+    t.run();
+    CHECK(t.ov->world_view_focused_for_test());
+
+    // A restore with the grid shown takes no focus.
+    CowStage u;
+    u.ov->set_world_available(true);
+    u.ov->set_mode(Mode::Popout);
+    u.ov->restore(CallOverlayWidget::OverlayState{});
+    u.run();
+    CHECK_FALSE(u.ov->world_view_focused_for_test());
+}
+
+TEST_CASE("CallOverlayWidget forwards video frames to the world while it is active",
+          "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->update_participants({cow_part("p1", "@me:x"), cow_part("p2", "@bob:x")});
+    s.ov->set_world_available(true);
+    s.ov->set_mode(Mode::DockedExpanded);
+    auto frame = std::make_shared<std::vector<std::uint8_t>>(4 * 4 * 4, 100);
+
+    s.ov->on_video_frame("p2", 4, 4, frame);
+    CHECK(s.ov->world_frames_for_test() == 0); // grid shown: tiles only
+    s.ov->click_world_button_for_test();
+    s.ov->on_video_frame("p2", 4, 4, frame);
+    CHECK(s.ov->world_frames_for_test() == 1);
+}
+
+TEST_CASE("CallOverlayWidget world keeps only this device's tile, not the account's others",
+          "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->update_participants({cow_part("p1", "@me:x", false, false, false, true),
+                               cow_part("p1b", "@me:x"), cow_part("p2", "@bob:x")});
+    s.ov->set_world_available(true);
+    s.ov->set_mode(Mode::DockedExpanded);
+    s.ov->click_world_button_for_test();
+    s.run();
+    CHECK(shown_tiles(s) == 1);
+    CHECK(s.ov->self_tile_bounds_for_test().w > 0);
+    for (auto* t : vt::find_all<tesseract::views::ParticipantTile>(*s.ov))
+    {
+        CHECK(t->visible() == (t->bounds().w > 0));
+    }
+
+    // No local participant in the list: nobody is "self", every tile is hidden.
+    s.ov->update_participants({cow_part("p1b", "@me:x"), cow_part("p2", "@bob:x")});
+    s.run();
+    CHECK(shown_tiles(s) == 0);
+    CHECK(s.ov->self_tile_bounds_for_test().w == 0);
+}
+
+TEST_CASE("CallOverlayWidget parked world never restarts", "[tk][view][call_overlay][world]")
+{
+    CowStage s;
+    s.ov->set_world_available(true);
+    s.ov->set_mode(Mode::DockedExpanded);
+    s.ov->click_world_button_for_test();
+    CHECK(s.ov->world_view_active_for_test());
+    s.ov->deactivate_world();
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+
+    s.ov->set_world_available(true); // each of these syncs with World shown and available
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+    s.ov->set_mode(Mode::Popout);
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+    s.run();
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+    auto st = s.ov->snapshot();
+    s.ov->restore(st);
+    CHECK(s.ov->world_shown());
+    CHECK_FALSE(s.ov->world_view_active_for_test());
+}
+#endif

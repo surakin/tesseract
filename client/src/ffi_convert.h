@@ -97,6 +97,8 @@ inline RtcParticipantInfo from_ffi(const tesseract_ffi::RtcParticipantInfo& p)
         p.is_audio_muted,
         p.is_video_muted,
         p.is_screen_sharing,
+        p.world_capable,
+        p.is_local,
     };
 }
 

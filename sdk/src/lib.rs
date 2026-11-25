@@ -18,6 +18,7 @@ mod highlight;
 mod html_sanitize;
 mod image_packs;
 mod jxl;
+mod log_rate_limit;
 mod maps_link;
 mod markdown;
 mod matrix_uri;
@@ -46,6 +47,7 @@ mod url_preview;
 mod waveform;
 mod waveform_store;
 mod webp_anim;
+mod world_bundle;
 
 // Production cxx bridge — skipped during `cargo test` to avoid needing C++ linked.
 // Tests use the pure-Rust stub module below instead.
@@ -70,6 +72,9 @@ pub mod ffi {
         pub device_id: String,
         pub is_audio_muted: bool,
         pub is_video_muted: bool,
+        pub is_screen_sharing: bool,
+        pub world_capable: bool,
+        pub is_local: bool,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -808,6 +813,7 @@ pub mod ffi {
         }
         pub fn on_threads_updated(&self, _room_id: &str) {}
         pub fn on_bot_commands_updated(&self, _room_id: &str) {}
+        pub fn on_room_world_changed(&self, _room_id: &str) {}
         pub fn on_notification(
             &self,
             _room_id: &str,
@@ -842,6 +848,8 @@ pub mod ffi {
             _height: u32,
             _rgba: &[u8],
         ) {
+        }
+        pub fn on_rtc_world_frame(&self, _session_id: u64, _participant_id: &str, _payload: &[u8]) {
         }
         pub fn on_rtc_audio_frame(
             &self,

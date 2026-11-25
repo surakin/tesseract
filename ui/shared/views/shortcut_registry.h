@@ -81,10 +81,19 @@ enum class ShortcutId
     VideoRestart,
     MediaPrev,
     MediaNext,
+    // 3D call world
+    WorldForward,
+    WorldBack,
+    WorldStrafeLeft,
+    WorldStrafeRight,
+    WorldTurnLeft,
+    WorldTurnRight,
+    WorldLook,
+    WorldBar,
 };
 
-// Number of ShortcutId values (MediaNext is the last).
-inline constexpr std::size_t kShortcutIdCount = static_cast<std::size_t>(ShortcutId::MediaNext) + 1;
+// Number of ShortcutId values (WorldBar is the last).
+inline constexpr std::size_t kShortcutIdCount = static_cast<std::size_t>(ShortcutId::WorldBar) + 1;
 
 enum class ShortcutGroup
 {
@@ -95,6 +104,7 @@ enum class ShortcutGroup
     Pickers,
     DatePicker,
     MediaViewers,
+    World,
 };
 
 enum class ShortcutScope
@@ -117,6 +127,10 @@ struct ShortcutDef
     // Untranslated (tk::N_-marked); show through tk::tr.
     const char* description;
     std::vector<tk::KeyChord> chords;
+    // Untranslated (tk::N_-marked) text shown instead of the chords, for entries that are not a
+    // key press (a mouse drag, a lone Shift). Such entries carry a placeholder chord with key
+    // Unknown, which never matches an event.
+    const char* label = nullptr;
 };
 
 // All shortcuts for `platform`, in display order (grouped). Platform
@@ -132,6 +146,10 @@ bool matches(ShortcutId id, const tk::KeyEvent& event);
 
 // Translated heading for a group.
 std::string group_title(ShortcutGroup group);
+
+// What the overlay shows for `def`: its translated label, or each chord's label.
+std::vector<std::string> shortcut_key_labels(const ShortcutDef& def,
+                                             tk::Platform platform = tk::current_platform());
 
 // Every chord of `id`, labelled and joined with " / ".
 std::string shortcut_label(ShortcutId id, tk::Platform platform = tk::current_platform());

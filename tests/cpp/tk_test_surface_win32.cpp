@@ -1,11 +1,15 @@
 #include "tk_test_surface.h"
 #include "tk/canvas_d2d.h"
 
-#include <BetterText/BetterText.h>
+#include "tesseract/win32/windows_enable.h"
+#include <BetterText/BetterText.h> // includes <windows.h> itself
+#include "tesseract/win32/windows_disable.h"
+#include "tesseract/win32/windows_enable.h"
 #include <d2d1.h>
 #include <d2d1_1.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <algorithm>
 #include <cstdint>

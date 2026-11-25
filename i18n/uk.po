@@ -8305,3 +8305,234 @@ msgstr "Відійшов, останній раз {0}"
 
 msgid "Owner"
 msgstr "Власник"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D engine could not be loaded."
+msgstr "Не вдалося завантажити 3D-рушій."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "This 3D engine cannot draw off-screen."
+msgstr "Цей 3D-рушій не вміє малювати поза екраном."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "No graphics device is available for the 3D view."
+msgstr "Для 3D-вигляду немає доступного графічного пристрою."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D world could not be loaded."
+msgstr "Не вдалося завантажити 3D-світ."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "The 3D scene could not be built."
+msgstr "Не вдалося побудувати 3D-сцену."
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Starting the 3D view…"
+msgstr "Запуск 3D-вигляду…"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "World"
+msgstr "Світ"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk forward"
+msgstr "Іти вперед"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Walk back"
+msgstr "Іти назад"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn left"
+msgstr "Повернути ліворуч"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Turn right"
+msgstr "Повернути праворуч"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe left"
+msgstr "Крок убік ліворуч"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Strafe right"
+msgstr "Крок убік праворуч"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Look around"
+msgstr "Роззирнутися"
+
+#: ui/shared/views/shortcut_registry.cpp
+msgid "Drag"
+msgstr "Перетягування"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the 3D world"
+msgstr "Показати 3D-світ"
+
+#: ui/shared/views/CallOverlayWidget.cpp
+msgid "Show the call grid"
+msgstr "Показати сітку дзвінка"
+
+#: ui/shared/views/world/WorldView.cpp
+msgid "Click to look around and walk. Esc or Left Ctrl gives the mouse back."
+msgstr "Клацніть, щоб роззирнутися та ходити. Esc або лівий Ctrl повертає мишу."
+
+msgid "\"{0}\" already exists in that folder. Choose another folder or rename it."
+msgstr "«{0}» уже існує в цій теці. Виберіть іншу теку або перейменуйте його."
+
+msgid "A shortcut or symbolic link cannot be imported; choose the folder or zip itself."
+msgstr "Ярлик або символічне посилання імпортувати не можна; виберіть саму теку або zip-архів."
+
+msgid "Always run this world"
+msgstr "Завжди запускати цей світ"
+
+msgid "An unexpected error occurred."
+msgstr "Сталася неочікувана помилка."
+
+msgid "Choose a world folder"
+msgstr "Виберіть теку світу"
+
+msgid "Choose a world folder or a .zip file."
+msgstr "Виберіть теку світу або файл .zip."
+
+msgid "Choose a world zip"
+msgstr "Виберіть zip-архів світу"
+
+msgid "Choose where to save the world"
+msgstr "Виберіть, де зберегти світ"
+
+msgid "Could not download the world: {0}"
+msgstr "Не вдалося завантажити світ: {0}"
+
+msgid "Could not publish the world: {0}"
+msgstr "Не вдалося опублікувати світ: {0}"
+
+msgid "Could not read the room's world: {0}"
+msgstr "Не вдалося прочитати світ кімнати: {0}"
+
+msgid "Don't run"
+msgstr "Не запускати"
+
+msgid "Exporting the world…"
+msgstr "Експорт світу…"
+
+msgid "Hide world actions"
+msgstr "Сховати дії світу"
+
+msgid "Import folder"
+msgstr "Імпортувати теку"
+
+msgid "Import zip"
+msgstr "Імпортувати zip"
+
+msgid "Importing the world…"
+msgstr "Імпорт світу…"
+
+msgid "Loading the world…"
+msgstr "Завантаження світу…"
+
+msgid "Reload"
+msgstr "Перезавантажити"
+
+msgid "Run once"
+msgstr "Запустити один раз"
+
+msgid "Run this room's world?"
+msgstr "Запустити світ цієї кімнати?"
+
+msgid "Show or hide the world's buttons"
+msgstr "Показати або сховати кнопки світу"
+
+msgid "Show world actions"
+msgstr "Показати дії світу"
+
+msgid "That folder or file cannot be read."
+msgstr "Цю теку або файл неможливо прочитати."
+
+msgid "The built-in world could not be found."
+msgstr "Не вдалося знайти вбудований світ."
+
+msgid "The built-in world is missing {0}."
+msgstr "У вбудованому світі бракує {0}."
+
+msgid "The built-in world is not valid."
+msgstr "Вбудований світ недійсний."
+
+msgid "The call has ended."
+msgstr "Дзвінок завершено."
+
+msgid "The chosen folder cannot be written to."
+msgstr "У вибрану теку неможливо записувати."
+
+msgid "The name of that folder cannot be used."
+msgstr "Назву цієї теки не можна використати."
+
+msgid "The name of that folder or file cannot be used."
+msgstr "Назву цієї теки або файлу не можна використати."
+
+msgid "The room's world is not valid."
+msgstr "Світ кімнати недійсний."
+
+msgid "The world changed."
+msgstr "Світ змінився."
+
+msgid "The world changed. Reload"
+msgstr "Світ змінився. Перезавантажити"
+
+msgid "The world changed: \"{0}\" by {1}."
+msgstr "Світ змінився: «{0}» від {1}."
+
+msgid "The world could not be exported: {0}"
+msgstr "Не вдалося експортувати світ: {0}"
+
+msgid "The world could not be imported: {0}"
+msgstr "Не вдалося імпортувати світ: {0}"
+
+msgid "The world could not be transferred"
+msgstr "Не вдалося передати світ"
+
+msgid "The world is not valid: {0}"
+msgstr "Світ недійсний: {0}"
+
+msgid "The world was not run."
+msgstr "Світ не було запущено."
+
+msgid "The world was published to this room."
+msgstr "Світ опубліковано в цій кімнаті."
+
+msgid "The world was saved to {0}."
+msgstr "Світ збережено в {0}."
+
+msgid "There is no temporary folder to check the world in."
+msgstr "Немає тимчасової теки для перевірки світу."
+
+msgid "This folder is not a valid world: {0}"
+msgstr "Ця тека не є дійсним світом: {0}"
+
+msgid "This is not a valid world: {0}"
+msgstr "Це не дійсний світ: {0}"
+
+msgid "This world is too large."
+msgstr "Цей світ завеликий."
+
+msgid "This world needs a newer Tesseract."
+msgstr "Цей світ потребує новішої версії Tesseract."
+
+msgid "Waiting for your answer in the main window"
+msgstr "Очікування вашої відповіді в головному вікні"
+
+msgid "World actions"
+msgstr "Дії світу"
+
+msgid "World exported"
+msgstr "Світ експортовано"
+
+msgid "World imported"
+msgstr "Світ імпортовано"
+
+msgid "{0} published the world \"{1}\" (id {2}) for this room. It contains scripts that will run on your computer. Run it only if you trust {0}."
+msgstr "{0} опублікував(-ла) світ «{1}» (id {2}) для цієї кімнати. Він містить скрипти, які виконуватимуться на вашому комп’ютері. Запускайте його лише якщо довіряєте {0}."
+
+msgid "…"
+msgstr "…"

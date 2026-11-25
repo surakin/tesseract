@@ -3,8 +3,10 @@
 
 #include "tk/i18n.h"
 
+#include "tesseract/win32/windows_enable.h"
 #include <shellapi.h>
 #include <ole2.h> // IStream + DEFINE_GUID — required before gdiplus.h
+#include "tesseract/win32/windows_disable.h"
 #include <algorithm>
 #include <cwchar>
 #include <utility>
@@ -15,7 +17,9 @@
 // Mirrors the trick in MainWindow.h.
 using std::max; // NOLINT(misc-unused-using-decls)
 using std::min; // NOLINT(misc-unused-using-decls)
+#include "tesseract/win32/windows_enable.h"
 #include <gdiplus.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace win32
 {

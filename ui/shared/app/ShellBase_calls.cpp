@@ -1,6 +1,18 @@
 #include "app/ShellBase.h"
 #include "views/MainAppWidget.h"
+#if TESSERACT_WITH_ENGINE
+#include "views/ConfirmDialog.h"
+#include "views/WorldConsentDialog.h"
+#include "views/world/EngineScene.h"
+#include "views/BusyDialog.h"
+#include "views/world/WorldLoader.h"
+#include "views/world/world_transfer.h"
+#include "views/world/world_room.h"
+#include <tesseract/world_trust.h>
+#endif
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <unordered_set>
 #ifndef _WIN32
 #include <fcntl.h>
@@ -14,6 +26,8 @@ namespace
 // The slot label the legacy ring (a plain MSC4075 notification) arrives under;
 // MatrixRTC invites carry their real slot id.
 constexpr const char* kLegacyRingSlot = "call#default";
+// How often the call offers its pose frame to the transport (the world's scripts decide if one is due).
+constexpr int kWorldTickMs = 50;
 } // namespace
 
 std::vector<std::string>
@@ -438,6 +452,21 @@ void ShellBase::handle_rtc_video_frame_ui_(std::uint64_t session_id,
     }
 }
 
+void ShellBase::handle_rtc_world_frame_ui_(std::uint64_t session_id,
+                                           const std::string& participant_id,
+                                           std::vector<std::uint8_t> payload)
+{
+    // A frame of the previous call, or our own echo, is not for this call's world.
+    if (!is_current_call_event_(session_id) || participant_id == world_local_id_)
+    {
+        return;
+    }
+    if (auto* ov = active_call_overlay_())
+    {
+        ov->on_world_frame(participant_id, payload);
+    }
+}
+
 void ShellBase::handle_rtc_screen_frame_ui_(std::uint64_t session_id,
                                             const std::string& participant_id, std::uint32_t width,
                                             std::uint32_t height,
@@ -831,7 +860,9 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
         return;
     }
 
-    auto result = client_->rtc_start_call(room_id, slot_id, audio_only);
+    // Advertised in the membership this call publishes (the probe may have finished after login).
+    client_->rtc_set_world_available(world_available_);
+    auto result = rtc_start_call_(room_id, slot_id, audio_only);
     if (!result.ok)
     {
         show_status_message_(tk::trf(tk::tr("Call failed: {0}"), {result.message}));
@@ -842,6 +873,9 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     // A failure to set it up arrives as a session-ended event.
     call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id, result.session_id);
     call_account_ = active_account_;
+    clear_world_();
+    call_world_offered_ = world_available_;
+    start_world_send_tick_();
     {
         // Frames may arrive as soon as the id is set; build the output first, then publish both.
         auto output = make_call_audio_output_();
@@ -1104,6 +1138,9 @@ void ShellBase::end_call(bool wait_for_leave)
         capture_->cancel();
     }
     call_audio_session_id_.store(0);
+    stop_world_send_tick_();
+    cancel_world_load_(); // before the hang-up: nothing of the call's world outlives its decision
+    deactivate_world_();  // the popout's overlay is deleted later: stop its engine now
     {
         // Release the playback stream now: the session-ended event returns early
         // once call_session_ is reset, so it would hold the device until the next call.
@@ -1122,6 +1159,7 @@ void ShellBase::end_call(bool wait_for_leave)
         }
         call_session_.reset();
     }
+    clear_world_();
     if (call_window_)
     {
         call_window_->on_window_closed = nullptr;
@@ -1153,6 +1191,549 @@ bool ShellBase::is_current_call_event_(std::uint64_t session_id) const
     return !account || account->user_id == event_account_;
 }
 
+RtcStartResult ShellBase::rtc_start_call_(const std::string& room_id, const std::string& slot_id,
+                                          bool audio_only)
+{
+    return client_->rtc_start_call(room_id, slot_id, audio_only);
+}
+
+void ShellBase::clear_world_()
+{
+    call_world_offered_ = false;
+    world_local_id_.clear();
+    cancel_world_load_();
+}
+
+void ShellBase::start_world_send_tick_()
+{
+    if (!call_world_offered_ || world_tick_running_)
+    {
+        return;
+    }
+    world_tick_running_ = true;
+    const std::uint64_t gen = ++world_tick_gen_;
+    post_to_ui_after_(kWorldTickMs, guarded(
+                                        [this, gen]
+                                        {
+                                            world_send_tick_(gen);
+                                        }));
+}
+
+void ShellBase::stop_world_send_tick_()
+{
+    world_tick_running_ = false;
+    ++world_tick_gen_; // the pending tick finds itself stale
+}
+
+void ShellBase::world_send_tick_(std::uint64_t gen)
+{
+    if (gen != world_tick_gen_ || !world_tick_running_ || !call_session_)
+    {
+        return;
+    }
+    if (client_)
+    {
+        if (auto* ov = active_call_overlay_())
+        {
+            for (const auto& frame : ov->take_world_frames())
+            {
+                client_->rtc_send_world_frame(frame.data(), frame.size());
+            }
+        }
+    }
+    post_to_ui_after_(kWorldTickMs, guarded(
+                                        [this, gen]
+                                        {
+                                            world_send_tick_(gen);
+                                        }));
+}
+
+void ShellBase::start_world_probe_()
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_probe_started_)
+    {
+        return;
+    }
+    world_probe_started_ = true;
+    run_async_("world/probe",
+               [this]
+               {
+                   // World directories not used for a month go (a bundle is cheap to fetch again).
+                   views::world::prune_world_bundles(tesseract::cache_dir() / "world-bundles",
+                                                     views::world::kBundleMaxAge);
+                   const auto failure = views::world::EngineScene::probe({});
+                   post_to_ui_alive_(
+                       [this, failure]
+                       {
+                           world_available_ = failure == views::world::EngineScene::Failure::None;
+                           std::fprintf(stderr, "[world] 3D engine %s (probe result %d)\n",
+                                        world_available_ ? "available" : "not available",
+                                        static_cast<int>(failure));
+                           if (client_)
+                           {
+                               client_->rtc_set_world_available(world_available_);
+                           }
+                       });
+               });
+#endif
+}
+
+void ShellBase::handle_room_world_changed_ui_(std::string room_id)
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_loader_ && call_session_ && call_session_->room_id() == room_id)
+    {
+        world_loader_->on_changed(room_id);
+    }
+#else
+    (void)room_id;
+#endif
+}
+
+void ShellBase::cancel_world_load_()
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_loader_)
+    {
+        world_loader_->cancel(); // first: the dismissal below then changes nothing
+    }
+    const bool question_open = world_consent_token_ != 0;
+    world_consent_token_ = 0;
+    if (question_open && main_app_ && main_app_->confirm_dialog())
+    {
+        main_app_->confirm_dialog()->close();
+    }
+    if (auto* ov = active_call_overlay_())
+    {
+        ov->set_world_question_pending(false);
+    }
+#endif
+}
+
+void ShellBase::world_wanted_()
+{
+#if TESSERACT_WITH_ENGINE
+    if (!call_session_ || !client_)
+    {
+        return;
+    }
+    ensure_world_loader_();
+    refresh_world_actions_(); // the power levels may have changed since the call began
+    world_loader_->request(call_session_->room_id());
+#endif
+}
+
+void ShellBase::ensure_world_loader_()
+{
+#if TESSERACT_WITH_ENGINE
+    if (world_loader_)
+    {
+        return;
+    }
+    world_trust_ = std::make_shared<WorldTrustStore>(WorldTrustStore::default_path());
+
+    views::world::WorldLoader::Services s;
+    // The account of the call, captured on the UI thread; the worker locks it for the length of
+    // one call only, so a logout is never held up and never used after.
+    s.bind = [this]
+    {
+        if (world_seams_for_test_)
+        {
+            views::world::WorldLoader::Ops o;
+            o.alive = []
+            {
+                return true;
+            };
+            o.room_world = world_seams_for_test_->room_world;
+            o.download = world_seams_for_test_->download;
+            o.sender_verified = world_seams_for_test_->sender_verified;
+            return o;
+        }
+        const std::weak_ptr<AccountSession> w = call_account_;
+        views::world::WorldLoader::Ops o;
+        o.alive = [w]
+        {
+            return !w.expired();
+        };
+        o.room_world = [w](const std::string& room_id)
+        {
+            if (auto a = w.lock(); a && a->client)
+            {
+                return a->client->room_world(room_id);
+            }
+            RoomWorldRead r;
+            r.kind = RoomWorldRead::Kind::Error;
+            r.error = "not logged in";
+            return r;
+        };
+        o.download = [w](const RoomWorld& world, std::vector<std::uint8_t>& out)
+        {
+            if (auto a = w.lock(); a && a->client)
+            {
+                return a->client->download_world_bundle(world, out);
+            }
+            return Result{false, "not logged in"};
+        };
+        o.sender_verified = [w](const std::string& user_id)
+        {
+            auto a = w.lock();
+            return a && a->client && user_trust_is_verified(a->client->get_user_trust(user_id));
+        };
+        return o;
+    };
+    s.extract = [this](const std::vector<std::uint8_t>& bytes, const std::string& dest)
+    {
+        if (world_seams_for_test_ && world_seams_for_test_->extract)
+        {
+            return world_seams_for_test_->extract(bytes, dest);
+        }
+        return extract_world_bundle(bytes, dest);
+    };
+    s.run_async = [this](std::function<void()> work, std::function<void()> done)
+    {
+        if (world_seams_for_test_ && world_seams_for_test_->run_async)
+        {
+            world_seams_for_test_->run_async(std::move(work), std::move(done));
+            return;
+        }
+        run_async_("world/load",
+                   [this, work = std::move(work), done = std::move(done)]() mutable
+                   {
+                       work();
+                       post_to_ui_alive_(std::move(done));
+                   });
+    };
+    s.meadow = []
+    {
+        return views::world::room_options();
+    };
+    s.trust = world_trust_.get();
+    s.bundle_root = tesseract::cache_dir() / "world-bundles";
+
+    views::world::WorldLoader::Callbacks cb;
+    cb.load = [this](views::world::EngineScene::Options options)
+    {
+        if (auto* ov = active_call_overlay_())
+        {
+            ov->set_world_options(std::move(options));
+        }
+    };
+    cb.fall_back_to_grid = [this](std::string reason)
+    {
+        if (auto* ov = active_call_overlay_())
+        {
+            ov->fall_back_to_grid();
+        }
+        if (!reason.empty())
+        {
+            // The reason may quote text the bundle chose.
+            on_show_status_message_ui_(views::sanitize_world_text(reason, 200));
+        }
+    };
+    cb.ask =
+        [this](views::WorldConsentRequest request, std::function<void(views::ConsentChoice)> answer)
+    {
+        if (!main_app_ || !main_app_->confirm_dialog())
+        {
+            answer(views::ConsentChoice::DontRun);
+            return;
+        }
+        // The dialog lives in the main window: bring it forward (a pop-out call window has
+        // its own window on top).
+        raise_and_activate_();
+        // Set before open(): it dismisses the question shown before, whose wrapper must find
+        // this token is not its own and leave it alone.
+        const std::uint64_t token = ++world_consent_seq_;
+        world_consent_token_ = token;
+        if (auto* ov = active_call_overlay_())
+        {
+            ov->set_world_question_pending(true);
+        }
+        views::open_world_consent_dialog(
+            *main_app_->confirm_dialog(), request,
+            [this, token, answer = std::move(answer)](views::ConsentChoice c)
+            {
+                if (world_consent_token_ == token)
+                {
+                    world_consent_token_ = 0;
+                    if (auto* ov = active_call_overlay_())
+                    {
+                        ov->set_world_question_pending(false);
+                    }
+                }
+                answer(c);
+            });
+    };
+    cb.show_changed_banner = [this](views::WorldConsentRequest request)
+    {
+        auto* ov = active_call_overlay_();
+        if (!ov)
+        {
+            return;
+        }
+        const std::string name = views::sanitize_world_text(request.name);
+        const std::string sender =
+            views::sanitize_world_text(request.sender, views::kMaxSenderChars);
+        ov->show_world_banner(
+            name.empty() ? tk::tr("The world changed.")
+                         : tk::trf(tk::tr("The world changed: \"{0}\" by {1}."), {name, sender}));
+    };
+    cb.hide_changed_banner = [this]
+    {
+        if (auto* ov = active_call_overlay_())
+        {
+            ov->hide_world_banner();
+        }
+    };
+    world_loader_ = std::make_shared<views::world::WorldLoader>(std::move(s), std::move(cb));
+#endif
+}
+
+void ShellBase::install_world_actions_()
+{
+#if TESSERACT_WITH_ENGINE
+    auto* ov = active_call_overlay_();
+    if (!ov || !call_world_offered_)
+    {
+        return;
+    }
+    ov->set_world_actions({{"import_folder", tk::tr("Import folder"), false},
+                           {"import_zip", tk::tr("Import zip"), false},
+                           {"export", tk::tr("Export"), true}},
+                          [this](const std::string& id)
+                          {
+                              if (id == "import_folder")
+                              {
+                                  world_import_(false);
+                              }
+                              else if (id == "import_zip")
+                              {
+                                  world_import_(true);
+                              }
+                              else if (id == "export")
+                              {
+                                  world_export_();
+                              }
+                          });
+    refresh_world_actions_();
+#endif
+}
+
+void ShellBase::refresh_world_actions_()
+{
+#if TESSERACT_WITH_ENGINE
+    auto* ov = active_call_overlay_();
+    if (!ov || !ov->world_button_bar())
+    {
+        return;
+    }
+    // Import needs the power to set the room's world; Export is open to everyone in the room.
+    bool may_set = false;
+    if (call_session_)
+    {
+        if (world_seams_for_test_ && world_seams_for_test_->can_set_room_world)
+        {
+            may_set = world_seams_for_test_->can_set_room_world(call_session_->room_id());
+        }
+        else if (auto a = call_account_.lock(); a && a->client)
+        {
+            may_set = a->client->can_set_room_world(call_session_->room_id());
+        }
+    }
+    ov->set_world_action_enabled("import_folder", may_set);
+    ov->set_world_action_enabled("import_zip", may_set);
+    ov->set_world_action_enabled("export", true);
+#endif
+}
+
+#if TESSERACT_WITH_ENGINE
+namespace
+{
+// The transfer's client calls on the call's account, locked for one call at a time.
+views::world::TransferOps account_transfer_ops(std::weak_ptr<AccountSession> w)
+{
+    return views::world::client_transfer_ops(
+        [w](const std::function<void(Client&)>& fn)
+        {
+            if (auto a = w.lock(); a && a->client)
+            {
+                fn(*a->client);
+                return true;
+            }
+            return false;
+        });
+}
+} // namespace
+#endif
+
+void ShellBase::world_import_(bool zip)
+{
+#if TESSERACT_WITH_ENGINE
+    if (!call_session_)
+    {
+        return;
+    }
+    const std::string room_id = call_session_->room_id();
+    auto picked = [this, room_id](std::string path)
+    {
+        if (path.empty() || !call_session_ || call_account_.expired())
+        {
+            return; // cancelled, or the call ended while the picker was open
+        }
+        views::world::TransferOps ops = account_transfer_ops(call_account_);
+        // The importer's own world does not ask for their consent.
+        ops.trust_published = [trust = world_trust_](const std::string& hash)
+        {
+            if (trust)
+            {
+                trust->add(hash);
+            }
+        };
+        run_world_transfer_(
+            tk::tr("Importing the world…"),
+            [ops, room_id, path = std::move(path)](std::string& message)
+            {
+                if (views::world::import_world(ops, room_id, path, &message))
+                {
+                    message = tk::tr("The world was published to this room.");
+                    return true;
+                }
+                return false;
+            },
+            tk::tr("World imported"));
+    };
+    if (zip)
+    {
+        pick_open_file_(tk::tr("Choose a world zip"), std::move(picked));
+    }
+    else
+    {
+        pick_folder_(tk::tr("Choose a world folder"), std::move(picked));
+    }
+#else
+    (void)zip;
+#endif
+}
+
+void ShellBase::world_export_()
+{
+#if TESSERACT_WITH_ENGINE
+    if (!call_session_)
+    {
+        return;
+    }
+    const std::string room_id = call_session_->room_id();
+    pick_folder_(tk::tr("Choose where to save the world"),
+                 [this, room_id](std::string dir)
+                 {
+                     if (dir.empty() || !call_session_ || call_account_.expired())
+                     {
+                         return; // cancelled, or the call ended while the picker was open
+                     }
+                     const views::world::TransferOps ops = account_transfer_ops(call_account_);
+                     run_world_transfer_(
+                         tk::tr("Exporting the world…"),
+                         [ops, room_id, dir = std::move(dir)](std::string& message)
+                         {
+                             std::string out;
+                             if (views::world::export_world(ops, room_id, dir, &message, &out))
+                             {
+                                 message = tk::trf(tk::tr("The world was saved to {0}."), {out});
+                                 return true;
+                             }
+                             return false;
+                         },
+                         tk::tr("World exported"));
+                 });
+#endif
+}
+
+void ShellBase::run_world_transfer_(std::string busy_title, std::function<bool(std::string&)> work,
+                                    std::string success_title)
+{
+#if TESSERACT_WITH_ENGINE
+    if (main_app_ && main_app_->busy_dialog())
+    {
+        main_app_->busy_dialog()->open(std::move(busy_title));
+        request_relayout_();
+    }
+    struct Outcome
+    {
+        bool ok = false;
+        std::string message;
+    };
+    auto outcome = std::make_shared<Outcome>();
+    // Whatever `work` does, the busy dialog (which nothing else can dismiss) is closed afterwards.
+    auto body = [work = std::move(work), outcome]
+    {
+        try
+        {
+            outcome->ok = work(outcome->message);
+        }
+        catch (const std::exception& e)
+        {
+            outcome->ok = false;
+            outcome->message = e.what();
+        }
+        catch (...)
+        {
+            outcome->ok = false;
+            outcome->message = tk::tr("An unexpected error occurred.");
+        }
+    };
+    auto finish = [this, outcome, success_title = std::move(success_title)]() mutable
+    {
+        if (main_app_ && main_app_->busy_dialog())
+        {
+            main_app_->busy_dialog()->close();
+            request_relayout_();
+        }
+        if (outcome->ok)
+        {
+            show_message_dialog_(std::move(success_title), std::move(outcome->message), false);
+        }
+        else
+        {
+            show_message_dialog_(tk::tr("The world could not be transferred"),
+                                 std::move(outcome->message), true);
+        }
+    };
+    if (world_seams_for_test_ && world_seams_for_test_->run_async)
+    {
+        world_seams_for_test_->run_async(std::move(body), std::move(finish));
+        return;
+    }
+    run_async_("world/transfer",
+               [this, body = std::move(body), finish = std::move(finish)]() mutable
+               {
+                   body();
+                   post_to_ui_alive_(std::move(finish));
+               });
+#else
+    (void)busy_title;
+    (void)work;
+    (void)success_title;
+#endif
+}
+
+void ShellBase::deactivate_world_()
+{
+    if (auto* ov = active_call_overlay_())
+    {
+        ov->deactivate_world();
+    }
+}
+
+void ShellBase::note_local_participant_(const RtcParticipantInfo& info)
+{
+    // Our own info carries our LiveKit identity (possibly hashed): the world starts here, once.
+    if (info.is_local && world_local_id_.empty())
+    {
+        world_local_id_ = info.participant_id;
+    }
+}
+
 void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id, RtcParticipantInfo info)
 {
     if (!is_current_call_event_(session_id))
@@ -1160,6 +1741,7 @@ void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id, RtcP
         return;
     }
     call_session_->on_participant_joined(info);
+    note_local_participant_(info);
     if (auto* ov = active_call_overlay_())
     {
         ov->update_participants(call_session_->participants());
@@ -1188,6 +1770,7 @@ void ShellBase::handle_rtc_participant_updated_ui_(std::uint64_t session_id,
         return;
     }
     call_session_->on_participant_updated(info);
+    note_local_participant_(info);
     if (auto* ov = active_call_overlay_())
     {
         ov->update_participants(call_session_->participants());
@@ -1250,7 +1833,11 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id, std::stri
         capture_->cancel();
     }
     call_audio_session_id_.store(0);
+    stop_world_send_tick_();
+    cancel_world_load_();
+    deactivate_world_();
     call_session_.reset();
+    clear_world_();
     if (call_window_)
     {
         call_window_->on_window_closed = nullptr;
@@ -1347,10 +1934,16 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         m = views::CallOverlayWidget::Mode::Floating;
     }
 
-    // Snapshot mutable overlay state into the persistent struct before teardown.
+    // Snapshot mutable overlay state into the persistent struct before teardown. The engine is
+    // one per process: the old world view stops before the new overlay can start its own.
     if (auto* ov = active_call_overlay_())
     {
         call_overlay_state_ = ov->snapshot();
+        ov->deactivate_world();
+        if (call_overlay_teardown_hook_)
+        {
+            call_overlay_teardown_hook_(*ov);
+        }
     }
 
     // Tear down whatever is currently active.
@@ -1462,7 +2055,20 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         // Restore all mutable overlay state from the persistent struct.
         // restore() sets local_user_id first so is_self is applied when
         // update_participants() creates/refreshes tiles below.
+        ov->set_world_available(call_world_offered_);
+        ov->on_world_wanted = [this]
+        {
+            world_wanted_();
+        };
+        ov->on_world_reload = [this]
+        {
+            if (world_loader_)
+            {
+                world_loader_->reload();
+            }
+        };
         ov->restore(call_overlay_state_);
+        install_world_actions_();
         ov->set_room_active(call_session_ && call_session_->room_id() == current_room_id_);
 
         ov->on_hang_up = [this]

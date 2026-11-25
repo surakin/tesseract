@@ -783,9 +783,96 @@ bool Host::advance_focus_(bool forward)
     return true;
 }
 
+bool Host::lock_pointer(Widget& owner)
+{
+    if (auto current = pointer_lock_owner_alive_())
+    {
+        return current.get() == &owner;
+    }
+    if (!apply_pointer_lock_(true))
+    {
+        return false;
+    }
+    pointer_lock_owner_ = track(&owner);
+    pointer_lock_active_ = true;
+    pressed_widget_.reset(); // a press that began before the lock must not stay held
+    return true;
+}
+
+void Host::unlock_pointer(Widget& owner)
+{
+    const auto current = pointer_lock_owner_alive_();
+    if (!current || current.get() != &owner)
+    {
+        return;
+    }
+    pointer_lock_owner_.reset();
+    pointer_lock_active_ = false;
+    (void)apply_pointer_lock_(false);
+    request_repaint();
+}
+
+std::shared_ptr<Widget> Host::pointer_lock_owner_alive_()
+{
+    if (!pointer_lock_active_)
+    {
+        return nullptr;
+    }
+    auto owner = pointer_lock_owner_.lock();
+    if (!owner)
+    {
+        pointer_lock_active_ = false; // the owner was destroyed while locked
+        (void)apply_pointer_lock_(false);
+    }
+    return owner;
+}
+
+void Host::dispatch_pointer_motion(float dx, float dy)
+{
+    if (auto owner = pointer_lock_owner_alive_())
+    {
+        fire_user_activity_();
+        owner->on_pointer_motion(dx, dy);
+        request_repaint();
+    }
+}
+
+void Host::dispatch_pointer_lock_lost()
+{
+    auto owner = pointer_lock_owner_alive_();
+    if (!pointer_lock_active_)
+    {
+        return;
+    }
+    pointer_lock_owner_.reset();
+    pointer_lock_active_ = false;
+    (void)apply_pointer_lock_(false);
+    if (owner)
+    {
+        owner->on_pointer_lock_lost();
+    }
+    request_repaint();
+}
+
+void Host::defer_pointer_lock_lost()
+{
+    post_to_ui(guarded(
+        [this]
+        {
+            dispatch_pointer_lock_lost();
+        }));
+}
+
 bool Host::dispatch_key_down(const KeyEvent& event)
 {
     fire_user_activity_();
+    // A locked pointer owns the whole keyboard, ahead of the prefilter, popups and accelerators.
+    if (auto owner = pointer_lock_owner_alive_())
+    {
+        owner->on_key_down(event);
+        request_repaint();
+        return true;
+    }
     if (key_prefilter_ && key_prefilter_(event))
     {
         request_repaint();
@@ -904,6 +991,42 @@ bool Host::dispatch_key_down(const KeyEvent& event)
         return true;
     }
     return false;
+}
+
+bool Host::dispatch_key_up(const KeyEvent& event)
+{
+    if (auto owner = pointer_lock_owner_alive_())
+    {
+        owner->on_key_up(event);
+        return true;
+    }
+    auto f = focused_widget_.lock();
+    if (!f)
+    {
+        return false;
+    }
+    if (f->dispatch_key_up(event))
+    {
+        return true;
+    }
+    for (Widget* w = f->parent(); w; w = w->parent())
+    {
+        if (w->on_key_up(event))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Host::dispatch_keys_released()
+{
+    dispatch_pointer_lock_lost(); // a window that lost the keyboard cannot keep the pointer
+    auto f = focused_widget_.lock();
+    for (Widget* w = f.get(); w; w = w->parent())
+    {
+        w->on_keys_released();
+    }
 }
 
 void Host::paint_focus_overlay(PaintCtx& ctx)

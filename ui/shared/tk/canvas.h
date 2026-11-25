@@ -639,6 +639,16 @@ public:
         virtual Canvas& canvas() = 0;
         // Invalidates canvas() — call at most once, after all drawing.
         virtual std::unique_ptr<Image> finish() = 0;
+        // Alternative to finish(): ends drawing and hands back the pixels instead of an
+        // Image, as premultiplied BGRA (the byte order every backend's bitmap already has and
+        // draw_bgra_premult_pixels() takes), `w * 4` bytes per row with no padding, top row
+        // first. Returns false (and leaves the outputs alone) when the backend cannot. Call at
+        // most once, after all drawing, instead of finish().
+        virtual bool finish_bgra(std::vector<std::uint8_t>& /*out*/, std::uint32_t& /*w*/,
+                                 std::uint32_t& /*h*/)
+        {
+            return false;
+        }
     };
 
     // `logical_size` is in the same logical-pixel units as every other Canvas

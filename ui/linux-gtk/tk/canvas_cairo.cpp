@@ -890,6 +890,32 @@ public:
         return std::make_unique<CairoImage>(s);
     }
 
+    bool finish_bgra(std::vector<std::uint8_t>& out, std::uint32_t& w, std::uint32_t& h) override
+    {
+        cairo_destroy(cr_);
+        cr_ = nullptr;
+        cairo_surface_flush(surface_);
+        // CAIRO_FORMAT_ARGB32 is premultiplied B, G, R, A in memory on a little-endian host.
+        const int iw = cairo_image_surface_get_width(surface_);
+        const int ih = cairo_image_surface_get_height(surface_);
+        const int stride = cairo_image_surface_get_stride(surface_);
+        const unsigned char* data = cairo_image_surface_get_data(surface_);
+        if (!data || iw <= 0 || ih <= 0)
+        {
+            return false;
+        }
+        const std::size_t row = static_cast<std::size_t>(iw) * 4;
+        out.resize(row * static_cast<std::size_t>(ih));
+        for (int y = 0; y < ih; ++y)
+        {
+            std::memcpy(out.data() + static_cast<std::size_t>(y) * row,
+                        data + static_cast<std::size_t>(y) * static_cast<std::size_t>(stride), row);
+        }
+        w = static_cast<std::uint32_t>(iw);
+        h = static_cast<std::uint32_t>(ih);
+        return true;
+    }
+
 private:
     cairo_surface_t* surface_;
     cairo_t* cr_;

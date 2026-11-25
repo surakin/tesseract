@@ -258,6 +258,16 @@ void EventHandlerBase::on_knock_requests_updated(const std::string& room_id)
         });
 }
 
+void EventHandlerBase::on_room_world_changed(const std::string& room_id)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_, rid = room_id]() mutable
+        {
+            ShellBase::EventAccountScope scope(*shell, uid);
+            shell->handle_room_world_changed_ui_(std::move(rid));
+        });
+}
+
 void EventHandlerBase::on_media_ready(std::uint64_t request_id,
                                       const std::vector<std::uint8_t>& bytes)
 {
@@ -1131,6 +1141,20 @@ void EventHandlerBase::on_call_video_frame(std::uint64_t session_id,
                            shell->handle_rtc_video_frame_ui_(session_id, participant_id, width,
                                                              height, bgra);
                        });
+}
+
+void EventHandlerBase::on_call_world_frame(std::uint64_t session_id,
+                                           const std::string& participant_id,
+                                           const std::uint8_t* payload, std::size_t size)
+{
+    // Not coalesced: every frame carries its own sequence number.
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_, session_id, participant_id,
+         bytes = std::vector<std::uint8_t>(payload, payload + size)]() mutable
+        {
+            ShellBase::EventAccountScope scope(*shell, uid);
+            shell->handle_rtc_world_frame_ui_(session_id, participant_id, std::move(bytes));
+        });
 }
 
 void EventHandlerBase::on_call_screen_frame(std::uint64_t session_id,

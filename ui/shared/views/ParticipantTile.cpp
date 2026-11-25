@@ -17,16 +17,13 @@ constexpr float kParticipantTileNameH = 20.0f;
 constexpr float kBadgeSz = 18.0f;   // mic-off / video-off badge circle diameter
 constexpr float kBadgeIcon = 12.0f; // icon drawn inside each badge
 constexpr float kPinBtnSz = 24.0f;
-constexpr float kPinInset = 4.0f;    // inset from the video-rect corner
-constexpr float kAvatarFrac = 0.55f; // avatar diameter as fraction of media short side
+constexpr float kPinInset = 4.0f; // inset from the video-rect corner
 
 // Badge colours.
 constexpr tk::Color kParticipantTileMutedRed{220, 60, 60, 255};
 constexpr tk::Color kBadgeBg{0, 0, 0, 180};
 constexpr tk::Color kParticipantTileWhite{255, 255, 255, 255};
 constexpr tk::Color kParticipantTileWhiteSoft{255, 255, 255, 200};
-constexpr tk::Color kAvatarBg{60, 60, 60, 255};
-constexpr tk::Color kAvatarFg{200, 200, 200, 255};
 constexpr tk::Color kTileBg{0, 0, 0, 200};
 constexpr tk::Color kPinAccent{255, 200, 50, 255};
 constexpr tk::Color kPinBg{0, 0, 0, 140};
@@ -179,9 +176,10 @@ void ParticipantTile::paint(tk::PaintCtx& ctx)
     {
         // Avatar disc centred in the media area.
         const tk::Image* avatar = avatar_provider_ ? avatar_provider_(state_.user_id) : nullptr;
-        const float diam = std::min(bounds_.w, media_h) * kAvatarFrac;
+        const float diam = std::min(bounds_.w, media_h) * kCallAvatarFrac;
         const tk::Point ctr{bounds_.x + bounds_.w * 0.5f, bounds_.y + kCellPad + media_h * 0.5f};
-        draw_avatar(ctx.canvas, avatar, ctr, diam, state_.display_name, kAvatarBg, kAvatarFg);
+        draw_avatar(ctx.canvas, avatar, ctr, diam, state_.display_name, kCallAvatarBg,
+                    kCallAvatarFg);
         // Use a centered square as the video rect so the black tile background
         // frames the avatar with a consistent border, and pin/mic badges anchor
         // to its corners the same way they would over a real video stream.

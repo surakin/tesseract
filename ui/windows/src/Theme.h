@@ -5,18 +5,22 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
+#include "tesseract/win32.h"
 // GDI+ headers reference IUnknown / IStream / PROPID / byte / MIDL_INTERFACE,
 // which WIN32_LEAN_AND_MEAN strips out of <windows.h>. Pull them back in.
+#include "tesseract/win32/windows_enable.h"
 #include <objidl.h>
 #include <propidl.h>
+#include "tesseract/win32/windows_disable.h"
 // GdiplusTypes.h calls unqualified min()/max(); with NOMINMAX the Win32
 // macros are gone, so std::min/std::max must be brought into scope (a bare
 // <algorithm> is not enough — the names there are std-qualified) before it.
 #include <algorithm>
 using std::max;
 using std::min;
+#include "tesseract/win32/windows_enable.h"
 #include <gdiplus.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace win32::theme
 {

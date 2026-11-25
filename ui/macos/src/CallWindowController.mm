@@ -74,7 +74,7 @@ MacCallWindow::MacCallWindow(tesseract::ShellBase* shell) : tesseract::CallWindo
     NSView* surfaceView = (__bridge NSView*)surface_->view_handle();
     [win setContentView:surfaceView];
 
-    auto overlay = std::make_unique<tesseract::views::CallOverlayWidget>();
+    auto overlay = tk::create_root_widget<tesseract::views::CallOverlayWidget>(&surface_->host());
     call_overlay_widget_ = overlay.get();
     surface_->set_root(std::move(overlay));
 

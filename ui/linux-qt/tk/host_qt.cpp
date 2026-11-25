@@ -1,4 +1,9 @@
 #include "host_qt.h"
+#if defined(HAVE_POINTER_LOCK) && defined(TESSERACT_WAYLAND_POINTER_LOCK)
+#define TESSERACT_QT_WAYLAND_LOCK 1
+#include "platform/linux/wayland_pointer_lock.h"
+#include <qpa/qplatformnativeinterface.h>
+#endif
 #include "anim_image_cache.h"
 #include "canvas_qpainter.h"
 #include "emoji_support.h"
@@ -2665,6 +2670,22 @@ public:
         surface_->setCursor(c);
     }
 
+    bool apply_pointer_lock_(bool locked) override
+    {
+        return surface_ != nullptr && surface_->set_pointer_locked(locked);
+    }
+
+    // The Surface's lock delivers here.
+    void on_pointer_motion(float dx, float dy)
+    {
+        dispatch_pointer_motion(dx, dy);
+    }
+
+    void on_pointer_lock_lost()
+    {
+        defer_pointer_lock_lost(); // arrives inside the lock object's own callback
+    }
+
     void request_repaint() override
     {
         if (surface_)
@@ -3110,6 +3131,16 @@ public:
         return dispatch_key_down(event);
     }
 
+    bool on_key_up(const KeyEvent& event)
+    {
+        return dispatch_key_up(event);
+    }
+
+    void on_keys_released()
+    {
+        dispatch_keys_released();
+    }
+
     // Dropped-file entry point, mirroring on_pointer_down/on_wheel above:
     // forwards to the shared Host::dispatch_file_drop tree walk.
     Widget* on_file_drop(Point world, FileDropPayload& payload)
@@ -3191,6 +3222,12 @@ protected:
     // plain key's release would be filtered.
     bool eventFilter(QObject* obj, QEvent* event) override
     {
+        if (event->type() == QEvent::WindowDeactivate)
+        {
+            // Releases that happen while another window is active never
+            // arrive here, so drop any held keys now.
+            dispatch_keys_released();
+        }
         if (event->type() == QEvent::KeyRelease)
         {
             auto* ke = static_cast<QKeyEvent*>(event);
@@ -3465,6 +3502,48 @@ KeyEvent translate_key_event(QKeyEvent* e)
     out.alt = e->modifiers() & Qt::AltModifier;
     out.meta = e->modifiers() & Qt::MetaModifier;
     out.repeat = e->isAutoRepeat();
+    // XKB keycodes (X11 and Wayland): layout-independent key positions.
+    switch (e->nativeScanCode())
+    {
+    case 25:
+        out.physical = PhysicalKey::W;
+        break;
+    case 65:
+        out.physical = PhysicalKey::Space;
+        break;
+    case 38:
+        out.physical = PhysicalKey::A;
+        break;
+    case 39:
+        out.physical = PhysicalKey::S;
+        break;
+    case 40:
+        out.physical = PhysicalKey::D;
+        break;
+    case 50:
+        out.physical = PhysicalKey::ShiftLeft;
+        break;
+    case 62:
+        out.physical = PhysicalKey::ShiftRight;
+        break;
+    case 37:
+        out.physical = PhysicalKey::ControlLeft;
+        break;
+    case 111:
+        out.physical = PhysicalKey::Up;
+        break;
+    case 116:
+        out.physical = PhysicalKey::Down;
+        break;
+    case 113:
+        out.physical = PhysicalKey::Left;
+        break;
+    case 114:
+        out.physical = PhysicalKey::Right;
+        break;
+    default:
+        break;
+    }
     if (out.key == Key::Unknown)
     {
         out.text = character_text_from_qt(e);
@@ -3542,9 +3621,87 @@ void Surface::mouseReleaseEvent(QMouseEvent* e)
 
 void Surface::mouseMoveEvent(QMouseEvent* e)
 {
+    if (pointer_locked_)
+    {
+        // Wayland reports the motion through the protocol, never here. Elsewhere: how far the
+        // cursor got from the centre it was put back on.
+        if (!wayland_lock_)
+        {
+            const QPoint now = e->position().toPoint();
+            const QPoint delta = now - lock_center_;
+            if (delta != QPoint(0, 0))
+            {
+                QCursor::setPos(mapToGlobal(lock_center_));
+                host_->on_pointer_motion(static_cast<float>(delta.x()),
+                                         static_cast<float>(delta.y()));
+            }
+        }
+        return;
+    }
     host_->on_pointer_move(
         {static_cast<float>(e->position().x()), static_cast<float>(e->position().y())});
     QWidget::mouseMoveEvent(e);
+}
+
+bool Surface::set_pointer_locked(bool locked)
+{
+    if (locked == pointer_locked_)
+    {
+        return locked;
+    }
+    if (!locked)
+    {
+        pointer_locked_ = false;
+        wayland_lock_.reset();
+        releaseMouse();
+        unsetCursor();
+        return false;
+    }
+#ifdef TESSERACT_QT_WAYLAND_LOCK
+    if (auto* app = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>())
+    {
+        auto* native = QGuiApplication::platformNativeInterface();
+        // This widget is not a native window of its own: the top-level window's surface is it.
+        QWindow* top = window() ? window()->windowHandle() : nullptr;
+        auto* surface =
+            (native && top)
+                ? static_cast<wl_surface*>(native->nativeResourceForWindow("surface", top))
+                : nullptr;
+        if (surface && tesseract::platform::WaylandPointerLock::available(app->display()))
+        {
+            auto lock = std::make_unique<tesseract::platform::WaylandPointerLock>();
+            const bool ok = lock->lock(
+                app->display(), surface, app->pointer(),
+                [this](float dx, float dy)
+                {
+                    host_->on_pointer_motion(dx, dy);
+                },
+                [this]()
+                {
+                    // The compositor ended it (focus moved): the shared host tells the owner.
+                    host_->on_pointer_lock_lost();
+                });
+            if (!ok)
+            {
+                return false;
+            }
+            wayland_lock_ = std::move(lock);
+            pointer_locked_ = true;
+            setCursor(Qt::BlankCursor);
+            return true;
+        }
+    }
+#endif
+    if (QGuiApplication::platformName() == QLatin1String("wayland"))
+    {
+        return false; // a Wayland client cannot move the cursor itself
+    }
+    lock_center_ = rect().center();
+    pointer_locked_ = true;
+    setCursor(Qt::BlankCursor);
+    grabMouse();
+    QCursor::setPos(mapToGlobal(lock_center_));
+    return true;
 }
 
 bool Surface::event(QEvent* e)
@@ -3554,6 +3711,13 @@ bool Surface::event(QEvent* e)
     // Qt focus — QWidget::event() claims them first for focusNextPrevChild().
     // Handle them here instead, exactly like keyPressEvent() otherwise
     // would, so Tab/Shift-Tab keep driving our own canvas focus traversal.
+    // A locked pointer owns the whole keyboard: Qt asks whether this widget wants the key before it
+    // triggers an application shortcut (a QShortcut or QAction); say yes so none fires.
+    if (e->type() == QEvent::ShortcutOverride && host_->pointer_locked())
+    {
+        e->accept();
+        return true;
+    }
     if (e->type() == QEvent::KeyPress)
     {
         auto* ke = static_cast<QKeyEvent*>(e);
@@ -3607,12 +3771,38 @@ void Surface::showEvent(QShowEvent* e)
 void Surface::keyPressEvent(QKeyEvent* e)
 {
     KeyEvent event = translate_key_event(e);
-    if (event.key != Key::Unknown && host_->on_key_down(event))
+    // A modifier such as Left Ctrl has a physical key but no logical one; while the pointer is
+    // locked the owner still needs it (Left Ctrl releases the capture).
+    const bool physical_only = event.physical != PhysicalKey::Unknown && host_->pointer_locked();
+    if ((event.key != Key::Unknown || physical_only) && host_->on_key_down(event))
     {
         e->accept();
         return;
     }
     QWidget::keyPressEvent(e);
+}
+
+void Surface::keyReleaseEvent(QKeyEvent* e)
+{
+    if (e->isAutoRepeat())
+    {
+        QWidget::keyReleaseEvent(e);
+        return;
+    }
+    KeyEvent event = translate_key_event(e);
+    if ((event.key != Key::Unknown || event.physical != PhysicalKey::Unknown) &&
+        host_->on_key_up(event))
+    {
+        e->accept();
+        return;
+    }
+    QWidget::keyReleaseEvent(e);
+}
+
+void Surface::focusOutEvent(QFocusEvent* e)
+{
+    host_->on_keys_released();
+    QWidget::focusOutEvent(e);
 }
 
 void Surface::wheelEvent(QWheelEvent* e)

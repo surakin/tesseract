@@ -3,7 +3,7 @@
 # left alone: tesseract_enable_warnings_as_errors() only touches targets whose
 # sources live under client/, ui/ or tests/ of this repository.
 #
-#   GCC / Clang / AppleClang : -Wall -Wextra -Werror
+#   GCC / Clang / AppleClang : -Wall -Wextra -Wshadow(=local on GCC) -Werror
 #                              (minus the missing-field-initializers pair)
 #   MSVC / clang-cl          : /W4 /WX
 #
@@ -40,6 +40,13 @@ function(tesseract_enable_warnings_as_errors)
         # fixtures, option structs) and flagging them is far too noisy.
         set(_flags -Wall -Wextra -Wno-missing-field-initializers
                    -Wno-missing-designated-field-initializers)
+        # A local hiding another local: MSVC /W4 reports it (C4456), so catch it here too.
+        # GCC's plain -Wshadow also flags constructor parameters named like members.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            list(APPEND _flags -Wshadow=local)
+        else()
+            list(APPEND _flags -Wshadow)
+        endif()
         if(TESSERACT_WARNINGS_AS_ERRORS)
             list(APPEND _flags -Werror)
         endif()

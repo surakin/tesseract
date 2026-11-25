@@ -343,6 +343,24 @@ add_custom_command(TARGET tesseract_macos POST_BUILD
     VERBATIM
 )
 
+# The 3D engine library and the world assets (TESSERACT_WITH_ENGINE). EngineScene looks in
+# Contents/Frameworks and Contents/Resources/worlds first. The dylib's install name is
+# already @rpath/libengine.1.dylib and it links nothing outside the system, so it is only
+# copied; declared before the signing steps below so they cover it.
+if(TESSERACT_WITH_ENGINE)
+    add_dependencies(tesseract_macos tesseract_engine_external)
+    add_custom_command(TARGET tesseract_macos POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_BINARY_DIR}/engine-sdk/lib/libengine.1.dylib"
+            "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/Frameworks/libengine.1.dylib"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/assets/worlds"
+            "$<TARGET_BUNDLE_DIR:tesseract_macos>/Contents/Resources/worlds"
+        COMMENT "Bundling the 3D engine and world assets into Tesseract.app"
+        VERBATIM
+    )
+endif()
+
 if(TESSERACT_MAC_APP_STORE)
     set(TESSERACT_MAC_APPSTORE_APP_IDENTITY "" CACHE STRING
         "App Store signing identity (e.g. 'Apple Distribution: Foo (TEAMID)')")
@@ -389,11 +407,17 @@ if(TESSERACT_MAC_APP_STORE)
                 "${TESSERACT_MAC_PROVISIONING_PROFILE}"
                 "${_bundle}/Contents/embedded.provisionprofile")
     endif()
+    set(_as_sign_engine)
+    if(TESSERACT_WITH_ENGINE)
+        set(_as_sign_engine COMMAND codesign --force ${_as_timestamp} --options runtime
+            --sign "${_as_sign_id}" "${_bundle}/Contents/Frameworks/libengine.1.dylib")
+    endif()
     add_custom_command(TARGET tesseract_macos POST_BUILD
         ${_as_cmds}
         COMMAND codesign --force ${_as_timestamp} --options runtime
                 --sign "${_as_sign_id}"
                 "${_bundle}/Contents/Frameworks/${_opus_filename}"
+        ${_as_sign_engine}
         COMMAND codesign --force ${_as_timestamp} --options runtime
                 --entitlements "${_as_entitlements}"
                 --sign "${_as_sign_id}" "${_bundle}"

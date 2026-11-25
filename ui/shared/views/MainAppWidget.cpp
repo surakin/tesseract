@@ -2262,7 +2262,7 @@ void MainAppWidget::mount_call_overlay(
     if (initial_mode == views::CallOverlayWidget::Mode::Floating)
     {
         // Floating mode: create a CallOverlayWidget child in the floating layer.
-        auto w = std::make_unique<views::CallOverlayWidget>();
+        auto w = tk::create_widget<views::CallOverlayWidget>(this);
         w->set_post_delayed(std::move(post_delayed));
         w->set_repaint_requester(std::move(repaint_requester));
         w->set_avatar_provider(std::move(avatar_provider));

@@ -45,6 +45,9 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 3 — Smaller deferred items, pick opportunistically
 
+- **3D world bar follow-ups.** The "B" shortcut for the world button bar matches the typed character, so it does nothing on non-Latin
+  layouts (the handle and Tab still work); a physical-key match needs every backend to fill `tk::PhysicalKey`. Downloading a room's world
+  has no cancel token: logging out during a long download holds the session up to 120 s.
 - **Accessibility — screen-reader verification, then Phase 5.** Every
   view audited on 2026-10-03 is now mapped (see `docs/ACCESSIBILITY-PLAN.md`);
   nothing has been driven with a real screen reader yet (Orca on Qt6 first,
@@ -196,6 +199,8 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   - *Local files:* decrypted media plus its attachment key stay in the shared
     cache after logout; one keyring failure silently moves tokens and the
     store key to a plaintext file and deletes the keyring copy.
+  - *World bundles:* `client.media().upload` of a world bundle has no timeout and
+    no stop race, so a stalled upload holds the import until it ends.
   - *Auth:* the OAuth loopback listener accepts the first GET to any path, so
     a local process or web page can abort a sign-in.
   - *Calls/crypto:* call frame keys from an unsigned device of a verified

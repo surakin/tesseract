@@ -21,12 +21,13 @@ use super::{
     identity::{classify_identity, IdentityShape},
     key_rotation::{ActivationGate, KeyRotator, RotationAction, Sessions},
     livekit_room::{LiveKitRoom, MemberTransports, PrimaryEnded, SharedKeys},
-    members::{desired_sfus, transport_map, JoinCheck, LkFocus},
+    members::{desired_sfus, transport_map, world_capable_set, JoinCheck, LkFocus},
     mrtc_membership::{
         can_send_member_event, can_send_slot, encryption_flipped_mid_call,
-        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, others_may_be_present,
-        plan_slot, send_invite, should_write_member_events, withdraw_invite, JoinParams, LeaveCode,
-        MrtcMembership, SlotPlan, SlotWatch,
+        member_events_skip_reason, new_member_id as new_mrtc_member_id,
+        open_slot as open_mrtc_slot, others_may_be_present, plan_slot, send_invite,
+        should_write_member_events, withdraw_invite, JoinParams, LeaveCode, MrtcMembership,
+        SlotPlan, SlotWatch,
     },
     sfu_set::{SfuContext, SfuSet},
     signaling::{self, send_msc3401_member_join, send_msc3401_member_leave, DelayedRestart},
@@ -119,6 +120,11 @@ impl RtcSession {
         self.sfus
             .primary
             .push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
+    }
+
+    /// Offer our world pose to the call (primary connection only).
+    pub fn send_world_frame(&self, payload: &[u8]) {
+        self.sfus.primary.send_world_frame(payload);
     }
 
     /// Publish the screen share track synchronously.
@@ -641,6 +647,9 @@ pub async fn start_call(
     // Which SFU each member publishes on; lets the LiveKit layer ignore
     // participants that are not real publishers on the SFU they appear on.
     let member_transports = MemberTransports::default();
+    // Snapshot once: this call advertises (and reports for itself) the same
+    // answer for its whole life, whatever the flag becomes later.
+    member_transports.set_local_world(crate::client::rtc::world_available());
     let mut local_focus = LkFocus {
         service_url: local_service_url.clone(),
         alias: lk_alias.clone(),
@@ -651,6 +660,7 @@ pub async fn start_call(
         &initial_members,
         Some((join_ts, &local_focus)),
     ));
+    member_transports.replace_world(world_capable_set(&initial_members));
     member_transports
         .identities()
         .replace(hashed_identities(&initial_members));
@@ -679,6 +689,7 @@ pub async fn start_call(
         &initial_members,
         Some((join_ts, &local_focus)),
     ));
+    member_transports.replace_world(world_capable_set(&initial_members));
 
     // ── E2EE negotiation ────────────────────────────────────────────────────
     // Only enable frame encryption when the Matrix room is encrypted.
@@ -816,46 +827,53 @@ pub async fn start_call(
     // compatibility mode: a sticky m.rtc.member while the slot is usable.
     // `mrtc` is the membership that joined; `announced` also keeps one whose
     // join failed, since the send may still have gone through.
-    let mrtc: Option<Arc<MrtcMembership>> = if should_write_member_events(
-        client.supports_sticky_events().await.unwrap_or(false),
-        slot_usable,
-        can_send_member_event(&room).await,
-    ) {
-        let membership = Arc::new(MrtcMembership::new(
-            room.clone(),
-            JoinParams {
-                member_id: member_id.clone(),
-                user_id: user_id.clone(),
-                device_id: device_id.clone(),
-                sfu_url: lk_transport.server_url.clone(),
-                service_url: local_service_url.clone(),
-                audio_only,
-            },
-        ));
-        announced.set_membership(Arc::clone(&membership));
-        match membership.join().await {
-            Ok(()) => {
-                // A session of ours that ended without leaving (a restart) is
-                // still joined for minutes under another member id: withdraw it
-                // now that we are in, never before, so a failed join leaves it alone.
-                let stale = stale_own_members(
-                    &super::sticky::live_entries(&room),
-                    &user_id,
-                    &device_id,
-                    membership.member_id(),
-                    super::sticky::now_ms(),
-                );
-                membership.withdraw_stale(&stale).await;
-                Some(membership)
-            }
-            Err(e) => {
-                warn!("rtc: MatrixRTC join failed (non-fatal): {e}");
-                None
-            }
+    let sticky_supported = client.supports_sticky_events().await.unwrap_or(false);
+    let can_send_member = can_send_member_event(&room).await;
+    if member_transports.local_world() {
+        if let Some(why) = member_events_skip_reason(sticky_supported, slot_usable, can_send_member)
+        {
+            // The capability rides only on the sticky m.rtc.member: nobody moves in this call.
+            warn!("rtc: the 3D world capability is not advertised in this call: {why}");
         }
-    } else {
-        None
-    };
+    }
+    let mrtc: Option<Arc<MrtcMembership>> =
+        if should_write_member_events(sticky_supported, slot_usable, can_send_member) {
+            let membership = Arc::new(MrtcMembership::new(
+                room.clone(),
+                JoinParams {
+                    member_id: member_id.clone(),
+                    user_id: user_id.clone(),
+                    device_id: device_id.clone(),
+                    sfu_url: lk_transport.server_url.clone(),
+                    service_url: local_service_url.clone(),
+                    audio_only,
+                    world: member_transports.local_world(),
+                },
+            ));
+            announced.set_membership(Arc::clone(&membership));
+            match membership.join().await {
+                Ok(()) => {
+                    // A session of ours that ended without leaving (a restart) is
+                    // still joined for minutes under another member id: withdraw it
+                    // now that we are in, never before, so a failed join leaves it alone.
+                    let stale = stale_own_members(
+                        &super::sticky::live_entries(&room),
+                        &user_id,
+                        &device_id,
+                        membership.member_id(),
+                        super::sticky::now_ms(),
+                    );
+                    membership.withdraw_stale(&stale).await;
+                    Some(membership)
+                }
+                Err(e) => {
+                    warn!("rtc: MatrixRTC join failed (non-fatal): {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
     // MSC4075: ring the room only if nobody else is in the call yet, and
     // never in a dedicated call room (joining there isn't calling anyone).
@@ -2168,7 +2186,11 @@ async fn reconcile_loop(
         }
 
         member_transports.replace(transport_map(&members, Some((join_ts, &local_focus))));
+        let world_changed = member_transports.replace_world(world_capable_set(&members));
         sfus.recheck_participants();
+        if world_changed {
+            sfus.refresh_participants();
+        }
         let desired = desired_sfus(
             &members,
             Some((join_ts, &local_focus)),
@@ -3124,6 +3146,7 @@ mod announced_tests {
                 sfu_url: "wss://s".into(),
                 service_url: "https://j".into(),
                 audio_only: false,
+                world: false,
             },
             true,
         )));

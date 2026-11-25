@@ -6,7 +6,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>
+#include "tesseract/win32.h"
 
 #include "app/AuxWindowBase.h"
 #include "tk/host_win32.h"

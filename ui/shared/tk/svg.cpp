@@ -4,7 +4,11 @@
 #include <cmath>
 #include <vector>
 
-// Vendored single-header library: not ours to edit, so silence MSVC /W4 around it.
+// Vendored single-header library: not ours to edit, so silence MSVC /W4 and clang -Wshadow around it.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wshadow"
+#endif
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4244 4456 4702 4701 4267 4127 4100)
@@ -15,6 +19,9 @@
 #include "nanosvgrast.h"
 #ifdef _MSC_VER
 #pragma warning(pop)
+#endif
+#if defined(__clang__)
+#pragma clang diagnostic pop
 #endif
 
 namespace tk

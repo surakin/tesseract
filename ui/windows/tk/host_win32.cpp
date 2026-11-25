@@ -10,10 +10,13 @@
 #include "tk/image_sniff.h"
 #include "platform/win32/dropped_files_win32.h"
 
-#include <BetterText/BetterText.h>
+#include "tesseract/win32/windows_enable.h"
+#include <BetterText/BetterText.h> // includes <windows.h> itself
+#include "tesseract/win32/windows_disable.h"
 
 #include <tesseract/settings.h>
 
+#include "tesseract/win32/windows_enable.h"
 #include <commctrl.h>
 #include <d2d1.h>         // ID2D1HwndRenderTarget, D2D1_RENDER_TARGET_PROPERTIES
 #include <d2d1_1.h>       // ID2D1Factory1, ID2D1DeviceContext, ID2D1Bitmap1
@@ -23,6 +26,7 @@
 #include <dwrite.h>       // IDWriteTextFormat, DWRITE_FONT_WEIGHT_* enums
 #include <dwrite_2.h>     // IDWriteFactory2::CreateTextFormat
 #include <windowsx.h>     // GET_X_LPARAM / GET_Y_LPARAM
+#include "tesseract/win32/windows_disable.h"
 
 // Typography flags added in later Windows 10 SDKs; define if absent.
 #ifndef TO_DEFAULTCOLOREMOJI
@@ -31,6 +35,7 @@
 #ifndef TO_DISPLAYFONTCOLOR
 #define TO_DISPLAYFONTCOLOR 0x2000
 #endif
+#include "tesseract/win32/windows_enable.h"
 #include <wincodec.h>
 #include <objidl.h>
 #include <ole2.h>     // RegisterDragDrop / IDropTarget
@@ -41,12 +46,15 @@
 #include <wrl/client.h>
 #include <initguid.h>
 #include <netlistmgr.h>
+#include "tesseract/win32/windows_disable.h"
 
 // Device enumeration: WASAPI (audio) + Media Foundation (camera).
+#include "tesseract/win32/windows_enable.h"
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <mfapi.h>
 #include <mfidl.h>
+#include "tesseract/win32/windows_disable.h"
 
 #include <atomic>
 #include <memory>
@@ -3219,7 +3227,7 @@ HCURSOR recolor_legacy_cursor(HCURSOR source, bool want_white)
     }
 
     BITMAP bm{};
-    if (!GetObject(ii.hbmMask, sizeof(bm), &bm) || bm.bmWidth <= 0 || bm.bmHeight <= 0)
+    if (!GetObjectW(ii.hbmMask, sizeof(bm), &bm) || bm.bmWidth <= 0 || bm.bmHeight <= 0)
     {
         DeleteObject(ii.hbmMask);
         return nullptr;
@@ -4520,12 +4528,75 @@ public:
     {
         // Release the Win32 capture grabbed in on_pointer_down before running
         // the shared release logic.
-        if (GetCapture() == hwnd_)
+        if (!lock_active_ && GetCapture() == hwnd_) // a pointer lock keeps the capture
         {
             ReleaseCapture();
         }
         dispatch_pointer_up(
             {phys_to_dip(static_cast<float>(x)), phys_to_dip(static_cast<float>(y))});
+    }
+
+    // Mouse capture: the cursor is hidden, confined to the client area and put back on its centre
+    // after every move; how far it got from the centre is the relative motion.
+    bool apply_pointer_lock_(bool locked) override
+    {
+        if (!locked)
+        {
+            if (lock_active_)
+            {
+                lock_active_ = false;
+                ClipCursor(nullptr);
+                if (GetCapture() == hwnd_)
+                {
+                    ReleaseCapture();
+                }
+                ShowCursor(TRUE);
+            }
+            return false;
+        }
+        if (!hwnd_ || lock_active_)
+        {
+            return lock_active_;
+        }
+        RECT rc{};
+        GetClientRect(hwnd_, &rc);
+        POINT top_left{rc.left, rc.top};
+        POINT bottom_right{rc.right, rc.bottom};
+        ClientToScreen(hwnd_, &top_left);
+        ClientToScreen(hwnd_, &bottom_right);
+        const RECT clip{top_left.x, top_left.y, bottom_right.x, bottom_right.y};
+        lock_center_ = {(rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2};
+        SetCapture(hwnd_);
+        ClipCursor(&clip);
+        recenter_cursor_();
+        ShowCursor(FALSE);
+        lock_active_ = true;
+        return true;
+    }
+
+    // WM_MOUSEMOVE while locked: true when handled.
+    bool on_locked_pointer_move(int x, int y)
+    {
+        if (!lock_active_)
+        {
+            return false;
+        }
+        const int dx = x - lock_center_.x;
+        const int dy = y - lock_center_.y;
+        if (dx != 0 || dy != 0) // the move our own recentring causes is zero
+        {
+            recenter_cursor_();
+            dispatch_pointer_motion(phys_to_dip(static_cast<float>(dx)),
+                                    phys_to_dip(static_cast<float>(dy)));
+        }
+        return true;
+    }
+
+    void recenter_cursor_()
+    {
+        POINT c = lock_center_;
+        ClientToScreen(hwnd_, &c);
+        SetCursorPos(c.x, c.y);
     }
 
     void on_pointer_move(int x, int y)
@@ -4564,6 +4635,16 @@ public:
     bool on_key_down(const KeyEvent& event)
     {
         return dispatch_key_down(event);
+    }
+
+    bool on_key_up(const KeyEvent& event)
+    {
+        return dispatch_key_up(event);
+    }
+
+    void on_keys_released()
+    {
+        dispatch_keys_released();
     }
 
     void detach()
@@ -4625,6 +4706,8 @@ protected:
 
 private:
     HWND hwnd_;
+    bool lock_active_ = false; // see apply_pointer_lock_
+    POINT lock_center_{};      // client pixels
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
     const Theme* theme_;
     bool transparent_ = false;
@@ -4931,6 +5014,61 @@ KeyEvent translate_key_event(WPARAM vk, LPARAM lParam)
     out.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     out.meta = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
     out.repeat = (lParam & (1L << 30)) != 0;
+    // Hardware scancode plus the extended bit: layout-independent positions.
+    const unsigned scan = static_cast<unsigned>((lParam >> 16) & 0xFF);
+    const bool extended = (lParam & (1L << 24)) != 0;
+    if (extended)
+    {
+        switch (scan)
+        {
+        case 0x48:
+            out.physical = PhysicalKey::Up;
+            break;
+        case 0x50:
+            out.physical = PhysicalKey::Down;
+            break;
+        case 0x4B:
+            out.physical = PhysicalKey::Left;
+            break;
+        case 0x4D:
+            out.physical = PhysicalKey::Right;
+            break;
+        default:
+            break;
+        }
+    }
+    else
+    {
+        switch (scan)
+        {
+        case 0x11:
+            out.physical = PhysicalKey::W;
+            break;
+        case 0x39:
+            out.physical = PhysicalKey::Space;
+            break;
+        case 0x1E:
+            out.physical = PhysicalKey::A;
+            break;
+        case 0x1F:
+            out.physical = PhysicalKey::S;
+            break;
+        case 0x20:
+            out.physical = PhysicalKey::D;
+            break;
+        case 0x2A:
+            out.physical = PhysicalKey::ShiftLeft;
+            break;
+        case 0x36:
+            out.physical = PhysicalKey::ShiftRight;
+            break;
+        case 0x1D: // the extended 0x1D is the right Ctrl
+            out.physical = PhysicalKey::ControlLeft;
+            break;
+        default:
+            break;
+        }
+    }
     if (out.key == Key::Unknown)
     {
         out.text = character_text_from_win32(vk, shift);
@@ -5037,6 +5175,10 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         break;
     case WM_MOUSEMOVE:
     {
+        if (host && host->on_locked_pointer_move(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)))
+        {
+            return 0;
+        }
         if (host)
         {
             host->on_pointer_move(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
@@ -5090,13 +5232,36 @@ LRESULT CALLBACK surface_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         if (host)
         {
             KeyEvent event = translate_key_event(wParam, lParam);
-            if (event.key != Key::Unknown && host->on_key_down(event))
+            // A modifier has a physical key but no logical one; the pointer-lock owner needs it.
+            const bool physical_only =
+                event.physical != PhysicalKey::Unknown && host->pointer_locked();
+            if ((event.key != Key::Unknown || physical_only) && host->on_key_down(event))
             {
                 return 0;
             }
         }
         break;
     }
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+    {
+        if (host)
+        {
+            KeyEvent event = translate_key_event(wParam, lParam);
+            if ((event.key != Key::Unknown || event.physical != PhysicalKey::Unknown) &&
+                host->on_key_up(event))
+            {
+                return 0;
+            }
+        }
+        break;
+    }
+    case WM_KILLFOCUS:
+        if (host)
+        {
+            host->on_keys_released();
+        }
+        break;
     case WM_DESTROY:
         return 0;
     case WM_GETOBJECT:

@@ -180,13 +180,18 @@ struct BridgeRecorder : tesseract::IEventHandler
                                     const tesseract::RtcParticipantInfo& i) override
     {
         log.push_back("pj:" + std::to_string(s) + ":" + i.participant_id + ":" + i.user_id +
-                      (i.is_screen_sharing ? ":share" : ""));
+                      (i.is_screen_sharing ? ":share" : "") + (i.world_capable ? ":world" : ""));
     }
     void on_call_video_frame(std::uint64_t s, const std::string& p, std::uint32_t w,
                              std::uint32_t h, const std::uint8_t*, std::size_t n) override
     {
         log.push_back("vf:" + std::to_string(s) + ":" + p + ":" + std::to_string(w) + "x" +
                       std::to_string(h) + ":" + std::to_string(n));
+    }
+    void on_call_world_frame(std::uint64_t s, const std::string& p, const std::uint8_t*,
+                             std::size_t n) override
+    {
+        log.push_back("wf:" + std::to_string(s) + ":" + p + ":" + std::to_string(n));
     }
     void on_call_audio_frame(std::uint64_t s, const std::string& p, const std::int16_t*,
                              std::size_t n, std::uint32_t rate, std::uint32_t ch) override
@@ -489,15 +494,19 @@ TEST_CASE("verification and call callbacks forward their arguments", "[bridge][d
     p.participant_id = "p";
     p.user_id = "@u";
     p.is_screen_sharing = true;
+    p.world_capable = true;
+    p.is_local = true;
     f.bridge.on_rtc_participant_joined(9, p);
 
     const std::uint8_t px[8] = {};
     f.bridge.on_rtc_video_frame(9, "p", 2, 1, rust::Slice<const std::uint8_t>(px, 8));
+    f.bridge.on_rtc_world_frame(9, "p", rust::Slice<const std::uint8_t>(px, 3));
     const std::int16_t pcm[4] = {};
     f.bridge.on_rtc_audio_frame(9, "p", rust::Slice<const std::int16_t>(pcm, 4), 48000, 2);
     f.bridge.on_rtc_invitation("!r", "slot", "@c", "video", 30000, "$n");
 
-    CHECK(f.rec.log == std::vector<std::string>{
-                           "vreq:f1:@u:DEV:in", "sas:f1:1:20", "pj:9:p:@u:share", "vf:9:p:2x1:8",
-                           "af:9:p:4:48000:2", "inv:!r:slot:@c:video:30000:$n"});
+    CHECK(f.rec.log == std::vector<std::string>{"vreq:f1:@u:DEV:in", "sas:f1:1:20",
+                                                "pj:9:p:@u:share:world", "vf:9:p:2x1:8", "wf:9:p:3",
+                                                "af:9:p:4:48000:2",
+                                                "inv:!r:slot:@c:video:30000:$n"});
 }

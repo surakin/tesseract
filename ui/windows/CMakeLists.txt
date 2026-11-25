@@ -102,7 +102,7 @@ target_sources(tesseract_win32 PRIVATE
 
 target_compile_features(tesseract_win32 PRIVATE cxx_std_20)
 
-# std base + windows.h. WIN32_LEAN_AND_MEAN / NOMINMAX / _WIN32_WINNT are set as
+# std base + win32_pch.h (windows.h, wrl, d2d1, dwrite behind the macro guards). WIN32_LEAN_AND_MEAN / NOMINMAX / _WIN32_WINNT are set as
 # target definitions below, so the PCH compiles windows.h identically to the
 # TUs. C++/WinRT headers are deliberately NOT in the PCH: they're confined to
 # two TUs (main.cpp, Win32Notifier.cpp) that need a relaxed-conformance flag.

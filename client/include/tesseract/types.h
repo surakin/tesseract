@@ -1560,6 +1560,10 @@ struct RtcParticipantInfo
     bool is_audio_muted = false;
     bool is_video_muted = false;
     bool is_screen_sharing = false;
+    /// The member advertises the 3D call world capability.
+    bool world_capable = false;
+    /// This is our own participant; `participant_id` is our LiveKit identity.
+    bool is_local = false;
 };
 
 /// High-level phases of the sliding-sync `RoomListService`. Surfaced via

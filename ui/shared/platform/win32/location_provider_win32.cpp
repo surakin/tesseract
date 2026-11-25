@@ -9,8 +9,10 @@
 #include "platform/win32/winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include "tk/weak_self.h"
 
+#include "tesseract/win32/windows_enable.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Devices.Geolocation.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace WDG = winrt::Windows::Devices::Geolocation;
 namespace WF = winrt::Windows::Foundation;

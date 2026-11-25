@@ -17,11 +17,29 @@ pub mod signaling;
 pub mod slots;
 pub mod sticky;
 pub mod transport;
+pub mod world_stream;
 
 pub use session::RtcSession;
 pub use signaling::RtcParticipantInfo;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
+
+/// The MatrixRTC capability a member advertises when its 3D call world is
+/// available (also the name of its data track and topic).
+pub const WORLD_CAPABILITY: &str = "dev.tesseract.world.v1";
+
+static WORLD_AVAILABLE: AtomicBool = AtomicBool::new(false);
+
+/// Whether this process can render the 3D call world; read when the call
+/// membership is built and for the local participant's info.
+pub fn world_available() -> bool {
+    WORLD_AVAILABLE.load(Ordering::Relaxed)
+}
+
+pub fn set_world_available(available: bool) {
+    WORLD_AVAILABLE.store(available, Ordering::Relaxed);
+}
 
 /// Sink for call events, implemented by the FFI bridge (Layer 2).
 /// All methods are invoked on tokio worker threads; the implementation
@@ -84,6 +102,8 @@ pub trait RtcEventSink: Send + Sync + 'static {
     fn accepts_participant(&self, _participant_id: &str) -> bool {
         true
     }
+    /// A 3D call world frame (already accepted by `world_stream::accept_packet`).
+    fn on_world_frame(&self, _session_id: u64, _participant_id: &str, _payload: &[u8]) {}
 }
 
 /// One sink per signed-in account, keyed by its user id. Each account's

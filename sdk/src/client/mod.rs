@@ -33,6 +33,7 @@ mod backfill;
 mod bot_commands;
 mod crypto_reset;
 pub(crate) mod gif;
+pub(crate) mod hash;
 mod history_export;
 pub(crate) mod identity;
 mod image_packs;
@@ -59,9 +60,11 @@ pub(crate) mod rtc_ffi;
 pub(crate) mod search;
 mod send;
 mod session;
+pub(crate) mod state_epoch;
 pub(crate) mod state_events;
 mod strip_av;
 mod strip_meta;
+pub(crate) mod world_event;
 
 /// True when the image bytes can be confidently stripped of metadata (see
 /// `strip_meta::is_strippable`). Used by the C++ send policy.
@@ -1467,16 +1470,24 @@ impl ClientFfi {
             });
             let _ = tracing_subscriber::registry()
                 .with(
-                    tracing_subscriber::fmt::layer()
-                        .with_filter(tracing_subscriber::EnvFilter::new(filter_str)),
+                    tracing_subscriber::fmt::layer().with_filter(crate::log_rate_limit::limited(
+                        tracing_subscriber::EnvFilter::new(filter_str),
+                    )),
                 )
                 .with(request_layer)
                 .try_init();
         }
         #[cfg(not(feature = "request_log"))]
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::new(filter_str))
-            .try_init();
+        {
+            use tracing_subscriber::prelude::*;
+            let _ = tracing_subscriber::registry()
+                .with(
+                    tracing_subscriber::fmt::layer().with_filter(crate::log_rate_limit::limited(
+                        tracing_subscriber::EnvFilter::new(filter_str),
+                    )),
+                )
+                .try_init();
+        }
 
         Self {
             client: None,
@@ -1969,6 +1980,9 @@ async fn fetch_room_state_cached(
     if let Some(existing) = cache.lock().get(room_id) {
         return Some(Arc::clone(existing));
     }
+    // An invalidation while the request is out makes its answer stale: it goes to this caller
+    // only, never into the cache.
+    let epoch = state_epoch::current(room_id.as_str());
     use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
     let room_state = match client.send(state_api::Request::new(room_id.clone())).await {
         Ok(r) => Arc::new(r.room_state),
@@ -1979,6 +1993,9 @@ async fn fetch_room_state_cached(
     };
     {
         let mut cache = cache.lock();
+        if !state_epoch::still_current(room_id.as_str(), epoch) {
+            return Some(room_state);
+        }
         // Whole-room state is megabytes for a big room: keep only a few.
         if cache.len() >= ROOM_STATE_CACHE_ROOMS {
             if let Some(evict) = cache.keys().find(|k| *k != room_id).cloned() {
@@ -1996,6 +2013,7 @@ async fn fetch_room_state_cached(
 /// server-side changes.
 #[cfg(not(test))]
 pub(super) fn invalidate_room_state_cache(cache: &RoomStateCache, room_id: &OwnedRoomId) {
+    state_epoch::bump(room_id.as_str());
     cache.lock().remove(room_id);
 }
 

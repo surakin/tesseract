@@ -453,6 +453,36 @@ bool Widget::dispatch_key_down(const KeyEvent& event)
     return on_key_down(event);
 }
 
+bool Widget::on_key_up(const KeyEvent&)
+{
+    return false;
+}
+
+bool Widget::dispatch_key_up(const KeyEvent& event)
+{
+    if (!visible_ || !enabled_)
+    {
+        return false;
+    }
+
+    for (Widget* ch : snapshot_children_rev(children()))
+    {
+        if (!ch->visible())
+        {
+            continue;
+        }
+        if (ch->dispatch_key_up(event))
+        {
+            return true;
+        }
+    }
+    return on_key_up(event);
+}
+
+void Widget::on_keys_released()
+{
+}
+
 // Two rects are considered part of the same visual "row" for reading-order
 // purposes if their vertical extents overlap at all — not just exact-y
 // equality — so a row of differently-sized widgets (e.g. an HBox with
@@ -729,6 +759,19 @@ RootWidget* Widget::get_root_widget()
 void RootWidget::queue_for_deletion(std::unique_ptr<Widget> subtree)
 {
     host()->queue_for_deletion(std::move(subtree));
+}
+
+bool Widget::lock_pointer()
+{
+    return host_ != nullptr && host_->lock_pointer(*this);
+}
+
+void Widget::unlock_pointer()
+{
+    if (host_ != nullptr)
+    {
+        host_->unlock_pointer(*this);
+    }
 }
 
 } // namespace tk

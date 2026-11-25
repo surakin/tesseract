@@ -25,7 +25,7 @@ CallWindow::CallWindow(MainWindow* parent_shell)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(surface_);
 
-    auto overlay = std::make_unique<tesseract::views::CallOverlayWidget>();
+    auto overlay = tk::create_root_widget<tesseract::views::CallOverlayWidget>(&surface_->host());
     call_overlay_widget_ = overlay.get();
     surface_->set_root(std::move(overlay));
 

@@ -6,10 +6,12 @@
 #include <chrono>
 #include <thread>
 
+#include "tesseract/win32/windows_enable.h"
 #include <ole2.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include "tesseract/win32/windows_disable.h"
 
 namespace tesseract::win32_drop
 {
