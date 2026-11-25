@@ -1,0 +1,79 @@
+name: Install the 3D engine's build tools
+description: >-
+  What the engine (cmake/Engine.cmake, built by every job that compiles
+  Tesseract) needs from the runner: the Vulkan SDK headers on Windows, and the
+  Slang shader compiler (slangc) on every platform. Mirrors the engine's own
+  BUILD.md; if that changes, change this too.
+
+inputs:
+  slang-version:
+    description: >-
+      Slang release to install. The engine wants exactly this one: another
+      version mints different shader bytes.
+    default: '2026.18.2'
+
+runs:
+  using: composite
+  steps:
+    # The SDK's vulkan/ and vk_video/ headers are needed to configure the engine
+    # on Windows (it stops with "No Vulkan SDK found" otherwise).
+    - name: Install the Vulkan SDK (headers and loader)
+      if: runner.os == 'Windows'
+      uses: humbletim/setup-vulkan-sdk@c25f41106918cde0bf347e6f201277392b3a9e9d # v1.2.1
+      with:
+        vulkan-query-version: latest
+        vulkan-components: Vulkan-Headers, Vulkan-Loader
+        vulkan-use-cache: true
+
+    # The action installs the SDK inside the checkout (VULKAN_SDK/); git must
+    # not see it as changed paths.
+    - name: Keep the Vulkan SDK out of git's view
+      if: runner.os == 'Windows'
+      shell: bash
+      run: echo "VULKAN_SDK/" >> .git/info/exclude
+
+    - name: Install slangc (Linux, macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        SLANG_VERSION: ${{ inputs.slang-version }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)    asset=linux-x86_64;  sha256=8a097d4365e1cab10265d0b0d77b461b5d30576f99ddc0521a35723c34cad816 ;;
+          macOS-ARM64)  asset=macos-aarch64; sha256=410c0ed14e231089a58437bb0d8e00389c48e29ed9ffe23e3b04a5c74f1ce809 ;;
+          macOS-X64)    asset=macos-x86_64;  sha256=d09a2993b4ed6d81c0c19ff8bede27944bf73437d982549bd7b2ac5a1a3202b9 ;;
+          *) echo "::error::no slangc for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+        esac
+        if [ "$SLANG_VERSION" != "2026.18.2" ]; then
+          echo "::error::the checksums in this action are for Slang 2026.18.2; update them with the version"
+          exit 1
+        fi
+        url="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-${asset}.tar.gz"
+        dest="$RUNNER_TEMP/slang-${SLANG_VERSION}"
+        mkdir -p "$dest"
+        curl -fsSL "$url" -o "$RUNNER_TEMP/slang.tar.gz"
+        echo "${sha256}  $RUNNER_TEMP/slang.tar.gz" | shasum -a 256 -c -
+        tar -xzf "$RUNNER_TEMP/slang.tar.gz" -C "$dest"
+        echo "$dest/bin" >> "$GITHUB_PATH"
+        "$dest/bin/slangc" -v
+
+    - name: Install slangc (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        SLANG_VERSION: ${{ inputs.slang-version }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:SLANG_VERSION -ne '2026.18.2') {
+          throw 'the checksum in this action is for Slang 2026.18.2; update it with the version'
+        }
+        $sha256 = '747602aec6b3623658d55fea87492d71828e15d16802d7941204fde418ceee8e'
+        $url = "https://github.com/shader-slang/slang/releases/download/v$($env:SLANG_VERSION)/slang-$($env:SLANG_VERSION)-windows-x86_64.zip"
+        $zip = Join-Path $env:RUNNER_TEMP 'slang.zip'
+        $dest = Join-Path $env:RUNNER_TEMP "slang-$($env:SLANG_VERSION)"
+        Invoke-WebRequest -Uri $url -OutFile $zip
+        if ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() -ne $sha256) { throw 'slang checksum mismatch' }
+        Expand-Archive -Path $zip -DestinationPath $dest
+        "$dest\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        & "$dest\bin\slangc.exe" -v

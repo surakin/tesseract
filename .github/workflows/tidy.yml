@@ -20,6 +20,7 @@ on:
       - 'CMakeLists.txt'
       - 'CMakePresets.json'
       - '.clang-tidy'
+      - '.github/actions/**'
       - '.github/workflows/tidy.yml'
   workflow_dispatch:
 
@@ -35,6 +36,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
 
       - name: Set up clang
         uses: ./.github/actions/setup-clang

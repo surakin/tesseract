@@ -399,6 +399,11 @@ experiment in [3D-CALL-ROOMS.md](3D-CALL-ROOMS.md)) clones the 3D engine from
 `<build>/engine/` and installs its SDK to `<build>/engine-sdk/`
 (`cmake/Engine.cmake`). The `engine_load` ctest loads it and checks its ABI.
 
+The engine's own prerequisites are in its `BUILD.md`. Two matter on a fresh machine: on Windows the **Vulkan SDK** (its
+`vulkan/` headers; set `ENGINE_VULKAN_SDK` or `VULKAN_SDK`, or install it under `C:\VulkanSDK\`, else the engine's configure stops with
+"No Vulkan SDK found"), and on every platform `slangc` **exactly v2026.18.2** on `PATH` (or `ENGINE_SLANGC`), which re-mints the shaders (without it
+the engine uses its committed outputs). The CI workflows install both through `.github/actions/engine-tools`.
+
 ### Unity builds and precompiled headers
 
 `-DTESSERACT_UNITY_BUILD=OFF` (default `ON`) disables CMake's unity build

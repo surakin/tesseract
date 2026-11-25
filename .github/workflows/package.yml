@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
@@ -244,6 +247,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
 
       # The runner image's default Xcode / Command Line Tools move with every
       # image update, and a linker older than its SDK fails on the new .tbd
@@ -489,6 +495,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
+
       # The `secrets` context can't be read in an `if:`; check presence here
       # and gate the remaining steps on this step's output (see the Windows
       # signing check above).
@@ -647,6 +656,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
 
       # The runner image's default Xcode / Command Line Tools move with every
       # image update, and a linker older than its SDK fails on the new .tbd
@@ -871,6 +883,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang

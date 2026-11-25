@@ -75,6 +75,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
@@ -156,6 +159,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
+
       # Pin one Xcode so the compiler, linker and SDK match; the runner
       # image's default moves with every update (see package.yml).
       - name: Select Xcode
@@ -226,6 +232,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install the engine's build tools (Vulkan SDK, slangc)
+        uses: ./.github/actions/engine-tools
 
       - name: Set up clang (webrtc-sys needs clang 21 or later)
         uses: ./.github/actions/setup-clang
