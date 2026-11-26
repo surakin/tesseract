@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- build(macos): publishing a release now updates the Homebrew cask automatically. Workflow unrun
 - build(macos): local builds compile libopus for the deployment target themselves, so Homebrew's opus is no longer needed. macOS arm64 release build, ctest 4049/4051
 - fix(macos): a restored draft, and text typed after a mention or emoticon, no longer turns black in the composer.
 - fix(macos): the text-field context menu and other system menus follow the system language instead of always showing English.

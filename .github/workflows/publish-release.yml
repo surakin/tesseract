@@ -18,6 +18,8 @@
 #                       Connect
 #        - aur:         bumps and pushes the tesseract-matrix and
 #                       tesseract-matrix-git AUR packages
+#        - homebrew:    bumps the version and checksums of the Homebrew cask in
+#                       the surakin/homebrew-tesseract tap
 #        - winget:      opens the winget-pkgs update PR (disabled, see below)
 #
 # Everything published here is the exact build that was tested as the
@@ -46,6 +48,8 @@
 #            ITSAppUsesNonExemptEncryption (see ui/macos/CMakeLists.txt).
 #   AUR:     the AUR account, the first manual push of tesseract-matrix, and a
 #            dedicated SSH key pair; see packaging/arch/aur/README.md.
+#   Homebrew: the surakin/homebrew-tesseract tap with Casks/tesseract.rb
+#            already committed (the job only bumps its version and sha256s).
 #   Winget:  the first manual submission in packaging/winget/README.md.
 #
 # Repo configuration (Settings > Secrets and variables > Actions):
@@ -64,6 +68,10 @@
 #                    private half of the SSH key registered on the AUR account;
 #                    stored as a secret of the `aur` environment (Settings >
 #                    Environments), not a repo-level secret
+#     HOMEBREW_TAP_TOKEN
+#                    fine-grained GitHub PAT limited to the
+#                    surakin/homebrew-tesseract repo, with Contents:
+#                    read and write
 #     WINGET_TOKEN   GitHub PAT (classic, public_repo scope) for an account
 #                    that can open PRs against microsoft/winget-pkgs
 # ---------------------------------------------------------------------------
@@ -96,6 +104,10 @@ on:
         default: true
       aur:
         description: 'Push the tesseract-matrix and tesseract-matrix-git AUR packages'
+        type: boolean
+        default: true
+      homebrew:
+        description: 'Bump the Homebrew cask in the tap'
         type: boolean
         default: true
       winget:
@@ -450,6 +462,67 @@ jobs:
           commit_email: surakus@pm.me
           commit_message: Update to ${{ env.TAG }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+  # ---------------------------------------------------------------------------
+  # Homebrew — bump Casks/tesseract.rb in the surakin/homebrew-tesseract tap to
+  # this tag: version plus the sha256 of the release's two DMGs. A plain commit
+  # on main, never a force-push: `brew update` can't fast-forward a rewritten
+  # tap. Re-running for an already-bumped tag is a no-op.
+  # ---------------------------------------------------------------------------
+  homebrew:
+    name: Homebrew cask (tap bump)
+    if: github.event_name == 'release' || inputs.homebrew
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download the release's DMGs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ver="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dmg \
+            --pattern "Tesseract-${ver}-arm64.dmg" \
+            --pattern "Tesseract-${ver}-x86_64.dmg"
+          ls -l dmg
+
+      - name: Check out the tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: surakin/homebrew-tesseract
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update the cask
+        run: |
+          ver="${TAG#v}"
+          arm=$(sha256sum "dmg/Tesseract-${ver}-arm64.dmg" | cut -d' ' -f1)
+          intel=$(sha256sum "dmg/Tesseract-${ver}-x86_64.dmg" | cut -d' ' -f1)
+          cask=tap/Casks/tesseract.rb
+          sed -i -E \
+            -e "s/^(  version )\"[^\"]*\"/\1\"${ver}\"/" \
+            -e "s/(arm: +)\"[0-9a-f]{64}\"/\1\"${arm}\"/" \
+            -e "s/(intel: +)\"[0-9a-f]{64}\"/\1\"${intel}\"/" \
+            "$cask"
+          # Fail loudly if the cask's layout drifted and a substitution missed.
+          grep -q "version \"${ver}\"" "$cask"
+          grep -q "$arm" "$cask"
+          grep -q "$intel" "$cask"
+          git -C tap diff
+
+      - name: Commit and push
+        run: |
+          cd tap
+          if git diff --quiet; then
+            echo "Cask already at ${TAG}; nothing to push"
+            exit 0
+          fi
+          git config user.name "Marco Alvarez"
+          git config user.email "surakus@pm.me"
+          git commit -am "tesseract ${TAG#v}"
+          git push origin main
 
   # ---------------------------------------------------------------------------
   # winget — open the winget-pkgs manifest update PR for the NSIS installer.
