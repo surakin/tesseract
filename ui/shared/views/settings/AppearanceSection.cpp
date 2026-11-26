@@ -32,8 +32,7 @@ std::string message_layout_description(tesseract::Settings::MessageLayout layout
     switch (layout)
     {
     case ML::Bubbles:
-        return tk::tr("Your own messages appear on the right, in a subtle "
-                      "rounded bubble.");
+        return tk::tr("Messages appear in subtle rounded bubbles.");
     case ML::Irc:
         return tk::tr("A monospaced, mIRC-style timeline: every line is "
                       "\"[time] <nick>\" with a colour per person.");
@@ -164,6 +163,24 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
             bubbles_own_avatar_cb_ = opts->add_child(std::move(cb));
             binder.bind(bubbles_own_avatar_cb_, &S::bubbles_show_own_avatar,
                         SettingKey::BubblesOwnAvatar);
+            auto align_cb = tk::create_widget<tk::CheckButton>(
+                this, tk::tr("Align my messages to the right"), s.bubbles_align_own_messages_right);
+            align_cb->set_min_height(kOptionCheckH);
+            bubbles_align_own_messages_right_cb_ = opts->add_child(std::move(align_cb));
+            binder.bind(bubbles_align_own_messages_right_cb_, &S::bubbles_align_own_messages_right,
+                        SettingKey::BubblesAlignOwnMessagesRight,
+                        [this](bool)
+                        {
+                            if (message_layout_preview_)
+                            {
+                                message_layout_preview_->refresh_layout();
+                            }
+                        });
+            auto dock_cb = tk::create_widget<tk::CheckButton>(
+                this, tk::tr("Show side panels beside the timeline"), s.bubbles_dock_side_panels);
+            dock_cb->set_min_height(kOptionCheckH);
+            auto* dock = opts->add_child(std::move(dock_cb));
+            binder.bind(dock, &S::bubbles_dock_side_panels, SettingKey::BubblesDockSidePanels);
             using A = S::SystemMessageTimelineAlignment;
             auto center_cb = tk::create_widget<tk::CheckButton>(
                 this, tk::tr("Center system messages"),

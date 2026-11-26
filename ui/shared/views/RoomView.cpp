@@ -1187,7 +1187,6 @@ void RoomView::wire_internal_callbacks()
     };
     room_info_panel_->on_layout_changed = [this]()
     {
-        sync_side_panel_state_();
         if (on_layout_changed)
         {
             on_layout_changed();
@@ -1542,16 +1541,6 @@ void RoomView::confirm_and_report_(std::string event_id)
                               on_report_requested(event_id, std::move(*reason));
                           }
                       });
-}
-
-void RoomView::sync_side_panel_state_()
-{
-    if (!message_list_)
-    {
-        return;
-    }
-    message_list_->set_side_panel_open(thread_panel_state_ != ThreadPanelState::Closed ||
-                                       (room_info_panel_ && room_info_panel_->is_open()));
 }
 
 void RoomView::show_room_info()
@@ -3159,8 +3148,6 @@ void RoomView::set_thread_panel(ThreadPanelState state, const std::string& root_
         message_list_->set_highlighted_event(state == ThreadPanelState::Open ? root_event_id
                                                                              : std::string{});
     }
-    sync_side_panel_state_();
-
     if (on_layout_changed)
     {
         on_layout_changed();
@@ -3295,12 +3282,27 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float header_bottom = bounds.y + header_h;
     const float compose_top = bounds.y + bounds.h - compose_h;
 
-    // Thread panel floats on top of the main column: header, message list,
-    // and compose bar always arrange at full width. The panel paints last
-    // and intercepts pointer events first (children dispatch in reverse),
-    // so the message list keeps its natural width — text doesn't reflow
-    // when the panel toggles.
-    //
+    const auto& settings = tesseract::Settings::instance();
+    float reserved_panel_w = 0.0f;
+    if (settings.message_layout == tesseract::Settings::MessageLayout::Bubbles &&
+        settings.bubbles_dock_side_panels)
+    {
+        if (thread_panel_state_ != ThreadPanelState::Closed)
+        {
+            reserved_panel_w = kThreadPanelWidth;
+        }
+        if ((room_info_panel_ && room_info_panel_->is_open()) ||
+            (knock_requests_panel_ && knock_requests_panel_->is_open()))
+        {
+            reserved_panel_w = std::max(reserved_panel_w, RoomInfoPanel::kPanelW);
+        }
+        if (reserved_panel_w >= bounds.w)
+        {
+            reserved_panel_w = 0.0f;
+        }
+    }
+    const float timeline_w = bounds.w - reserved_panel_w;
+
     // The pinned-events banner (when visible) consumes a kBannerH-tall
     // strip at the top of the message-list area. The banner spans the
     // full bounds.w just like the message list does, so when the thread
@@ -3383,12 +3385,12 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (message_list_)
     {
-        message_list_->arrange(ctx, {bounds.x, list_top, bounds.w, msg_h});
+        message_list_->arrange(ctx, {bounds.x, list_top, timeline_w, msg_h});
     }
 
     if (message_blocker_)
     {
-        message_blocker_->arrange(ctx, {bounds.x, list_top, bounds.w, msg_h});
+        message_blocker_->arrange(ctx, {bounds.x, list_top, timeline_w, msg_h});
     }
 
     if (compose_bar_)

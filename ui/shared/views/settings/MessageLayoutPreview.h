@@ -17,10 +17,7 @@ class MessageLayoutPreview : public tk::Widget
 public:
     MessageLayoutPreview();
 
-    // Re-syncs the nested list's row renderer from the current global
-    // Settings::instance().message_layout and repaints. Call after the
-    // global setting has changed (or to force the preview in sync with
-    // it, e.g. when the settings panel populates).
+    // Re-syncs the nested list with the current display settings and repaints.
     void refresh_layout();
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

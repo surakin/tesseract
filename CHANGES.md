@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(settings): choose whether Bubbles side panels float or resize the timeline. Linux Qt6 build, user-verified
+- feat(settings): choose whether your messages align right in the Bubbles layout. Linux Qt6 build, user-verified
+- fix(messages): side panels no longer force own bubbles to the left when open. Linux Qt6 build, user-verified
+- fix(build): avoid a GCC warning that blocked the Linux Qt6 build. Linux Qt6 build
 - fix(macos): a restored draft, and text typed after a mention or emoticon, no longer turns black in the composer.
 - fix(macos): the text-field context menu and other system menus follow the system language instead of always showing English.
 - fix(ui): removing a power-level override no longer leaves a blank in the room history. Linux Qt6 build, ctest 4054/4054

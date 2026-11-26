@@ -4075,11 +4075,9 @@ public:
         return bubble_right_(m) && tesseract::Settings::instance().bubbles_show_own_avatar;
     }
 
-    // Own rows are right-anchored, except while a side panel is open: the
-    // timeline is then narrow and own rows lay out on the left like others'.
     bool bubble_right_(const MessageRowData& m) const
     {
-        return m.is_own && !owner_.side_panel_open_;
+        return m.is_own && tesseract::Settings::instance().bubbles_align_own_messages_right;
     }
 
     void render_bubble_row_(const RowPaintCtx& rp)
@@ -8764,7 +8762,7 @@ private:
     // ── Row layout strategy ──────────────────────────────────────────────
     // measure_row_height / paint_row dispatch every real message row here.
     // ClassicRowRenderer reproduces the historical layout exactly;
-    // BubbleRowRenderer right-aligns own messages in a subtle bubble.
+    // BubbleRowRenderer draws rounded bubbles with optional own-message alignment.
     // Rebuilt lazily when Settings::message_layout changes (the shell
     // also calls MessageListView::on_display_prefs_changed() to force a
     // relayout). Both renderers are friends so they can call the
@@ -10126,21 +10124,6 @@ void MessageListView::set_dimmed(bool dimmed)
     if (request_repaint_)
     {
         request_repaint_();
-    }
-}
-
-void MessageListView::set_side_panel_open(bool open)
-{
-    if (side_panel_open_ == open)
-    {
-        return;
-    }
-    side_panel_open_ = open;
-    // Only the Bubbles layout lays rows out differently while a panel is open.
-    if (tesseract::Settings::instance().message_layout ==
-        tesseract::Settings::MessageLayout::Bubbles)
-    {
-        on_display_prefs_changed();
     }
 }
 

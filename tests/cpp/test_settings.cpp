@@ -623,6 +623,44 @@ TEST_CASE("Settings persist message_layout", "[settings]")
     s.message_layout = ML::Classic; // restore default for other tests
 }
 
+TEST_CASE("Settings own bubble alignment defaults right and persists", "[settings][bubbles]")
+{
+    tesseract::test::SettingsGuard guard;
+    auto dir = make_tmp_dir("bubbles_align_own_messages_right");
+    auto& s = tesseract::Settings::instance();
+
+    s.bubbles_align_own_messages_right = false;
+    write_file(dir / "app_settings.json", "{}");
+    s.load_from_disk(dir);
+    CHECK(s.bubbles_align_own_messages_right);
+
+    s.bubbles_align_own_messages_right = false;
+    s.save_to_disk(dir);
+    s.bubbles_align_own_messages_right = true;
+    s.load_from_disk(dir);
+    CHECK_FALSE(s.bubbles_align_own_messages_right);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("Settings bubble side panels default floating and persist", "[settings][bubbles]")
+{
+    tesseract::test::SettingsGuard guard;
+    auto dir = make_tmp_dir("bubbles_dock_side_panels");
+    auto& s = tesseract::Settings::instance();
+    s.bubbles_dock_side_panels = true;
+    write_file(dir / "app_settings.json", "{}");
+    s.load_from_disk(dir);
+    CHECK_FALSE(s.bubbles_dock_side_panels);
+
+    s.bubbles_dock_side_panels = true;
+    s.save_to_disk(dir);
+    s.bubbles_dock_side_panels = false;
+    s.load_from_disk(dir);
+    CHECK(s.bubbles_dock_side_panels);
+    fs::remove_all(dir);
+}
+
 TEST_CASE("Settings persist system_message_timeline_alignment", "[settings][system_messages]")
 {
     using A = tesseract::Settings::SystemMessageTimelineAlignment;

@@ -800,6 +800,8 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::ShowSenderTimezone:
     case K::MessageLayout:
     case K::BubblesOwnAvatar:
+    case K::BubblesAlignOwnMessagesRight:
+    case K::BubblesDockSidePanels:
     case K::SystemMessageTimelineAlignment:
     case K::TimelineColumnWidth:
     case K::TimelineColumnAnchor:
