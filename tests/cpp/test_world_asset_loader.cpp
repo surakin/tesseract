@@ -124,7 +124,7 @@ struct EngineFixture
     {
         auto info = eh::Init<engine_create_info>();
         info.flags = ENGINE_CREATE_LOG_SUPPRESS_CONSOLE;
-        engine_info about;
+        engine_info about{};
         eh::Status made = eh::Engine::Create(loader.api, info, &engine);
         if (made.Ok())
         {

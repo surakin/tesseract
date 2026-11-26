@@ -27,10 +27,10 @@ using namespace tesseract::views::world;
 namespace world_transfer_test
 {
 
-struct TempDir
+struct TransferTempDir
 {
     fs::path path;
-    TempDir()
+    TransferTempDir()
     {
         static std::atomic<unsigned> n{0};
         path = fs::temp_directory_path() /
@@ -39,7 +39,7 @@ struct TempDir
                 std::to_string(n++));
         fs::create_directories(path);
     }
-    ~TempDir()
+    ~TransferTempDir()
     {
         std::error_code ec;
         fs::remove_all(path, ec);
@@ -165,7 +165,7 @@ using namespace world_transfer_test;
 
 TEST_CASE("import of a directory uploads one bundle and sets the event", "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Green field");
     FakeRoom room;
     std::string err;
@@ -179,7 +179,7 @@ TEST_CASE("import of a directory uploads one bundle and sets the event", "[world
 
 TEST_CASE("import of an invalid zip sets nothing", "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     write_file(t.path / "bad.zip", "this is not a zip file at all");
     FakeRoom room;
     std::string err;
@@ -205,7 +205,7 @@ TEST_CASE("import of the same directory twice hands set_room_world the same bund
 {
     // The dedup itself is Client::set_room_world's (it keys on this hash); what import controls is
     // that an unchanged directory gives identical bytes, so the same hash.
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w");
     FakeRoom room;
     REQUIRE(import_world(room.ops(), "!r:x", (t.path / "w").string(), nullptr));
@@ -217,7 +217,7 @@ TEST_CASE("import of the same directory twice hands set_room_world the same bund
 
 TEST_CASE("import refuses a symbolic link", "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w");
     std::error_code ec;
     fs::create_directory_symlink(t.path / "w", t.path / "link", ec);
@@ -234,7 +234,7 @@ TEST_CASE("import refuses a symbolic link", "[world][world transfer]")
 
 TEST_CASE("export writes the manifest and every file", "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Green field");
     FakeRoom room;
     REQUIRE(import_world(room.ops(), "!r:x", (t.path / "w").string(), nullptr));
@@ -248,7 +248,7 @@ TEST_CASE("export writes the manifest and every file", "[world][world transfer]"
 
 TEST_CASE("export refuses to overwrite an existing directory", "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Green field");
     FakeRoom room;
     REQUIRE(import_world(room.ops(), "!r:x", (t.path / "w").string(), nullptr));
@@ -281,7 +281,7 @@ TEST_CASE("export refuses to overwrite an existing directory", "[world][world tr
 TEST_CASE("export of a room without a world copies exactly the meadow's manifest files (no .py)",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     const fs::path assets = EngineScene::default_assets_dir();
     const auto expected_list = bundle_files(read_file(assets / "world.json"));
     REQUIRE_FALSE(expected_list.empty());
@@ -299,7 +299,7 @@ TEST_CASE("export of a room without a world copies exactly the meadow's manifest
 
 TEST_CASE("export then import round-trips to the same hash", "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Round trip");
     FakeRoom room;
     REQUIRE(import_world(room.ops(), "!r:x", (t.path / "w").string(), nullptr));
@@ -363,7 +363,7 @@ TEST_CASE("the exported directory name is safe whatever the world is called",
 TEST_CASE("a world named with path separators exports into a safe directory",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "..\\\\..\\\\evil/..");
     FakeRoom room;
     REQUIRE(import_world(room.ops(), "!r:x", (t.path / "w").string(), nullptr));
@@ -377,7 +377,7 @@ TEST_CASE("a world named with path separators exports into a safe directory",
 TEST_CASE("export reports a room whose world cannot be read or downloaded",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     FakeRoom room;
     TransferOps ops = room.ops();
     ops.room_world = [](const std::string&)
@@ -409,7 +409,7 @@ TEST_CASE("export of the meadow works when the loaded bundle directory was prune
           "[world][world transfer]")
 {
     // The export reads the room's bundle from the server, never the loader's cache directory.
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Pruned");
     FakeRoom room;
     REQUIRE(import_world(room.ops(), "!r:x", (t.path / "w").string(), nullptr));
@@ -423,7 +423,7 @@ TEST_CASE("export of the meadow works when the loaded bundle directory was prune
 TEST_CASE("import and export turn a throwing client or a non-UTF-8 path into an error",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w");
     FakeRoom room;
     std::string err;
@@ -461,7 +461,7 @@ TEST_CASE("import and export turn a throwing client or a non-UTF-8 path into an 
 TEST_CASE("import reports a missing temporary directory instead of throwing",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w");
     FakeRoom room;
     const char* old = std::getenv("TMPDIR");
@@ -503,7 +503,7 @@ TEST_CASE("client_transfer_ops with a gone client says the call ended", "[world]
 TEST_CASE("import trusts the published bundle's hash, and only on success",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Green field");
     FakeRoom room;
     std::vector<std::string> trusted;
@@ -524,7 +524,7 @@ TEST_CASE("import trusts the published bundle's hash, and only on success",
 TEST_CASE("import refuses a bundle no client could load, before uploading",
           "[world][world transfer]")
 {
-    TempDir t;
+    TransferTempDir t;
     make_world_dir(t.path / "w", "Green field");
     // Valid for the SDK, but its script attaches under a name the C++ side refuses is hard to
     // make; an events_out name with a control character is refused by both. Use a manifest the

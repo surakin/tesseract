@@ -303,14 +303,14 @@ std::vector<std::uint8_t> pose_frame(std::uint32_t seq, std::uint32_t time_ms, c
     putf(b, 16, p.y);
     putf(b, 20, p.z);
     const long yaw = std::lround(p.yaw / (2 * std::numbers::pi) * 65536.0) & 0xFFFF;
-    b[24] = yaw & 0xFF;
-    b[25] = yaw >> 8;
+    b[24] = static_cast<std::uint8_t>(yaw & 0xFF);
+    b[25] = static_cast<std::uint8_t>(yaw >> 8);
     const long pitch = std::lround(p.pitch / (std::numbers::pi / 2) * 32767.0);
-    b[26] = pitch & 0xFF;
-    b[27] = (pitch >> 8) & 0xFF;
+    b[26] = static_cast<std::uint8_t>(pitch & 0xFF);
+    b[27] = static_cast<std::uint8_t>((pitch >> 8) & 0xFF);
     const long speed = std::lround(p.speed * 1000.0);
-    b[28] = speed & 0xFF;
-    b[29] = (speed >> 8) & 0xFF;
+    b[28] = static_cast<std::uint8_t>(speed & 0xFF);
+    b[29] = static_cast<std::uint8_t>((speed >> 8) & 0xFF);
     return b;
 }
 
