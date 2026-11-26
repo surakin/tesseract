@@ -1098,17 +1098,27 @@ void ShellBase::apply_low_power_mode_(bool active)
     resolve_presence_polling_();
 }
 
+bool ShellBase::presence_polling_wanted_() const
+{
+    return tesseract::Settings::instance().send_presence && last_window_active_ &&
+           !low_power_active();
+}
+
 void ShellBase::resolve_presence_polling_()
 {
-    // Single writer of the SDK DM-presence-poll knob. Poll only when the user
+    // Single writer of the SDK DM-presence-poll knobs. Poll only when the user
     // allows presence, the window is on-screen, and we're not conserving power.
-    const bool want =
-        tesseract::Settings::instance().send_presence && last_window_active_ && !low_power_active();
+    // Sliding Sync delivers no presence EDUs, so this poll is the only receive
+    // path. The SDK polls every 60 s; the kick here refreshes at once (it is
+    // skipped SDK-side when the last poll is only seconds old).
+    const bool want = presence_polling_wanted_();
     if (!client_)
     {
         return;
     }
     auto sess = active_account_;
+    const bool want_changed = presence_applied_want_ != std::optional<bool>(want);
+    presence_applied_want_ = want;
     run_async_mut_(
         [sess, want]()
         {
@@ -1122,6 +1132,27 @@ void ShellBase::resolve_presence_polling_()
                 sess->client->poll_presence_now();
             }
         });
+    // Turning presence off in Settings hides the presence line, turning it on
+    // brings it back from the cached value (a pause keeps it as it is).
+    if (want_changed)
+    {
+        refresh_presence_subtitles_();
+    }
+}
+
+void ShellBase::refresh_presence_subtitles_()
+{
+    if (main_room_pane_)
+    {
+        main_room_pane_->refresh_presence_subtitle_();
+    }
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (w && w->pane())
+        {
+            w->pane()->refresh_presence_subtitle_();
+        }
+    }
 }
 
 // Apply the persisted "Use historical MSC2545 compatibility" preference

@@ -10,6 +10,7 @@
 #include "views/RoomMediaView.h"
 #include "views/send_block.h"
 #include "views/media_drop.h"
+#include "views/presence_text.h"
 #include "views/text_util.h"
 #include "tk/i18n.h"
 #include <tesseract/client.h>
@@ -379,6 +380,7 @@ void RoomPane::finish_init()
                 // set_room() clears the pinned-messages banner, so seed it
                 // from the cached room info right after.
                 refresh_pinned_(r);
+                refresh_presence_subtitle_();
             }
             deps_.update_window_title(r.name);
             break;
@@ -509,6 +511,18 @@ void RoomPane::wire_room_view_()
         {
             shell_->ensure_profile_avatar_(mxc);
         };
+        // Hidden only when presence is turned off in Settings; while polling
+        // is paused (unfocused window, low power) the last known value stays.
+        // Only DM counterparts are polled, so other users simply have no data.
+        panel->set_presence_provider(
+            [this](const std::string& user_id) -> std::optional<tesseract::PresenceInfo>
+            {
+                if (!tesseract::Settings::instance().send_presence)
+                {
+                    return std::nullopt;
+                }
+                return shell_->presence_info_for_(user_id);
+            });
         panel->on_trust_requested = [this](std::string user_id)
         {
             refresh_profile_trust_(user_id);
@@ -2922,6 +2936,7 @@ void RoomPane::on_room_info_updated(const RoomInfo& r)
         // set_room() clears the pinned-messages banner, so re-seed it from
         // the fresh room info (mirrors finish_init's initial seed).
         refresh_pinned_(r);
+        refresh_presence_subtitle_();
     }
     deps_.update_window_title(r.name);
     deps_.relayout();
@@ -4716,6 +4731,33 @@ void RoomPane::refresh_room_members_()
     {
         room_view_->on_fetch_room_members(room_id_);
     }
+}
+
+void RoomPane::refresh_presence_subtitle_()
+{
+    if (room_view_ && room_view_->user_profile_panel())
+    {
+        room_view_->user_profile_panel()->refresh_presence();
+    }
+    if (!room_view_ || !room_view_->header() || room_id_.empty())
+    {
+        return;
+    }
+    // The header shows a presence subtitle only for a 1:1 DM — the same
+    // counterpart the Rust presence poller tracks. Everything else keeps its
+    // topic there (or nothing).
+    std::string subtitle;
+    // Hidden only when presence is turned off in Settings. While polling is
+    // paused (unfocused window, low power) the last known value stays: "last
+    // seen" text is recomputed from its timestamp, and refocusing polls again.
+    if (const auto* r = pane_room_by_id_(room_id_); tesseract::Settings::instance().send_presence &&
+                                                    r && r->is_direct && !r->is_space &&
+                                                    !r->dm_counterpart_user_id.empty())
+    {
+        const PresenceInfo info = shell_->presence_info_for_(r->dm_counterpart_user_id);
+        subtitle = views::presence_line(info.state, info.last_active_ts, info.currently_active);
+    }
+    room_view_->header()->set_presence_text(std::move(subtitle));
 }
 
 const tk::Image* RoomPane::shell_avatar_(const std::string& mxc) const

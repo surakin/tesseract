@@ -13,6 +13,7 @@
 #include <functional>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -109,6 +110,21 @@ public:
     }
     std::function<void(std::string room_id)> on_common_room_avatar_needed;
 
+    // Presence of the shown user: a dot on the avatar and a "Last seen ..." line
+    // under the MXID. The provider returns the shell's cached presence, or
+    // nullopt when it must not be shown (polling off, so the data is stale).
+    // Unknown presence (offline, never active) shows neither.
+    using PresenceProvider =
+        std::function<std::optional<tesseract::PresenceInfo>(const std::string& user_id)>;
+    void set_presence_provider(PresenceProvider p);
+    // Re-reads the provider; relayouts and repaints only if what is shown changed.
+    void refresh_presence();
+    // The presence line currently shown ("" when hidden). For tests/a11y.
+    std::string presence_text() const
+    {
+        return presence_text_();
+    }
+
     // Callbacks wired by shell
     std::function<void(std::string user_id)> on_open_dm;
     std::function<void(std::string user_id)> on_ignore;
@@ -152,7 +168,13 @@ public:
     // The trust shield is canvas-painted, so its meaning is announced here.
     std::string access_description() const override
     {
-        return trust_tooltip_text_();
+        const std::string trust = trust_tooltip_text_();
+        const std::string presence = presence_text_();
+        if (trust.empty() || presence.empty())
+        {
+            return trust.empty() ? presence : trust;
+        }
+        return trust + ". " + presence;
     }
 
 private:
@@ -166,6 +188,15 @@ private:
     std::string fullres_requested_for_;
 
     ImageProvider image_provider_;
+
+    PresenceProvider presence_provider_;
+    // Fingerprint of what the last layout/paint showed, so refresh_presence()
+    // only relayouts on a visible change.
+    std::string presence_shown_key_;
+    std::string presence_text_() const;
+    tesseract::PresenceState presence_state_() const;
+    std::string presence_key_() const;
+    tk::CachedTextLayout presence_layout_;
 
     // Child widgets (borrowed pointers)
     tk::Button* close_btn_ = nullptr;
@@ -262,6 +293,7 @@ private:
     static constexpr float kPadX = 16.0f;
     static constexpr float kPadY = 12.0f;
     static constexpr float kButtonH = 36.0f;
+    static constexpr float kPresH = 16.0f; // presence line (Small font)
     static constexpr float kHeaderH = 40.0f;
 };
 

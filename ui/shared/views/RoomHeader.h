@@ -46,6 +46,12 @@ public:
     void set_room(const tesseract::RoomInfo& info);
     void set_avatar_provider(std::function<const tk::Image*(const std::string& mxc_url)> provider);
 
+    // Second line under the room name: a DM counterpart's presence text
+    // ("Online", "Active now", "Last seen 5m ago"). When non-empty it is
+    // appended to the topic ("<topic> · <presence>"), or shown alone when
+    // there is no topic; an empty string leaves just the topic.
+    void set_presence_text(std::string text);
+
     // When condensed, the header shows only the room topic at a reduced height.
     // Used by the multi-tab layout when a TabBar is visible above the header.
     void set_condensed(bool condensed);
@@ -311,6 +317,34 @@ public:
         return topic_label_ ? topic_label_->bounds() : tk::Rect{};
     }
 
+    // Test-only: the full second-line text as drawn (topic first line plus
+    // appended presence), whether painted from spans or the plain label.
+    std::string subtitle_for_test() const
+    {
+        std::string text;
+        if (!topic_spans_.empty())
+        {
+            for (const auto& span : subtitle_spans_())
+            {
+                text += span.text;
+            }
+            return text;
+        }
+        return subtitle_text_();
+    }
+
+    // Test-only: the current second-line presence text.
+    const std::string& presence_text_for_test() const
+    {
+        return presence_text_;
+    }
+
+    // Test-only: whether the cached topic state says the topic spans lines.
+    bool topic_multiline_for_test() const
+    {
+        return topic_multiline_;
+    }
+
 private:
     bool encrypted_ = false;
     tk::Rect lock_icon_rect_{};
@@ -351,6 +385,19 @@ private:
     std::string display_name_;
     std::string topic_;
     std::string topic_html_;
+    // Presence subtitle for a DM counterpart. When set it takes the topic's
+    // place as the header's second line.
+    std::string presence_text_;
+    // Id of the room last passed to set_room(); a change clears presence_text_.
+    std::string room_id_;
+
+    // Second-line helpers: the topic with presence appended, as plain text
+    // (label), as spans (rich paths) and as the full tooltip text.
+    bool showing_presence_() const;
+    std::string subtitle_text_() const;
+    std::vector<tk::TextSpan> subtitle_spans_() const;
+    std::string subtitle_tooltip_text_() const;
+    bool subtitle_visible_() const;
     std::vector<tk::TextSpan> topic_spans_;
     // First-line-only spans used for painting (equals topic_spans_ when
     // the topic is single-line; truncated at the first \n + "…" otherwise).

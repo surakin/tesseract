@@ -1291,6 +1291,22 @@ pub mod ffi {
         is_current: bool,
     }
 
+    /// One user's presence snapshot, delivered by `on_presence_changed`.
+    /// `state` uses the same encoding as the wire enum: 1=Online,
+    /// 2=Unavailable, 3=Offline (0 is never sent). `last_active_ts` is unix
+    /// milliseconds derived from the server's `last_active_ago`, or 0 when the
+    /// homeserver reported none (never seen / its presence is disabled).
+    /// `currently_active` is the server's own "right now" flag, present only
+    /// for some servers. `status_msg` is the user's free-form status text,
+    /// empty when unset.
+    struct PresenceFfi {
+        user_id: String,
+        state: u8,
+        last_active_ts: u64,
+        currently_active: bool,
+        status_msg: String,
+    }
+
     /// One thread in a room, flattened from matrix-sdk-ui's ThreadListItem.
     /// `latest_*` fields are empty/0 when no reply summary is available.
     struct ThreadInfo {
@@ -1960,7 +1976,7 @@ pub mod ffi {
 
         /// Fired when a presence event arrives for `user_id`. `state` encodes:
         ///   1 = Online  2 = Unavailable  3 = Offline
-        fn on_presence_changed(self: &EventHandlerBridge, user_id: &str, state: u8);
+        fn on_presence_changed(self: &EventHandlerBridge, presence: &PresenceFfi);
 
         /// Fired when the cached thread list for `room_id` changes. The UI
         /// re-queries via list_room_threads (re-query ping, like
@@ -4424,8 +4440,9 @@ pub mod ffi {
         fn set_active_room(self: &ClientFfi, room_id: &str);
 
         /// Issue one immediate round of DM presence polls without waiting
-        /// for the 60s interval. Used by the UI shell when the window
-        /// returns to focus so contacts don't appear stale after un-minimize.
+        /// for the 60s interval, unless a round started within the last 15 s.
+        /// Used by the UI shell when the window returns to focus, polling
+        /// turns on or a DM is opened, so presence is fresh where it is seen.
         /// No-op if sync isn't running or polling is disabled. Thread-safe.
         fn poll_presence_now(self: &ClientFfi);
 

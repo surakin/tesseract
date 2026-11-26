@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "tk/slider.h"
@@ -199,4 +200,76 @@ TEST_CASE("Slider set_range widens an unset limit to the new maximum", "[tk][sli
     s.slider->set_range(0.0, 2000.0); // an explicit limit is kept
     s.slider->set_value(900.0);
     CHECK(s.slider->value() == 500.0);
+}
+
+TEST_CASE("Slider snaps user input to its step anchored at min", "[tk][slider]")
+{
+    vt::Stage st;
+    auto slider = create_root_widget<Slider>(&st.host, 5.0, 300.0, 5.0);
+    std::vector<double> changes;
+    slider->on_changed = [&](double v)
+    {
+        changes.push_back(v);
+    };
+    st.mount(*slider, {0, 0, 200, 24});
+
+    // Drag across the whole track: every value is on the 5-step grid.
+    st.host.dispatch_pointer_down({0.0f, 12.0f});
+    for (float x = 0.0f; x <= 200.0f; x += 3.0f)
+    {
+        slider->on_pointer_drag({x, 12.0f});
+        const double v = slider->value();
+        CHECK(std::fmod(v, 5.0) == 0.0);
+        CHECK(v >= 5.0);
+        CHECK(v <= 300.0);
+    }
+    slider->on_pointer_drag({999.0f, 12.0f});
+    CHECK(slider->value() == 300.0);
+    slider->on_pointer_drag({-9.0f, 12.0f});
+    CHECK(slider->value() == 5.0);
+
+    CHECK(slider->access_set_value(62.0));
+    CHECK(slider->value() == 60.0);
+    CHECK(slider->access_set_value(63.0));
+    CHECK(slider->value() == 65.0);
+}
+
+TEST_CASE("Slider snapping never overshoots a max off the step grid", "[tk][slider]")
+{
+    vt::Stage st;
+    auto slider = create_root_widget<Slider>(&st.host, 0.0, 10.0, 3.0);
+    st.mount(*slider, {0, 0, 200, 24});
+    CHECK(slider->access_set_value(9.9));
+    CHECK(slider->value() == 10.0);
+    CHECK(slider->access_set_value(8.0));
+    CHECK(slider->value() == 9.0);
+    CHECK(slider->access_set_value(1000.0));
+    CHECK(slider->value() == 10.0);
+
+    slider->set_limit(7.0);
+    CHECK(slider->access_set_value(7.0));
+    CHECK(slider->value() == 7.0);
+    st.host.request_focus(slider.get());
+    CHECK(slider->on_key_down(vt::key(Key::End)));
+    CHECK(slider->value() == 7.0);
+    CHECK(slider->on_key_down(vt::key(Key::Home)));
+    CHECK(slider->value() == 0.0);
+}
+
+TEST_CASE("Slider snapping keeps fine and unit steps usable", "[tk][slider]")
+{
+    vt::Stage st;
+    auto fine = create_root_widget<Slider>(&st.host, 0.0, 1.0, 0.001);
+    st.mount(*fine, {0, 0, 200, 24});
+    CHECK(fine->access_set_value(0.5004));
+    CHECK(fine->value() == Catch::Approx(0.5).margin(1e-9));
+    CHECK(fine->access_set_value(0.5006));
+    CHECK(fine->value() == Catch::Approx(0.501).margin(1e-9));
+    CHECK(fine->access_set_value(1.0));
+    CHECK(fine->value() == 1.0);
+
+    auto unit = create_root_widget<Slider>(&st.host, 0.0, 100.0, 1.0);
+    st.mount(*unit, {0, 30, 200, 24});
+    CHECK(unit->access_set_value(41.6));
+    CHECK(unit->value() == 42.0);
 }

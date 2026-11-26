@@ -374,3 +374,148 @@ TEST_CASE("local_midnight_ms starts the picked day at local midnight",
     }
 }
 #endif
+
+TEST_CASE("set_room keeps topic state current while a presence subtitle shows",
+          "[room_header][presence]")
+{
+    RoomHeader h;
+    h.set_presence_text("Online");
+
+    tesseract::RoomInfo info;
+    info.id = "!b:x";
+    info.name = "Other";
+    info.topic = "first line\nsecond line";
+    h.set_room(info);
+    CHECK(h.topic_multiline_for_test());
+
+    // Presence clearing afterwards must leave the new room's topic state.
+    h.set_presence_text("");
+    CHECK(h.topic_multiline_for_test());
+}
+
+namespace
+{
+
+tesseract::RoomInfo presence_test_room(const std::string& topic, const std::string& topic_html = {})
+{
+    tesseract::RoomInfo info;
+    info.id = "!p:x";
+    info.name = "Friend";
+    info.topic = topic;
+    info.topic_html = topic_html;
+    return info;
+}
+
+} // namespace
+
+TEST_CASE("set_room clears presence only when the room changes", "[room_header][presence]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    auto dm = presence_test_room("");
+    dm.id = "!dm:x";
+    h.set_room(dm);
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "Online");
+
+    // Same room (an info update): presence stays.
+    dm.name = "Renamed";
+    h.set_room(dm);
+    CHECK(h.presence_text_for_test() == "Online");
+    CHECK(h.subtitle_for_test() == "Online");
+
+    // Different room: presence is gone at once and only the new topic shows.
+    auto other = presence_test_room("Weekly sync");
+    other.id = "!room:x";
+    h.set_room(other);
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.presence_text_for_test().empty());
+    CHECK(h.subtitle_for_test() == "Weekly sync");
+
+    // A topicless room with the same topic as before also drops presence.
+    h.set_presence_text("Away");
+    auto third = presence_test_room("Weekly sync");
+    third.id = "!third:x";
+    h.set_room(third);
+    CHECK(h.presence_text_for_test().empty());
+    CHECK(h.subtitle_for_test() == "Weekly sync");
+}
+
+TEST_CASE("A plain topic shows the presence appended after it", "[room_header][presence]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "Weekly sync · Online");
+}
+
+TEST_CASE("A multiline topic keeps its first line and ellipsis before the presence",
+          "[room_header][presence]")
+{
+    RoomHeader h;
+    h.set_room(presence_test_room("first line\nsecond line"));
+    h.set_presence_text("Online");
+    CHECK(h.subtitle_for_test() == "first line… · Online");
+}
+
+TEST_CASE("A topic with a link keeps the link and gets an unlinked presence tail",
+          "[room_header][presence]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("see https://example.org/x now"));
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "see https://example.org/x now · Online");
+
+    std::size_t links = 0;
+    const std::size_t rows = h.access_row_count();
+    for (std::size_t i = 0; i < rows; ++i)
+    {
+        links += h.access_role_for_widget_row(i) == tk::Role::Link ? 1 : 0;
+    }
+    CHECK(links == 1);
+}
+
+TEST_CASE("An HTML topic gets the presence appended", "[room_header][presence]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Docs here", "<a href=\"https://example.org\">Docs</a> here"));
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "Docs here · Online");
+}
+
+TEST_CASE("Presence alone and topic alone each fill the second line", "[room_header][presence]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room(""));
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "Online");
+
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "Weekly sync");
+}
+
+TEST_CASE("Toggling presence with an unchanged topic updates the line", "[room_header][presence]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("see https://example.org/x"));
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "see https://example.org/x");
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "see https://example.org/x · Online");
+    h.set_presence_text("");
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK(h.subtitle_for_test() == "see https://example.org/x");
+}

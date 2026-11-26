@@ -9,7 +9,7 @@ msgstr ""
 
 #: ui/linux-gtk/src/CallWindow.cpp:24 ui/linux-qt/src/CallWindow.cpp:18
 #: ui/macos/src/CallWindowController.mm:70 ui/shared/views/RoomHeader.cpp:255
-#: ui/shared/views/RoomHeader.cpp:865 ui/windows/src/CallWindow.cpp:52
+#: ui/shared/views/RoomHeader.cpp:948 ui/windows/src/CallWindow.cpp:52
 msgid "Call"
 msgstr "[Çàllx]"
 
@@ -24,13 +24,13 @@ msgstr "[Qùïtx]"
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:218 ui/linux-qt/src/LinuxNotifier.cpp:194
 #: ui/macos/src/MainWindow.mm:2958 ui/shared/views/MessageActions.cpp:22
-#: ui/shared/views/MessageListView.cpp:11532
+#: ui/shared/views/MessageListView.cpp:11535
 #: ui/windows/src/Win32Notifier.cpp:282
 msgid "Reply"
 msgstr "[Réplyx]"
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:263 ui/linux-qt/src/LinuxNotifier.cpp:248
-#: ui/shared/app/RoomPane.cpp:5564
+#: ui/shared/app/RoomPane.cpp:5586
 msgid "Open"
 msgstr "[Öpéñx]"
 
@@ -136,8 +136,8 @@ msgstr "[Qùït Tésséràçtxx]"
 
 #: ui/macos/src/AppDelegate.mm:296 ui/shared/views/ComposeBar.cpp:1026
 #: ui/shared/views/FileViewerPage.cpp:61
-#: ui/shared/views/MessageListView.cpp:2187
-#: ui/shared/views/MessageListView.cpp:8401
+#: ui/shared/views/MessageListView.cpp:2190
+#: ui/shared/views/MessageListView.cpp:8404
 msgid "File"
 msgstr "[Fïléx]"
 
@@ -146,7 +146,7 @@ msgid "Add Room…"
 msgstr "[Àdd Rööm…x]"
 
 #: ui/macos/src/AppDelegate.mm:305 ui/shared/views/MessageActions.cpp:33
-#: ui/shared/views/MessageListView.cpp:11534
+#: ui/shared/views/MessageListView.cpp:11537
 msgid "Edit"
 msgstr "[Édïtx]"
 
@@ -283,25 +283,25 @@ msgid "Unable to decrypt this message"
 msgstr "[Ùñàblé tö déçrypt thïs méssàgéxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:105
-#: ui/shared/views/MessageListView.cpp:2179
-#: ui/shared/views/MessageListView.cpp:6299
+#: ui/shared/views/MessageListView.cpp:2182
+#: ui/shared/views/MessageListView.cpp:6302
 msgid "Message deleted"
 msgstr "[Méssàgé délétédxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:106
-#: ui/shared/views/MessageListView.cpp:3942
-#: ui/shared/views/MessageListView.cpp:3969
-#: ui/shared/views/MessageListView.cpp:5967
-#: ui/shared/views/MessageListView.cpp:6017
-#: ui/shared/views/MessageListView.cpp:6046
-#: ui/shared/views/MessageListView.cpp:6074
-#: ui/shared/views/MessageListView.cpp:6094
-#: ui/shared/views/MessageListView.cpp:6206
-#: ui/shared/views/MessageListView.cpp:6232
-#: ui/shared/views/MessageListView.cpp:6281
-#: ui/shared/views/MessageListView.cpp:6384
-#: ui/shared/views/MessageListView.cpp:6457
-#: ui/shared/views/MessageListView.cpp:6527
+#: ui/shared/views/MessageListView.cpp:3945
+#: ui/shared/views/MessageListView.cpp:3972
+#: ui/shared/views/MessageListView.cpp:5970
+#: ui/shared/views/MessageListView.cpp:6020
+#: ui/shared/views/MessageListView.cpp:6049
+#: ui/shared/views/MessageListView.cpp:6077
+#: ui/shared/views/MessageListView.cpp:6097
+#: ui/shared/views/MessageListView.cpp:6209
+#: ui/shared/views/MessageListView.cpp:6235
+#: ui/shared/views/MessageListView.cpp:6284
+#: ui/shared/views/MessageListView.cpp:6387
+#: ui/shared/views/MessageListView.cpp:6460
+#: ui/shared/views/MessageListView.cpp:6530
 msgid "(edited)"
 msgstr "[(édïtéd)x]"
 
@@ -331,118 +331,118 @@ msgid "Reactions: {0}"
 msgstr "[Réàçtïöñs: {0}xx]"
 
 #: ui/shared/app/HistoryExportController.cpp:112
-#: ui/shared/views/MessageListView.cpp:1661
-#: ui/shared/views/MessageListView.cpp:1830
+#: ui/shared/views/MessageListView.cpp:1664
+#: ui/shared/views/MessageListView.cpp:1833
 #, c++-format
 msgid "{0} joined the room"
 msgstr "[{0} jöïñéd thé röömxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:113
-#: ui/shared/views/MessageListView.cpp:1663
-#: ui/shared/views/MessageListView.cpp:1832
+#: ui/shared/views/MessageListView.cpp:1666
+#: ui/shared/views/MessageListView.cpp:1835
 #, c++-format
 msgid "{0} left the room"
 msgstr "[{0} léft thé röömxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:114
-#: ui/shared/views/MessageListView.cpp:1665
+#: ui/shared/views/MessageListView.cpp:1668
 #, c++-format
 msgid "{0} was banned by {1}"
 msgstr "[{0} wàs bàññéd by {1}xxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:115
-#: ui/shared/views/MessageListView.cpp:1666
+#: ui/shared/views/MessageListView.cpp:1669
 #, c++-format
 msgid "{0} was banned"
 msgstr "[{0} wàs bàññédxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:116
-#: ui/shared/views/MessageListView.cpp:1668
+#: ui/shared/views/MessageListView.cpp:1671
 #, c++-format
 msgid "{0} was unbanned by {1}"
 msgstr "[{0} wàs ùñbàññéd by {1}xxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:117
-#: ui/shared/views/MessageListView.cpp:1669
+#: ui/shared/views/MessageListView.cpp:1672
 #, c++-format
 msgid "{0} is no longer banned"
 msgstr "[{0} ïs ñö löñgér bàññédxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:118
-#: ui/shared/views/MessageListView.cpp:1671
+#: ui/shared/views/MessageListView.cpp:1674
 #, c++-format
 msgid "{0} was removed by {1}"
 msgstr "[{0} wàs rémövéd by {1}xxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:119
-#: ui/shared/views/MessageListView.cpp:1672
+#: ui/shared/views/MessageListView.cpp:1675
 #, c++-format
 msgid "{0} was removed"
 msgstr "[{0} wàs rémövédxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:120
-#: ui/shared/views/MessageListView.cpp:1674
+#: ui/shared/views/MessageListView.cpp:1677
 #, c++-format
 msgid "{0} was invited by {1}"
 msgstr "[{0} wàs ïñvïtéd by {1}xxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:121
-#: ui/shared/views/MessageListView.cpp:1675
+#: ui/shared/views/MessageListView.cpp:1678
 #, c++-format
 msgid "{0} received an invitation"
 msgstr "[{0} réçéïvéd àñ ïñvïtàtïöñxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:122
-#: ui/shared/views/MessageListView.cpp:1677
+#: ui/shared/views/MessageListView.cpp:1680
 #, c++-format
 msgid "{0} was removed and banned by {1}"
 msgstr "[{0} wàs rémövéd àñd bàññéd by {1}xxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:123
-#: ui/shared/views/MessageListView.cpp:1678
+#: ui/shared/views/MessageListView.cpp:1681
 #, c++-format
 msgid "{0} was kicked and banned"
 msgstr "[{0} wàs kïçkéd àñd bàññédxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:124
-#: ui/shared/views/MessageListView.cpp:1680
+#: ui/shared/views/MessageListView.cpp:1683
 #, c++-format
 msgid "{0} has accepted the invitation"
 msgstr "[{0} hàs àççéptéd thé ïñvïtàtïöñxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:125
-#: ui/shared/views/MessageListView.cpp:1682
+#: ui/shared/views/MessageListView.cpp:1685
 #, c++-format
 msgid "{0} has rejected the invitation"
 msgstr "[{0} hàs réjéçtéd thé ïñvïtàtïöñxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:126
-#: ui/shared/views/MessageListView.cpp:1684
+#: ui/shared/views/MessageListView.cpp:1687
 #, c++-format
 msgid "{0}'s invitation was revoked by {1}"
 msgstr "[{0}'s ïñvïtàtïöñ wàs révökéd by {1}xxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:127
-#: ui/shared/views/MessageListView.cpp:1685
+#: ui/shared/views/MessageListView.cpp:1688
 #, c++-format
 msgid "{0}'s invitation was revoked"
 msgstr "[{0}'s ïñvïtàtïöñ wàs révökédxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:128
-#: ui/shared/views/MessageListView.cpp:1687
-#: ui/shared/views/MessageListView.cpp:1857
+#: ui/shared/views/MessageListView.cpp:1690
+#: ui/shared/views/MessageListView.cpp:1860
 #, c++-format
 msgid "{0} requested to join"
 msgstr "[{0} réqùéstéd tö jöïñxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:129
-#: ui/shared/views/MessageListView.cpp:1689
+#: ui/shared/views/MessageListView.cpp:1692
 #, c++-format
 msgid "{0}'s request to join was approved by {1}"
 msgstr "[{0}'s réqùést tö jöïñ wàs àpprövéd by {1}xxxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:130
-#: ui/shared/views/MessageListView.cpp:1690
+#: ui/shared/views/MessageListView.cpp:1693
 #, c++-format
 msgid "{0}'s join request was approved"
 msgstr "[{0}'s jöïñ réqùést wàs àpprövédxxxxxx]"
@@ -453,25 +453,25 @@ msgid "{0}'s request to join was withdrawn"
 msgstr "[{0}'s réqùést tö jöïñ wàs wïthdràwñxxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:132
-#: ui/shared/views/MessageListView.cpp:1694
+#: ui/shared/views/MessageListView.cpp:1697
 #, c++-format
 msgid "{0}'s request to join was denied by {1}"
 msgstr "[{0}'s réqùést tö jöïñ wàs déñïéd by {1}xxxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:133
-#: ui/shared/views/MessageListView.cpp:1695
+#: ui/shared/views/MessageListView.cpp:1698
 #, c++-format
 msgid "{0}'s join request was denied"
 msgstr "[{0}'s jöïñ réqùést wàs déñïédxxxxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:134
-#: ui/shared/views/MessageListView.cpp:14788
+#: ui/shared/views/MessageListView.cpp:14791
 #, c++-format
 msgid "{0}. Reason: {1}"
 msgstr "[{0}. Réàsöñ: {1}xxx]"
 
 #: ui/shared/app/HistoryExportController.cpp:135
-#: ui/shared/views/MessageListView.cpp:2002
+#: ui/shared/views/MessageListView.cpp:2005
 #, c++-format
 msgid "{0} via {1}"
 msgstr "[{0} vïà {1}xx]"
@@ -554,26 +554,26 @@ msgstr "[Ùsàgé:x]"
 msgid "Options:"
 msgstr "[Öptïöñs:x]"
 
-#: ui/shared/app/RoomPane.cpp:491
+#: ui/shared/app/RoomPane.cpp:493
 msgid "Switch to this account to open this room."
 msgstr "[Swïtçh tö thïs àççöùñt tö öpéñ thïs rööm.xxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:521
+#: ui/shared/app/RoomPane.cpp:523
 msgid "Switch to this account to verify users."
 msgstr "[Swïtçh tö thïs àççöùñt tö vérïfy ùsérs.xxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:546 ui/shared/app/RoomPane.cpp:3862
-#: ui/shared/app/RoomPane.cpp:4012
+#: ui/shared/app/RoomPane.cpp:548 ui/shared/app/RoomPane.cpp:3865
+#: ui/shared/app/RoomPane.cpp:4015
 #, c++-format
 msgid "Couldn't update the digital identity: {0}"
 msgstr "[Çöùldñ't ùpdàté thé dïgïtàl ïdéñtïty: {0}xxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:818
+#: ui/shared/app/RoomPane.cpp:820
 #, c++-format
 msgid "Failed to set topic: {0}"
 msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
 
-#: ui/shared/app/RoomPane.cpp:1212 ui/shared/app/ShellBase_settings.cpp:1760
+#: ui/shared/app/RoomPane.cpp:1214 ui/shared/app/ShellBase_settings.cpp:1783
 #: ui/shared/views/settings/SettingsController.cpp:114
 #: ui/shared/views/settings/SettingsController.cpp:244
 #: ui/shared/views/settings/SettingsController.cpp:662
@@ -586,61 +586,61 @@ msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
 msgid "not logged in"
 msgstr "[ñöt löggéd ïñxx]"
 
-#: ui/shared/app/RoomPane.cpp:1676
+#: ui/shared/app/RoomPane.cpp:1678
 msgid "This image can't be sent because its metadata can't be removed."
 msgstr "[Thïs ïmàgé çàñ't bé séñt béçàùsé ïts métàdàtà çàñ't bé rémövéd.xxxxxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:1870
+#: ui/shared/app/RoomPane.cpp:1872
 #, c++-format
 msgid "{0} image can't be sent because its metadata can't be removed. Remove it to send the rest."
 msgid_plural "{0} images can't be sent because their metadata can't be removed. Remove them to send the rest."
 msgstr[0] "[{0} ïmàgé çàñ't bé séñt béçàùsé ïts métàdàtà çàñ't bé rémövéd. Rémövé ït tö séñd thé rést.xxxxxxxxxxxxxxxxxx]"
 msgstr[1] "[{0} ïmàgés çàñ't bé séñt béçàùsé théïr métàdàtà çàñ't bé rémövéd. Rémövé thém tö séñd thé rést.xxxxxxxxxxxxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:2193
+#: ui/shared/app/RoomPane.cpp:2195
 msgid "File exceeds the upload limit"
 msgstr "[Fïlé éxçééds thé ùplöàd lïmïtxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:2557
+#: ui/shared/app/RoomPane.cpp:2559
 #, c++-format
 msgid "Jump to date failed: {0}"
 msgstr "[Jùmp tö dàté fàïléd: {0}xxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3449
+#: ui/shared/app/RoomPane.cpp:3452
 #, c++-format
 msgid "Send reply failed: {0}"
 msgstr "[Séñd réply fàïléd: {0}xxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3543
+#: ui/shared/app/RoomPane.cpp:3546
 #, c++-format
 msgid "Edit failed: {0}"
 msgstr "[Édït fàïléd: {0}xxx]"
 
-#: ui/shared/app/RoomPane.cpp:3591
+#: ui/shared/app/RoomPane.cpp:3594
 msgid "Message reported"
 msgstr "[Méssàgé répörtédxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3596
+#: ui/shared/app/RoomPane.cpp:3599
 #, c++-format
 msgid "Couldn't report message: {0}"
 msgstr "[Çöùldñ't répört méssàgé: {0}xxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3622 ui/shared/app/RoomPane.cpp:5954
+#: ui/shared/app/RoomPane.cpp:3625 ui/shared/app/RoomPane.cpp:5976
 #: ui/shared/views/RoomSettingsView.cpp:230
 msgid "Copied to clipboard"
 msgstr "[Çöpïéd tö çlïpböàrdxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3766 ui/shared/app/RoomPane.cpp:3872
+#: ui/shared/app/RoomPane.cpp:3769 ui/shared/app/RoomPane.cpp:3875
 #, c++-format
 msgid "Failed to retry sending: {0}"
 msgstr "[Fàïléd tö rétry séñdïñg: {0}xxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3804 ui/shared/app/ShellBase_calls.cpp:671
-#: ui/shared/views/MessageListView.cpp:9853
+#: ui/shared/app/RoomPane.cpp:3807 ui/shared/app/ShellBase_calls.cpp:671
+#: ui/shared/views/MessageListView.cpp:9856
 msgid "Message not sent"
 msgstr "[Méssàgé ñöt séñtxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3806
+#: ui/shared/app/RoomPane.cpp:3809
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1511
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1866
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1946
@@ -656,134 +656,134 @@ msgstr "[Méssàgé ñöt séñtxxx]"
 msgid "Close"
 msgstr "[Çlöséx]"
 
-#: ui/shared/app/RoomPane.cpp:3809
+#: ui/shared/app/RoomPane.cpp:3812
 msgid "The check that blocked this message is turned off, but the change takes effect after you restart Tesseract."
 msgstr "[Thé çhéçk thàt blöçkéd thïs méssàgé ïs tùrñéd öff, bùt thé çhàñgé tàkés éfféçt àftér yöù réstàrt Tésséràçt.xxxxxxxxxxxxxxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3811 ui/shared/app/RoomPane.cpp:3896
-#: ui/shared/views/MessageListView.cpp:5001
+#: ui/shared/app/RoomPane.cpp:3814 ui/shared/app/RoomPane.cpp:3899
+#: ui/shared/views/MessageListView.cpp:5004
 msgid "Cancel sending"
 msgstr "[Çàñçél séñdïñgxx]"
 
-#: ui/shared/app/RoomPane.cpp:3830
+#: ui/shared/app/RoomPane.cpp:3833
 msgid "Withdraw verification and send"
 msgstr "[Wïthdràw vérïfïçàtïöñ àñd séñdxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:3832 ui/shared/app/RoomPane.cpp:3900
+#: ui/shared/app/RoomPane.cpp:3835 ui/shared/app/RoomPane.cpp:3903
 #: ui/shared/views/RoomInfoPanel.cpp:1773
 msgid "Show profile"
 msgstr "[Shöw pröfïléxx]"
 
-#: ui/shared/app/RoomPane.cpp:3916 ui/shared/views/LoginView.cpp:2043
-#: ui/shared/views/LoginView.cpp:2065 ui/shared/views/MessageListView.cpp:3799
+#: ui/shared/app/RoomPane.cpp:3919 ui/shared/views/LoginView.cpp:2043
+#: ui/shared/views/LoginView.cpp:2065 ui/shared/views/MessageListView.cpp:3802
 #: ui/shared/views/ServerBrowserOverlay.cpp:354
 msgid "Retry"
 msgstr "[Rétryx]"
 
-#: ui/shared/app/RoomPane.cpp:4026
+#: ui/shared/app/RoomPane.cpp:4029
 #, c++-format
 msgid "Failed to cancel message: {0}"
 msgstr "[Fàïléd tö çàñçél méssàgé: {0}xxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:4849
+#: ui/shared/app/RoomPane.cpp:4871
 #, c++-format
 msgid "Command failed: {0}"
 msgstr "[Çömmàñd fàïléd: {0}xxx]"
 
-#: ui/shared/app/RoomPane.cpp:5431
+#: ui/shared/app/RoomPane.cpp:5453
 #, c++-format
 msgid "Saved to {0}"
 msgstr "[Sàvéd tö {0}xx]"
 
-#: ui/shared/app/RoomPane.cpp:5435
+#: ui/shared/app/RoomPane.cpp:5457
 #: ui/shared/views/EncryptionSetupOverlay.cpp:344
 msgid "Couldn't save the file."
 msgstr "[Çöùldñ't sàvé thé fïlé.xxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5505
+#: ui/shared/app/RoomPane.cpp:5527
 msgid "Couldn't download the file"
 msgstr "[Çöùldñ't döwñlöàd thé fïléxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5524
+#: ui/shared/app/RoomPane.cpp:5546
 msgid "Couldn't open the file"
 msgstr "[Çöùldñ't öpéñ thé fïléxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5557
+#: ui/shared/app/RoomPane.cpp:5579
 msgid "Open this file?"
 msgstr "[Öpéñ thïs fïlé?xxx]"
 
-#: ui/shared/app/RoomPane.cpp:5559
+#: ui/shared/app/RoomPane.cpp:5581
 #, c++-format
 msgid "“{0}” isn't an image, video, audio or text file ({1}). Files like this can contain macros or run code in the app that opens them. Only open it if you trust the sender."
 msgstr "[“{0}” ïsñ't àñ ïmàgé, vïdéö, àùdïö ör téxt fïlé ({1}). Fïlés lïké thïs çàñ çöñtàïñ màçrös ör rùñ çödé ïñ thé àpp thàt öpéñs thém. Öñly öpéñ ït ïf yöù trùst thé séñdér.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5562
+#: ui/shared/app/RoomPane.cpp:5584
 msgid "unknown type"
 msgstr "[ùñkñöwñ typéxx]"
 
-#: ui/shared/app/RoomPane.cpp:5575
+#: ui/shared/app/RoomPane.cpp:5597
 msgid "Can't open this file"
 msgstr "[Çàñ't öpéñ thïs fïléxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5576
+#: ui/shared/app/RoomPane.cpp:5598
 #, c++-format
 msgid "“{0}” can run programs on your computer, so Tesseract won't open it. You can save it instead."
 msgstr "[“{0}” çàñ rùñ prögràms öñ yöùr çömpùtér, sö Tésséràçt wöñ't öpéñ ït. Yöù çàñ sàvé ït ïñstéàd.xxxxxxxxxxxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5579
+#: ui/shared/app/RoomPane.cpp:5601
 msgid "Save as…"
 msgstr "[Sàvé às…x]"
 
-#: ui/shared/app/RoomPane.cpp:5589
+#: ui/shared/app/RoomPane.cpp:5611
 msgid "File contents don't match"
 msgstr "[Fïlé çöñtéñts döñ't màtçhxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5590
+#: ui/shared/app/RoomPane.cpp:5612
 msgid "File type doesn't match its name"
 msgstr "[Fïlé typé döésñ't màtçh ïts ñàméxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5593
+#: ui/shared/app/RoomPane.cpp:5615
 #, c++-format
 msgid "“{0}” doesn't look like what it claims to be."
 msgstr "[“{0}” döésñ't löök lïké whàt ït çlàïms tö bé.xxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5595
+#: ui/shared/app/RoomPane.cpp:5617
 #, c++-format
 msgid "“{0}” has a file extension that doesn't match its type."
 msgstr "[“{0}” hàs à fïlé éxtéñsïöñ thàt döésñ't màtçh ïts typé.xxxxxxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5602
+#: ui/shared/app/RoomPane.cpp:5624
 #, c++-format
 msgid "Detected from its contents: {0}"
 msgstr "[Détéçtéd fröm ïts çöñtéñts: {0}xxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5604
+#: ui/shared/app/RoomPane.cpp:5626
 #, c++-format
 msgid "Declared by the sender: {0}"
 msgstr "[Déçlàréd by thé séñdér: {0}xxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5605
+#: ui/shared/app/RoomPane.cpp:5627
 msgid "unknown"
 msgstr "[ùñkñöwñx]"
 
-#: ui/shared/app/RoomPane.cpp:5607
+#: ui/shared/app/RoomPane.cpp:5629
 #, c++-format
 msgid "File name extension: {0}"
 msgstr "[Fïlé ñàmé éxtéñsïöñ: {0}xxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5608
+#: ui/shared/app/RoomPane.cpp:5630
 msgid "none"
 msgstr "[ñöñéx]"
 
-#: ui/shared/app/RoomPane.cpp:5609
+#: ui/shared/app/RoomPane.cpp:5631
 msgid "Only open it if you trust the sender."
 msgstr "[Öñly öpéñ ït ïf yöù trùst thé séñdér.xxxxxxx]"
 
-#: ui/shared/app/RoomPane.cpp:5611
+#: ui/shared/app/RoomPane.cpp:5633
 msgid "Open anyway"
 msgstr "[Öpéñ àñywàyxx]"
 
-#: ui/shared/app/RoomPane.cpp:5616
+#: ui/shared/app/RoomPane.cpp:5638
 #, c++-format
 msgid "Rename to .{0} and open"
 msgstr "[Réñàmé tö .{0} àñd öpéñxxxx]"
@@ -826,7 +826,7 @@ msgstr "[Çöññéçtédx]"
 msgid "Couldn't save the sign-in for {0}. You may have to sign in again next time."
 msgstr "[Çöùldñ't sàvé thé sïgñ-ïñ för {0}. Yöù mày hàvé tö sïgñ ïñ àgàïñ ñéxt tïmé.xxxxxxxxxxxxxxx]"
 
-#: ui/shared/app/ShellBase.h:4179
+#: ui/shared/app/ShellBase.h:4186
 msgid "New message"
 msgstr "[Ñéw méssàgéxx]"
 
@@ -1035,7 +1035,7 @@ msgstr "[Yöù döñ't hàvé pérmïssïöñ tö jöïñ çàlls ïñ thïs rö
 msgid "A moderator needs to start the call."
 msgstr "[À mödéràtör ñééds tö stàrt thé çàll.xxxxxxx]"
 
-#: ui/shared/app/ShellBase_navigation.cpp:839
+#: ui/shared/app/ShellBase_navigation.cpp:844
 #, c++-format
 msgid "Subscribe failed: {0}"
 msgstr "[Sùbsçrïbé fàïléd: {0}xxxx]"
@@ -1103,7 +1103,7 @@ msgid "Usage: /dm @user:server"
 msgstr "[Ùsàgé: /dm @ùsér:sérvérxxxx]"
 
 #: ui/shared/app/ShellBase_rooms.cpp:1196
-#: ui/shared/views/MessageListView.cpp:9854
+#: ui/shared/views/MessageListView.cpp:9857
 #, c++-format
 msgid "Message not sent: {0}"
 msgstr "[Méssàgé ñöt séñt: {0}xxxx]"
@@ -1260,66 +1260,66 @@ msgstr "[Thé Àçtïvïty Möñïtör ïs ñöt àvàïlàblé öñ thïs plàt
 msgid "Tesseract {0} available"
 msgstr "[Tésséràçt {0} àvàïlàbléxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1369
+#: ui/shared/app/ShellBase_settings.cpp:1392
 #: ui/shared/views/settings/SettingsController.cpp:1033
 msgid "Export message keys"
 msgstr "[Éxpört méssàgé kéysxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1373
+#: ui/shared/app/ShellBase_settings.cpp:1396
 #: ui/shared/views/settings/SettingsController.cpp:1090
 msgid "Import message keys"
 msgstr "[Ïmpört méssàgé kéysxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1377
+#: ui/shared/app/ShellBase_settings.cpp:1400
 #: ui/shared/views/ExportHistoryDialog.cpp:790
 msgid "Export complete"
 msgstr "[Éxpört çömplétéxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1377
+#: ui/shared/app/ShellBase_settings.cpp:1400
 #: ui/shared/views/ExportHistoryDialog.cpp:790
 msgid "Export failed"
 msgstr "[Éxpört fàïlédxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1378
+#: ui/shared/app/ShellBase_settings.cpp:1401
 msgid "Message keys exported successfully."
 msgstr "[Méssàgé kéys éxpörtéd sùççéssfùlly.xxxxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1383
+#: ui/shared/app/ShellBase_settings.cpp:1406
 msgid "Import complete"
 msgstr "[Ïmpört çömplétéxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1383
+#: ui/shared/app/ShellBase_settings.cpp:1406
 msgid "Import failed"
 msgstr "[Ïmpört fàïlédxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1384
+#: ui/shared/app/ShellBase_settings.cpp:1407
 msgid "Message keys imported successfully."
 msgstr "[Méssàgé kéys ïmpörtéd sùççéssfùlly.xxxxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1408
+#: ui/shared/app/ShellBase_settings.cpp:1431
 msgid "Choose a folder for the exported history"
 msgstr "[Çhöösé à földér för thé éxpörtéd hïstöryxxxxxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1500
+#: ui/shared/app/ShellBase_settings.cpp:1523
 msgid "Exporting history…"
 msgstr "[Éxpörtïñg hïstöry…xxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1508
+#: ui/shared/app/ShellBase_settings.cpp:1531
 #, c++-format
 msgid "Exporting history… {0} messages"
 msgstr "[Éxpörtïñg hïstöry… {0} méssàgésxxxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1575
+#: ui/shared/app/ShellBase_settings.cpp:1598
 #, c++-format
 msgid "Failed to upload avatar: {0}"
 msgstr "[Fàïléd tö ùplöàd àvàtàr: {0}xxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1580
+#: ui/shared/app/ShellBase_settings.cpp:1603
 #, c++-format
 msgid "Failed to set room avatar: {0}"
 msgstr "[Fàïléd tö sét rööm àvàtàr: {0}xxxxxx]"
 
-#: ui/shared/app/ShellBase_settings.cpp:1584
+#: ui/shared/app/ShellBase_settings.cpp:1607
 #: ui/shared/views/SlashCommands.cpp:343
 msgid "Avatar updated for this room"
 msgstr "[Àvàtàr ùpdàtéd för thïs röömxxxxx]"
@@ -1327,13 +1327,13 @@ msgstr "[Àvàtàr ùpdàtéd för thïs röömxxxxx]"
 #: ui/shared/app/ShellBase_wiring.cpp:1213
 #: ui/shared/app/ShellBase_wiring.cpp:1219 ui/shared/views/ComposeBar.cpp:266
 #: ui/shared/views/ComposeBar.cpp:668 ui/shared/views/ComposeBar.cpp:2076
-#: ui/shared/views/MessageListView.cpp:2191
+#: ui/shared/views/MessageListView.cpp:2194
 msgid "Voice message"
 msgstr "[Vöïçé méssàgéxx]"
 
 #: ui/shared/app/ShellBase_wiring.cpp:1214
 #: ui/shared/views/AudioViewerPage.cpp:188 ui/shared/views/ComposeBar.cpp:1025
-#: ui/shared/views/MessageListView.cpp:8401
+#: ui/shared/views/MessageListView.cpp:8404
 msgid "Audio"
 msgstr "[Àùdïöx]"
 
@@ -1708,26 +1708,27 @@ msgid "Thread pool"
 msgstr "[Thréàd pöölxx]"
 
 #: ui/shared/views/ActivityMonitorView.cpp:48
+#: ui/shared/views/settings/PrivacySection.cpp:159
 #, c++-format
 msgid "{0}s"
 msgstr "[{0}sx]"
 
 #: ui/shared/views/ActivityMonitorView.cpp:52
-#: ui/shared/views/MessageSearchView.cpp:43
+#: ui/shared/views/MessageSearchView.cpp:43 ui/shared/views/presence_text.h:58
 #: ui/shared/views/settings/DevicesSection.cpp:66
 #, c++-format
 msgid "{0}m"
 msgstr "[{0}mx]"
 
 #: ui/shared/views/ActivityMonitorView.cpp:56
-#: ui/shared/views/MessageSearchView.cpp:48
+#: ui/shared/views/MessageSearchView.cpp:48 ui/shared/views/presence_text.h:62
 #: ui/shared/views/settings/DevicesSection.cpp:70
 #, c++-format
 msgid "{0}h"
 msgstr "[{0}hx]"
 
 #: ui/shared/views/ActivityMonitorView.cpp:58
-#: ui/shared/views/MessageSearchView.cpp:53
+#: ui/shared/views/MessageSearchView.cpp:53 ui/shared/views/presence_text.h:66
 #: ui/shared/views/settings/DevicesSection.cpp:74
 #, c++-format
 msgid "{0}d"
@@ -1756,6 +1757,7 @@ msgid "Not run yet"
 msgstr "[Ñöt rùñ yétxx]"
 
 #: ui/shared/views/ActivityMonitorView.cpp:175
+#: ui/shared/views/presence_text.h:72
 #: ui/shared/views/settings/DevicesSection.cpp:80
 #, c++-format
 msgid "{0} ago"
@@ -1823,8 +1825,8 @@ msgstr "[Çàll ïñ prögréssxxx]"
 
 #: ui/shared/views/CallBanner.cpp:227 ui/shared/views/ComposeBar.cpp:1904
 #: ui/shared/views/KnockStatusCard.cpp:38
-#: ui/shared/views/MessageListView.cpp:1768
-#: ui/shared/views/MessageListView.cpp:4466
+#: ui/shared/views/MessageListView.cpp:1771
+#: ui/shared/views/MessageListView.cpp:4469
 #: ui/shared/views/MessageSearchView.cpp:182
 #: ui/shared/views/MessageSearchView.cpp:211
 #: ui/shared/views/PinnedBanner.cpp:114 ui/shared/views/SlashCommands.cpp:790
@@ -2152,14 +2154,14 @@ msgstr "[Ñéxt möñthxx]"
 #: ui/shared/views/DatePickerView.cpp:682
 #: ui/shared/views/DatePickerView.cpp:698
 #: ui/shared/views/DatePickerView.cpp:1200
-#: ui/shared/views/MessageListView.cpp:1596
+#: ui/shared/views/MessageListView.cpp:1599
 #: ui/shared/views/ThreadListView.cpp:76
 msgid "Today"
 msgstr "[Tödàyx]"
 
 #. TRANSLATORS: date separator pattern, see tk::format_date.
 #: ui/shared/views/DatePickerView.cpp:689
-#: ui/shared/views/MessageListView.cpp:1615
+#: ui/shared/views/MessageListView.cpp:1618
 msgid "%B %-d, %Y"
 msgstr "[%B %-d, %Yxx]"
 
@@ -2848,7 +2850,7 @@ msgstr "[Àñyx]"
 
 #: ui/shared/views/ImagePackEditorView.cpp:164
 #: ui/shared/views/ImagePackEditorView.cpp:561
-#: ui/shared/views/MessageListView.cpp:2185
+#: ui/shared/views/MessageListView.cpp:2188
 msgid "Sticker"
 msgstr "[Stïçkérx]"
 
@@ -3054,8 +3056,8 @@ msgid "Join a Room"
 msgstr "[Jöïñ à Röömxx]"
 
 #: ui/shared/views/KeyboardShortcutsOverlay.cpp:98
-#: ui/shared/views/MessageListView.cpp:4544
-#: ui/shared/views/MessageListView.cpp:4865
+#: ui/shared/views/MessageListView.cpp:4547
+#: ui/shared/views/MessageListView.cpp:4868
 #: ui/shared/views/MessageSearchView.cpp:216
 #: ui/shared/views/RoomDirectoryView.cpp:78
 #: ui/shared/views/RoomMediaView.cpp:178
@@ -3264,12 +3266,12 @@ msgid "Seek"
 msgstr "[Séékx]"
 
 #: ui/shared/views/MediaTransportBar.cpp:168
-#: ui/shared/views/MessageListView.cpp:4822
+#: ui/shared/views/MessageListView.cpp:4825
 msgid "Pause"
 msgstr "[Pàùséx]"
 
 #: ui/shared/views/MediaTransportBar.cpp:168
-#: ui/shared/views/MessageListView.cpp:4822
+#: ui/shared/views/MessageListView.cpp:4825
 msgid "Play"
 msgstr "[Plàyx]"
 
@@ -3300,12 +3302,12 @@ msgid "Copy event source"
 msgstr "[Çöpy évéñt söùrçéxxx]"
 
 #: ui/shared/views/MessageActions.cpp:20
-#: ui/shared/views/MessageListView.cpp:11531
+#: ui/shared/views/MessageListView.cpp:11534
 msgid "Add reaction"
 msgstr "[Àdd réàçtïöñxx]"
 
 #: ui/shared/views/MessageActions.cpp:28
-#: ui/shared/views/MessageListView.cpp:11533
+#: ui/shared/views/MessageListView.cpp:11536
 msgid "Reply in thread"
 msgstr "[Réply ïñ thréàdxxx]"
 
@@ -3351,482 +3353,482 @@ msgstr "[Wàïtïñg för löçàtïöñ…xxxx]"
 msgid "Live location ended"
 msgstr "[Lïvé löçàtïöñ éñdédxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1608
+#: ui/shared/views/MessageListView.cpp:1611
 #: ui/shared/views/ThreadListView.cpp:89
 msgid "Yesterday"
 msgstr "[Yéstérdàyx]"
 
-#: ui/shared/views/MessageListView.cpp:1692
+#: ui/shared/views/MessageListView.cpp:1695
 #, c++-format
 msgid "{0} withdrew {1} request to join"
 msgstr "[{0} wïthdréw {1} réqùést tö jöïñxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1697
+#: ui/shared/views/MessageListView.cpp:1700
 #, c++-format
 msgid "{0} changed their avatar"
 msgstr "[{0} çhàñgéd théïr àvàtàrxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1699
+#: ui/shared/views/MessageListView.cpp:1702
 #, c++-format
 msgid "{0} removed their avatar"
 msgstr "[{0} rémövéd théïr àvàtàrxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1702
+#: ui/shared/views/MessageListView.cpp:1705
 #, c++-format
 msgid "{0} changed their display name to {1}"
 msgstr "[{0} çhàñgéd théïr dïsplày ñàmé tö {1}xxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1705
+#: ui/shared/views/MessageListView.cpp:1708
 #, c++-format
 msgid "{0} removed their display name"
 msgstr "[{0} rémövéd théïr dïsplày ñàméxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1707
+#: ui/shared/views/MessageListView.cpp:1710
 #, c++-format
 msgid "{0} changed their display name and avatar"
 msgstr "[{0} çhàñgéd théïr dïsplày ñàmé àñd àvàtàrxxxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1721
+#: ui/shared/views/MessageListView.cpp:1724
 #, c++-format
 msgid "{0} removed the room name"
 msgstr "[{0} rémövéd thé rööm ñàméxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1725
+#: ui/shared/views/MessageListView.cpp:1728
 #, c++-format
 msgid "{0} set the room name to {1}"
 msgstr "[{0} sét thé rööm ñàmé tö {1}xxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1727
+#: ui/shared/views/MessageListView.cpp:1730
 #, c++-format
 msgid "{0} changed the room name to {1}"
 msgstr "[{0} çhàñgéd thé rööm ñàmé tö {1}xxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1755
+#: ui/shared/views/MessageListView.cpp:1758
 #, c++-format
 msgid "{0} removed the topic"
 msgstr "[{0} rémövéd thé töpïçxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1757
+#: ui/shared/views/MessageListView.cpp:1760
 #, c++-format
 msgid "{0} changed the topic to {1}"
 msgstr "[{0} çhàñgéd thé töpïç tö {1}xxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1765
+#: ui/shared/views/MessageListView.cpp:1768
 #, c++-format
 msgid "{0} upgraded this room"
 msgstr "[{0} ùpgràdéd thïs röömxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1782
+#: ui/shared/views/MessageListView.cpp:1785
 #, c++-format
 msgid "Room state updated: {0}"
 msgstr "[Rööm stàté ùpdàtéd: {0}xxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1784
+#: ui/shared/views/MessageListView.cpp:1787
 #: ui/shared/views/StateEventPhrases.cpp:350
 #: ui/shared/views/StateEventPhrases.cpp:529
 #, c++-format
 msgid "{0} updated the room state: {1}"
 msgstr "[{0} ùpdàtéd thé rööm stàté: {1}xxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1788
+#: ui/shared/views/MessageListView.cpp:1791
 #, c++-format
 msgid "Unhandled event: {0}"
 msgstr "[Ùñhàñdléd évéñt: {0}xxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1790
+#: ui/shared/views/MessageListView.cpp:1793
 #, c++-format
 msgid "{0} sent an unhandled event: {1}"
 msgstr "[{0} séñt àñ ùñhàñdléd évéñt: {1}xxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1807 ui/shared/views/send_block.cpp:37
+#: ui/shared/views/MessageListView.cpp:1810 ui/shared/views/send_block.cpp:37
 #, c++-format
 msgid "{0} and {1}"
 msgstr "[{0} àñd {1}xx]"
 
-#: ui/shared/views/MessageListView.cpp:1810 ui/shared/views/send_block.cpp:40
+#: ui/shared/views/MessageListView.cpp:1813 ui/shared/views/send_block.cpp:40
 #, c++-format
 msgid "{0}, {1} and {2} other"
 msgid_plural "{0}, {1} and {2} others"
 msgstr[0] "[{0}, {1} àñd {2} öthérxxxx]"
 msgstr[1] "[{0}, {1} àñd {2} öthérsxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1834
+#: ui/shared/views/MessageListView.cpp:1837
 #, c++-format
 msgid "{0} was banned from the room"
 msgid_plural "{0} were banned from the room"
 msgstr[0] "[{0} wàs bàññéd fröm thé röömxxxxx]"
 msgstr[1] "[{0} wéré bàññéd fröm thé röömxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1837
+#: ui/shared/views/MessageListView.cpp:1840
 #, c++-format
 msgid "{0} was unbanned"
 msgid_plural "{0} were unbanned"
 msgstr[0] "[{0} wàs ùñbàññédxxx]"
 msgstr[1] "[{0} wéré ùñbàññédxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1840
+#: ui/shared/views/MessageListView.cpp:1843
 #, c++-format
 msgid "{0} was removed from the room"
 msgid_plural "{0} were removed from the room"
 msgstr[0] "[{0} wàs rémövéd fröm thé röömxxxxx]"
 msgstr[1] "[{0} wéré rémövéd fröm thé röömxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1842
+#: ui/shared/views/MessageListView.cpp:1845
 #, c++-format
 msgid "{0} was invited"
 msgid_plural "{0} were invited"
 msgstr[0] "[{0} wàs ïñvïtédxxx]"
 msgstr[1] "[{0} wéré ïñvïtédxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1844
+#: ui/shared/views/MessageListView.cpp:1847
 #, c++-format
 msgid "{0} was removed and banned"
 msgid_plural "{0} were removed and banned"
 msgstr[0] "[{0} wàs rémövéd àñd bàññédxxxxx]"
 msgstr[1] "[{0} wéré rémövéd àñd bàññédxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1847
+#: ui/shared/views/MessageListView.cpp:1850
 #, c++-format
 msgid "{0} accepted the invitation"
 msgid_plural "{0} accepted their invitations"
 msgstr[0] "[{0} àççéptéd thé ïñvïtàtïöñxxxxx]"
 msgstr[1] "[{0} àççéptéd théïr ïñvïtàtïöñsxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1850
+#: ui/shared/views/MessageListView.cpp:1853
 #, c++-format
 msgid "{0} rejected the invitation"
 msgid_plural "{0} rejected their invitations"
 msgstr[0] "[{0} réjéçtéd thé ïñvïtàtïöñxxxxx]"
 msgstr[1] "[{0} réjéçtéd théïr ïñvïtàtïöñsxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1854
+#: ui/shared/views/MessageListView.cpp:1857
 #, c++-format
 msgid "{0} had {1} invitation revoked"
 msgid_plural "{0} had {1} invitations revoked"
 msgstr[0] "[{0} hàd {1} ïñvïtàtïöñ révökédxxxxxx]"
 msgstr[1] "[{0} hàd {1} ïñvïtàtïöñs révökédxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1859
+#: ui/shared/views/MessageListView.cpp:1862
 #, c++-format
 msgid "{0}'s request to join was approved"
 msgid_plural "{0}'s requests to join were approved"
 msgstr[0] "[{0}'s réqùést tö jöïñ wàs àpprövédxxxxxx]"
 msgstr[1] "[{0}'s réqùésts tö jöïñ wéré àpprövédxxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1864
+#: ui/shared/views/MessageListView.cpp:1867
 #, c++-format
 msgid "{0} cancelled {1} request to join"
 msgid_plural "{0} cancelled {1} requests to join"
 msgstr[0] "[{0} çàñçélléd {1} réqùést tö jöïñxxxxxx]"
 msgstr[1] "[{0} çàñçélléd {1} réqùésts tö jöïñxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1868
+#: ui/shared/views/MessageListView.cpp:1871
 #, c++-format
 msgid "{0}'s request to join was denied"
 msgid_plural "{0}'s requests to join were denied"
 msgstr[0] "[{0}'s réqùést tö jöïñ wàs déñïédxxxxxx]"
 msgstr[1] "[{0}'s réqùésts tö jöïñ wéré déñïédxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1871
+#: ui/shared/views/MessageListView.cpp:1874
 #, c++-format
 msgid "{0} updated their avatar"
 msgid_plural "{0} updated their avatars"
 msgstr[0] "[{0} ùpdàtéd théïr àvàtàrxxxx]"
 msgstr[1] "[{0} ùpdàtéd théïr àvàtàrsxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1874
+#: ui/shared/views/MessageListView.cpp:1877
 #, c++-format
 msgid "{0} cleared their avatar"
 msgid_plural "{0} cleared their avatars"
 msgstr[0] "[{0} çléàréd théïr àvàtàrxxxx]"
 msgstr[1] "[{0} çléàréd théïr àvàtàrsxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1878
+#: ui/shared/views/MessageListView.cpp:1881
 #, c++-format
 msgid "{0} updated their display name"
 msgid_plural "{0} updated their display names"
 msgstr[0] "[{0} ùpdàtéd théïr dïsplày ñàméxxxxxx]"
 msgstr[1] "[{0} ùpdàtéd théïr dïsplày ñàmésxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1882
+#: ui/shared/views/MessageListView.cpp:1885
 #, c++-format
 msgid "{0} cleared their display name"
 msgid_plural "{0} cleared their display names"
 msgstr[0] "[{0} çléàréd théïr dïsplày ñàméxxxxxx]"
 msgstr[1] "[{0} çléàréd théïr dïsplày ñàmésxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:1885
+#: ui/shared/views/MessageListView.cpp:1888
 #, c++-format
 msgid "{0} updated their display name and avatar"
 msgid_plural "{0} updated their display names and avatars"
 msgstr[0] "[{0} ùpdàtéd théïr dïsplày ñàmé àñd àvàtàrxxxxxxxx]"
 msgstr[1] "[{0} ùpdàtéd théïr dïsplày ñàmés àñd àvàtàrsxxxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:2027
+#: ui/shared/views/MessageListView.cpp:2030
 msgid "Sender"
 msgstr "[Séñdérx]"
 
-#: ui/shared/views/MessageListView.cpp:2039
+#: ui/shared/views/MessageListView.cpp:2042
 #, c++-format
 msgid "{0} forwarded:"
 msgstr "[{0} förwàrdéd:xx]"
 
-#: ui/shared/views/MessageListView.cpp:2040
+#: ui/shared/views/MessageListView.cpp:2043
 #, c++-format
 msgid "{0} forwarded: {1}"
 msgstr "[{0} förwàrdéd: {1}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:2181
+#: ui/shared/views/MessageListView.cpp:2184
 msgid "Unable to decrypt message"
 msgstr "[Ùñàblé tö déçrypt méssàgéxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:2183
+#: ui/shared/views/MessageListView.cpp:2186
 msgid "Image"
 msgstr "[Ïmàgéx]"
 
-#: ui/shared/views/MessageListView.cpp:2189
+#: ui/shared/views/MessageListView.cpp:2192
 msgid "Audio message"
 msgstr "[Àùdïö méssàgéxx]"
 
-#: ui/shared/views/MessageListView.cpp:2193
+#: ui/shared/views/MessageListView.cpp:2196
 msgid "Video"
 msgstr "[Vïdéöx]"
 
-#: ui/shared/views/MessageListView.cpp:2203
+#: ui/shared/views/MessageListView.cpp:2206
 msgid "Location"
 msgstr "[Löçàtïöñx]"
 
-#: ui/shared/views/MessageListView.cpp:2205
-#: ui/shared/views/MessageListView.cpp:4891
+#: ui/shared/views/MessageListView.cpp:2208
+#: ui/shared/views/MessageListView.cpp:4894
 #: ui/shared/views/PollCardDisplay.cpp:58
 msgid "Poll"
 msgstr "[Pöllx]"
 
-#: ui/shared/views/MessageListView.cpp:2255
+#: ui/shared/views/MessageListView.cpp:2258
 msgid ", "
 msgstr "[, x]"
 
-#: ui/shared/views/MessageListView.cpp:2257
+#: ui/shared/views/MessageListView.cpp:2260
 msgid "; "
 msgstr "[; x]"
 
-#: ui/shared/views/MessageListView.cpp:2259
+#: ui/shared/views/MessageListView.cpp:2262
 #, c++-format
 msgid "Table, {0} rows, {1} columns: {2}"
 msgstr "[Tàblé, {0} röws, {1} çölùmñs: {2}xxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:3107
+#: ui/shared/views/MessageListView.cpp:3110
 #: ui/shared/views/SlashCommandPopup.cpp:115
 #: ui/shared/views/SlashCommandPopup.h:129
 #, c++-format
 msgid "via {0}"
 msgstr "[vïà {0}x]"
 
-#: ui/shared/views/MessageListView.cpp:4391
-#: ui/shared/views/MessageListView.cpp:5335
-#: ui/shared/views/MessageListView.cpp:8977
+#: ui/shared/views/MessageListView.cpp:4394
+#: ui/shared/views/MessageListView.cpp:5338
+#: ui/shared/views/MessageListView.cpp:8980
 msgid "New messages"
 msgstr "[Ñéw méssàgésxx]"
 
-#: ui/shared/views/MessageListView.cpp:4395
-#: ui/shared/views/MessageListView.cpp:5366
+#: ui/shared/views/MessageListView.cpp:4398
+#: ui/shared/views/MessageListView.cpp:5369
 msgid "This room continues an older conversation."
 msgstr "[Thïs rööm çöñtïñùés àñ öldér çöñvérsàtïöñ.xxxxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4396
-#: ui/shared/views/MessageListView.cpp:5367
+#: ui/shared/views/MessageListView.cpp:4399
+#: ui/shared/views/MessageListView.cpp:5370
 #: ui/shared/views/RoomSearchBar.cpp:260
 msgid "Start of conversation"
 msgstr "[Stàrt öf çöñvérsàtïöñxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4399
-#: ui/shared/views/MessageListView.cpp:4408
-#: ui/shared/views/MessageListView.cpp:4479
+#: ui/shared/views/MessageListView.cpp:4402
+#: ui/shared/views/MessageListView.cpp:4411
+#: ui/shared/views/MessageListView.cpp:4482
 #, c++-format
 msgid "{0} {1}"
 msgstr "[{0} {1}x]"
 
-#: ui/shared/views/MessageListView.cpp:4404
-#: ui/shared/views/MessageListView.cpp:5471
+#: ui/shared/views/MessageListView.cpp:4407
+#: ui/shared/views/MessageListView.cpp:5474
 msgid "started a video call"
 msgstr "[stàrtéd à vïdéö çàllxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4405
-#: ui/shared/views/MessageListView.cpp:5472
+#: ui/shared/views/MessageListView.cpp:4408
+#: ui/shared/views/MessageListView.cpp:5475
 msgid "started a voice call"
 msgstr "[stàrtéd à vöïçé çàllxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4406
-#: ui/shared/views/MessageListView.cpp:5472
+#: ui/shared/views/MessageListView.cpp:4409
+#: ui/shared/views/MessageListView.cpp:5475
 msgid "started a call"
 msgstr "[stàrtéd à çàllxx]"
 
-#: ui/shared/views/MessageListView.cpp:4438
+#: ui/shared/views/MessageListView.cpp:4441
 #, c++-format
 msgid "{0}; {1}"
 msgstr "[{0}; {1}x]"
 
-#: ui/shared/views/MessageListView.cpp:4480
+#: ui/shared/views/MessageListView.cpp:4483
 #, c++-format
 msgid "{0} ({1}): {2}"
 msgstr "[{0} ({1}): {2}xx]"
 
-#: ui/shared/views/MessageListView.cpp:4489
+#: ui/shared/views/MessageListView.cpp:4492
 #, c++-format
 msgid "{0} ({1} from you): {2}"
 msgstr "[{0} ({1} fröm yöù): {2}xxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4495
+#: ui/shared/views/MessageListView.cpp:4498
 msgid "not sent"
 msgstr "[ñöt séñtx]"
 
-#: ui/shared/views/MessageListView.cpp:4499
+#: ui/shared/views/MessageListView.cpp:4502
 msgid "sending"
 msgstr "[séñdïñgx]"
 
-#: ui/shared/views/MessageListView.cpp:4504
+#: ui/shared/views/MessageListView.cpp:4507
 msgid "in reply"
 msgstr "[ïñ réplyx]"
 
-#: ui/shared/views/MessageListView.cpp:4505
+#: ui/shared/views/MessageListView.cpp:4508
 #, c++-format
 msgid "replying to {0}"
 msgstr "[réplyïñg tö {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:4510
+#: ui/shared/views/MessageListView.cpp:4513
 msgid "forwarded message"
 msgstr "[förwàrdéd méssàgéxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4511
+#: ui/shared/views/MessageListView.cpp:4514
 #, c++-format
 msgid "forwarded from {0}"
 msgstr "[förwàrdéd fröm {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:4515
+#: ui/shared/views/MessageListView.cpp:4518
 #, c++-format
 msgid "bot command {0}"
 msgstr "[böt çömmàñd {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:4519
+#: ui/shared/views/MessageListView.cpp:4522
 msgid "edited"
 msgstr "[édïtédx]"
 
-#: ui/shared/views/MessageListView.cpp:4527
+#: ui/shared/views/MessageListView.cpp:4530
 #, c++-format
 msgid "{0} reply in thread"
 msgid_plural "{0} replies in thread"
 msgstr[0] "[{0} réply ïñ thréàdxxx]"
 msgstr[1] "[{0} réplïés ïñ thréàdxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4539
+#: ui/shared/views/MessageListView.cpp:4542
 #, c++-format
 msgid "{0} reaction"
 msgid_plural "{0} reactions"
 msgstr[0] "[{0} réàçtïöñxx]"
 msgstr[1] "[{0} réàçtïöñsxx]"
 
-#: ui/shared/views/MessageListView.cpp:4596
-#: ui/shared/views/MessageListView.cpp:4623
+#: ui/shared/views/MessageListView.cpp:4599
+#: ui/shared/views/MessageListView.cpp:4626
 #, c++-format
 msgid "View profile of {0}"
 msgstr "[Vïéw pröfïlé öf {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:4640
+#: ui/shared/views/MessageListView.cpp:4643
 msgid "Reveal spoiler"
 msgstr "[Révéàl spöïlérxx]"
 
-#: ui/shared/views/MessageListView.cpp:4654
+#: ui/shared/views/MessageListView.cpp:4657
 msgid "Expand code block"
 msgstr "[Éxpàñd çödé blöçkxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4655
+#: ui/shared/views/MessageListView.cpp:4658
 msgid "Collapse code block"
 msgstr "[Çöllàpsé çödé blöçkxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4667
+#: ui/shared/views/MessageListView.cpp:4670
 msgid "Jump to replied message"
 msgstr "[Jùmp tö réplïéd méssàgéxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4675
+#: ui/shared/views/MessageListView.cpp:4678
 msgid "View original message"
 msgstr "[Vïéw örïgïñàl méssàgéxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4720
-#: ui/shared/views/MessageListView.cpp:4721
+#: ui/shared/views/MessageListView.cpp:4723
+#: ui/shared/views/MessageListView.cpp:4724
 #, c++-format
 msgid "Link preview: {0}"
 msgstr "[Lïñk prévïéw: {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:4738
+#: ui/shared/views/MessageListView.cpp:4741
 #, c++-format
 msgid "Open thread, {0} reply"
 msgid_plural "Open thread, {0} replies"
 msgstr[0] "[Öpéñ thréàd, {0} réplyxxxx]"
 msgstr[1] "[Öpéñ thréàd, {0} réplïésxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4758
+#: ui/shared/views/MessageListView.cpp:4761
 msgid "Show hidden media"
 msgstr "[Shöw hïddéñ médïàxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4771
+#: ui/shared/views/MessageListView.cpp:4774
 msgid "Open image"
 msgstr "[Öpéñ ïmàgéxx]"
 
-#: ui/shared/views/MessageListView.cpp:4785
+#: ui/shared/views/MessageListView.cpp:4788
 msgid "Open gallery"
 msgstr "[Öpéñ gàlléryxx]"
 
-#: ui/shared/views/MessageListView.cpp:4793
+#: ui/shared/views/MessageListView.cpp:4796
 msgid "Play video"
 msgstr "[Plày vïdéöxx]"
 
-#: ui/shared/views/MessageListView.cpp:4807
+#: ui/shared/views/MessageListView.cpp:4810
 msgid "Open file"
 msgstr "[Öpéñ fïléx]"
 
-#: ui/shared/views/MessageListView.cpp:4852
+#: ui/shared/views/MessageListView.cpp:4855
 msgid "Reactions"
 msgstr "[Réàçtïöñsx]"
 
-#: ui/shared/views/MessageListView.cpp:4861
+#: ui/shared/views/MessageListView.cpp:4864
 #, c++-format
 msgid "{0}, {1} reaction"
 msgid_plural "{0}, {1} reactions"
 msgstr[0] "[{0}, {1} réàçtïöñxxx]"
 msgstr[1] "[{0}, {1} réàçtïöñsxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4865
+#: ui/shared/views/MessageListView.cpp:4868
 msgid "reacted by you"
 msgstr "[réàçtéd by yöùxx]"
 
-#: ui/shared/views/MessageListView.cpp:4913
+#: ui/shared/views/MessageListView.cpp:4916
 #, c++-format
 msgid "{0}, {1}%"
 msgstr "[{0}, {1}%x]"
 
-#: ui/shared/views/MessageListView.cpp:4935
+#: ui/shared/views/MessageListView.cpp:4938
 #: ui/shared/views/PollCardDisplay.cpp:129 ui/shared/views/RoomView.cpp:659
 msgid "End poll"
 msgstr "[Éñd pöllx]"
 
-#: ui/shared/views/MessageListView.cpp:4954
+#: ui/shared/views/MessageListView.cpp:4957
 msgid "Message actions"
 msgstr "[Méssàgé àçtïöñsxxx]"
 
-#: ui/shared/views/MessageListView.cpp:4975 ui/shared/views/RoomHeader.cpp:274
+#: ui/shared/views/MessageListView.cpp:4978 ui/shared/views/RoomHeader.cpp:274
 msgid "More options"
 msgstr "[Möré öptïöñsxx]"
 
-#: ui/shared/views/MessageListView.cpp:4990
+#: ui/shared/views/MessageListView.cpp:4993
 msgid "Retry sending"
 msgstr "[Rétry séñdïñgxx]"
 
-#: ui/shared/views/MessageListView.cpp:5032
+#: ui/shared/views/MessageListView.cpp:5035
 #, c++-format
 msgid "Read by {0}"
 msgstr "[Réàd by {0}xx]"
 
-#: ui/shared/views/MessageListView.cpp:5078
+#: ui/shared/views/MessageListView.cpp:5081
 #: ui/shared/views/ThreadListView.cpp:513
 #: ui/shared/views/ThreadListView.cpp:620
 #, c++-format
@@ -3835,99 +3837,99 @@ msgid_plural "{0} replies"
 msgstr[0] "[{0} réplyx]"
 msgstr[1] "[{0} réplïésxx]"
 
-#: ui/shared/views/MessageListView.cpp:5875
+#: ui/shared/views/MessageListView.cpp:5878
 msgid "Load video"
 msgstr "[Löàd vïdéöxx]"
 
-#: ui/shared/views/MessageListView.cpp:5879
+#: ui/shared/views/MessageListView.cpp:5882
 msgid "Load sticker"
 msgstr "[Löàd stïçkérxx]"
 
-#: ui/shared/views/MessageListView.cpp:5883
+#: ui/shared/views/MessageListView.cpp:5886
 msgid "Load gallery"
 msgstr "[Löàd gàlléryxx]"
 
-#: ui/shared/views/MessageListView.cpp:5885
+#: ui/shared/views/MessageListView.cpp:5888
 msgid "Load image"
 msgstr "[Löàd ïmàgéxx]"
 
-#: ui/shared/views/MessageListView.cpp:5978
-#: ui/shared/views/MessageListView.cpp:7226
-#: ui/shared/views/MessageListView.cpp:7509
-#: ui/shared/views/MessageListView.cpp:7579
+#: ui/shared/views/MessageListView.cpp:5981
+#: ui/shared/views/MessageListView.cpp:7229
+#: ui/shared/views/MessageListView.cpp:7512
+#: ui/shared/views/MessageListView.cpp:7582
 msgid "(empty message)"
 msgstr "[(émpty méssàgé)xxx]"
 
-#: ui/shared/views/MessageListView.cpp:6654
+#: ui/shared/views/MessageListView.cpp:6657
 msgid "Forwarded message"
 msgstr "[Förwàrdéd méssàgéxxx]"
 
-#: ui/shared/views/MessageListView.cpp:6655
+#: ui/shared/views/MessageListView.cpp:6658
 #, c++-format
 msgid "Forwarded from {0}"
 msgstr "[Förwàrdéd fröm {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:6754
+#: ui/shared/views/MessageListView.cpp:6757
 #, c++-format
 msgid "Bot command: {0}"
 msgstr "[Böt çömmàñd: {0}xxx]"
 
-#: ui/shared/views/MessageListView.cpp:6905
-#: ui/shared/views/MessageListView.cpp:7000
+#: ui/shared/views/MessageListView.cpp:6908
+#: ui/shared/views/MessageListView.cpp:7003
 msgid "Original message unavailable"
 msgstr "[Örïgïñàl méssàgé ùñàvàïlàbléxxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:7084
-#: ui/shared/views/MessageListView.cpp:7156
+#: ui/shared/views/MessageListView.cpp:7087
+#: ui/shared/views/MessageListView.cpp:7159
 msgid "[Spoiler]"
 msgstr "[[Spöïlér]x]"
 
-#: ui/shared/views/MessageListView.cpp:7085
-#: ui/shared/views/MessageListView.cpp:7157
+#: ui/shared/views/MessageListView.cpp:7088
+#: ui/shared/views/MessageListView.cpp:7160
 #, c++-format
 msgid "[Spoiler: {0}]"
 msgstr "[[Spöïlér: {0}]xx]"
 
-#: ui/shared/views/MessageListView.cpp:7423
-#: ui/shared/views/MessageListView.cpp:8181
+#: ui/shared/views/MessageListView.cpp:7426
+#: ui/shared/views/MessageListView.cpp:8184
 msgid "Expand"
 msgstr "[Éxpàñdx]"
 
-#: ui/shared/views/MessageListView.cpp:7423
-#: ui/shared/views/MessageListView.cpp:8181
+#: ui/shared/views/MessageListView.cpp:7426
+#: ui/shared/views/MessageListView.cpp:8184
 msgid "Collapse"
 msgstr "[Çöllàpséx]"
 
-#: ui/shared/views/MessageListView.cpp:8420
+#: ui/shared/views/MessageListView.cpp:8423
 #, c++-format
 msgid "+{0}"
 msgstr "[+{0}x]"
 
-#: ui/shared/views/MessageListView.cpp:9313
+#: ui/shared/views/MessageListView.cpp:9316
 msgid "Jump to first unread"
 msgstr "[Jùmp tö fïrst ùñréàdxxxx]"
 
-#: ui/shared/views/MessageListView.cpp:9482
+#: ui/shared/views/MessageListView.cpp:9485
 msgid "View older messages"
 msgstr "[Vïéw öldér méssàgésxxx]"
 
-#: ui/shared/views/MessageListView.cpp:11535
+#: ui/shared/views/MessageListView.cpp:11538
 msgid "More"
 msgstr "[Möréx]"
 
-#: ui/shared/views/MessageListView.cpp:14686
+#: ui/shared/views/MessageListView.cpp:14689
 msgid "Reacted with :"
 msgstr "[Réàçtéd wïth :xx]"
 
-#: ui/shared/views/MessageListView.cpp:14695
+#: ui/shared/views/MessageListView.cpp:14698
 msgid "Reacted by:"
 msgstr "[Réàçtéd by:xx]"
 
-#: ui/shared/views/MessageListView.cpp:14699
+#: ui/shared/views/MessageListView.cpp:14702
 msgid "Reacted with "
 msgstr "[Réàçtéd wïth xx]"
 
-#: ui/shared/views/MessageListView.cpp:15130
+#: ui/shared/views/MessageListView.cpp:15133
 #, c++-format
 msgid "{0} ({1} of {2})"
 msgstr "[{0} ({1} öf {2})xxx]"
@@ -4064,7 +4066,7 @@ msgstr[0] "[Réàd by {0} pérsöñxxx]"
 msgstr[1] "[Réàd by {0} péöpléxxx]"
 
 #: ui/shared/views/RoomDirectoryView.cpp:301 ui/shared/views/RoomHeader.cpp:240
-#: ui/shared/views/RoomHeader.cpp:851
+#: ui/shared/views/RoomHeader.cpp:934
 #: ui/shared/views/settings/MessagesSection.cpp:243
 msgid "Search"
 msgstr "[Séàrçhx]"
@@ -4078,7 +4080,7 @@ msgstr "[Ñö rööms föùñd.xxx]"
 msgid "Loading rooms…"
 msgstr "[Löàdïñg rööms…xx]"
 
-#: ui/shared/views/RoomHeader.cpp:181 ui/shared/views/RoomHeader.cpp:880
+#: ui/shared/views/RoomHeader.cpp:181 ui/shared/views/RoomHeader.cpp:963
 msgid "Jump to Date"
 msgstr "[Jùmp tö Dàtéxx]"
 
@@ -4086,25 +4088,25 @@ msgstr "[Jùmp tö Dàtéxx]"
 msgid "Room info"
 msgstr "[Rööm ïñföx]"
 
-#: ui/shared/views/RoomHeader.cpp:225 ui/shared/views/RoomHeader.cpp:773
-#: ui/shared/views/RoomHeader.cpp:837
+#: ui/shared/views/RoomHeader.cpp:225 ui/shared/views/RoomHeader.cpp:856
+#: ui/shared/views/RoomHeader.cpp:920
 msgid "Threads"
 msgstr "[Thréàdsx]"
 
-#: ui/shared/views/RoomHeader.cpp:772
+#: ui/shared/views/RoomHeader.cpp:855
 msgid "Threads (unread messages)"
 msgstr "[Thréàds (ùñréàd méssàgés)xxxxx]"
 
-#: ui/shared/views/RoomHeader.cpp:1063
+#: ui/shared/views/RoomHeader.cpp:1161
 msgid "This room is connected to another chat app. Your messages are sent there too, and that app's own rules apply, not just Matrix's."
 msgstr "[Thïs rööm ïs çöññéçtéd tö àñöthér çhàt àpp. Yöùr méssàgés àré séñt théré töö, àñd thàt àpp's öwñ rùlés àpply, ñöt jùst Màtrïx's.xxxxxxxxxxxxxxxxxxxxxxxxx]"
 
-#: ui/shared/views/RoomHeader.cpp:1066
+#: ui/shared/views/RoomHeader.cpp:1164
 #, c++-format
 msgid "This room is connected to {0}. Your messages are sent there too, and {0}'s own rules apply, not just Matrix's."
 msgstr "[Thïs rööm ïs çöññéçtéd tö {0}. Yöùr méssàgés àré séñt théré töö, àñd {0}'s öwñ rùlés àpply, ñöt jùst Màtrïx's.xxxxxxxxxxxxxxxxxxxxxx]"
 
-#: ui/shared/views/RoomHeader.cpp:1076
+#: ui/shared/views/RoomHeader.cpp:1174
 msgid "Encrypted room"
 msgstr "[Éñçryptéd röömxx]"
 
@@ -4665,7 +4667,7 @@ msgstr "[Rùlésx]"
 
 #: ui/shared/views/ServerBrowserOverlay.cpp:467
 #: ui/shared/views/SettingsView.cpp:199
-#: ui/shared/views/settings/PrivacySection.cpp:20
+#: ui/shared/views/settings/PrivacySection.cpp:29
 msgid "Privacy"
 msgstr "[Prïvàçyx]"
 
@@ -5646,6 +5648,39 @@ msgid_plural "Select up to {0} options"
 msgstr[0] "[Séléçt ùp tö {0} öptïöñxxxx]"
 msgstr[1] "[Séléçt ùp tö {0} öptïöñsxxxx]"
 
+#: ui/shared/views/presence_text.h:46 ui/shared/views/presence_text.h:53
+#: ui/shared/views/settings/DevicesSection.cpp:60
+msgid "just now"
+msgstr "[jùst ñöwx]"
+
+#: ui/shared/views/presence_text.h:70
+#: ui/shared/views/settings/DevicesSection.cpp:78
+#, c++-format
+msgid "{0}mo"
+msgstr "[{0}möx]"
+
+#: ui/shared/views/presence_text.h:84
+#, c++-format
+msgid "Last seen {0}"
+msgstr "[Làst sééñ {0}xx]"
+
+#: ui/shared/views/presence_text.h:95
+msgid "Online"
+msgstr "[Öñlïñéx]"
+
+#: ui/shared/views/presence_text.h:99
+msgid "Active now"
+msgstr "[Àçtïvé ñöwxx]"
+
+#: ui/shared/views/presence_text.h:104
+msgid "Away"
+msgstr "[Àwàyx]"
+
+#: ui/shared/views/presence_text.h:105
+#, c++-format
+msgid "Away, last seen {0}"
+msgstr "[Àwày, làst sééñ {0}xxx]"
+
 #: ui/shared/views/room_chip_strip.cpp:83
 msgid "Unnamed"
 msgstr "[Ùññàmédx]"
@@ -5971,15 +6006,6 @@ msgstr "[ñévérx]"
 #: ui/shared/views/settings/DevicesSection.cpp:52
 msgid "in the future"
 msgstr "[ïñ thé fùtùréxx]"
-
-#: ui/shared/views/settings/DevicesSection.cpp:60
-msgid "just now"
-msgstr "[jùst ñöwx]"
-
-#: ui/shared/views/settings/DevicesSection.cpp:78
-#, c++-format
-msgid "{0}mo"
-msgstr "[{0}möx]"
 
 #: ui/shared/views/settings/DevicesSection.cpp:155
 #: ui/shared/views/settings/DevicesSection.cpp:372
@@ -6483,28 +6509,29 @@ msgstr "[Àdd à kéywörd…xx]"
 msgid "Add"
 msgstr "[Àddx]"
 
-#: ui/shared/views/settings/PrivacySection.cpp:23
+#: ui/shared/views/settings/PrivacySection.cpp:32
 msgid "Send and receive presence status"
 msgstr "[Séñd àñd réçéïvé préséñçé stàtùsxxxxxx]"
 
-#: ui/shared/views/settings/PrivacySection.cpp:26
+
+#: ui/shared/views/settings/PrivacySection.cpp:93
 msgid "Show avatars in invites"
 msgstr "[Shöw àvàtàrs ïñ ïñvïtésxxxx]"
 
-#: ui/shared/views/settings/PrivacySection.cpp:41
-#: ui/shared/views/settings/PrivacySection.cpp:52
+#: ui/shared/views/settings/PrivacySection.cpp:108
+#: ui/shared/views/settings/PrivacySection.cpp:119
 msgid "Data sharing"
 msgstr "[Dàtà shàrïñgxx]"
 
-#: ui/shared/views/settings/PrivacySection.cpp:43
+#: ui/shared/views/settings/PrivacySection.cpp:110
 msgid "Check for updates automatically"
 msgstr "[Çhéçk för ùpdàtés àùtömàtïçàllyxxxxxx]"
 
-#: ui/shared/views/settings/PrivacySection.cpp:55
+#: ui/shared/views/settings/PrivacySection.cpp:122
 msgid "Save a local crash report if the app crashes"
 msgstr "[Sàvé à löçàl çràsh répört ïf thé àpp çràshésxxxxxxxx]"
 
-#: ui/shared/views/settings/PrivacySection.cpp:64
+#: ui/shared/views/settings/PrivacySection.cpp:131
 msgid "When enabled, a plain-text stack trace is written to a file on this device if the app crashes. Nothing is sent anywhere automatically — you can find and share the file yourself if you want to report a bug."
 msgstr "[Whéñ éñàbléd, à plàïñ-téxt stàçk tràçé ïs wrïttéñ tö à fïlé öñ thïs dévïçé ïf thé àpp çràshés. Ñöthïñg ïs séñt àñywhéré àùtömàtïçàlly — yöù çàñ fïñd àñd shàré thé fïlé yöùrsélf ïf yöù wàñt tö répört à bùg.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
 
@@ -6868,7 +6895,7 @@ msgid "Hits: {0}  ·  Misses: {1}"
 msgstr "[Hïts: {0}  ·  Mïssés: {1}xxxxx]"
 
 #: ui/shared/views/settings/StorageGroup.cpp:64
-#, c++-format
+#, c-format, c++-format
 msgid "Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"
 msgstr "[Hïts: {0}  ·  Mïssés: {1}  ({2}% hït ràté)xxxxxxxx]"
 

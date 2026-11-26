@@ -11,6 +11,10 @@ Tagged releases summarize all changes since the previous tag.
 - build(sdk): unused Rust code and imports now fail every build, including test builds, and the dead rtc code is removed. cargo test
 - fix(ui): the "Applying encryption settings" dialog now grows to show its full text instead of cutting it off. Linux release build
 - fix(spaces): rooms with newer-style IDs can be added to a space and stay there after a restart. cargo test
+- fix(ui): sliders now snap to their step when dragged with the mouse. Linux Qt6 build, ctest 4072/4072
+- feat(ui): the user profile panel shows the person's presence dot and last-seen text. Linux Qt6 build, ctest 4074/4074
+- fix(dm): direct chats restored from a previous session show the other person's presence again. Linux Qt6 build, ctest 4062/4062, cargo 1786/1786
+- feat(ui): direct messages show the other person's presence under the room name, refreshed every minute and when the DM is opened. Linux Qt6 build, ctest 4074/4074, cargo 1761/1761
 - feat(ui): with Show state events on, room history shows join rules, history visibility, power level and other state changes, grouped by type. Linux Qt6 build
 - fix(rooms): the room-list preview shows the sender's display name instead of their user ID when the app has not loaded their profile. Linux release build, cargo test
 - fix(ui): the window title no longer shows a room after going back to the room list in a narrow window or popping the room out. Linux release build, ctest 4021/4021

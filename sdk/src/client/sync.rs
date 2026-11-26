@@ -389,13 +389,14 @@ impl ClientFfi {
         // SyncService uses SlidingSync (MSC3575) which does not include the
         // presence extension, so add_event_handler(PresenceEvent) never fires.
         // Instead poll GET /_matrix/client/v3/presence/{userId}/status for each
-        // DM counterpart on a 60-second interval.
+        // DM counterpart every 60 s.
         {
             let h = Arc::clone(&handler);
             let client_p = client.clone();
             let stop_rx_presence = stop_rx.clone();
             let presence_enabled_p = std::sync::Arc::clone(&self.presence_polling_enabled);
             let dm_counterparts = Arc::clone(&self.dm_counterparts);
+            let last_poll = Arc::clone(&self.presence_last_poll);
             let forbidden_presence = Arc::clone(&self.forbidden_presence);
             let app_cache_db_p = Arc::clone(&self.app_cache_db);
             self.spawn_tracked(
@@ -406,6 +407,7 @@ impl ClientFfi {
                     stop_rx_presence,
                     presence_enabled_p,
                     dm_counterparts,
+                    last_poll,
                     forbidden_presence,
                     app_cache_db_p,
                 ),
@@ -466,11 +468,12 @@ impl ClientFfi {
         // fanning out into per-room SQLite queries on every read-receipt /
         // latest-event burst.
         //
-        // `m.call.member` state events are not notable updates in matrix-sdk,
-        // so a dedicated channel carries the affected room ID into the watcher
-        // loop when call-member state changes.
-        let (call_member_tx, call_member_rx) =
+        // Changes matrix-sdk does not report as notable updates (`m.call.member`
+        // state, ignore-list changes, a DM's member list arriving) send the
+        // affected room ID on this channel so the watcher rebuilds that room.
+        let (room_rebuild_tx, room_rebuild_rx) =
             tokio::sync::mpsc::unbounded_channel::<OwnedRoomId>();
+        let dm_members_rebuild_tx = room_rebuild_tx.clone();
         {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
@@ -571,7 +574,7 @@ impl ClientFfi {
             let dm_counterparts_w = Arc::clone(&self.dm_counterparts);
             let app_cache_db_rw = Arc::clone(&self.app_cache_db);
             let room_state_cache_rw = Arc::clone(&self.room_state_cache);
-            let mut call_member_rx = call_member_rx;
+            let mut room_rebuild_rx = room_rebuild_rx;
 
             let in_flight_rw = self.in_flight_ctx();
             self.spawn_tracked("room-list-cache-fill", async move {
@@ -654,10 +657,11 @@ impl ClientFfi {
                         _ = stop_rx_rooms.changed() => {
                             if *stop_rx_rooms.borrow() { break; }
                         }
-                        Some(room_id) = call_member_rx.recv() => {
-                            // A m.call.member state event arrived for this room.
-                            // Rebuild its RoomInfo so has_active_call reflects
-                            // the current call state, then emit.
+                        Some(room_id) = room_rebuild_rx.recv() => {
+                            // Something the notable-update stream does not
+                            // report changed in this room (call members, the
+                            // ignore list, a DM's member list): rebuild its
+                            // RoomInfo, then emit.
                             if let Some(room) = client_clone.get_room(&room_id) {
                                 if room.state() == RoomState::Joined {
                                     if let Some(info) =
@@ -972,7 +976,7 @@ impl ClientFfi {
         // The call banner leaves out ignored users, so a change to the ignore
         // list refreshes the rooms that have a call in them.
         {
-            let tx = call_member_tx.clone();
+            let tx = room_rebuild_tx.clone();
             let client_clone = client.clone();
             self.spawn_tracked("ignore-list-call-refresh", async move {
                 let mut changes = client_clone.subscribe_to_ignore_user_list_changes();
@@ -994,7 +998,7 @@ impl ClientFfi {
             use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
             self.event_handler_handles.push(client.add_event_handler(
                 move |_ev: SyncStateEvent<CallMemberEventContent>, room: Room| {
-                    let tx = call_member_tx.clone();
+                    let tx = room_rebuild_tx.clone();
                     async move {
                         let _ = tx.send(room.room_id().to_owned());
                     }
@@ -1208,6 +1212,19 @@ impl ClientFfi {
             self.spawn_tracked(
                 "room-list-state-watcher",
                 watch_room_list_state(h, svc_clone, stop_rx),
+            );
+        }
+
+        // Load the member list of every DM that never had it loaded, so the DM
+        // partner (room-list dot, header presence, avatar fallback) is known.
+        {
+            let client_clone = client.clone();
+            let svc_clone = Arc::clone(&sync_service);
+            let stop_rx = stop_rx.clone();
+            let tx = dm_members_rebuild_tx;
+            self.spawn_tracked(
+                "dm-member-fetch",
+                fetch_dm_members_once(client_clone, svc_clone, tx, stop_rx),
             );
         }
 
@@ -1737,7 +1754,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return;
         };
+        // Fresh enough already: the data on screen is at most PRESENCE_FRESH old.
+        if presence_poll_is_fresh(*self.presence_last_poll.lock(), std::time::Instant::now()) {
+            return;
+        }
         let dm_counterparts = Arc::clone(&self.dm_counterparts);
+        let last_poll = Arc::clone(&self.presence_last_poll);
         let forbidden_presence = Arc::clone(&self.forbidden_presence);
         let app_cache_db = Arc::clone(&self.app_cache_db);
         let h = self.rt.spawn(async move {
@@ -1745,6 +1767,7 @@ impl ClientFfi {
                 &client,
                 &handler,
                 &dm_counterparts,
+                &last_poll,
                 &forbidden_presence,
                 &app_cache_db,
             )
@@ -1768,6 +1791,7 @@ async fn poll_presence_once(
     client: &matrix_sdk::Client,
     handler: &Arc<Mutex<SendHandler>>,
     dm_counterparts: &Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
+    last_poll: &Arc<parking_lot::Mutex<Option<std::time::Instant>>>,
     forbidden_presence: &Arc<
         parking_lot::Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>,
     >,
@@ -1779,14 +1803,13 @@ async fn poll_presence_once(
     if client.user_id().is_none() {
         return;
     }
+    // Stamped at the start, so a kick arriving while this pass runs skips.
+    *last_poll.lock() = Some(std::time::Instant::now());
     // Snapshot the cached counterpart set under the read lock, then drop
-    // the lock before any await. The cache is refreshed from
-    // RoomInfo.dm_counterpart_user_id by the room-list rebuild path — no
-    // per-tick scan of joined_rooms or per-room dm_other_user lookup here.
-    let counterparts: Vec<String> = {
-        let set = dm_counterparts.read();
-        set.iter().cloned().collect()
-    };
+    // the lock before any await. The room-list rebuild path refreshes it from
+    // RoomInfo.dm_counterpart_user_id (see `fetch_dm_members_once` for DMs
+    // whose member list was not loaded yet).
+    let counterparts: Vec<String> = dm_counterparts.read().iter().cloned().collect();
     if counterparts.is_empty() {
         return;
     }
@@ -1812,9 +1835,28 @@ async fn poll_presence_once(
                             RumaPresence::Unavailable => 2,
                             _ => 3,
                         };
+                        tracing::debug!(
+                            "presence: {uid} state={state} last_active_ago={:?}",
+                            resp.last_active_ago
+                        );
+                        // `last_active_ago` is "time since the server last saw
+                        // activity", so the absolute wall-clock instant is
+                        // (now − ago). Zero when the server reported none (a
+                        // never-seen user, or presence disabled): the UI hides
+                        // the "last seen" line in that case.
+                        let last_active_ts = resp.last_active_ago.map_or(0, |ago| {
+                            super::rtc::sticky::now_ms().saturating_sub(ago.as_millis() as u64)
+                        });
+                        let presence = crate::ffi::PresenceFfi {
+                            user_id: uid.clone(),
+                            state,
+                            last_active_ts,
+                            currently_active: resp.currently_active.unwrap_or(false),
+                            status_msg: resp.status_msg.unwrap_or_default(),
+                        };
                         {
                             let g = h_ref.lock();
-                            g.on_presence_changed(&uid, state);
+                            g.on_presence_changed(&presence);
                         }
                     }
                     Err(e) => {
@@ -1834,8 +1876,12 @@ async fn poll_presence_once(
                                 }
                             }
                         }
-                        // Other transient errors (404, 5xx, network) silently
-                        // ignored — the next tick will retry.
+                        // Other transient errors (404, 5xx, network) are
+                        // retried on the next tick. Logged at debug so a
+                        // homeserver that refuses presence (or a network
+                        // hiccup) is visible when diagnosing "no presence
+                        // shown" instead of failing completely silently.
+                        tracing::debug!("presence: poll of {uid} failed: {e}");
                     }
                 }
             }
@@ -2059,23 +2105,26 @@ async fn handle_typing_notification(
     }
 }
 
-/// Presence polling loop: every 60s, when enabled, run one DM presence pass.
+/// Presence polling loop: every `PRESENCE_POLL_INTERVAL`, when enabled, run
+/// one DM presence pass.
+#[allow(clippy::too_many_arguments)]
 async fn watch_presence(
     h: Arc<Mutex<SendHandler>>,
     client: Client,
     mut stop_rx_presence: watch::Receiver<bool>,
     presence_enabled: Arc<std::sync::atomic::AtomicBool>,
     dm_counterparts: Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
+    last_poll: Arc<parking_lot::Mutex<Option<std::time::Instant>>>,
     forbidden_presence: Arc<Mutex<std::collections::HashSet<matrix_sdk::ruma::OwnedUserId>>>,
     app_cache_db: Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
 ) {
-    // 60s tick: matrix-sdk delivers presence EDUs through the sync stream
-    // for free; this polling loop is a fallback for servers that omit them
-    // for non-following users. The cache population (in the room-list
-    // rebuild path) means the very first tick reads no users until
-    // build_room_infos has finished its initial sweep — that's fine,
-    // presence is not load-bearing for the first frame.
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+    // Sliding Sync never delivers presence EDUs (the Rust SDK does not even
+    // request the presence extension), so this poll is the only receive path.
+    // The cache population (in the room-list rebuild path) means the very
+    // first tick reads no users until build_room_infos has finished its
+    // initial sweep — that's fine, presence is not load-bearing for the first
+    // frame.
+    let mut interval = tokio::time::interval(PRESENCE_POLL_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
@@ -2087,14 +2136,50 @@ async fn watch_presence(
         }
         let _job =
             super::activity::begin("presence-poll", "Sync", super::activity::JobKind::Periodic);
+        // Zero here answers "why is no presence shown" when the room list has
+        // not yet published a DM counterpart.
+        tracing::debug!(
+            "presence: polling {} DM counterpart(s)",
+            dm_counterparts.read().len()
+        );
         poll_presence_once(
             &client,
             &h,
             &dm_counterparts,
+            &last_poll,
             &forbidden_presence,
             &app_cache_db,
         )
         .await;
+    }
+}
+
+/// How often the background loop polls every DM counterpart's presence.
+const PRESENCE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+/// A `poll_presence_now` kick within this long of the last pass is skipped.
+const PRESENCE_FRESH: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Whether the last presence pass (if any) is recent enough that an
+/// on-demand kick would only repeat it.
+fn presence_poll_is_fresh(last: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    last.is_some_and(|t| now.saturating_duration_since(t) < PRESENCE_FRESH)
+}
+
+#[cfg(test)]
+mod presence_fresh_tests {
+    use super::{presence_poll_is_fresh, PRESENCE_FRESH};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn kick_is_skipped_only_shortly_after_a_pass() {
+        let now = Instant::now();
+        assert!(!presence_poll_is_fresh(None, now));
+        assert!(presence_poll_is_fresh(Some(now), now));
+        assert!(presence_poll_is_fresh(
+            Some(now),
+            now + PRESENCE_FRESH - Duration::from_millis(1)
+        ));
+        assert!(!presence_poll_is_fresh(Some(now), now + PRESENCE_FRESH));
     }
 }
 
@@ -2298,6 +2383,89 @@ async fn watch_imported_keys(
         }
     }
 }
+
+/// Sliding sync only sends the member events of people in the recent
+/// timeline, so a quiet DM can have no member event for its partner and
+/// `dm_other_user` then finds nobody. Once the room list is running, fetch
+/// the full member list of each DM (an `m.direct` room, or one with exactly
+/// two real members) that matrix-sdk has not fully loaded yet, then rebuild
+/// that room. matrix-sdk persists the "members loaded" flag, so each room is
+/// fetched once, not on every start.
+async fn fetch_dm_members_once(
+    client: Client,
+    svc: Arc<SyncService>,
+    rebuild_tx: tokio::sync::mpsc::UnboundedSender<OwnedRoomId>,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    use futures_util::StreamExt;
+    use matrix_sdk_ui::room_list_service::State;
+
+    let mut state_rx = svc.room_list_service().state();
+    if !matches!(state_rx.get(), State::Running) {
+        loop {
+            tokio::select! {
+                res = stop_rx.changed() => {
+                    if res.is_err() || *stop_rx.borrow() { return; }
+                }
+                state = state_rx.next() => match state {
+                    Some(State::Running) => break,
+                    Some(_) => {}
+                    None => return,
+                },
+            }
+        }
+    }
+
+    let mut rooms = Vec::new();
+    for room in client.joined_rooms() {
+        if room.is_space() || room.are_members_synced() {
+            continue;
+        }
+        let real = room
+            .active_members_count()
+            .saturating_sub(room.active_service_members_count().unwrap_or(0));
+        if real == 2 || room.is_direct().await.unwrap_or(false) {
+            rooms.push(room);
+        }
+    }
+    if rooms.is_empty() {
+        return;
+    }
+    tracing::debug!("loading the member list of {} DM(s)", rooms.len());
+    let fetches = futures_util::stream::iter(rooms).for_each_concurrent(
+        DM_MEMBER_FETCH_CONCURRENCY,
+        |room| {
+            let tx = rebuild_tx.clone();
+            async move {
+                let synced = tokio::time::timeout(
+                    std::time::Duration::from_secs(DM_MEMBER_FETCH_TIMEOUT_S),
+                    room.sync_members(),
+                )
+                .await;
+                match synced {
+                    Ok(Ok(())) => {
+                        let _ = tx.send(room.room_id().to_owned());
+                    }
+                    Ok(Err(e)) => {
+                        tracing::debug!("member list of {} failed: {e}", room.room_id());
+                    }
+                    Err(_) => {
+                        tracing::debug!("member list of {} timed out", room.room_id());
+                    }
+                }
+            }
+        },
+    );
+    tokio::select! {
+        _ = stop_rx.changed() => {}
+        _ = fetches => {}
+    }
+}
+
+/// How many DM member lists `fetch_dm_members_once` loads at a time.
+const DM_MEMBER_FETCH_CONCURRENCY: usize = 4;
+/// Give up on one DM's member list after this long; the next start retries.
+const DM_MEMBER_FETCH_TIMEOUT_S: u64 = 15;
 
 /// RoomListService state watcher: emit an initial snapshot, then surface each
 /// sliding-sync phase transition via `on_room_list_state`.

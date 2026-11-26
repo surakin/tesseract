@@ -28,6 +28,8 @@ std::vector<tk::TextSpan> themed_spans(std::vector<tk::TextSpan> spans, const tk
     return spans;
 }
 
+// Joins the topic and the presence on the second line; not a translatable sentence.
+constexpr const char* kSubtitleSeparator = " · ";
 constexpr float kRoomHeaderPadX = 16.0f;
 constexpr float kRoomHeaderAvatarSize = 40.0f;
 constexpr float kRoomHeaderAvatarGap = 12.0f;
@@ -284,6 +286,14 @@ RoomHeader::RoomHeader()
 
 void RoomHeader::set_room(const tesseract::RoomInfo& info)
 {
+    // A different room must not inherit the previous room's presence subtitle
+    // (a DM's presence would linger over a normal room until the next
+    // refresh). Re-sets for the same room (info updates) keep it.
+    if (info.id != room_id_)
+    {
+        room_id_ = info.id;
+        set_presence_text("");
+    }
     display_name_ = info.name;
     avatar_url_ = info.effective_avatar_url();
     encrypted_ = info.is_encrypted;
@@ -369,11 +379,12 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
                 topic_display_spans_.clear();
                 const auto nl = topic_.find('\n');
                 topic_multiline_ = (nl != std::string::npos);
-                const std::string display = topic_multiline_ ? topic_.substr(0, nl) + "…" : topic_;
-                topic_label_->set_text(display);
-                topic_label_->set_visible(!topic_.empty());
             }
         }
+        // The plain label carries the second line unless the rich-text path
+        // paints it from spans; presence is appended to the topic either way.
+        topic_label_->set_text(subtitle_text_());
+        topic_label_->set_visible(topic_spans_.empty() && subtitle_visible_());
     }
 }
 
@@ -381,6 +392,78 @@ void RoomHeader::set_avatar_provider(
     std::function<const tk::Image*(const std::string& mxc_url)> provider)
 {
     avatar_provider_ = std::move(provider);
+}
+
+void RoomHeader::set_presence_text(std::string text)
+{
+    if (text == presence_text_)
+    {
+        return;
+    }
+    presence_text_ = std::move(text);
+    // The appended presence changed: force the label/layout to rebuild.
+    topic_dirty_ = true;
+    topic_layout_.reset();
+    topic_natural_w_ = -1.0f;
+    if (topic_label_)
+    {
+        topic_label_->set_text(subtitle_text_());
+        topic_label_->set_visible(topic_spans_.empty() && subtitle_visible_());
+    }
+}
+
+// True when the header's second line carries presence (appended to the topic).
+bool RoomHeader::showing_presence_() const
+{
+    return !presence_text_.empty();
+}
+
+// The plain text drawn on the second line: the topic's first line (with "…"
+// when multiline), then the presence appended after the separator.
+std::string RoomHeader::subtitle_text_() const
+{
+    const auto nl = topic_.find('\n');
+    std::string text = (nl != std::string::npos) ? topic_.substr(0, nl) + "…" : topic_;
+    if (!presence_text_.empty())
+    {
+        text += text.empty() ? presence_text_ : std::string(kSubtitleSeparator) + presence_text_;
+    }
+    return text;
+}
+
+// The rich-text spans painted on the second line: the topic's display spans
+// plus an unlinked trailing span carrying the presence.
+std::vector<tk::TextSpan> RoomHeader::subtitle_spans_() const
+{
+    std::vector<tk::TextSpan> spans = topic_display_spans_;
+    if (!presence_text_.empty())
+    {
+        tk::TextSpan tail;
+        tail.text =
+            spans.empty() ? presence_text_ : std::string(kSubtitleSeparator) + presence_text_;
+        spans.push_back(std::move(tail));
+    }
+    return spans;
+}
+
+// The full (untruncated) second-line text, for the truncation tooltip.
+std::string RoomHeader::subtitle_tooltip_text_() const
+{
+    if (presence_text_.empty())
+    {
+        return topic_;
+    }
+    return topic_.empty() ? presence_text_ : topic_ + kSubtitleSeparator + presence_text_;
+}
+
+// Whether the header has any second line to draw.
+bool RoomHeader::subtitle_visible_() const
+{
+    if (!presence_text_.empty())
+    {
+        return true;
+    }
+    return !topic_.empty() || !topic_html_.empty();
 }
 
 void RoomHeader::set_condensed(bool condensed)
@@ -394,7 +477,7 @@ tk::Size RoomHeader::measure(tk::LayoutCtx&, tk::Size constraints)
     {
         return {constraints.w, kHeight};
     }
-    const bool has_topic = !topic_.empty() || !topic_html_.empty();
+    const bool has_topic = subtitle_visible_();
     if (!has_topic)
     {
         return {constraints.w, 0.0f};
@@ -416,7 +499,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         title_target_->arrange(ctx, {});
         title_target_->set_links_from_spans(topic_spans_);
-        title_target_->set_accessible_description(display_name_);
+        title_target_->set_accessible_description(showing_presence_() ? presence_text_
+                                                                      : display_name_);
     }
 
     // Action buttons are never shown in condensed mode; hide + zero them so the
@@ -484,10 +568,13 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         topic_rect_ = {bounds.x + kRoomHeaderPadX, topic_y,
                        std::max(0.0f, bounds.w - 2.0f * kRoomHeaderPadX), kTopicH};
 
-        const bool has_topic = !topic_.empty() || !topic_html_.empty();
-        const bool show_label = has_topic && topic_html_.empty();
+        const bool has_topic = subtitle_visible_();
+        // The plain label is used when there are no spans; rich-text and
+        // autolinked topics paint from spans instead.
+        const bool show_label = has_topic && topic_spans_.empty();
         if (topic_label_)
         {
+            topic_label_->set_text(subtitle_text_());
             topic_label_->set_visible(show_label);
             if (show_label)
             {
@@ -505,12 +592,12 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
             if (!topic_display_spans_.empty())
             {
+                const auto sub_spans = subtitle_spans_();
                 tk::TextStyle ts{};
                 ts.role = tk::FontRole::SidebarPreview;
                 ts.trim = tk::TextTrim::Ellipsis;
                 ts.max_width = topic_rect_.w;
-                topic_layout_ =
-                    ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
+                topic_layout_ = ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts);
                 if (topic_multiline_)
                 {
                     topic_truncated_ = true;
@@ -521,14 +608,14 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                     {
                         tk::TextStyle ts_nat{};
                         ts_nat.role = tk::FontRole::SidebarPreview;
-                        auto nat = ctx.factory.build_rich_text(
-                            themed_spans(topic_display_spans_, ctx.theme), ts_nat);
+                        auto nat =
+                            ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts_nat);
                         topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                     }
                     topic_truncated_ = topic_natural_w_ > topic_rect_.w;
                 }
             }
-            else if (!topic_.empty())
+            else if (subtitle_visible_())
             {
                 if (topic_multiline_)
                 {
@@ -540,7 +627,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                     {
                         tk::TextStyle ts_nat{};
                         ts_nat.role = tk::FontRole::SidebarPreview;
-                        auto nat = ctx.factory.build_text(topic_, ts_nat);
+                        auto nat = ctx.factory.build_text(subtitle_text_(), ts_nat);
                         topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                     }
                     topic_truncated_ = topic_natural_w_ > topic_rect_.w;
@@ -627,8 +714,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - kRoomHeaderAvatarSize -
                            kRoomHeaderAvatarGap - right_reserve);
 
-    const bool has_topic = !topic_.empty() || !topic_html_.empty();
-    const bool show_label = has_topic && topic_html_.empty();
+    const bool has_topic = subtitle_visible_();
+    const bool show_label = has_topic && topic_spans_.empty();
 
     const float name_y = has_topic ? bounds.y + kNameY_Pair : bounds.y + kNameY_Single;
 
@@ -657,6 +744,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (topic_label_)
     {
+        topic_label_->set_text(subtitle_text_());
         topic_label_->set_visible(show_label);
         if (show_label)
         {
@@ -677,13 +765,13 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (!topic_display_spans_.empty())
         {
             // Rich text: paint from display spans (first-line only when
-            // multiline; equals topic_spans_ for single-line topics).
+            // multiline) plus the unlinked presence tail.
+            const auto sub_spans = subtitle_spans_();
             tk::TextStyle ts{};
             ts.role = tk::FontRole::SidebarPreview;
             ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
-            topic_layout_ =
-                ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
+            topic_layout_ = ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts);
 
             if (topic_multiline_)
             {
@@ -695,14 +783,14 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 {
                     tk::TextStyle ts_nat{};
                     ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat = ctx.factory.build_rich_text(
-                        themed_spans(topic_display_spans_, ctx.theme), ts_nat);
+                    auto nat =
+                        ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts_nat);
                     topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                 }
                 topic_truncated_ = topic_natural_w_ > text_w;
             }
         }
-        else if (!topic_.empty())
+        else if (subtitle_visible_())
         {
             // Plain text: label already shows first-line + "…" when multiline.
             if (topic_multiline_)
@@ -715,7 +803,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 {
                     tk::TextStyle ts_nat{};
                     ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat = ctx.factory.build_text(topic_, ts_nat);
+                    auto nat = ctx.factory.build_text(subtitle_text_(), ts_nat);
                     topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                 }
                 topic_truncated_ = topic_natural_w_ > text_w;
@@ -911,7 +999,7 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
 
     if (condensed_)
     {
-        // Condensed: only topic, no avatar / name / calendar.
+        // Condensed: only the second line, no avatar / name / calendar.
         if (!topic_spans_.empty())
         {
             if (topic_layout_)
@@ -983,8 +1071,9 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         }
     }
 
-    // Topic: rich text (HTML) if present, plain label otherwise.
-    // topic_layout_ is built and cached in arrange(); no rebuild needed here.
+    // Second line: the topic (rich text from spans, plain label otherwise)
+    // with a DM counterpart's presence appended. topic_layout_ is built and
+    // cached in arrange(); no rebuild needed here.
     if (!topic_spans_.empty())
     {
         if (topic_layout_)
@@ -1082,7 +1171,7 @@ std::size_t RoomHeader::access_row_count() const
     if (!topic_spans_.empty())
     {
         std::string text;
-        for (const auto& span : topic_spans_)
+        for (const auto& span : subtitle_spans_())
         {
             text += span.text;
         }
@@ -1242,7 +1331,7 @@ bool RoomHeader::on_pointer_move(tk::Point local)
     {
         if (host_)
         {
-            host_->show_tooltip(this, topic_, topic_rect_);
+            host_->show_tooltip(this, subtitle_tooltip_text_(), topic_rect_);
         }
     }
     else if (!new_hover_topic && hover_topic_)

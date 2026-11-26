@@ -532,10 +532,11 @@ public:
     {
     }
 
-    /// Called when a presence event is received for `user_id`.
-    /// `state` reflects the user's current presence state.
+    /// Called when a presence update is received for a user.
+    /// `info` carries the presence state plus the last-active timestamp, the
+    /// server's "currently active" flag and the user's status message.
     /// Called on a background thread.
-    virtual void on_presence_changed(const std::string& /*user_id*/, PresenceState /*state*/)
+    virtual void on_presence_changed(const PresenceInfo& /*info*/)
     {
     }
 

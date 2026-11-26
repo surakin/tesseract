@@ -7658,3 +7658,23 @@ msgid "{0} updated the room settings ({1} change)"
 msgid_plural "{0} updated the room settings ({1} changes)"
 msgstr[0] "{0} a mis à jour les paramètres du salon ({1} modification)"
 msgstr[1] "{0} a mis à jour les paramètres du salon ({1} modifications)"
+
+#: ui/shared/views/presence_text.h
+msgid "Online"
+msgstr "En ligne"
+
+#: ui/shared/views/presence_text.h
+msgid "Active now"
+msgstr "Actif actuellement"
+
+#: ui/shared/views/presence_text.h
+msgid "Away"
+msgstr "Absent"
+
+#: ui/shared/views/presence_text.h
+msgid "Last seen {0}"
+msgstr "Vu(e) {0}"
+
+#: ui/shared/views/presence_text.h
+msgid "Away, last seen {0}"
+msgstr "Absent(e), vu(e) {0}"

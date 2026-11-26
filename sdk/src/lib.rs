@@ -566,6 +566,15 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct PresenceFfi {
+        pub user_id: String,
+        pub state: u8,
+        pub last_active_ts: u64,
+        pub currently_active: bool,
+        pub status_msg: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct DeleteDeviceBegin {
         pub ok: bool,
         pub message: String,

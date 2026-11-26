@@ -1042,13 +1042,13 @@ void EventHandlerBridge::on_identity_status_changed(rust::Str room_id,
                  });
 }
 
-void EventHandlerBridge::on_presence_changed(rust::Str user_id, std::uint8_t state) const
+void EventHandlerBridge::on_presence_changed(const tesseract_ffi::PresenceFfi& presence) const
 {
     with_handler("on_presence_changed", slot_,
                  [&](tesseract::IEventHandler* handler_)
                  {
                      tesseract::PresenceState ps;
-                     switch (state)
+                     switch (presence.state)
                      {
                      case 1:
                          ps = tesseract::PresenceState::Online;
@@ -1060,7 +1060,13 @@ void EventHandlerBridge::on_presence_changed(rust::Str user_id, std::uint8_t sta
                          ps = tesseract::PresenceState::Offline;
                          break;
                      }
-                     handler_->on_presence_changed(std::string(user_id), ps);
+                     tesseract::PresenceInfo info;
+                     info.user_id = std::string(presence.user_id);
+                     info.state = ps;
+                     info.last_active_ts = presence.last_active_ts;
+                     info.currently_active = presence.currently_active;
+                     info.status_msg = std::string(presence.status_msg);
+                     handler_->on_presence_changed(info);
                  });
 }
 

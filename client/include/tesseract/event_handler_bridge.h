@@ -28,6 +28,7 @@ struct MediaIndexRowFfi;
 struct RtcParticipantInfo;
 struct RoomSecurityStateFfi;
 struct ServerInfoFfi;
+struct PresenceFfi;
 struct RoomExportProgressFfi;
 } // namespace tesseract_ffi
 
@@ -204,7 +205,7 @@ public:
                                     const rust::Vec<rust::String>& display_names,
                                     const rust::Vec<std::uint8_t>& kinds) const;
 
-    void on_presence_changed(rust::Str user_id, std::uint8_t state) const;
+    void on_presence_changed(const tesseract_ffi::PresenceFfi& presence) const;
 
     /// Thread-timeline callbacks — mirror of the four room-timeline callbacks
     /// above with an additional `thread_root` parameter.

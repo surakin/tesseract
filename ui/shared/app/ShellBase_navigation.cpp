@@ -1195,6 +1195,22 @@ void ShellBase::on_room_selected_(const std::string& room_id)
         {
             room_view_->set_room(*r);
             after_room_set_();
+            // The header cleared the previous room's presence; show this
+            // room's own (DM counterpart) right away.
+            refresh_presence_subtitles_();
+            // Opening a DM is when its presence is looked at: refresh it now
+            // rather than at the next 60 s poll (skipped SDK-side if recent).
+            if (r->is_direct && !r->is_space && presence_polling_wanted_())
+            {
+                run_async_mut_(
+                    [sess = active_account_]()
+                    {
+                        if (sess && sess->client)
+                        {
+                            sess->client->poll_presence_now();
+                        }
+                    });
+            }
         }
     }
     refresh_window_title_();

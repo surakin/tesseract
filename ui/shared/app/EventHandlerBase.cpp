@@ -963,13 +963,13 @@ void EventHandlerBase::on_room_action_complete(std::uint64_t request_id, bool ok
         });
 }
 
-void EventHandlerBase::on_presence_changed(const std::string& user_id, PresenceState state)
+void EventHandlerBase::on_presence_changed(const PresenceInfo& info)
 {
     shell()->post_to_ui_(
-        [shell = shell(), account = user_id_, uid = user_id, s = state]()
+        [shell = shell(), account = user_id_, presence = info]()
         {
             ShellBase::EventAccountScope scope(*shell, account);
-            shell->handle_presence_changed_ui_(uid, s);
+            shell->handle_presence_changed_ui_(presence);
         });
 }
 

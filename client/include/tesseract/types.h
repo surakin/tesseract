@@ -79,6 +79,28 @@ enum class PresenceState : uint8_t
     Offline,
 };
 
+/// One user's presence snapshot, delivered by
+/// `IEventHandler::on_presence_changed`. Mirrors the Rust `PresenceFfi`.
+/// `last_active_ts` is unix milliseconds (derived from the server's
+/// `last_active_ago`), or 0 when the homeserver reported no activity time —
+/// the UI hides the "last seen" line in that case. `currently_active` is the
+/// server's own "active right now" flag (false when absent), and `status_msg`
+/// is the user's free-form status text (empty when unset).
+struct PresenceInfo
+{
+    std::string user_id;
+    PresenceState state = PresenceState::Offline;
+    uint64_t last_active_ts = 0;
+    bool currently_active = false;
+    std::string status_msg;
+
+    bool operator==(const PresenceInfo& o) const
+    {
+        return user_id == o.user_id && state == o.state && last_active_ts == o.last_active_ts &&
+               currently_active == o.currently_active && status_msg == o.status_msg;
+    }
+};
+
 /// One aggregated reaction key attached to a timeline event.
 /// `senders.size() == count`. The UI uses `senders` to populate the chip's
 /// tooltip (e.g. "Reacted by:\n  Alice\n  Bob"). Each sender entry is the

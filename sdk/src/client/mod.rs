@@ -1053,6 +1053,12 @@ pub struct ClientFfi {
     /// `dm_other_user` member-list lookup that goes with it) on every tick.
     #[cfg(not(test))]
     pub(super) dm_counterparts: Arc<parking_lot::RwLock<std::collections::HashSet<String>>>,
+    /// When the last DM presence pass started (the 60 s loop or a
+    /// `poll_presence_now` kick). A kick within `PRESENCE_FRESH` of it is
+    /// skipped, so opening DMs or refocusing the window in quick succession
+    /// does not re-poll every counterpart each time.
+    #[cfg(not(test))]
+    pub(super) presence_last_poll: Arc<parking_lot::Mutex<Option<std::time::Instant>>>,
     /// Users that returned 403 Forbidden on the presence endpoint —
     /// typically bridge puppet accounts with presence privacy enabled.
     /// They never recover mid-session so we record them and skip future
@@ -1592,6 +1598,7 @@ impl ClientFfi {
             )),
             #[cfg(not(test))]
             dm_counterparts: Arc::new(parking_lot::RwLock::new(std::collections::HashSet::new())),
+            presence_last_poll: Arc::new(parking_lot::Mutex::new(None)),
             #[cfg(not(test))]
             forbidden_presence: Arc::new(Mutex::new(std::collections::HashSet::new())),
             #[cfg(not(test))]
@@ -3970,6 +3977,7 @@ pub(super) struct RoomListFingerprintKey {
     language: String,
     avatar_url: String,
     dm_avatar_url: String,
+    dm_counterpart_user_id: String,
     is_encrypted: bool,
     join_rule: String,
     guest_access: bool,
@@ -4023,6 +4031,10 @@ pub(super) fn room_list_fingerprint(rooms: &[crate::ffi::RoomInfo]) -> Vec<RoomL
             // fingerprint is unchanged and the live update is silently
             // dropped — the room list keeps painting the stale avatar until
             // some unrelated change happens to perturb the fingerprint.
+            //
+            // dm_counterpart_user_id: the DM partner, which the presence dot
+            // and header line key on, can become known later (once the DM's
+            // member list is loaded) with nothing else changing.
             //
             // is_encrypted / join_rule / guest_access / history_visibility:
             // Security & Privacy tab fields. None of these touch
@@ -4101,6 +4113,7 @@ pub(super) fn room_list_fingerprint(rooms: &[crate::ffi::RoomInfo]) -> Vec<RoomL
                 language: r.language.clone(),
                 avatar_url: r.avatar_url.clone(),
                 dm_avatar_url: r.dm_avatar_url.clone(),
+                dm_counterpart_user_id: r.dm_counterpart_user_id.clone(),
                 is_encrypted: r.is_encrypted,
                 join_rule: r.join_rule.clone(),
                 guest_access: r.guest_access,

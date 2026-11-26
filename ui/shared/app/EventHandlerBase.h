@@ -184,7 +184,7 @@ public:
     void on_identity_status_changed(const std::string& room_id,
                                     const std::vector<IdentityWarning>& warnings) override;
     void on_user_identities_changed(const std::vector<std::string>& user_ids) override;
-    void on_presence_changed(const std::string& user_id, PresenceState state) override;
+    void on_presence_changed(const PresenceInfo& info) override;
 
     void on_call_invitation(const std::string& room_id, const std::string& slot_id,
                             const std::string& caller_user_id, const std::string& call_intent,
