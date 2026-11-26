@@ -111,6 +111,8 @@ struct ProfileGuard
     }
 };
 
+// Only the XDG/private-dir tests below use these, and they are not built on macOS.
+#if !defined(__APPLE__)
 std::filesystem::path make_temp_dir(const char* tag, std::filesystem::perms perms)
 {
     namespace fs = std::filesystem;
@@ -128,6 +130,7 @@ bool is_private_dir(const std::string& path)
     return lstat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid() &&
            (st.st_mode & 077) == 0;
 }
+#endif
 
 } // namespace
 

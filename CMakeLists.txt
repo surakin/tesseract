@@ -358,6 +358,8 @@ corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 # Universal macOS builds (CMAKE_OSX_ARCHITECTURES with several entries): sets
 # TESSERACT_MAC_UNIVERSAL and defines the helpers called below. No-op otherwise.
 include(${CMAKE_SOURCE_DIR}/cmake/MacUniversal.cmake)
+# macOS AppKit: libopus built for the deployment target (tesseract_mac_opus).
+include(${CMAKE_SOURCE_DIR}/cmake/MacOpus.cmake)
 
 # matrix-sdk is rustls-only (no native-tls feature), so no system OpenSSL is
 # required. SQLite is bundled via the `bundled-sqlite` feature, so
@@ -507,9 +509,10 @@ endif()
 # follows the archive in the link command.  MSVC CI builds bundle opus into
 # the Rust archive via OPUS_STATIC=1; non-Windows needs it explicitly.
 if(NOT WIN32)
-    # Universal macOS builds build libopus themselves and preset OPUS_LIB.
-    if(TESSERACT_MAC_UNIVERSAL)
-        tesseract_mac_universal_opus()
+    # macOS AppKit builds libopus for the deployment target and presets
+    # OPUS_LIB, unless OPUS_LIB_DIR names one (see cmake/MacOpus.cmake).
+    if(TESSERACT_UI STREQUAL "macos")
+        tesseract_mac_opus()
     endif()
     find_library(OPUS_LIB NAMES opus
         HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
@@ -520,17 +523,21 @@ endif()
 if(APPLE)
     # audiopus_sys on macOS always uses the "dynamic" Cargo feature, which calls
     # pkg-config to locate libopus. Set PKG_CONFIG_PATH to whichever directory
-    # holds the opus.pc file (Homebrew lib/pkgconfig on arm64, or the pkgconfig/
-    # subdirectory we create alongside a source-built dylib on x86_64).
+    # holds the opus.pc file (the lib/pkgconfig of cmake/MacOpus.cmake's build,
+    # or the pkgconfig/ subdirectory CI creates alongside its OPUS_LIB_DIR).
     # PKG_CONFIG_ALLOW_CROSS lets pkg-config run during cross-compilation (arm64
     # runner building an x86_64 target).
     # NOTE: do NOT set OPUS_STATIC here. audiopus_sys build.rs checks
     # env::var("OPUS_STATIC").is_ok() — presence, not value — so even
     # OPUS_STATIC=0 would trigger the static branch, overriding the feature.
+    # OPUS_LIB_DIR is audiopus_sys's fallback when pkg-config is missing (as on
+    # a fresh Mac): it links that directory's libopus instead of trying to
+    # build its own opus with autotools.
     get_filename_component(_opus_pkgconfig_dir "${OPUS_LIB}" DIRECTORY)
     corrosion_set_env_vars(tesseract_sdk_ffi
         PKG_CONFIG_ALLOW_CROSS=1
-        "PKG_CONFIG_PATH=${_opus_pkgconfig_dir}/pkgconfig")
+        "PKG_CONFIG_PATH=${_opus_pkgconfig_dir}/pkgconfig"
+        "OPUS_LIB_DIR=${_opus_pkgconfig_dir}")
 endif()
 
 # ---------------------------------------------------------------------------

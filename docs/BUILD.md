@@ -50,7 +50,7 @@ Notes on the less obvious deps:
 ### macOS / AppKit
 
 ```bash
-brew install ninja cmake opus resvg   # resvg renders the app icon; without Homebrew: cargo install resvg
+brew install ninja cmake resvg   # resvg renders the app icon; without Homebrew: cargo install resvg
 xcode-select --install   # Xcode Command Line Tools
 # Rust toolchain + native macOS targets (pick the one matching the preset):
 #   rustup toolchain install stable
@@ -59,6 +59,13 @@ xcode-select --install   # Xcode Command Line Tools
 ```
 
 No Go or Perl toolchain is needed (see the note under the Linux prerequisites above).
+
+libopus is not taken from Homebrew: its bottle targets the build machine's own
+macOS, and dyld refuses to load it below that version. The first configure
+fetches libopus v1.5.2 (network access needed) and builds it for the 13.0
+deployment target into `build/<preset>/opus/` (`cmake/MacOpus.cmake`); later
+configures reuse it. To use your own build instead, export `OPUS_LIB_DIR` to a
+directory holding `libopus.dylib` and `pkgconfig/opus.pc` (single-arch presets only).
 
 #### Developer ID signing (DMG)
 
@@ -230,9 +237,8 @@ aarch64-apple-darwin x86_64-apple-darwin`). One build tree holds both
 architectures: Corrosion builds the arm64 Rust archive, a custom target builds
 the x86_64 one, and the two are `lipo`'d together
 (`cmake/MacUniversal.cmake`), so expect roughly double the disk footprint of a
-single-arch build. CMake also fetches libopus (v1.5.2, so configure needs
-network access) and builds it per architecture into a universal dylib, which
-keeps its minimum macOS at the deployment target.
+single-arch build. libopus is built once per architecture and `lipo`'d into
+a universal dylib; `OPUS_LIB_DIR` is ignored here.
 
 Cache variables:
 

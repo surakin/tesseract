@@ -213,8 +213,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" AND TESSERACT_MAC_STRIP)
 endif()
 
 # opus: audiopus_sys (the Rust crate) emits a link-lib=opus directive that
-# the C++ linker must satisfy. Homebrew installs opus to a non-standard
-# prefix, so find_library locates it before the exe link step runs.
+# the C++ linker must satisfy. OPUS_LIB is already cached by the root
+# CMakeLists.txt (cmake/MacOpus.cmake's build, or one under OPUS_LIB_DIR).
 find_library(OPUS_LIB NAMES opus
     HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
     REQUIRED)
@@ -234,7 +234,8 @@ string(STRIP "${_opus_id}" _opus_id)
 # dyld refuses a library whose minimum OS is newer than the running system, so
 # a libopus built for the build machine (Homebrew's is) makes the bundle
 # unlaunchable below that version whatever LSMinimumSystemVersion says. CI
-# builds opus with -DCMAKE_OSX_DEPLOYMENT_TARGET to match and fails on this.
+# builds opus with -DCMAKE_OSX_DEPLOYMENT_TARGET to match and fails on this;
+# cmake/MacOpus.cmake does the same unless OPUS_LIB_DIR overrides it.
 execute_process(
     COMMAND vtool -show-build "${_opus_real}"
     OUTPUT_VARIABLE _opus_build
