@@ -5,6 +5,7 @@
 #include "views/UserProfilePanel.h"
 #include "tk_test_surface.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -249,4 +250,83 @@ TEST_CASE("UserProfilePanel: common room avatars are requested once while unload
     panel.set_common_rooms({{"!a:example.org", "A", "mxc://example.org/a"}}, 1, false);
     st.run(panel, {0, 0, 600, 500});
     CHECK(needed.size() == 2);
+}
+
+TEST_CASE("UserProfilePanel: presence line and accessible description follow the provider",
+          "[tk][view][user_profile_panel][presence]")
+{
+    TkUserProfilePanelStage st;
+    UserProfilePanel panel;
+    std::optional<tesseract::PresenceInfo> info;
+    panel.set_presence_provider(
+        [&](const std::string& uid) -> std::optional<tesseract::PresenceInfo>
+        {
+            if (info)
+            {
+                info->user_id = uid;
+            }
+            return info;
+        });
+
+    panel.open("@alice:example.org", "Alice", "");
+    st.run(panel, {0, 0, 300, 400});
+    CHECK(panel.presence_text().empty()); // provider returns nothing: hidden
+    CHECK(panel.access_description().empty());
+
+    info = tesseract::PresenceInfo{};
+    info->state = tesseract::PresenceState::Online;
+    panel.refresh_presence();
+    st.run(panel, {0, 0, 300, 400});
+    CHECK(panel.presence_text() == "Online");
+    CHECK(panel.access_description() == "Online");
+
+    info->state = tesseract::PresenceState::Unavailable;
+    panel.refresh_presence();
+    st.run(panel, {0, 0, 300, 400});
+    CHECK(panel.presence_text() == "Away");
+
+    info->state = tesseract::PresenceState::Offline; // unknown: nothing to show
+    panel.refresh_presence();
+    st.run(panel, {0, 0, 300, 400});
+    CHECK(panel.presence_text().empty());
+
+    info.reset(); // polling turned off
+    panel.refresh_presence();
+    CHECK(panel.presence_text().empty());
+}
+
+TEST_CASE("UserProfilePanel: refresh_presence relayouts only when the shown presence changed",
+          "[tk][view][user_profile_panel][presence]")
+{
+    TkUserProfilePanelStage st;
+    UserProfilePanel panel;
+    tesseract::PresenceInfo info;
+    info.state = tesseract::PresenceState::Online;
+    panel.set_presence_provider(
+        [&](const std::string&) -> std::optional<tesseract::PresenceInfo>
+        {
+            return info;
+        });
+    int layout_changes = 0;
+    panel.on_layout_changed = [&]
+    {
+        ++layout_changes;
+    };
+    panel.open("@alice:example.org", "Alice", "");
+    st.run(panel, {0, 0, 300, 400});
+    const int base = layout_changes;
+
+    panel.refresh_presence(); // nothing changed
+    CHECK(layout_changes == base);
+
+    info.state = tesseract::PresenceState::Unavailable;
+    panel.refresh_presence(); // live update while open
+    CHECK(layout_changes == base + 1);
+    st.run(panel, {0, 0, 300, 400}); // paints with the dot and the line, no crash
+    CHECK(panel.presence_text() == "Away");
+
+    panel.close();
+    const int after_close = layout_changes; // close() itself notifies
+    panel.refresh_presence();               // closed: ignored
+    CHECK(layout_changes == after_close);
 }

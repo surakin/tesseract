@@ -108,6 +108,8 @@ struct RwShell : tesseract::test::TestShellBase
     using ShellBase::my_user_id_;
     using ShellBase::next_request_id_;
     using ShellBase::pending_media_;
+    using ShellBase::handle_presence_changed_ui_;
+    using ShellBase::user_presence_;
     using ShellBase::rooms_;
 };
 
@@ -525,6 +527,37 @@ TEST_CASE("the media gallery opens for the room and closes cleanly", "[roompane]
     REQUIRE(f.gallery->on_close);
     f.gallery->close(); // fires on_close -> the pane's own cleanup
     CHECK_FALSE(f.gallery->is_open());
+    f.s.pump();
+}
+
+TEST_CASE("a presence update reaches the DM header subtitle", "[roompane][widgets][presence]")
+{
+    RwFx f;
+    // The fixture room is not a DM, so no subtitle is shown.
+    CHECK(f.pane().room_view()->header()->presence_text_for_test().empty());
+
+    // Make it a DM with a known counterpart and seed presence for it.
+    tesseract::RoomInfo dm;
+    dm.id = "!r:x";
+    dm.name = "Room";
+    dm.is_direct = true;
+    dm.dm_counterpart_user_id = "@friend:x";
+    f.s.rooms_ = {dm};
+    f.s.mark_room_index_dirty_();
+
+    tesseract::PresenceInfo info;
+    info.user_id = "@friend:x";
+    info.state = tesseract::PresenceState::Online;
+    f.s.handle_presence_changed_ui_(info);
+    CHECK(f.s.user_presence_.at("@friend:x").state == tesseract::PresenceState::Online);
+    CHECK(f.pane().room_view()->header()->presence_text_for_test() == "Online");
+
+    // Leaving falls back to "Last seen …" once a timestamp is known.
+    info.state = tesseract::PresenceState::Offline;
+    info.last_active_ts = 1'700'000'000'000ULL;
+    f.s.handle_presence_changed_ui_(info);
+    CHECK(f.pane().room_view()->header()->presence_text_for_test().find("Last seen") !=
+          std::string::npos);
     f.s.pump();
 }
 

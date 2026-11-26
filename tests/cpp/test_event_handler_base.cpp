@@ -624,7 +624,7 @@ TEST_CASE("remaining callbacks are safe on an idle shell", "[event_handler_base]
     f.h.on_typing_changed("!r", {"a"});
     f.h.on_user_identities_changed({"@u"});
     f.h.on_identity_status_changed("!r", {});
-    f.h.on_presence_changed("@u", tesseract::PresenceState::Online);
+    f.h.on_presence_changed(tesseract::PresenceInfo{});
     f.h.on_rooms_updated({});
     f.h.on_invites_updated({});
     f.h.on_my_knocks_updated({});

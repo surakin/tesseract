@@ -117,6 +117,7 @@ struct ProfileShell : tesseract::test::TestShellBase
     using ShellBase::pending_restore_rooms_;
     using ShellBase::per_account_rooms_;
     using ShellBase::presence_for_;
+    using ShellBase::presence_info_for_;
     using ShellBase::recent_room_ids_;
     using ShellBase::request_member_pronoun_ui_;
     using ShellBase::rooms_;
@@ -240,18 +241,62 @@ TEST_CASE("find_existing_dm_ looks in the active room list", "[shell][profile]")
     CHECK(s.find_existing_dm_("@stranger:x").empty());
 }
 
+namespace
+{
+tesseract::PresenceInfo mk_presence(const std::string& uid, tesseract::PresenceState st,
+                                    std::uint64_t ts = 0, bool active = false, std::string msg = {})
+{
+    tesseract::PresenceInfo info;
+    info.user_id = uid;
+    info.state = st;
+    info.last_active_ts = ts;
+    info.currently_active = active;
+    info.status_msg = std::move(msg);
+    return info;
+}
+} // namespace
+
 TEST_CASE("presence updates only repaint on a real change", "[shell][profile][presence]")
 {
     ProfileShell s;
     CHECK(s.presence_for_("@a:x") == tesseract::PresenceState::Offline);
-    s.handle_presence_changed_ui_("@a:x", tesseract::PresenceState::Online);
+    s.handle_presence_changed_ui_(mk_presence("@a:x", tesseract::PresenceState::Online));
     CHECK(s.rooms_updated == 1);
     CHECK(s.presence_for_("@a:x") == tesseract::PresenceState::Online);
-    s.handle_presence_changed_ui_("@a:x", tesseract::PresenceState::Online);
+    s.handle_presence_changed_ui_(mk_presence("@a:x", tesseract::PresenceState::Online));
     CHECK(s.rooms_updated == 1);
-    s.handle_presence_changed_ui_("@a:x", tesseract::PresenceState::Unavailable);
+    s.handle_presence_changed_ui_(mk_presence("@a:x", tesseract::PresenceState::Unavailable));
     CHECK(s.rooms_updated == 2);
     CHECK(s.presence_for_("@a:x") == tesseract::PresenceState::Unavailable);
+}
+
+TEST_CASE("presence snapshot carries the last-active time and status", "[shell][profile][presence]")
+{
+    ProfileShell s;
+    s.handle_presence_changed_ui_(
+        mk_presence("@a:x", tesseract::PresenceState::Offline, 1700000000000ULL, false, "brb"));
+    tesseract::PresenceInfo got = s.presence_info_for_("@a:x");
+    CHECK(got.state == tesseract::PresenceState::Offline);
+    CHECK(got.last_active_ts == 1700000000000ULL);
+    CHECK(got.status_msg == "brb");
+    // Unknown user: a default snapshot, no timestamp, no status.
+    const tesseract::PresenceInfo unknown = s.presence_info_for_("@nobody:x");
+    CHECK(unknown.state == tesseract::PresenceState::Offline);
+    CHECK(unknown.last_active_ts == 0);
+    CHECK(unknown.status_msg.empty());
+}
+
+TEST_CASE("presence repaints when only the last-active time changes", "[shell][profile][presence]")
+{
+    ProfileShell s;
+    s.handle_presence_changed_ui_(mk_presence("@a:x", tesseract::PresenceState::Offline, 120'000));
+    CHECK(s.rooms_updated == 1);
+    // Millisecond jitter within the same minute is not a visible change.
+    s.handle_presence_changed_ui_(mk_presence("@a:x", tesseract::PresenceState::Offline, 121'500));
+    CHECK(s.rooms_updated == 1);
+    // A later minute changes the "last seen" text, so repaint.
+    s.handle_presence_changed_ui_(mk_presence("@a:x", tesseract::PresenceState::Offline, 200'000));
+    CHECK(s.rooms_updated == 2);
 }
 
 TEST_CASE("profile field writes are tracked and applied on success", "[shell][profile][fields]")

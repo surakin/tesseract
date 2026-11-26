@@ -8,6 +8,7 @@
 #include "tk/hover_area.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
+#include "presence_text.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -258,6 +259,8 @@ void UserProfilePanel::open(std::string user_id, std::string display_name, std::
     set_visible(true);
     name_layout_.reset();
     uid_layout_.reset();
+    presence_layout_.reset();
+    presence_shown_key_ = presence_key_();
 
     // Reset DM button to Normal or HasDM each time the panel opens for a
     // user, so stale Sending state from a prior open doesn't leak through.
@@ -318,6 +321,59 @@ void UserProfilePanel::close()
 void UserProfilePanel::set_avatar_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
+}
+
+void UserProfilePanel::set_presence_provider(PresenceProvider p)
+{
+    presence_provider_ = std::move(p);
+}
+
+tesseract::PresenceState UserProfilePanel::presence_state_() const
+{
+    if (!open_ || !presence_provider_)
+    {
+        return tesseract::PresenceState::Offline;
+    }
+    const auto info = presence_provider_(user_id_);
+    return info ? info->state : tesseract::PresenceState::Offline;
+}
+
+std::string UserProfilePanel::presence_text_() const
+{
+    if (!open_ || !presence_provider_)
+    {
+        return {};
+    }
+    const auto info = presence_provider_(user_id_);
+    if (!info)
+    {
+        return {};
+    }
+    return presence_line(info->state, info->last_active_ts, info->currently_active);
+}
+
+std::string UserProfilePanel::presence_key_() const
+{
+    return std::to_string(static_cast<int>(presence_state_())) + "|" + presence_text_();
+}
+
+void UserProfilePanel::refresh_presence()
+{
+    if (!open_)
+    {
+        return;
+    }
+    const std::string key = presence_key_();
+    if (key == presence_shown_key_)
+    {
+        return;
+    }
+    presence_shown_key_ = key;
+    presence_layout_.reset();
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void UserProfilePanel::set_dm_button_state(DmButtonState state)
@@ -492,6 +548,8 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     // correct width/content.
     name_layout_.reset();
     uid_layout_.reset();
+    presence_layout_.reset();
+    presence_shown_key_ = presence_key_();
     common_header_layout_.reset();
     pronouns_label_layout_.reset();
     pronouns_value_layout_.reset();
@@ -519,8 +577,9 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     // Left column: avatar, name + shield, MXID, then the buttons.
     const bool verify_button = verify_btn_ && verify_btn_->visible();
-    const float left_h = kHeaderH + kAvatarD + kPadY + kNameH + kPadY * 0.5f + kUidH + kPadY +
-                         (verify_button ? kButtonH + kPadY * 0.5f : 0.0f) + kButtonH +
+    const float pres_h = presence_text_().empty() ? 0.0f : kPresH;
+    const float left_h = kHeaderH + kAvatarD + kPadY + kNameH + kPadY * 0.5f + kUidH + pres_h +
+                         kPadY + (verify_button ? kButtonH + kPadY * 0.5f : 0.0f) + kButtonH +
                          kPadY * 0.5f + kButtonH + kPadY;
 
     const float card_h =
@@ -550,7 +609,7 @@ void UserProfilePanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     // Buttons: full left-column width, stacked below the name and MXID.
     const float btn_x = card_rect_.x + left_x;
-    float btn_y = av_y + kAvatarD + kPadY + kNameH + kPadY * 0.5f + kUidH + kPadY;
+    float btn_y = av_y + kAvatarD + kPadY + kNameH + kPadY * 0.5f + kUidH + pres_h + kPadY;
     if (verify_button)
     {
         verify_btn_->arrange(lc, {btn_x, btn_y, kLeftW, kButtonH});
@@ -738,6 +797,25 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
     }
     avatar_area_->paint(ctx); // hover ring over the avatar
 
+    // Presence dot on the avatar's bottom-right edge, as in the member rows.
+    {
+        const auto ps = presence_state_();
+        const bool online = ps == tesseract::PresenceState::Online;
+        if (online || ps == tesseract::PresenceState::Unavailable)
+        {
+            constexpr float kDotD = 20.0f;
+            constexpr float kRing = 3.0f;
+            constexpr float kDiag = 0.70710678f; // cos 45deg: point on the circle's edge
+            const float outer_d = kDotD + kRing * 2.0f;
+            const float cx = av_centre.x + kAvatarD * 0.5f * kDiag;
+            const float cy = av_centre.y + kAvatarD * 0.5f * kDiag;
+            cv.fill_rounded_rect({cx - outer_d * 0.5f, cy - outer_d * 0.5f, outer_d, outer_d},
+                                 outer_d * 0.5f, pal.bg);
+            cv.fill_rounded_rect({cx - kDotD * 0.5f, cy - kDotD * 0.5f, kDotD, kDotD}, kDotD * 0.5f,
+                                 online ? pal.presence_online : pal.presence_unavailable);
+        }
+    }
+
     // Display name (Title, ellipsis) with the trust shield on the same line,
     // centred in the left column.
     constexpr float kNameH = 20.0f;
@@ -789,6 +867,25 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
         const tk::Size sz = uid_layout_->measure();
         const float tx = left_x + (kLeftW - sz.w) * 0.5f;
         cv.draw_text(*uid_layout_, {tx, uid_y}, pal.text_muted);
+    }
+
+    // Presence line under the MXID (hidden when there is nothing to say).
+    if (const std::string pres = presence_text_(); !pres.empty())
+    {
+        if (!presence_layout_)
+        {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Small;
+            st.trim = tk::TextTrim::Ellipsis;
+            st.max_width = kLeftW;
+            presence_layout_ = ctx.factory.build_text(pres, st);
+        }
+        if (presence_layout_)
+        {
+            const tk::Size sz = presence_layout_->measure();
+            const float tx = left_x + (kLeftW - sz.w) * 0.5f;
+            cv.draw_text(*presence_layout_, {tx, uid_y + 16.0f}, pal.text_muted);
+        }
     }
 
     // Extended profile fields (MSC4133/MSC4426) — label+value rows at the top

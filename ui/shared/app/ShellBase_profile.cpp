@@ -1804,26 +1804,37 @@ void ShellBase::handle_user_identities_changed_ui_(std::vector<std::string> user
     }
 }
 
-void ShellBase::handle_presence_changed_ui_(const std::string& user_id, PresenceState state)
+void ShellBase::handle_presence_changed_ui_(const PresenceInfo& info)
 {
     // poll_presence_once (sdk/src/client/sync.rs) reports every successful
     // presence poll unconditionally, not just changes — with N DM
     // counterparts polled every 60s, most ticks report a state identical to
     // the last one. Rebuilding the room list is not cheap (a full
     // space-child-count pass over every room), so skip it when nothing
-    // actually changed.
-    auto [it, inserted] = user_presence_.try_emplace(user_id, state);
+    // actually changed. The Rust side derives last_active_ts as
+    // now - last_active_ago on every poll, so it jitters by milliseconds;
+    // the "last seen" line only shows minute granularity, so compare the
+    // timestamp quantized to the minute and the other fields exactly.
+    auto [it, inserted] = user_presence_.try_emplace(info.user_id, info);
     if (!inserted)
     {
-        if (it->second == state)
+        const PresenceInfo& old = it->second;
+        const bool same_display = old.state == info.state &&
+                                  old.currently_active == info.currently_active &&
+                                  old.status_msg == info.status_msg &&
+                                  old.last_active_ts / 60'000 == info.last_active_ts / 60'000;
+        it->second = info;
+        if (same_display)
         {
             return;
         }
-        it->second = state;
     }
     // The room list may show a DM dot, and the RoomInfoPanel (main or
     // pop-out) may show a member dot — both read presence_provider_ on every
     // paint, so an actual state change still needs a repaint.
+    // An open DM shows the counterpart's presence as the header subtitle;
+    // refresh it before the repaint so the new text lands in the same frame.
+    refresh_presence_subtitles_();
     on_rooms_updated_();
     update_secondary_room_infos_();
 }
@@ -1831,7 +1842,19 @@ void ShellBase::handle_presence_changed_ui_(const std::string& user_id, Presence
 PresenceState ShellBase::presence_for_(const std::string& user_id) const
 {
     auto it = user_presence_.find(user_id);
-    return it != user_presence_.end() ? it->second : PresenceState::Offline;
+    return it != user_presence_.end() ? it->second.state : PresenceState::Offline;
+}
+
+PresenceInfo ShellBase::presence_info_for_(const std::string& user_id) const
+{
+    auto it = user_presence_.find(user_id);
+    if (it != user_presence_.end())
+    {
+        return it->second;
+    }
+    PresenceInfo unknown;
+    unknown.user_id = user_id;
+    return unknown;
 }
 
 // ── Presence (send-side) ──────────────────────────────────────────────────────

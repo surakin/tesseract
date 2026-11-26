@@ -116,9 +116,12 @@ struct BridgeRecorder : tesseract::IEventHandler
     {
         log.push_back(std::string("profile:") + (n ? *n : "-") + ":" + (a ? *a : "-"));
     }
-    void on_presence_changed(const std::string& u, tesseract::PresenceState s) override
+    void on_presence_changed(const tesseract::PresenceInfo& info) override
     {
-        log.push_back("presence:" + u + ":" + std::to_string(static_cast<int>(s)));
+        log.push_back("presence:" + info.user_id + ":" +
+                      std::to_string(static_cast<int>(info.state)) + ":" +
+                      std::to_string(info.last_active_ts) + ":" +
+                      (info.currently_active ? "1" : "0") + ":" + info.status_msg);
     }
     void on_identity_status_changed(const std::string& r,
                                     const std::vector<tesseract::IdentityWarning>& w) override
@@ -372,15 +375,30 @@ TEST_CASE("own profile change maps absent fields to nullopt", "[bridge][dispatch
 TEST_CASE("presence codes map to Online/Unavailable/Offline", "[bridge][dispatch]")
 {
     BridgeFixture f;
-    f.bridge.on_presence_changed("@a", 1);
-    f.bridge.on_presence_changed("@b", 2);
-    f.bridge.on_presence_changed("@c", 0);
-    f.bridge.on_presence_changed("@d", 99);
+    auto send =
+        [&](const char* uid, std::uint8_t state, std::uint64_t ts, bool active, const char* msg)
+    {
+        tesseract_ffi::PresenceFfi p{};
+        p.user_id = uid;
+        p.state = state;
+        p.last_active_ts = ts;
+        p.currently_active = active;
+        p.status_msg = msg;
+        f.bridge.on_presence_changed(p);
+    };
+    send("@a", 1, 0, false, "");
+    send("@b", 2, 1700000000000ULL, true, "brb");
+    send("@c", 0, 0, false, "");
+    send("@d", 99, 0, false, "");
     auto on = std::to_string(static_cast<int>(tesseract::PresenceState::Online));
     auto un = std::to_string(static_cast<int>(tesseract::PresenceState::Unavailable));
     auto off = std::to_string(static_cast<int>(tesseract::PresenceState::Offline));
-    CHECK(f.rec.log == std::vector<std::string>{"presence:@a:" + on, "presence:@b:" + un,
-                                                "presence:@c:" + off, "presence:@d:" + off});
+    CHECK(f.rec.log == std::vector<std::string>{
+                           "presence:@a:" + on + ":0:0:",
+                           "presence:@b:" + un + ":1700000000000:1:brb",
+                           "presence:@c:" + off + ":0:0:",
+                           "presence:@d:" + off + ":0:0:",
+                       });
 }
 
 TEST_CASE("identity status zips parallel arrays tolerating short ones", "[bridge][dispatch]")

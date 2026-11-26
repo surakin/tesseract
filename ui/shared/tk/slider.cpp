@@ -146,7 +146,20 @@ void Slider::paint(PaintCtx& ctx)
 
 void Slider::apply_user_(double v, bool commit)
 {
-    const double nv = clamp_(v);
+    double nv = clamp_(v);
+    if (step_ > 0.0 && std::isfinite(v))
+    {
+        // Snap to the step grid anchored at min_. Values at or beyond the upper
+        // bound (End, drag past the end) keep the exact bound, which need not
+        // be on the grid.
+        const double hi = clamp_(max_);
+        if (nv < hi)
+        {
+            const double snapped = std::min(hi, min_ + std::round((nv - min_) / step_) * step_);
+            // The bound itself is a stop too when it is nearer than the grid point.
+            nv = (hi - nv <= std::abs(snapped - nv)) ? hi : snapped;
+        }
+    }
     if (nv != value_)
     {
         value_ = nv;

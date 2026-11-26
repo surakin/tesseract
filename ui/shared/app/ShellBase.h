@@ -2096,9 +2096,23 @@ protected:
     // account's client to enter it. Mirrors apply_membership_events_pref_.
     void apply_low_power_pref_(tesseract::Client& client);
 
-    // Sole writer of the SDK's DM-presence-poll knob. Folds together the
-    // send_presence user setting, window-active state and low-power mode.
+    // Sole writer of the SDK's DM-presence-poll switch. Folds together the
+    // send_presence user setting, window-active state and low-power mode, and
+    // asks for an immediate poll while polling is on (the SDK skips it when
+    // the last poll is recent).
     void resolve_presence_polling_();
+
+    // True while presence is being polled: the user allows presence, the
+    // window is on-screen and low power mode is off. (Showing it only needs
+    // the send_presence setting.)
+    bool presence_polling_wanted_() const;
+
+    // Re-evaluate the DM presence subtitle of the main pane and every pop-out.
+    void refresh_presence_subtitles_();
+
+    // What resolve_presence_polling_() last applied, so the presence line is
+    // only refreshed when polling actually turns on or off.
+    std::optional<bool> presence_applied_want_;
 
     // Each shell overrides to show / hide its subtle status-bar indicator;
     // default no-op covers headless / test builds.
@@ -4764,16 +4778,20 @@ protected:
     void handle_verification_state_ui_(bool is_verified);
 
     // ── Presence (receive-side) ───────────────────────────────────────────────
-    // Maps bare Matrix user ID → last-received PresenceState.
+    // Maps bare Matrix user ID → last-received presence snapshot.
     // Keyed only on IDs we've ever received a presence event for.
-    std::unordered_map<std::string, PresenceState> user_presence_;
+    std::unordered_map<std::string, PresenceInfo> user_presence_;
 
     // Called on the UI thread by EventHandlerBase. Updates user_presence_ and
     // triggers a room-list repaint when the changed user is a DM counterpart.
-    void handle_presence_changed_ui_(const std::string& user_id, PresenceState state);
+    void handle_presence_changed_ui_(const PresenceInfo& info);
 
     // Look up the presence state for user_id. Returns Offline when unknown.
     PresenceState presence_for_(const std::string& user_id) const;
+
+    // Look up the full presence snapshot for user_id. Returns a default
+    // (Offline, no timestamp) snapshot when unknown.
+    PresenceInfo presence_info_for_(const std::string& user_id) const;
 
     // ── Presence (send-side) ──────────────────────────────────────────────────
     // Owned PresenceTracker. Constructed lazily on first

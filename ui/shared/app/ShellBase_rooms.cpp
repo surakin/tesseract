@@ -2296,6 +2296,10 @@ void ShellBase::on_rooms_updated_()
     }
     refresh_window_title_();
     update_secondary_room_infos_();
+    // set_room() above does not touch the header's presence subtitle (it owns
+    // the topic line); refresh it here so a DM open across any room-list or
+    // presence update keeps showing the counterpart's current state.
+    refresh_presence_subtitles_();
     after_rooms_updated_ui_();
 }
 

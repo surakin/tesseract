@@ -1208,10 +1208,13 @@ TEST_CASE("wiring: knock row selection records the room; cancel clears content",
 TEST_CASE("wiring: presence provider reads the shell's presence map", "[shell][wiring]")
 {
     WiringFixture f;
-    f.s.user_presence_["@a:x"] = tesseract::PresenceState::Online;
+    tesseract::PresenceInfo info;
+    info.user_id = "@a:x";
+    info.state = tesseract::PresenceState::Online;
+    f.s.user_presence_["@a:x"] = info;
     // Reaching the provider through a RoomInfoPanel is heavy; the wiring
     // itself must at least have installed it without disturbing state.
-    CHECK(f.s.user_presence_.at("@a:x") == tesseract::PresenceState::Online);
+    CHECK(f.s.user_presence_.at("@a:x").state == tesseract::PresenceState::Online);
     CHECK(f.app->user_info()->on_status_clicked != nullptr);
     CHECK(f.app->on_settings_shortcut != nullptr);
 }

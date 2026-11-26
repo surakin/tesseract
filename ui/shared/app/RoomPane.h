@@ -233,6 +233,10 @@ public:
     // A member's profile (display name / avatar) changed in this pane's room:
     // re-read the member list so the room info panel and mention pills show it.
     void refresh_room_members_();
+    // Recompute the room header's presence subtitle for this pane's room (a
+    // no-op for a non-DM or when presence polling is off). Call after the
+    // room changes and after any presence update for its counterpart.
+    void refresh_presence_subtitle_();
     views::RoomView* room_view() const
     {
         return room_view_;
