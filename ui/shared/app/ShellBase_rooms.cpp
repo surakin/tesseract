@@ -809,6 +809,15 @@ void ShellBase::moderate_member_(ModerationAction action, const std::string& roo
     {
         return;
     }
+    if (action == ModerationAction::SetPowerLevel)
+    {
+        // Power levels go through set_member_power_level_ (they need a level).
+        if (done)
+        {
+            done(false);
+        }
+        return;
+    }
     auto req_id = next_room_action_id_++;
     pending_moderations_[req_id] = {user_id, display_name, action, std::move(done)};
     switch (action)
@@ -822,7 +831,25 @@ void ShellBase::moderate_member_(ModerationAction action, const std::string& roo
     case ModerationAction::Unban:
         acting_client->unban_user_async(req_id, room_id, user_id, reason);
         break;
+    case ModerationAction::SetPowerLevel: // returned early above
+        break;
     }
+}
+
+void ShellBase::set_member_power_level_(const std::string& room_id, const std::string& user_id,
+                                        const std::string& display_name, std::int64_t level,
+                                        const std::shared_ptr<AccountSession>& on_behalf_of)
+{
+    const auto acting = acting_session_(on_behalf_of);
+    Client* const acting_client = acting_client_(on_behalf_of);
+    EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
+    if (room_id.empty() || user_id.empty() || !acting_client)
+    {
+        return;
+    }
+    auto req_id = next_room_action_id_++;
+    pending_moderations_[req_id] = {user_id, display_name, ModerationAction::SetPowerLevel, {}};
+    acting_client->set_user_power_level_async(req_id, room_id, user_id, level);
 }
 
 void ShellBase::invite_users_(
@@ -1422,6 +1449,9 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id, bool o
                 break;
             case ModerationAction::Unban:
                 status = tk::trf(tk::tr("Couldn't unban {0}"), {who});
+                break;
+            case ModerationAction::SetPowerLevel:
+                status = tk::trf(tk::tr("Couldn't change {0}'s power level"), {who});
                 break;
             }
             if (!message.empty())

@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-11-21**. 4006 C++ + 1747 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-11-27**. 4093 C++ + 1747 Rust tests.
 
 > **Single sign-on, translations and chat commands (2026-11-21, v0.9.10).**
 > Servers that use single sign-on (`m.login.sso`) get a sign-in button per

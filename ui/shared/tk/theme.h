@@ -117,6 +117,12 @@ struct Palette
     Color presence_unavailable; // amber
     Color presence_offline;     // muted grey
 
+    // Member role labels (room info panel member list). Fixed hues, not the
+    // accent, so a role keeps its colour under every accent theme.
+    Color role_owner;     // green
+    Color role_admin;     // red
+    Color role_moderator; // blue
+
     // Default initials-avatar disc colours when the sender has no avatar.
     Color avatar_initials_bg;
     Color avatar_initials_text;

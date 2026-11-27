@@ -4136,6 +4136,17 @@ pub mod ffi {
             reason: &str,
         );
 
+        /// Non-blocking change of one member's power level. Same delivery
+        /// contract as `kick_user_async`: result via
+        /// on_room_action_complete(request_id, ok, "", message).
+        fn set_user_power_level_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+            level: i64,
+        );
+
         /// Banned members of a room. Syncs the member list first (bounded by
         /// a timeout, since lazy-loaded rooms may not have ban events
         /// locally), then reads the store. Blocks — worker thread.
@@ -4273,6 +4284,15 @@ pub mod ffi {
 
         /// Ban counterpart of `can_kick_user`.
         fn can_ban_user(self: &ClientFfi, room_id: &str, target_user_id: &str) -> bool;
+
+        /// True iff the current user may change `target_user_id`'s power
+        /// level (may send m.room.power_levels and outranks the target; false
+        /// for self). Blocks — worker thread (cached power levels, no network).
+        fn can_change_user_power_level(
+            self: &ClientFfi,
+            room_id: &str,
+            target_user_id: &str,
+        ) -> bool;
 
         /// True iff the current user's power level meets the requirement for
         /// sending m.room.power_levels in this room — the single all-or-

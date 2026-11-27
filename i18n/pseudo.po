@@ -1128,6 +1128,9 @@ msgstr "[Çöùldñ't bàñ {0}xxx]"
 msgid "Couldn't unban {0}"
 msgstr "[Çöùldñ't ùñbàñ {0}xxx]"
 
+msgid "Couldn't change {0}'s power level"
+msgstr "[Çöùldñ't çhàñgé {0}'ś pöŵéŕ léṽél xxxxxxxxxx]"
+
 #: ui/shared/app/ShellBase_rooms.cpp:1458
 msgid "complete room action"
 msgstr "[çömplété rööm àçtïöñxxxx]"
@@ -4250,6 +4253,30 @@ msgstr "[Kïçk ùsér…xx]"
 #: ui/shared/views/RoomInfoPanel.cpp:1803
 msgid "Ban user…"
 msgstr "[Bàñ ùsér…x]"
+
+msgid "Change power level…"
+msgstr "[Çhàñgé pöwér lévél…xxx]"
+
+msgid "Change power level"
+msgstr "[Çhàñgé pöwér lévélxxx]"
+
+msgid "Power level"
+msgstr "[Pöwér lévélxx]"
+
+msgid "Custom"
+msgstr "[Çùstömx]"
+
+msgid "Custom power level"
+msgstr "[Çùstöm pöwér lévélxxx]"
+
+msgid "in {0}"
+msgstr "[ïñ {0}x]"
+
+msgid "Can't be higher than your own power level ({0})."
+msgstr "[Çàñ't bé hïghér thàñ yöùr öwñ pöwér lévél ({0}).xxxxxxxxx]"
+
+msgid "You won't be able to undo this: they'll have the same power level as you."
+msgstr "[Yöù wöñ't bé àblé tö ùñdö thïs: théy'll hàvé thé sàmé pöwér lévél às yöù.xxxxxxxxxxxxxx]"
 
 #: ui/shared/views/RoomInfoPanel.cpp:2002
 msgid "Room settings"
@@ -8135,3 +8162,6 @@ msgstr "[Symbölsx]"
 #: client/src/emoji.cpp:187
 msgid "Flags"
 msgstr "[Flàgsx]"
+
+msgid "Owner"
+msgstr "[Öwñérx]"

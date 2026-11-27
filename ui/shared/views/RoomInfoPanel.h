@@ -16,6 +16,7 @@
 
 #include <tesseract/types.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -69,14 +70,20 @@ public:
     using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
     void set_avatar_provider(ImageProvider p);
     void set_presence_provider(PresenceProvider p);
+    // The room's users_default: members at this level get no role label.
+    void set_default_power_level(std::int64_t level);
 
     // Which moderation actions the current user may take on one member —
     // queried when that member's context menu opens. Without a provider
-    // both are false (items shown disabled).
+    // both are false (items shown disabled). `can_change_power_level` adds a
+    // "Change power level…" item (hidden otherwise); `own_power_level` is the
+    // current user's level, passed through to on_change_power_level.
     struct MemberActions
     {
         bool can_kick = false;
         bool can_ban = false;
+        bool can_change_power_level = false;
+        std::int64_t own_power_level = 0;
     };
     using MemberActionsProvider = std::function<MemberActions(const std::string& user_id)>;
     void set_member_actions_provider(MemberActionsProvider p);
@@ -89,6 +96,10 @@ public:
     // Test-only: display names of the rows laid out, in list order (regular
     // members, then service members).
     std::vector<std::string> shown_member_names_for_test() const;
+    // Test-only: the role label shown on member row `row` ("" for none).
+    std::string member_role_label_for_test(int row) const;
+    // Test-only: the accessible name of member row `row`.
+    std::string member_access_name_for_test(int row) const;
     // Test-only: the user id the cached text layout of member row `row` was
     // built for ("" if none has been painted).
     std::string member_layout_owner_for_test(int row) const
@@ -163,6 +174,9 @@ public:
         on_kick_member;
     std::function<void(std::string room_id, std::string user_id, std::string display_name)>
         on_ban_member;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name,
+                       std::string avatar_url, std::int64_t current_level, std::int64_t own_level)>
+        on_change_power_level;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -300,6 +314,7 @@ private:
         std::string user_id;
         tk::CachedTextLayout name;
         tk::CachedTextLayout uid;
+        tk::CachedTextLayout role;
     };
     std::vector<MemberLayout> member_layouts_;
 
@@ -316,6 +331,9 @@ private:
 
     ImageProvider image_provider_;
     PresenceProvider presence_provider_;
+    std::int64_t users_default_ = 0;
+    // A row's display name (or user id), plus its role label when it has one.
+    std::string member_access_name_(const tesseract::RoomMember& mem) const;
     MemberActionsProvider member_actions_provider_;
 
     // Member-row context menu — renders in its own native popup surface (see
@@ -395,6 +413,7 @@ public:
     using PresenceProvider = RoomInfoPanelBody::PresenceProvider;
     void set_avatar_provider(ImageProvider p);
     void set_presence_provider(PresenceProvider p);
+    void set_default_power_level(std::int64_t level);
 
     using MemberActions = RoomInfoPanelBody::MemberActions;
     using MemberActionsProvider = RoomInfoPanelBody::MemberActionsProvider;
@@ -465,6 +484,12 @@ public:
         on_kick_member;
     std::function<void(std::string room_id, std::string user_id, std::string display_name)>
         on_ban_member;
+    // Fired by the member-row context menu's "Change power level…" item
+    // (shown only when MemberActionsProvider allows). `current_level` is the
+    // member's level, `own_level` the current user's.
+    std::function<void(std::string room_id, std::string user_id, std::string display_name,
+                       std::string avatar_url, std::int64_t current_level, std::int64_t own_level)>
+        on_change_power_level;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

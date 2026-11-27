@@ -513,6 +513,9 @@ msgstr "Kunne ikke bannlyse {0}"
 msgid "Couldn't unban {0}"
 msgstr "Kunne ikke oppheve bannlysingen av {0}"
 
+msgid "Couldn't change {0}'s power level"
+msgstr "Kunne ikke endre maktnivået til {0}"
+
 msgid "complete room action"
 msgstr "fullføre romhandlingen"
 
@@ -2540,6 +2543,30 @@ msgstr "Kast ut bruker…"
 
 msgid "Ban user…"
 msgstr "Bannlys bruker…"
+
+msgid "Change power level…"
+msgstr "Endre maktnivå…"
+
+msgid "Change power level"
+msgstr "Endre maktnivå"
+
+msgid "Power level"
+msgstr "Maktnivå"
+
+msgid "Custom"
+msgstr "Egendefinert"
+
+msgid "Custom power level"
+msgstr "Egendefinert maktnivå"
+
+msgid "in {0}"
+msgstr "i {0}"
+
+msgid "Can't be higher than your own power level ({0})."
+msgstr "Kan ikke være høyere enn ditt eget maktnivå ({0})."
+
+msgid "You won't be able to undo this: they'll have the same power level as you."
+msgstr "Du kan ikke angre dette: personen får samme maktnivå som deg."
 
 msgid "Room settings"
 msgstr "Rominnstillinger"
@@ -6040,3 +6067,6 @@ msgstr "Sist sett {0}"
 #: ui/shared/views/presence_text.h
 msgid "Away, last seen {0}"
 msgstr "Borte, sist sett {0}"
+
+msgid "Owner"
+msgstr "Eier"

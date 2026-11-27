@@ -243,6 +243,9 @@ set(_views_sources
     views/ForwardRoomPicker.cpp
     views/InviteDialog.h
     views/InviteDialog.cpp
+    views/PowerLevelDialog.h
+    views/PowerLevelDialog.cpp
+    views/power_level_presets.h
     views/InviteFieldModel.h
     views/InviteFieldModel.cpp
     views/SpaceAddRoomList.h

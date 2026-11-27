@@ -45,6 +45,10 @@ protected:
 
 public:
     void set_options(std::vector<Option> options);
+    const std::vector<Option>& options() const
+    {
+        return options_;
+    }
     void set_selected_value(const std::string& value);
     const std::string& selected_value() const
     {

@@ -439,6 +439,33 @@ RoomView::RoomView()
         }
     };
 
+    // Power-level dialog — same layering and lifecycle as invite_dialog_
+    // (opened from RoomInfoPanel, which closes first). Hidden until open().
+    power_level_dialog_ = add_child(tk::create_widget<PowerLevelDialog>(this));
+    power_level_dialog_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
+    };
+    power_level_dialog_->on_close = [this]()
+    {
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
+    };
+    power_level_dialog_->on_save = [this](std::string room_id, std::string user_id,
+                                          std::string display_name, std::int64_t level)
+    {
+        if (on_set_member_power_level)
+        {
+            on_set_member_power_level(std::move(room_id), std::move(user_id),
+                                      std::move(display_name), level);
+        }
+    };
+
     // Added last of all so it dispatches/paints above the whole room,
     // including room_media_view_ — see call_lobby()'s doc comment. Hidden
     // until open().
@@ -1215,6 +1242,32 @@ void RoomView::wire_internal_callbacks()
         [this](std::string room_id, std::string user_id, std::string name)
     {
         confirm_and_moderate_member_(true, std::move(room_id), std::move(user_id), std::move(name));
+    };
+    room_info_panel_->on_change_power_level =
+        [this](std::string room_id, std::string user_id, std::string name, std::string avatar_url,
+               std::int64_t current_level, std::int64_t own_level)
+    {
+        if (!power_level_dialog_)
+        {
+            return;
+        }
+        if (room_info_panel_->is_open())
+        {
+            room_info_panel_->close();
+        }
+        PowerLevelDialog::Target t;
+        t.room_id = std::move(room_id);
+        t.room_name = current_room_info_.name;
+        t.user_id = std::move(user_id);
+        t.display_name = std::move(name);
+        t.avatar_url = std::move(avatar_url);
+        t.current_level = current_level;
+        t.own_level = own_level;
+        power_level_dialog_->open(std::move(t));
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     };
 
     // Wire knock-requests panel callbacks.
@@ -2004,6 +2057,10 @@ void RoomView::set_avatar_provider(MessageListView::ImageProvider p)
     {
         room_info_panel_->set_avatar_provider(p);
     }
+    if (power_level_dialog_)
+    {
+        power_level_dialog_->set_avatar_provider(p);
+    }
     if (room_settings_view_)
     {
         room_settings_view_->set_avatar_provider(p);
@@ -2128,7 +2185,9 @@ bool RoomView::is_overlay_open() const
            (room_info_panel_ && room_info_panel_->is_open()) ||
            (user_profile_panel_ && user_profile_panel_->is_open()) ||
            (room_media_view_ && room_media_view_->is_open()) ||
-           (invite_dialog_ && invite_dialog_->is_open()) || (call_lobby_ && call_lobby_->is_open());
+           (invite_dialog_ && invite_dialog_->is_open()) ||
+           (power_level_dialog_ && power_level_dialog_->is_open()) ||
+           (call_lobby_ && call_lobby_->is_open());
 }
 
 RoomSearchBar* RoomView::room_search_bar() const
@@ -2577,6 +2636,10 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
         if (invite_dialog_ && invite_dialog_->is_open())
         {
             invite_dialog_->close();
+        }
+        if (power_level_dialog_ && power_level_dialog_->is_open())
+        {
+            power_level_dialog_->close();
         }
         close_room_search();
         // The action-pill "more" submenu and the call-type popup are backdrop
@@ -3747,15 +3810,16 @@ void RoomView::on_theme_changed(const tk::Theme& t)
     }
 }
 
-std::array<tk::Widget*, 8> RoomView::overlay_panels_() const
+std::array<tk::Widget*, 9> RoomView::overlay_panels_() const
 {
-    return {room_info_panel_, user_profile_panel_,   overflow_menu_,        call_popup_,
-            room_media_view_, header_overflow_menu_, knock_requests_panel_, invite_dialog_};
+    return {room_info_panel_,      user_profile_panel_, overflow_menu_,
+            call_popup_,           room_media_view_,    header_overflow_menu_,
+            knock_requests_panel_, invite_dialog_,      power_level_dialog_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
 //
-// Of the 6 overlay_panels_(), only room_info_panel_/user_profile_panel_/
+// Of the overlay_panels_(), only room_info_panel_/user_profile_panel_/
 // room_media_view_ are arranged at the full RoomView bounds and consume
 // backdrop clicks — active_overlay_panel_() delegates to whichever is open so
 // it both blocks pass-through to the widgets it covers (pinned banner, thread
@@ -3781,6 +3845,10 @@ tk::Widget* RoomView::active_overlay_panel_() const
     // hover/right-click in RoomView while one is open instead of just
     // dismissing it. Host::register_popup()'s click-anywhere-dismiss (see
     // on_popup_dismiss()) is what closes them now, independent of this path.
+    if (power_level_dialog_ && power_level_dialog_->is_open())
+    {
+        return power_level_dialog_;
+    }
     if (invite_dialog_ && invite_dialog_->is_open())
     {
         return invite_dialog_;

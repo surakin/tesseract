@@ -1049,6 +1049,9 @@ msgstr "Não foi possível banir {0}"
 msgid "Couldn't unban {0}"
 msgstr "Não foi possível remover o banimento de {0}"
 
+msgid "Couldn't change {0}'s power level"
+msgstr "Não foi possível alterar o nível de poder de {0}"
+
 #: ui/shared/app/ShellBase_rooms.cpp:1364
 msgid "complete room action"
 msgstr "concluir a ação da sala"
@@ -4052,6 +4055,30 @@ msgstr "Remover usuário…"
 #: ui/shared/views/RoomInfoPanel.cpp:1803
 msgid "Ban user…"
 msgstr "Banir usuário…"
+
+msgid "Change power level…"
+msgstr "Alterar nível de poder…"
+
+msgid "Change power level"
+msgstr "Alterar nível de poder"
+
+msgid "Power level"
+msgstr "Nível de poder"
+
+msgid "Custom"
+msgstr "Personalizado"
+
+msgid "Custom power level"
+msgstr "Nível de poder personalizado"
+
+msgid "in {0}"
+msgstr "em {0}"
+
+msgid "Can't be higher than your own power level ({0})."
+msgstr "Não pode ser maior que o seu próprio nível de poder ({0})."
+
+msgid "You won't be able to undo this: they'll have the same power level as you."
+msgstr "Você não poderá desfazer isso: a pessoa terá o mesmo nível de poder que você."
 
 #: ui/shared/views/RoomInfoPanel.cpp:2002
 msgid "Room settings"
@@ -7825,3 +7852,6 @@ msgstr "Visto pela última vez {0}"
 #: ui/shared/views/presence_text.h
 msgid "Away, last seen {0}"
 msgstr "Ausente, visto pela última vez {0}"
+
+msgid "Owner"
+msgstr "Proprietário"

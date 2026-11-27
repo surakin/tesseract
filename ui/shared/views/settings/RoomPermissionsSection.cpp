@@ -1,6 +1,7 @@
 #include "RoomPermissionsSection.h"
 
 #include "SettingsGroup.h"
+#include "views/power_level_presets.h"
 
 #include "tk/form_layout.h"
 #include "tk/i18n.h"
@@ -16,10 +17,6 @@ namespace tesseract::views
 namespace
 {
 
-constexpr int64_t kLevelDefault = 0;
-constexpr int64_t kLevelModerator = 50;
-constexpr int64_t kLevelAdmin = 100;
-
 // Shared by all 10 rows: seeds a combo's option list from the room's actual
 // value, synthesizing a 4th "Custom (N)" option (selected) when that value
 // doesn't match one of the three presets — mirrors RoomSecuritySection's
@@ -28,13 +25,9 @@ constexpr int64_t kLevelAdmin = 100;
 // power level is still a value the user might deliberately want to keep.
 void set_level_combo(tk::ComboBox* combo, int64_t level)
 {
-    std::vector<tk::ComboBox::Option> opts = {
-        {tk::tr("Default"), "0"},
-        {tk::tr("Moderator"), "50"},
-        {tk::tr("Admin"), "100"},
-    };
+    std::vector<tk::ComboBox::Option> opts = power_level_preset_options();
     const std::string value = std::to_string(level);
-    if (level != kLevelDefault && level != kLevelModerator && level != kLevelAdmin)
+    if (!is_power_level_preset(level))
     {
         opts.push_back({tk::trf(tk::tr("Custom ({0})"), {value}), value});
     }

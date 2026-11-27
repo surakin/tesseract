@@ -90,6 +90,11 @@ constexpr Palette light_palette()
     p.presence_unavailable = Color::rgb(0xEB7107); // amber
     p.presence_offline = Color::rgb(0xB0B3BA);     // muted grey
 
+    // Member role labels: >= 4.5:1 on the light background.
+    p.role_owner = Color::rgb(0x1A7F37);
+    p.role_admin = Color::rgb(0xC62828);
+    p.role_moderator = Color::rgb(0x1F62C9);
+
     // Same as the colour each role used before it had its own field.
     p.link = p.accent;
     p.text_disabled = p.text_muted;
@@ -173,6 +178,11 @@ constexpr Palette dark_palette()
     p.presence_online = Color::rgb(0x23B064);      // green
     p.presence_unavailable = Color::rgb(0xE08C1A); // amber
     p.presence_offline = Color::rgb(0x606470);     // muted grey
+
+    // Member role labels: >= 4.5:1 on the dark background.
+    p.role_owner = Color::rgb(0x3FB950);
+    p.role_admin = Color::rgb(0xF47067);
+    p.role_moderator = Color::rgb(0x58A6FF);
 
     // Same as the colour each role used before it had its own field.
     p.link = p.accent;
@@ -483,6 +493,7 @@ Theme make_high_contrast_theme(const HighContrastColors& in)
     p.presence_online = hl;
     p.presence_unavailable = text;
     p.presence_offline = gray;
+    p.role_owner = p.role_admin = p.role_moderator = text;
 
     p.avatar_initials_bg = hl;
     p.avatar_initials_text = hl_text;

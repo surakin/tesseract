@@ -2,6 +2,7 @@
 #include "html_spans.h"
 #include "icons.h"
 #include "media_utils.h"
+#include "power_level_presets.h"
 #include "settings/bcp47_languages.h"
 
 #include "tk/i18n.h"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -566,6 +568,43 @@ void RoomInfoPanelBody::set_presence_provider(PresenceProvider p)
     presence_provider_ = std::move(p);
 }
 
+void RoomInfoPanelBody::set_default_power_level(std::int64_t level)
+{
+    if (level == users_default_)
+    {
+        return;
+    }
+    users_default_ = level;
+    member_layouts_.clear(); // role labels (and name widths) change
+    if (auto* h = host())
+    {
+        h->request_repaint();
+    }
+}
+
+std::string RoomInfoPanelBody::member_access_name_(const tesseract::RoomMember& mem) const
+{
+    const std::string& name = mem.display_name.empty() ? mem.user_id : mem.display_name;
+    const std::string role =
+        member_role_label(member_role(mem.power_level, users_default_), mem.power_level);
+    // TRANSLATORS: a member list row read by screen readers: {0} = the
+    // member's name, {1} = their role (Admin, Moderator, ...).
+    return role.empty() ? name : tk::trf(tk::tr("{0}, {1}"), {name, role});
+}
+
+std::string RoomInfoPanelBody::member_role_label_for_test(int row) const
+{
+    const auto* mem = row >= 0 ? member_at_(static_cast<std::size_t>(row)) : nullptr;
+    return mem ? member_role_label(member_role(mem->power_level, users_default_), mem->power_level)
+               : std::string{};
+}
+
+std::string RoomInfoPanelBody::member_access_name_for_test(int row) const
+{
+    const auto* mem = row >= 0 ? member_at_(static_cast<std::size_t>(row)) : nullptr;
+    return mem ? member_access_name_(*mem) : std::string{};
+}
+
 const tesseract::RoomMember* RoomInfoPanelBody::member_at_(std::size_t row) const
 {
     if (row < regular_rows_)
@@ -990,7 +1029,7 @@ bool RoomInfoPanelBody::move_member_cursor_(const tk::KeyEvent& e)
     members_target_->set_target_rect(w);
     scroll_into_view(w);
     const auto& mem = *member_at_(static_cast<std::size_t>(next));
-    members_target_->set_accessible_name(mem.display_name.empty() ? mem.user_id : mem.display_name);
+    members_target_->set_accessible_name(member_access_name_(mem));
     if (auto* h = host())
     {
         h->show_tooltip(members_target_, mem.display_name.empty() ? mem.user_id : mem.display_name,
@@ -1039,8 +1078,7 @@ void RoomInfoPanelBody::place_keyboard_targets_(tk::LayoutCtx& lc)
     if (rows > 0 && open_)
     {
         const auto& mem = *member_at_(static_cast<std::size_t>(member_cursor_));
-        members_target_->set_accessible_name(mem.display_name.empty() ? mem.user_id
-                                                                      : mem.display_name);
+        members_target_->set_accessible_name(member_access_name_(mem));
         members_target_->set_accessible_description(
             tk::trf(tk::tr("Member {0} of {1}"),
                     {std::to_string(member_cursor_ + 1), std::to_string(rows)}));
@@ -1372,13 +1410,30 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
             ml.user_id = mem.user_id;
         }
 
+        // Role label (non-default power level), right-aligned on the name
+        // line; the name is ellipsized first, so the label keeps its width
+        // up to half the text column.
+        const MemberRole role = member_role(mem.power_level, users_default_);
+        if (!ml.role && role != MemberRole::None)
+        {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Small;
+            st.halign = tk::TextHAlign::Leading;
+            st.trim = tk::TextTrim::Ellipsis;
+            st.max_width = txt_max_w * 0.5f;
+            ml.role = ctx.factory.build_text(member_role_label(role, mem.power_level), st);
+        }
+        constexpr float kRoleGap = 8.0f;
+        const tk::Size role_sz = ml.role ? ml.role->measure() : tk::Size{};
+        const float name_max_w = ml.role ? txt_max_w - role_sz.w - kRoleGap : txt_max_w;
+
         if (!ml.name)
         {
             tk::TextStyle st{};
             st.role = tk::FontRole::SenderName;
             st.halign = tk::TextHAlign::Leading;
             st.trim = tk::TextTrim::Ellipsis;
-            st.max_width = txt_max_w;
+            st.max_width = name_max_w;
             ml.name = ctx.factory.build_text(
                 mem.display_name.empty() ? mem.user_id : mem.display_name, st);
         }
@@ -1395,6 +1450,13 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         if (ml.name)
         {
             cv.draw_text(*ml.name, {txt_x, name_ty}, pal.text_primary);
+        }
+        if (ml.role)
+        {
+            const float name_h = ml.name ? ml.name->measure().h : role_sz.h;
+            cv.draw_text(*ml.role,
+                         {txt_x + txt_max_w - role_sz.w, name_ty + (name_h - role_sz.h) * 0.5f},
+                         member_role_color(role, pal));
         }
         if (ml.uid)
         {
@@ -1784,6 +1846,27 @@ bool RoomInfoPanelBody::on_right_click(tk::Point local)
     sep.is_separator = true;
     items.push_back(std::move(sep));
 
+    // ruma's check misses a target with no explicit entry whose users_default
+    // is >= ours, so also require the member to sit below us — unless we are
+    // a v12 room creator (INT64_MAX), who outranks everyone.
+    const bool outranks =
+        actions.own_power_level == INT64_MAX || mem.power_level < actions.own_power_level;
+    if (actions.can_change_power_level && outranks)
+    {
+        PopupMenu::Item power;
+        power.svg_icon = kShieldCheckSvg;
+        power.label = tk::tr("Change power level\xe2\x80\xa6");
+        power.on_selected = [this, room_id, user_id, name, avatar, current = mem.power_level,
+                             own = actions.own_power_level]
+        {
+            if (on_change_power_level)
+            {
+                on_change_power_level(room_id, user_id, name, avatar, current, own);
+            }
+        };
+        items.push_back(std::move(power));
+    }
+
     PopupMenu::Item kick;
     kick.svg_icon = kUserRoundMinusSvg;
     kick.label = tk::tr("Kick user\xe2\x80\xa6");
@@ -1991,6 +2074,16 @@ RoomInfoPanel::RoomInfoPanel()
             on_ban_member(std::move(room_id), std::move(user_id), std::move(display_name));
         }
     };
+    body_->on_change_power_level = [this](std::string room_id, std::string user_id,
+                                          std::string display_name, std::string avatar_url,
+                                          std::int64_t current_level, std::int64_t own_level)
+    {
+        if (on_change_power_level)
+        {
+            on_change_power_level(std::move(room_id), std::move(user_id), std::move(display_name),
+                                  std::move(avatar_url), current_level, own_level);
+        }
+    };
 
     close_btn_ = add_child(tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
                                                          tk::Button::Variant::Icon));
@@ -2081,6 +2174,14 @@ void RoomInfoPanel::set_presence_provider(PresenceProvider p)
     if (body_)
     {
         body_->set_presence_provider(std::move(p));
+    }
+}
+
+void RoomInfoPanel::set_default_power_level(std::int64_t level)
+{
+    if (body_)
+    {
+        body_->set_default_power_level(level);
     }
 }
 

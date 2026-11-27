@@ -788,11 +788,17 @@ void RoomPane::wire_room_view_()
                     return;
                 }
                 auto members = sess->client->get_room_members(room_id);
+                const std::int64_t users_default =
+                    sess->client->room_power_levels(room_id).default_role;
                 ui(
-                    [this, rv, room_id, members = std::move(members)]() mutable
+                    [this, rv, room_id, users_default, members = std::move(members)]() mutable
                     {
                         cached_room_members_ = members;
                         cached_members_room_ = room_id;
+                        if (auto* panel = rv->room_info_panel())
+                        {
+                            panel->set_default_power_level(users_default);
+                        }
                         rv->set_room_members(std::move(members));
                     });
             });
@@ -988,6 +994,9 @@ void RoomPane::wire_room_view_()
                 {
                     a.can_kick = pane_client_()->can_kick_user(room_id, user_id);
                     a.can_ban = pane_client_()->can_ban_user(room_id, user_id);
+                    a.can_change_power_level =
+                        pane_client_()->can_change_user_power_level(room_id, user_id);
+                    a.own_power_level = pane_client_()->room_own_power_level(room_id).level;
                 }
                 return a;
             });
@@ -1171,6 +1180,14 @@ void RoomPane::wire_room_view_()
     {
         shell_->moderate_member_(ShellBase::ModerationAction::Ban, room_id, user_id, display_name,
                                  reason, {}, session_());
+    };
+    // Member context menu "Change power level…" — the dialog capped the level
+    // at the cached own level; the server is authoritative, and a rejection
+    // surfaces on the status line.
+    rv->on_set_member_power_level = [this](std::string room_id, std::string user_id,
+                                           std::string display_name, std::int64_t level)
+    {
+        shell_->set_member_power_level_(room_id, user_id, display_name, level, session_());
     };
     // Room Settings → Moderation: Unban applies immediately; the row is
     // disabled while in flight and removed on success (not refetched — the

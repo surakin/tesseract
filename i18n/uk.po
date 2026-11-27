@@ -866,6 +866,9 @@ msgstr "Не вдалося заблокувати {0}"
 msgid "Couldn't unban {0}"
 msgstr "Не вдалося зняти блокування з {0}"
 
+msgid "Couldn't change {0}'s power level"
+msgstr "Не вдалося змінити рівень повноважень {0}"
+
 #: ui/shared/app/ShellBase_rooms.cpp:1223
 msgid "complete room action"
 msgstr "завершити дію в кімнаті"
@@ -3904,6 +3907,30 @@ msgstr "Вилучити користувача…"
 #: ui/shared/views/RoomInfoPanel.cpp:1372
 msgid "Ban user…"
 msgstr "Заблокувати користувача…"
+
+msgid "Change power level…"
+msgstr "Змінити рівень повноважень…"
+
+msgid "Change power level"
+msgstr "Змінити рівень повноважень"
+
+msgid "Power level"
+msgstr "Рівень повноважень"
+
+msgid "Custom"
+msgstr "Власне"
+
+msgid "Custom power level"
+msgstr "Власний рівень повноважень"
+
+msgid "in {0}"
+msgstr "у {0}"
+
+msgid "Can't be higher than your own power level ({0})."
+msgstr "Не може бути вищим за ваш власний рівень повноважень ({0})."
+
+msgid "You won't be able to undo this: they'll have the same power level as you."
+msgstr "Ви не зможете це скасувати: ця людина матиме такий самий рівень повноважень, як і ви."
 
 #: ui/shared/views/RoomInfoPanel.cpp:1491
 msgid "Room settings"
@@ -8275,3 +8302,6 @@ msgstr "Останній раз {0}"
 #: ui/shared/views/presence_text.h
 msgid "Away, last seen {0}"
 msgstr "Відійшов, останній раз {0}"
+
+msgid "Owner"
+msgstr "Власник"

@@ -2364,6 +2364,17 @@ void Client::unban_user_async(std::uint64_t request_id, const std::string& room_
     impl_->ffi->unban_user_async(request_id, room_id, user_id, reason);
 }
 
+void Client::set_user_power_level_async(std::uint64_t request_id, const std::string& room_id,
+                                        const std::string& user_id, std::int64_t level)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->set_user_power_level_async(request_id, room_id, user_id, level);
+}
+
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
 {
     SH_FFI;
@@ -2590,6 +2601,13 @@ bool Client::can_ban_user(const std::string& room_id, const std::string& target_
 {
     SH_FFI;
     return impl_->ffi->can_ban_user(room_id, target_user_id);
+}
+
+bool Client::can_change_user_power_level(const std::string& room_id,
+                                         const std::string& target_user_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_change_user_power_level(room_id, target_user_id);
 }
 
 bool Client::can_set_room_power_levels(const std::string& room_id)

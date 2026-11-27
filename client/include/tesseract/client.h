@@ -1724,6 +1724,12 @@ public:
     void unban_user_async(std::uint64_t request_id, const std::string& room_id,
                           const std::string& user_id, const std::string& reason = "");
 
+    /// Non-blocking change of one member's power level. Result delivered via
+    /// IEventHandler::on_room_action_complete. A level equal to the room's
+    /// users_default removes the member's explicit entry.
+    void set_user_power_level_async(std::uint64_t request_id, const std::string& room_id,
+                                    const std::string& user_id, std::int64_t level);
+
     /// Banned members of a room. Syncs the member list first (bounded by a
     /// timeout) so bans of users who never spoke are included. When that sync
     /// does not finish, `complete` is false and the list may be partial.
@@ -1870,6 +1876,12 @@ public:
     /// themselves. Cached read — no network. False on any uncertainty.
     bool can_kick_user(const std::string& room_id, const std::string& target_user_id);
     bool can_ban_user(const std::string& room_id, const std::string& target_user_id);
+
+    /// True iff the current user may change `target_user_id`'s power level:
+    /// may send m.room.power_levels AND outranks the target (room-v12
+    /// privileged creators can never be changed). False for the current user
+    /// themselves. Cached read — no network. False on any uncertainty.
+    bool can_change_user_power_level(const std::string& room_id, const std::string& target_user_id);
 
     /// True iff the current user's PL meets the requirement for sending
     /// m.room.power_levels in this room — the single all-or-nothing gate

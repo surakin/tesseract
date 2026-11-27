@@ -2888,6 +2888,30 @@ msgstr "Nutzer entfernen …"
 msgid "Ban user…"
 msgstr "Nutzer sperren …"
 
+msgid "Change power level…"
+msgstr "Berechtigungsstufe ändern …"
+
+msgid "Change power level"
+msgstr "Berechtigungsstufe ändern"
+
+msgid "Power level"
+msgstr "Berechtigungsstufe"
+
+msgid "Custom"
+msgstr "Benutzerdefiniert"
+
+msgid "Custom power level"
+msgstr "Benutzerdefinierte Berechtigungsstufe"
+
+msgid "in {0}"
+msgstr "in {0}"
+
+msgid "Can't be higher than your own power level ({0})."
+msgstr "Darf nicht höher sein als deine eigene Berechtigungsstufe ({0})."
+
+msgid "You won't be able to undo this: they'll have the same power level as you."
+msgstr "Das kannst du nicht rückgängig machen: Die Person hat dann dieselbe Berechtigungsstufe wie du."
+
 #: ui/shared/views/RoomView.cpp:1168
 msgid "Ban {0}?"
 msgstr "{0} sperren?"
@@ -2952,6 +2976,9 @@ msgstr "Gesperrt von {0}"
 #: ui/shared/app/ShellBase_rooms.cpp:1196
 msgid "Couldn't unban {0}"
 msgstr "{0} konnte nicht entsperrt werden"
+
+msgid "Couldn't change {0}'s power level"
+msgstr "Die Berechtigungsstufe von {0} konnte nicht geändert werden"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:148
 msgid "Save to file…"
@@ -7676,3 +7703,6 @@ msgstr "Zuletzt gesehen {0}"
 #: ui/shared/views/presence_text.h
 msgid "Away, last seen {0}"
 msgstr "Abwesend, zuletzt gesehen {0}"
+
+msgid "Owner"
+msgstr "Eigentümer"

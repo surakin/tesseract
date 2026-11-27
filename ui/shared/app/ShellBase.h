@@ -1573,16 +1573,18 @@ protected:
     };
     std::unordered_map<std::uint64_t, PendingInvite> pending_invites_;
 
-    // In-flight kick/ban/unban requests (room info panel's member context
-    // menu, Room Settings → Moderation), same request-id counter and
+    // In-flight kick/ban/unban/power-level requests (room info panel's member
+    // context menu, Room Settings → Moderation), same request-id counter and
     // completion path as pending_invites_. Failures surface on the status
-    // line; success shows up through sync as the membership event. `done`
-    // (optional) fires either way, after the status message.
+    // line; success shows up through sync as the membership event (or the
+    // m.room.power_levels event for SetPowerLevel). `done` (optional) fires
+    // either way, after the status message.
     enum class ModerationAction
     {
         Kick,
         Ban,
-        Unban
+        Unban,
+        SetPowerLevel
     };
     struct PendingModeration
     {
@@ -5917,6 +5919,11 @@ protected:
                           const std::string& user_id, const std::string& display_name,
                           const std::string& reason, std::function<void(bool ok)> done = {},
                           const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+    // Set user_id's power level in room_id (room info panel's "Change power
+    // level…" dialog); failures go to the status line like moderate_member_.
+    void set_member_power_level_(const std::string& room_id, const std::string& user_id,
+                                 const std::string& display_name, std::int64_t level,
+                                 const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
     // AddRoomView's Join tab: async MSC3266 room summary lookup (no async
     // get_room_summary exists, so this dispatches the blocking call on a

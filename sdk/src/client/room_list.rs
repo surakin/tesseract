@@ -1974,6 +1974,85 @@ impl ClientFfi {
         });
     }
 
+    /// Non-blocking change of one member's power level (a level equal to
+    /// `users_default` removes the explicit entry). Spawns as a tokio task;
+    /// result delivered via on_room_action_complete(request_id, ok, "",
+    /// message).
+    #[cfg(not(test))]
+    pub fn set_user_power_level_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        user_id: &str,
+        level: i64,
+    ) {
+        use matrix_sdk::ruma::{Int, UserId};
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                {
+                    let g = h.lock();
+                    g.on_room_action_complete(request_id, ok, "", msg);
+                }
+            }
+        };
+
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                deliver(false, &format!("invalid room id: {e}"));
+                return;
+            }
+        };
+        let uid = match UserId::parse(user_id) {
+            Ok(uid) => uid,
+            Err(e) => {
+                deliver(false, &format!("invalid user id: {e}"));
+                return;
+            }
+        };
+        let Some(int) = Int::new(level) else {
+            deliver(false, "invalid power level");
+            return;
+        };
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/set_user_power_level".to_string(),
+            );
+            let Some(room) = client.get_room(&room_id_parsed) else {
+                deliver(false, "room not found");
+                return;
+            };
+            match room.update_power_levels(vec![(&uid, int)]).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn set_user_power_level_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _user_id: &str,
+        _level: i64,
+    ) {
+    }
+
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn get_room_members(&self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
@@ -3380,6 +3459,44 @@ impl ClientFfi {
             Ok(pl) => pl.user_can_kick_user(user_id, &target),
             Err(_) => false,
         }
+    }
+
+    /// True iff the current user may change `target_user_id`'s power level:
+    /// may send m.room.power_levels AND outranks the target (ruma's
+    /// `user_can_change_user_power_level`, which also refuses room-v12
+    /// privileged creators). False for the user themselves and on any
+    /// uncertainty. Cached read — no network round-trip.
+    #[cfg(not(test))]
+    pub fn can_change_user_power_level(&self, room_id: &str, target_user_id: &str) -> bool {
+        use matrix_sdk::ruma::{OwnedRoomId, UserId};
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Ok(target) = UserId::parse(target_user_id) else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        if user_id == target {
+            return false;
+        }
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_change_user_power_level(user_id, &target),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_change_user_power_level(&self, _room_id: &str, _target_user_id: &str) -> bool {
+        false
     }
 
     /// True iff the current user's power level meets the requirement for

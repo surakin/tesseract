@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(room-info): change a member's power level from their context menu in the room info panel. Linux build + ctest 4093/4093
+- feat(room-info): the member list shows Owner, Admin, Moderator or custom power levels in colour when they differ from the room default. Linux build + ctest 4096/4096
 - build(macos): publishing a release now updates the Homebrew cask automatically. Workflow unrun
 - docs(site): the README and website now show how to install on macOS with Homebrew. Website not viewed in a browser
 - build(macos): local builds compile libopus for the deployment target themselves, so Homebrew's opus is no longer needed. macOS arm64 release build, ctest 4049/4051

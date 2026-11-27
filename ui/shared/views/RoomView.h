@@ -29,6 +29,7 @@
 #include "RoomInfoPanel.h"
 #include "KnockRequestsPanel.h"
 #include "InviteDialog.h"
+#include "PowerLevelDialog.h"
 #include "RoomMediaView.h"
 #include "RoomSearchBar.h"
 #include "RoomSettingsView.h"
@@ -273,6 +274,10 @@ public:
     InviteDialog* invite_dialog() const
     {
         return invite_dialog_;
+    }
+    PowerLevelDialog* power_level_dialog() const
+    {
+        return power_level_dialog_;
     }
     KnockRequestsPanel* knock_requests_panel() const
     {
@@ -704,6 +709,11 @@ public:
     std::function<void(std::string room_id, std::string user_id, std::string display_name,
                        std::string reason)>
         on_ban_member;
+    // Fired when the user saves a new level in the power-level dialog opened
+    // from the room info panel's member context menu.
+    std::function<void(std::string room_id, std::string user_id, std::string display_name,
+                       std::int64_t level)>
+        on_set_member_power_level;
     // Fired when the user clicks the room-settings avatar disc to pick a
     // new image. The shell uploads it (Client::upload_media) and calls
     // room_settings_view()->set_staged_avatar() — never commits directly.
@@ -883,7 +893,7 @@ private:
     // area. room_settings_view_ is deliberately not here — it replaces the
     // ENTIRE room content (early-returns from both arrange() and paint())
     // rather than layering on top of it.
-    std::array<tk::Widget*, 8> overlay_panels_() const;
+    std::array<tk::Widget*, 9> overlay_panels_() const;
 
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
@@ -1020,6 +1030,10 @@ private:
     // it joins active_overlay_panel_() routing and set_room()'s room-switch
     // closing.
     InviteDialog* invite_dialog_ = nullptr;
+    // Member "Change power level…" dialog, opened from room_info_panel_'s
+    // member context menu (which closes the panel). Handled like
+    // invite_dialog_ everywhere.
+    PowerLevelDialog* power_level_dialog_ = nullptr;
     // Admin-side "Requests to join" panel (MSC2403). Swaps in for
     // room_info_panel_ exactly like room_settings_view_ does — see
     // show_knock_requests()/KnockRequestsPanel's own header doc comment.

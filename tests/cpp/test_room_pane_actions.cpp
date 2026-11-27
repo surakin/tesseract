@@ -115,6 +115,7 @@ struct RpShell : tesseract::test::TestShellBase
     using ShellBase::last_sent_thread_receipt_;
     using ShellBase::main_room_pane_;
     using ShellBase::mark_room_index_dirty_;
+    using ModerationAction = ShellBase::ModerationAction;
     using ShellBase::my_user_id_;
     using ShellBase::next_paginate_id_;
     using ShellBase::pagination_;
@@ -446,6 +447,40 @@ TEST_CASE("member moderation and knock actions register shell requests", "[roomp
     CHECK(f.s.knock_requests_panel_room_id_ == "!r:x");
     f.view->on_decline_and_ban_knock_request("!r:x", "@k:x", "no");
     f.view->on_knock_requests_closed();
+}
+
+TEST_CASE("member power-level change registers a shell request", "[roompane][moderation]")
+{
+    RpFx f;
+    f.view->on_set_member_power_level("!r:x", "@u:x", "U", 50);
+    REQUIRE(f.s.pending_moderations_.size() == 1);
+    CHECK(f.s.pending_moderations_.begin()->second.action ==
+          RpShell::ModerationAction::SetPowerLevel);
+}
+
+TEST_CASE("member power-level dialog opens from the info panel and saves through the shell",
+          "[roompane][moderation]")
+{
+    RpFx f;
+    f.view->show_room_info();
+    REQUIRE(f.view->room_info_panel()->is_open());
+    auto* dlg = f.view->power_level_dialog();
+    REQUIRE(dlg != nullptr);
+    CHECK_FALSE(dlg->is_open());
+
+    f.view->room_info_panel()->on_change_power_level("!r:x", "@u:x", "U", "", 0, 100);
+    CHECK_FALSE(f.view->room_info_panel()->is_open());
+    REQUIRE(dlg->is_open());
+    CHECK(f.view->is_overlay_open());
+
+    dlg->level_combo()->set_selected_value("50");
+    REQUIRE(dlg->save_enabled());
+    dlg->save_for_test();
+    CHECK_FALSE(dlg->is_open());
+    REQUIRE(f.s.pending_moderations_.size() == 1);
+    const auto& mod = f.s.pending_moderations_.begin()->second;
+    CHECK(mod.action == RpShell::ModerationAction::SetPowerLevel);
+    CHECK(mod.user_id == "@u:x");
 }
 
 TEST_CASE("room-info callbacks reach the shell", "[roompane][roominfo]")

@@ -2888,6 +2888,30 @@ msgstr "Expulser l'utilisateur…"
 msgid "Ban user…"
 msgstr "Bannir l'utilisateur…"
 
+msgid "Change power level…"
+msgstr "Modifier le niveau de pouvoir…"
+
+msgid "Change power level"
+msgstr "Modifier le niveau de pouvoir"
+
+msgid "Power level"
+msgstr "Niveau de pouvoir"
+
+msgid "Custom"
+msgstr "Personnalisé"
+
+msgid "Custom power level"
+msgstr "Niveau de pouvoir personnalisé"
+
+msgid "in {0}"
+msgstr "dans {0}"
+
+msgid "Can't be higher than your own power level ({0})."
+msgstr "Ne peut pas dépasser votre propre niveau de pouvoir ({0})."
+
+msgid "You won't be able to undo this: they'll have the same power level as you."
+msgstr "Vous ne pourrez pas annuler cette action : cette personne aura le même niveau de pouvoir que vous."
+
 #: ui/shared/views/RoomView.cpp:1168
 msgid "Ban {0}?"
 msgstr "Bannir {0} ?"
@@ -2952,6 +2976,9 @@ msgstr "Banni par {0}"
 #: ui/shared/app/ShellBase_rooms.cpp:1196
 msgid "Couldn't unban {0}"
 msgstr "Impossible de révoquer le bannissement de {0}"
+
+msgid "Couldn't change {0}'s power level"
+msgstr "Impossible de modifier le niveau de pouvoir de {0}"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:148
 msgid "Save to file…"
@@ -7678,3 +7705,6 @@ msgstr "Vu(e) {0}"
 #: ui/shared/views/presence_text.h
 msgid "Away, last seen {0}"
 msgstr "Absent(e), vu(e) {0}"
+
+msgid "Owner"
+msgstr "Propriétaire"
