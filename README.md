@@ -43,7 +43,15 @@ Drop `--user` to install system-wide. If you'd rather not add a remote, each rel
 
 ### macOS
 
-Download the `.dmg` for your CPU (Apple Silicon or Intel) from the Releases page and drag Tesseract into Applications.
+**Homebrew**, from Tesseract's own tap (not the official Homebrew repo):
+
+```bash
+brew install --cask surakin/tesseract/tesseract
+```
+
+Update with `brew upgrade --cask tesseract`.
+
+Or download the `.dmg` for your CPU (Apple Silicon or Intel) from the Releases page and drag Tesseract into Applications.
 
 The DMGs are Developer ID signed and notarized, and need macOS 13 (Ventura) or newer.
 
