@@ -1222,6 +1222,10 @@ pub mod ffi {
         /// `im.ponies.emote_rooms` subscription list, as opposed to being
         /// visible only because the user is joined to the source room.
         is_subscribed: bool,
+        /// For a pack that exists only under the unstable
+        /// `im.ponies.room_emotes` type: ids of stable packs that hold every
+        /// one of its images. Pickers hide it when one of those is shown.
+        covered_by: Vec<String>,
     }
 
     /// One image entry inside a pack. `usage_mask` is the per-image usage

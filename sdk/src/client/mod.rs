@@ -2012,10 +2012,11 @@ async fn fetch_all_room_pack_contents(
     cache: &RoomStateCache,
     room_id: &OwnedRoomId,
     legacy_compat: bool,
-) -> Option<Vec<(String, serde_json::Value)>> {
+) -> Option<Vec<(String, serde_json::Value, u8)>> {
     let state = fetch_room_state_cached(client, cache, room_id).await?;
 
-    let mut by_state_key: std::collections::BTreeMap<String, serde_json::Value> =
+    // state_key -> (merged content, SRC_* bits of the types that fed it)
+    let mut by_state_key: std::collections::BTreeMap<String, (serde_json::Value, u8)> =
         std::collections::BTreeMap::new();
     for raw in state.iter() {
         let Ok(Some(ty)) = raw.get_field::<String>("type") else {
@@ -2030,13 +2031,22 @@ async fn fetch_all_room_pack_contents(
         let Ok(Some(content)) = raw.get_field::<serde_json::Value>("content") else {
             continue;
         };
-        let merged =
-            crate::image_packs::merge_pack_contents(by_state_key.remove(&state_key), Some(content));
+        let (prev, prev_bits) = match by_state_key.remove(&state_key) {
+            Some((v, b)) => (Some(v), b),
+            None => (None, 0),
+        };
+        let merged = crate::image_packs::merge_pack_contents(prev, Some(content));
         if let Some(m) = merged {
-            by_state_key.insert(state_key, m);
+            let bits = prev_bits | crate::image_packs::room_pack_type_bits(&ty);
+            by_state_key.insert(state_key, (m, bits));
         }
     }
-    Some(by_state_key.into_iter().collect())
+    Some(
+        by_state_key
+            .into_iter()
+            .map(|(k, (v, b))| (k, v, b))
+            .collect(),
+    )
 }
 
 /// Discover every MSC4391 `m.bot.command_description` state event in a room
@@ -2129,7 +2139,12 @@ pub(super) async fn room_pack_state_keys(
 ) -> Option<std::collections::BTreeSet<String>> {
     fetch_all_room_pack_contents(client, cache, room_id, legacy_compat)
         .await
-        .map(|pairs| pairs.into_iter().map(|(state_key, _)| state_key).collect())
+        .map(|pairs| {
+            pairs
+                .into_iter()
+                .map(|(state_key, _, _)| state_key)
+                .collect()
+        })
 }
 
 /// Which of `ROOM_PACK_TYPES` currently have content for `state_key` in
@@ -2180,9 +2195,10 @@ async fn discover_and_parse_room_packs(
 ) -> Vec<crate::image_packs::ImagePack> {
     let mut room_name: Option<String> = None;
     let mut packs = Vec::new();
-    for (state_key, content) in fetch_all_room_pack_contents(client, cache, room_id, legacy_compat)
-        .await
-        .unwrap_or_default()
+    for (state_key, content, bits) in
+        fetch_all_room_pack_contents(client, cache, room_id, legacy_compat)
+            .await
+            .unwrap_or_default()
     {
         let source = crate::image_packs::PackSource::Room {
             room_id: room_id_str.to_owned(),
@@ -2192,6 +2208,7 @@ async fn discover_and_parse_room_packs(
         let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) else {
             continue;
         };
+        pack.set_source_bits(bits);
         // A room pack that's been "removed" (see remove_room_pack) still
         // exists as a state event — Matrix has no true delete — but with
         // an empty images map and no display_name, so without this it
@@ -2248,6 +2265,13 @@ async fn collect_subscribed_room_refs(
     room_refs_set
 }
 
+/// Per-sync-session HTTP fetch cache for single-key room packs: the merged
+/// pack content (or `None` when the room had none) plus the
+/// `image_packs::SRC_*` bits of the event types it came from.
+#[cfg(not(test))]
+pub(super) type PackFetchCache =
+    std::collections::HashMap<(OwnedRoomId, String), Option<(serde_json::Value, u8)>>;
+
 /// Fetch one room's MSC2545 pack (`(room_id, state_key)`), local-cache
 /// first then HTTP fallback. Called from `rebuild_image_packs` (subscribed +
 /// recently-active rooms, kept warm for the picker) — the only caller now
@@ -2257,7 +2281,7 @@ async fn collect_subscribed_room_refs(
 #[cfg(not(test))]
 async fn fetch_room_pack(
     client: &Client,
-    http_cache: &mut std::collections::HashMap<(OwnedRoomId, String), Option<serde_json::Value>>,
+    http_cache: &mut PackFetchCache,
     room_id: &OwnedRoomId,
     room_id_str: &str,
     state_key: &str,
@@ -2280,6 +2304,7 @@ async fn fetch_room_pack(
     // with different images.
     if let Some(room) = client.get_room(room_id) {
         let mut merged: Option<Value> = None;
+        let mut bits = 0u8;
         for &ev_type_str in crate::image_packs::room_pack_types(legacy_compat) {
             let et = StateEventType::from(ev_type_str);
             // `RawAnySyncOrStrippedState` is an untagged enum wrapping a
@@ -2292,6 +2317,7 @@ async fn fetch_room_pack(
                 continue;
             };
             merged = crate::image_packs::merge_pack_contents(merged, Some(content));
+            bits |= crate::image_packs::room_pack_type_bits(ev_type_str);
         }
         if let Some(content) = merged {
             let source = crate::image_packs::PackSource::Room {
@@ -2300,6 +2326,7 @@ async fn fetch_room_pack(
             };
             let id = crate::image_packs::pack_id_for(&source);
             if let Some(mut pack) = crate::image_packs::parse_pack_content(id, source, &content) {
+                pack.set_source_bits(bits);
                 // A "removed" pack (see remove_room_pack) still exists as a
                 // state event with an empty images map — treat it as absent
                 // rather than resurfacing it with a room-name fallback.
@@ -2334,7 +2361,7 @@ async fn fetch_room_pack(
     }
     let cache_key = (room_id.clone(), state_key.to_owned());
     let cached = http_cache.get(&cache_key).cloned();
-    let content_opt: Option<Value> = match cached {
+    let content_opt: Option<(Value, u8)> = match cached {
         Some(v) => v, // already fetched this session (may be None = not found)
         None => {
             use matrix_sdk::ruma::api::client::state::get_state_event_for_key;
@@ -2342,6 +2369,7 @@ async fn fetch_room_pack(
             // success) and combine — a room may carry both with different
             // images.
             let mut fetched: Option<Value> = None;
+            let mut bits = 0u8;
             for &ev_type_str in crate::image_packs::room_pack_types(legacy_compat) {
                 let et = StateEventType::from(ev_type_str);
                 let req = get_state_event_for_key::v3::Request::new(
@@ -2354,20 +2382,23 @@ async fn fetch_room_pack(
                         serde_json::from_str::<Value>(response.event_or_content.get())
                     {
                         fetched = crate::image_packs::merge_pack_contents(fetched, Some(content));
+                        bits |= crate::image_packs::room_pack_type_bits(ev_type_str);
                     }
                 }
             }
+            let fetched = fetched.map(|v| (v, bits));
             http_cache.insert(cache_key, fetched.clone());
             fetched
         }
     };
-    let content = content_opt?;
+    let (content, bits) = content_opt?;
     let source = crate::image_packs::PackSource::Room {
         room_id: room_id_str.to_owned(),
         state_key: state_key.to_owned(),
     };
     let id = crate::image_packs::pack_id_for(&source);
     let mut pack = crate::image_packs::parse_pack_content(id, source, &content)?;
+    pack.set_source_bits(bits);
     if pack.images.is_empty() {
         return None;
     }
@@ -2399,7 +2430,7 @@ async fn fetch_room_pack(
 #[cfg(not(test))]
 pub(super) async fn rebuild_image_packs(
     client: &Client,
-    http_cache: &mut std::collections::HashMap<(OwnedRoomId, String), Option<serde_json::Value>>,
+    http_cache: &mut PackFetchCache,
     active_rooms: &[String],
     app_cache_db: &std::sync::Arc<parking_lot::Mutex<Option<rusqlite::Connection>>>,
     room_state_cache: &RoomStateCache,
@@ -2491,7 +2522,7 @@ pub(super) async fn rebuild_image_packs(
     // correct here since the state_key is already known precisely, no
     // discovery needed. Each future gets a private one-entry copy of the
     // fetch cache (the shared map is `&mut`); new entries merge back after.
-    type PackCache = std::collections::HashMap<(OwnedRoomId, String), Option<Value>>;
+    type PackCache = PackFetchCache;
     let mut subscribed_futs = Vec::new();
     for (room_id_str, state_key) in &subscribed_set {
         if active_set.contains(room_id_str) {
@@ -2564,6 +2595,7 @@ pub(super) async fn rebuild_image_packs(
         }
     }
 
+    crate::image_packs::mark_unstable_duplicates(&mut packs);
     packs
 }
 

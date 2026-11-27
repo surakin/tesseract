@@ -39,6 +39,7 @@ impl ClientFfi {
                 source_room: p.source_room().to_owned(),
                 source_state_key: p.source_state_key().to_owned(),
                 is_subscribed: p.is_subscribed,
+                covered_by: p.covered_by.clone(),
             })
             .collect()
     }
@@ -92,6 +93,7 @@ impl ClientFfi {
                     source_room: room_id,
                     source_state_key: state_key,
                     is_subscribed,
+                    covered_by: Vec::new(),
                 }
             })
             .collect()
@@ -1081,10 +1083,7 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return;
         };
-        let mut http_cache: std::collections::HashMap<
-            (matrix_sdk::ruma::OwnedRoomId, String),
-            Option<serde_json::Value>,
-        > = std::collections::HashMap::new();
+        let mut http_cache: super::PackFetchCache = std::collections::HashMap::new();
         let active_rooms_snapshot = self.active_rooms.lock().clone();
         let app_cache_db = Arc::clone(&self.app_cache_db);
         let room_state_cache = Arc::clone(&self.room_state_cache);

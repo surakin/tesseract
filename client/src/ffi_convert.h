@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tesseract
@@ -134,6 +135,12 @@ inline BackupProgress from_ffi(const tesseract_ffi::BackupProgress& p)
 
 inline ImagePack from_ffi(const tesseract_ffi::ImagePackFfi& p)
 {
+    std::vector<std::string> covered_by;
+    covered_by.reserve(p.covered_by.size());
+    for (const auto& id : p.covered_by)
+    {
+        covered_by.emplace_back(id);
+    }
     PackSourceKind kind =
         (std::string(p.source_kind) == "room") ? PackSourceKind::Room : PackSourceKind::User;
     return {
@@ -149,6 +156,7 @@ inline ImagePack from_ffi(const tesseract_ffi::ImagePackFfi& p)
         .source_room = std::string(p.source_room),
         .source_state_key = std::string(p.source_state_key),
         .is_subscribed = p.is_subscribed,
+        .covered_by = std::move(covered_by),
     };
 }
 

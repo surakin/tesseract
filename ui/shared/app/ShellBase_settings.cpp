@@ -457,12 +457,20 @@ ShellBase::emoticons_for_room_(const std::string& room_id) const
         return out;
     }
     const std::vector<std::string> parent_space_ids = parent_spaces_for_room_(room_id);
-    for (const auto& [pack, imgs] : emoticon_packs_)
+    std::vector<tesseract::ImagePack> packs;
+    packs.reserve(emoticon_packs_.size());
+    for (const auto& entry : emoticon_packs_)
     {
-        if (!views::is_pack_picker_visible(pack, room_id, parent_space_ids))
+        packs.push_back(entry.first);
+    }
+    const std::vector<bool> visible = views::picker_visible_mask(packs, room_id, parent_space_ids);
+    for (std::size_t i = 0; i < emoticon_packs_.size(); ++i)
+    {
+        if (!visible[i])
         {
             continue;
         }
+        const auto& imgs = emoticon_packs_[i].second;
         out.insert(out.end(), imgs.begin(), imgs.end());
     }
     return out;

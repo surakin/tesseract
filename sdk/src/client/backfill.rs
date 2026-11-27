@@ -2424,6 +2424,9 @@ mod known_room_pack_tests {
             },
             images: Vec::new(),
             is_subscribed: false,
+            from_stable: false,
+            from_unstable: false,
+            covered_by: Vec::new(),
         }
     }
 

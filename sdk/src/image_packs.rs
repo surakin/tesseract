@@ -192,6 +192,14 @@ pub struct ImagePack {
     /// only because the user is joined to the source room. Always `false`
     /// for `PackSource::User` (subscription has no meaning there).
     pub is_subscribed: bool,
+    /// Which room-pack event type(s) contributed to this pack's (merged)
+    /// content. Both `false` for the personal pack, which has no stable form.
+    pub from_stable: bool,
+    pub from_unstable: bool,
+    /// Ids of stable packs whose images are a superset of this
+    /// unstable-only pack's images, filled by [`mark_unstable_duplicates`].
+    /// Pickers hide this pack when one of them is shown alongside it.
+    pub covered_by: Vec<String>,
 }
 
 impl ImagePack {
@@ -324,7 +332,66 @@ pub fn parse_pack_content(id: String, source: PackSource, content: &Value) -> Op
         source,
         images: entries,
         is_subscribed: false,
+        from_stable: false,
+        from_unstable: false,
+        covered_by: Vec::new(),
     })
+}
+
+/// Bit for content read from the stable `m.room.image_pack` type.
+pub const SRC_STABLE: u8 = 1 << 0;
+/// Bit for content read from the unstable `im.ponies.room_emotes` type.
+pub const SRC_UNSTABLE: u8 = 1 << 1;
+
+/// The `SRC_*` bit for a room-pack event type, 0 for anything else.
+pub fn room_pack_type_bits(ev_type: &str) -> u8 {
+    match ev_type {
+        TYPE_ROOM_PACK_STABLE => SRC_STABLE,
+        TYPE_ROOM_PACK_UNSTABLE => SRC_UNSTABLE,
+        _ => 0,
+    }
+}
+
+impl ImagePack {
+    /// Record which event types (`SRC_*` bits) the pack's content came from.
+    pub fn set_source_bits(&mut self, bits: u8) {
+        self.from_stable = bits & SRC_STABLE != 0;
+        self.from_unstable = bits & SRC_UNSTABLE != 0;
+    }
+}
+
+/// Fill `covered_by` on every pack that exists only under the unstable
+/// room-pack type: the ids of the stable packs that each hold every one of
+/// its image URLs (shortcodes ignored). Packs read from both types at the
+/// same state key are already merged into one and never marked; an
+/// unstable pack covered only by the union of several stable packs is not
+/// marked either. Whether a marked pack is actually hidden is up to the
+/// picker, which needs one of the covering packs to be shown too.
+pub fn mark_unstable_duplicates(packs: &mut [ImagePack]) {
+    use std::collections::HashSet;
+    let stable: Vec<(String, HashSet<String>)> = packs
+        .iter()
+        .filter(|p| p.from_stable)
+        .map(|p| {
+            (
+                p.id.clone(),
+                p.images.iter().map(|i| i.url.clone()).collect(),
+            )
+        })
+        .collect();
+    for pack in packs.iter_mut() {
+        pack.covered_by.clear();
+        if !pack.from_unstable || pack.from_stable || pack.images.is_empty() {
+            continue;
+        }
+        pack.covered_by = stable
+            .iter()
+            .filter(|(id, urls)| {
+                *id != pack.id && pack.images.iter().all(|i| urls.contains(&i.url))
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+    }
 }
 
 /// Merge two MSC2545 pack `content` JSON blobs representing the stable and
@@ -733,6 +800,135 @@ pub fn suggest_shortcode(body: &str, existing: &serde_json::Map<String, Value>) 
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn dup_pack(room: &str, key: &str, bits: u8, urls: &[&str]) -> ImagePack {
+        let source = if room.is_empty() {
+            PackSource::User
+        } else {
+            PackSource::Room {
+                room_id: room.to_owned(),
+                state_key: key.to_owned(),
+            }
+        };
+        let mut p = ImagePack {
+            id: pack_id_for(&source),
+            display_name: String::new(),
+            avatar_url: String::new(),
+            attribution: String::new(),
+            usage: USAGE_ANY,
+            source,
+            images: urls
+                .iter()
+                .enumerate()
+                .map(|(n, u)| ImageEntry {
+                    shortcode: format!("s{n}"),
+                    url: (*u).to_owned(),
+                    body: String::new(),
+                    info_json: "{}".to_owned(),
+                    usage: USAGE_ANY,
+                    favorite: false,
+                })
+                .collect(),
+            is_subscribed: false,
+            from_stable: false,
+            from_unstable: false,
+            covered_by: Vec::new(),
+        };
+        p.set_source_bits(bits);
+        p
+    }
+
+    #[test]
+    fn mark_dupes_hides_unstable_subset_of_stable() {
+        let mut packs = vec![
+            dup_pack("!r:h", "cats", SRC_STABLE, &["mxc://h/a", "mxc://h/b"]),
+            dup_pack(
+                "!r:h",
+                "cats (unstable)",
+                SRC_UNSTABLE,
+                &["mxc://h/b", "mxc://h/a"],
+            ),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[0].covered_by.is_empty());
+        assert_eq!(packs[1].covered_by, vec![packs[0].id.clone()]);
+    }
+
+    #[test]
+    fn mark_dupes_partial_overlap_kept() {
+        let mut packs = vec![
+            dup_pack("!r:h", "s", SRC_STABLE, &["mxc://h/a"]),
+            dup_pack("!r:h", "u", SRC_UNSTABLE, &["mxc://h/a", "mxc://h/extra"]),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[1].covered_by.is_empty());
+    }
+
+    #[test]
+    fn mark_dupes_cross_room() {
+        let mut packs = vec![
+            dup_pack("!u:h", "", SRC_UNSTABLE, &["mxc://h/a"]),
+            dup_pack("!s:h", "", SRC_STABLE, &["mxc://h/a", "mxc://h/b"]),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert_eq!(packs[0].covered_by, vec![packs[1].id.clone()]);
+    }
+
+    #[test]
+    fn mark_dupes_merged_pack_never_marked() {
+        let mut packs = vec![
+            dup_pack("!r:h", "", SRC_STABLE | SRC_UNSTABLE, &["mxc://h/a"]),
+            dup_pack("!r:h", "other", SRC_STABLE, &["mxc://h/a"]),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[0].covered_by.is_empty());
+    }
+
+    #[test]
+    fn mark_dupes_empty_pack_never_marked() {
+        let mut packs = vec![
+            dup_pack("!r:h", "s", SRC_STABLE, &["mxc://h/a"]),
+            dup_pack("!r:h", "u", SRC_UNSTABLE, &[]),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[1].covered_by.is_empty());
+    }
+
+    #[test]
+    fn mark_dupes_user_pack_never_marked() {
+        let mut packs = vec![
+            dup_pack("", "", 0, &["mxc://h/a"]),
+            dup_pack("!r:h", "s", SRC_STABLE, &["mxc://h/a"]),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[0].covered_by.is_empty());
+    }
+
+    #[test]
+    fn mark_dupes_union_of_two_stable_does_not_count() {
+        let mut packs = vec![
+            dup_pack("!r:h", "s1", SRC_STABLE, &["mxc://h/a"]),
+            dup_pack("!r:h", "s2", SRC_STABLE, &["mxc://h/b"]),
+            dup_pack("!r:h", "u", SRC_UNSTABLE, &["mxc://h/a", "mxc://h/b"]),
+        ];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[2].covered_by.is_empty());
+    }
+
+    #[test]
+    fn mark_dupes_clears_stale_marks() {
+        let mut packs = vec![dup_pack("!r:h", "u", SRC_UNSTABLE, &["mxc://h/a"])];
+        packs[0].covered_by = vec!["gone".to_owned()];
+        mark_unstable_duplicates(&mut packs);
+        assert!(packs[0].covered_by.is_empty());
+    }
+
+    #[test]
+    fn room_pack_type_bits_maps_types() {
+        assert_eq!(room_pack_type_bits(TYPE_ROOM_PACK_STABLE), SRC_STABLE);
+        assert_eq!(room_pack_type_bits(TYPE_ROOM_PACK_UNSTABLE), SRC_UNSTABLE);
+        assert_eq!(room_pack_type_bits("m.room.name"), 0);
+    }
 
     #[test]
     fn room_pack_types_legacy_compat_true_returns_both() {

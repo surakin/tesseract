@@ -28,8 +28,16 @@ namespace tesseract::views
 bool is_pack_picker_visible(const tesseract::ImagePack& pack, const std::string& current_room_id,
                             const std::vector<std::string>& parent_space_ids);
 
+// Which of `packs` a picker shows (same order and size as `packs`): those
+// passing is_pack_picker_visible(), minus any unstable-only duplicate whose
+// `covered_by` names another pack that is shown. A duplicate whose stable
+// twin is not shown (other room, filtered out by usage) stays visible.
+std::vector<bool> picker_visible_mask(const std::vector<tesseract::ImagePack>& packs,
+                                      const std::string& current_room_id,
+                                      const std::vector<std::string>& parent_space_ids);
+
 // Filters `packs` (already usage-filtered by the caller) down to
-// is_pack_picker_visible() entries, then stable-partitions the survivors
+// picker_visible_mask() entries, then stable-partitions the survivors
 // into personal pack first, then the pack sourced from `current_room_id`
 // (if any), then packs sourced from any of `parent_space_ids` in their
 // existing relative order, then every subscribed-room pack in their

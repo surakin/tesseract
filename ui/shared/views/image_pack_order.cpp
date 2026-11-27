@@ -1,6 +1,8 @@
 #include "views/image_pack_order.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <unordered_set>
 
 namespace tesseract::views
 {
@@ -24,6 +26,37 @@ bool is_pack_picker_visible(const tesseract::ImagePack& pack, const std::string&
     return pack.is_subscribed;
 }
 
+std::vector<bool> picker_visible_mask(const std::vector<tesseract::ImagePack>& packs,
+                                      const std::string& current_room_id,
+                                      const std::vector<std::string>& parent_space_ids)
+{
+    std::vector<bool> mask(packs.size());
+    std::unordered_set<std::string> shown_ids;
+    for (std::size_t i = 0; i < packs.size(); ++i)
+    {
+        mask[i] = is_pack_picker_visible(packs[i], current_room_id, parent_space_ids);
+        if (mask[i])
+        {
+            shown_ids.insert(packs[i].id);
+        }
+    }
+    // Coverers are stable packs, which are never covered themselves, so one
+    // pass against the shown set is enough.
+    for (std::size_t i = 0; i < packs.size(); ++i)
+    {
+        const auto& cov = packs[i].covered_by;
+        if (mask[i] && std::any_of(cov.begin(), cov.end(),
+                                   [&](const std::string& id)
+                                   {
+                                       return id != packs[i].id && shown_ids.count(id) > 0;
+                                   }))
+        {
+            mask[i] = false;
+        }
+    }
+    return mask;
+}
+
 std::vector<tesseract::ImagePack>
 order_picker_packs(std::vector<tesseract::ImagePack> packs, const std::string& current_room_id,
                    const std::vector<std::string>& parent_space_ids)
@@ -33,11 +66,13 @@ order_picker_packs(std::vector<tesseract::ImagePack> packs, const std::string& c
     std::vector<tesseract::ImagePack> space;
     std::vector<tesseract::ImagePack> subscribed;
 
-    for (auto& p : packs)
+    const std::vector<bool> visible = picker_visible_mask(packs, current_room_id, parent_space_ids);
+    for (std::size_t i = 0; i < packs.size(); ++i)
     {
-        if (!is_pack_picker_visible(p, current_room_id, parent_space_ids))
+        auto& p = packs[i];
+        if (!visible[i])
         {
-            continue; // not personal, not current room/space, not subscribed — hide
+            continue; // not personal/current room/space/subscribed, or a covered duplicate
         }
         if (p.source_kind == tesseract::PackSourceKind::User)
         {

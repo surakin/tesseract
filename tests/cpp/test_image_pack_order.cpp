@@ -207,3 +207,57 @@ TEST_CASE("order_picker_packs: pack from a room that is neither current, "
     REQUIRE(packs.size() == 1);
     CHECK(packs[0].source_room == "!space:h");
 }
+
+TEST_CASE("order_picker_packs: unstable copy hidden when its stable twin is shown",
+          "[image_pack][order]")
+{
+    auto stable = make_room_pack("!current:h", "Cats");
+    stable.id = "stable";
+    auto unstable = make_room_pack("!current:h", "Cats (unstable)");
+    unstable.id = "unstable";
+    unstable.covered_by = {"stable"};
+
+    auto packs = order_picker_packs({stable, unstable}, "!current:h", kNoSpaces);
+    REQUIRE(packs.size() == 1);
+    CHECK(packs[0].id == "stable");
+}
+
+TEST_CASE("order_picker_packs: unstable copy kept when its coverer is not in the list",
+          "[image_pack][order]")
+{
+    auto unstable = make_room_pack("!current:h", "Cats (unstable)");
+    unstable.id = "unstable";
+    unstable.covered_by = {"stable"}; // e.g. dropped by the caller's usage filter
+
+    auto packs = order_picker_packs({unstable}, "!current:h", kNoSpaces);
+    REQUIRE(packs.size() == 1);
+    CHECK(packs[0].id == "unstable");
+}
+
+TEST_CASE("order_picker_packs: unstable copy kept when its coverer's room is hidden",
+          "[image_pack][order]")
+{
+    auto stable = make_room_pack("!other:h", "Cats"); // not current, not subscribed
+    stable.id = "stable";
+    auto unstable = make_room_pack("!current:h", "Cats (unstable)");
+    unstable.id = "unstable";
+    unstable.covered_by = {"stable"};
+
+    auto packs = order_picker_packs({stable, unstable}, "!current:h", kNoSpaces);
+    REQUIRE(packs.size() == 1);
+    CHECK(packs[0].id == "unstable");
+}
+
+TEST_CASE("picker_visible_mask: covered pack hidden, coverer shown", "[image_pack][order]")
+{
+    auto stable = make_room_pack("!current:h", "Cats");
+    stable.id = "stable";
+    auto unstable = make_room_pack("!current:h", "Cats (unstable)");
+    unstable.id = "unstable";
+    unstable.covered_by = {"stable"};
+
+    auto mask = tesseract::views::picker_visible_mask({stable, unstable}, "!current:h", kNoSpaces);
+    REQUIRE(mask.size() == 2);
+    CHECK(mask[0]);
+    CHECK_FALSE(mask[1]);
+}

@@ -66,6 +66,11 @@ struct ImagePack
     /// subscription list, as opposed to being visible only because the user
     /// is joined to the source room.
     bool is_subscribed = false;
+    /// For a pack that exists only under the unstable `im.ponies.room_emotes`
+    /// type: ids of stable packs holding every one of its images. Pickers
+    /// hide it when one of those is shown too (see
+    /// views::picker_visible_mask). Empty otherwise.
+    std::vector<std::string> covered_by;
 };
 
 struct ImagePackImage

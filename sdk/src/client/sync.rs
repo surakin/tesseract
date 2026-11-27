@@ -641,10 +641,7 @@ impl ClientFfi {
                 // rebuilds for the lifetime of this sync session.  Each
                 // (room_id, state_key) pair is fetched at most once —
                 // subsequent notable-update rebuilds reuse the result.
-                let mut http_pack_cache: std::collections::HashMap<
-                    (OwnedRoomId, String),
-                    Option<serde_json::Value>,
-                > = std::collections::HashMap::new();
+                let mut http_pack_cache: super::PackFetchCache = std::collections::HashMap::new();
                 let active_rooms_snapshot = active_rooms.lock().clone();
                 let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
                 let pks = { let _in_flight = in_flight_rw.guard("image-packs"); rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await };
@@ -1702,6 +1699,7 @@ impl ClientFfi {
                         let mut g = image_packs.lock();
                         g.retain(|p| p.source_room() != room_id);
                         g.extend(discovered);
+                        crate::image_packs::mark_unstable_duplicates(&mut g);
                     }
                     if let Some(h) = &handler {
                         let guard = h.lock();
