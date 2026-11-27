@@ -24,6 +24,15 @@ TEST_CASE("data_dir returns a non-empty absolute path", "[paths]")
 #endif
 }
 
+TEST_CASE("path::string() yields UTF-8 for non-ASCII names", "[paths]")
+{
+    // Paths reach the Rust SDK through path::string(). On Windows that uses the
+    // active code page, which must be UTF-8 (set in Tesseract.manifest), or
+    // "é" becomes a lone 0xE9 byte and the SDK writes to a garbled directory.
+    const std::filesystem::path p(u8"C:/Users/Jos\u00e9/AppData");
+    CHECK(p.string() == "C:/Users/Jos\xC3\xA9/AppData");
+}
+
 TEST_CASE("SessionStore::path lives under config_dir", "[paths][session]")
 {
     auto cfg = tesseract::config_dir();

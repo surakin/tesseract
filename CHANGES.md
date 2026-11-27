@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(windows): Windows users with accented user names no longer get a garbled folder in C:\Users holding their account data. Linux release build, ctest 4101/4101
 - fix(packs): the pickers no longer show an old-format copy of an image pack whose images are all in a newer pack shown alongside it. Linux release build, ctest 4290/4290, cargo 1836/1836
 - feat(room-info): change a member's power level from their context menu in the room info panel. Linux build + ctest 4093/4093
 - feat(room-info): the member list shows Owner, Admin, Moderator or custom power levels in colour when they differ from the room default. Linux build + ctest 4096/4096

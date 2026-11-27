@@ -571,6 +571,12 @@ else()
         tesseract_app
     )
 endif()
+# Run the tests under the app's manifest, so process-wide settings such as the
+# UTF-8 active code page match the shipped binary. The app embeds it through its
+# .rc file; here CMake merges it in via the linker's /MANIFESTINPUT.
+if(WIN32)
+    target_sources(tesseract_tests PRIVATE ${PROJECT_SOURCE_DIR}/ui/windows/Tesseract.manifest)
+endif()
 # Register each Catch2 TEST_CASE as an individual ctest test.
 include(Catch)
 # Keychain-touching tests share the OS credential store (libsecret /
