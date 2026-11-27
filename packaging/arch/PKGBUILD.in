@@ -29,7 +29,13 @@ depends=(
     'ffmpeg'             # libavutil: silence av_log output at startup
     'emoji-font'         # emoji glyph rendering (provided by noto-fonts-emoji)
     'vulkan-icd-loader'  # the 3D world view (engine) loads libvulkan
-    'libxkbcommon'       # linked by the 3D engine library
+    # Window-system libraries the 3D engine library links (also its build headers):
+    'wayland'
+    'libxkbcommon'
+    'libx11'
+    'libxcursor'
+    'libxi'
+    'libxfixes'
 )
 makedepends=(
     'cmake'

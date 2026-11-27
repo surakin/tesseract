@@ -1,9 +1,10 @@
 name: Install the 3D engine's build tools
 description: >-
   What the engine (cmake/Engine.cmake, built by every job that compiles
-  Tesseract) needs from the runner: the Vulkan SDK headers on Windows, and the
-  Slang shader compiler (slangc) on every platform. Mirrors the engine's own
-  BUILD.md; if that changes, change this too.
+  Tesseract) needs from the runner: the window-system headers on Linux, the
+  Vulkan SDK headers on Windows, and the Slang shader compiler (slangc) on
+  every platform. Mirrors the engine's own BUILD.md; if that changes, change
+  this too.
 
 inputs:
   slang-version:
@@ -15,6 +16,23 @@ inputs:
 runs:
   using: composite
   steps:
+    # The engine's Linux platform layer (engine/platform/CMakeLists.txt) requires
+    # these pkg-config modules: wayland-client, xkbcommon, x11, xcursor, xi and
+    # xfixes. Installed here so a job does not depend on another package (such as
+    # libgtk-4-dev) pulling them in.
+    - name: Install the engine's window-system headers (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y \
+          libwayland-dev \
+          libxkbcommon-dev \
+          libx11-dev \
+          libxcursor-dev \
+          libxi-dev \
+          libxfixes-dev
+
     # The SDK's vulkan/ and vk_video/ headers are needed to configure the engine
     # on Windows (it stops with "No Vulkan SDK found" otherwise).
     - name: Install the Vulkan SDK (headers and loader)
