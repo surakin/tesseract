@@ -7,6 +7,8 @@
 #include "tk/i18n.h"
 #include "tk/theme.h"
 
+#include <tesseract/settings.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -31,8 +33,15 @@ std::vector<tk::TextSpan> themed_spans(std::vector<tk::TextSpan> spans, const tk
 // Joins the topic and the presence on the second line; not a translatable sentence.
 constexpr const char* kSubtitleSeparator = " · ";
 constexpr float kRoomHeaderPadX = 16.0f;
-constexpr float kRoomHeaderAvatarSize = 40.0f;
+constexpr float kRoomHeaderAvatarSize = RoomHeader::kAvatarSize;
 constexpr float kRoomHeaderAvatarGap = 12.0f;
+
+// Compact IRC header: a 30 px strip, halved avatar, name · presence · topic
+// on one line. Presence sits right of the name (muted), topic fills the rest.
+constexpr float kCompactAvatarSize = RoomHeader::kCompactAvatarSize;
+constexpr float kCompactAvatarGap = 8.0f;
+constexpr float kCompactPresenceGap = 6.0f;
+constexpr float kCompactPresenceTopicGap = 8.0f;
 
 constexpr float kCalBtnSize = 28.0f;
 constexpr float kCalBtnMargin = 8.0f;
@@ -294,6 +303,10 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
         room_id_ = info.id;
         set_presence_text("");
     }
+    if (info.name != display_name_)
+    {
+        name_natural_w_ = -1.0f;
+    }
     display_name_ = info.name;
     avatar_url_ = info.effective_avatar_url();
     encrypted_ = info.is_encrypted;
@@ -405,10 +418,17 @@ void RoomHeader::set_presence_text(std::string text)
     topic_dirty_ = true;
     topic_layout_.reset();
     topic_natural_w_ = -1.0f;
+    presence_layout_.reset();
     if (topic_label_)
     {
         topic_label_->set_text(subtitle_text_());
         topic_label_->set_visible(topic_spans_.empty() && subtitle_visible_());
+    }
+    // The compact strip draws the presence itself (not from a Label), so a
+    // presence refresh must ask the host for a re-layout too.
+    if (host())
+    {
+        host()->mark_needs_relayout();
     }
 }
 
@@ -466,15 +486,40 @@ bool RoomHeader::subtitle_visible_() const
     return !topic_.empty() || !topic_html_.empty();
 }
 
+// The topic alone (first line + "…" when multiline), without any presence tail.
+std::string RoomHeader::topic_plain_text_() const
+{
+    const auto nl = topic_.find('\n');
+    return (nl != std::string::npos) ? topic_.substr(0, nl) + "…" : topic_;
+}
+
+// True in compact mode: the IRC message layout is active, so every room gets
+// the same single-line strip (a DM's presence sits right of its name, a normal
+// room has just name · topic). The condensed tab-bar header always wins.
+bool RoomHeader::compact_() const
+{
+    return !condensed_ && tesseract::Settings::instance().message_layout ==
+                              tesseract::Settings::MessageLayout::Irc;
+}
+
 void RoomHeader::set_condensed(bool condensed)
 {
     condensed_ = condensed;
 }
 
-tk::Size RoomHeader::measure(tk::LayoutCtx&, tk::Size constraints)
+tk::Size RoomHeader::measure(tk::LayoutCtx& ctx, tk::Size constraints)
 {
     if (!condensed_)
     {
+        if (compact_())
+        {
+            // The single name line must not clip at user-scaled Heading
+            // fonts; with defaults kCompactHeight is exactly the line height.
+            const auto name_lo =
+                ctx.factory.build_text(display_name_, tk::TextStyle{tk::FontRole::Title});
+            const float name_h = name_lo ? name_lo->measure().h : 0.0f;
+            return {constraints.w, std::max(kCompactHeight, name_h + 6.0f)};
+        }
         return {constraints.w, kHeight};
     }
     const bool has_topic = subtitle_visible_();
@@ -637,10 +682,16 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         return;
     }
 
+    // Mode geometry: the compact single-line IRC header halves the strip's
+    // height and avatar; everything else keeps the classic 60 px geometry.
+    const bool compact = compact_();
+    const float avatar_size = compact ? kCompactAvatarSize : kRoomHeaderAvatarSize;
+    const float avatar_gap = compact ? kCompactAvatarGap : kRoomHeaderAvatarGap;
+
     // Leading reserve: the back button (narrow-window layout only) sits
     // before the avatar, pushing everything else right.
     const float lead_reserve = show_back_btn_ ? (kCalBtnSize + kCalBtnMargin) : 0.0f;
-    const float btn_y = bounds.y + (kHeight - kCalBtnSize) * 0.5f;
+    const float btn_y = bounds.y + (bounds.h - kCalBtnSize) * 0.5f;
     if (back_btn_)
     {
         back_btn_->set_visible(show_back_btn_);
@@ -649,8 +700,18 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                                                : tk::Rect{});
     }
 
-    const float text_x =
-        bounds.x + kRoomHeaderPadX + lead_reserve + kRoomHeaderAvatarSize + kRoomHeaderAvatarGap;
+    const float text_x = bounds.x + kRoomHeaderPadX + lead_reserve + avatar_size + avatar_gap;
+
+    // A mode switch invalidates cached natural widths / layouts so the
+    // compact and full builds never reuse each other's measurements.
+    if (compact != last_layout_compact_)
+    {
+        last_layout_compact_ = compact;
+        topic_natural_w_ = -1.0f;
+        name_natural_w_ = -1.0f;
+        presence_last_w_ = -1.0f;
+        last_topic_w_ = -1.0f;
+    }
 
     // Determine which action buttons fit at the current width, collapsing
     // the lowest-priority ones into the overflow ("more") menu when they
@@ -670,9 +731,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     };
     const int wanted_count =
         (wanted[0] ? 1 : 0) + (wanted[1] ? 1 : 0) + (wanted[2] ? 1 : 0) + (wanted[3] ? 1 : 0);
-    const float budget =
-        std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - kRoomHeaderAvatarSize -
-                           kRoomHeaderAvatarGap - kRoomHeaderMinTextW);
+    const float budget = std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - avatar_size -
+                                            avatar_gap - kRoomHeaderMinTextW);
 
     int shown_slot_count = wanted_count;
     if (reserve_for_slots(wanted_count) <= budget)
@@ -710,103 +770,114 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         shown_slot_count = accepted + 1; // + the "more" trigger itself
     }
     const float right_reserve = reserve_for_slots(shown_slot_count);
-    const float text_w =
-        std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - kRoomHeaderAvatarSize -
-                           kRoomHeaderAvatarGap - right_reserve);
+    const float text_w = std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - avatar_size -
+                                            avatar_gap - right_reserve);
 
-    const bool has_topic = subtitle_visible_();
-    const bool show_label = has_topic && topic_spans_.empty();
-
-    const float name_y = has_topic ? bounds.y + kNameY_Pair : bounds.y + kNameY_Single;
-
-    // Leading badges, left to right: bridge, lock, then the name.
-    const bool show_bridge = bridged_ && text_w >= kBridgeIconPx + kBridgeIconGap;
-    const float bridge_reserve = show_bridge ? (kBridgeIconPx + kBridgeIconGap) : 0.0f;
-    bridge_icon_rect_ = show_bridge
-                            ? tk::Rect{text_x, name_y + (kRoomHeaderNameH - kBridgeIconPx) * 0.5f,
-                                       kBridgeIconPx, kBridgeIconPx}
-                            : tk::Rect{};
-
-    const float lock_reserve = encrypted_ ? (kLockW + kLockGap) : 0.0f;
-    lock_icon_rect_ = encrypted_
-                          ? tk::Rect{text_x + bridge_reserve,
-                                     name_y + (kRoomHeaderNameH - kLockH) * 0.5f, kLockW, kLockH}
-                          : tk::Rect{};
-
-    if (name_label_)
+    // Name / presence / topic layout: the compact mode draws all three inline
+    // on one line; the classic mode keeps the two-line name-over-topic layout.
+    if (compact)
     {
-        const float lead = bridge_reserve + lock_reserve;
-        name_label_->arrange(
-            ctx, {text_x + lead, name_y, std::max(0.0f, text_w - lead), kRoomHeaderNameH});
+        arrange_compact_(ctx, text_x, text_w);
     }
-
-    topic_rect_ = {text_x, bounds.y + kTopicY, text_w, kTopicH};
-
-    if (topic_label_)
+    else
     {
-        topic_label_->set_text(subtitle_text_());
-        topic_label_->set_visible(show_label);
-        if (show_label)
+        // Not compact: no inline presence line on this strip.
+        presence_rect_ = {};
+
+        const bool has_topic = subtitle_visible_();
+        const bool show_label = has_topic && topic_spans_.empty();
+
+        const float name_y = has_topic ? bounds.y + kNameY_Pair : bounds.y + kNameY_Single;
+
+        // Leading badges, left to right: bridge, lock, then the name.
+        const bool show_bridge = bridged_ && text_w >= kBridgeIconPx + kBridgeIconGap;
+        const float bridge_reserve = show_bridge ? (kBridgeIconPx + kBridgeIconGap) : 0.0f;
+        bridge_icon_rect_ =
+            show_bridge ? tk::Rect{text_x, name_y + (kRoomHeaderNameH - kBridgeIconPx) * 0.5f,
+                                   kBridgeIconPx, kBridgeIconPx}
+                        : tk::Rect{};
+
+        const float lock_reserve = encrypted_ ? (kLockW + kLockGap) : 0.0f;
+        lock_icon_rect_ =
+            encrypted_ ? tk::Rect{text_x + bridge_reserve,
+                                  name_y + (kRoomHeaderNameH - kLockH) * 0.5f, kLockW, kLockH}
+                       : tk::Rect{};
+
+        if (name_label_)
         {
-            topic_label_->arrange(ctx, topic_rect_);
+            const float lead = bridge_reserve + lock_reserve;
+            name_label_->arrange(
+                ctx, {text_x + lead, name_y, std::max(0.0f, text_w - lead), kRoomHeaderNameH});
         }
-    }
 
-    // Rebuild topic layout and recompute truncation when the topic content
-    // changed (set_room() sets topic_dirty_) or the available width changed.
-    const bool needs_rebuild = topic_dirty_ || (text_w != last_topic_w_);
-    if (needs_rebuild)
-    {
-        topic_dirty_ = false;
-        last_topic_w_ = text_w;
-        topic_truncated_ = false;
-        topic_layout_.reset();
+        topic_rect_ = {text_x, bounds.y + kTopicY, text_w, kTopicH};
 
-        if (!topic_display_spans_.empty())
+        if (topic_label_)
         {
-            // Rich text: paint from display spans (first-line only when
-            // multiline) plus the unlinked presence tail.
-            const auto sub_spans = subtitle_spans_();
-            tk::TextStyle ts{};
-            ts.role = tk::FontRole::SidebarPreview;
-            ts.trim = tk::TextTrim::Ellipsis;
-            ts.max_width = text_w;
-            topic_layout_ = ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts);
-
-            if (topic_multiline_)
+            topic_label_->set_text(subtitle_text_());
+            topic_label_->set_visible(show_label);
+            if (show_label)
             {
-                topic_truncated_ = true;
-            }
-            else
-            {
-                if (topic_natural_w_ < 0.0f)
-                {
-                    tk::TextStyle ts_nat{};
-                    ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat =
-                        ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts_nat);
-                    topic_natural_w_ = nat ? nat->measure().w : 0.0f;
-                }
-                topic_truncated_ = topic_natural_w_ > text_w;
+                topic_label_->arrange(ctx, topic_rect_);
             }
         }
-        else if (subtitle_visible_())
+
+        // Rebuild topic layout and recompute truncation when the topic content
+        // changed (set_room() sets topic_dirty_) or the available width changed.
+        const bool needs_rebuild = topic_dirty_ || (text_w != last_topic_w_);
+        if (needs_rebuild)
         {
-            // Plain text: label already shows first-line + "…" when multiline.
-            if (topic_multiline_)
+            topic_dirty_ = false;
+            last_topic_w_ = text_w;
+            topic_truncated_ = false;
+            topic_layout_.reset();
+
+            if (!topic_display_spans_.empty())
             {
-                topic_truncated_ = true;
-            }
-            else
-            {
-                if (topic_natural_w_ < 0.0f)
+                // Rich text: paint from display spans (first-line only when
+                // multiline) plus the unlinked presence tail.
+                const auto sub_spans = subtitle_spans_();
+                tk::TextStyle ts{};
+                ts.role = tk::FontRole::SidebarPreview;
+                ts.trim = tk::TextTrim::Ellipsis;
+                ts.max_width = text_w;
+                topic_layout_ = ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts);
+
+                if (topic_multiline_)
                 {
-                    tk::TextStyle ts_nat{};
-                    ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat = ctx.factory.build_text(subtitle_text_(), ts_nat);
-                    topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                    topic_truncated_ = true;
                 }
-                topic_truncated_ = topic_natural_w_ > text_w;
+                else
+                {
+                    if (topic_natural_w_ < 0.0f)
+                    {
+                        tk::TextStyle ts_nat{};
+                        ts_nat.role = tk::FontRole::SidebarPreview;
+                        auto nat =
+                            ctx.factory.build_rich_text(themed_spans(sub_spans, ctx.theme), ts_nat);
+                        topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                    }
+                    topic_truncated_ = topic_natural_w_ > text_w;
+                }
+            }
+            else if (subtitle_visible_())
+            {
+                // Plain text: label already shows first-line + "…" when multiline.
+                if (topic_multiline_)
+                {
+                    topic_truncated_ = true;
+                }
+                else
+                {
+                    if (topic_natural_w_ < 0.0f)
+                    {
+                        tk::TextStyle ts_nat{};
+                        ts_nat.role = tk::FontRole::SidebarPreview;
+                        auto nat = ctx.factory.build_text(subtitle_text_(), ts_nat);
+                        topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                    }
+                    topic_truncated_ = topic_natural_w_ > text_w;
+                }
             }
         }
     }
@@ -904,7 +975,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         const float title_x = bounds.x + kRoomHeaderPadX + lead_reserve - 4.0f;
         if (title_right > title_x)
         {
-            const tk::Rect title_r{title_x, bounds.y + 4.0f, title_right - title_x, kHeight - 8.0f};
+            const tk::Rect title_r{title_x, bounds.y + 4.0f, title_right - title_x,
+                                   bounds.h - 8.0f};
             title_target_->arrange(ctx, title_r);
             if (info_area_)
             {
@@ -982,6 +1054,160 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 }
 
+// Compact single-line layout: avatar · name · presence(muted) · topic all on
+// one vertically-centred line. Name keeps its natural (Title) width so the
+// presence sits right after it; the topic gets the remaining width, ellipsized.
+void RoomHeader::arrange_compact_(tk::LayoutCtx& ctx, float text_x, float text_w)
+{
+    const float name_y = bounds_.y + (bounds_.h - kRoomHeaderNameH) * 0.5f;
+
+    // Leading badges, left to right: bridge, lock, then the name.
+    const bool show_bridge = bridged_ && text_w >= kBridgeIconPx + kBridgeIconGap;
+    const float bridge_reserve = show_bridge ? (kBridgeIconPx + kBridgeIconGap) : 0.0f;
+    bridge_icon_rect_ = show_bridge
+                            ? tk::Rect{text_x, name_y + (kRoomHeaderNameH - kBridgeIconPx) * 0.5f,
+                                       kBridgeIconPx, kBridgeIconPx}
+                            : tk::Rect{};
+
+    const float lock_reserve = encrypted_ ? (kLockW + kLockGap) : 0.0f;
+    lock_icon_rect_ = encrypted_
+                          ? tk::Rect{text_x + bridge_reserve,
+                                     name_y + (kRoomHeaderNameH - kLockH) * 0.5f, kLockW, kLockH}
+                          : tk::Rect{};
+
+    const float lead = bridge_reserve + lock_reserve;
+    const float text_right = text_x + text_w;
+    const float name_x = text_x + lead;
+    const float available = std::max(0.0f, text_right - name_x);
+
+    // Natural widths: the name (cached; Title role) and the presence line.
+    if (name_natural_w_ < 0.0f)
+    {
+        tk::TextStyle ts{};
+        ts.role = tk::FontRole::Title;
+        auto nat = ctx.factory.build_text(display_name_, ts);
+        name_natural_w_ = nat ? nat->measure().w : 0.0f;
+    }
+    tk::TextStyle pst_nat{};
+    pst_nat.role = tk::FontRole::SidebarPreview;
+    const auto presence_nat_lo = ctx.factory.build_text(presence_text_, pst_nat);
+    const float presence_nat_w = presence_nat_lo ? presence_nat_lo->measure().w : 0.0f;
+
+    // The presence keeps its natural width (it is the whole point of the
+    // compact strip), so a long name is squeezed first and ellipsized; the
+    // topic gives up whatever is left.
+    const float presence_reserve =
+        presence_text_.empty() ? 0.0f : std::min(presence_nat_w + kCompactPresenceGap, available);
+    const float name_w = std::min(name_natural_w_, std::max(0.0f, available - presence_reserve));
+    if (name_label_)
+    {
+        name_label_->set_text(display_name_);
+        name_label_->set_visible(name_w > 0.0f);
+        name_label_->arrange(ctx, {name_x, name_y, name_w, kRoomHeaderNameH});
+    }
+
+    // Presence, right of the name: muted, ellipsized only when it must shrink.
+    // A normal room has none, so the topic starts right after the name.
+    const bool has_presence = !presence_text_.empty();
+    const float presence_x = name_x + name_w + (name_w > 0.0f ? kCompactPresenceGap : 0.0f);
+    const float presence_w =
+        has_presence ? std::max(0.0f, std::min(presence_nat_w, text_right - presence_x)) : 0.0f;
+    if (presence_last_w_ != presence_w)
+    {
+        presence_last_w_ = presence_w;
+        presence_layout_.reset();
+    }
+    if (!presence_layout_)
+    {
+        tk::TextStyle pst{};
+        pst.role = tk::FontRole::SidebarPreview;
+        pst.trim = tk::TextTrim::Ellipsis;
+        pst.max_width = presence_w;
+        presence_layout_ = ctx.factory.build_text(presence_text_, pst);
+    }
+    const float presence_h = presence_layout_ ? presence_layout_->measure().h : 0.0f;
+    presence_rect_ = presence_w > 0.0f
+                         ? tk::Rect{presence_x, bounds_.y + (bounds_.h - presence_h) * 0.5f,
+                                    presence_w, presence_h}
+                         : tk::Rect{};
+
+    // Topic fills whatever remains, ellipsized; hidden when none is left.
+    const bool has_topic_content = !topic_spans_.empty() || !topic_.empty() || !topic_html_.empty();
+    const float topic_x =
+        presence_x + presence_w + (presence_w > 0.0f ? kCompactPresenceTopicGap : 0.0f);
+    const float topic_w = std::max(0.0f, text_right - topic_x);
+    topic_rect_ = {topic_x, bounds_.y + (bounds_.h - kTopicH) * 0.5f, topic_w, kTopicH};
+
+    const bool show_topic_label = has_topic_content && topic_spans_.empty() && topic_w > 0.0f;
+    if (topic_label_)
+    {
+        topic_label_->set_text(topic_plain_text_());
+        topic_label_->set_visible(show_topic_label);
+        if (show_topic_label)
+        {
+            topic_label_->arrange(ctx, topic_rect_);
+        }
+    }
+
+    const bool needs_rebuild = topic_dirty_ || (topic_w != last_topic_w_);
+    if (needs_rebuild)
+    {
+        topic_dirty_ = false;
+        last_topic_w_ = topic_w;
+        topic_truncated_ = false;
+        topic_layout_.reset();
+
+        if (!topic_display_spans_.empty())
+        {
+            // Rich text: paint from the topic-only display spans (presence is
+            // drawn separately in compact mode).
+            tk::TextStyle ts{};
+            ts.role = tk::FontRole::SidebarPreview;
+            ts.trim = tk::TextTrim::Ellipsis;
+            ts.max_width = topic_w;
+            topic_layout_ =
+                ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
+            if (topic_multiline_)
+            {
+                topic_truncated_ = true;
+            }
+            else if (topic_natural_w_ < 0.0f)
+            {
+                tk::TextStyle ts_nat{};
+                ts_nat.role = tk::FontRole::SidebarPreview;
+                auto nat = ctx.factory.build_rich_text(
+                    themed_spans(topic_display_spans_, ctx.theme), ts_nat);
+                topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                topic_truncated_ = topic_natural_w_ > topic_w;
+            }
+            else
+            {
+                topic_truncated_ = topic_natural_w_ > topic_w;
+            }
+        }
+        else if (has_topic_content)
+        {
+            // Plain text: the label ellipsizes itself.
+            if (topic_multiline_)
+            {
+                topic_truncated_ = true;
+            }
+            else if (topic_natural_w_ < 0.0f)
+            {
+                tk::TextStyle ts_nat{};
+                ts_nat.role = tk::FontRole::SidebarPreview;
+                auto nat = ctx.factory.build_text(topic_plain_text_(), ts_nat);
+                topic_natural_w_ = nat ? nat->measure().w : 0.0f;
+                topic_truncated_ = topic_natural_w_ > topic_w;
+            }
+            else
+            {
+                topic_truncated_ = topic_natural_w_ > topic_w;
+            }
+        }
+    }
+}
+
 void RoomHeader::paint(tk::PaintCtx& ctx)
 {
     host_ = ctx.host;
@@ -1029,18 +1255,25 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         info_area_->paint(ctx);
     }
 
-    // Avatar — circle-cropped image or initials disc.
-    const tk::Point avatar_centre{bounds_.x + kRoomHeaderPadX + lead_reserve +
-                                      kRoomHeaderAvatarSize * 0.5f,
-                                  bounds_.y + kHeight * 0.5f};
+    // Avatar — circle-cropped image or initials disc, halved in compact mode.
+    const float avatar_size = compact_() ? kCompactAvatarSize : kRoomHeaderAvatarSize;
+    const tk::Point avatar_centre{bounds_.x + kRoomHeaderPadX + lead_reserve + avatar_size * 0.5f,
+                                  bounds_.y + bounds_.h * 0.5f};
     const tk::Image* avatar_img =
         (avatar_provider_ && !avatar_url_.empty()) ? avatar_provider_(avatar_url_) : nullptr;
-    draw_avatar(ctx.canvas, avatar_img, avatar_centre, kRoomHeaderAvatarSize, display_name_,
+    draw_avatar(ctx.canvas, avatar_img, avatar_centre, avatar_size, display_name_,
                 ctx.theme.palette.avatar_initials_bg, ctx.theme.palette.avatar_initials_text);
 
     if (name_label_)
     {
         name_label_->paint(ctx);
+    }
+
+    // Compact mode: the muted presence line right of the name.
+    if (presence_rect_.w > 0.0f && presence_layout_)
+    {
+        ctx.canvas.draw_text(*presence_layout_, {presence_rect_.x, presence_rect_.y},
+                             ctx.theme.palette.text_muted);
     }
 
     if (encrypted_)

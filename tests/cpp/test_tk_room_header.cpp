@@ -8,6 +8,8 @@
 #include "views/DatePickerView.h"
 #include "views/RoomHeader.h"
 
+#include <tesseract/settings.h>
+
 #include <cstdlib>
 #include <ctime>
 #include <memory>
@@ -518,4 +520,154 @@ TEST_CASE("Toggling presence with an unchanged topic updates the line", "[room_h
     h.set_presence_text("");
     st.arrange(h, {0, 0, 800, 60});
     CHECK(h.subtitle_for_test() == "see https://example.org/x");
+}
+
+namespace
+{
+
+// Sets the message layout for the lifetime of the object and restores the
+// previous value (the setting is process-global, see test_message_list_*).
+struct ScopedMessageLayout
+{
+    explicit ScopedMessageLayout(tesseract::Settings::MessageLayout layout)
+        : previous_(tesseract::Settings::instance().message_layout)
+    {
+        tesseract::Settings::instance().message_layout = layout;
+    }
+    ~ScopedMessageLayout()
+    {
+        tesseract::Settings::instance().message_layout = previous_;
+    }
+    tesseract::Settings::MessageLayout previous_;
+};
+
+} // namespace
+
+TEST_CASE("The IRC layout halves the header of every room", "[room_header][irc]")
+{
+    ScopedMessageLayout irc(tesseract::Settings::MessageLayout::Irc);
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("Last seen 5m ago");
+
+    auto lc = st.layout_ctx();
+    CHECK(h.measure(lc, {800, 60}).h == RoomHeader::kCompactHeight);
+    CHECK(h.avatar_diameter_for_test() == RoomHeader::kCompactAvatarSize);
+
+    // A normal room (no presence line) gets the same compact strip.
+    h.set_presence_text("");
+    CHECK(h.measure(lc, {800, 60}).h == RoomHeader::kCompactHeight);
+    CHECK(h.avatar_diameter_for_test() == RoomHeader::kCompactAvatarSize);
+}
+
+TEST_CASE("Only the IRC layout compacts the header", "[room_header][irc]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("Online");
+
+    for (const auto layout :
+         {tesseract::Settings::MessageLayout::Classic, tesseract::Settings::MessageLayout::Bubbles})
+    {
+        ScopedMessageLayout scoped(layout);
+        auto lc = st.layout_ctx();
+        CHECK(h.measure(lc, {800, 60}).h == RoomHeader::kHeight);
+        CHECK(h.avatar_diameter_for_test() == RoomHeader::kAvatarSize);
+    }
+
+    // The condensed tab-bar header keeps its own thin strip in IRC mode.
+    {
+        ScopedMessageLayout irc(tesseract::Settings::MessageLayout::Irc);
+        h.set_condensed(true);
+        auto lc = st.layout_ctx();
+        CHECK(h.measure(lc, {800, 60}).h < RoomHeader::kCompactHeight);
+        h.set_condensed(false);
+    }
+}
+
+TEST_CASE("Compact IRC header puts the presence right of the name, topic after it",
+          "[room_header][irc]")
+{
+    ScopedMessageLayout irc(tesseract::Settings::MessageLayout::Irc);
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("Last seen 5m ago");
+    st.arrange(h, {0, 0, 800, RoomHeader::kCompactHeight});
+
+    // halved avatar + gap after the strip padding
+    const tk::Rect name = h.name_label_rect_for_test();
+    CHECK(name.x == 16.0f + RoomHeader::kCompactAvatarSize + 8.0f);
+
+    const tk::Rect presence = h.presence_rect_for_test();
+    CHECK(presence.w > 0.0f);
+    CHECK(presence.x > name.x + name.w);
+    CHECK(presence.y >= 0.0f);
+    CHECK(presence.y + presence.h <= RoomHeader::kCompactHeight);
+
+    // The topic follows on the same row, no second line.
+    const tk::Rect topic = h.topic_label_rect_for_test();
+    CHECK(topic.x > presence.x);
+    CHECK(topic.y + topic.h <= RoomHeader::kCompactHeight);
+
+    // Paints without a real provider or cached avatar (initials fallback).
+    CHECK_NOTHROW(st.paint(h));
+}
+
+TEST_CASE("Compact IRC header of a normal room puts the topic right after the name",
+          "[room_header][irc]")
+{
+    ScopedMessageLayout irc(tesseract::Settings::MessageLayout::Irc);
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("");
+    st.arrange(h, {0, 0, 800, RoomHeader::kCompactHeight});
+
+    CHECK(h.presence_rect_for_test().w == 0.0f);
+
+    const tk::Rect name = h.name_label_rect_for_test();
+    const tk::Rect topic = h.topic_label_rect_for_test();
+    CHECK(topic.x > name.x + name.w);
+    CHECK(topic.y + topic.h <= RoomHeader::kCompactHeight);
+    CHECK(topic.x < 200.0f); // right after the name, not pushed out
+}
+
+TEST_CASE("Compact IRC header keeps the presence when the name is long", "[room_header][irc]")
+{
+    ScopedMessageLayout irc(tesseract::Settings::MessageLayout::Irc);
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    auto room = presence_test_room("Weekly sync");
+    room.name = std::string(200, 'W');
+    h.set_room(room);
+    h.set_presence_text("Online");
+    st.arrange(h, {0, 0, 420, RoomHeader::kCompactHeight});
+
+    const tk::Rect presence = h.presence_rect_for_test();
+    CHECK(presence.w > 0.0f);
+    CHECK(presence.x + presence.w <= 420.0f);
+}
+
+TEST_CASE("Leaving the IRC layout restores the two-line header", "[room_header][irc]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    h.set_room(presence_test_room("Weekly sync"));
+    h.set_presence_text("Online");
+
+    {
+        ScopedMessageLayout irc(tesseract::Settings::MessageLayout::Irc);
+        st.arrange(h, {0, 0, 800, RoomHeader::kCompactHeight});
+        CHECK(h.presence_rect_for_test().w > 0.0f);
+        CHECK(h.subtitle_for_test() == "Weekly sync · Online");
+    }
+    {
+        ScopedMessageLayout classic(tesseract::Settings::MessageLayout::Classic);
+        st.arrange(h, {0, 0, 800, RoomHeader::kHeight});
+        CHECK(h.presence_rect_for_test().w == 0.0f);
+        CHECK(h.subtitle_for_test() == "Weekly sync · Online");
+    }
 }

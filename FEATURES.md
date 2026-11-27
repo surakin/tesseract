@@ -43,7 +43,7 @@ version) are noted where relevant.
 - Custom emoji and stickers via image packs (MSC2545)
 - Threads (matrix-rust-sdk thread support), with a client-side thread-list filter and in-thread find/search
 - Unread-thread indicator: a dot on the room header's threads button and on individual thread-list rows, driven by MSC3771 threaded read receipts (which Tesseract also sends); a "mark all threads as read" button in the thread-list header; read state persists across restarts in a per-device `thread_read_state.db`
-- Message layout is a choice (Appearance → Layout): `Classic` (default), `Bubbles` (chat-bubble style with hugged widths), or `IRC` (monospaced mIRC look-alike with per-person coloring and IRC-style system lines) — a live preview shows next to the setting
+- Message layout is a choice (Appearance → Layout): `Classic` (default), `Bubbles` (chat-bubble style with hugged widths), or `IRC` (monospaced mIRC look-alike with per-person coloring and IRC-style system lines; every room's header is one compact line, carrying the other person's last seen in a direct message) — a live preview shows next to the setting
 - Mentions: user mentions with `@` autocomplete, rendered as pills, click-to-profile; `m.mentions` populated (reliable notifications, including in encrypted rooms)
 - Read receipts: public (`m.read`) and private (`m.read.private`); per-reader timestamp on hover, with a "+N" overflow pill opening a scrollable grid of everyone who has read the message
 - Fully-read markers (`m.fully_read`)

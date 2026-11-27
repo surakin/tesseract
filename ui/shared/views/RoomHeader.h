@@ -32,12 +32,19 @@ class RoomHeader : public tk::Widget, public tk::WidgetRowAccessibility
 {
 public:
     static constexpr float kHeight = 60.0f;
+    // Height of the compact single-line header used with the IRC message
+    // layout: avatar · name · presence (DMs only) · topic all on one 30 px line.
+    static constexpr float kCompactHeight = 30.0f;
+    // Avatar diameters: the classic strip's 40 px circle, halved in compact mode.
+    static constexpr float kAvatarSize = 40.0f;
+    static constexpr float kCompactAvatarSize = 20.0f;
 
     // The topic layout is rebuilt only when dirty or the width changes.
     void on_fonts_changed() override
     {
         topic_dirty_ = true;
         topic_natural_w_ = -1.0f;
+        name_natural_w_ = -1.0f;
     }
 
     RoomHeader();
@@ -339,6 +346,18 @@ public:
         return presence_text_;
     }
 
+    // Test-only: the compact strip's presence rect (0 when not compact).
+    tk::Rect presence_rect_for_test() const
+    {
+        return presence_rect_;
+    }
+
+    // Test-only: the avatar diameter used in the current mode.
+    float avatar_diameter_for_test() const
+    {
+        return compact_() ? kCompactAvatarSize : kAvatarSize;
+    }
+
     // Test-only: whether the cached topic state says the topic spans lines.
     bool topic_multiline_for_test() const
     {
@@ -398,12 +417,27 @@ private:
     std::vector<tk::TextSpan> subtitle_spans_() const;
     std::string subtitle_tooltip_text_() const;
     bool subtitle_visible_() const;
+    // The topic alone (first line + "…" when multiline), without the presence
+    // tail — the compact single-line header draws the topic separately.
+    std::string topic_plain_text_() const;
+    // True in compact mode: not condensed, a presence subtitle is shown, and
+    // the IRC message layout is active. Drives the halved height / avatar.
+    bool compact_() const;
+    void arrange_compact_(tk::LayoutCtx& ctx, float text_x, float text_w);
     std::vector<tk::TextSpan> topic_spans_;
     // First-line-only spans used for painting (equals topic_spans_ when
     // the topic is single-line; truncated at the first \n + "…" otherwise).
     std::vector<tk::TextSpan> topic_display_spans_;
     bool topic_multiline_ = false;
     tk::Rect topic_rect_{};
+    // Compact-mode presence: muted text right of the name, ellipsized.
+    tk::CachedTextLayout presence_layout_;
+    tk::Rect presence_rect_{};
+    // Cached natural widths / mode tag so a mode or font change rebuilds the
+    // inline compact layouts instead of reusing a stale measurement.
+    float name_natural_w_ = -1.0f;
+    float presence_last_w_ = -1.0f;
+    bool last_layout_compact_ = false;
     std::string avatar_url_;
 
     tk::CachedTextLayout topic_layout_;

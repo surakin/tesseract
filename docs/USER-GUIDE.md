@@ -60,7 +60,7 @@ Settings → Appearance lets you choose how messages look:
 
 - **Classic:** a flat list.
 - **Bubbles:** chat bubbles, like a phone messenger.
-- **IRC:** compact, in a monospaced font, with a colour per person.
+- **IRC:** compact, in a monospaced font, with a colour per person. The room header becomes one line too, with the other person's last seen next to their name in a direct message.
 
 ## 5. Getting around fast
 
